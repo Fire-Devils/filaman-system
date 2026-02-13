@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="de" data-theme="brand">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FilaMan Layout Draft</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --font-sans: "Space Grotesk", "Segoe UI", sans-serif;
+        --font-serif: "Fraunces", "Georgia", serif;
+        --radius-lg: 20px;
+        --radius-md: 14px;
+        --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.18);
+        --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.12);
+        --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.08);
+        --transition: 220ms ease;
+      }
+
+      html[data-theme="brand"] {
+        --bg: #0c1612;
+        --bg-elevated: #13261d;
+        --bg-soft: #183225;
+        --text: #e9f3ec;
+        --text-muted: #b5c7bd;
+        --accent: #4ee3a2;
+        --accent-2: #6cc6ff;
+        --accent-3: #f7c86a;
+        --border: rgba(255, 255, 255, 0.08);
+        --glow: 0 0 45px rgba(78, 227, 162, 0.35);
+        --gradient-hero: radial-gradient(circle at 20% 20%, rgba(78, 227, 162, 0.25), transparent 60%),
+          radial-gradient(circle at 80% 0%, rgba(108, 198, 255, 0.18), transparent 55%),
+          linear-gradient(140deg, #0c1612 0%, #12251b 45%, #0b1410 100%);
+      }
+
+      html[data-theme="light"] {
+        --bg: #f8f6f1;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f1ece3;
+        --text: #1a231e;
+        --text-muted: #53645a;
+        --accent: #1c9b6b;
+        --accent-2: #2b7bc7;
+        --accent-3: #d38e2c;
+        --border: rgba(26, 35, 30, 0.12);
+        --glow: 0 0 45px rgba(28, 155, 107, 0.18);
+        --gradient-hero: radial-gradient(circle at 20% 20%, rgba(28, 155, 107, 0.16), transparent 60%),
+          radial-gradient(circle at 80% 0%, rgba(43, 123, 199, 0.14), transparent 55%),
+          linear-gradient(140deg, #f8f6f1 0%, #f1ece3 50%, #ffffff 100%);
+      }
+
+      html[data-theme="dark"] {
+        --bg: #0b0d12;
+        --bg-elevated: #141825;
+        --bg-soft: #1a2032;
+        --text: #eef1f7;
+        --text-muted: #9aa4b7;
+        --accent: #73d1ff;
+        --accent-2: #8cf3b2;
+        --accent-3: #f3a05f;
+        --border: rgba(255, 255, 255, 0.08);
+        --glow: 0 0 45px rgba(115, 209, 255, 0.35);
+        --gradient-hero: radial-gradient(circle at 20% 20%, rgba(115, 209, 255, 0.25), transparent 60%),
+          radial-gradient(circle at 80% 0%, rgba(140, 243, 178, 0.18), transparent 55%),
+          linear-gradient(145deg, #0b0d12 0%, #0f1421 55%, #0b0d12 100%);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--font-sans);
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      img {
+        max-width: 100%;
+        display: block;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        min-height: 100vh;
+        background: var(--gradient-hero);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        min-height: 100vh;
+      }
+
+      body[data-sidebar="collapsed"] .layout {
+        grid-template-columns: 84px 1fr;
+      }
+
+      .container {
+        width: min(1180px, 92vw);
+        margin: 0 auto;
+      }
+
+      .sidebar {
+        background: var(--bg-elevated);
+        border-right: 1px solid var(--border);
+        padding: 24px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+      }
+
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .sidebar-toggle {
+        border: 1px solid var(--border);
+        background: var(--bg-soft);
+        color: var(--text);
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: transform var(--transition), background var(--transition);
+      }
+
+      .sidebar-toggle:hover {
+        transform: translateY(-1px);
+      }
+
+      .sidebar-nav {
+        display: grid;
+        gap: 10px;
+      }
+
+      .nav-group {
+        display: grid;
+        gap: 8px;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        color: var(--text-muted);
+        transition: background var(--transition), color var(--transition);
+      }
+
+      .nav-item:hover,
+      .nav-item.active {
+        background: var(--bg-soft);
+        color: var(--text);
+      }
+
+      .nav-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        background: linear-gradient(140deg, var(--accent), var(--accent-2));
+        display: grid;
+        place-items: center;
+        font-size: 0.8rem;
+        color: #0b120e;
+        flex-shrink: 0;
+      }
+
+      .nav-text {
+        font-weight: 600;
+      }
+
+      .nav-sub {
+        margin-left: 42px;
+        display: grid;
+        gap: 6px;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+      }
+
+      .nav-sub a {
+        padding: 6px 10px;
+        border-radius: 10px;
+        transition: background var(--transition), color var(--transition);
+      }
+
+      .nav-sub a:hover {
+        background: var(--bg-soft);
+        color: var(--text);
+      }
+
+      .sidebar-footer {
+        margin-top: auto;
+        display: grid;
+        gap: 12px;
+      }
+
+      body[data-sidebar="collapsed"] .nav-text,
+      body[data-sidebar="collapsed"] .nav-sub,
+      body[data-sidebar="collapsed"] .logo-text,
+      body[data-sidebar="collapsed"] .logo-tagline {
+        display: none;
+      }
+
+      .main {
+        padding-bottom: 60px;
+      }
+
+      .nav {
+        padding: 28px 0 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+      }
+
+      .logo-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        background: linear-gradient(140deg, var(--accent), var(--accent-2));
+        box-shadow: var(--glow);
+        display: grid;
+        place-items: center;
+        font-family: var(--font-serif);
+        color: #0b120e;
+      }
+
+      .topbar-title {
+        font-weight: 600;
+        font-size: 1.1rem;
+      }
+
+      .theme-toggle {
+        display: flex;
+        gap: 8px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        padding: 6px;
+        border-radius: 999px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .theme-toggle button {
+        border: 0;
+        background: transparent;
+        color: var(--text-muted);
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all var(--transition);
+      }
+
+      .theme-toggle button.active {
+        background: var(--accent);
+        color: #0b120e;
+        box-shadow: var(--glow);
+      }
+
+      .hero {
+        padding: 70px 0 40px;
+        display: grid;
+        gap: 40px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        align-items: center;
+      }
+
+      .eyebrow {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.28em;
+        color: var(--accent-3);
+      }
+
+      h1 {
+        font-size: clamp(2.8rem, 5vw, 4.2rem);
+        line-height: 1.05;
+        margin: 12px 0 16px;
+        font-family: var(--font-serif);
+      }
+
+      .hero p {
+        font-size: 1.1rem;
+        color: var(--text-muted);
+      }
+
+      .hero-actions {
+        margin-top: 28px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+      }
+
+      .btn {
+        padding: 12px 20px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+        cursor: pointer;
+        transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #0b120e;
+        box-shadow: var(--glow);
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+      }
+
+      .btn-outline {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .hero-panel {
+        background: var(--bg-elevated);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border);
+        padding: 24px;
+        box-shadow: var(--shadow-lg);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-panel::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.08), transparent 40%);
+        pointer-events: none;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+
+      .panel-title {
+        font-weight: 600;
+      }
+
+      .chip {
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: var(--bg-soft);
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        border: 1px solid var(--border);
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 16px;
+      }
+
+      .metric {
+        background: var(--bg-soft);
+        border-radius: var(--radius-md);
+        padding: 14px;
+        border: 1px solid var(--border);
+      }
+
+      .metric strong {
+        font-size: 1.4rem;
+        display: block;
+      }
+
+      .section {
+        padding: 50px 0;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 26px;
+      }
+
+      .section-title h2 {
+        margin: 0;
+        font-size: clamp(1.8rem, 3vw, 2.6rem);
+        font-family: var(--font-serif);
+      }
+
+      .section-title span {
+        color: var(--text-muted);
+        max-width: 460px;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 18px;
+      }
+
+      .card {
+        background: var(--bg-elevated);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+        padding: 18px;
+        box-shadow: var(--shadow-sm);
+        transition: transform var(--transition), box-shadow var(--transition);
+      }
+
+      .card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-md);
+      }
+
+      .card h3 {
+        margin-top: 0;
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .pill {
+        border: 1px solid var(--border);
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        background: var(--bg-soft);
+      }
+
+      .dashboard {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 20px;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+
+      .table th,
+      .table td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      .cta {
+        margin: 40px 0 80px;
+        background: linear-gradient(140deg, rgba(255, 255, 255, 0.05), transparent),
+          var(--bg-elevated);
+        border-radius: var(--radius-lg);
+        padding: 36px;
+        border: 1px solid var(--border);
+        display: grid;
+        gap: 24px;
+        align-items: center;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+
+      .cta h3 {
+        margin-top: 0;
+        font-size: 1.8rem;
+      }
+
+      .footer {
+        padding: 40px 0 60px;
+        border-top: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 0.9rem;
+      }
+
+      .footer-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+      }
+
+      .fade-up {
+        animation: fadeUp 700ms ease forwards;
+        opacity: 0;
+        transform: translateY(12px);
+      }
+
+      .fade-delay-1 {
+        animation-delay: 120ms;
+      }
+
+      .fade-delay-2 {
+        animation-delay: 240ms;
+      }
+
+      .fade-delay-3 {
+        animation-delay: 360ms;
+      }
+
+      @keyframes fadeUp {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 960px) {
+        .layout {
+          grid-template-columns: 84px 1fr;
+        }
+
+        .nav-text,
+        .nav-sub,
+        .logo-text,
+        .logo-tagline {
+          display: none;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .nav {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .hero {
+          padding-top: 40px;
+        }
+      }
+    </style>
+  </head>
+  <body data-sidebar="expanded">
+    <div class="page">
+      <div class="layout">
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <div class="logo">
+              <div class="logo-mark">FM</div>
+              <div class="logo-text">
+                <div>FilaMan</div>
+                <small class="logo-tagline" style="color: var(--text-muted);">Filament Management Tool</small>
+              </div>
+            </div>
+            <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar">
+              ||
+            </button>
+          </div>
+
+          <nav class="sidebar-nav" aria-label="Main">
+            <a class="nav-item active" href="#features">
+              <span class="nav-icon">D</span>
+              <span class="nav-text">Dashboard</span>
+            </a>
+            <div class="nav-group">
+              <a class="nav-item" href="#inventory">
+                <span class="nav-icon">S</span>
+                <span class="nav-text">Spools</span>
+              </a>
+              <div class="nav-sub">
+                <a href="#inventory">Alle Spools</a>
+                <a href="#inventory">Events</a>
+                <a href="#inventory">Low Stock</a>
+              </div>
+            </div>
+            <div class="nav-group">
+              <a class="nav-item" href="#insights">
+                <span class="nav-icon">P</span>
+                <span class="nav-text">Printers</span>
+              </a>
+              <div class="nav-sub">
+                <a href="#insights">AMS Slots</a>
+                <a href="#insights">Devices</a>
+              </div>
+            </div>
+            <a class="nav-item" href="#cta">
+              <span class="nav-icon">A</span>
+              <span class="nav-text">Admin</span>
+            </a>
+          </nav>
+
+          <div class="sidebar-footer">
+            <div class="theme-toggle" role="group" aria-label="Theme toggle">
+              <button type="button" data-theme="brand" class="active">Default</button>
+              <button type="button" data-theme="light">Light</button>
+              <button type="button" data-theme="dark">Dark</button>
+            </div>
+          </div>
+        </aside>
+
+        <main class="main">
+          <div class="container">
+            <nav class="nav">
+              <div class="topbar-title">Dashboard Overview</div>
+              <div class="hero-actions">
+                <button class="btn btn-outline">Quick Add</button>
+                <button class="btn btn-primary">Neue Spule</button>
+              </div>
+            </nav>
+
+            <section class="hero">
+              <div>
+                <div class="eyebrow">FilaMan System</div>
+                <h1 class="fade-up">Filament, Spools, AMS. Alles unter Kontrolle.</h1>
+                <p class="fade-up fade-delay-1">
+                  Ein klares, schnelles Dashboard fuer Filamentverwaltung mit Gewicht, NFC, AMS-Slots
+                  und Events. Lokal, sicher und fuer Teams vorbereitet.
+                </p>
+                <div class="hero-actions fade-up fade-delay-2">
+                  <button class="btn btn-primary">Layout ansehen</button>
+                  <button class="btn btn-outline">Spec Referenz</button>
+                </div>
+              </div>
+              <div class="hero-panel fade-up fade-delay-3">
+                <div class="panel-header">
+                  <div class="panel-title">Live Inventory</div>
+                  <div class="chip">12 Active Spools</div>
+                </div>
+                <div class="metric-grid">
+                  <div class="metric">
+                    <span>Remaining</span>
+                    <strong>8.4 kg</strong>
+                    <small style="color: var(--text-muted);">12 spools</small>
+                  </div>
+                  <div class="metric">
+                    <span>AMS Slots</span>
+                    <strong>3/4</strong>
+                    <small style="color: var(--text-muted);">Bambu X1C</small>
+                  </div>
+                  <div class="metric">
+                    <span>Low Stock</span>
+                    <strong>2</strong>
+                    <small style="color: var(--text-muted);">PLA, PETG</small>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+      <section id="features" class="section">
+        <div class="container">
+          <div class="section-title">
+            <h2>Hauptfunktionen</h2>
+            <span>Konzentriert auf Filament-Tracking, Events und AMS-Zuordnung.</span>
+          </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Spools & Events</h3>
+              <p>Messungen, Verbrauch und Korrekturen mit klarer Historie.</p>
+              <div class="pill-row">
+                <span class="pill">Measurement</span>
+                <span class="pill">Consumption</span>
+                <span class="pill">Rebuild</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>AMS Slot Mapping</h3>
+              <p>Automatische Zuweisung von Spulen zu Slots mit Plugin-Events.</p>
+              <div class="pill-row">
+                <span class="pill">Slots</span>
+                <span class="pill">Assignments</span>
+                <span class="pill">Policies</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>RBAC + Tokens</h3>
+              <p>Session, API Keys und Device Tokens fuer sichere Integrationen.</p>
+              <div class="pill-row">
+                <span class="pill">Session</span>
+                <span class="pill">ApiKey</span>
+                <span class="pill">Device</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Plugins lokal</h3>
+              <p>Lokale Python-Plugins empfangen Events und halten AMS State aktuell.</p>
+              <div class="pill-row">
+                <span class="pill">Driver</span>
+                <span class="pill">Emitter</span>
+                <span class="pill">Registry</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="inventory" class="section">
+        <div class="container">
+          <div class="section-title">
+            <h2>Inventory Uebersicht</h2>
+            <span>Beispielhaftes Layout fuer Tabellen, Status und Quick Actions.</span>
+          </div>
+          <div class="dashboard">
+            <div class="card">
+              <h3>Aktive Spools</h3>
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Filament</th>
+                    <th>Rest</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>PLA Matte Black</td>
+                    <td>640 g</td>
+                    <td><span class="status"><span class="dot"></span>Ready</span></td>
+                  </tr>
+                  <tr>
+                    <td>PETG Transparent</td>
+                    <td>210 g</td>
+                    <td><span class="status" style="border-color: var(--accent-3);"><span class="dot" style="background: var(--accent-3);"></span>Low</span></td>
+                  </tr>
+                  <tr>
+                    <td>ABS Signal Orange</td>
+                    <td>0 g</td>
+                    <td><span class="status" style="border-color: #f36b6b;"><span class="dot" style="background: #f36b6b;"></span>Empty</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card">
+              <h3>Aktive Policies</h3>
+              <p>Regeln fuer Rebuild, Clamp und Auto-Empty werden zentral verwaltet.</p>
+              <div class="pill-row">
+                <span class="pill">Clamp -> 0</span>
+                <span class="pill">Auto-Empty</span>
+                <span class="pill">Rebuild Missing Tara</span>
+              </div>
+              <div style="margin-top: 18px;">
+                <button class="btn btn-outline">Policy Details</button>
+              </div>
+            </div>
+            <div class="card">
+              <h3>AMS Slots</h3>
+              <p>Bambu X1C AMS #1</p>
+              <div class="metric-grid">
+                <div class="metric">
+                  <span>Slot A</span>
+                  <strong>PLA</strong>
+                </div>
+                <div class="metric">
+                  <span>Slot B</span>
+                  <strong>PETG</strong>
+                </div>
+                <div class="metric">
+                  <span>Slot C</span>
+                  <strong>---</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="insights" class="section">
+        <div class="container">
+          <div class="section-title">
+            <h2>Insights & Aktionen</h2>
+            <span>Cards fuer Aktionen, Teams und kommende Aufgaben.</span>
+          </div>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Team Access</h3>
+              <p>Viewer, User und Admin Rollen mit granularen Permissions.</p>
+              <div class="pill-row">
+                <span class="pill">RBAC</span>
+                <span class="pill">Permissions</span>
+                <span class="pill">Audit</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Devices</h3>
+              <p>Device Tokens fuer Waage, NFC Reader und Scanner.</p>
+              <div class="pill-row">
+                <span class="pill">Tokens</span>
+                <span class="pill">Sessions</span>
+                <span class="pill">CSRF</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>Admin Tools</h3>
+              <p>Seed Management, System Rollen und API Limits.</p>
+              <div class="pill-row">
+                <span class="pill">Seeds</span>
+                <span class="pill">Policies</span>
+                <span class="pill">Logs</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="cta" class="section">
+        <div class="container">
+          <div class="cta">
+            <div>
+              <h3>Bereit fuer das finale Layout?</h3>
+              <p>Wir koennen als naechstes die IA aus den Specs in konkrete Screens zerlegen.</p>
+            </div>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+              <button class="btn btn-primary">Screens planen</button>
+              <button class="btn btn-outline">Routing ansehen</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+          <footer class="footer">
+            <div class="container footer-grid">
+              <div>
+                <strong>FilaMan System</strong>
+                <p>Filament Management Tool fuer 3D-Drucker.</p>
+              </div>
+              <div>
+                <strong>Shortcuts</strong>
+                <p>Dashboard</p>
+                <p>Spools</p>
+                <p>Printers</p>
+              </div>
+              <div>
+                <strong>Status</strong>
+                <p>Local Plugins</p>
+                <p>API v1</p>
+              </div>
+            </div>
+          </footer>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      const buttons = document.querySelectorAll(".theme-toggle button");
+      const root = document.documentElement;
+      const sidebarToggle = document.getElementById("sidebarToggle");
+      const body = document.body;
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const theme = button.getAttribute("data-theme");
+          root.setAttribute("data-theme", theme);
+          buttons.forEach((btn) => btn.classList.remove("active"));
+          button.classList.add("active");
+        });
+      });
+
+      sidebarToggle.addEventListener("click", () => {
+        const isCollapsed = body.getAttribute("data-sidebar") === "collapsed";
+        body.setAttribute("data-sidebar", isCollapsed ? "expanded" : "collapsed");
+      });
+    </script>
+  </body>
+</html>
