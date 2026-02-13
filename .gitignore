@@ -1,0 +1,63 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node / Astro / Tailwind
+node_modules/
+dist/
+.astro/
+.vercel/
+.netlify/
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+*.egg
+.eggs/
+.venv/
+venv/
+ENV/
+.envrc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+*.tsbuildinfo
+*.map
+*.swp
+*.swo
+
+# OS / Editor
+.idea/
+*.iml
+
+# Tailwind output
+*.css.map
+
+# Misc
+coverage/
+*.bak
+*.tmp
