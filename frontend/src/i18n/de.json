@@ -160,7 +160,10 @@
     "noColorsAvailable": "Keine Farben vorhanden. Unten eine anlegen.",
     "failedLoadColors": "Farben konnten nicht geladen werden",
     "failedCreateColor": "Farbe konnte nicht erstellt werden",
-    "colorRequired": "Bitte mindestens eine Farbe auswählen."
+    "colorRequired": "Bitte mindestens eine Farbe auswählen.",
+    "editFilament": "Filament bearbeiten",
+    "saveFilament": "Filament speichern",
+    "failedUpdate": "Filament konnte nicht aktualisiert werden"
   },
   "spools": {
     "title": "Spulen",

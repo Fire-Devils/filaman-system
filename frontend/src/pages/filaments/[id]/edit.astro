@@ -1,0 +1,767 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+
+const { id } = Astro.params
+---
+
+<Layout title="FilaMan - Edit Filament">
+  <div style="margin-bottom: 24px;">
+    <a href={`/filaments/${id}`} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filament</span></a>
+  </div>
+  
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="filaments.editFilament">Edit Filament</h1>
+  
+  <div id="edit-loading">
+    <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  </div>
+
+  <div id="edit-error" class="hidden">
+    <p style="color: var(--error-text);" data-i18n="filaments.failedLoadSingle">Failed to load filament</p>
+  </div>
+
+  <div id="edit-form-wrapper" class="hidden">
+    <div class="fm-card" style="max-width: 720px; padding: 24px;">
+      <form id="filament-form" style="display: grid; gap: 16px;">
+        
+        <!-- Manufacturer -->
+        <div>
+          <label for="manufacturer_id" class="fm-label" data-i18n="filaments.manufacturer">Manufacturer *</label>
+          <select 
+            id="manufacturer_id" 
+            name="manufacturer_id" 
+            required
+            class="fm-select"
+          >
+            <option value="" data-i18n="filaments.selectManufacturer">Select manufacturer...</option>
+          </select>
+        </div>
+        
+        <!-- Designation -->
+        <div>
+          <label for="designation" class="fm-label" data-i18n="filaments.designation">Designation *</label>
+          <input
+            type="text"
+            id="designation"
+            name="designation"
+            required
+            placeholder="e.g. PLA Basic Red"
+            data-i18n-placeholder="filaments.designationPlaceholder"
+            class="fm-input"
+          />
+        </div>
+        
+        <!-- Type + Diameter row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="type" class="fm-label" data-i18n="filaments.type">Type *</label>
+            <select 
+              id="type" 
+              name="type" 
+              required
+              class="fm-select"
+            >
+              <option value="" data-i18n="filaments.selectType">Select type...</option>
+            </select>
+            <div id="custom-type-wrapper" class="hidden" style="margin-top: 8px;">
+              <label for="custom_type" class="fm-label" data-i18n="filaments.customTypeLabel">Custom Type *</label>
+              <input
+                type="text"
+                id="custom_type"
+                name="custom_type"
+                placeholder="e.g. HIPS"
+                data-i18n-placeholder="filaments.customTypePlaceholder"
+                class="fm-input"
+                maxlength="50"
+                style="text-transform: uppercase;"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label for="diameter_mm" class="fm-label" data-i18n="filaments.diameterMm">Diameter (mm) *</label>
+            <input
+              type="number"
+              id="diameter_mm"
+              name="diameter_mm"
+              step="0.01"
+              value="1.75"
+              required
+              class="fm-input"
+            />
+          </div>
+        </div>
+        
+        <!-- Material Subgroup + Finish Type row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="material_subgroup" class="fm-label" data-i18n="filaments.materialSubgroup">Material Subgroup</label>
+            <input
+              type="text"
+              id="material_subgroup"
+              name="material_subgroup"
+              placeholder="e.g. Silk, Matte, CF, PLA+"
+              data-i18n-placeholder="filaments.materialSubgroupPlaceholder"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="finish_type" class="fm-label" data-i18n="filaments.finishType">Finish Type</label>
+            <select 
+              id="finish_type" 
+              name="finish_type"
+              class="fm-select"
+            >
+              <option value="">-</option>
+              <option value="solid" data-i18n="filaments.finishSolid">Solid</option>
+              <option value="translucent" data-i18n="filaments.finishTranslucent">Translucent</option>
+              <option value="neon" data-i18n="filaments.finishNeon">Neon</option>
+              <option value="glow" data-i18n="filaments.finishGlow">Glow in the Dark</option>
+            </select>
+          </div>
+        </div>
+        
+        <!-- Color Mode -->
+        <div>
+          <label class="fm-label" data-i18n="filaments.colorMode">Color Mode *</label>
+          <div style="display: flex; gap: 16px; margin-top: 4px;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text);">
+              <input type="radio" name="color_mode" value="single" checked style="accent-color: var(--accent);" />
+              <span data-i18n="filaments.colorModeSingle">Single Color</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text);">
+              <input type="radio" name="color_mode" value="multi" style="accent-color: var(--accent);" />
+              <span data-i18n="filaments.colorModeMulti">Multi Color</span>
+            </label>
+          </div>
+        </div>
+        
+        <!-- Multi Color Style (only visible when multi selected) -->
+        <div id="multi-color-options" class="hidden">
+          <label for="multi_color_style" class="fm-label" data-i18n="filaments.multiColorStyle">Multi Color Style *</label>
+          <select
+            id="multi_color_style"
+            name="multi_color_style"
+            class="fm-select"
+          >
+            <option value="striped" data-i18n="filaments.styleStriped">Striped</option>
+            <option value="gradient" data-i18n="filaments.styleGradient">Gradient</option>
+          </select>
+        </div>
+        
+        <!-- Color Selection -->
+        <div>
+          <label class="fm-label" data-i18n="filaments.colors">Colors *</label>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 4px;" id="color-hint" data-i18n="filaments.colorHintSingle">Select the filament color.</p>
+          <div id="selected-colors" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;"></div>
+          <div id="color-grid" class="fm-color-grid" style="max-height: 160px; overflow-y: auto; padding: 8px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+            <p style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="common.loading">Loading...</p>
+          </div>
+          <!-- Inline new color form -->
+          <div id="new-color-toggle" style="margin-top: 8px;">
+            <button type="button" id="btn-add-new-color" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 6px 14px;">
+              + <span data-i18n="filaments.addNewColor">Add New Color</span>
+            </button>
+          </div>
+          <div id="new-color-form" class="fm-inline-color-form hidden">
+            <div>
+              <label class="fm-label" data-i18n="filaments.colorPickerLabel">Color</label>
+              <input type="color" id="new-color-hex" value="#FF0000" style="width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); cursor: pointer;" />
+            </div>
+            <div>
+              <label class="fm-label" data-i18n="filaments.colorNameLabel">Name *</label>
+              <input type="text" id="new-color-name" placeholder="e.g. Red" data-i18n-placeholder="filaments.colorNamePlaceholder" class="fm-input" />
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-save-new-color" class="fm-btn fm-btn-primary" style="font-size: 0.8rem; padding: 8px 14px;" data-i18n="common.save">Save</button>
+              <button type="button" id="btn-cancel-new-color" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 8px 14px;" data-i18n="common.cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Manufacturer Color Name -->
+        <div>
+          <label for="manufacturer_color_name" class="fm-label" data-i18n="filaments.manufacturerColorName">Manufacturer Color Name</label>
+          <input
+            type="text"
+            id="manufacturer_color_name"
+            name="manufacturer_color_name"
+            placeholder="e.g. Fire Engine Red"
+            data-i18n-placeholder="filaments.colorNamePlaceholder"
+            class="fm-input"
+          />
+        </div>
+        
+        <!-- Weights row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="raw_material_weight_g" class="fm-label" data-i18n="filaments.rawMaterialWeight">Raw Material Weight (g)</label>
+            <input
+              type="number"
+              id="raw_material_weight_g"
+              name="raw_material_weight_g"
+              step="1"
+              placeholder="e.g. 1000"
+              data-i18n-placeholder="filaments.rawMaterialPlaceholder"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="default_spool_weight_g" class="fm-label" data-i18n="filaments.defaultSpoolWeight">Default Spool Weight (g)</label>
+            <input
+              type="number"
+              id="default_spool_weight_g"
+              name="default_spool_weight_g"
+              step="1"
+              placeholder="e.g. 250"
+              data-i18n-placeholder="filaments.defaultSpoolWeightPlaceholder"
+              class="fm-input"
+            />
+          </div>
+        </div>
+        
+        <!-- Price + Density row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="price" class="fm-label" data-i18n="filaments.price">Price</label>
+            <input
+              type="number"
+              id="price"
+              name="price"
+              step="0.01"
+              placeholder="e.g. 24.99"
+              data-i18n-placeholder="filaments.pricePlaceholder"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="density_g_cm3" class="fm-label" data-i18n="filaments.density">Density (g/cm³)</label>
+            <input
+              type="number"
+              id="density_g_cm3"
+              name="density_g_cm3"
+              step="0.01"
+              placeholder="e.g. 1.24"
+              data-i18n-placeholder="filaments.densityPlaceholder"
+              class="fm-input"
+            />
+          </div>
+        </div>
+        
+        <!-- Shop URL -->
+        <div>
+          <label for="shop_url" class="fm-label" data-i18n="filaments.shopUrl">Shop URL</label>
+          <input
+            type="url"
+            id="shop_url"
+            name="shop_url"
+            placeholder="e.g. https://shop.example.com/filament"
+            data-i18n-placeholder="filaments.shopUrlPlaceholder"
+            class="fm-input"
+          />
+        </div>
+        
+        <div id="error-message" class="fm-alert-error hidden"></div>
+        
+        <div style="display: flex; gap: 12px; padding-top: 8px;">
+          <button
+            type="submit"
+            id="submit-btn"
+            class="fm-btn fm-btn-primary"
+            data-i18n="filaments.saveFilament"
+          >
+            Save Filament
+          </button>
+          <a
+            href={`/filaments/${id}`}
+            class="fm-btn fm-btn-outline"
+            data-i18n="common.cancel"
+          >
+            Cancel
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../../lib/i18n'
+    await initI18n()
+
+    const CUSTOM_TYPE_VALUE = '__custom__'
+
+    // Extract filament ID from URL: /filaments/{id}/edit
+    const pathParts = window.location.pathname.split('/').filter(Boolean)
+    const filamentId = pathParts[pathParts.length - 2]
+
+    // ── State ──
+    let allColors: Array<{ id: number; name: string; hex_code: string }> = []
+    let selectedColorIds: number[] = []  // ordered by position
+    let loadedTypes: string[] = []
+
+    // ── DOM refs ──
+    const editLoading = document.getElementById('edit-loading') as HTMLDivElement
+    const editError = document.getElementById('edit-error') as HTMLDivElement
+    const editFormWrapper = document.getElementById('edit-form-wrapper') as HTMLDivElement
+    const form = document.getElementById('filament-form') as HTMLFormElement
+    const errorMessage = document.getElementById('error-message') as HTMLDivElement
+    const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
+    const typeSelect = document.getElementById('type') as HTMLSelectElement
+    const customTypeWrapper = document.getElementById('custom-type-wrapper') as HTMLDivElement
+    const customTypeInput = document.getElementById('custom_type') as HTMLInputElement
+    const colorGrid = document.getElementById('color-grid') as HTMLDivElement
+    const selectedColorsContainer = document.getElementById('selected-colors') as HTMLDivElement
+    const colorHint = document.getElementById('color-hint') as HTMLParagraphElement
+    const multiColorOptions = document.getElementById('multi-color-options') as HTMLDivElement
+    const newColorForm = document.getElementById('new-color-form') as HTMLDivElement
+    const btnAddNewColor = document.getElementById('btn-add-new-color') as HTMLButtonElement
+    const btnSaveNewColor = document.getElementById('btn-save-new-color') as HTMLButtonElement
+    const btnCancelNewColor = document.getElementById('btn-cancel-new-color') as HTMLButtonElement
+    const newColorHex = document.getElementById('new-color-hex') as HTMLInputElement
+    const newColorName = document.getElementById('new-color-name') as HTMLInputElement
+
+    // ── Color mode radio handling ──
+    const colorModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="color_mode"]')
+
+    function getColorMode(): string {
+      for (const r of colorModeRadios) { if (r.checked) return r.value }
+      return 'single'
+    }
+
+    function onColorModeChange() {
+      const mode = getColorMode()
+      if (mode === 'multi') {
+        multiColorOptions.classList.remove('hidden')
+        colorHint.textContent = t('filaments.colorHintMulti')
+      } else {
+        multiColorOptions.classList.add('hidden')
+        colorHint.textContent = t('filaments.colorHintSingle')
+        // If more than 1 color selected in single mode, keep only the last
+        if (selectedColorIds.length > 1) {
+          selectedColorIds = [selectedColorIds[selectedColorIds.length - 1]]
+          renderSelectedColors()
+          renderColorGrid()
+        }
+      }
+    }
+
+    colorModeRadios.forEach(r => r.addEventListener('change', onColorModeChange))
+
+    // ── Type handling ──
+    typeSelect.addEventListener('change', () => {
+      if (typeSelect.value === CUSTOM_TYPE_VALUE) {
+        customTypeWrapper.classList.remove('hidden')
+        customTypeInput.required = true
+        customTypeInput.focus()
+      } else {
+        customTypeWrapper.classList.add('hidden')
+        customTypeInput.required = false
+        customTypeInput.value = ''
+      }
+    })
+
+    customTypeInput.addEventListener('input', () => {
+      customTypeInput.value = customTypeInput.value.toUpperCase()
+    })
+
+    // ── Load data ──
+    async function loadManufacturers(): Promise<void> {
+      try {
+        const response = await fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch manufacturers')
+        const data = await response.json()
+        const select = document.getElementById('manufacturer_id') as HTMLSelectElement
+        data.items.forEach((m: any) => {
+          const option = document.createElement('option')
+          option.value = m.id
+          option.textContent = m.name || t('common.unknown')
+          select.appendChild(option)
+        })
+      } catch (error) {
+        console.error('Failed to load manufacturers:', error)
+      }
+    }
+
+    async function loadTypes(): Promise<void> {
+      try {
+        const response = await fetch('/api/v1/filaments/types', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch filament types')
+        loadedTypes = await response.json()
+        loadedTypes.forEach((typeName: string) => {
+          const option = document.createElement('option')
+          option.value = typeName
+          option.textContent = typeName
+          typeSelect.appendChild(option)
+        })
+      } catch (error) {
+        console.error('Failed to load filament types:', error)
+        loadedTypes = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'NYLON', 'PC']
+        for (const typeName of loadedTypes) {
+          const option = document.createElement('option')
+          option.value = typeName
+          option.textContent = typeName
+          typeSelect.appendChild(option)
+        }
+      }
+      const customOption = document.createElement('option')
+      customOption.value = CUSTOM_TYPE_VALUE
+      customOption.textContent = t('filaments.addCustomType')
+      typeSelect.appendChild(customOption)
+    }
+
+    async function loadColors(): Promise<void> {
+      try {
+        const response = await fetch('/api/v1/colors?page_size=200', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch colors')
+        const data = await response.json()
+        allColors = data.items
+        renderColorGrid()
+      } catch (error) {
+        console.error('Failed to load colors:', error)
+        colorGrid.innerHTML = `<p style="color: var(--error-text); font-size: 0.85rem;">${t('filaments.failedLoadColors')}</p>`
+      }
+    }
+
+    // ── Render color grid (all available colors) ──
+    function renderColorGrid() {
+      if (allColors.length === 0) {
+        colorGrid.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('filaments.noColorsAvailable')}</p>`
+        return
+      }
+
+      colorGrid.innerHTML = ''
+      allColors.forEach(c => {
+        const isSelected = selectedColorIds.includes(c.id)
+        const swatch = document.createElement('button')
+        swatch.type = 'button'
+        swatch.className = `fm-color-swatch ${isSelected ? 'selected' : ''}`
+        swatch.style.backgroundColor = c.hex_code
+        swatch.title = `${c.name} (${c.hex_code})`
+        swatch.addEventListener('click', () => toggleColor(c.id))
+        colorGrid.appendChild(swatch)
+      })
+    }
+
+    // ── Toggle color selection ──
+    function toggleColor(colorId: number) {
+      const mode = getColorMode()
+      const idx = selectedColorIds.indexOf(colorId)
+      if (idx >= 0) {
+        // Deselect
+        selectedColorIds.splice(idx, 1)
+      } else {
+        if (mode === 'single') {
+          // Replace
+          selectedColorIds = [colorId]
+        } else {
+          // Add
+          selectedColorIds.push(colorId)
+        }
+      }
+      renderSelectedColors()
+      renderColorGrid()
+    }
+
+    // ── Render selected colors (chips below label) ──
+    function renderSelectedColors() {
+      selectedColorsContainer.innerHTML = ''
+      selectedColorIds.forEach((cid, idx) => {
+        const color = allColors.find(c => c.id === cid)
+        if (!color) return
+        const entry = document.createElement('div')
+        entry.className = 'fm-color-entry'
+        entry.innerHTML = `
+          <span class="fm-color-swatch-lg" style="background-color: ${color.hex_code};"></span>
+          <span style="font-size: 0.85rem; color: var(--text);">${color.name}</span>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">${color.hex_code}</span>
+          ${getColorMode() === 'multi' ? `<span style="font-size: 0.75rem; color: var(--text-muted);">#${idx + 1}</span>` : ''}
+          <button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;padding:0 4px;" data-remove-color="${cid}">&times;</button>
+        `
+        selectedColorsContainer.appendChild(entry)
+      })
+
+      // Wire remove buttons
+      selectedColorsContainer.querySelectorAll<HTMLButtonElement>('[data-remove-color]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = parseInt(btn.dataset.removeColor!)
+          selectedColorIds = selectedColorIds.filter(c => c !== id)
+          renderSelectedColors()
+          renderColorGrid()
+        })
+      })
+    }
+
+    // ── New color form ──
+    btnAddNewColor.addEventListener('click', () => {
+      newColorForm.classList.remove('hidden')
+      btnAddNewColor.parentElement!.classList.add('hidden')
+      newColorName.focus()
+    })
+
+    btnCancelNewColor.addEventListener('click', () => {
+      newColorForm.classList.add('hidden')
+      btnAddNewColor.parentElement!.classList.remove('hidden')
+      newColorName.value = ''
+    })
+
+    btnSaveNewColor.addEventListener('click', async () => {
+      const name = newColorName.value.trim()
+      const hex = newColorHex.value
+      if (!name) { newColorName.focus(); return }
+
+      btnSaveNewColor.disabled = true
+      try {
+        const response = await fetch('/api/v1/colors', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ name, hex_code: hex }),
+        })
+        if (!response.ok) {
+          const err = await response.json()
+          throw new Error(err.detail?.message || t('filaments.failedCreateColor'))
+        }
+        const newColor = await response.json()
+        allColors.push(newColor)
+        // Auto-select the new color
+        toggleColor(newColor.id)
+        // Reset form
+        newColorName.value = ''
+        newColorForm.classList.add('hidden')
+        btnAddNewColor.parentElement!.classList.remove('hidden')
+      } catch (error: any) {
+        await (window as any).__fmAlert?.(error.message) || alert(error.message)
+      } finally {
+        btnSaveNewColor.disabled = false
+      }
+    })
+
+    // ── CSRF ──
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    // ── Pre-fill form with existing filament data ──
+    function prefillForm(f: any) {
+      // Manufacturer
+      const mfgSelect = document.getElementById('manufacturer_id') as HTMLSelectElement
+      mfgSelect.value = String(f.manufacturer_id)
+
+      // Designation
+      ;(document.getElementById('designation') as HTMLInputElement).value = f.designation || ''
+
+      // Type — check if it's in the loaded types list
+      if (loadedTypes.includes(f.type)) {
+        typeSelect.value = f.type
+      } else {
+        // Custom type not in the list — select custom and fill the input
+        typeSelect.value = CUSTOM_TYPE_VALUE
+        customTypeWrapper.classList.remove('hidden')
+        customTypeInput.required = true
+        customTypeInput.value = f.type || ''
+      }
+
+      // Diameter
+      ;(document.getElementById('diameter_mm') as HTMLInputElement).value = f.diameter_mm != null ? String(f.diameter_mm) : '1.75'
+
+      // Material subgroup
+      ;(document.getElementById('material_subgroup') as HTMLInputElement).value = f.material_subgroup || ''
+
+      // Finish type
+      ;(document.getElementById('finish_type') as HTMLSelectElement).value = f.finish_type || ''
+
+      // Color mode
+      const modeValue = f.color_mode || 'single'
+      colorModeRadios.forEach(r => { r.checked = r.value === modeValue })
+      if (modeValue === 'multi') {
+        multiColorOptions.classList.remove('hidden')
+        colorHint.textContent = t('filaments.colorHintMulti')
+      }
+
+      // Multi color style
+      if (f.multi_color_style) {
+        ;(document.getElementById('multi_color_style') as HTMLSelectElement).value = f.multi_color_style
+      }
+
+      // Colors — pre-select from filament.colors sorted by position
+      if (f.colors && f.colors.length > 0) {
+        const sorted = [...f.colors].sort((a: any, b: any) => a.position - b.position)
+        selectedColorIds = sorted.map((fc: any) => fc.color_id)
+        renderSelectedColors()
+        renderColorGrid()
+      }
+
+      // Manufacturer color name
+      ;(document.getElementById('manufacturer_color_name') as HTMLInputElement).value = f.manufacturer_color_name || ''
+
+      // Weights
+      ;(document.getElementById('raw_material_weight_g') as HTMLInputElement).value = f.raw_material_weight_g != null ? String(f.raw_material_weight_g) : ''
+      ;(document.getElementById('default_spool_weight_g') as HTMLInputElement).value = f.default_spool_weight_g != null ? String(f.default_spool_weight_g) : ''
+
+      // Price
+      ;(document.getElementById('price') as HTMLInputElement).value = f.price != null ? String(f.price) : ''
+
+      // Density
+      ;(document.getElementById('density_g_cm3') as HTMLInputElement).value = f.density_g_cm3 != null ? String(f.density_g_cm3) : ''
+
+      // Shop URL
+      ;(document.getElementById('shop_url') as HTMLInputElement).value = f.shop_url || ''
+    }
+
+    // ── Form Submit ──
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(form)
+
+      // Resolve type
+      let filamentType = formData.get('type') as string
+      if (filamentType === CUSTOM_TYPE_VALUE) {
+        filamentType = (formData.get('custom_type') as string || '').trim().toUpperCase()
+        if (!filamentType) {
+          errorMessage.textContent = t('filaments.customTypeLabel')
+          errorMessage.classList.remove('hidden')
+          customTypeInput.focus()
+          return
+        }
+      }
+
+      // Validate at least one color selected
+      if (selectedColorIds.length === 0) {
+        errorMessage.textContent = t('filaments.colorRequired')
+        errorMessage.classList.remove('hidden')
+        return
+      }
+
+      const colorMode = getColorMode()
+
+      // Build PATCH payload (scalar fields)
+      const patchData: any = {
+        manufacturer_id: parseInt(formData.get('manufacturer_id') as string),
+        designation: formData.get('designation'),
+        type: filamentType,
+        diameter_mm: parseFloat(formData.get('diameter_mm') as string),
+        color_mode: colorMode,
+        multi_color_style: colorMode === 'multi' ? (formData.get('multi_color_style') || null) : null,
+      }
+
+      // Optional fields — send null to clear if empty
+      const materialSubgroup = (formData.get('material_subgroup') as string || '').trim()
+      patchData.material_subgroup = materialSubgroup || null
+
+      const finishType = (formData.get('finish_type') as string || '').trim()
+      patchData.finish_type = finishType || null
+
+      const manufacturerColorName = (formData.get('manufacturer_color_name') as string || '').trim()
+      patchData.manufacturer_color_name = manufacturerColorName || null
+
+      const rawWeight = formData.get('raw_material_weight_g') as string
+      patchData.raw_material_weight_g = rawWeight ? parseFloat(rawWeight) : null
+
+      const spoolWeight = formData.get('default_spool_weight_g') as string
+      patchData.default_spool_weight_g = spoolWeight ? parseFloat(spoolWeight) : null
+
+      const price = formData.get('price') as string
+      patchData.price = price ? parseFloat(price) : null
+
+      const density = formData.get('density_g_cm3') as string
+      patchData.density_g_cm3 = density ? parseFloat(density) : null
+
+      const shopUrl = (formData.get('shop_url') as string || '').trim()
+      patchData.shop_url = shopUrl || null
+
+      // Build PUT /colors payload
+      const colorsData = {
+        color_mode: colorMode,
+        multi_color_style: colorMode === 'multi' ? (formData.get('multi_color_style') || null) : null,
+        colors: selectedColorIds.map((cid, idx) => ({
+          color_id: cid,
+          position: idx + 1,
+        })),
+      }
+
+      errorMessage.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+
+      try {
+        // 1. PATCH scalar fields
+        const patchResponse = await fetch(`/api/v1/filaments/${filamentId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(patchData),
+        })
+
+        if (!patchResponse.ok) {
+          const errorData = await patchResponse.json()
+          throw new Error(errorData.detail?.message || errorData.message || t('filaments.failedUpdate'))
+        }
+
+        // 2. PUT colors
+        const colorsResponse = await fetch(`/api/v1/filaments/${filamentId}/colors`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(colorsData),
+        })
+
+        if (!colorsResponse.ok) {
+          const errorData = await colorsResponse.json()
+          throw new Error(errorData.detail?.message || errorData.message || t('filaments.failedUpdate'))
+        }
+
+        // Success — redirect to detail page
+        window.location.href = `/filaments/${filamentId}`
+      } catch (error: any) {
+        errorMessage.textContent = error.message || t('filaments.failedUpdate')
+        errorMessage.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('filaments.saveFilament')
+      }
+    })
+
+    // ── Init: load reference data, then load filament ──
+    async function init() {
+      try {
+        // Load reference data in parallel
+        await Promise.all([loadManufacturers(), loadTypes(), loadColors()])
+
+        // Now load the filament
+        const response = await fetch(`/api/v1/filaments/${filamentId}`, {
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch filament')
+        }
+
+        const filament = await response.json()
+        prefillForm(filament)
+
+        // Show form, hide loading
+        editLoading.classList.add('hidden')
+        editFormWrapper.classList.remove('hidden')
+      } catch (error) {
+        console.error('Failed to load filament for editing:', error)
+        editLoading.classList.add('hidden')
+        editError.classList.remove('hidden')
+      }
+    }
+
+    init()
+  </script>
+</Layout>

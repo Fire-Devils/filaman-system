@@ -160,7 +160,10 @@
     "noColorsAvailable": "No colors available. Add one below.",
     "failedLoadColors": "Failed to load colors",
     "failedCreateColor": "Failed to create color",
-    "colorRequired": "Please select at least one color."
+    "colorRequired": "Please select at least one color.",
+    "editFilament": "Edit Filament",
+    "saveFilament": "Save Filament",
+    "failedUpdate": "Failed to update filament"
   },
   "spools": {
     "title": "Spools",
