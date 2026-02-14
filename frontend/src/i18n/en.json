@@ -187,7 +187,13 @@
     "newStatus": "New Status *",
     "newLocation": "New Location",
     "lowThresholdLabel": "Low Threshold",
-    "emptySpool": "Empty Spool"
+    "emptySpool": "Empty Spool",
+    "statusNew": "New",
+    "statusOpened": "Opened",
+    "statusDrying": "Drying",
+    "statusActive": "Active",
+    "statusEmpty": "Empty",
+    "statusArchived": "Archived"
   },
   "printers": {
     "title": "Printers",

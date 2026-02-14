@@ -187,7 +187,13 @@
     "newStatus": "Neuer Status *",
     "newLocation": "Neuer Standort",
     "lowThresholdLabel": "Schwellenwert",
-    "emptySpool": "Leere Spule"
+    "emptySpool": "Leere Spule",
+    "statusNew": "Neu",
+    "statusOpened": "Geöffnet",
+    "statusDrying": "Trocknung",
+    "statusActive": "Aktiv",
+    "statusEmpty": "Leer",
+    "statusArchived": "Archiviert"
   },
   "printers": {
     "title": "Drucker",

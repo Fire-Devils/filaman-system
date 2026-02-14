@@ -123,7 +123,9 @@ const { id } = Astro.params
     
     function getStatusLabel(statusId) {
       const s = statuses.find(s => s.id === statusId)
-      return s ? s.label : `#${statusId}`
+      if (!s) return `#${statusId}`
+      const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
+      return t(i18nKey) || s.label
     }
     
     function getLocationName(locationId) {
@@ -353,7 +355,11 @@ const { id } = Astro.params
             <div>
               <label class="fm-label">${t('spools.newStatus')}</label>
               <select id="field-status" required class="fm-select">
-                ${statuses.map(s => `<option value="${s.key}">${s.label}</option>`).join('')}
+                ${statuses.map(s => {
+                  const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
+                  const label = t(i18nKey) || s.label
+                  return `<option value="${s.key}">${label}</option>`
+                }).join('')}
               </select>
             </div>
             <div>

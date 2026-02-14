@@ -57,6 +57,18 @@ import Layout from '../../layouts/Layout.astro'
           fetch('/api/v1/locations?page_size=200', { credentials: 'include' }),
           fetch('/api/v1/filaments?page_size=200', { credentials: 'include' }),
         ])
+
+        if (statusesRes?.ok) {
+          statuses = await statusesRes.json()
+          const select = document.getElementById('filter-status') as HTMLSelectElement
+          statuses.forEach((s: any) => {
+            const opt = document.createElement('option')
+            opt.value = s.id
+            const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
+            opt.textContent = t(i18nKey) || s.label
+            select.appendChild(opt)
+          })
+        }
         
         if (locationsRes?.ok) {
           const data = await locationsRes.json()
@@ -109,6 +121,13 @@ import Layout from '../../layouts/Layout.astro'
       const f = filaments.find(f => f.id === filamentId)
       return f ? `${f.designation} (${f.type})` : `#${filamentId}`
     }
+
+    function getStatusLabel(statusId: number): string {
+      const s = statuses.find((s: any) => s.id === statusId)
+      if (!s) return `#${statusId}`
+      const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
+      return t(i18nKey) || s.label
+    }
     
     function getLocationName(locationId: number | null): string {
       if (!locationId) return '-'
@@ -144,7 +163,7 @@ import Layout from '../../layouts/Layout.astro'
           <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
             <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
             <td style="padding: 12px;">${getFilamentName(s.filament_id)}</td>
-            <td style="padding: 12px;">${s.status_id}</td>
+            <td style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
             <td style="padding: 12px; font-family: monospace; ${weightStyle}">
               ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
             </td>
