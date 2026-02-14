@@ -5,34 +5,35 @@ const { id } = Astro.params
 ---
 
 <Layout title="FilaMan - Printer">
-  <div class="mb-6">
-    <a href="/printers" class="text-blue-600 hover:text-blue-700">&larr; <span data-i18n="printers.backToPrinters">Back to Printers</span></a>
+  <div style="margin-bottom: 24px;">
+    <a href="/printers" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="printers.backToPrinters">Back to Printers</span></a>
   </div>
   
   <div id="printer-content">
-    <p class="text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</p>
+    <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
   
-  <div id="ams-section" class="mt-8 hidden">
-    <div class="flex justify-between items-center mb-4">
-      <h2 class="text-xl font-semibold" data-i18n="printers.amsUnits">AMS Units</h2>
+  <div id="ams-section" class="hidden" style="margin-top: 32px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h2 style="font-size: 1.3rem; font-weight: 600;" data-i18n="printers.amsUnits">AMS Units</h2>
       <button
         id="btn-add-ams"
-        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors text-sm"
+        class="fm-btn fm-btn-primary"
+        style="font-size: 0.85rem;"
         data-i18n="printers.addAmsUnit"
       >
         Add AMS Unit
       </button>
     </div>
-    <div id="ams-units" class="space-y-4"></div>
+    <div id="ams-units" style="display: flex; flex-direction: column; gap: 16px;"></div>
   </div>
   
-  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md mx-4">
-      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="printers.addAmsUnit">Add AMS Unit</h3>
-      <form id="modal-form" class="space-y-4">
+  <div id="modal-container" class="fm-modal-overlay hidden">
+    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
+      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="printers.addAmsUnit">Add AMS Unit</h3>
+      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
         <div>
-          <label for="ams-unit-no" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="printers.unitNumber">
+          <label for="ams-unit-no" class="fm-label" data-i18n="printers.unitNumber">
             Unit Number *
           </label>
           <input
@@ -41,11 +42,11 @@ const { id } = Astro.params
             required
             min="0"
             value="0"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            class="fm-input"
           />
         </div>
         <div>
-          <label for="ams-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="printers.unitName">
+          <label for="ams-name" class="fm-label" data-i18n="printers.unitName">
             Name
           </label>
           <input
@@ -53,11 +54,11 @@ const { id } = Astro.params
             id="ams-name"
             data-i18n-placeholder="printers.unitNamePlaceholder"
             placeholder="e.g. Left AMS"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            class="fm-input"
           />
         </div>
         <div>
-          <label for="ams-slots" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="printers.numberOfSlots">
+          <label for="ams-slots" class="fm-label" data-i18n="printers.numberOfSlots">
             Number of Slots *
           </label>
           <input
@@ -67,15 +68,15 @@ const { id } = Astro.params
             min="1"
             max="8"
             value="4"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            class="fm-input"
           />
         </div>
-        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
-        <div class="flex gap-3">
-          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.add">
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.add">
             Add
           </button>
-          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
             Cancel
           </button>
         </div>
@@ -102,7 +103,7 @@ const { id } = Astro.params
         
         if (!response.ok) {
           if (response.status === 404) {
-            document.getElementById('printer-content')!.innerHTML = `<div class="text-red-500">${t('printers.notFound')}</div>`
+            document.getElementById('printer-content')!.innerHTML = `<div style="color: var(--error-text);">${t('printers.notFound')}</div>`
             return
           }
           throw new Error('Failed to fetch printer')
@@ -112,47 +113,47 @@ const { id } = Astro.params
         renderPrinter()
       } catch (error) {
         console.error('Failed to load printer:', error)
-        document.getElementById('printer-content')!.innerHTML = `<div class="text-red-500">${t('printers.failedLoad')}</div>`
+        document.getElementById('printer-content')!.innerHTML = `<div style="color: var(--error-text);">${t('printers.failedLoad')}</div>`
       }
     }
     
     function renderPrinter() {
       document.getElementById('printer-content')!.innerHTML = `
-        <div class="flex justify-between items-start mb-6">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
-            <h1 class="text-3xl font-bold">${printer.name}</h1>
-            <p class="text-gray-500 dark:text-gray-400 mt-1">${printer.manufacturer || ''} ${printer.model || ''}</p>
+            <h1 style="font-size: 1.8rem; font-weight: 700; font-family: var(--font-serif);">${printer.name}</h1>
+            <p style="color: var(--text-muted); margin-top: 4px;">${printer.manufacturer || ''} ${printer.model || ''}</p>
           </div>
-          <div class="flex gap-2">
-            <button id="btn-toggle-active" class="px-4 py-2 ${printer.is_active ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-md font-medium transition-colors">
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-toggle-active" class="${printer.is_active ? 'fm-btn fm-btn-outline' : 'fm-btn fm-btn-primary'}">
               ${printer.is_active ? t('printers.deactivate') : t('printers.activate')}
             </button>
-            <button id="btn-delete" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium transition-colors">
+            <button id="btn-delete" class="fm-btn fm-btn-danger">
               ${t('common.delete')}
             </button>
           </div>
         </div>
         
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div class="text-sm text-gray-500 dark:text-gray-400">${t('printers.driver')}</div>
-            <div class="text-lg font-semibold">${printer.driver_key}</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.driver')}</div>
+            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">${printer.driver_key}</div>
           </div>
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div class="text-sm text-gray-500 dark:text-gray-400">${t('printers.serialNumber')}</div>
-            <div class="text-lg font-semibold font-mono text-sm">${printer.serial_number || '-'}</div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.serialNumber')}</div>
+            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px; font-family: monospace; font-size: 0.85rem;">${printer.serial_number || '-'}</div>
           </div>
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div class="text-sm text-gray-500 dark:text-gray-400">${t('common.status')}</div>
-            <div class="text-lg font-semibold">
-              <span class="px-2 py-1 text-sm rounded ${printer.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}">
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('common.status')}</div>
+            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">
+              <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); ${printer.is_active ? 'color: var(--accent-2);' : 'color: var(--error-text);'}">
                 ${printer.is_active ? t('common.active') : t('common.inactive')}
               </span>
             </div>
           </div>
-          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <div class="text-sm text-gray-500 dark:text-gray-400">${t('printers.amsUnits')}</div>
-            <div class="text-lg font-semibold">${printer.ams_units?.length || 0}</div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.amsUnits')}</div>
+            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">${printer.ams_units?.length || 0}</div>
           </div>
         </div>
       `
@@ -209,21 +210,21 @@ const { id } = Astro.params
       const container = document.getElementById('ams-units')!
       
       container.innerHTML = printer.ams_units.map((unit: any) => `
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <div class="flex justify-between items-center mb-3">
+        <div class="fm-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <div>
-              <h3 class="font-semibold">${unit.name || t('printers.amsUnitLabel', { no: unit.ams_unit_no })}</h3>
-              <p class="text-sm text-gray-500 dark:text-gray-400">${t('printers.unitLabel', { no: unit.ams_unit_no })} · ${t('printers.slots', { count: unit.slots_total })}</p>
+              <h3 style="font-weight: 600;">${unit.name || t('printers.amsUnitLabel', { no: unit.ams_unit_no })}</h3>
+              <p style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.unitLabel', { no: unit.ams_unit_no })} · ${t('printers.slots', { count: unit.slots_total })}</p>
             </div>
-            <span class="px-2 py-1 text-xs rounded ${unit.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}">
+            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); ${unit.is_active ? 'color: var(--accent-2);' : 'color: var(--error-text);'}">
               ${unit.is_active ? t('common.active') : t('common.inactive')}
             </span>
           </div>
-          <div class="grid grid-cols-4 gap-2">
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
             ${Array.from({ length: unit.slots_total }, (_, i) => `
-              <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded text-center">
-                <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">${t('printers.slotLabel', { no: i + 1 })}</div>
-                <div class="text-sm font-medium text-gray-400 dark:text-gray-500">${t('common.empty')}</div>
+              <div style="padding: 12px; background: var(--bg-soft); border-radius: var(--radius-sm); text-align: center;">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">${t('printers.slotLabel', { no: i + 1 })}</div>
+                <div style="font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${t('common.empty')}</div>
               </div>
             `).join('')}
           </div>

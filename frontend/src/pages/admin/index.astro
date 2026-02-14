@@ -3,24 +3,24 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Admin">
-  <h1 class="text-3xl font-bold mb-6" data-i18n="admin.title">Admin</h1>
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.title">Admin</h1>
   
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-    <a href="/admin/users" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-      <h2 class="text-xl font-semibold mb-2" data-i18n="admin.users">Users</h2>
-      <p class="text-gray-500 dark:text-gray-400 text-sm" data-i18n="admin.usersDesc">Manage user accounts</p>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+    <a href="/admin/users" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.users">Users</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.usersDesc">Manage user accounts</p>
     </a>
-    <a href="/admin/roles" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-      <h2 class="text-xl font-semibold mb-2" data-i18n="admin.rolesPerms">Roles & Permissions</h2>
-      <p class="text-gray-500 dark:text-gray-400 text-sm" data-i18n="admin.rolesPermsDesc">Manage roles and permissions</p>
+    <a href="/admin/roles" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.rolesPerms">Roles & Permissions</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.rolesPermsDesc">Manage roles and permissions</p>
     </a>
-    <a href="/admin/devices" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-      <h2 class="text-xl font-semibold mb-2" data-i18n="admin.devices">Devices</h2>
-      <p class="text-gray-500 dark:text-gray-400 text-sm" data-i18n="admin.devicesDesc">Manage device tokens</p>
+    <a href="/admin/devices" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
+      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.devices">Devices</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.devicesDesc">Manage device tokens</p>
     </a>
-    <div class="bg-gray-100 dark:bg-gray-700 rounded-lg p-6 opacity-50">
-      <h2 class="text-xl font-semibold mb-2" data-i18n="admin.system">System</h2>
-      <p class="text-gray-500 dark:text-gray-400 text-sm" data-i18n="admin.systemDesc">Coming soon</p>
+    <div class="fm-card" style="padding: 24px; opacity: 0.5;">
+      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.system">System</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.systemDesc">Coming soon</p>
     </div>
   </div>
 </Layout>

@@ -3,67 +3,67 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Locations">
-  <div class="flex justify-between items-center mb-6">
-    <h1 class="text-3xl font-bold" data-i18n="locations.title">Locations</h1>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="locations.title">Locations</h1>
     <button
       id="btn-new"
-      class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
+      class="fm-btn fm-btn-primary"
       data-i18n="locations.addLocation"
     >
       Add Location
     </button>
   </div>
   
-  <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-      <thead class="bg-gray-50 dark:bg-gray-700">
-        <tr>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="locations.name">Name</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="locations.identifier">Identifier</th>
-          <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="locations.spools">Spools</th>
-          <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="common.actions">Actions</th>
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead>
+        <tr style="background: var(--bg-soft);">
+          <th data-i18n="locations.name">Name</th>
+          <th data-i18n="locations.identifier">Identifier</th>
+          <th style="text-align: right;" data-i18n="locations.spools">Spools</th>
+          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
-      <tbody id="locations-table" class="divide-y divide-gray-200 dark:divide-gray-700">
+      <tbody id="locations-table">
         <tr>
-          <td colspan="4" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</td>
+          <td colspan="4" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
   </div>
   
-  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md mx-4">
-      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="locations.addLocation">Add Location</h3>
-      <form id="modal-form" class="space-y-4">
+  <div id="modal-container" class="fm-modal-overlay hidden">
+    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
+      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="locations.addLocation">Add Location</h3>
+      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
         <input type="hidden" id="location-id" />
         <div>
-          <label for="location-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label for="location-name" class="fm-label">
             <span data-i18n="locations.name">Name</span> *
           </label>
           <input
             type="text"
             id="location-name"
             required
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            class="fm-input"
           />
         </div>
         <div>
-          <label for="location-identifier" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="locations.identifier">
+          <label for="location-identifier" class="fm-label" data-i18n="locations.identifier">
             Identifier
           </label>
           <input
             type="text"
             id="location-identifier"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+            class="fm-input"
           />
         </div>
-        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
-        <div class="flex gap-3">
-          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.save">
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
             Save
           </button>
-          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
             Cancel
           </button>
         </div>
@@ -109,7 +109,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load locations:', error)
         document.getElementById('locations-table')!.innerHTML = `
           <tr>
-            <td colspan="4" class="px-6 py-4 text-center text-red-500">${t('locations.failedLoad')}</td>
+            <td colspan="4" style="text-align: center; color: var(--error-text);">${t('locations.failedLoad')}</td>
           </tr>
         `
       }
@@ -121,7 +121,7 @@ import Layout from '../../layouts/Layout.astro'
       if (locations.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="4" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">
               ${t('locations.noLocations')}
             </td>
           </tr>
@@ -131,12 +131,12 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = locations.map(loc => `
         <tr>
-          <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 dark:text-gray-100">${loc.name}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400 font-mono text-sm">${loc.identifier || '-'}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-right text-gray-500 dark:text-gray-400">${spoolCounts[loc.id] || 0}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-right">
-            <button data-id="${loc.id}" data-name="${loc.name}" data-identifier="${loc.identifier || ''}" class="btn-edit text-blue-600 hover:text-blue-700 mr-3">${t('common.edit')}</button>
-            <button data-id="${loc.id}" class="btn-delete text-red-600 hover:text-red-700">${t('common.delete')}</button>
+          <td style="padding: 12px; font-weight: 500;">${loc.name}</td>
+          <td style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${loc.identifier || '-'}</td>
+          <td style="padding: 12px; text-align: right; color: var(--text-muted);">${spoolCounts[loc.id] || 0}</td>
+          <td style="padding: 12px; text-align: right;">
+            <button data-id="${loc.id}" data-name="${loc.name}" data-identifier="${loc.identifier || ''}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
+            <button data-id="${loc.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
           </td>
         </tr>
       `).join('')

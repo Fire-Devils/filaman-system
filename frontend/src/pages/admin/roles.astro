@@ -3,42 +3,42 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Admin Roles">
-  <div class="mb-6">
-    <a href="/admin" class="text-blue-600 hover:text-blue-700">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  <div style="margin-bottom: 24px;">
+    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
   </div>
   
-  <h1 class="text-3xl font-bold mb-6" data-i18n="admin.rolesPerms">Roles & Permissions</h1>
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.rolesPerms">Roles & Permissions</h1>
   
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
     <div>
-      <h2 class="text-xl font-semibold mb-4" data-i18n="admin.rolesTitle">Roles</h2>
-      <div id="roles-list" class="space-y-2">
-        <p class="text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</p>
+      <h2 style="font-size: 1.3rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.rolesTitle">Roles</h2>
+      <div id="roles-list" style="display: flex; flex-direction: column; gap: 8px;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
     
     <div>
-      <h2 class="text-xl font-semibold mb-4" data-i18n="admin.permissions">Permissions</h2>
-      <div id="permissions-list" class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-        <p class="text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</p>
+      <h2 style="font-size: 1.3rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.permissions">Permissions</h2>
+      <div id="permissions-list" class="fm-card" style="padding: 16px;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
   </div>
   
-  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="admin.editRolePermissions">Edit Role Permissions</h3>
-      <form id="modal-form" class="space-y-4">
+  <div id="modal-container" class="fm-modal-overlay hidden">
+    <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
+      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editRolePermissions">Edit Role Permissions</h3>
+      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
         <input type="hidden" id="role-id" />
-        <p id="role-name" class="text-gray-500 dark:text-gray-400 mb-2"></p>
+        <p id="role-name" style="color: var(--text-muted); margin-bottom: 8px;"></p>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="admin.permissions">Permissions</label>
-          <div id="permissions-checkboxes" class="space-y-2 max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded p-2"></div>
+          <label class="fm-label" data-i18n="admin.permissions">Permissions</label>
+          <div id="permissions-checkboxes" style="display: flex; flex-direction: column; gap: 8px; max-height: 15rem; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px;"></div>
         </div>
-        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
-        <div class="flex gap-3">
-          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.save">Save</button>
-          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">Cancel</button>
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </div>
@@ -76,14 +76,14 @@ import Layout from '../../layouts/Layout.astro'
       const container = document.getElementById('roles-list')!
       
       container.innerHTML = roles.map(r => `
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-          <div class="flex justify-between items-start">
+        <div class="fm-card" style="padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
-              <h3 class="font-semibold">${r.name}</h3>
-              <p class="text-sm text-gray-500 dark:text-gray-400">${r.key}</p>
-              ${r.description ? `<p class="text-sm text-gray-400 dark:text-gray-500 mt-1">${r.description}</p>` : ''}
+              <h3 style="font-weight: 600;">${r.name}</h3>
+              <p style="font-size: 0.85rem; color: var(--text-muted);">${r.key}</p>
+              ${r.description ? `<p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">${r.description}</p>` : ''}
             </div>
-            <button data-id="${r.id}" data-key="${r.key}" data-name="${r.name}" class="btn-edit text-blue-600 hover:text-blue-700 text-sm">${t('admin.editPermissions')}</button>
+            <button data-id="${r.id}" data-key="${r.key}" data-name="${r.name}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; font-size: 0.85rem;">${t('admin.editPermissions')}</button>
           </div>
         </div>
       `).join('')
@@ -107,13 +107,13 @@ import Layout from '../../layouts/Layout.astro'
       }, {})
       
       container.innerHTML = Object.entries(grouped).map(([category, perms]: [string, any]) => `
-        <div class="mb-4">
-          <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2 capitalize">${category}</h4>
-          <div class="space-y-1">
+        <div style="margin-bottom: 16px;">
+          <h4 style="font-weight: 500; color: var(--text); margin-bottom: 8px; text-transform: capitalize;">${category}</h4>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
             ${(perms as any[]).map(p => `
-              <div class="text-sm">
-                <span class="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">${p.key}</span>
-                ${p.description ? `<span class="text-gray-500 dark:text-gray-400 ml-2">${p.description}</span>` : ''}
+              <div style="font-size: 0.85rem;">
+                <span style="font-family: monospace; font-size: 0.75rem; background: var(--bg-soft); padding: 1px 4px; border-radius: var(--radius-sm);">${p.key}</span>
+                ${p.description ? `<span style="color: var(--text-muted); margin-left: 8px;">${p.description}</span>` : ''}
               </div>
             `).join('')}
           </div>
@@ -142,11 +142,11 @@ import Layout from '../../layouts/Layout.astro'
       }, {})
       
       checkboxesContainer.innerHTML = Object.entries(grouped).map(([category, perms]: [string, any]) => `
-        <div class="mb-3">
-          <div class="font-medium text-gray-600 dark:text-gray-400 text-xs uppercase mb-1">${category}</div>
+        <div style="margin-bottom: 12px;">
+          <div style="font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px;">${category}</div>
           ${(perms as any[]).map(p => `
-            <label class="flex items-center gap-2 text-sm">
-              <input type="checkbox" value="${p.key}" class="perm-checkbox rounded border-gray-300" ${role.permissions?.includes(p.key) ? 'checked' : ''} />
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem;">
+              <input type="checkbox" value="${p.key}" class="perm-checkbox" ${role.permissions?.includes(p.key) ? 'checked' : ''} />
               <span>${p.key}</span>
             </label>
           `).join('')}
