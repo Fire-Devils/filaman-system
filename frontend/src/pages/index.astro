@@ -1,0 +1,156 @@
+---
+import Layout from '../layouts/Layout.astro'
+
+interface Spool {
+  id: number
+  filament_id: number
+  status_id: number
+  remaining_weight_g: number | null
+  low_weight_threshold_g: number
+  lot_number: string | null
+  rfid_uid: string | null
+  external_id: string | null
+}
+
+interface Filament {
+  id: number
+  designation: string
+  type: string
+  manufacturer_id: number
+}
+
+interface Status {
+  id: number
+  key: string
+  label: string
+}
+
+interface SpoolWithFilament extends Spool {
+  filament?: Filament
+  status?: Status
+}
+
+interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+---
+
+<Layout title="FilaMan - Dashboard">
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
+  
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+    <div class="fm-card">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.lowSpools">Low Spools</h2>
+      <div id="low-spools" style="display: grid; gap: 8px;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+    
+    <div class="fm-card">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.recentActivity">Recent Activity</h2>
+      <div id="recent-activity" style="display: grid; gap: 8px;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+  </div>
+  
+  <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
+    <div class="fm-card">
+      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-spools">-</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalSpools">Total Spools</div>
+    </div>
+    <div class="fm-card">
+      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-filaments">-</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.filaments">Filaments</div>
+    </div>
+    <div class="fm-card">
+      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowSpools">Low Spools</div>
+    </div>
+    <div class="fm-card">
+      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-empty-spools">-</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.emptySpools">Empty Spools</div>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../lib/i18n'
+    await initI18n()
+
+    async function loadDashboard() {
+
+      try {
+        const [spoolsRes, filamentsRes] = await Promise.all([
+          fetch('/api/v1/spools?page_size=200', { credentials: 'include' }),
+          fetch('/api/v1/filaments?page_size=200', { credentials: 'include' }),
+        ])
+        
+        if (!spoolsRes.ok || !filamentsRes.ok) {
+          throw new Error('Failed to fetch data')
+        }
+        
+        const spoolsData = await spoolsRes.json()
+        const filamentsData = await filamentsRes.json()
+        
+        const spools = spoolsData.items
+        const filaments = filamentsData.items
+        
+        const lowSpools = spools.filter((s: any) => 
+          s.remaining_weight_g !== null && 
+          s.remaining_weight_g <= s.low_weight_threshold_g &&
+          s.remaining_weight_g > 0
+        )
+        
+        const emptySpools = spools.filter((s: any) => 
+          s.remaining_weight_g !== null && 
+          s.remaining_weight_g <= 0
+        )
+        
+        document.getElementById('stat-total-spools')!.textContent = spools.length
+        document.getElementById('stat-total-filaments')!.textContent = filaments.length
+        document.getElementById('stat-low-spools')!.textContent = lowSpools.length
+        document.getElementById('stat-empty-spools')!.textContent = emptySpools.length
+        
+        const lowSpoolsContainer = document.getElementById('low-spools')!
+        if (lowSpools.length === 0) {
+          lowSpoolsContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
+        } else {
+          lowSpoolsContainer.innerHTML = lowSpools.slice(0, 5).map((s: any) => `
+            <a href="/spools/${s.id}" class="fm-surface-soft" style="display: block; padding: 12px; border-radius: var(--radius-sm); border-color: var(--accent-3); text-decoration: none; transition: background var(--transition);">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 500;">${t('dashboard.spoolId', { id: s.id })}</span>
+                <span style="color: var(--accent-3); font-family: monospace;">${s.remaining_weight_g?.toFixed(0)}g</span>
+              </div>
+            </a>
+          `).join('')
+        }
+        
+        const activityContainer = document.getElementById('recent-activity')!
+        const recentEvents = spools
+          .filter((s: any) => s.last_used_at)
+          .sort((a: any, b: any) => new Date(b.last_used_at).getTime() - new Date(a.last_used_at).getTime())
+          .slice(0, 5)
+        
+        if (recentEvents.length === 0) {
+          activityContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noRecentActivity')}</p>`
+        } else {
+          activityContainer.innerHTML = recentEvents.map((s: any) => `
+            <div class="fm-surface-soft" style="padding: 8px 12px; border-radius: var(--radius-sm);">
+              <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                <span>${t('dashboard.spoolId', { id: s.id })}</span>
+                <span style="color: var(--text-muted);">${new Date(s.last_used_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+          `).join('')
+        }
+      } catch (error) {
+        console.error('Failed to load dashboard:', error)
+      }
+    }
+    
+    loadDashboard()
+  </script>
+</Layout>

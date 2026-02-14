@@ -1,0 +1,468 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+const { id } = Astro.params
+---
+
+<Layout title="FilaMan - Spool">
+  <div style="margin-bottom: 24px;">
+    <a href="/spools" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
+  </div>
+  
+  <div id="spool-content">
+    <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  </div>
+  
+  <div id="actions-section" class="hidden" style="margin-top: 24px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.quickActions">Quick Actions</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+      <button id="btn-measurement" class="fm-btn fm-btn-primary" style="background: var(--accent);" data-i18n="spools.recordWeight">
+        Record Weight
+      </button>
+      <button id="btn-adjustment" class="fm-btn fm-btn-outline" style="border-color: var(--accent-2); color: var(--accent-2);" data-i18n="spools.adjust">
+        Adjust
+      </button>
+      <button id="btn-status" class="fm-btn fm-btn-outline" style="border-color: var(--accent-3); color: var(--accent-3);" data-i18n="spools.changeStatus">
+        Change Status
+      </button>
+      <button id="btn-move" class="fm-btn fm-btn-outline" data-i18n="spools.move">
+        Move
+      </button>
+    </div>
+  </div>
+  
+  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="fm-card" style="padding: 24px; width: 100%; max-width: 420px; margin: 16px;">
+      <h3 id="modal-title" style="font-weight: 600; margin: 0 0 16px 0;"></h3>
+      <form id="modal-form" style="display: grid; gap: 16px;">
+        <div id="modal-fields"></div>
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.submit">
+            Submit
+          </button>
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <div id="events-section" class="hidden" style="margin-top: 32px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.eventHistory">Event History</h2>
+    <div class="fm-card" style="padding: 0; overflow: hidden;">
+      <table class="fm-table">
+        <thead>
+          <tr style="background: var(--bg-soft);">
+            <th data-i18n="spools.eventType">Type</th>
+            <th data-i18n="spools.eventDate">Date</th>
+            <th data-i18n="spools.eventWeight">Weight</th>
+            <th data-i18n="common.note">Note</th>
+          </tr>
+        </thead>
+        <tbody id="events-table">
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    const id = window.location.pathname.split('/').filter(Boolean).pop()!
+
+    let spool = null
+    let statuses = []
+    let locations = []
+    
+    function getCsrfToken() {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadData() {
+      try {
+        const [spoolRes, statusesRes, locationsRes] = await Promise.all([
+          fetch(`/api/v1/spools/${id}`, { credentials: 'include' }),
+          fetch('/api/v1/spools/statuses', { credentials: 'include' }),
+          fetch('/api/v1/locations?page_size=200', { credentials: 'include' }),
+        ])
+        
+        if (!spoolRes.ok) {
+          if (spoolRes.status === 404) {
+            document.getElementById('spool-content').innerHTML = `<div style="color: var(--error-text);">${t('spools.notFound')}</div>`
+            return
+          }
+          throw new Error('Failed to fetch spool')
+        }
+        
+        spool = await spoolRes.json()
+        
+        if (statusesRes.ok) {
+          statuses = await statusesRes.json()
+        }
+        
+        if (locationsRes.ok) {
+          const data = await locationsRes.json()
+          locations = data.items
+        }
+        
+        renderSpool()
+        loadEvents()
+        setupActions()
+      } catch (error) {
+        console.error('Failed to load spool:', error)
+        document.getElementById('spool-content').innerHTML = `<div style="color: var(--error-text);">${t('spools.failedLoadSingle')}</div>`
+      }
+    }
+    
+    function getStatusLabel(statusId) {
+      const s = statuses.find(s => s.id === statusId)
+      return s ? s.label : `#${statusId}`
+    }
+    
+    function getLocationName(locationId) {
+      if (!locationId) return t('spools.noLocation')
+      const l = locations.find(l => l.id === locationId)
+      return l ? l.name : `#${locationId}`
+    }
+    
+    function renderSpool() {
+      const isLow = spool.remaining_weight_g !== null && 
+                    spool.remaining_weight_g > 0 && 
+                    spool.remaining_weight_g <= spool.low_weight_threshold_g
+      const isEmpty = spool.remaining_weight_g !== null && spool.remaining_weight_g <= 0
+      
+      let statusStyle = 'background: var(--success-bg); border-color: var(--success-border);'
+      if (isEmpty) statusStyle = 'background: var(--error-bg); border-color: var(--error-border);'
+      else if (isLow) statusStyle = 'background: rgba(247, 200, 106, 0.15); border: 1px solid rgba(247, 200, 106, 0.4);'
+      
+      document.getElementById('spool-content').innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+          <div>
+            <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${t('spools.spoolId', { id: spool.id })}</h1>
+            <p style="color: var(--text-muted); margin: 4px 0 0;">${t('spools.filament')}: <a href="/filaments/${spool.filament_id}" style="color: var(--accent); text-decoration: none;">${t('spools.filament')} #${spool.filament_id}</a></p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-delete" class="fm-btn fm-btn-danger">
+              ${t('common.delete')}
+            </button>
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.status')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${getStatusLabel(spool.status_id)}</div>
+          </div>
+          <div class="fm-card" style="${statusStyle}">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.remaining')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600; font-family: monospace;">${spool.remaining_weight_g !== null ? spool.remaining_weight_g.toFixed(0) + 'g' : '-'}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.location')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${getLocationName(spool.location_id)}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.lowThresholdLabel')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${spool.low_weight_threshold_g}g</div>
+          </div>
+        </div>
+        
+        <div style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.initialWeight')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${spool.initial_total_weight_g ? spool.initial_total_weight_g + 'g' : '-'}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.emptySpool')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${spool.empty_spool_weight_g ? spool.empty_spool_weight_g + 'g' : '-'}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.rfidUid')}</div>
+            <div style="font-size: 0.9rem; font-weight: 600; font-family: monospace;">${spool.rfid_uid || '-'}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.externalId')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${spool.external_id || '-'}</div>
+          </div>
+        </div>
+        
+        ${spool.lot_number ? `
+          <div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.lotNumber')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${spool.lot_number}</div>
+          </div>
+        ` : ''}
+      `
+      
+      document.getElementById('actions-section').classList.remove('hidden')
+      
+      document.getElementById('btn-delete')?.addEventListener('click', async () => {
+        if (!confirm(t('spools.confirmDelete'))) return
+        
+        try {
+          const response = await fetch(`/api/v1/spools/${id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+          })
+          
+          if (response.ok) {
+            window.location.href = '/spools'
+          } else {
+            alert(t('spools.failedDelete'))
+          }
+        } catch {
+          alert(t('spools.failedDelete'))
+        }
+      })
+    }
+    
+    async function loadEvents() {
+      try {
+        const response = await fetch(`/api/v1/spools/${id}/events?page_size=50`, {
+          credentials: 'include',
+        })
+        
+        if (!response.ok) throw new Error('Failed to fetch events')
+        
+        const data = await response.json()
+        document.getElementById('events-section').classList.remove('hidden')
+        renderEvents(data.items)
+      } catch (error) {
+        console.error('Failed to load events:', error)
+      }
+    }
+    
+    function renderEvents(events) {
+      const tbody = document.getElementById('events-table')
+      
+      if (events.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">${t('spools.noEvents')}</td>
+          </tr>
+        `
+        return
+      }
+      
+      tbody.innerHTML = events.map(e => `
+        <tr>
+          <td style="padding: 12px;">
+            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${e.event_type}</span>
+          </td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
+            ${new Date(e.event_at).toLocaleString()}
+          </td>
+          <td style="padding: 12px; font-family: monospace; font-size: 0.85rem;">
+            ${e.measured_weight_g !== null ? e.measured_weight_g.toFixed(0) + 'g' : ''}
+            ${e.delta_weight_g !== null ? (e.delta_weight_g > 0 ? '+' : '') + e.delta_weight_g.toFixed(0) + 'g' : ''}
+          </td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${e.note || '-'}</td>
+        </tr>
+      `).join('')
+    }
+    
+    function getEventTypeStyle(type) {
+      const styles = {
+        measurement: 'border-color: var(--accent-2); color: var(--accent-2);',
+        adjustment: 'border-color: var(--accent); color: var(--accent);',
+        consumption: 'border-color: var(--accent-3); color: var(--accent-3);',
+        status_change: 'border-color: var(--accent-3); color: var(--accent-3);',
+        move_location: 'border-color: var(--accent); color: var(--accent);',
+      }
+      return styles[type] || ''
+    }
+    
+    function setupActions() {
+      document.getElementById('btn-measurement')?.addEventListener('click', () => showModal('measurement'))
+      document.getElementById('btn-adjustment')?.addEventListener('click', () => showModal('adjustment'))
+      document.getElementById('btn-status')?.addEventListener('click', () => showModal('status'))
+      document.getElementById('btn-move')?.addEventListener('click', () => showModal('move'))
+    }
+    
+    function showModal(type) {
+      const container = document.getElementById('modal-container')
+      const title = document.getElementById('modal-title')
+      const fields = document.getElementById('modal-fields')
+      const error = document.getElementById('modal-error')
+      
+      error.classList.add('hidden')
+      fields.innerHTML = ''
+      
+      const titles = {
+        measurement: t('spools.modalRecordWeight'),
+        adjustment: t('spools.modalAdjust'),
+        status: t('spools.modalChangeStatus'),
+        move: t('spools.modalMove'),
+      }
+      title.textContent = titles[type]
+      
+      if (type === 'measurement') {
+        fields.innerHTML = `
+          <div style="display: grid; gap: 12px;">
+            <div>
+              <label class="fm-label">${t('spools.measuredWeight')}</label>
+              <input type="number" id="field-weight" step="0.1" required class="fm-input">
+            </div>
+            <div>
+              <label class="fm-label">${t('common.note')}</label>
+              <input type="text" id="field-note" class="fm-input">
+            </div>
+          </div>
+        `
+      } else if (type === 'adjustment') {
+        fields.innerHTML = `
+          <div style="display: grid; gap: 12px;">
+            <div>
+              <label class="fm-label">${t('spools.adjustmentType')}</label>
+              <select id="field-adjustment-type" required class="fm-select">
+                <option value="tare">${t('spools.adjustSetTara')}</option>
+                <option value="relative">${t('spools.adjustRelative')}</option>
+                <option value="absolute">${t('spools.adjustSetRemaining')}</option>
+              </select>
+            </div>
+            <div id="field-delta-container">
+              <label class="fm-label">${t('spools.deltaWeight')}</label>
+              <input type="number" id="field-delta" step="0.1" class="fm-input">
+            </div>
+            <div id="field-measured-container" class="hidden">
+              <label class="fm-label">${t('spools.measuredWeightLabel')}</label>
+              <input type="number" id="field-measured" step="0.1" class="fm-input">
+            </div>
+            <div>
+              <label class="fm-label">${t('common.note')}</label>
+              <input type="text" id="field-note" class="fm-input">
+            </div>
+          </div>
+        `
+        document.getElementById('field-adjustment-type')?.addEventListener('change', (e) => {
+          const val = e.target.value
+          document.getElementById('field-delta-container').classList.toggle('hidden', val !== 'relative')
+          document.getElementById('field-measured-container').classList.toggle('hidden', val === 'relative')
+        })
+      } else if (type === 'status') {
+        fields.innerHTML = `
+          <div style="display: grid; gap: 12px;">
+            <div>
+              <label class="fm-label">${t('spools.newStatus')}</label>
+              <select id="field-status" required class="fm-select">
+                ${statuses.map(s => `<option value="${s.key}">${s.label}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="fm-label">${t('common.note')}</label>
+              <input type="text" id="field-note" class="fm-input">
+            </div>
+          </div>
+        `
+      } else if (type === 'move') {
+        fields.innerHTML = `
+          <div style="display: grid; gap: 12px;">
+            <div>
+              <label class="fm-label">${t('spools.newLocation')}</label>
+              <select id="field-location" class="fm-select">
+                <option value="">${t('spools.noLocation')}</option>
+                ${locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="fm-label">${t('common.note')}</label>
+              <input type="text" id="field-note" class="fm-input">
+            </div>
+          </div>
+        `
+      }
+      
+      container.classList.remove('hidden')
+      container.dataset.type = type
+      
+      document.getElementById('modal-cancel')?.addEventListener('click', () => {
+        container.classList.add('hidden')
+      })
+    }
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const container = document.getElementById('modal-container')
+      const type = container.dataset.type
+      const error = document.getElementById('modal-error')
+      const submitBtn = document.getElementById('modal-submit')
+      
+      let url = ''
+      let body = {}
+      
+      if (type === 'measurement') {
+        url = `/api/v1/spools/${id}/measurements`
+        body = {
+          measured_weight_g: parseFloat(document.getElementById('field-weight').value),
+          note: document.getElementById('field-note').value || null,
+        }
+      } else if (type === 'adjustment') {
+        url = `/api/v1/spools/${id}/adjustments`
+        const adjType = document.getElementById('field-adjustment-type').value
+        body = {
+          adjustment_type: adjType,
+          note: document.getElementById('field-note').value || null,
+        }
+        if (adjType === 'relative') {
+          body.delta_weight_g = parseFloat(document.getElementById('field-delta').value) || null
+        } else {
+          body.measured_weight_g = parseFloat(document.getElementById('field-measured').value) || null
+        }
+      } else if (type === 'status') {
+        url = `/api/v1/spools/${id}/status`
+        body = {
+          status: document.getElementById('field-status').value,
+          note: document.getElementById('field-note').value || null,
+        }
+      } else if (type === 'move') {
+        url = `/api/v1/spools/${id}/move`
+        const locId = document.getElementById('field-location').value
+        body = {
+          location_id: locId ? parseInt(locId) : null,
+          note: document.getElementById('field-note').value || null,
+        }
+      }
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.submitting')
+      
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        })
+        
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.message || t('spools.failedSubmit'))
+        }
+        
+        container.classList.add('hidden')
+        loadData()
+      } catch (err) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.submit')
+      }
+    })
+    
+    loadData()
+  </script>
+</Layout>

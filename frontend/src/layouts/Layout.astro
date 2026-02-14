@@ -1,0 +1,230 @@
+---
+import '../styles/global.css'
+
+interface Props {
+  title: string
+}
+
+const { title } = Astro.props
+---
+
+<html lang="en" data-theme="brand">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <script is:inline>
+      (function() {
+        var t = localStorage.getItem('theme') || 'brand';
+        document.documentElement.setAttribute('data-theme', t);
+        var l = localStorage.getItem('lang') || 'en';
+        document.documentElement.setAttribute('lang', l);
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="fm-page" style="display: grid; grid-template-columns: 260px 1fr; min-height: 100vh;">
+      <aside class="fm-surface" style="border-right: 1px solid var(--border); padding: 24px 18px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto;">
+        <!-- Logo -->
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); box-shadow: var(--glow); display: grid; place-items: center; font-family: var(--font-serif); color: #0b120e; font-weight: 700; font-size: 1rem;">FM</div>
+          <div>
+            <div style="font-weight: 700; letter-spacing: 0.6px;">FilaMan</div>
+            <small style="color: var(--text-muted); font-size: 0.7rem;" data-i18n="app.subtitle">Filament Management</small>
+          </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav style="display: grid; gap: 6px; flex: 1;">
+          <a href="/" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">D</span>
+            <span data-i18n="nav.dashboard">Dashboard</span>
+          </a>
+          <a href="/filaments" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">F</span>
+            <span data-i18n="nav.filaments">Filaments</span>
+          </a>
+          <a href="/manufacturers" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">M</span>
+            <span data-i18n="nav.manufacturers">Manufacturers</span>
+          </a>
+          <a href="/spools" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">S</span>
+            <span data-i18n="nav.spools">Spools</span>
+          </a>
+          <a href="/locations" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">L</span>
+            <span data-i18n="nav.locations">Locations</span>
+          </a>
+          <a href="/printers" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">P</span>
+            <span data-i18n="nav.printers">Printers</span>
+          </a>
+
+          <div id="admin-nav" class="hidden" style="margin-top: 8px;">
+            <hr class="fm-divider" style="margin-bottom: 8px;" />
+            <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
+            <a href="/admin" class="fm-nav-item">
+              <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent-3), var(--accent)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">A</span>
+              <span data-i18n="nav.adminPanel">Admin Panel</span>
+            </a>
+          </div>
+
+          <hr class="fm-divider" style="margin-top: 8px;" />
+          <a href="/settings" class="fm-nav-item">
+            <span style="width: 28px; height: 28px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); display: grid; place-items: center; font-size: 0.75rem; flex-shrink: 0;">&#9881;</span>
+            <span data-i18n="nav.settings">Settings</span>
+          </a>
+        </nav>
+
+        <!-- Sidebar Footer: User + Theme -->
+        <div style="margin-top: auto; display: grid; gap: 12px;">
+          <div id="user-info" style="font-size: 0.85rem;">
+            <span style="color: var(--text-muted);" data-i18n="common.loading">Loading...</span>
+          </div>
+          <button
+            id="logout-btn"
+            class="fm-btn fm-btn-outline"
+            style="width: 100%; font-size: 0.8rem; padding: 8px 14px;"
+            data-i18n="nav.logout"
+          >
+            Logout
+          </button>
+          <div class="fm-theme-toggle" role="group" aria-label="Theme toggle">
+            <button type="button" data-theme="brand" class="active" data-i18n="theme.default">Default</button>
+            <button type="button" data-theme="light" data-i18n="theme.light">Light</button>
+            <button type="button" data-theme="dark" data-i18n="theme.dark">Dark</button>
+          </div>
+        </div>
+      </aside>
+
+      <main style="padding: 32px; overflow-y: auto;">
+        <slot />
+      </main>
+    </div>
+
+    <script>
+      import { t, initI18n, syncLangFromUser } from '../lib/i18n'
+
+      /* ── i18n init ───────────────────────────────────────────── */
+      await initI18n()
+
+      // Translate all elements with data-i18n attribute
+      function translatePage() {
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+          const key = el.getAttribute('data-i18n')!
+          el.textContent = t(key)
+        })
+        // Also translate placeholder attributes
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+          const key = el.getAttribute('data-i18n-placeholder')!
+          ;(el as HTMLInputElement).placeholder = t(key)
+        })
+        // Translate title attributes
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+          const key = el.getAttribute('data-i18n-title')!
+          el.setAttribute('title', t(key))
+        })
+      }
+
+      translatePage()
+
+      // Expose t and translatePage globally for page scripts
+      ;(window as any).__t = t
+      ;(window as any).__translatePage = translatePage
+      ;(window as any).__syncLangFromUser = syncLangFromUser
+
+      /* ── Theme switcher ──────────────────────────────────────── */
+      const themeButtons = document.querySelectorAll('.fm-theme-toggle button')
+      const root = document.documentElement
+
+      function setTheme(theme: string) {
+        root.setAttribute('data-theme', theme)
+        localStorage.setItem('theme', theme)
+        themeButtons.forEach(btn => btn.classList.remove('active'))
+        document.querySelector(`.fm-theme-toggle button[data-theme="${theme}"]`)?.classList.add('active')
+      }
+
+      // Restore saved theme on load
+      const saved = localStorage.getItem('theme') || 'brand'
+      setTheme(saved)
+
+      themeButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          const theme = button.getAttribute('data-theme')!
+          setTheme(theme)
+        })
+      })
+
+      /* ── Auth check ──────────────────────────────────────────── */
+      const userInfo = document.getElementById('user-info')!
+      const logoutBtn = document.getElementById('logout-btn')!
+      const adminNav = document.getElementById('admin-nav')!
+
+      async function checkAuth() {
+        try {
+          const response = await fetch('/api/v1/me', {
+            credentials: 'include',
+          })
+
+          if (!response.ok) {
+            window.location.href = '/login'
+            return
+          }
+
+          const user = await response.json()
+
+          // Sync language from user profile
+          syncLangFromUser(user.language)
+
+          userInfo.innerHTML = `
+            <div style="font-weight: 600; color: var(--text);">${user.display_name || user.email}</div>
+            <div style="color: var(--text-muted); font-size: 0.75rem;">${user.roles.join(', ')}</div>
+          `
+
+          if (user.is_superadmin || user.permissions.some((p: string) => p.startsWith('admin:'))) {
+            adminNav.classList.remove('hidden')
+          }
+        } catch {
+          window.location.href = '/login'
+        }
+      }
+
+      checkAuth()
+
+      logoutBtn.addEventListener('click', async () => {
+        const csrfToken = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('csrf_token='))
+          ?.split('=')[1]
+
+        await fetch('/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': decodeURIComponent(csrfToken || ''),
+          },
+          credentials: 'include',
+        })
+
+        localStorage.removeItem('lang')
+        window.location.href = '/login'
+      })
+
+      /* ── Active nav highlighting ─────────────────────────────── */
+      const currentPath = window.location.pathname
+      document.querySelectorAll('.fm-nav-item').forEach(item => {
+        const href = item.getAttribute('href')
+        if (href === currentPath || (href !== '/' && currentPath.startsWith(href!))) {
+          item.classList.add('active')
+        }
+      })
+    </script>
+  </body>
+</html>

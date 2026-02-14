@@ -1,0 +1,133 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Filaments">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="filaments.title">Filaments</h1>
+    <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
+      Add Filament
+    </a>
+  </div>
+  
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead>
+        <tr style="background: var(--bg-soft);">
+          <th data-i18n="filaments.designation">Designation</th>
+          <th data-i18n="filaments.type">Type</th>
+          <th data-i18n="filaments.diameter">Diameter</th>
+          <th data-i18n="filaments.manufacturer">Manufacturer</th>
+          <th style="text-align: right;" data-i18n="filaments.spools">Spools</th>
+        </tr>
+      </thead>
+      <tbody id="filaments-table">
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div id="pagination" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;"></div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let currentPage = 1
+    const pageSize = 50
+    
+    async function loadFilaments(page: number = 1) {
+      try {
+        const response = await fetch(`/api/v1/filaments?page=${page}&page_size=${pageSize}`, {
+          credentials: 'include',
+        })
+        
+        if (!response.ok) throw new Error('Failed to fetch filaments')
+        
+        const data = await response.json()
+        renderFilaments(data.items)
+        renderPagination(data.total, data.page)
+      } catch (error) {
+        console.error('Failed to load filaments:', error)
+        document.getElementById('filaments-table')!.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
+          </tr>
+        `
+      }
+    }
+    
+    function renderFilaments(filaments: any[]) {
+      const tbody = document.getElementById('filaments-table')!
+      
+      if (filaments.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--text-muted);">
+              ${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.
+            </td>
+          </tr>
+        `
+        return
+      }
+      
+      tbody.innerHTML = filaments.map(f => `
+        <tr style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
+          <td style="padding: 12px;">
+            <div style="font-weight: 500;">${f.designation}</div>
+            ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${f.manufacturer_color_name}</div>` : ''}
+          </td>
+          <td style="padding: 12px; color: var(--text-muted);">${f.type}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${f.diameter_mm}mm</td>
+          <td style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
+          <td style="padding: 12px; text-align: right; color: var(--text-muted);">-</td>
+        </tr>
+      `).join('')
+    }
+    
+    function renderPagination(total: number, page: number) {
+      const totalPages = Math.ceil(total / pageSize)
+      const container = document.getElementById('pagination')!
+      
+      if (totalPages <= 1) {
+        container.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: total })}</div>`
+        return
+      }
+      
+      container.innerHTML = `
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+          ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button 
+            id="prev-btn"
+            class="fm-btn fm-btn-outline"
+            style="padding: 6px 14px; font-size: 0.85rem;"
+            ${page <= 1 ? 'disabled' : ''}
+          >
+            ${t('common.previous')}
+          </button>
+          <button 
+            id="next-btn"
+            class="fm-btn fm-btn-outline"
+            style="padding: 6px 14px; font-size: 0.85rem;"
+            ${page >= totalPages ? 'disabled' : ''}
+          >
+            ${t('common.next')}
+          </button>
+        </div>
+      `
+      
+      document.getElementById('prev-btn')?.addEventListener('click', () => {
+        if (page > 1) loadFilaments(page - 1)
+      })
+      document.getElementById('next-btn')?.addEventListener('click', () => {
+        if (page < totalPages) loadFilaments(page + 1)
+      })
+    }
+    
+    loadFilaments()
+  </script>
+</Layout>

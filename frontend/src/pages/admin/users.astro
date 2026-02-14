@@ -1,0 +1,286 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Admin Users">
+  <div class="mb-6">
+    <a href="/admin" class="text-blue-600 hover:text-blue-700">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+  
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold" data-i18n="admin.users">Users</h1>
+    <button
+      id="btn-new"
+      class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
+      data-i18n="admin.addUser"
+    >
+      Add User
+    </button>
+  </div>
+  
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      <thead class="bg-gray-50 dark:bg-gray-700">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="admin.email">Email</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="admin.displayName">Display Name</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="common.status">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="admin.roles">Roles</th>
+          <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-table" class="divide-y divide-gray-200 dark:divide-gray-700">
+        <tr>
+          <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="admin.addUser">Add User</h3>
+      <form id="modal-form" class="space-y-4">
+        <input type="hidden" id="user-id" />
+        <div>
+          <label for="user-email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"><span data-i18n="admin.email">Email</span> *</label>
+          <input type="email" id="user-email" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+        </div>
+        <div id="password-field">
+          <label for="user-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="admin.password">Password *</label>
+          <input type="password" id="user-password" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+        </div>
+        <div>
+          <label for="user-display-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="admin.displayName">Display Name</label>
+          <input type="text" id="user-display-name" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="admin.roles">Roles</label>
+          <div id="roles-checkboxes" class="space-y-2"></div>
+        </div>
+        <div>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" id="user-superadmin" class="rounded border-gray-300" />
+            <span class="text-sm text-gray-700 dark:text-gray-300" data-i18n="admin.superadmin">Superadmin</span>
+          </label>
+        </div>
+        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
+        <div class="flex gap-3">
+          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.save">Save</button>
+          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let users: any[] = []
+    let roles: any[] = []
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadData() {
+      try {
+        const [usersRes, rolesRes] = await Promise.all([
+          fetch('/api/v1/admin/users', { credentials: 'include' }),
+          fetch('/api/v1/admin/roles', { credentials: 'include' }),
+        ])
+        
+        if (!usersRes.ok) throw new Error('Failed to fetch users')
+        
+        users = await usersRes.json().then(d => d.items)
+        roles = await rolesRes.json()
+        renderUsers()
+        renderRoleCheckboxes()
+      } catch (error) {
+        console.error('Failed to load data:', error)
+      }
+    }
+    
+    function renderUsers() {
+      const tbody = document.getElementById('users-table')!
+      
+      if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">${t('admin.noUsers')}</td></tr>`
+        return
+      }
+      
+      tbody.innerHTML = users.map(u => `
+        <tr>
+          <td class="px-6 py-4 whitespace-nowrap font-medium">${u.email}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400">${u.display_name || '-'}</td>
+          <td class="px-6 py-4 whitespace-nowrap">
+            <span class="px-2 py-1 text-xs rounded ${u.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}">
+              ${u.is_active ? t('common.active') : t('common.inactive')}
+            </span>
+            ${u.is_superadmin ? `<span class="ml-1 px-2 py-1 text-xs rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">${t('admin.superadmin')}</span>` : ''}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400">-</td>
+          <td class="px-6 py-4 whitespace-nowrap text-right">
+            <button data-id="${u.id}" class="btn-edit text-blue-600 hover:text-blue-700 mr-3">${t('common.edit')}</button>
+            <button data-id="${u.id}" class="btn-reset text-yellow-600 hover:text-yellow-700 mr-3">${t('admin.resetPw')}</button>
+          </td>
+        </tr>
+      `).join('')
+      
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => openModal(parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)))
+      })
+      
+      document.querySelectorAll('.btn-reset').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          const newPassword = prompt(t('admin.resetPwPrompt'))
+          if (!newPassword || newPassword.length < 8) {
+            alert(t('admin.resetPwTooShort'))
+            return
+          }
+          
+          try {
+            const response = await fetch(`/api/v1/admin/users/${id}/reset-password?new_password=${encodeURIComponent(newPassword)}`, {
+              method: 'POST',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) throw new Error('Failed to reset password')
+            alert(t('admin.resetPwSuccess'))
+          } catch {
+            alert(t('admin.resetPwFailed'))
+          }
+        })
+      })
+    }
+    
+    function renderRoleCheckboxes(selectedRoles: string[] = []) {
+      const container = document.getElementById('roles-checkboxes')!
+      container.innerHTML = roles.map(r => `
+        <label class="flex items-center gap-2">
+          <input type="checkbox" value="${r.key}" class="role-checkbox rounded border-gray-300" ${selectedRoles.includes(r.key) ? 'checked' : ''} />
+          <span class="text-sm text-gray-700 dark:text-gray-300">${r.name}</span>
+        </label>
+      `).join('')
+    }
+    
+    async function openModal(id: number | null = null) {
+      const container = document.getElementById('modal-container')!
+      const title = document.getElementById('modal-title')!
+      const idInput = document.getElementById('user-id') as HTMLInputElement
+      const emailInput = document.getElementById('user-email') as HTMLInputElement
+      const passwordInput = document.getElementById('user-password') as HTMLInputElement
+      const passwordField = document.getElementById('password-field')!
+      const displayNameInput = document.getElementById('user-display-name') as HTMLInputElement
+      const superadminInput = document.getElementById('user-superadmin') as HTMLInputElement
+      const error = document.getElementById('modal-error')!
+      
+      error.classList.add('hidden')
+      
+      if (id) {
+        title.textContent = t('admin.editUser')
+        passwordField.classList.add('hidden')
+        passwordInput.required = false
+        
+        const response = await fetch(`/api/v1/admin/users/${id}`, { credentials: 'include' })
+        const user = await response.json()
+        
+        idInput.value = String(id)
+        emailInput.value = user.email
+        displayNameInput.value = user.display_name || ''
+        superadminInput.checked = user.is_superadmin
+        renderRoleCheckboxes(user.roles || [])
+      } else {
+        title.textContent = t('admin.addUser')
+        passwordField.classList.remove('hidden')
+        passwordInput.required = true
+        
+        idInput.value = ''
+        emailInput.value = ''
+        passwordInput.value = ''
+        displayNameInput.value = ''
+        superadminInput.checked = false
+        renderRoleCheckboxes()
+      }
+      
+      container.classList.remove('hidden')
+    }
+    
+    function closeModal() {
+      document.getElementById('modal-container')!.classList.add('hidden')
+    }
+    
+    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
+    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const id = (document.getElementById('user-id') as HTMLInputElement).value
+      const email = (document.getElementById('user-email') as HTMLInputElement).value
+      const password = (document.getElementById('user-password') as HTMLInputElement).value
+      const displayName = (document.getElementById('user-display-name') as HTMLInputElement).value || null
+      const isSuperadmin = (document.getElementById('user-superadmin') as HTMLInputElement).checked
+      const selectedRoles = Array.from(document.querySelectorAll('.role-checkbox:checked')).map((cb: any) => cb.value)
+      
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+      
+      try {
+        if (id) {
+await fetch(`/api/v1/admin/users/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+          
+          await fetch(`/api/v1/admin/users/${id}/roles`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify(selectedRoles),
+          })
+        } else {
+          const response = await fetch('/api/v1/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify({ email, password, display_name: displayName, is_superadmin: isSuperadmin }),
+          })
+          
+          if (!response.ok) {
+            const data = await response.json()
+            throw new Error(data.message || t('admin.failedCreateUser'))
+          }
+          
+          const user = await response.json()
+          await fetch(`/api/v1/admin/users/${user.id}/roles`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify(selectedRoles),
+          })
+        }
+        
+        closeModal()
+        loadData()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+    
+    loadData()
+  </script>
+</Layout>

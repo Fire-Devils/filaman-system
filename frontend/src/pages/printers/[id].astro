@@ -1,0 +1,286 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+const { id } = Astro.params
+---
+
+<Layout title="FilaMan - Printer">
+  <div class="mb-6">
+    <a href="/printers" class="text-blue-600 hover:text-blue-700">&larr; <span data-i18n="printers.backToPrinters">Back to Printers</span></a>
+  </div>
+  
+  <div id="printer-content">
+    <p class="text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</p>
+  </div>
+  
+  <div id="ams-section" class="mt-8 hidden">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-semibold" data-i18n="printers.amsUnits">AMS Units</h2>
+      <button
+        id="btn-add-ams"
+        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors text-sm"
+        data-i18n="printers.addAmsUnit"
+      >
+        Add AMS Unit
+      </button>
+    </div>
+    <div id="ams-units" class="space-y-4"></div>
+  </div>
+  
+  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md mx-4">
+      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="printers.addAmsUnit">Add AMS Unit</h3>
+      <form id="modal-form" class="space-y-4">
+        <div>
+          <label for="ams-unit-no" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="printers.unitNumber">
+            Unit Number *
+          </label>
+          <input
+            type="number"
+            id="ams-unit-no"
+            required
+            min="0"
+            value="0"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          />
+        </div>
+        <div>
+          <label for="ams-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="printers.unitName">
+            Name
+          </label>
+          <input
+            type="text"
+            id="ams-name"
+            data-i18n-placeholder="printers.unitNamePlaceholder"
+            placeholder="e.g. Left AMS"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          />
+        </div>
+        <div>
+          <label for="ams-slots" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="printers.numberOfSlots">
+            Number of Slots *
+          </label>
+          <input
+            type="number"
+            id="ams-slots"
+            required
+            min="1"
+            max="8"
+            value="4"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          />
+        </div>
+        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
+        <div class="flex gap-3">
+          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.add">
+            Add
+          </button>
+          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    const id = window.location.pathname.split('/').filter(Boolean).pop()!
+
+    let printer: any = null
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadPrinter() {
+      try {
+        const response = await fetch(`/api/v1/printers/${id}`, { credentials: 'include' })
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            document.getElementById('printer-content')!.innerHTML = `<div class="text-red-500">${t('printers.notFound')}</div>`
+            return
+          }
+          throw new Error('Failed to fetch printer')
+        }
+        
+        printer = await response.json()
+        renderPrinter()
+      } catch (error) {
+        console.error('Failed to load printer:', error)
+        document.getElementById('printer-content')!.innerHTML = `<div class="text-red-500">${t('printers.failedLoad')}</div>`
+      }
+    }
+    
+    function renderPrinter() {
+      document.getElementById('printer-content')!.innerHTML = `
+        <div class="flex justify-between items-start mb-6">
+          <div>
+            <h1 class="text-3xl font-bold">${printer.name}</h1>
+            <p class="text-gray-500 dark:text-gray-400 mt-1">${printer.manufacturer || ''} ${printer.model || ''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button id="btn-toggle-active" class="px-4 py-2 ${printer.is_active ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-md font-medium transition-colors">
+              ${printer.is_active ? t('printers.deactivate') : t('printers.activate')}
+            </button>
+            <button id="btn-delete" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium transition-colors">
+              ${t('common.delete')}
+            </button>
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">${t('printers.driver')}</div>
+            <div class="text-lg font-semibold">${printer.driver_key}</div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">${t('printers.serialNumber')}</div>
+            <div class="text-lg font-semibold font-mono text-sm">${printer.serial_number || '-'}</div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">${t('common.status')}</div>
+            <div class="text-lg font-semibold">
+              <span class="px-2 py-1 text-sm rounded ${printer.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}">
+                ${printer.is_active ? t('common.active') : t('common.inactive')}
+              </span>
+            </div>
+          </div>
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500 dark:text-gray-400">${t('printers.amsUnits')}</div>
+            <div class="text-lg font-semibold">${printer.ams_units?.length || 0}</div>
+          </div>
+        </div>
+      `
+      
+      document.getElementById('btn-delete')?.addEventListener('click', async () => {
+        if (!confirm(t('printers.confirmDelete'))) return
+        
+        try {
+          const response = await fetch(`/api/v1/printers/${id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+          })
+          
+          if (response.ok) {
+            window.location.href = '/printers'
+          } else {
+            alert(t('printers.failedDelete'))
+          }
+        } catch {
+          alert(t('printers.failedDelete'))
+        }
+      })
+      
+      document.getElementById('btn-toggle-active')?.addEventListener('click', async () => {
+        try {
+          const response = await fetch(`/api/v1/printers/${id}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': getCsrfToken(),
+            },
+            credentials: 'include',
+            body: JSON.stringify({ is_active: !printer.is_active }),
+          })
+          
+          if (response.ok) {
+            loadPrinter()
+          } else {
+            alert(t('printers.failedUpdate'))
+          }
+        } catch {
+          alert(t('printers.failedUpdate'))
+        }
+      })
+      
+      if (printer.ams_units && printer.ams_units.length > 0) {
+        document.getElementById('ams-section')!.classList.remove('hidden')
+        renderAmsUnits()
+      }
+    }
+    
+    function renderAmsUnits() {
+      const container = document.getElementById('ams-units')!
+      
+      container.innerHTML = printer.ams_units.map((unit: any) => `
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="flex justify-between items-center mb-3">
+            <div>
+              <h3 class="font-semibold">${unit.name || t('printers.amsUnitLabel', { no: unit.ams_unit_no })}</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">${t('printers.unitLabel', { no: unit.ams_unit_no })} · ${t('printers.slots', { count: unit.slots_total })}</p>
+            </div>
+            <span class="px-2 py-1 text-xs rounded ${unit.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}">
+              ${unit.is_active ? t('common.active') : t('common.inactive')}
+            </span>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            ${Array.from({ length: unit.slots_total }, (_, i) => `
+              <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded text-center">
+                <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">${t('printers.slotLabel', { no: i + 1 })}</div>
+                <div class="text-sm font-medium text-gray-400 dark:text-gray-500">${t('common.empty')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')
+    }
+    
+    document.getElementById('btn-add-ams')?.addEventListener('click', () => {
+      document.getElementById('modal-container')!.classList.remove('hidden')
+    })
+    
+    document.getElementById('modal-cancel')?.addEventListener('click', () => {
+      document.getElementById('modal-container')!.classList.add('hidden')
+    })
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const unitNo = (document.getElementById('ams-unit-no') as HTMLInputElement).value
+      const name = (document.getElementById('ams-name') as HTMLInputElement).value || null
+      const slotsTotal = (document.getElementById('ams-slots') as HTMLInputElement).value
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('printers.adding')
+      
+      try {
+        const params = new URLSearchParams({
+          ams_unit_no: unitNo,
+          slots_total: slotsTotal,
+        })
+        if (name) params.append('name', name)
+        
+        const response = await fetch(`/api/v1/printers/${id}/ams-units?${params.toString()}`, {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+        })
+        
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.message || t('printers.failedAddAms'))
+        }
+        
+        document.getElementById('modal-container')!.classList.add('hidden')
+        loadPrinter()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.add')
+      }
+    })
+    
+    loadPrinter()
+  </script>
+</Layout>

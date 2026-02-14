@@ -1,0 +1,203 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Spools">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="spools.title">Spools</h1>
+    <a href="/spools/new" class="fm-btn fm-btn-primary" data-i18n="spools.addSpool">
+      Add Spool
+    </a>
+  </div>
+  
+  <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+    <select id="filter-status" class="fm-select" style="width: auto; min-width: 160px;">
+      <option value="" data-i18n="spools.allStatuses">All Statuses</option>
+    </select>
+    <select id="filter-location" class="fm-select" style="width: auto; min-width: 160px;">
+      <option value="" data-i18n="spools.allLocations">All Locations</option>
+    </select>
+  </div>
+  
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead>
+        <tr style="background: var(--bg-soft);">
+          <th data-i18n="spools.id">ID</th>
+          <th data-i18n="spools.filament">Filament</th>
+          <th data-i18n="spools.status">Status</th>
+          <th data-i18n="spools.remaining">Remaining</th>
+          <th data-i18n="spools.location">Location</th>
+        </tr>
+      </thead>
+      <tbody id="spools-table">
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div id="pagination" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;"></div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let currentPage = 1
+    const pageSize = 50
+    let statuses: any[] = []
+    let locations: any[] = []
+    let filaments: any[] = []
+    
+    async function loadFilters() {
+      try {
+        const [statusesRes, locationsRes, filamentsRes] = await Promise.all([
+          fetch('/api/v1/spools/statuses', { credentials: 'include' }).catch(() => null),
+          fetch('/api/v1/locations?page_size=200', { credentials: 'include' }),
+          fetch('/api/v1/filaments?page_size=200', { credentials: 'include' }),
+        ])
+        
+        if (locationsRes?.ok) {
+          const data = await locationsRes.json()
+          locations = data.items
+          const select = document.getElementById('filter-location') as HTMLSelectElement
+          locations.forEach((l: any) => {
+            const opt = document.createElement('option')
+            opt.value = l.id
+            opt.textContent = l.name
+            select.appendChild(opt)
+          })
+        }
+        
+        if (filamentsRes?.ok) {
+          const data = await filamentsRes.json()
+          filaments = data.items
+        }
+      } catch (error) {
+        console.error('Failed to load filters:', error)
+      }
+    }
+    
+    async function loadSpools(page: number = 1) {
+      const statusId = (document.getElementById('filter-status') as HTMLSelectElement).value
+      const locationId = (document.getElementById('filter-location') as HTMLSelectElement).value
+      
+      let url = `/api/v1/spools?page=${page}&page_size=${pageSize}`
+      if (statusId) url += `&status_id=${statusId}`
+      if (locationId) url += `&location_id=${locationId}`
+      
+      try {
+        const response = await fetch(url, { credentials: 'include' })
+        
+        if (!response.ok) throw new Error('Failed to fetch spools')
+        
+        const data = await response.json()
+        renderSpools(data.items)
+        renderPagination(data.total, data.page)
+      } catch (error) {
+        console.error('Failed to load spools:', error)
+        document.getElementById('spools-table')!.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
+          </tr>
+        `
+      }
+    }
+    
+    function getFilamentName(filamentId: number): string {
+      const f = filaments.find(f => f.id === filamentId)
+      return f ? `${f.designation} (${f.type})` : `#${filamentId}`
+    }
+    
+    function getLocationName(locationId: number | null): string {
+      if (!locationId) return '-'
+      const l = locations.find(l => l.id === locationId)
+      return l ? l.name : `#${locationId}`
+    }
+    
+    function renderSpools(spools: any[]) {
+      const tbody = document.getElementById('spools-table')!
+      
+      if (spools.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--text-muted);">
+              ${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.
+            </td>
+          </tr>
+        `
+        return
+      }
+      
+      tbody.innerHTML = spools.map(s => {
+        const isLow = s.remaining_weight_g !== null && 
+                      s.remaining_weight_g > 0 && 
+                      s.remaining_weight_g <= s.low_weight_threshold_g
+        const isEmpty = s.remaining_weight_g !== null && s.remaining_weight_g <= 0
+        
+        let weightStyle = ''
+        if (isEmpty) weightStyle = 'color: var(--error-text); font-weight: 500;'
+        else if (isLow) weightStyle = 'color: var(--accent-3); font-weight: 500;'
+        
+        return `
+          <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
+            <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
+            <td style="padding: 12px;">${getFilamentName(s.filament_id)}</td>
+            <td style="padding: 12px;">${s.status_id}</td>
+            <td style="padding: 12px; font-family: monospace; ${weightStyle}">
+              ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
+            </td>
+            <td style="padding: 12px;">${getLocationName(s.location_id)}</td>
+          </tr>
+        `
+      }).join('')
+    }
+    
+    function renderPagination(total: number, page: number) {
+      const totalPages = Math.ceil(total / pageSize)
+      const container = document.getElementById('pagination')!
+      
+      if (totalPages <= 1) {
+        container.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.spoolCount', { count: total })}</div>`
+        return
+      }
+      
+      container.innerHTML = `
+        <div style="font-size: 0.85rem; color: var(--text-muted);">
+          ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button 
+            id="prev-btn"
+            class="fm-btn fm-btn-outline"
+            style="padding: 6px 14px; font-size: 0.85rem;"
+            ${page <= 1 ? 'disabled' : ''}
+          >
+            ${t('common.previous')}
+          </button>
+          <button 
+            id="next-btn"
+            class="fm-btn fm-btn-outline"
+            style="padding: 6px 14px; font-size: 0.85rem;"
+            ${page >= totalPages ? 'disabled' : ''}
+          >
+            ${t('common.next')}
+          </button>
+        </div>
+      `
+      
+      document.getElementById('prev-btn')?.addEventListener('click', () => {
+        if (page > 1) loadSpools(page - 1)
+      })
+      document.getElementById('next-btn')?.addEventListener('click', () => {
+        if (page < totalPages) loadSpools(page + 1)
+      })
+    }
+    
+    document.getElementById('filter-status')?.addEventListener('change', () => loadSpools(1))
+    document.getElementById('filter-location')?.addEventListener('change', () => loadSpools(1))
+    
+    loadFilters().then(() => loadSpools())
+  </script>
+</Layout>

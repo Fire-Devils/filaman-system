@@ -1,0 +1,274 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Manufacturers">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
+    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
+      Add Manufacturer
+    </button>
+  </div>
+
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead>
+        <tr>
+          <th data-i18n="manufacturers.name">Name</th>
+          <th data-i18n="manufacturers.url">URL</th>
+          <th data-i18n="manufacturers.filaments">Filaments</th>
+          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="manufacturers-table">
+        <tr>
+          <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
+    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
+      <h3 id="modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;" data-i18n="manufacturers.addManufacturer">Add Manufacturer</h3>
+      <form id="modal-form" style="display: grid; gap: 16px;">
+        <input type="hidden" id="manufacturer-id" />
+        <div>
+          <label for="manufacturer-name" class="fm-label">
+            <span data-i18n="manufacturers.name">Name</span> *
+          </label>
+          <input
+            type="text"
+            id="manufacturer-name"
+            required
+            class="fm-input"
+            data-i18n-placeholder="manufacturers.namePlaceholder"
+            placeholder="e.g. Bambu Lab"
+          />
+        </div>
+        <div>
+          <label for="manufacturer-url" class="fm-label" data-i18n="manufacturers.url">
+            URL
+          </label>
+          <input
+            type="url"
+            id="manufacturer-url"
+            class="fm-input"
+            data-i18n-placeholder="manufacturers.urlPlaceholder"
+            placeholder="e.g. https://bambulab.com"
+          />
+        </div>
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
+            Save
+          </button>
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let manufacturers: any[] = []
+    let filamentCounts: Record<number, number> = {}
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    async function loadManufacturers() {
+      try {
+        const [mfRes, filRes] = await Promise.all([
+          fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' }),
+          fetch('/api/v1/filaments?page_size=1000', { credentials: 'include' }),
+        ])
+
+        if (!mfRes.ok) throw new Error('Failed to fetch manufacturers')
+
+        manufacturers = await mfRes.json().then(d => d.items)
+
+        filamentCounts = {}
+        if (filRes.ok) {
+          const filaments = await filRes.json().then(d => d.items)
+          filaments.forEach((f: any) => {
+            if (f.manufacturer_id) {
+              filamentCounts[f.manufacturer_id] = (filamentCounts[f.manufacturer_id] || 0) + 1
+            }
+          })
+        }
+
+        renderManufacturers()
+      } catch (error) {
+        console.error('Failed to load manufacturers:', error)
+        document.getElementById('manufacturers-table')!.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+          </tr>
+        `
+      }
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
+    }
+
+    function renderManufacturers() {
+      const tbody = document.getElementById('manufacturers-table')!
+
+      if (manufacturers.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              ${t('manufacturers.noManufacturers')}
+            </td>
+          </tr>
+        `
+        return
+      }
+
+      tbody.innerHTML = manufacturers.map(mf => `
+        <tr>
+          <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td>${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
+          <td>${filamentCounts[mf.id] || 0}</td>
+          <td style="text-align: right; white-space: nowrap;">
+            <button data-id="${mf.id}" data-name="${escapeHtml(mf.name)}" data-url="${escapeHtml(mf.url || '')}" class="btn-edit fm-btn fm-btn-outline" style="padding: 5px 12px; font-size: 0.8rem;">${t('common.edit')}</button>
+            <button data-id="${mf.id}" class="btn-delete fm-btn fm-btn-danger" style="padding: 5px 12px; font-size: 0.8rem; margin-left: 6px;">${t('common.delete')}</button>
+          </td>
+        </tr>
+      `).join('')
+
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget as HTMLButtonElement
+          openModal(
+            parseInt(target.dataset.id!),
+            target.dataset.name!,
+            target.dataset.url!
+          )
+        })
+      })
+
+      document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const target = e.currentTarget as HTMLButtonElement
+          const id = parseInt(target.dataset.id!)
+
+          if (!confirm(t('manufacturers.confirmDelete'))) return
+
+          try {
+            const response = await fetch(`/api/v1/manufacturers/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+
+            if (!response.ok) {
+              const data = await response.json()
+              alert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
+              return
+            }
+
+            loadManufacturers()
+          } catch {
+            alert(t('manufacturers.failedDelete'))
+          }
+        })
+      })
+    }
+
+    function openModal(id: number | null = null, name: string = '', url: string = '') {
+      const container = document.getElementById('modal-container')!
+      const title = document.getElementById('modal-title')!
+      const idInput = document.getElementById('manufacturer-id') as HTMLInputElement
+      const nameInput = document.getElementById('manufacturer-name') as HTMLInputElement
+      const urlInput = document.getElementById('manufacturer-url') as HTMLInputElement
+      const error = document.getElementById('modal-error')!
+
+      title.textContent = id ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
+      idInput.value = id ? String(id) : ''
+      nameInput.value = name
+      urlInput.value = url
+      error.classList.add('hidden')
+
+      container.style.display = 'flex'
+      nameInput.focus()
+    }
+
+    function closeModal() {
+      document.getElementById('modal-container')!.style.display = 'none'
+    }
+
+    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
+    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+
+    // Close modal on backdrop click
+    document.getElementById('modal-container')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal()
+    })
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal()
+    })
+
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+
+      const id = (document.getElementById('manufacturer-id') as HTMLInputElement).value
+      const name = (document.getElementById('manufacturer-name') as HTMLInputElement).value
+      const url = (document.getElementById('manufacturer-url') as HTMLInputElement).value || null
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+
+      const data: Record<string, any> = { name }
+      if (url !== null) data.url = url
+      else data.url = null
+
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+
+      try {
+        const apiUrl = id ? `/api/v1/manufacturers/${id}` : '/api/v1/manufacturers'
+        const method = id ? 'PATCH' : 'POST'
+
+        const response = await fetch(apiUrl, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(data),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
+        }
+
+        closeModal()
+        loadManufacturers()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+
+    loadManufacturers()
+  </script>
+</Layout>

@@ -1,0 +1,231 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Admin Devices">
+  <div class="mb-6">
+    <a href="/admin" class="text-blue-600 hover:text-blue-700">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+  
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold" data-i18n="admin.deviceTokens">Device Tokens</h1>
+    <button
+      id="btn-new"
+      class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors"
+      data-i18n="admin.createDevice"
+    >
+      Create Device
+    </button>
+  </div>
+  
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      <thead class="bg-gray-50 dark:bg-gray-700">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="common.name">Name</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="common.status">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="admin.scopes">Scopes</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="admin.lastUsed">Last Used</th>
+          <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="devices-table" class="divide-y divide-gray-200 dark:divide-gray-700">
+        <tr>
+          <td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md mx-4">
+      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="admin.createDevice">Create Device</h3>
+      <form id="modal-form" class="space-y-4">
+        <div>
+          <label for="device-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"><span data-i18n="common.name">Name</span> *</label>
+          <input type="text" id="device-name" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+        </div>
+        <div>
+          <label for="device-scopes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="admin.scopesLabel">Scopes (comma-separated)</label>
+          <input type="text" id="device-scopes" placeholder="spool_events:create_measurement" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+        </div>
+        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
+        <div class="flex gap-3">
+          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.create">Create</button>
+          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <div id="token-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-md mx-4">
+      <h3 class="text-lg font-semibold mb-4" data-i18n="admin.tokenCreated">Device Token Created</h3>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4" data-i18n="admin.tokenWarning">Copy this token now. It will not be shown again.</p>
+      <div class="bg-gray-100 dark:bg-gray-700 rounded p-3 font-mono text-sm break-all mb-4" id="token-display"></div>
+      <button id="token-copy" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="admin.copyToClipboard">Copy to Clipboard</button>
+      <button id="token-close" class="w-full mt-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.close">Close</button>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let devices: any[] = []
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadDevices() {
+      try {
+        const response = await fetch('/api/v1/admin/devices', { credentials: 'include' })
+        devices = await response.json().then(d => d.items)
+        renderDevices()
+      } catch (error) {
+        console.error('Failed to load devices:', error)
+      }
+    }
+    
+    function renderDevices() {
+      const tbody = document.getElementById('devices-table')!
+      
+      if (devices.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">${t('admin.noDevices')}</td></tr>`
+        return
+      }
+      
+      tbody.innerHTML = devices.map(d => `
+        <tr>
+          <td class="px-6 py-4 whitespace-nowrap font-medium">${d.name}</td>
+          <td class="px-6 py-4 whitespace-nowrap">
+            <span class="px-2 py-1 text-xs rounded ${d.is_active ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}">
+              ${d.is_active ? t('common.active') : t('common.inactive')}
+            </span>
+          </td>
+          <td class="px-6 py-4 text-gray-500 dark:text-gray-400 text-sm">${d.scopes?.join(', ') || '-'}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400 text-sm">${d.last_used_at ? new Date(d.last_used_at).toLocaleString() : t('common.never')}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-right">
+            <button data-id="${d.id}" class="btn-rotate text-blue-600 hover:text-blue-700 mr-3">${t('admin.rotateToken')}</button>
+            <button data-id="${d.id}" class="btn-delete text-red-600 hover:text-red-700">${t('common.delete')}</button>
+          </td>
+        </tr>
+      `).join('')
+      
+      document.querySelectorAll('.btn-rotate').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (!confirm(t('admin.rotateConfirm'))) return
+          
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          
+          try {
+            const response = await fetch(`/api/v1/admin/devices/${id}/rotate`, {
+              method: 'POST',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) throw new Error('Failed to rotate token')
+            
+            const data = await response.json()
+            showToken(data.token)
+            loadDevices()
+          } catch {
+            alert(t('admin.failedRotate'))
+          }
+        })
+      })
+      
+      document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          if (!confirm(t('admin.confirmDeleteDevice'))) return
+          
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          
+          try {
+            await fetch(`/api/v1/admin/devices/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            loadDevices()
+          } catch {
+            alert(t('admin.failedDeleteDevice'))
+          }
+        })
+      })
+    }
+    
+    function showToken(token: string) {
+      const modal = document.getElementById('token-modal')!
+      const display = document.getElementById('token-display')!
+      
+      display.textContent = token
+      modal.classList.remove('hidden')
+    }
+    
+    document.getElementById('token-copy')?.addEventListener('click', () => {
+      const token = document.getElementById('token-display')!.textContent!
+      navigator.clipboard.writeText(token)
+      ;(document.getElementById('token-copy') as HTMLButtonElement).textContent = t('admin.copied')
+    })
+    
+    document.getElementById('token-close')?.addEventListener('click', () => {
+      document.getElementById('token-modal')!.classList.add('hidden')
+    })
+    
+    document.getElementById('btn-new')?.addEventListener('click', () => {
+      ;(document.getElementById('device-name') as HTMLInputElement).value = ''
+      ;(document.getElementById('device-scopes') as HTMLInputElement).value = ''
+      document.getElementById('modal-container')!.classList.remove('hidden')
+    })
+    
+    document.getElementById('modal-cancel')?.addEventListener('click', () => {
+      document.getElementById('modal-container')!.classList.add('hidden')
+    })
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const name = (document.getElementById('device-name') as HTMLInputElement).value
+      const scopesInput = (document.getElementById('device-scopes') as HTMLInputElement).value
+      const scopes = scopesInput ? scopesInput.split(',').map(s => s.trim()).filter(Boolean) : null
+      
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.creating')
+      
+      try {
+        const response = await fetch('/api/v1/admin/devices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ name, scopes }),
+        })
+        
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.message || t('admin.failedCreateDevice'))
+        }
+        
+        const data = await response.json()
+        document.getElementById('modal-container')!.classList.add('hidden')
+        showToken(data.token)
+        loadDevices()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.create')
+      }
+    })
+    
+    loadDevices()
+  </script>
+</Layout>

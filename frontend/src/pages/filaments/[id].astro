@@ -1,0 +1,156 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+const { id } = Astro.params
+---
+
+<Layout title="FilaMan - Filament">
+  <div style="margin-bottom: 24px;">
+    <a href="/filaments" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+  </div>
+  
+  <div id="filament-content">
+    <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  </div>
+  
+  <div id="spools-section" class="hidden" style="margin-top: 32px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.spools">Spools</h2>
+    <div class="fm-card" style="padding: 0; overflow: hidden;">
+      <table class="fm-table">
+        <thead>
+          <tr style="background: var(--bg-soft);">
+            <th data-i18n="spools.id">ID</th>
+            <th data-i18n="spools.status">Status</th>
+            <th data-i18n="spools.remaining">Remaining</th>
+            <th data-i18n="spools.location">Location</th>
+          </tr>
+        </thead>
+        <tbody id="spools-table">
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    const id = window.location.pathname.split('/').filter(Boolean).pop()!
+
+    async function loadFilament() {
+
+      try {
+        const response = await fetch(`/api/v1/filaments/${id}`, {
+          credentials: 'include',
+        })
+        
+        if (!response.ok) {
+          if (response.status === 404) {
+            document.getElementById('filament-content')!.innerHTML = `
+              <div style="color: var(--error-text);">${t('filaments.notFound')}</div>
+            `
+            return
+          }
+          throw new Error('Failed to fetch filament')
+        }
+        
+        const filament = await response.json()
+        renderFilament(filament)
+        loadSpools(filament.id)
+      } catch (error) {
+        console.error('Failed to load filament:', error)
+        document.getElementById('filament-content')!.innerHTML = `
+          <div style="color: var(--error-text);">${t('filaments.failedLoadSingle')}</div>
+        `
+      }
+    }
+    
+    function renderFilament(f) {
+
+      document.getElementById('filament-content').innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+          <div>
+            <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
+            <p style="color: var(--text-muted); margin: 4px 0 0;">${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
+          </div>
+          <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
+            ${t('common.edit')}
+          </a>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.type')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${f.type}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.diameter')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${f.diameter_mm}mm</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.rawMaterial')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${f.raw_material_weight_g ? f.raw_material_weight_g + 'g' : '-'}</div>
+          </div>
+          <div class="fm-card">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.spoolWeight')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${f.default_spool_weight_g ? f.default_spool_weight_g + 'g' : '-'}</div>
+          </div>
+        </div>
+        
+        ${f.manufacturer_color_name ? `
+          <div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.color')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${f.manufacturer_color_name}</div>
+          </div>
+        ` : ''}
+      `
+    }
+    
+    async function loadSpools(filamentId) {
+      try {
+        const response = await fetch(`/api/v1/spools?filament_id=${filamentId}&page_size=100`, {
+          credentials: 'include',
+        })
+        
+        if (!response.ok) throw new Error('Failed to fetch spools')
+        
+        const data = await response.json()
+        document.getElementById('spools-section').classList.remove('hidden')
+        renderSpools(data.items)
+      } catch (error) {
+        console.error('Failed to load spools:', error)
+      }
+    }
+    
+    function renderSpools(spools) {
+      const tbody = document.getElementById('spools-table')
+      
+      if (spools.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">
+              ${t('filaments.noSpools')} <a href="/spools/new?filament_id=${id}" style="color: var(--accent);">${t('filaments.addOne')}</a>.
+            </td>
+          </tr>
+        `
+        return
+      }
+      
+      tbody.innerHTML = spools.map(s => `
+        <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
+          <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
+          <td style="padding: 12px;">${s.status_id || '-'}</td>
+          <td style="padding: 12px; ${s.remaining_weight_g !== null && s.remaining_weight_g <= s.low_weight_threshold_g ? 'color: var(--accent-3); font-weight: 500;' : ''}">
+            ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
+          </td>
+          <td style="padding: 12px; color: var(--text-muted);">${s.location_id || t('spools.noLocation')}</td>
+        </tr>
+      `).join('')
+    }
+    
+    loadFilament()
+  </script>
+</Layout>

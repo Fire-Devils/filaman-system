@@ -1,0 +1,224 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - New Filament">
+  <div style="margin-bottom: 24px;">
+    <a href="/filaments" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+  </div>
+  
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="filaments.newFilament">New Filament</h1>
+  
+  <div class="fm-card" style="max-width: 640px; padding: 24px;">
+    <form id="filament-form" style="display: grid; gap: 16px;">
+      <div>
+        <label for="manufacturer_id" class="fm-label" data-i18n="filaments.manufacturer">Manufacturer *</label>
+        <select 
+          id="manufacturer_id" 
+          name="manufacturer_id" 
+          required
+          class="fm-select"
+        >
+          <option value="" data-i18n="filaments.selectManufacturer">Select manufacturer...</option>
+        </select>
+      </div>
+      
+      <div>
+        <label for="designation" class="fm-label" data-i18n="filaments.designation">Designation *</label>
+        <input
+          type="text"
+          id="designation"
+          name="designation"
+          required
+          placeholder="e.g. PLA Basic Red"
+          data-i18n-placeholder="filaments.designationPlaceholder"
+          class="fm-input"
+        />
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="type" class="fm-label" data-i18n="filaments.type">Type *</label>
+          <select 
+            id="type" 
+            name="type" 
+            required
+            class="fm-select"
+          >
+            <option value="PLA">PLA</option>
+            <option value="PETG">PETG</option>
+            <option value="ABS">ABS</option>
+            <option value="ASA">ASA</option>
+            <option value="TPU">TPU</option>
+            <option value="NYLON">NYLON</option>
+            <option value="PC">PC</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </div>
+        
+        <div>
+          <label for="diameter_mm" class="fm-label" data-i18n="filaments.diameterMm">Diameter (mm) *</label>
+          <input
+            type="number"
+            id="diameter_mm"
+            name="diameter_mm"
+            step="0.01"
+            value="1.75"
+            required
+            class="fm-input"
+          />
+        </div>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="raw_material_weight_g" class="fm-label" data-i18n="filaments.rawMaterialWeight">Raw Material Weight (g)</label>
+          <input
+            type="number"
+            id="raw_material_weight_g"
+            name="raw_material_weight_g"
+            step="1"
+            placeholder="e.g. 1000"
+            data-i18n-placeholder="filaments.rawMaterialPlaceholder"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="default_spool_weight_g" class="fm-label" data-i18n="filaments.defaultSpoolWeight">Default Spool Weight (g)</label>
+          <input
+            type="number"
+            id="default_spool_weight_g"
+            name="default_spool_weight_g"
+            step="1"
+            placeholder="e.g. 250"
+            data-i18n-placeholder="filaments.defaultSpoolWeightPlaceholder"
+            class="fm-input"
+          />
+        </div>
+      </div>
+      
+      <div>
+        <label for="manufacturer_color_name" class="fm-label" data-i18n="filaments.colorName">Color Name</label>
+        <input
+          type="text"
+          id="manufacturer_color_name"
+          name="manufacturer_color_name"
+          placeholder="e.g. Fire Engine Red"
+          data-i18n-placeholder="filaments.colorNamePlaceholder"
+          class="fm-input"
+        />
+      </div>
+      
+      <div id="error-message" class="fm-alert-error hidden"></div>
+      
+      <div style="display: flex; gap: 12px; padding-top: 8px;">
+        <button
+          type="submit"
+          id="submit-btn"
+          class="fm-btn fm-btn-primary"
+          data-i18n="filaments.createFilament"
+        >
+          Create Filament
+        </button>
+        <a
+          href="/filaments"
+          class="fm-btn fm-btn-outline"
+          data-i18n="common.cancel"
+        >
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    async function loadManufacturers() {
+      try {
+        const response = await fetch('/api/v1/manufacturers?page_size=200', {
+          credentials: 'include',
+        })
+        
+        if (!response.ok) throw new Error('Failed to fetch manufacturers')
+        
+        const data = await response.json()
+        const select = document.getElementById('manufacturer_id') as HTMLSelectElement
+        
+        data.items.forEach((m: any) => {
+          const option = document.createElement('option')
+          option.value = m.id
+          option.textContent = m.name || t('common.unknown')
+          select.appendChild(option)
+        })
+      } catch (error) {
+        console.error('Failed to load manufacturers:', error)
+      }
+    }
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    const form = document.getElementById('filament-form') as HTMLFormElement
+    const errorMessage = document.getElementById('error-message') as HTMLDivElement
+    const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
+    
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(form)
+      const data: any = {
+        manufacturer_id: parseInt(formData.get('manufacturer_id') as string),
+        designation: formData.get('designation'),
+        type: formData.get('type'),
+        diameter_mm: parseFloat(formData.get('diameter_mm') as string),
+        color_mode: 'single',
+      }
+      
+      const rawWeight = formData.get('raw_material_weight_g')
+      if (rawWeight) data.raw_material_weight_g = parseFloat(rawWeight as string)
+      
+      const spoolWeight = formData.get('default_spool_weight_g')
+      if (spoolWeight) data.default_spool_weight_g = parseFloat(spoolWeight as string)
+      
+      const colorName = formData.get('manufacturer_color_name')
+      if (colorName) data.manufacturer_color_name = colorName
+      
+      errorMessage.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.creating')
+      
+      try {
+        const response = await fetch('/api/v1/filaments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(data),
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.message || t('filaments.failedCreate'))
+        }
+        
+        const filament = await response.json()
+        window.location.href = `/filaments/${filament.id}`
+      } catch (error: any) {
+        errorMessage.textContent = error.message || t('filaments.failedCreate')
+        errorMessage.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('filaments.createFilament')
+      }
+    })
+    
+    loadManufacturers()
+  </script>
+</Layout>

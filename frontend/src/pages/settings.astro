@@ -1,0 +1,260 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Settings">
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="settings.title">Settings</h1>
+  
+  <div style="display: grid; gap: 24px; max-width: 640px;">
+    <div class="fm-card" style="padding: 24px;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="settings.profile">Profile</h2>
+      <form id="profile-form" style="display: grid; gap: 16px;">
+        <div>
+          <label for="email" class="fm-label" data-i18n="settings.email">Email</label>
+          <input
+            type="email"
+            id="email"
+            disabled
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="display_name" class="fm-label" data-i18n="settings.displayName">Display Name</label>
+          <input
+            type="text"
+            id="display_name"
+            name="display_name"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="language" class="fm-label" data-i18n="settings.language">Language</label>
+          <select
+            id="language"
+            name="language"
+            class="fm-select"
+          >
+            <option value="en" data-i18n="settings.langEn">English</option>
+            <option value="de" data-i18n="settings.langDe">Deutsch</option>
+          </select>
+        </div>
+        
+        <div id="profile-error" class="fm-alert-error hidden"></div>
+        <div id="profile-success" class="fm-alert-success hidden"></div>
+        
+        <button
+          type="submit"
+          id="profile-btn"
+          class="fm-btn fm-btn-primary"
+          style="justify-self: start;"
+          data-i18n="settings.saveProfile"
+        >
+          Save Profile
+        </button>
+      </form>
+    </div>
+    
+    <div class="fm-card" style="padding: 24px;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="settings.changePassword">Change Password</h2>
+      <form id="password-form" style="display: grid; gap: 16px;">
+        <div>
+          <label for="current_password" class="fm-label" data-i18n="settings.currentPassword">Current Password</label>
+          <input
+            type="password"
+            id="current_password"
+            name="current_password"
+            required
+            autocomplete="current-password"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="new_password" class="fm-label" data-i18n="settings.newPassword">New Password</label>
+          <input
+            type="password"
+            id="new_password"
+            name="new_password"
+            required
+            autocomplete="new-password"
+            minlength="8"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="confirm_password" class="fm-label" data-i18n="settings.confirmPassword">Confirm New Password</label>
+          <input
+            type="password"
+            id="confirm_password"
+            name="confirm_password"
+            required
+            autocomplete="new-password"
+            minlength="8"
+            class="fm-input"
+          />
+        </div>
+        
+        <div id="password-error" class="fm-alert-error hidden"></div>
+        <div id="password-success" class="fm-alert-success hidden"></div>
+        
+        <button
+          type="submit"
+          id="password-btn"
+          class="fm-btn fm-btn-primary"
+          style="justify-self: start;"
+          data-i18n="settings.changePassword"
+        >
+          Change Password
+        </button>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../lib/i18n'
+    await initI18n()
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadProfile() {
+      try {
+        const response = await fetch('/api/v1/me', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to load profile')
+        
+        const user = await response.json()
+        ;(document.getElementById('email') as HTMLInputElement).value = user.email
+        ;(document.getElementById('display_name') as HTMLInputElement).value = user.display_name || ''
+        ;(document.getElementById('language') as HTMLSelectElement).value = user.language
+      } catch (error) {
+        console.error('Failed to load profile:', error)
+      }
+    }
+    
+    const profileForm = document.getElementById('profile-form') as HTMLFormElement
+    const profileError = document.getElementById('profile-error') as HTMLDivElement
+    const profileSuccess = document.getElementById('profile-success') as HTMLDivElement
+    const profileBtn = document.getElementById('profile-btn') as HTMLButtonElement
+    
+    profileForm.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(profileForm)
+      const data = {
+        display_name: formData.get('display_name') || null,
+        language: formData.get('language'),
+      }
+      
+      profileError.classList.add('hidden')
+      profileSuccess.classList.add('hidden')
+      profileBtn.disabled = true
+      profileBtn.textContent = t('common.saving')
+      
+      try {
+        const response = await fetch('/api/v1/me', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(data),
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          const msg = errorData?.message || errorData?.detail || t('settings.profileFailed')
+          throw new Error(typeof msg === 'string' ? msg : t('settings.profileFailed'))
+        }
+        
+        // If language changed, store and reload so the entire UI updates
+        const selectedLang = formData.get('language') as string
+        if (selectedLang !== localStorage.getItem('lang')) {
+          localStorage.setItem('lang', selectedLang)
+          window.location.reload()
+          return
+        }
+        
+        profileSuccess.textContent = t('settings.profileSaved')
+        profileSuccess.classList.remove('hidden')
+      } catch (error: any) {
+        profileError.textContent = error.message
+        profileError.classList.remove('hidden')
+      } finally {
+        profileBtn.disabled = false
+        profileBtn.textContent = t('settings.saveProfile')
+      }
+    })
+    
+    const passwordForm = document.getElementById('password-form') as HTMLFormElement
+    const passwordError = document.getElementById('password-error') as HTMLDivElement
+    const passwordSuccess = document.getElementById('password-success') as HTMLDivElement
+    const passwordBtn = document.getElementById('password-btn') as HTMLButtonElement
+    
+    passwordForm.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(passwordForm)
+      const newPassword = formData.get('new_password') as string
+      const confirmPassword = formData.get('confirm_password') as string
+      
+      passwordError.classList.add('hidden')
+      passwordSuccess.classList.add('hidden')
+      
+      if (newPassword !== confirmPassword) {
+        passwordError.textContent = t('settings.passwordsNoMatch')
+        passwordError.classList.remove('hidden')
+        return
+      }
+      
+      if (newPassword.length < 8) {
+        passwordError.textContent = t('settings.passwordTooShort')
+        passwordError.classList.remove('hidden')
+        return
+      }
+      
+      const data = {
+        current_password: formData.get('current_password'),
+        new_password: newPassword,
+      }
+      
+      passwordBtn.disabled = true
+      passwordBtn.textContent = t('settings.changingPassword')
+      
+      try {
+        const response = await fetch('/api/v1/me/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(data),
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          const msg = errorData?.message || errorData?.detail || t('settings.passwordFailed')
+          throw new Error(typeof msg === 'string' ? msg : t('settings.passwordFailed'))
+        }
+        
+        passwordSuccess.textContent = t('settings.passwordChanged')
+        passwordSuccess.classList.remove('hidden')
+        passwordForm.reset()
+      } catch (error: any) {
+        passwordError.textContent = error.message
+        passwordError.classList.remove('hidden')
+      } finally {
+        passwordBtn.disabled = false
+        passwordBtn.textContent = t('settings.changePassword')
+      }
+    })
+    
+    loadProfile()
+  </script>
+</Layout>

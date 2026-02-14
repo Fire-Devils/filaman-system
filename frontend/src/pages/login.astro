@@ -1,0 +1,142 @@
+---
+import '../styles/global.css'
+
+interface Props {
+  error?: string
+}
+
+const { error } = Astro.props
+---
+
+<html lang="en" data-theme="brand">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>Login - FilaMan</title>
+    <script is:inline>
+      (function() {
+        var t = localStorage.getItem('theme') || 'brand';
+        document.documentElement.setAttribute('data-theme', t);
+        var l = localStorage.getItem('lang') || 'en';
+        document.documentElement.setAttribute('lang', l);
+      })();
+    </script>
+  </head>
+  <body class="fm-page" style="display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+    <div style="width: 100%; max-width: 420px; padding: 16px;">
+      <div class="fm-card" style="padding: 32px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <div style="width: 56px; height: 56px; border-radius: 16px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); box-shadow: var(--glow); display: inline-grid; place-items: center; font-family: var(--font-serif); color: #0b120e; font-weight: 700; font-size: 1.2rem; margin-bottom: 12px;">FM</div>
+          <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;" data-i18n="login.heading">FilaMan</h1>
+          <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0;" data-i18n="login.subtitle">Filament Management System</p>
+        </div>
+
+        {error && (
+          <div class="fm-alert-error" style="margin-bottom: 16px;">
+            {error}
+          </div>
+        )}
+
+        <form id="login-form" style="display: grid; gap: 16px;">
+          <div>
+            <label for="email" class="fm-label" data-i18n="login.email">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              required
+              autocomplete="email"
+              class="fm-input"
+            />
+          </div>
+
+          <div>
+            <label for="password" class="fm-label" data-i18n="login.password">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              required
+              autocomplete="current-password"
+              class="fm-input"
+            />
+          </div>
+
+          <div id="error-message" class="fm-alert-error hidden"></div>
+
+          <button
+            type="submit"
+            id="submit-btn"
+            class="fm-btn fm-btn-primary"
+            style="width: 100%; padding: 12px 20px;"
+            data-i18n="login.signIn"
+          >
+            Sign in
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      import { t, initI18n } from '../lib/i18n'
+
+      async function init() {
+        await initI18n()
+
+        // Translate page title
+        document.title = t('login.title')
+
+        // Translate all elements with data-i18n attributes
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+          el.textContent = t(el.getAttribute('data-i18n')!)
+        })
+
+        const form = document.getElementById('login-form') as HTMLFormElement
+        const errorMessage = document.getElementById('error-message') as HTMLDivElement
+        const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault()
+
+          const email = (document.getElementById('email') as HTMLInputElement).value
+          const password = (document.getElementById('password') as HTMLInputElement).value
+
+          errorMessage.classList.add('hidden')
+          submitBtn.disabled = true
+          submitBtn.textContent = t('login.signingIn')
+
+          try {
+            const response = await fetch('/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ email, password }),
+            })
+
+            if (response.ok) {
+              window.location.href = '/'
+              return
+            }
+
+            const data = await response.json()
+            errorMessage.textContent = data.message || t('login.failed')
+            errorMessage.classList.remove('hidden')
+          } catch (err) {
+            errorMessage.textContent = t('login.networkError')
+            errorMessage.classList.remove('hidden')
+          } finally {
+            submitBtn.disabled = false
+            submitBtn.textContent = t('login.signIn')
+          }
+        })
+      }
+
+      init()
+    </script>
+  </body>
+</html>

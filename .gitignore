@@ -61,3 +61,4 @@ htmlcov/
 coverage/
 *.bak
 *.tmp
+*.db

@@ -1,0 +1,301 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+const filamentId = Astro.url.searchParams.get('filament_id')
+---
+
+<Layout title="FilaMan - New Spool">
+  <div style="margin-bottom: 24px;">
+    <a href="/spools" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
+  </div>
+  
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.newSpool">New Spool</h1>
+  
+  <div class="fm-card" style="max-width: 640px; padding: 24px;">
+    <form id="spool-form" style="display: grid; gap: 16px;">
+      <div>
+        <label for="filament_id" class="fm-label" data-i18n="spools.filament">Filament *</label>
+        <select 
+          id="filament_id" 
+          name="filament_id" 
+          required
+          class="fm-select"
+        >
+          <option value="" data-i18n="spools.selectFilament">Select filament...</option>
+        </select>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="initial_total_weight_g" class="fm-label" data-i18n="spools.initialWeight">Initial Total Weight (g)</label>
+          <input
+            type="number"
+            id="initial_total_weight_g"
+            name="initial_total_weight_g"
+            step="1"
+            data-i18n-placeholder="spools.initialWeightPlaceholder"
+            placeholder="e.g. 1250"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
+          <input
+            type="number"
+            id="empty_spool_weight_g"
+            name="empty_spool_weight_g"
+            step="1"
+            data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
+            placeholder="e.g. 250"
+            class="fm-input"
+          />
+        </div>
+      </div>
+      
+      <div>
+        <label for="location_id" class="fm-label" data-i18n="spools.location">Location</label>
+        <select 
+          id="location_id" 
+          name="location_id"
+          class="fm-select"
+        >
+          <option value="" data-i18n="spools.noLocation">No location</option>
+        </select>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="lot_number" class="fm-label" data-i18n="spools.lotNumber">Lot Number</label>
+          <input
+            type="text"
+            id="lot_number"
+            name="lot_number"
+            data-i18n-placeholder="spools.lotNumberPlaceholder"
+            placeholder="e.g. LOT-2024-001"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="low_weight_threshold_g" class="fm-label" data-i18n="spools.lowThreshold">Low Weight Threshold (g)</label>
+          <input
+            type="number"
+            id="low_weight_threshold_g"
+            name="low_weight_threshold_g"
+            value="100"
+            step="1"
+            class="fm-input"
+          />
+        </div>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="rfid_uid" class="fm-label" data-i18n="spools.rfidUid">RFID UID</label>
+          <input
+            type="text"
+            id="rfid_uid"
+            name="rfid_uid"
+            data-i18n-placeholder="spools.rfidUidPlaceholder"
+            placeholder="e.g. 04A2B3C4D5"
+            class="fm-input"
+          />
+        </div>
+        
+        <div>
+          <label for="external_id" class="fm-label" data-i18n="spools.externalId">External ID</label>
+          <input
+            type="text"
+            id="external_id"
+            name="external_id"
+            data-i18n-placeholder="spools.externalIdPlaceholder"
+            placeholder="e.g. MY-SPOOL-001"
+            class="fm-input"
+          />
+        </div>
+      </div>
+      
+      <div id="error-message" class="fm-alert-error hidden"></div>
+      
+      <div style="display: flex; gap: 12px; padding-top: 8px;">
+        <button
+          type="submit"
+          id="submit-btn"
+          class="fm-btn fm-btn-primary"
+          data-i18n="spools.createSpool"
+        >
+          Create Spool
+        </button>
+        <a
+          href="/spools"
+          class="fm-btn fm-btn-outline"
+          data-i18n="common.cancel"
+        >
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    const filamentId = new URLSearchParams(window.location.search).get('filament_id')
+
+    let filaments = []
+
+    async function loadOptions() {
+      try {
+        const [filamentsRes, locationsRes] = await Promise.all([
+          fetch('/api/v1/filaments?page_size=200', { credentials: 'include' }),
+          fetch('/api/v1/locations?page_size=200', { credentials: 'include' }),
+        ])
+        
+        if (filamentsRes.ok) {
+          const data = await filamentsRes.json()
+          filaments = data.items
+          const select = document.getElementById('filament_id')
+          data.items.forEach((f) => {
+            const option = document.createElement('option')
+            option.value = f.id
+            option.textContent = `${f.designation} (${f.type}) - ${f.manufacturer?.name || t('common.unknown')}`
+            if (filamentId && f.id === parseInt(filamentId)) {
+              option.selected = true
+            }
+            select.appendChild(option)
+          })
+          // Apply defaults if filament is pre-selected via URL param
+          if (filamentId) {
+            applyFilamentDefaults(parseInt(filamentId))
+          }
+        }
+        
+        if (locationsRes.ok) {
+          const data = await locationsRes.json()
+          const select = document.getElementById('location_id')
+          data.items.forEach((l) => {
+            const option = document.createElement('option')
+            option.value = l.id
+            option.textContent = l.name
+            select.appendChild(option)
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load options:', error)
+      }
+    }
+
+    function applyFilamentDefaults(selectedFilamentId) {
+      const filament = filaments.find((f) => f.id === selectedFilamentId)
+      if (!filament) return
+
+      const initialWeightInput = document.getElementById('initial_total_weight_g')
+      const emptySpoolInput = document.getElementById('empty_spool_weight_g')
+
+      const rawWeight = filament.raw_material_weight_g
+      const spoolWeight = filament.default_spool_weight_g
+
+      if (rawWeight != null && spoolWeight != null) {
+        initialWeightInput.value = rawWeight + spoolWeight
+      } else if (rawWeight != null) {
+        initialWeightInput.value = rawWeight
+      } else {
+        initialWeightInput.value = ''
+      }
+
+      if (spoolWeight != null) {
+        emptySpoolInput.value = spoolWeight
+      } else {
+        emptySpoolInput.value = ''
+      }
+    }
+
+    document.getElementById('filament_id').addEventListener('change', (e) => {
+      const selectedId = parseInt(e.target.value)
+      if (selectedId) {
+        applyFilamentDefaults(selectedId)
+      } else {
+        document.getElementById('initial_total_weight_g').value = ''
+        document.getElementById('empty_spool_weight_g').value = ''
+      }
+    })
+    
+    function getCsrfToken() {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    const form = document.getElementById('spool-form')
+    const errorMessage = document.getElementById('error-message')
+    const submitBtn = document.getElementById('submit-btn')
+    
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(form)
+      const selectedFilamentId = parseInt(formData.get('filament_id'))
+      const data = {
+        filament_id: selectedFilamentId,
+        low_weight_threshold_g: parseInt(formData.get('low_weight_threshold_g')) || 100,
+      }
+      
+      const initialWeight = formData.get('initial_total_weight_g')
+      if (initialWeight) data.initial_total_weight_g = parseFloat(initialWeight)
+      
+      const emptyWeight = formData.get('empty_spool_weight_g')
+      if (emptyWeight) data.empty_spool_weight_g = parseFloat(emptyWeight)
+
+      // Set remaining_weight_g: use filament raw_material_weight_g as default
+      const selectedFilament = filaments.find((f) => f.id === selectedFilamentId)
+      if (selectedFilament && selectedFilament.raw_material_weight_g != null) {
+        data.remaining_weight_g = selectedFilament.raw_material_weight_g
+      }
+      
+      const locationId = formData.get('location_id')
+      if (locationId) data.location_id = parseInt(locationId)
+      
+      const lotNumber = formData.get('lot_number')
+      if (lotNumber) data.lot_number = lotNumber
+      
+      const rfidUid = formData.get('rfid_uid')
+      if (rfidUid) data.rfid_uid = rfidUid
+      
+      const externalId = formData.get('external_id')
+      if (externalId) data.external_id = externalId
+      
+      errorMessage.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.creating')
+      
+      try {
+        const response = await fetch('/api/v1/spools', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(data),
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.message || t('spools.failedCreate'))
+        }
+        
+        const spool = await response.json()
+        window.location.href = `/spools/${spool.id}`
+      } catch (error) {
+        errorMessage.textContent = error.message || t('spools.failedCreate')
+        errorMessage.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('spools.createSpool')
+      }
+    })
+    
+    loadOptions()
+  </script>
+</Layout>

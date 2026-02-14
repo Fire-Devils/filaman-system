@@ -1,0 +1,204 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Admin Roles">
+  <div class="mb-6">
+    <a href="/admin" class="text-blue-600 hover:text-blue-700">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+  
+  <h1 class="text-3xl font-bold mb-6" data-i18n="admin.rolesPerms">Roles & Permissions</h1>
+  
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <h2 class="text-xl font-semibold mb-4" data-i18n="admin.rolesTitle">Roles</h2>
+      <div id="roles-list" class="space-y-2">
+        <p class="text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+    
+    <div>
+      <h2 class="text-xl font-semibold mb-4" data-i18n="admin.permissions">Permissions</h2>
+      <div id="permissions-list" class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <p class="text-gray-500 dark:text-gray-400" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+  </div>
+  
+  <div id="modal-container" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+      <h3 id="modal-title" class="text-lg font-semibold mb-4" data-i18n="admin.editRolePermissions">Edit Role Permissions</h3>
+      <form id="modal-form" class="space-y-4">
+        <input type="hidden" id="role-id" />
+        <p id="role-name" class="text-gray-500 dark:text-gray-400 mb-2"></p>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1" data-i18n="admin.permissions">Permissions</label>
+          <div id="permissions-checkboxes" class="space-y-2 max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded p-2"></div>
+        </div>
+        <div id="modal-error" class="hidden p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm"></div>
+        <div class="flex gap-3">
+          <button type="submit" id="modal-submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium transition-colors" data-i18n="common.save">Save</button>
+          <button type="button" id="modal-cancel" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md font-medium transition-colors" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let roles: any[] = []
+    let permissions: any[] = []
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadData() {
+      try {
+        const [rolesRes, permsRes] = await Promise.all([
+          fetch('/api/v1/admin/roles', { credentials: 'include' }),
+          fetch('/api/v1/admin/permissions', { credentials: 'include' }),
+        ])
+        
+        roles = await rolesRes.json()
+        permissions = await permsRes.json()
+        renderRoles()
+        renderPermissions()
+      } catch (error) {
+        console.error('Failed to load data:', error)
+      }
+    }
+    
+    function renderRoles() {
+      const container = document.getElementById('roles-list')!
+      
+      container.innerHTML = roles.map(r => `
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <div class="flex justify-between items-start">
+            <div>
+              <h3 class="font-semibold">${r.name}</h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">${r.key}</p>
+              ${r.description ? `<p class="text-sm text-gray-400 dark:text-gray-500 mt-1">${r.description}</p>` : ''}
+            </div>
+            <button data-id="${r.id}" data-key="${r.key}" data-name="${r.name}" class="btn-edit text-blue-600 hover:text-blue-700 text-sm">${t('admin.editPermissions')}</button>
+          </div>
+        </div>
+      `).join('')
+      
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget as HTMLButtonElement
+          openModal(parseInt(target.dataset.id!), target.dataset.key!, target.dataset.name!)
+        })
+      })
+    }
+    
+    function renderPermissions() {
+      const container = document.getElementById('permissions-list')!
+      
+      const grouped = permissions.reduce((acc: any, p) => {
+        const cat = p.category || 'other'
+        if (!acc[cat]) acc[cat] = []
+        acc[cat].push(p)
+        return acc
+      }, {})
+      
+      container.innerHTML = Object.entries(grouped).map(([category, perms]: [string, any]) => `
+        <div class="mb-4">
+          <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2 capitalize">${category}</h4>
+          <div class="space-y-1">
+            ${(perms as any[]).map(p => `
+              <div class="text-sm">
+                <span class="font-mono text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">${p.key}</span>
+                ${p.description ? `<span class="text-gray-500 dark:text-gray-400 ml-2">${p.description}</span>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')
+    }
+    
+    async function openModal(id: number, key: string, name: string) {
+      const container = document.getElementById('modal-container')!
+      const roleName = document.getElementById('role-name')!
+      const error = document.getElementById('modal-error')!
+      
+      ;(document.getElementById('role-id') as HTMLInputElement).value = String(id)
+      roleName.textContent = t('admin.roleLabel', { name, key })
+      error.classList.add('hidden')
+      
+      const response = await fetch(`/api/v1/admin/roles/${id}`, { credentials: 'include' })
+      const role = await response.json()
+      
+      const checkboxesContainer = document.getElementById('permissions-checkboxes')!
+      const grouped = permissions.reduce((acc: any, p) => {
+        const cat = p.category || 'other'
+        if (!acc[cat]) acc[cat] = []
+        acc[cat].push(p)
+        return acc
+      }, {})
+      
+      checkboxesContainer.innerHTML = Object.entries(grouped).map(([category, perms]: [string, any]) => `
+        <div class="mb-3">
+          <div class="font-medium text-gray-600 dark:text-gray-400 text-xs uppercase mb-1">${category}</div>
+          ${(perms as any[]).map(p => `
+            <label class="flex items-center gap-2 text-sm">
+              <input type="checkbox" value="${p.key}" class="perm-checkbox rounded border-gray-300" ${role.permissions?.includes(p.key) ? 'checked' : ''} />
+              <span>${p.key}</span>
+            </label>
+          `).join('')}
+        </div>
+      `).join('')
+      
+      container.classList.remove('hidden')
+    }
+    
+    function closeModal() {
+      document.getElementById('modal-container')!.classList.add('hidden')
+    }
+    
+    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const id = (document.getElementById('role-id') as HTMLInputElement).value
+      const selectedPerms = Array.from(document.querySelectorAll('.perm-checkbox:checked')).map((cb: any) => cb.value)
+      
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+      
+      try {
+        const response = await fetch(`/api/v1/admin/roles/${id}/permissions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify(selectedPerms),
+        })
+        
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.message || t('admin.failedUpdatePermissions'))
+        }
+        
+        closeModal()
+        loadData()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+    
+    loadData()
+  </script>
+</Layout>
