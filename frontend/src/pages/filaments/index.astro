@@ -15,6 +15,7 @@ import Layout from '../../layouts/Layout.astro'
       <thead>
         <tr style="background: var(--bg-soft);">
           <th data-i18n="filaments.designation">Designation</th>
+          <th data-i18n="filaments.colors">Colors</th>
           <th data-i18n="filaments.type">Type</th>
           <th data-i18n="filaments.diameter">Diameter</th>
           <th data-i18n="filaments.manufacturer">Manufacturer</th>
@@ -23,7 +24,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="filaments-table">
         <tr>
-          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="6" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -53,19 +54,28 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load filaments:', error)
         document.getElementById('filaments-table')!.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
+            <td colspan="6" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
           </tr>
         `
       }
     }
     
+    function renderColorDots(colors: any[]): string {
+      if (!colors || colors.length === 0) return '-'
+      return colors.map(fc => {
+        const c = fc.color
+        if (!c) return ''
+        return `<span title="${fc.display_name_override || c.name}" style="display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle; margin-right: 2px;"></span>`
+      }).join('')
+    }
+
     function renderFilaments(filaments: any[]) {
       const tbody = document.getElementById('filaments-table')!
       
       if (filaments.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--text-muted);">
+            <td colspan="6" style="text-align: center; color: var(--text-muted);">
               ${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.
             </td>
           </tr>
@@ -79,10 +89,11 @@ import Layout from '../../layouts/Layout.astro'
             <div style="font-weight: 500;">${f.designation}</div>
             ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${f.manufacturer_color_name}</div>` : ''}
           </td>
+          <td style="padding: 12px;">${renderColorDots(f.colors)}</td>
           <td style="padding: 12px; color: var(--text-muted);">${f.type}</td>
           <td style="padding: 12px; color: var(--text-muted);">${f.diameter_mm}mm</td>
           <td style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
-          <td style="padding: 12px; text-align: right; color: var(--text-muted);">-</td>
+          <td style="padding: 12px; text-align: right; color: var(--text-muted);">${f.spool_count ?? 0}</td>
         </tr>
       `).join('')
     }

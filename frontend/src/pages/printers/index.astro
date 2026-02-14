@@ -190,7 +190,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          if (!confirm(t('printers.confirmDelete'))) return
+          if (!(await (window as any).__fmConfirm(t('printers.confirmDelete')))) return
           
           try {
             const response = await fetch(`/api/v1/printers/${id}`, {
@@ -201,13 +201,13 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              alert(data.message || t('printers.failedDelete'))
+              await (window as any).__fmAlert(data.message || t('printers.failedDelete'))
               return
             }
             
             loadPrinters()
           } catch {
-            alert(t('printers.failedDelete'))
+            await (window as any).__fmAlert(t('printers.failedDelete'))
           }
         })
       })

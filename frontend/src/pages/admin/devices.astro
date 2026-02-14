@@ -116,7 +116,7 @@ import Layout from '../../layouts/Layout.astro'
       
       document.querySelectorAll('.btn-rotate').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-          if (!confirm(t('admin.rotateConfirm'))) return
+          if (!(await (window as any).__fmConfirm(t('admin.rotateConfirm')))) return
           
           const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
           
@@ -133,14 +133,14 @@ import Layout from '../../layouts/Layout.astro'
             showToken(data.token)
             loadDevices()
           } catch {
-            alert(t('admin.failedRotate'))
+            await (window as any).__fmAlert(t('admin.failedRotate'))
           }
         })
       })
       
       document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-          if (!confirm(t('admin.confirmDeleteDevice'))) return
+          if (!(await (window as any).__fmConfirm(t('admin.confirmDeleteDevice')))) return
           
           const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
           
@@ -152,7 +152,7 @@ import Layout from '../../layouts/Layout.astro'
             })
             loadDevices()
           } catch {
-            alert(t('admin.failedDeleteDevice'))
+            await (window as any).__fmAlert(t('admin.failedDeleteDevice'))
           }
         })
       })

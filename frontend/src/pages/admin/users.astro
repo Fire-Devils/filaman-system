@@ -138,7 +138,7 @@ import Layout from '../../layouts/Layout.astro'
           const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
           const newPassword = prompt(t('admin.resetPwPrompt'))
           if (!newPassword || newPassword.length < 8) {
-            alert(t('admin.resetPwTooShort'))
+            if (newPassword !== null) await (window as any).__fmAlert(t('admin.resetPwTooShort'))
             return
           }
           
@@ -150,9 +150,9 @@ import Layout from '../../layouts/Layout.astro'
             })
             
             if (!response.ok) throw new Error('Failed to reset password')
-            alert(t('admin.resetPwSuccess'))
+            await (window as any).__fmAlert(t('admin.resetPwSuccess'))
           } catch {
-            alert(t('admin.resetPwFailed'))
+            await (window as any).__fmAlert(t('admin.resetPwFailed'))
           }
         })
       })

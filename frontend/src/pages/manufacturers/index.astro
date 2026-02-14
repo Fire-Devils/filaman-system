@@ -164,7 +164,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
 
-          if (!confirm(t('manufacturers.confirmDelete'))) return
+          if (!(await (window as any).__fmConfirm(t('manufacturers.confirmDelete')))) return
 
           try {
             const response = await fetch(`/api/v1/manufacturers/${id}`, {
@@ -175,13 +175,13 @@ import Layout from '../../layouts/Layout.astro'
 
             if (!response.ok) {
               const data = await response.json()
-              alert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
+              await (window as any).__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
               return
             }
 
             loadManufacturers()
           } catch {
-            alert(t('manufacturers.failedDelete'))
+            await (window as any).__fmAlert(t('manufacturers.failedDelete'))
           }
         })
       })

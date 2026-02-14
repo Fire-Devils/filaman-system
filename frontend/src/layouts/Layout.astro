@@ -11,7 +11,7 @@ const { title } = Astro.props
 <html lang="en" data-theme="brand">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap"
@@ -33,7 +33,7 @@ const { title } = Astro.props
       <aside class="fm-surface" style="border-right: 1px solid var(--border); padding: 24px 18px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto;">
         <!-- Logo -->
         <div style="display: flex; align-items: center; gap: 12px;">
-          <div style="width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); box-shadow: var(--glow); display: grid; place-items: center; font-family: var(--font-serif); color: #0b120e; font-weight: 700; font-size: 1rem;">FM</div>
+          <img src="/logo.png" alt="FilaMan" style="width: 42px; height: 42px; border-radius: 14px;" />
           <div>
             <div style="font-weight: 700; letter-spacing: 0.6px;">FilaMan</div>
             <small style="color: var(--text-muted); font-size: 0.7rem;" data-i18n="app.subtitle">Filament Management</small>
@@ -109,6 +109,18 @@ const { title } = Astro.props
       </main>
     </div>
 
+    <!-- Global confirm / alert modal -->
+    <div id="fm-confirm-overlay" class="fm-modal-overlay">
+      <div class="fm-modal">
+        <h3 id="fm-confirm-title" class="fm-modal-title"></h3>
+        <p id="fm-confirm-message" class="fm-modal-message"></p>
+        <div class="fm-modal-actions">
+          <button id="fm-confirm-cancel" class="fm-btn fm-btn-outline"></button>
+          <button id="fm-confirm-ok" class="fm-btn fm-btn-danger"></button>
+        </div>
+      </div>
+    </div>
+
     <script>
       import { t, initI18n, syncLangFromUser } from '../lib/i18n'
 
@@ -139,6 +151,64 @@ const { title } = Astro.props
       ;(window as any).__t = t
       ;(window as any).__translatePage = translatePage
       ;(window as any).__syncLangFromUser = syncLangFromUser
+
+      /* ── Global confirm / alert modal ────────────────────────── */
+      ;(function setupFmModal() {
+        const overlay = document.getElementById('fm-confirm-overlay')!
+        const titleEl = document.getElementById('fm-confirm-title')!
+        const messageEl = document.getElementById('fm-confirm-message')!
+        const okBtn = document.getElementById('fm-confirm-ok')!
+        const cancelBtn = document.getElementById('fm-confirm-cancel')!
+
+        let resolveFn: ((v: boolean) => void) | null = null
+
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean): Promise<boolean> {
+          titleEl.textContent = title
+          messageEl.textContent = message
+          okBtn.textContent = okLabel
+          okBtn.className = isDanger ? 'fm-btn fm-btn-danger' : 'fm-btn fm-btn-primary'
+
+          if (cancelLabel) {
+            cancelBtn.textContent = cancelLabel
+            cancelBtn.style.display = ''
+          } else {
+            cancelBtn.style.display = 'none'
+          }
+
+          overlay.classList.add('open')
+
+          return new Promise<boolean>(resolve => {
+            resolveFn = resolve
+          })
+        }
+
+        function closeModal(result: boolean) {
+          overlay.classList.remove('open')
+          if (resolveFn) {
+            resolveFn(result)
+            resolveFn = null
+          }
+        }
+
+        okBtn.addEventListener('click', () => closeModal(true))
+        cancelBtn.addEventListener('click', () => closeModal(false))
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) closeModal(false)
+        })
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal(false)
+        })
+
+        // fmConfirm(message) – replacement for window.confirm()
+        ;(window as any).__fmConfirm = function(message: string): Promise<boolean> {
+          return openModal(t('common.confirmTitle') || t('common.delete'), message, t('common.delete'), t('common.cancel'), true)
+        }
+
+        // fmAlert(message) – replacement for window.alert()
+        ;(window as any).__fmAlert = function(message: string): Promise<boolean> {
+          return openModal(t('common.errorTitle') || 'Error', message, t('common.close'), null, false)
+        }
+      })()
 
       /* ── Theme switcher ──────────────────────────────────────── */
       const themeButtons = document.querySelectorAll('.fm-theme-toggle button')

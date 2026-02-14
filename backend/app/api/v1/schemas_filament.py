@@ -47,6 +47,32 @@ class ColorResponse(BaseModel):
         from_attributes = True
 
 
+class FilamentColorEntry(BaseModel):
+    """A single color assignment for a filament (used in create/replace)."""
+    color_id: int
+    position: int = 1
+    display_name_override: str | None = None
+
+
+class FilamentColorResponse(BaseModel):
+    """Color entry as returned by the API."""
+    id: int
+    color_id: int
+    position: int
+    display_name_override: str | None
+    color: ColorResponse | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class FilamentColorsReplace(BaseModel):
+    """Body for PUT /filaments/{id}/colors."""
+    color_mode: str  # "single" | "multi"
+    multi_color_style: str | None = None  # "striped" | "gradient"
+    colors: list[FilamentColorEntry] = []
+
+
 class FilamentCreate(BaseModel):
     manufacturer_id: int
     designation: str
@@ -63,6 +89,7 @@ class FilamentCreate(BaseModel):
     color_mode: str = "single"
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
+    colors: list[FilamentColorEntry] | None = None
 
 
 class FilamentUpdate(BaseModel):
@@ -107,3 +134,5 @@ class FilamentResponse(BaseModel):
 
 class FilamentDetailResponse(FilamentResponse):
     manufacturer: ManufacturerResponse | None = None
+    spool_count: int = 0
+    colors: list[FilamentColorResponse] = []

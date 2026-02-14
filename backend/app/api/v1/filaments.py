@@ -11,6 +11,9 @@ from app.api.v1.schemas_filament import (
     ColorCreate,
     ColorResponse,
     ColorUpdate,
+    FilamentColorEntry,
+    FilamentColorResponse,
+    FilamentColorsReplace,
     FilamentCreate,
     FilamentDetailResponse,
     FilamentResponse,
@@ -19,7 +22,7 @@ from app.api.v1.schemas_filament import (
     ManufacturerResponse,
     ManufacturerUpdate,
 )
-from app.models import Color, Filament, FilamentColor, Manufacturer
+from app.models import Color, Filament, FilamentColor, Manufacturer, Spool
 
 router = APIRouter(prefix="/manufacturers", tags=["manufacturers"])
 
@@ -236,6 +239,19 @@ async def delete_color(
 
 router_filaments = APIRouter(prefix="/filaments", tags=["filaments"])
 
+# Default filament types (always included in the types list)
+DEFAULT_FILAMENT_TYPES = ["PLA", "PETG", "ABS", "ASA", "TPU", "NYLON", "PC"]
+
+
+@router_filaments.get("/types", response_model=list[str])
+async def list_filament_types(db: DBSession, principal: PrincipalDep):
+    """Return all known filament types: defaults merged with distinct types from DB, sorted."""
+    result = await db.execute(select(Filament.type).distinct())
+    db_types = {row[0] for row in result.all() if row[0]}
+
+    all_types = sorted(set(DEFAULT_FILAMENT_TYPES) | db_types)
+    return all_types
+
 
 @router_filaments.get("", response_model=PaginatedResponse[FilamentDetailResponse])
 async def list_filaments(
@@ -246,7 +262,10 @@ async def list_filaments(
     type: str | None = None,
     manufacturer_id: int | None = None,
 ):
-    query = select(Filament).options(selectinload(Filament.manufacturer))
+    query = select(Filament).options(
+        selectinload(Filament.manufacturer),
+        selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
+    )
 
     if type:
         query = query.where(Filament.type == type)
@@ -256,7 +275,32 @@ async def list_filaments(
     query = query.order_by(Filament.designation).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
-    items = result.scalars().all()
+    items = result.scalars().unique().all()
+
+    # Compute spool counts for the fetched filaments (excluding soft-deleted spools)
+    filament_ids = [f.id for f in items]
+    spool_counts: dict[int, int] = {}
+    if filament_ids:
+        spool_count_query = (
+            select(Spool.filament_id, func.count(Spool.id))
+            .where(Spool.filament_id.in_(filament_ids))
+            .where(Spool.deleted_at.is_(None))
+            .group_by(Spool.filament_id)
+        )
+        spool_result = await db.execute(spool_count_query)
+        spool_counts = {row[0]: row[1] for row in spool_result.all()}
+
+    items_with_count = [
+        FilamentDetailResponse.model_validate(
+            {
+                **f.__dict__,
+                "manufacturer": f.manufacturer,
+                "spool_count": spool_counts.get(f.id, 0),
+                "colors": sorted(f.filament_colors, key=lambda fc: fc.position),
+            }
+        )
+        for f in items
+    ]
 
     count_query = select(func.count()).select_from(Filament)
     if type:
@@ -267,20 +311,53 @@ async def list_filaments(
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 
-    return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+    return PaginatedResponse(items=items_with_count, page=page, page_size=page_size, total=total)
 
 
-@router_filaments.post("", response_model=FilamentResponse, status_code=status.HTTP_201_CREATED)
+@router_filaments.post("", response_model=FilamentDetailResponse, status_code=status.HTTP_201_CREATED)
 async def create_filament(
     data: FilamentCreate,
     db: DBSession,
     principal = RequirePermission("filaments:create"),
 ):
-    filament = Filament(**data.model_dump())
+    # Separate colors from the filament data
+    color_entries = data.colors or []
+    filament_data = data.model_dump(exclude={"colors"})
+    filament = Filament(**filament_data)
     db.add(filament)
+    await db.flush()  # get filament.id
+
+    # Create filament_colors
+    for entry in color_entries:
+        fc = FilamentColor(
+            filament_id=filament.id,
+            color_id=entry.color_id,
+            position=entry.position,
+            display_name_override=entry.display_name_override,
+        )
+        db.add(fc)
+
     await db.commit()
-    await db.refresh(filament)
-    return filament
+
+    # Reload with relationships
+    result = await db.execute(
+        select(Filament)
+        .where(Filament.id == filament.id)
+        .options(
+            selectinload(Filament.manufacturer),
+            selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
+        )
+    )
+    filament = result.scalar_one()
+
+    return FilamentDetailResponse.model_validate(
+        {
+            **filament.__dict__,
+            "manufacturer": filament.manufacturer,
+            "spool_count": 0,
+            "colors": sorted(filament.filament_colors, key=lambda fc: fc.position),
+        }
+    )
 
 
 @router_filaments.get("/{filament_id}", response_model=FilamentDetailResponse)
@@ -288,7 +365,10 @@ async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep)
     result = await db.execute(
         select(Filament)
         .where(Filament.id == filament_id)
-        .options(selectinload(Filament.manufacturer))
+        .options(
+            selectinload(Filament.manufacturer),
+            selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
+        )
     )
     filament = result.scalar_one_or_none()
     if not filament:
@@ -296,7 +376,23 @@ async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep)
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Filament not found"},
         )
-    return filament
+
+    # Compute spool count (excluding soft-deleted spools)
+    spool_count_result = await db.execute(
+        select(func.count(Spool.id))
+        .where(Spool.filament_id == filament_id)
+        .where(Spool.deleted_at.is_(None))
+    )
+    spool_count = spool_count_result.scalar() or 0
+
+    return FilamentDetailResponse.model_validate(
+        {
+            **filament.__dict__,
+            "manufacturer": filament.manufacturer,
+            "spool_count": spool_count,
+            "colors": sorted(filament.filament_colors, key=lambda fc: fc.position),
+        }
+    )
 
 
 @router_filaments.patch("/{filament_id}", response_model=FilamentResponse)
@@ -320,6 +416,57 @@ async def update_filament(
     await db.commit()
     await db.refresh(filament)
     return filament
+
+
+@router_filaments.put("/{filament_id}/colors", response_model=list[FilamentColorResponse])
+async def replace_filament_colors(
+    filament_id: int,
+    data: FilamentColorsReplace,
+    db: DBSession,
+    principal = RequirePermission("filaments:update"),
+):
+    """Replace all color assignments for a filament (spec: PUT /filaments/{id}/colors)."""
+    result = await db.execute(select(Filament).where(Filament.id == filament_id))
+    filament = result.scalar_one_or_none()
+    if not filament:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Filament not found"},
+        )
+
+    # Update color_mode and multi_color_style on the filament
+    filament.color_mode = data.color_mode
+    filament.multi_color_style = data.multi_color_style
+
+    # Delete existing filament_colors
+    existing = await db.execute(
+        select(FilamentColor).where(FilamentColor.filament_id == filament_id)
+    )
+    for fc in existing.scalars().all():
+        await db.delete(fc)
+
+    # Create new color entries
+    new_colors = []
+    for entry in data.colors:
+        fc = FilamentColor(
+            filament_id=filament_id,
+            color_id=entry.color_id,
+            position=entry.position,
+            display_name_override=entry.display_name_override,
+        )
+        db.add(fc)
+        new_colors.append(fc)
+
+    await db.commit()
+
+    # Reload with color relationships
+    result = await db.execute(
+        select(FilamentColor)
+        .where(FilamentColor.filament_id == filament_id)
+        .options(selectinload(FilamentColor.color))
+        .order_by(FilamentColor.position)
+    )
+    return result.scalars().all()
 
 
 @router_filaments.delete("/{filament_id}", status_code=status.HTTP_204_NO_CONTENT)

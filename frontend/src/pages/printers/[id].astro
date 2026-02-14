@@ -158,7 +158,7 @@ const { id } = Astro.params
       `
       
       document.getElementById('btn-delete')?.addEventListener('click', async () => {
-        if (!confirm(t('printers.confirmDelete'))) return
+        if (!(await (window as any).__fmConfirm(t('printers.confirmDelete')))) return
         
         try {
           const response = await fetch(`/api/v1/printers/${id}`, {
@@ -170,10 +170,10 @@ const { id } = Astro.params
           if (response.ok) {
             window.location.href = '/printers'
           } else {
-            alert(t('printers.failedDelete'))
+            await (window as any).__fmAlert(t('printers.failedDelete'))
           }
         } catch {
-          alert(t('printers.failedDelete'))
+          await (window as any).__fmAlert(t('printers.failedDelete'))
         }
       })
       
@@ -192,10 +192,10 @@ const { id } = Astro.params
           if (response.ok) {
             loadPrinter()
           } else {
-            alert(t('printers.failedUpdate'))
+            await (window as any).__fmAlert(t('printers.failedUpdate'))
           }
         } catch {
-          alert(t('printers.failedUpdate'))
+          await (window as any).__fmAlert(t('printers.failedUpdate'))
         }
       })
       

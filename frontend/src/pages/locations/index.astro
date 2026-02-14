@@ -157,7 +157,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          if (!confirm(t('locations.confirmDelete'))) return
+          if (!(await (window as any).__fmConfirm(t('locations.confirmDelete')))) return
           
           try {
             const response = await fetch(`/api/v1/locations/${id}`, {
@@ -168,13 +168,13 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              alert(data.message || t('locations.failedDelete'))
+              await (window as any).__fmAlert(data.message || t('locations.failedDelete'))
               return
             }
             
             loadLocations()
           } catch {
-            alert(t('locations.failedDelete'))
+            await (window as any).__fmAlert(t('locations.failedDelete'))
           }
         })
       })

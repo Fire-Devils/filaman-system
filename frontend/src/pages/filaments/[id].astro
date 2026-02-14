@@ -40,8 +40,24 @@ const { id } = Astro.params
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
 
-    async function loadFilament() {
+    const finishLabels: Record<string, string> = {
+      solid: 'filaments.finishSolid',
+      translucent: 'filaments.finishTranslucent',
+      neon: 'filaments.finishNeon',
+      glow: 'filaments.finishGlow',
+    }
 
+    const colorModeLabels: Record<string, string> = {
+      single: 'filaments.colorModeSingle',
+      multi: 'filaments.colorModeMulti',
+    }
+
+    const multiStyleLabels: Record<string, string> = {
+      striped: 'filaments.styleStriped',
+      gradient: 'filaments.styleGradient',
+    }
+
+    async function loadFilament() {
       try {
         const response = await fetch(`/api/v1/filaments/${id}`, {
           credentials: 'include',
@@ -67,10 +83,87 @@ const { id } = Astro.params
         `
       }
     }
-    
-    function renderFilament(f) {
 
-      document.getElementById('filament-content').innerHTML = `
+    function renderColorSwatches(colors: any[]): string {
+      if (!colors || colors.length === 0) return '-'
+      return colors.map(fc => {
+        const c = fc.color
+        if (!c) return ''
+        const label = fc.display_name_override || c.name
+        return `<span style="display: inline-flex; align-items: center; gap: 6px; margin-right: 10px;">
+          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle;"></span>
+          <span>${label}</span>
+        </span>`
+      }).join('')
+    }
+
+    function renderDetailCard(label: string, value: string): string {
+      return `<div class="fm-card">
+        <div style="font-size: 0.85rem; color: var(--text-muted);">${label}</div>
+        <div style="font-size: 1.1rem; font-weight: 600;">${value}</div>
+      </div>`
+    }
+    
+    function renderFilament(f: any) {
+      // Build the secondary info cards grid
+      const cards: string[] = []
+      cards.push(renderDetailCard(t('filaments.type'), f.type))
+      if (f.material_subgroup) {
+        cards.push(renderDetailCard(t('filaments.materialSubgroup'), f.material_subgroup))
+      }
+      cards.push(renderDetailCard(t('filaments.diameter'), f.diameter_mm + 'mm'))
+      if (f.finish_type) {
+        const finishKey = finishLabels[f.finish_type]
+        cards.push(renderDetailCard(t('filaments.finishType'), finishKey ? t(finishKey) : f.finish_type))
+      }
+      cards.push(renderDetailCard(t('filaments.rawMaterial'), f.raw_material_weight_g ? f.raw_material_weight_g + 'g' : '-'))
+      cards.push(renderDetailCard(t('filaments.spoolWeight'), f.default_spool_weight_g ? f.default_spool_weight_g + 'g' : '-'))
+      if (f.price != null) {
+        cards.push(renderDetailCard(t('filaments.price'), f.price.toFixed(2)))
+      }
+      if (f.density_g_cm3 != null) {
+        cards.push(renderDetailCard(t('filaments.density'), f.density_g_cm3.toString()))
+      }
+
+      // Color mode info
+      const colorModeKey = colorModeLabels[f.color_mode]
+      let colorModeDisplay = colorModeKey ? t(colorModeKey) : f.color_mode
+      if (f.color_mode === 'multi' && f.multi_color_style) {
+        const styleKey = multiStyleLabels[f.multi_color_style]
+        colorModeDisplay += ` (${styleKey ? t(styleKey) : f.multi_color_style})`
+      }
+
+      // Colors section
+      const colorsHtml = f.colors && f.colors.length > 0
+        ? `<div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
+              ${t('filaments.colors')} &mdash; ${colorModeDisplay}
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+              ${renderColorSwatches(f.colors)}
+            </div>
+          </div>`
+        : ''
+
+      // Manufacturer color name
+      const mfgColorHtml = f.manufacturer_color_name
+        ? `<div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.manufacturerColorName')}</div>
+            <div style="font-size: 1.1rem; font-weight: 600;">${f.manufacturer_color_name}</div>
+          </div>`
+        : ''
+
+      // Shop URL
+      const shopHtml = f.shop_url
+        ? `<div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.shopUrl')}</div>
+            <div style="font-size: 1.1rem;">
+              <a href="${f.shop_url}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); word-break: break-all;">${f.shop_url}</a>
+            </div>
+          </div>`
+        : ''
+
+      document.getElementById('filament-content')!.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
@@ -82,34 +175,16 @@ const { id } = Astro.params
         </div>
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.type')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.type}</div>
-          </div>
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.diameter')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.diameter_mm}mm</div>
-          </div>
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.rawMaterial')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.raw_material_weight_g ? f.raw_material_weight_g + 'g' : '-'}</div>
-          </div>
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.spoolWeight')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.default_spool_weight_g ? f.default_spool_weight_g + 'g' : '-'}</div>
-          </div>
+          ${cards.join('\n')}
         </div>
-        
-        ${f.manufacturer_color_name ? `
-          <div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.color')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.manufacturer_color_name}</div>
-          </div>
-        ` : ''}
+
+        ${colorsHtml}
+        ${mfgColorHtml}
+        ${shopHtml}
       `
     }
     
-    async function loadSpools(filamentId) {
+    async function loadSpools(filamentId: number) {
       try {
         const response = await fetch(`/api/v1/spools?filament_id=${filamentId}&page_size=100`, {
           credentials: 'include',
@@ -118,15 +193,15 @@ const { id } = Astro.params
         if (!response.ok) throw new Error('Failed to fetch spools')
         
         const data = await response.json()
-        document.getElementById('spools-section').classList.remove('hidden')
+        document.getElementById('spools-section')!.classList.remove('hidden')
         renderSpools(data.items)
       } catch (error) {
         console.error('Failed to load spools:', error)
       }
     }
     
-    function renderSpools(spools) {
-      const tbody = document.getElementById('spools-table')
+    function renderSpools(spools: any[]) {
+      const tbody = document.getElementById('spools-table')!
       
       if (spools.length === 0) {
         tbody.innerHTML = `

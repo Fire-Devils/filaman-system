@@ -206,7 +206,7 @@ const { id } = Astro.params
       document.getElementById('actions-section').classList.remove('hidden')
       
       document.getElementById('btn-delete')?.addEventListener('click', async () => {
-        if (!confirm(t('spools.confirmDelete'))) return
+        if (!(await (window as any).__fmConfirm(t('spools.confirmDelete')))) return
         
         try {
           const response = await fetch(`/api/v1/spools/${id}`, {
@@ -218,10 +218,10 @@ const { id } = Astro.params
           if (response.ok) {
             window.location.href = '/spools'
           } else {
-            alert(t('spools.failedDelete'))
+            await (window as any).__fmAlert(t('spools.failedDelete'))
           }
         } catch {
-          alert(t('spools.failedDelete'))
+          await (window as any).__fmAlert(t('spools.failedDelete'))
         }
       })
     }
