@@ -7,30 +7,40 @@ from sqlalchemy import text
 from app.api.auth import router as auth_router
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.database import async_session_maker, engine
+from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.seeds import run_all_seeds
-from app.models import Base
 from app.plugins.manager import plugin_manager
 
 setup_logging()
 logger = __import__('logging').getLogger(__name__)
 
 
-async def ensure_tables_exist():
-    async with engine.begin() as conn:
-        result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'"))
-        if result.fetchone() is None:
-            await conn.run_sync(Base.metadata.create_all)
-            await conn.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"))
-            await conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('a1b2c3d4e5f6')"))
+def run_migrations() -> None:
+    """Alembic-Migrationen programmatisch ausfuehren (upgrade head).
+
+    Funktioniert sowohl bei frischer DB (erstellt alle Tabellen) als auch
+    bei bestehender DB (fuehrt nur ausstehende Migrationen aus).
+    Wird synchron ausgefuehrt, da Alembic seinen eigenen Engine verwaltet.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config()
+    alembic_cfg.set_main_option("script_location", str(
+        __import__("pathlib").Path(__file__).resolve().parent.parent / "alembic"
+    ))
+    alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
+
+    command.upgrade(alembic_cfg, "head")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting FilaMan backend...")
-    await ensure_tables_exist()
+    run_migrations()
+    logger.info("Database migrations applied")
     async with async_session_maker() as db:
         await run_all_seeds(db)
     await plugin_manager.start_all()
