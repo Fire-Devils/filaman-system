@@ -9,12 +9,43 @@ import Layout from '../../layouts/Layout.astro'
     .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
     .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
     .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .filter-bar .fm-input-search {
+      flex: 1;
+      min-width: 200px;
+      max-width: 400px;
+    }
   </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="filaments.title">Filaments</h1>
     <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
       Add Filament
     </a>
+  </div>
+  
+  <div class="filter-bar">
+    <input
+      type="text"
+      id="filter-search"
+      class="fm-input fm-input-search"
+      data-i18n-placeholder="filaments.searchPlaceholder"
+      placeholder="Search designation, color, manufacturer..."
+    />
+    <select id="filter-manufacturer" class="fm-select" style="width: auto; min-width: 160px;">
+      <option value="" data-i18n="filaments.allManufacturers">All Manufacturers</option>
+    </select>
+    <select id="filter-type" class="fm-select" style="width: auto; min-width: 140px;">
+      <option value="" data-i18n="filaments.allTypes">All Types</option>
+    </select>
+    <select id="filter-color" class="fm-select" style="width: auto; min-width: 140px;">
+      <option value="" data-i18n="filaments.allColors">All Colors</option>
+    </select>
   </div>
   
   <div class="fm-card" style="padding: 0; overflow: hidden;">
@@ -46,12 +77,16 @@ import Layout from '../../layouts/Layout.astro'
     let currentPage = 1
     const pageSize = 50
     let allFilaments: any[] = []
+    let filteredFilaments: any[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     let filterManufacturerId: string | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
     filterManufacturerId = urlParams.get('manufacturer_id')
+
+    // Debounce timer for search input
+    let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -66,7 +101,7 @@ import Layout from '../../layouts/Layout.astro'
             sortDirection = 'asc'
           }
           updateSortIndicators()
-          renderFilaments(allFilaments)
+          applyFiltersAndRender()
         })
       })
     }
@@ -101,13 +136,125 @@ import Layout from '../../layouts/Layout.astro'
         return sortDirection === 'asc' ? cmp : -cmp
       })
     }
+
+    function getFilterValues() {
+      const search = (document.getElementById('filter-search') as HTMLInputElement).value.toLowerCase().trim()
+      const manufacturerId = (document.getElementById('filter-manufacturer') as HTMLSelectElement).value
+      const type = (document.getElementById('filter-type') as HTMLSelectElement).value
+      const color = (document.getElementById('filter-color') as HTMLSelectElement).value
+      return { search, manufacturerId, type, color }
+    }
+
+    function filterFilaments(filaments: any[]): any[] {
+      const { search, manufacturerId, type, color } = getFilterValues()
+
+      return filaments.filter(f => {
+        // Manufacturer filter
+        if (manufacturerId && String(f.manufacturer_id) !== manufacturerId) return false
+
+        // Type filter
+        if (type && f.type !== type) return false
+
+        // Color filter
+        if (color) {
+          const hasColor = f.colors?.some((fc: any) => {
+            const c = fc.color
+            return c && c.name === color
+          })
+          if (!hasColor) return false
+        }
+
+        // Text search across designation, manufacturer name, color names, type, manufacturer_color_name
+        if (search) {
+          const designation = (f.designation || '').toLowerCase()
+          const manufacturerName = (f.manufacturer?.name || '').toLowerCase()
+          const colorNames = (f.colors || []).map((fc: any) => {
+            const parts: string[] = []
+            if (fc.color?.name) parts.push(fc.color.name.toLowerCase())
+            if (fc.display_name_override) parts.push(fc.display_name_override.toLowerCase())
+            return parts.join(' ')
+          }).join(' ')
+          const typeName = (f.type || '').toLowerCase()
+          const mfColorName = (f.manufacturer_color_name || '').toLowerCase()
+
+          const haystack = `${designation} ${manufacturerName} ${colorNames} ${typeName} ${mfColorName}`
+          if (!haystack.includes(search)) return false
+        }
+
+        return true
+      })
+    }
+
+    function applyFiltersAndRender() {
+      filteredFilaments = filterFilaments(allFilaments)
+      currentPage = 1
+      renderPage()
+    }
+
+    function renderPage() {
+      const sorted = sortFilaments(filteredFilaments)
+      const startIdx = (currentPage - 1) * pageSize
+      const pageItems = sorted.slice(startIdx, startIdx + pageSize)
+      renderFilaments(pageItems)
+      renderPagination(filteredFilaments.length, currentPage)
+    }
+
+    function populateFilterDropdowns(filaments: any[]) {
+      // Manufacturers
+      const mfSelect = document.getElementById('filter-manufacturer') as HTMLSelectElement
+      const manufacturers = new Map<string, string>()
+      filaments.forEach(f => {
+        if (f.manufacturer?.id && f.manufacturer?.name) {
+          manufacturers.set(String(f.manufacturer.id), f.manufacturer.name)
+        }
+      })
+      const sortedMfs = [...manufacturers.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+      sortedMfs.forEach(([id, name]) => {
+        const opt = document.createElement('option')
+        opt.value = id
+        opt.textContent = name
+        mfSelect.appendChild(opt)
+      })
+
+      // If URL has manufacturer_id, pre-select
+      if (filterManufacturerId) {
+        mfSelect.value = filterManufacturerId
+      }
+
+      // Types
+      const typeSelect = document.getElementById('filter-type') as HTMLSelectElement
+      const types = new Set<string>()
+      filaments.forEach(f => { if (f.type) types.add(f.type) })
+      const sortedTypes = [...types].sort()
+      sortedTypes.forEach(type => {
+        const opt = document.createElement('option')
+        opt.value = type
+        opt.textContent = type
+        typeSelect.appendChild(opt)
+      })
+
+      // Colors
+      const colorSelect = document.getElementById('filter-color') as HTMLSelectElement
+      const colors = new Map<string, string>()
+      filaments.forEach(f => {
+        (f.colors || []).forEach((fc: any) => {
+          const c = fc.color
+          if (c?.name) colors.set(c.name, c.hex_code || '')
+        })
+      })
+      const sortedColors = [...colors.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      sortedColors.forEach(([name, hex]) => {
+        const opt = document.createElement('option')
+        opt.value = name
+        opt.textContent = name
+        colorSelect.appendChild(opt)
+      })
+    }
     
-    async function loadFilaments(page: number = 1) {
-      let url = `/api/v1/filaments?page=${page}&page_size=${pageSize}`
-      if (filterManufacturerId) url += `&manufacturer_id=${filterManufacturerId}`
-      
+    async function loadFilaments() {
+      // Load all filaments for client-side filtering
       try {
-        const response = await fetch(url, {
+        const response = await fetch(`/api/v1/filaments?page=1&page_size=200`, {
           credentials: 'include',
         })
         
@@ -115,8 +262,21 @@ import Layout from '../../layouts/Layout.astro'
         
         const data = await response.json()
         allFilaments = data.items
-        renderFilaments(allFilaments)
-        renderPagination(data.total, data.page)
+
+        // If there are more, load remaining pages
+        if (data.total > 200) {
+          const totalPages = Math.ceil(data.total / 200)
+          for (let p = 2; p <= totalPages; p++) {
+            const res = await fetch(`/api/v1/filaments?page=${p}&page_size=200`, { credentials: 'include' })
+            if (res.ok) {
+              const d = await res.json()
+              allFilaments = allFilaments.concat(d.items)
+            }
+          }
+        }
+
+        populateFilterDropdowns(allFilaments)
+        applyFiltersAndRender()
       } catch (error) {
         console.error('Failed to load filaments:', error)
         document.getElementById('filaments-table')!.innerHTML = `
@@ -138,20 +298,21 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderFilaments(filaments: any[]) {
       const tbody = document.getElementById('filaments-table')!
-      const sorted = sortFilaments(filaments)
       
-      if (sorted.length === 0) {
+      if (filaments.length === 0) {
+        const { search, manufacturerId, type, color } = getFilterValues()
+        const hasFilters = search || manufacturerId || type || color
         tbody.innerHTML = `
           <tr>
             <td colspan="6" style="text-align: center; color: var(--text-muted);">
-              ${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.
+              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
         return
       }
       
-      tbody.innerHTML = sorted.map(f => `
+      tbody.innerHTML = filaments.map(f => `
         <tr style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
           <td style="padding: 12px;">
             <div style="font-weight: 500;">${f.designation}</div>
@@ -200,12 +361,27 @@ import Layout from '../../layouts/Layout.astro'
       `
       
       document.getElementById('prev-btn')?.addEventListener('click', () => {
-        if (page > 1) loadFilaments(page - 1)
+        if (page > 1) {
+          currentPage = page - 1
+          renderPage()
+        }
       })
       document.getElementById('next-btn')?.addEventListener('click', () => {
-        if (page < totalPages) loadFilaments(page + 1)
+        if (page < totalPages) {
+          currentPage = page + 1
+          renderPage()
+        }
       })
     }
+
+    // Wire up filter events
+    document.getElementById('filter-search')?.addEventListener('input', () => {
+      if (searchTimeout) clearTimeout(searchTimeout)
+      searchTimeout = setTimeout(() => applyFiltersAndRender(), 250)
+    })
+    document.getElementById('filter-manufacturer')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-type')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-color')?.addEventListener('change', () => applyFiltersAndRender())
     
     setupSortableHeaders()
     loadFilaments()

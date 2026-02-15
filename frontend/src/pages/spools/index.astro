@@ -9,6 +9,19 @@ import Layout from '../../layouts/Layout.astro'
     .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
     .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
     .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .filter-bar .fm-input-search {
+      flex: 1;
+      min-width: 200px;
+      max-width: 400px;
+    }
+  
   </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="spools.title">Spools</h1>
@@ -17,13 +30,30 @@ import Layout from '../../layouts/Layout.astro'
     </a>
   </div>
   
-  <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+  <div class="filter-bar">
+    <input
+      type="text"
+      id="filter-search"
+      class="fm-input fm-input-search"
+      data-i18n-placeholder="spools.searchPlaceholder"
+      placeholder="Search filament, manufacturer..."
+    />
     <select id="filter-status" class="fm-select" style="width: auto; min-width: 160px;">
       <option value="" data-i18n="spools.allStatuses">All Statuses</option>
     </select>
     <select id="filter-location" class="fm-select" style="width: auto; min-width: 160px;">
       <option value="" data-i18n="spools.allLocations">All Locations</option>
     </select>
+    <select id="filter-manufacturer" class="fm-select" style="width: auto; min-width: 160px;">
+      <option value="" data-i18n="spools.allManufacturers">All Manufacturers</option>
+    </select>
+    <select id="filter-material" class="fm-select" style="width: auto; min-width: 140px;">
+      <option value="" data-i18n="spools.allMaterials">All Materials</option>
+    </select>
+    <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+      <input type="checkbox" id="filter-group" />
+      <span data-i18n="spools.groupByFilament">Group by Filament</span>
+    </label>
   </div>
   
   <div class="fm-card" style="padding: 0; overflow: hidden;">
@@ -32,6 +62,8 @@ import Layout from '../../layouts/Layout.astro'
         <tr style="background: var(--bg-soft);">
           <th data-i18n="spools.id" data-sort="id" class="sortable">ID</th>
           <th data-i18n="spools.filament" data-sort="filament_id" class="sortable">Filament</th>
+          <th data-i18n="spools.manufacturer" data-sort="manufacturer" class="sortable">Manufacturer</th>
+          <th data-i18n="spools.material" data-sort="material" class="sortable">Material</th>
           <th data-i18n="spools.status" data-sort="status_id" class="sortable">Status</th>
           <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable">Remaining</th>
           <th data-i18n="spools.location" data-sort="location_id" class="sortable">Location</th>
@@ -39,7 +71,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="spools-table">
         <tr>
-          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="7" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -56,10 +88,13 @@ import Layout from '../../layouts/Layout.astro'
     let statuses: any[] = []
     let locations: any[] = []
     let filaments: any[] = []
+    let manufacturers: any[] = []
     let allSpools: any[] = []
+    let filteredSpools: any[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     let filterManufacturerId: string | null = null
+    let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
     filterManufacturerId = urlParams.get('manufacturer_id')
@@ -77,7 +112,7 @@ import Layout from '../../layouts/Layout.astro'
             sortDirection = 'asc'
           }
           updateSortIndicators()
-          renderSpools(allSpools)
+          applyFiltersAndRender()
         })
       })
     }
@@ -92,10 +127,27 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
+    function getFilamentForSpool(spool: any): any {
+      return filaments.find(f => f.id === spool.filament_id) || null
+    }
+
+    function getManufacturerName(spool: any): string {
+      const fil = getFilamentForSpool(spool)
+      if (!fil) return '-'
+      return fil.manufacturer?.name || '-'
+    }
+
+    function getMaterialType(spool: any): string {
+      const fil = getFilamentForSpool(spool)
+      return fil ? fil.type : '-'
+    }
+
     function getSortValue(item: any, key: string): any {
       if (key === 'filament_id') return getFilamentName(item.filament_id)
       if (key === 'status_id') return getStatusLabel(item.status_id)
       if (key === 'location_id') return getLocationName(item.location_id)
+      if (key === 'manufacturer') return getManufacturerName(item)
+      if (key === 'material') return getMaterialType(item)
       return item[key]
     }
 
@@ -111,6 +163,119 @@ import Layout from '../../layouts/Layout.astro'
         else if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
         else cmp = aVal - bVal
         return sortDirection === 'asc' ? cmp : -cmp
+      })
+    }
+
+    function getFilterValues() {
+      const search = (document.getElementById('filter-search') as HTMLInputElement).value.toLowerCase().trim()
+      const statusId = (document.getElementById('filter-status') as HTMLSelectElement).value
+      const locationId = (document.getElementById('filter-location') as HTMLSelectElement).value
+      const manufacturerId = (document.getElementById('filter-manufacturer') as HTMLSelectElement).value
+      const material = (document.getElementById('filter-material') as HTMLSelectElement).value
+      const groupBy = (document.getElementById('filter-group') as HTMLInputElement).checked
+      return { search, statusId, locationId, manufacturerId, material, groupBy }
+    }
+
+    function filterSpools(spools: any[]): any[] {
+      const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
+
+      return spools.filter(s => {
+        // Status filter (server-side was removed, now client-side)
+        if (statusId && String(s.status_id) !== statusId) return false
+
+        // Location filter
+        if (locationId && String(s.location_id) !== locationId) return false
+
+        // Manufacturer filter
+        if (manufacturerId) {
+          const fil = getFilamentForSpool(s)
+          if (!fil || String(fil.manufacturer_id) !== manufacturerId) return false
+        }
+
+        // Material/type filter
+        if (material) {
+          const fil = getFilamentForSpool(s)
+          if (!fil || fil.type !== material) return false
+        }
+
+        // Text search across filament name, manufacturer name, material type, color names
+        if (search) {
+          const fil = getFilamentForSpool(s)
+          const filName = fil ? (fil.designation || '').toLowerCase() : ''
+          const filType = fil ? (fil.type || '').toLowerCase() : ''
+          const mfName = fil?.manufacturer?.name ? fil.manufacturer.name.toLowerCase() : ''
+          const mfColorName = fil ? (fil.manufacturer_color_name || '').toLowerCase() : ''
+          const colorNames = fil && fil.colors ? fil.colors.map((fc: any) => {
+            const parts: string[] = []
+            if (fc.color?.name) parts.push(fc.color.name.toLowerCase())
+            if (fc.display_name_override) parts.push(fc.display_name_override.toLowerCase())
+            return parts.join(' ')
+          }).join(' ') : ''
+          const locationName = getLocationName(s.location_id).toLowerCase()
+          const statusLabel = getStatusLabel(s.status_id).toLowerCase()
+
+          const haystack = `${filName} ${filType} ${mfName} ${mfColorName} ${colorNames} ${locationName} ${statusLabel}`
+          if (!haystack.includes(search)) return false
+        }
+
+        return true
+      })
+    }
+
+    function applyFiltersAndRender() {
+      filteredSpools = filterSpools(allSpools)
+      currentPage = 1
+      renderPage()
+    }
+
+    function renderPage() {
+      const { groupBy } = getFilterValues()
+      const sorted = sortSpools(filteredSpools)
+
+      if (groupBy) {
+        renderGroupedSpools(sorted)
+        const container = document.getElementById('pagination')!
+        container.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.spoolCount', { count: filteredSpools.length })}</div>`
+      } else {
+        const startIdx = (currentPage - 1) * pageSize
+        const pageItems = sorted.slice(startIdx, startIdx + pageSize)
+        renderSpools(pageItems)
+        renderPagination(filteredSpools.length, currentPage)
+      }
+    }
+
+    function populateFilterDropdowns() {
+      // Manufacturers from filaments data
+      const mfSelect = document.getElementById('filter-manufacturer') as HTMLSelectElement
+      const mfMap = new Map<string, string>()
+      filaments.forEach(f => {
+        if (f.manufacturer?.id && f.manufacturer?.name) {
+          mfMap.set(String(f.manufacturer.id), f.manufacturer.name)
+        }
+      })
+      const sortedMfs = [...mfMap.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+      sortedMfs.forEach(([id, name]) => {
+        const opt = document.createElement('option')
+        opt.value = id
+        opt.textContent = name
+        mfSelect.appendChild(opt)
+      })
+
+      // Pre-select manufacturer from URL param
+      if (filterManufacturerId) {
+        mfSelect.value = filterManufacturerId
+      }
+
+      // Materials/types from filaments
+      const matSelect = document.getElementById('filter-material') as HTMLSelectElement
+      const materials = new Set<string>()
+      filaments.forEach(f => { if (f.type) materials.add(f.type) })
+      const sortedMats = [...materials].sort()
+      sortedMats.forEach(mat => {
+        const opt = document.createElement('option')
+        opt.value = mat
+        opt.textContent = mat
+        matSelect.appendChild(opt)
       })
     }
     
@@ -150,34 +315,41 @@ import Layout from '../../layouts/Layout.astro'
           const data = await filamentsRes.json()
           filaments = data.items
         }
+
+        populateFilterDropdowns()
       } catch (error) {
         console.error('Failed to load filters:', error)
       }
     }
     
-    async function loadSpools(page: number = 1) {
-      const statusId = (document.getElementById('filter-status') as HTMLSelectElement).value
-      const locationId = (document.getElementById('filter-location') as HTMLSelectElement).value
-      
-      let url = `/api/v1/spools?page=${page}&page_size=${pageSize}`
-      if (statusId) url += `&status_id=${statusId}`
-      if (locationId) url += `&location_id=${locationId}`
-      if (filterManufacturerId) url += `&manufacturer_id=${filterManufacturerId}`
-      
+    async function loadSpools() {
+      // Load all spools for client-side filtering
       try {
-        const response = await fetch(url, { credentials: 'include' })
+        const response = await fetch(`/api/v1/spools?page=1&page_size=200`, { credentials: 'include' })
         
         if (!response.ok) throw new Error('Failed to fetch spools')
         
         const data = await response.json()
         allSpools = data.items
-        renderSpools(allSpools)
-        renderPagination(data.total, data.page)
+
+        // If there are more, load remaining pages
+        if (data.total > 200) {
+          const totalPages = Math.ceil(data.total / 200)
+          for (let p = 2; p <= totalPages; p++) {
+            const res = await fetch(`/api/v1/spools?page=${p}&page_size=200`, { credentials: 'include' })
+            if (res.ok) {
+              const d = await res.json()
+              allSpools = allSpools.concat(d.items)
+            }
+          }
+        }
+
+        applyFiltersAndRender()
       } catch (error) {
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
+            <td colspan="7" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
           </tr>
         `
       }
@@ -200,44 +372,137 @@ import Layout from '../../layouts/Layout.astro'
       const l = locations.find(l => l.id === locationId)
       return l ? l.name : `#${locationId}`
     }
+
+    function getColorDots(spool: any): string {
+      const fil = getFilamentForSpool(spool)
+      if (!fil || !fil.colors || fil.colors.length === 0) return ''
+      return fil.colors.map((fc: any) => {
+        const c = fc.color
+        if (!c) return ''
+        return `<span title="${fc.display_name_override || c.name}" style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: ${c.hex_code}; border: 1px solid var(--border); vertical-align: middle; margin-right: 2px;"></span>`
+      }).join('')
+    }
+
+    function renderSpoolRow(s: any): string {
+      const isLow = s.remaining_weight_g !== null && 
+                    s.remaining_weight_g > 0 && 
+                    s.remaining_weight_g <= s.low_weight_threshold_g
+      const isEmpty = s.remaining_weight_g !== null && s.remaining_weight_g <= 0
+      
+      let weightStyle = ''
+      if (isEmpty) weightStyle = 'color: var(--error-text); font-weight: 500;'
+      else if (isLow) weightStyle = 'color: var(--accent-3); font-weight: 500;'
+
+      const colorDots = getColorDots(s)
+      
+      return `
+        <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
+          <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
+          <td style="padding: 12px;">${colorDots} ${getFilamentName(s.filament_id)}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${getManufacturerName(s)}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${getMaterialType(s)}</td>
+          <td style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
+          <td style="padding: 12px; font-family: monospace; ${weightStyle}">
+            ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
+          </td>
+          <td style="padding: 12px;">${getLocationName(s.location_id)}</td>
+        </tr>
+      `
+    }
     
     function renderSpools(spools: any[]) {
       const tbody = document.getElementById('spools-table')!
-      const sorted = sortSpools(spools)
       
-      if (sorted.length === 0) {
+      if (spools.length === 0) {
+        const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
+        const hasFilters = search || statusId || locationId || manufacturerId || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--text-muted);">
-              ${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.
+            <td colspan="7" style="text-align: center; color: var(--text-muted);">
+              ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
         `
         return
       }
       
-      tbody.innerHTML = sorted.map(s => {
-        const isLow = s.remaining_weight_g !== null && 
-                      s.remaining_weight_g > 0 && 
-                      s.remaining_weight_g <= s.low_weight_threshold_g
-        const isEmpty = s.remaining_weight_g !== null && s.remaining_weight_g <= 0
-        
-        let weightStyle = ''
-        if (isEmpty) weightStyle = 'color: var(--error-text); font-weight: 500;'
-        else if (isLow) weightStyle = 'color: var(--accent-3); font-weight: 500;'
-        
-        return `
-          <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
-            <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
-            <td style="padding: 12px;">${getFilamentName(s.filament_id)}</td>
-            <td style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
-            <td style="padding: 12px; font-family: monospace; ${weightStyle}">
-              ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
+      tbody.innerHTML = spools.map(s => renderSpoolRow(s)).join('')
+    }
+
+    function renderGroupedSpools(spools: any[]) {
+      const tbody = document.getElementById('spools-table')!
+
+      if (spools.length === 0) {
+        const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
+        const hasFilters = search || statusId || locationId || manufacturerId || material
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted);">
+              ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
-            <td style="padding: 12px;">${getLocationName(s.location_id)}</td>
           </tr>
         `
-      }).join('')
+        return
+      }
+
+      // Group by filament_id + color combination (same filament = same color + material)
+      const groups = new Map<string, { label: string; colorDots: string; manufacturer: string; material: string; spools: any[] }>()
+
+      spools.forEach(s => {
+        const fil = getFilamentForSpool(s)
+        const groupKey = String(s.filament_id)
+        if (!groups.has(groupKey)) {
+          const colorDots = getColorDots(s)
+          groups.set(groupKey, {
+            label: fil ? `${fil.designation} (${fil.type})` : `#${s.filament_id}`,
+            colorDots,
+            manufacturer: getManufacturerName(s),
+            material: getMaterialType(s),
+            spools: [],
+          })
+        }
+        groups.get(groupKey)!.spools.push(s)
+      })
+
+      let html = ''
+      let groupIdx = 0
+      groups.forEach((group, key) => {
+        const gid = `group-${groupIdx}`
+        html += `
+          <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
+            <td colspan="7" style="padding: 10px 12px; color: var(--text);">
+              <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.colorDots} ${group.label}</span>
+              <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${group.manufacturer} &middot; ${group.material} &middot; ${t('spools.spoolsInGroup', { count: group.spools.length })}</span>
+            </td>
+          </tr>
+        `
+        group.spools.forEach(s => {
+          html += renderSpoolRow(s).replace('<tr ', `<tr data-group-row="${gid}" `)
+        })
+        groupIdx++
+      })
+
+      tbody.innerHTML = html
+
+      // Wire up group toggle
+      tbody.querySelectorAll('tr[data-group]').forEach(header => {
+        header.addEventListener('click', () => {
+          const gid = (header as HTMLElement).dataset.group!
+          const toggle = header.querySelector(`span[data-toggle]`) as HTMLElement
+          const rows = tbody.querySelectorAll(`tr[data-group-row="${gid}"]`)
+          const isCollapsed = toggle.dataset.collapsed === 'true'
+          
+          if (isCollapsed) {
+            toggle.dataset.collapsed = 'false'
+            toggle.innerHTML = toggle.innerHTML.replace('&#9654;', '&#9660;').replace('\u25B6', '\u25BC')
+            rows.forEach(r => (r as HTMLElement).style.display = '')
+          } else {
+            toggle.dataset.collapsed = 'true'
+            toggle.innerHTML = toggle.innerHTML.replace('&#9660;', '&#9654;').replace('\u25BC', '\u25B6')
+            rows.forEach(r => (r as HTMLElement).style.display = 'none')
+          }
+        })
+      })
     }
     
     function renderPagination(total: number, page: number) {
@@ -274,15 +539,29 @@ import Layout from '../../layouts/Layout.astro'
       `
       
       document.getElementById('prev-btn')?.addEventListener('click', () => {
-        if (page > 1) loadSpools(page - 1)
+        if (page > 1) {
+          currentPage = page - 1
+          renderPage()
+        }
       })
       document.getElementById('next-btn')?.addEventListener('click', () => {
-        if (page < totalPages) loadSpools(page + 1)
+        if (page < totalPages) {
+          currentPage = page + 1
+          renderPage()
+        }
       })
     }
-    
-    document.getElementById('filter-status')?.addEventListener('change', () => loadSpools(1))
-    document.getElementById('filter-location')?.addEventListener('change', () => loadSpools(1))
+
+    // Wire up filter events
+    document.getElementById('filter-search')?.addEventListener('input', () => {
+      if (searchTimeout) clearTimeout(searchTimeout)
+      searchTimeout = setTimeout(() => applyFiltersAndRender(), 250)
+    })
+    document.getElementById('filter-status')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-location')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-manufacturer')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-material')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-group')?.addEventListener('change', () => applyFiltersAndRender())
     
     setupSortableHeaders()
     loadFilters().then(() => loadSpools())

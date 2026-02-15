@@ -41,6 +41,9 @@ html[data-theme="brand"] {
   --success-bg: rgba(34, 197, 94, 0.15);
   --success-border: rgba(34, 197, 94, 0.4);
   --success-text: #86efac;
+  --group-header-bg: rgba(78, 227, 162, 0.15);
+  --group-header-bg-hover: rgba(78, 227, 162, 0.22);
+  --group-header-border: #4ee3a2;
 }
 
 /* ── Light theme ───────────────────────────────────────────────────── */
@@ -68,6 +71,9 @@ html[data-theme="light"] {
   --success-bg: rgba(34, 197, 94, 0.08);
   --success-border: rgba(34, 197, 94, 0.3);
   --success-text: #15803d;
+  --group-header-bg: rgba(28, 155, 107, 0.12);
+  --group-header-bg-hover: rgba(28, 155, 107, 0.20);
+  --group-header-border: #1c9b6b;
 }
 
 /* ── Dark theme ────────────────────────────────────────────────────── */
@@ -95,6 +101,9 @@ html[data-theme="dark"] {
   --success-bg: rgba(34, 197, 94, 0.15);
   --success-border: rgba(34, 197, 94, 0.4);
   --success-text: #86efac;
+  --group-header-bg: rgba(115, 209, 255, 0.15);
+  --group-header-bg-hover: rgba(115, 209, 255, 0.22);
+  --group-header-border: #73d1ff;
 }
 
 /* ── Base element styles ───────────────────────────────────────────── */

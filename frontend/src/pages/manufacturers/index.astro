@@ -9,12 +9,37 @@ import Layout from '../../layouts/Layout.astro'
     .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
     .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
     .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .filter-bar .fm-input-search {
+      flex: 1;
+      min-width: 200px;
+      max-width: 400px;
+    }
   </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
     <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
       Add Manufacturer
     </button>
+  </div>
+
+  <div class="filter-bar">
+    <input
+      type="text"
+      id="filter-search"
+      class="fm-input fm-input-search"
+      data-i18n-placeholder="manufacturers.searchPlaceholder"
+      placeholder="Search manufacturers..."
+    />
+    <select id="filter-material" class="fm-select" style="width: auto; min-width: 160px;">
+      <option value="" data-i18n="manufacturers.allMaterials">All Materials</option>
+    </select>
   </div>
 
   <div class="fm-card" style="padding: 0; overflow: hidden;">
@@ -88,6 +113,7 @@ import Layout from '../../layouts/Layout.astro'
     let manufacturers: any[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
+    let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -134,11 +160,58 @@ import Layout from '../../layouts/Layout.astro'
       return match ? decodeURIComponent(match[1]) : ''
     }
 
+    function getFilterValues() {
+      const search = (document.getElementById('filter-search') as HTMLInputElement).value.toLowerCase().trim()
+      const material = (document.getElementById('filter-material') as HTMLSelectElement).value
+      return { search, material }
+    }
+
+    function filterManufacturers(items: any[]): any[] {
+      const { search, material } = getFilterValues()
+
+      return items.filter(mf => {
+        // Material filter
+        if (material) {
+          const hasMaterial = mf.materials && mf.materials.some((m: string) => m === material)
+          if (!hasMaterial) return false
+        }
+
+        // Text search across name, url, materials
+        if (search) {
+          const name = (mf.name || '').toLowerCase()
+          const url = (mf.url || '').toLowerCase()
+          const materials = (mf.materials || []).join(' ').toLowerCase()
+          const haystack = `${name} ${url} ${materials}`
+          if (!haystack.includes(search)) return false
+        }
+
+        return true
+      })
+    }
+
+    function populateMaterialFilter(items: any[]) {
+      const materialSelect = document.getElementById('filter-material') as HTMLSelectElement
+      const materials = new Set<string>()
+      items.forEach(mf => {
+        if (mf.materials) {
+          mf.materials.forEach((m: string) => materials.add(m))
+        }
+      })
+      const sortedMaterials = [...materials].sort()
+      sortedMaterials.forEach(mat => {
+        const opt = document.createElement('option')
+        opt.value = mat
+        opt.textContent = mat
+        materialSelect.appendChild(opt)
+      })
+    }
+
     async function loadManufacturers() {
       try {
         const mfRes = await fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' })
         if (!mfRes.ok) throw new Error('Failed to fetch manufacturers')
         manufacturers = await mfRes.json().then(d => d.items)
+        populateMaterialFilter(manufacturers)
         renderManufacturers()
       } catch (error) {
         console.error('Failed to load manufacturers:', error)
@@ -158,13 +231,16 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderManufacturers() {
       const tbody = document.getElementById('manufacturers-table')!
-      const sorted = sortManufacturers(manufacturers)
+      const filtered = filterManufacturers(manufacturers)
+      const sorted = sortManufacturers(filtered)
 
       if (sorted.length === 0) {
+        const { search, material } = getFilterValues()
+        const hasFilters = search || material
         tbody.innerHTML = `
           <tr>
             <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
-              ${t('manufacturers.noManufacturers')}
+              ${hasFilters ? t('manufacturers.noResults') : t('manufacturers.noManufacturers')}
             </td>
           </tr>
         `
@@ -305,6 +381,13 @@ import Layout from '../../layouts/Layout.astro'
         submitBtn.textContent = t('common.save')
       }
     })
+
+    // Wire up filter events
+    document.getElementById('filter-search')?.addEventListener('input', () => {
+      if (searchTimeout) clearTimeout(searchTimeout)
+      searchTimeout = setTimeout(() => renderManufacturers(), 250)
+    })
+    document.getElementById('filter-material')?.addEventListener('change', () => renderManufacturers())
 
     setupSortableHeaders()
     loadManufacturers()

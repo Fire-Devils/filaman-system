@@ -164,7 +164,12 @@
     "colorRequired": "Please select at least one color.",
     "editFilament": "Edit Filament",
     "saveFilament": "Save Filament",
-    "failedUpdate": "Failed to update filament"
+    "failedUpdate": "Failed to update filament",
+    "searchPlaceholder": "Search designation, color, manufacturer...",
+    "allManufacturers": "All Manufacturers",
+    "allTypes": "All Types",
+    "allColors": "All Colors",
+    "noResults": "No filaments match the current filters."
   },
   "spools": {
     "title": "Spools",
@@ -234,7 +239,15 @@
     "statusDrying": "Drying",
     "statusActive": "Active",
     "statusEmpty": "Empty",
-    "statusArchived": "Archived"
+    "statusArchived": "Archived",
+    "manufacturer": "Manufacturer",
+    "material": "Material",
+    "searchPlaceholder": "Search filament, manufacturer...",
+    "allManufacturers": "All Manufacturers",
+    "allMaterials": "All Materials",
+    "groupByFilament": "Group by Filament",
+    "noResults": "No spools match the current filters.",
+    "spoolsInGroup": "{count} spool(s)"
   },
   "printers": {
     "title": "Printers",
@@ -297,7 +310,10 @@
     "failedSave": "Failed to save manufacturer",
     "failedDelete": "Failed to delete manufacturer",
     "noManufacturers": "No manufacturers found. Click \"Add Manufacturer\" to create one.",
-    "confirmDelete": "Are you sure you want to delete this manufacturer?"
+    "confirmDelete": "Are you sure you want to delete this manufacturer?",
+    "searchPlaceholder": "Search manufacturers...",
+    "allMaterials": "All Materials",
+    "noResults": "No manufacturers match the current filters."
   },
   "admin": {
     "title": "Admin",

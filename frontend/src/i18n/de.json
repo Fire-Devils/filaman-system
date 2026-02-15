@@ -164,7 +164,12 @@
     "colorRequired": "Bitte mindestens eine Farbe auswählen.",
     "editFilament": "Filament bearbeiten",
     "saveFilament": "Filament speichern",
-    "failedUpdate": "Filament konnte nicht aktualisiert werden"
+    "failedUpdate": "Filament konnte nicht aktualisiert werden",
+    "searchPlaceholder": "Bezeichnung, Farbe, Hersteller suchen...",
+    "allManufacturers": "Alle Hersteller",
+    "allTypes": "Alle Typen",
+    "allColors": "Alle Farben",
+    "noResults": "Keine Filamente entsprechen den aktuellen Filtern."
   },
   "spools": {
     "title": "Spulen",
@@ -234,7 +239,15 @@
     "statusDrying": "Trocknung",
     "statusActive": "Aktiv",
     "statusEmpty": "Leer",
-    "statusArchived": "Archiviert"
+    "statusArchived": "Archiviert",
+    "manufacturer": "Hersteller",
+    "material": "Material",
+    "searchPlaceholder": "Filament, Hersteller suchen...",
+    "allManufacturers": "Alle Hersteller",
+    "allMaterials": "Alle Materialien",
+    "groupByFilament": "Nach Filament gruppieren",
+    "noResults": "Keine Spulen entsprechen den aktuellen Filtern.",
+    "spoolsInGroup": "{count} Spule(n)"
   },
   "printers": {
     "title": "Drucker",
@@ -297,7 +310,10 @@
     "failedSave": "Hersteller konnte nicht gespeichert werden",
     "failedDelete": "Hersteller konnte nicht gelöscht werden",
     "noManufacturers": "Keine Hersteller gefunden. Klicken Sie auf \"Hersteller hinzufügen\".",
-    "confirmDelete": "Möchten Sie diesen Hersteller wirklich löschen?"
+    "confirmDelete": "Möchten Sie diesen Hersteller wirklich löschen?",
+    "searchPlaceholder": "Hersteller suchen...",
+    "allMaterials": "Alle Materialien",
+    "noResults": "Keine Hersteller entsprechen den aktuellen Filtern."
   },
   "admin": {
     "title": "Admin",
