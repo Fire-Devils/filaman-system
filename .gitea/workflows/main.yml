@@ -40,5 +40,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/manuelw/filaman-system:latest
-            ghcr.io/manuelw/filaman-system:${{ gitea.sha }}
+            ghcr.io/fire-devils/filaman-system:latest
+            ghcr.io/fire-devils/filaman-system:${{ gitea.sha }}
