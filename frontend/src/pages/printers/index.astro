@@ -33,7 +33,7 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay hidden">
+  <div id="modal-container" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="printers.addPrinter">Add Printer</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
@@ -233,12 +233,12 @@ import Layout from '../../layouts/Layout.astro'
       serialInput.value = serial
       error.classList.add('hidden')
       
-      container.classList.remove('hidden')
+      container.classList.add('open')
       nameInput.focus()
     }
     
     function closeModal() {
-      document.getElementById('modal-container')!.classList.add('hidden')
+      document.getElementById('modal-container')!.classList.remove('open')
     }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())

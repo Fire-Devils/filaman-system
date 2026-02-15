@@ -37,7 +37,7 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay hidden">
+  <div id="modal-container" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.createDevice">Create Device</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
@@ -58,7 +58,7 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
   
-  <div id="token-modal" class="fm-modal-overlay hidden">
+  <div id="token-modal" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
       <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.tokenCreated">Device Token Created</h3>
       <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;" data-i18n="admin.tokenWarning">Copy this token now. It will not be shown again.</p>
@@ -163,7 +163,7 @@ import Layout from '../../layouts/Layout.astro'
       const display = document.getElementById('token-display')!
       
       display.textContent = token
-      modal.classList.remove('hidden')
+      modal.classList.add('open')
     }
     
     document.getElementById('token-copy')?.addEventListener('click', () => {
@@ -173,17 +173,17 @@ import Layout from '../../layouts/Layout.astro'
     })
     
     document.getElementById('token-close')?.addEventListener('click', () => {
-      document.getElementById('token-modal')!.classList.add('hidden')
+      document.getElementById('token-modal')!.classList.remove('open')
     })
     
     document.getElementById('btn-new')?.addEventListener('click', () => {
       ;(document.getElementById('device-name') as HTMLInputElement).value = ''
       ;(document.getElementById('device-scopes') as HTMLInputElement).value = ''
-      document.getElementById('modal-container')!.classList.remove('hidden')
+      document.getElementById('modal-container')!.classList.add('open')
     })
     
     document.getElementById('modal-cancel')?.addEventListener('click', () => {
-      document.getElementById('modal-container')!.classList.add('hidden')
+      document.getElementById('modal-container')!.classList.remove('open')
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
@@ -214,7 +214,7 @@ import Layout from '../../layouts/Layout.astro'
         }
         
         const data = await response.json()
-        document.getElementById('modal-container')!.classList.add('hidden')
+        document.getElementById('modal-container')!.classList.remove('open')
         showToken(data.token)
         loadDevices()
       } catch (err: any) {

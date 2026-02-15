@@ -25,7 +25,7 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay hidden">
+  <div id="modal-container" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editRolePermissions">Edit Role Permissions</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
@@ -153,11 +153,11 @@ import Layout from '../../layouts/Layout.astro'
         </div>
       `).join('')
       
-      container.classList.remove('hidden')
+      container.classList.add('open')
     }
     
     function closeModal() {
-      document.getElementById('modal-container')!.classList.add('hidden')
+      document.getElementById('modal-container')!.classList.remove('open')
     }
     
     document.getElementById('modal-cancel')?.addEventListener('click', closeModal)

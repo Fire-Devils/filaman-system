@@ -28,7 +28,7 @@ const { id } = Astro.params
     <div id="ams-units" style="display: flex; flex-direction: column; gap: 16px;"></div>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay hidden">
+  <div id="modal-container" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="printers.addAmsUnit">Add AMS Unit</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
@@ -233,11 +233,11 @@ const { id } = Astro.params
     }
     
     document.getElementById('btn-add-ams')?.addEventListener('click', () => {
-      document.getElementById('modal-container')!.classList.remove('hidden')
+      document.getElementById('modal-container')!.classList.add('open')
     })
     
     document.getElementById('modal-cancel')?.addEventListener('click', () => {
-      document.getElementById('modal-container')!.classList.add('hidden')
+      document.getElementById('modal-container')!.classList.remove('open')
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
@@ -271,7 +271,7 @@ const { id } = Astro.params
           throw new Error(data.message || t('printers.failedAddAms'))
         }
         
-        document.getElementById('modal-container')!.classList.add('hidden')
+      document.getElementById('modal-container')!.classList.remove('open')
         loadPrinter()
       } catch (err: any) {
         error.textContent = err.message

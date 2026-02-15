@@ -185,10 +185,14 @@ async def update_user(
     return user
 
 
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
 @router.post("/users/{user_id}/reset-password")
 async def reset_user_password(
     user_id: int,
-    new_password: str,
+    data: ResetPasswordRequest,
     db: DBSession,
     principal = RequirePermission("admin:users_manage"),
 ):
@@ -203,7 +207,7 @@ async def reset_user_password(
             detail={"code": "not_found", "message": "User not found"},
         )
 
-    user.password_hash = hash_password(new_password)
+    user.password_hash = hash_password(data.new_password)
     await db.commit()
 
     return {"message": "Password reset successfully"}

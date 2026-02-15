@@ -37,7 +37,7 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay hidden">
+  <div id="modal-container" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.addUser">Add User</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
@@ -103,18 +103,24 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
     
+    function escapeHtml(str: string): string {
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
+    }
+    
     function renderUsers() {
       const tbody = document.getElementById('users-table')!
       
       if (users.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">${t('admin.noUsers')}</td></tr>`
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">${escapeHtml(t('admin.noUsers'))}</td></tr>`
         return
       }
       
       tbody.innerHTML = users.map(u => `
         <tr>
-          <td>${u.email}</td>
-          <td style="color: var(--text-muted);">${u.display_name || '-'}</td>
+          <td>${escapeHtml(u.email)}</td>
+          <td style="color: var(--text-muted);">${escapeHtml(u.display_name || '-')}</td>
           <td>
             <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${u.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
               ${u.is_active ? t('common.active') : t('common.inactive')}
@@ -143,10 +149,11 @@ import Layout from '../../layouts/Layout.astro'
           }
           
           try {
-            const response = await fetch(`/api/v1/admin/users/${id}/reset-password?new_password=${encodeURIComponent(newPassword)}`, {
+            const response = await fetch(`/api/v1/admin/users/${id}/reset-password`, {
               method: 'POST',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              body: JSON.stringify({ new_password: newPassword }),
             })
             
             if (!response.ok) throw new Error('Failed to reset password')
@@ -207,15 +214,18 @@ import Layout from '../../layouts/Layout.astro'
         renderRoleCheckboxes()
       }
       
-      container.classList.remove('hidden')
+      container.classList.add('open')
     }
     
     function closeModal() {
-      document.getElementById('modal-container')!.classList.add('hidden')
+      document.getElementById('modal-container')!.classList.remove('open')
     }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    document.getElementById('modal-container')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal()
+    })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -236,11 +246,17 @@ import Layout from '../../layouts/Layout.astro'
       
       try {
         if (id) {
-await fetch(`/api/v1/admin/users/${id}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
+          const updateRes = await fetch(`/api/v1/admin/users/${id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              body: JSON.stringify({ email, display_name: displayName, is_superadmin: isSuperadmin }),
             })
+          
+          if (!updateRes.ok) {
+            const data = await updateRes.json()
+            throw new Error(data.detail?.message || data.message || t('admin.failedUpdateUser'))
+          }
           
           await fetch(`/api/v1/admin/users/${id}/roles`, {
             method: 'PUT',
