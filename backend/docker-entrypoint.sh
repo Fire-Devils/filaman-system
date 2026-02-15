@@ -10,10 +10,7 @@ fi
 
 # Run Alembic migrations in a subshell to avoid blocking the main process
 echo "Running database migrations..."
-# The \\ escapes the pipe symbol, so it's passed correctly to the subshell
-alembic upgrade head \
-  --raise-error-on-failed-init \
-  --raise-error-on-data-error
+alembic upgrade head
 echo "Database migrations complete."
 
 # Execute the command passed to this script (e.g., uvicorn)
