@@ -319,6 +319,25 @@ body {
   color: var(--text);
 }
 
+/* Nav icon containers */
+.fm-nav-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.fm-nav-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: var(--text-muted);
+  transition: fill var(--transition);
+}
+.fm-nav-item:hover .fm-nav-icon svg,
+.fm-nav-item.active .fm-nav-icon svg {
+  fill: var(--accent);
+}
+
 /* Theme toggle */
 .fm-theme-toggle {
   display: flex;

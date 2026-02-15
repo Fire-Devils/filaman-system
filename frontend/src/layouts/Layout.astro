@@ -43,27 +43,27 @@ const { title } = Astro.props
         <!-- Navigation -->
         <nav style="display: grid; gap: 6px; flex: 1;">
           <a href="/" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">D</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-dashboard"></use></svg></span>
             <span data-i18n="nav.dashboard">Dashboard</span>
           </a>
           <a href="/filaments" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">F</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-filaments"></use></svg></span>
             <span data-i18n="nav.filaments">Filaments</span>
           </a>
           <a href="/manufacturers" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">M</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-manufacturers"></use></svg></span>
             <span data-i18n="nav.manufacturers">Manufacturers</span>
           </a>
           <a href="/spools" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">S</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-spools"></use></svg></span>
             <span data-i18n="nav.spools">Spools</span>
           </a>
           <a href="/locations" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">L</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-locations"></use></svg></span>
             <span data-i18n="nav.locations">Locations</span>
           </a>
           <a href="/printers" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent), var(--accent-2)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">P</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-printers"></use></svg></span>
             <span data-i18n="nav.printers">Printers</span>
           </a>
 
@@ -71,14 +71,14 @@ const { title } = Astro.props
             <hr class="fm-divider" style="margin-bottom: 8px;" />
             <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
             <a href="/admin" class="fm-nav-item">
-              <span style="width: 28px; height: 28px; border-radius: 10px; background: linear-gradient(140deg, var(--accent-3), var(--accent)); display: grid; place-items: center; font-size: 0.75rem; color: #0b120e; flex-shrink: 0;">A</span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-admin"></use></svg></span>
               <span data-i18n="nav.adminPanel">Admin Panel</span>
             </a>
           </div>
 
           <hr class="fm-divider" style="margin-top: 8px;" />
           <a href="/settings" class="fm-nav-item">
-            <span style="width: 28px; height: 28px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); display: grid; place-items: center; font-size: 0.75rem; flex-shrink: 0;">&#9881;</span>
+            <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-settings"></use></svg></span>
             <span data-i18n="nav.settings">Settings</span>
           </a>
         </nav>
