@@ -3,16 +3,19 @@ set -e
 
 # This script runs database migrations and then starts the main application.
 
-# Navigate to the app directory where alembic.ini should be found
-cd /app
+# Ensure the data directory exists for the database
+if [ ! -d "/app/data" ]; then
+  mkdir -p /app/data
+fi
 
-# Create the data directory if it doesn't exist to ensure the database file can be created.
-mkdir -p /app/data
-
-# Run Alembic migrations
+# Run Alembic migrations in a subshell to avoid blocking the main process
 echo "Running database migrations..."
-alembic upgrade head
+# The \\ escapes the pipe symbol, so it's passed correctly to the subshell
+alembic upgrade head \
+  --raise-error-on-failed-init \
+  --raise-error-on-data-error
 echo "Database migrations complete."
 
 # Execute the command passed to this script (e.g., uvicorn)
 exec "$@"
+
