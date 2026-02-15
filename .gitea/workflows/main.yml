@@ -49,3 +49,5 @@ jobs:
           tags: |
             ghcr.io/fire-devils/filaman-system:latest
             ghcr.io/fire-devils/filaman-system:${{ gitea.sha }}
+          cache-from: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache
+          cache-to: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache,mode=max

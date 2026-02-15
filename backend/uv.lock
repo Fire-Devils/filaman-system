@@ -298,6 +298,7 @@ dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "passlib", extra = ["argon2"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -310,7 +311,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -320,7 +320,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.19.0" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "fastapi", specifier = ">=0.109.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
+    { name = "httpx", specifier = ">=0.26.0" },
     { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },

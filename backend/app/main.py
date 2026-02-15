@@ -27,11 +27,15 @@ def run_migrations() -> None:
     from alembic import command
     from alembic.config import Config
 
-    alembic_cfg = Config()
+    alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option("script_location", str(
         __import__("pathlib").Path(__file__).resolve().parent.parent / "alembic"
     ))
-    alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
+
+    # Use a sync database URL for Alembic, as it doesn't support async drivers directly
+    # in its command functions. We replace 'sqlite+aiosqlite' with just 'sqlite'.
+    sync_database_url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
+    alembic_cfg.set_main_option("sqlalchemy.url", sync_database_url)
 
     command.upgrade(alembic_cfg, "head")
 
