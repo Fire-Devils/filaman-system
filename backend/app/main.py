@@ -110,3 +110,18 @@ async def health_ready():
         "db": "ok" if db_ok else "fail",
         "plugins": "ok" if plugins_ok else "fail",
     }
+
+
+if not settings.debug:
+    from fastapi.staticfiles import StaticFiles
+    import os
+
+    static_files_path = "/app/static"
+    if not os.path.exists(static_files_path) or not os.path.isdir(static_files_path):
+        logger.warning(
+            f"Static files directory '{static_files_path}' not found. "
+            "Frontend will not be served."
+        )
+    else:
+        logger.info(f"Serving static files from '{static_files_path}'")
+        app.mount("/", StaticFiles(directory=static_files_path, html=True), name="static")

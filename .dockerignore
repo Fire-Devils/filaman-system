@@ -1,0 +1,29 @@
+# Dockerignore for the FilaMan System
+
+# Git files
+.git
+.gitignore
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Python backend
+backend/.venv
+backend/__pycache__
+backend/*.db
+backend/*.db-journal
+backend/.pytest_cache
+backend/alembic/versions
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/.astro
+
+# General
+.DS_Store
+.vscode
+README.md
+spec

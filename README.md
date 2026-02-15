@@ -72,7 +72,7 @@ The static files will be in `frontend/dist/`.
 
 ## Environment Variables
 
-Create a `.env` file in the backend directory:
+Create a `.env` file in the project root directory:
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
@@ -85,3 +85,56 @@ ADMIN_PASSWORD=secure-password
 ## License
 
 MIT
+
+## Docker Setup
+
+This project is configured to run in a Docker container. This is the recommended way to run the application in production.
+
+### Local Development with Docker
+
+To build and run the application using Docker, use Docker Compose:
+
+```bash
+docker-compose up --build
+```
+
+The application will be available at http://localhost:8000.
+
+**Note:** The `docker-compose.yml` is configured for development and uses the local SQLite database. For production, you should use a more robust database and manage your secrets securely.
+
+### CI/CD with Gitea
+
+This repository contains a Gitea workflow to automatically build and push the Docker image to the GitHub Container Registry (ghcr.io).
+
+The workflow is defined in `.gitea/workflows/main.yml`.
+
+**Setup:**
+
+1.  **Update the workflow file:**
+    Open `.gitea/workflows/main.yml` and replace `YOUR_GITEA_USERNAME` with your GitHub username.
+
+2.  **Add Gitea Secrets:**
+    In your Gitea repository settings, add the following secrets:
+    *   `GHCR_USERNAME`: Your GitHub username.
+    *   `GHCR_TOKEN`: A GitHub Personal Access Token (PAT) with `read:packages` and `write:packages` scopes.
+
+Once configured, the workflow will trigger on every push to the `main` branch.
+
+### Backend Configuration for Docker
+
+To serve the frontend from the FastAPI backend when running in Docker, you need to configure your `main.py` to serve static files.
+
+Add the following to your `backend/app/main.py`:
+
+```python
+from fastapi.staticfiles import StaticFiles
+
+# ... your existing FastAPI app initialization
+app = FastAPI()
+
+# ... your existing routes and middleware
+
+# Mount the static files directory
+# This must be after all other routes
+app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")
+```
