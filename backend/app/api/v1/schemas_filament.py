@@ -21,6 +21,8 @@ class ManufacturerResponse(BaseModel):
     url: str | None
     custom_fields: dict[str, Any] | None
     filament_count: int = 0
+    spool_count: int = 0
+    materials: list[str] = []
 
     class Config:
         from_attributes = True

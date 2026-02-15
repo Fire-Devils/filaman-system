@@ -24,12 +24,14 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="manufacturers.name" data-sort="name" class="sortable">Name</th>
           <th data-i18n="manufacturers.url" data-sort="url" class="sortable">URL</th>
           <th data-i18n="manufacturers.filaments" data-sort="filament_count" class="sortable">Filaments</th>
+          <th data-i18n="manufacturers.spools" data-sort="spool_count" class="sortable">Spools</th>
+          <th data-i18n="manufacturers.materials">Materials</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="manufacturers-table">
         <tr>
-          <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+          <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -142,7 +144,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
-            <td colspan="4" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+            <td colspan="6" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
           </tr>
         `
       }
@@ -161,7 +163,7 @@ import Layout from '../../layouts/Layout.astro'
       if (sorted.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">
               ${t('manufacturers.noManufacturers')}
             </td>
           </tr>
@@ -173,7 +175,9 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
           <td>${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
-          <td>${mf.filament_count || 0}</td>
+          <td><a href="/filaments?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
+          <td><a href="/spools?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
+          <td>${mf.materials && mf.materials.length > 0 ? mf.materials.map(m => escapeHtml(m)).join(', ') : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td style="text-align: right; white-space: nowrap;">
             <button data-id="${mf.id}" data-name="${escapeHtml(mf.name)}" data-url="${escapeHtml(mf.url || '')}" class="btn-edit fm-btn fm-btn-outline" style="padding: 5px 12px; font-size: 0.8rem;">${t('common.edit')}</button>
             <button data-id="${mf.id}" class="btn-delete fm-btn fm-btn-danger" style="padding: 5px 12px; font-size: 0.8rem; margin-left: 6px;">${t('common.delete')}</button>

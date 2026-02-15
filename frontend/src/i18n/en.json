@@ -291,6 +291,8 @@
     "url": "URL",
     "urlPlaceholder": "e.g. https://bambulab.com",
     "filaments": "Filaments",
+    "spools": "Spools",
+    "materials": "Materials",
     "failedLoad": "Failed to load manufacturers",
     "failedSave": "Failed to save manufacturer",
     "failedDelete": "Failed to delete manufacturer",

@@ -42,9 +42,11 @@ async def list_manufacturers(
     )
     items = list(result.scalars().all())
 
-    # Filament-Count pro Hersteller berechnen
     mfr_ids = [m.id for m in items]
     fil_counts: dict[int, int] = {}
+    spool_counts: dict[int, int] = {}
+    materials_map: dict[int, list[str]] = {m.id: [] for m in items}
+
     if mfr_ids:
         fc_result = await db.execute(
             select(Filament.manufacturer_id, func.count(Filament.id))
@@ -53,9 +55,33 @@ async def list_manufacturers(
         )
         fil_counts = {row[0]: row[1] for row in fc_result.all()}
 
+        types_result = await db.execute(
+            select(Filament.manufacturer_id, Filament.type)
+            .where(Filament.manufacturer_id.in_(mfr_ids))
+            .distinct()
+        )
+        for row in types_result.all():
+            mfr_id, mat_type = row[0], row[1]
+            if mfr_id in materials_map and mat_type:
+                materials_map[mfr_id].append(mat_type)
+
+        spool_result = await db.execute(
+            select(Filament.manufacturer_id, func.count(Spool.id))
+            .join(Filament, Spool.filament_id == Filament.id)
+            .where(Filament.manufacturer_id.in_(mfr_ids))
+            .where(Spool.deleted_at.is_(None))
+            .group_by(Filament.manufacturer_id)
+        )
+        spool_counts = {row[0]: row[1] for row in spool_result.all()}
+
     items_out = [
         ManufacturerResponse.model_validate(
-            {**m.__dict__, "filament_count": fil_counts.get(m.id, 0)}
+            {
+                **m.__dict__,
+                "filament_count": fil_counts.get(m.id, 0),
+                "spool_count": spool_counts.get(m.id, 0),
+                "materials": sorted(materials_map.get(m.id, [])),
+            }
         )
         for m in items
     ]

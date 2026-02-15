@@ -48,6 +48,10 @@ import Layout from '../../layouts/Layout.astro'
     let allFilaments: any[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
+    let filterManufacturerId: string | null = null
+
+    const urlParams = new URLSearchParams(window.location.search)
+    filterManufacturerId = urlParams.get('manufacturer_id')
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -99,8 +103,11 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     async function loadFilaments(page: number = 1) {
+      let url = `/api/v1/filaments?page=${page}&page_size=${pageSize}`
+      if (filterManufacturerId) url += `&manufacturer_id=${filterManufacturerId}`
+      
       try {
-        const response = await fetch(`/api/v1/filaments?page=${page}&page_size=${pageSize}`, {
+        const response = await fetch(url, {
           credentials: 'include',
         })
         

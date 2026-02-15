@@ -146,9 +146,12 @@ async def list_spools(
     filament_id: int | None = None,
     status_id: int | None = None,
     location_id: int | None = None,
+    manufacturer_id: int | None = None,
 ):
     query = select(Spool).where(Spool.deleted_at.is_(None))
 
+    if manufacturer_id:
+        query = query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
         query = query.where(Spool.filament_id == filament_id)
     if status_id:
@@ -162,6 +165,8 @@ async def list_spools(
     items = result.scalars().all()
 
     count_query = select(func.count()).select_from(Spool).where(Spool.deleted_at.is_(None))
+    if manufacturer_id:
+        count_query = count_query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
         count_query = count_query.where(Spool.filament_id == filament_id)
     if status_id:
