@@ -10,9 +10,6 @@ This guide explains how to run the FilaMan application using a single Docker com
 
 - You must have **Docker** installed on your system.
 
-### Installation Steps
-
-**Step 1: Start the Application with Docker**  
 Open a terminal or command prompt, navigate into the folder you just created, and run the command below.
 
 ```bash
@@ -47,9 +44,6 @@ Docker will now download the image and start the FilaMan container in the backgr
 
 - Sie müssen **Docker** auf Ihrem System installiert haben.
 
-### Installationsschritte
-
-**Schritt 1: Anwendung mit Docker starten**  
 Öffnen Sie nun ein Terminal oder eine Kommandozeile, navigieren Sie in den Ordner, den Sie gerade erstellt haben, und führen Sie den folgenden Befehl aus.
 
 ```bash
