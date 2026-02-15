@@ -17,34 +17,9 @@ setup_logging()
 logger = __import__('logging').getLogger(__name__)
 
 
-def run_migrations() -> None:
-    """Alembic-Migrationen programmatisch ausfuehren (upgrade head).
-
-    Funktioniert sowohl bei frischer DB (erstellt alle Tabellen) als auch
-    bei bestehender DB (fuehrt nur ausstehende Migrationen aus).
-    Wird synchron ausgefuehrt, da Alembic seinen eigenen Engine verwaltet.
-    """
-    from alembic import command
-    from alembic.config import Config
-
-    alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("script_location", str(
-        __import__("pathlib").Path(__file__).resolve().parent.parent / "alembic"
-    ))
-
-    # Use a sync database URL for Alembic, as it doesn't support async drivers directly
-    # in its command functions. We replace 'sqlite+aiosqlite' with just 'sqlite'.
-    sync_database_url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
-    alembic_cfg.set_main_option("sqlalchemy.url", sync_database_url)
-
-    command.upgrade(alembic_cfg, "head")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting FilaMan backend...")
-    run_migrations()
-    logger.info("Database migrations applied")
     async with async_session_maker() as db:
         await run_all_seeds(db)
     await plugin_manager.start_all()

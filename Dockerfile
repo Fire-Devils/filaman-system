@@ -69,5 +69,12 @@ COPY --from=frontend-builder /app/frontend/dist /app/static
 # Expose the port the app runs on
 EXPOSE 8000
 
-# Run the application
+# Copy entrypoint script and make it executable
+COPY backend/docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Set the entrypoint
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# The command to run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
