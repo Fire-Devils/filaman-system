@@ -12,6 +12,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Docker CLI
+        run: |
+          apt-get update
+          apt-get install -y docker.io
+
       - name: Generate production .env file
         run: |
           echo "DEBUG=false" > .env
