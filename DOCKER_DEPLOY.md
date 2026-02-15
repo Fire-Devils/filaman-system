@@ -1,6 +1,6 @@
-# How to Install FilaMan via Docker
+# How to Install FilaMan via Docker Command
 
-This guide explains how to run the FilaMan application using the pre-built Docker image from the GitHub Container Registry (ghcr.io). No programming knowledge is required.
+This guide explains how to run the FilaMan application using a single Docker command. This is the recommended method for simple deployments.
 
 ---
 
@@ -8,46 +8,21 @@ This guide explains how to run the FilaMan application using the pre-built Docke
 
 ### Prerequisites
 
-- You must have **Docker** and **Docker Compose** installed on your system.
+- You must have **Docker** installed on your system.
 
 ### Installation Steps
 
-**Step 1: Create a Folder**  
-Create a new, empty folder on your computer where you want to store the application data. For example, `C:\FilaMan` or `/home/user/filaman`.
+**Step 1: Create a Configuration File (`.env`)**  
+First, you need to create a configuration file that stores all your settings.
 
-**Step 2: Create the `docker-compose.yml` File**  
-Inside the new folder, create a file named `docker-compose.yml` and paste the following content into it:
-
-```yaml
-version: '3.8'
-
-services:
-  filaman:
-    # IMPORTANT: Replace the image path with the actual image path
-    # Example: ghcr.io/your-username/filaman-system:latest
-    image: ghcr.io/fire-devils/filaman-system:latest
-    container_name: filaman-system-app
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./filaman.db:/app/filaman.db
-    env_file:
-      - .env
-
-networks:
-  default:
-    name: filaman-network
-```
-**Important:** You must replace `ghcr.io/fire-devils/filaman-system:latest` with the correct image path provided by the project developer.
-
-**Step 3: Create the `.env` Configuration File**  
-In the same folder, create another file named `.env`. This file holds the configuration. Paste the content below into this file.
+1.  Create a new, empty folder on your computer where you want to store the application data (e.g., `C:\FilaMan` or `/home/user/filaman`).
+2.  Inside this new folder, create a file named `.env`.
+3.  Paste the following content into this file:
 
 ```env
-# It is strongly recommended to change these default keys for security
-SECRET_KEY=change-me-in-production
-CSRF_SECRET_KEY=change-me-in-production
+# It is strongly recommended to change these for security
+SECRET_KEY=change-me-in-production-with-a-long-random-string
+CSRF_SECRET_KEY=change-me-in-production-with-a-long-random-string
 
 # Default Admin User (created on first start)
 ADMIN_EMAIL=admin@example.com
@@ -61,23 +36,36 @@ DEBUG=false
 CORS_ORIGINS=*
 DATABASE_URL=sqlite+aiosqlite:////app/filaman.db
 ```
-For security, you should replace the default values for `SECRET_KEY` and `CSRF_SECRET_KEY` with long, random strings.
+**Important:** For security, you should replace the default values for `SECRET_KEY` and `CSRF_SECRET_KEY` with long, random strings.
 
-**Step 4: Start the Application**  
-Open a terminal or command prompt, navigate into the folder you created, and run the following command:  
-`docker-compose up -d`
+**Step 2: Start the Application with Docker**  
+Now, open a terminal or command prompt, navigate into the folder you just created, and run the command below.
 
-Docker will now download the FilaMan image and start the application.
+**Important:** You must replace `ghcr.io/your-username/filaman-system:latest` with the correct image path provided by the project developer.
+
+```bash
+docker run -d \
+  --name filaman-system-app \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v "$(pwd)/filaman.db":/app/filaman.db \
+  --env-file .env \
+  ghcr.io/your-username/filaman-system:latest
+```
+
+Docker will now download the image and start the FilaMan container in the background.
 
 ### Accessing the Application
 
-Once the container is running, you can access FilaMan in your web browser at:  
-**http://localhost:8000**
+- **URL:** http://localhost:8000
+- **Default Username:** `admin@example.com`
+- **Default Password:** `admin123`
 
-### Default Admin Login
-
--   **Username:** `admin@example.com`
--   **Password:** `admin123`
+### Managing the Container
+- **To stop the container:** `docker stop filaman-system-app`
+- **To start the container again:** `docker start filaman-system-app`
+- **To view logs:** `docker logs -f filaman-system-app`
+- **To remove the container:** `docker rm filaman-system-app`
 
 ---
 
@@ -85,46 +73,21 @@ Once the container is running, you can access FilaMan in your web browser at:
 
 ### Voraussetzungen
 
-- Sie müssen **Docker** und **Docker Compose** auf Ihrem System installiert haben.
+- Sie müssen **Docker** auf Ihrem System installiert haben.
 
 ### Installationsschritte
 
-**Schritt 1: Ordner erstellen**  
-Erstellen Sie einen neuen, leeren Ordner auf Ihrem Computer, in dem Sie die Anwendungsdaten speichern möchten. Zum Beispiel `C:\FilaMan` oder `/home/user/filaman`.
+**Schritt 1: Konfigurationsdatei (`.env`) erstellen**  
+Zuerst müssen Sie eine Konfigurationsdatei anlegen, die alle Einstellungen speichert.
 
-**Schritt 2: `docker-compose.yml`-Datei erstellen**  
-Erstellen Sie in dem neuen Ordner eine Datei mit dem Namen `docker-compose.yml` und fügen Sie den folgenden Inhalt ein:
-
-```yaml
-version: '3.8'
-
-services:
-  filaman:
-    # WICHTIG: Ersetzen Sie den Image-Pfad mit dem tatsächlichen Pfad
-    # Beispiel: ghcr.io/ihr-benutzername/filaman-system:latest
-    image: ghcr.io/YOUR_GITEA_USERNAME/filaman-system:latest
-    container_name: filaman-system-app
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./filaman.db:/app/filaman.db
-    env_file:
-      - .env
-
-networks:
-  default:
-    name: filaman-network
-```
-**Wichtig:** Sie müssen `ghcr.io/YOUR_GITEA_USERNAME/filaman-system:latest` durch den korrekten Image-Pfad ersetzen, den der Projektentwickler bereitstellt.
-
-**Schritt 3: `.env`-Konfigurationsdatei erstellen**  
-Erstellen Sie im selben Ordner eine weitere Datei mit dem Namen `.env`. Diese Datei enthält die Konfiguration. Fügen Sie den folgenden Inhalt ein.
+1.  Erstellen Sie einen neuen, leeren Ordner auf Ihrem Computer, in dem die Anwendungsdaten gespeichert werden sollen (z.B. `C:\FilaMan` oder `/home/user/filaman`).
+2.  Erstellen Sie in diesem Ordner eine Datei mit dem Namen `.env`.
+3.  Fügen Sie den folgenden Inhalt in diese Datei ein:
 
 ```env
-# Es wird dringend empfohlen, diese Standardschlüssel aus Sicherheitsgründen zu ändern
-SECRET_KEY=change-me-in-production
-CSRF_SECRET_KEY=change-me-in-production
+# Es wird dringend empfohlen, diese aus Sicherheitsgründen zu ändern
+SECRET_KEY=change-me-in-production-with-a-long-random-string
+CSRF_SECRET_KEY=change-me-in-production-with-a-long-random-string
 
 # Standard-Admin-Benutzer (wird beim ersten Start erstellt)
 ADMIN_EMAIL=admin@example.com
@@ -138,20 +101,33 @@ DEBUG=false
 CORS_ORIGINS=*
 DATABASE_URL=sqlite+aiosqlite:////app/filaman.db
 ```
-Aus Sicherheitsgründen sollten Sie die Standardwerte für `SECRET_KEY` und `CSRF_SECRET_KEY` durch lange, zufällige Zeichenketten ersetzen.
+**Wichtig:** Aus Sicherheitsgründen sollten Sie die Standardwerte für `SECRET_KEY` und `CSRF_SECRET_KEY` durch lange, zufällige Zeichenketten ersetzen.
 
-**Schritt 4: Anwendung starten**  
-Öffnen Sie ein Terminal oder eine Kommandozeile, navigieren Sie in den von Ihnen erstellten Ordner und führen Sie diesen Befehl aus:  
-`docker-compose up -d`
+**Schritt 2: Anwendung mit Docker starten**  
+Öffnen Sie nun ein Terminal oder eine Kommandozeile, navigieren Sie in den Ordner, den Sie gerade erstellt haben, und führen Sie den folgenden Befehl aus.
 
-Docker wird nun das FilaMan-Image herunterladen und die Anwendung starten.
+**Wichtig:** Sie müssen `ghcr.io/your-username/filaman-system:latest` durch den korrekten Image-Pfad ersetzen, den der Projektentwickler bereitstellt.
+
+```bash
+docker run -d \
+  --name filaman-system-app \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  -v "$(pwd)/filaman.db":/app/filaman.db \
+  --env-file .env \
+  ghcr.io/your-username/filaman-system:latest
+```
+
+Docker wird nun das Image herunterladen und den FilaMan-Container im Hintergrund starten.
 
 ### Zugriff auf die Anwendung
 
-Sobald der Container läuft, können Sie FilaMan in Ihrem Webbrowser unter folgender Adresse aufrufen:  
-**http://localhost:8000**
+- **URL:** http://localhost:8000
+- **Standard-Benutzername:** `admin@example.com`
+- **Standard-Passwort:** `admin123`
 
-### Standard-Admin-Login
-
--   **Benutzername:** `admin@example.com`
--   **Passwort:** `admin123`
+### Container verwalten
+- **Container stoppen:** `docker stop filaman-system-app`
+- **Container wieder starten:** `docker start filaman-system-app`
+- **Logs ansehen:** `docker logs -f filaman-system-app`
+- **Container entfernen:** `docker rm filaman-system-app`
