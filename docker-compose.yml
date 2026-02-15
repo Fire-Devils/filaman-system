@@ -2,18 +2,22 @@ version: '3.8'
 
 services:
   filaman:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: filaman-system
+    # IMPORTANT: Replace the image path with your actual image path on ghcr.io
+    # Example: ghcr.io/your-username/filaman-system:latest
+    image: ghcr.io/fire-devils/filaman-system:latest
     container_name: filaman-system-app
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    volumes:
+      # This will create a 'filaman.db' file in the same directory as this compose file
+      # to persist your database data.
+      - ./filaman.db:/app/filaman.db
     env_file:
+      # This tells Docker Compose to load environment variables from a file named '.env'
+      # in the same directory.
       - .env
-
 
 networks:
   default:
     name: filaman-network
-
