@@ -18,7 +18,6 @@ docker run -d \
   --restart unless-stopped \
   -p 8000:8000 \
   -v "$(pwd)/filaman.db":/app/filaman.db \
-  --env-file .env \
   ghcr.io/fire-devils/filaman-system:latest
 ```
 
@@ -52,7 +51,6 @@ docker run -d \
   --restart unless-stopped \
   -p 8000:8000 \
   -v "$(pwd)/filaman.db":/app/filaman.db \
-  --env-file .env \
   ghcr.io/fire-devils/filaman-system:latest
 ```
 
