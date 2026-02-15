@@ -1,0 +1,421 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - System">
+  <div style="margin-bottom: 24px;">
+    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+  
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.systemPlugins">Plugins</h1>
+    <button
+      id="btn-install"
+      class="fm-btn fm-btn-primary"
+      data-i18n="admin.installPlugin"
+    >
+      Install Plugin
+    </button>
+  </div>
+  
+  <!-- Plugin-Liste -->
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead style="background: var(--bg-soft);">
+        <tr>
+          <th data-i18n="common.name">Name</th>
+          <th data-i18n="admin.pluginVersion">Version</th>
+          <th data-i18n="admin.pluginAuthor">Author</th>
+          <th data-i18n="admin.pluginDriver">Driver Key</th>
+          <th data-i18n="common.status">Status</th>
+          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="plugins-table">
+        <tr>
+          <td colspan="6" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Install Modal -->
+  <div id="install-modal" class="fm-modal-overlay">
+    <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px;">
+      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.installPlugin">Install Plugin</h3>
+      
+      <form id="install-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <label class="fm-label" data-i18n="admin.pluginZipFile">Plugin ZIP File</label>
+          <div id="drop-zone" style="border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 32px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;">
+            <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;" data-i18n="admin.pluginDropHint">Drag & Drop ZIP file here or click to select</p>
+            <p id="file-name" style="margin: 8px 0 0; font-weight: 600; color: var(--text); display: none;"></p>
+            <input type="file" id="file-input" accept=".zip,application/zip" style="display: none;" />
+          </div>
+        </div>
+        
+        <!-- Validierungsergebnis -->
+        <div id="validation-result" style="display: none;">
+          <div id="validation-success" class="fm-alert-success" style="display: none; padding: 12px; border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--bg-soft); border: 1px solid var(--accent-2);">
+            <strong data-i18n="admin.pluginValidationOk">Validation passed</strong>
+            <div id="validation-details" style="margin-top: 8px; font-size: 0.85rem;"></div>
+          </div>
+          <div id="validation-error" class="fm-alert-error" style="display: none; padding: 12px; border-radius: var(--radius-sm);">
+            <strong data-i18n="admin.pluginValidationFailed">Validation failed</strong>
+            <div id="error-details" style="margin-top: 8px; font-size: 0.85rem;"></div>
+          </div>
+        </div>
+        
+        <!-- Fortschrittsbalken -->
+        <div id="upload-progress" style="display: none;">
+          <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
+            <div id="progress-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.3s;"></div>
+          </div>
+          <p id="progress-text" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; text-align: center;" data-i18n="admin.pluginUploading">Uploading...</p>
+        </div>
+        
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="install-submit" class="fm-btn fm-btn-primary" disabled data-i18n="admin.installPlugin">Install Plugin</button>
+          <button type="button" id="install-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Detail Modal -->
+  <div id="detail-modal" class="fm-modal-overlay">
+    <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px;">
+      <h3 id="detail-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;">Plugin Details</h3>
+      <div id="detail-content" style="display: flex; flex-direction: column; gap: 12px; font-size: 0.9rem;"></div>
+      <div style="margin-top: 16px;">
+        <button type="button" id="detail-close" class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let plugins: any[] = []
+    let selectedFile: File | null = null
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    function escapeHtml(str: string): string {
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
+    }
+    
+    // ----------------------------------------------------------------
+    //  Plugin-Liste laden und rendern
+    // ----------------------------------------------------------------
+    
+    async function loadPlugins() {
+      try {
+        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch plugins')
+        plugins = await response.json()
+        renderPlugins()
+      } catch (error) {
+        console.error('Failed to load plugins:', error)
+        const tbody = document.getElementById('plugins-table')!
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--error-text);">${escapeHtml(t('admin.pluginFailedLoad'))}</td></tr>`
+      }
+    }
+    
+    function renderPlugins() {
+      const tbody = document.getElementById('plugins-table')!
+      
+      if (plugins.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">${escapeHtml(t('admin.noPlugins'))}</td></tr>`
+        return
+      }
+      
+      tbody.innerHTML = plugins.map(p => `
+        <tr>
+          <td>
+            <div style="font-weight: 600;">${escapeHtml(p.name)}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(p.description || '')}</div>
+          </td>
+          <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.version)}</td>
+          <td style="color: var(--text-muted);">${escapeHtml(p.author || '-')}</td>
+          <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.driver_key)}</td>
+          <td>
+            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${p.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
+              ${p.is_active ? t('common.active') : t('common.inactive')}
+            </span>
+          </td>
+          <td style="text-align: right;">
+            <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.pluginDetails')}</button>
+            <button data-key="${escapeHtml(p.plugin_key)}" data-name="${escapeHtml(p.name)}" class="btn-uninstall" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('admin.uninstallPlugin')}</button>
+          </td>
+        </tr>
+      `).join('')
+      
+      // Detail-Buttons
+      document.querySelectorAll('.btn-detail').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const key = (e.currentTarget as HTMLButtonElement).dataset.key!
+          showPluginDetails(key)
+        })
+      })
+      
+      // Uninstall-Buttons
+      document.querySelectorAll('.btn-uninstall').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const key = (e.currentTarget as HTMLButtonElement).dataset.key!
+          const name = (e.currentTarget as HTMLButtonElement).dataset.name!
+          
+          const msg = t('admin.confirmUninstall').replace('{name}', name)
+          if (!(await (window as any).__fmConfirm(msg))) return
+          
+          try {
+            const response = await fetch(`/api/v1/admin/system/plugins/${key}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}))
+              throw new Error(data.detail?.message || t('admin.pluginUninstallFailed'))
+            }
+            
+            loadPlugins()
+          } catch (err: any) {
+            await (window as any).__fmAlert(err.message || t('admin.pluginUninstallFailed'))
+          }
+        })
+      })
+    }
+    
+    // ----------------------------------------------------------------
+    //  Plugin-Details anzeigen
+    // ----------------------------------------------------------------
+    
+    function showPluginDetails(key: string) {
+      const plugin = plugins.find(p => p.plugin_key === key)
+      if (!plugin) return
+      
+      const title = document.getElementById('detail-title')!
+      const content = document.getElementById('detail-content')!
+      
+      title.textContent = plugin.name
+      
+      const rows = [
+        { label: 'Plugin Key', value: plugin.plugin_key },
+        { label: t('admin.pluginVersion'), value: plugin.version },
+        { label: t('admin.pluginAuthor'), value: plugin.author || '-' },
+        { label: t('admin.pluginDriver'), value: plugin.driver_key },
+        { label: t('admin.pluginDescription'), value: plugin.description || '-' },
+        { label: t('admin.pluginHomepage'), value: plugin.homepage ? `<a href="${escapeHtml(plugin.homepage)}" target="_blank" style="color: var(--accent);">${escapeHtml(plugin.homepage)}</a>` : '-' },
+        { label: t('admin.pluginLicense'), value: plugin.license || '-' },
+        { label: t('admin.pluginInstalledAt'), value: new Date(plugin.installed_at).toLocaleString() },
+      ]
+      
+      content.innerHTML = rows.map(r => `
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(r.label)}</span>
+          <span style="text-align: right;">${r.value}</span>
+        </div>
+      `).join('')
+      
+      // Config Schema anzeigen
+      if (plugin.config_schema && Object.keys(plugin.config_schema).length > 0) {
+        content.innerHTML += `
+          <div style="margin-top: 8px;">
+            <span style="font-weight: 600; font-size: 0.9rem;" data-i18n="admin.pluginConfigSchema">Configuration Schema</span>
+            <div style="margin-top: 8px; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto;">${escapeHtml(JSON.stringify(plugin.config_schema, null, 2))}</div>
+          </div>
+        `
+      }
+      
+      document.getElementById('detail-modal')!.classList.add('open')
+    }
+    
+    document.getElementById('detail-close')?.addEventListener('click', () => {
+      document.getElementById('detail-modal')!.classList.remove('open')
+    })
+    document.getElementById('detail-modal')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) document.getElementById('detail-modal')!.classList.remove('open')
+    })
+    
+    // ----------------------------------------------------------------
+    //  Install-Modal: Drag & Drop, Dateiauswahl, Upload
+    // ----------------------------------------------------------------
+    
+    const dropZone = document.getElementById('drop-zone')!
+    const fileInput = document.getElementById('file-input') as HTMLInputElement
+    const fileName = document.getElementById('file-name')!
+    const installSubmit = document.getElementById('install-submit') as HTMLButtonElement
+    
+    // Oeffnen
+    document.getElementById('btn-install')?.addEventListener('click', () => {
+      resetInstallModal()
+      document.getElementById('install-modal')!.classList.add('open')
+    })
+    
+    document.getElementById('install-cancel')?.addEventListener('click', () => {
+      document.getElementById('install-modal')!.classList.remove('open')
+    })
+    
+    document.getElementById('install-modal')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) document.getElementById('install-modal')!.classList.remove('open')
+    })
+    
+    function resetInstallModal() {
+      selectedFile = null
+      fileInput.value = ''
+      fileName.style.display = 'none'
+      fileName.textContent = ''
+      installSubmit.disabled = true
+      document.getElementById('validation-result')!.style.display = 'none'
+      document.getElementById('validation-success')!.style.display = 'none'
+      document.getElementById('validation-error')!.style.display = 'none'
+      document.getElementById('upload-progress')!.style.display = 'none'
+      ;(document.getElementById('progress-bar') as HTMLElement).style.width = '0%'
+      dropZone.style.borderColor = 'var(--border)'
+      dropZone.style.background = 'transparent'
+    }
+    
+    // Klick auf Drop-Zone oeffnet Dateiauswahl
+    dropZone.addEventListener('click', () => fileInput.click())
+    
+    // Drag & Drop
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      dropZone.style.borderColor = 'var(--accent)'
+      dropZone.style.background = 'var(--bg-soft)'
+    })
+    
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.style.borderColor = 'var(--border)'
+      dropZone.style.background = 'transparent'
+    })
+    
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault()
+      dropZone.style.borderColor = 'var(--border)'
+      dropZone.style.background = 'transparent'
+      
+      const files = e.dataTransfer?.files
+      if (files && files.length > 0) {
+        handleFileSelect(files[0])
+      }
+    })
+    
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files.length > 0) {
+        handleFileSelect(fileInput.files[0])
+      }
+    })
+    
+    function handleFileSelect(file: File) {
+      // ZIP-Pruefung
+      if (!file.name.endsWith('.zip')) {
+        showValidationError(t('admin.pluginNotZip'))
+        return
+      }
+      
+      // Groessen-Pruefung (10 MB)
+      if (file.size > 10 * 1024 * 1024) {
+        showValidationError(t('admin.pluginTooLarge'))
+        return
+      }
+      
+      selectedFile = file
+      fileName.textContent = file.name + ` (${(file.size / 1024).toFixed(1)} KB)`
+      fileName.style.display = 'block'
+      installSubmit.disabled = false
+      
+      // Validierung zuruecksetzen
+      document.getElementById('validation-result')!.style.display = 'none'
+      document.getElementById('validation-success')!.style.display = 'none'
+      document.getElementById('validation-error')!.style.display = 'none'
+    }
+    
+    function showValidationError(message: string) {
+      document.getElementById('validation-result')!.style.display = 'block'
+      document.getElementById('validation-success')!.style.display = 'none'
+      const errorEl = document.getElementById('validation-error')!
+      errorEl.style.display = 'block'
+      document.getElementById('error-details')!.textContent = message
+      installSubmit.disabled = true
+    }
+    
+    // Upload / Install
+    document.getElementById('install-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      if (!selectedFile) return
+      
+      installSubmit.disabled = true
+      installSubmit.textContent = t('admin.pluginInstalling')
+      
+      const progressDiv = document.getElementById('upload-progress')!
+      const progressBar = document.getElementById('progress-bar') as HTMLElement
+      progressDiv.style.display = 'block'
+      progressBar.style.width = '30%'
+      
+      try {
+        const formData = new FormData()
+        formData.append('file', selectedFile)
+        
+        progressBar.style.width = '60%'
+        
+        const response = await fetch('/api/v1/admin/system/plugins/install', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: formData,
+        })
+        
+        progressBar.style.width = '90%'
+        
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({ detail: { message: 'Unknown error' } }))
+          const msg = data.detail?.message || data.message || t('admin.pluginInstallFailed')
+          throw new Error(msg)
+        }
+        
+        const result = await response.json()
+        
+        progressBar.style.width = '100%'
+        
+        // Erfolg anzeigen
+        document.getElementById('validation-result')!.style.display = 'block'
+        document.getElementById('validation-error')!.style.display = 'none'
+        const successEl = document.getElementById('validation-success')!
+        successEl.style.display = 'block'
+        document.getElementById('validation-details')!.innerHTML = `
+          <strong>${escapeHtml(result.plugin.name)}</strong> v${escapeHtml(result.plugin.version)}<br>
+          ${escapeHtml(result.message)}
+        `
+        
+        // Nach kurzer Verzoegerung schliessen und Liste aktualisieren
+        setTimeout(() => {
+          document.getElementById('install-modal')!.classList.remove('open')
+          loadPlugins()
+        }, 1500)
+        
+      } catch (err: any) {
+        showValidationError(err.message)
+        progressDiv.style.display = 'none'
+      } finally {
+        installSubmit.disabled = false
+        installSubmit.textContent = t('admin.installPlugin')
+      }
+    })
+    
+    // ----------------------------------------------------------------
+    //  Initialisierung
+    // ----------------------------------------------------------------
+    
+    loadPlugins()
+  </script>
+</Layout>

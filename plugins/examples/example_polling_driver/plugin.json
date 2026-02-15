@@ -1,0 +1,36 @@
+{
+  "plugin_key": "example_polling_driver",
+  "name": "Example Polling Driver",
+  "version": "1.0.0",
+  "description": "Beispiel-Plugin: Simuliert einen HTTP-Polling-Treiber, der periodisch den AMS-Status abfragt.",
+  "author": "FilaMan Team",
+  "min_filaman_version": "1.0.0",
+  "driver_key": "example_polling_driver",
+  "homepage": "https://github.com/filaman/filaman",
+  "license": "MIT",
+  "config_schema": {
+    "host": {
+      "type": "string",
+      "required": true,
+      "description": "Hostname oder IP-Adresse des Druckers"
+    },
+    "port": {
+      "type": "integer",
+      "required": false,
+      "default": 8080,
+      "description": "HTTP-Port des Druckers"
+    },
+    "poll_interval_seconds": {
+      "type": "integer",
+      "required": false,
+      "default": 30,
+      "description": "Abfrageintervall in Sekunden"
+    },
+    "api_key": {
+      "type": "string",
+      "required": false,
+      "secret": true,
+      "description": "Optionaler API-Schluessel fuer die Authentifizierung"
+    }
+  }
+}

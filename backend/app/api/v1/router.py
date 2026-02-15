@@ -9,6 +9,7 @@ from app.api.v1.spools import (
     router_spool_measurements,
     router_spools,
 )
+from app.api.v1.system import router as system_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -21,3 +22,4 @@ api_router.include_router(router_spool_measurements)
 api_router.include_router(me_router)
 api_router.include_router(printers_router)
 api_router.include_router(admin_router)
+api_router.include_router(system_router)

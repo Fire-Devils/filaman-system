@@ -60,6 +60,7 @@ PERMISSIONS = [
     {"key": "admin:users_manage", "description": "Manage users (admin)", "category": "admin"},
     {"key": "admin:rbac_manage", "description": "Manage roles and permissions (admin)", "category": "admin"},
     {"key": "admin:devices_manage", "description": "Manage devices (admin)", "category": "admin"},
+    {"key": "admin:plugins_manage", "description": "Manage plugins (admin)", "category": "admin"},
 ]
 
 ROLES = [

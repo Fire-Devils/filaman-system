@@ -6,6 +6,7 @@ from app.models.rbac import Permission, Role, RolePermission, UserPermission, Us
 from app.models.spool import Spool, SpoolEvent, SpoolStatus
 from app.models.user import OAuthIdentity, User, UserApiKey, UserSession
 from app.models.device import Device
+from app.models.plugin import InstalledPlugin
 
 __all__ = [
     "Base",
@@ -34,4 +35,5 @@ __all__ = [
     "UserApiKey",
     "UserSession",
     "Device",
+    "InstalledPlugin",
 ]
