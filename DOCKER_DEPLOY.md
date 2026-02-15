@@ -12,36 +12,8 @@ This guide explains how to run the FilaMan application using a single Docker com
 
 ### Installation Steps
 
-**Step 1: Create a Configuration File (`.env`)**  
-First, you need to create a configuration file that stores all your settings.
-
-1.  Create a new, empty folder on your computer where you want to store the application data (e.g., `C:\FilaMan` or `/home/user/filaman`).
-2.  Inside this new folder, create a file named `.env`.
-3.  Paste the following content into this file:
-
-```env
-# It is strongly recommended to change these for security
-SECRET_KEY=change-me-in-production-with-a-long-random-string
-CSRF_SECRET_KEY=change-me-in-production-with-a-long-random-string
-
-# Default Admin User (created on first start)
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=admin123
-ADMIN_DISPLAY_NAME=Admin
-ADMIN_LANGUAGE=en
-ADMIN_SUPERADMIN=true
-
-# Production Settings
-DEBUG=false
-CORS_ORIGINS=*
-DATABASE_URL=sqlite+aiosqlite:////app/filaman.db
-```
-**Important:** For security, you should replace the default values for `SECRET_KEY` and `CSRF_SECRET_KEY` with long, random strings.
-
-**Step 2: Start the Application with Docker**  
-Now, open a terminal or command prompt, navigate into the folder you just created, and run the command below.
-
-**Important:** You must replace `ghcr.io/your-username/filaman-system:latest` with the correct image path provided by the project developer.
+**Step 1: Start the Application with Docker**  
+Open a terminal or command prompt, navigate into the folder you just created, and run the command below.
 
 ```bash
 docker run -d \
@@ -50,7 +22,7 @@ docker run -d \
   -p 8000:8000 \
   -v "$(pwd)/filaman.db":/app/filaman.db \
   --env-file .env \
-  ghcr.io/your-username/filaman-system:latest
+  ghcr.io/fire-devils/filaman-system:latest
 ```
 
 Docker will now download the image and start the FilaMan container in the background.
@@ -77,36 +49,8 @@ Docker will now download the image and start the FilaMan container in the backgr
 
 ### Installationsschritte
 
-**Schritt 1: Konfigurationsdatei (`.env`) erstellen**  
-Zuerst müssen Sie eine Konfigurationsdatei anlegen, die alle Einstellungen speichert.
-
-1.  Erstellen Sie einen neuen, leeren Ordner auf Ihrem Computer, in dem die Anwendungsdaten gespeichert werden sollen (z.B. `C:\FilaMan` oder `/home/user/filaman`).
-2.  Erstellen Sie in diesem Ordner eine Datei mit dem Namen `.env`.
-3.  Fügen Sie den folgenden Inhalt in diese Datei ein:
-
-```env
-# Es wird dringend empfohlen, diese aus Sicherheitsgründen zu ändern
-SECRET_KEY=change-me-in-production-with-a-long-random-string
-CSRF_SECRET_KEY=change-me-in-production-with-a-long-random-string
-
-# Standard-Admin-Benutzer (wird beim ersten Start erstellt)
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=admin123
-ADMIN_DISPLAY_NAME=Admin
-ADMIN_LANGUAGE=en
-ADMIN_SUPERADMIN=true
-
-# Produktions-Einstellungen
-DEBUG=false
-CORS_ORIGINS=*
-DATABASE_URL=sqlite+aiosqlite:////app/filaman.db
-```
-**Wichtig:** Aus Sicherheitsgründen sollten Sie die Standardwerte für `SECRET_KEY` und `CSRF_SECRET_KEY` durch lange, zufällige Zeichenketten ersetzen.
-
-**Schritt 2: Anwendung mit Docker starten**  
+**Schritt 1: Anwendung mit Docker starten**  
 Öffnen Sie nun ein Terminal oder eine Kommandozeile, navigieren Sie in den Ordner, den Sie gerade erstellt haben, und führen Sie den folgenden Befehl aus.
-
-**Wichtig:** Sie müssen `ghcr.io/your-username/filaman-system:latest` durch den korrekten Image-Pfad ersetzen, den der Projektentwickler bereitstellt.
 
 ```bash
 docker run -d \
@@ -115,7 +59,7 @@ docker run -d \
   -p 8000:8000 \
   -v "$(pwd)/filaman.db":/app/filaman.db \
   --env-file .env \
-  ghcr.io/your-username/filaman-system:latest
+  ghcr.io/fire-devils/filaman-system:latest
 ```
 
 Docker wird nun das Image herunterladen und den FilaMan-Container im Hintergrund starten.
