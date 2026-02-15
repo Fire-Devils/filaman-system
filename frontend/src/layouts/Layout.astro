@@ -199,9 +199,12 @@ const { title } = Astro.props
           if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal(false)
         })
 
-        // fmConfirm(message) – replacement for window.confirm()
-        ;(window as any).__fmConfirm = function(message: string): Promise<boolean> {
-          return openModal(t('common.confirmTitle') || t('common.delete'), message, t('common.delete'), t('common.cancel'), true)
+        // fmConfirm(message, options?) – replacement for window.confirm()
+        ;(window as any).__fmConfirm = function(message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }): Promise<boolean> {
+          const title = options?.title || t('common.confirmTitle') || t('common.delete')
+          const okLabel = options?.okLabel || t('common.delete')
+          const isDanger = options?.isDanger !== undefined ? options.isDanger : true
+          return openModal(title, message, okLabel, t('common.cancel'), isDanger)
         }
 
         // fmAlert(message) – replacement for window.alert()

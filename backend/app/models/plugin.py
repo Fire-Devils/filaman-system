@@ -8,7 +8,7 @@ from app.models.base import Base, TimestampMixin
 
 
 class InstalledPlugin(TimestampMixin, Base):
-    """Installiertes Plugin (Drucker-Treiber)."""
+    """Installiertes Plugin (Treiber oder Integration)."""
 
     __tablename__ = "installed_plugins"
 
@@ -20,7 +20,9 @@ class InstalledPlugin(TimestampMixin, Base):
     author: Mapped[str | None] = mapped_column(String(200), nullable=True)
     homepage: Mapped[str | None] = mapped_column(String(500), nullable=True)
     license: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    driver_key: Mapped[str] = mapped_column(String(50), nullable=False)
+    plugin_type: Mapped[str] = mapped_column(String(30), nullable=False, default="driver")
+    driver_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    page_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     config_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     installed_at: Mapped[datetime] = mapped_column(

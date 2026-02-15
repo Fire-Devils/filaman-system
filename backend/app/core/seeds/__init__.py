@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Permission, Role, SpoolStatus, User, UserRole
 from app.core.config import settings
+from app.services.plugin_service import PluginInstallService
 
 
 SPOOL_STATUSES = [
@@ -213,9 +214,30 @@ async def seed_admin_user_from_env(db: AsyncSession) -> None:
     await db.commit()
 
 
+BUILTIN_PLUGINS = [
+    {
+        "plugin_key": "spoolman_import",
+        "name": "Spoolman Import",
+        "version": "1.0.0",
+        "description": "Import filaments, spools, manufacturers and locations from a Spoolman instance",
+        "author": "FilaMan",
+        "plugin_type": "import",
+        "page_url": "/admin/system/spoolman-import",
+    },
+]
+
+
+async def seed_builtin_plugins(db: AsyncSession) -> None:
+    """Register built-in plugins so they appear in the plugin list."""
+    svc = PluginInstallService(db)
+    for plugin_data in BUILTIN_PLUGINS:
+        await svc.register_builtin(**plugin_data)
+
+
 async def run_all_seeds(db: AsyncSession) -> None:
     await seed_spool_statuses(db)
     await seed_permissions(db)
     await seed_roles(db)
     await seed_role_permissions(db)
     await seed_admin_user_from_env(db)
+    await seed_builtin_plugins(db)

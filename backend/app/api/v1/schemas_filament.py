@@ -20,6 +20,7 @@ class ManufacturerResponse(BaseModel):
     name: str
     url: str | None
     custom_fields: dict[str, Any] | None
+    filament_count: int = 0
 
     class Config:
         from_attributes = True

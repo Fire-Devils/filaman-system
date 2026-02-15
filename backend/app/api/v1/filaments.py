@@ -40,12 +40,30 @@ async def list_manufacturers(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = result.scalars().all()
+    items = list(result.scalars().all())
+
+    # Filament-Count pro Hersteller berechnen
+    mfr_ids = [m.id for m in items]
+    fil_counts: dict[int, int] = {}
+    if mfr_ids:
+        fc_result = await db.execute(
+            select(Filament.manufacturer_id, func.count(Filament.id))
+            .where(Filament.manufacturer_id.in_(mfr_ids))
+            .group_by(Filament.manufacturer_id)
+        )
+        fil_counts = {row[0]: row[1] for row in fc_result.all()}
+
+    items_out = [
+        ManufacturerResponse.model_validate(
+            {**m.__dict__, "filament_count": fil_counts.get(m.id, 0)}
+        )
+        for m in items
+    ]
 
     count_result = await db.execute(select(func.count()).select_from(Manufacturer))
     total = count_result.scalar() or 0
 
-    return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+    return PaginatedResponse(items=items_out, page=page, page_size=page_size, total=total)
 
 
 @router.post("", response_model=ManufacturerResponse, status_code=status.HTTP_201_CREATED)

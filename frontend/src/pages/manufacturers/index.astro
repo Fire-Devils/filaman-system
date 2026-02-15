@@ -77,7 +77,6 @@ import Layout from '../../layouts/Layout.astro'
     await initI18n()
 
     let manufacturers: any[] = []
-    let filamentCounts: Record<number, number> = {}
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -86,25 +85,9 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadManufacturers() {
       try {
-        const [mfRes, filRes] = await Promise.all([
-          fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' }),
-          fetch('/api/v1/filaments?page_size=1000', { credentials: 'include' }),
-        ])
-
+        const mfRes = await fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' })
         if (!mfRes.ok) throw new Error('Failed to fetch manufacturers')
-
         manufacturers = await mfRes.json().then(d => d.items)
-
-        filamentCounts = {}
-        if (filRes.ok) {
-          const filaments = await filRes.json().then(d => d.items)
-          filaments.forEach((f: any) => {
-            if (f.manufacturer_id) {
-              filamentCounts[f.manufacturer_id] = (filamentCounts[f.manufacturer_id] || 0) + 1
-            }
-          })
-        }
-
         renderManufacturers()
       } catch (error) {
         console.error('Failed to load manufacturers:', error)
@@ -140,7 +123,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
           <td>${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
-          <td>${filamentCounts[mf.id] || 0}</td>
+          <td>${mf.filament_count || 0}</td>
           <td style="text-align: right; white-space: nowrap;">
             <button data-id="${mf.id}" data-name="${escapeHtml(mf.name)}" data-url="${escapeHtml(mf.url || '')}" class="btn-edit fm-btn fm-btn-outline" style="padding: 5px 12px; font-size: 0.8rem;">${t('common.edit')}</button>
             <button data-id="${mf.id}" class="btn-delete fm-btn fm-btn-danger" style="padding: 5px 12px; font-size: 0.8rem; margin-left: 6px;">${t('common.delete')}</button>

@@ -69,8 +69,8 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <th data-i18n="common.name">Name</th>
           <th data-i18n="admin.pluginVersion">Version</th>
+          <th data-i18n="admin.pluginType">Type</th>
           <th data-i18n="admin.pluginAuthor">Author</th>
-          <th data-i18n="admin.pluginDriver">Driver Key</th>
           <th data-i18n="common.status">Status</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
@@ -126,6 +126,27 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
   
+  <!-- Danger Zone: Killswitch -->
+  <div style="margin-top: 48px;">
+    <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 16px; color: var(--error-text); font-family: var(--font-serif);" data-i18n="admin.dangerZone">Danger Zone</h2>
+    <div class="fm-card" style="border: 1px solid var(--error-text); padding: 24px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.killswitchTitle">Delete all data</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;" data-i18n="admin.killswitchDesc">Permanently delete all spools, filaments, manufacturers, colors, locations, and printers including their logs and events. Users, roles, permissions, and devices are not affected.</p>
+        </div>
+        <button
+          id="btn-killswitch"
+          class="fm-btn"
+          style="background: var(--error-text); color: #fff; white-space: nowrap; flex-shrink: 0;"
+          data-i18n="admin.killswitchButton"
+        >
+          Delete all data
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Detail Modal -->
   <div id="detail-modal" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px;">
@@ -180,15 +201,28 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = plugins.map(p => `
+      const typeLabels: Record<string, string> = {
+        driver: t('admin.pluginTypeDriver'),
+        import: t('admin.pluginTypeImport'),
+        integration: t('admin.pluginTypeIntegration'),
+      }
+      
+      tbody.innerHTML = plugins.map(p => {
+        const nameHtml = p.page_url
+          ? `<a href="${escapeHtml(p.page_url)}" style="color: var(--accent); text-decoration: none; font-weight: 600;">${escapeHtml(p.name)}</a>`
+          : `<span style="font-weight: 600;">${escapeHtml(p.name)}</span>`
+        
+        return `
         <tr>
           <td>
-            <div style="font-weight: 600;">${escapeHtml(p.name)}</div>
+            ${nameHtml}
             <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(p.description || '')}</div>
           </td>
           <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.version)}</td>
+          <td>
+            <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: var(--bg-soft); color: var(--text-muted);">${escapeHtml(typeLabels[p.plugin_type] || p.plugin_type)}</span>
+          </td>
           <td style="color: var(--text-muted);">${escapeHtml(p.author || '-')}</td>
-          <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.driver_key)}</td>
           <td>
             <label class="fm-toggle" title="${p.is_active ? t('admin.pluginDeactivate') : t('admin.pluginActivate')}">
               <input type="checkbox" class="toggle-active" data-key="${escapeHtml(p.plugin_key)}" ${p.is_active ? 'checked' : ''} />
@@ -197,10 +231,11 @@ import Layout from '../../layouts/Layout.astro'
           </td>
           <td style="text-align: right;">
             <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.pluginDetails')}</button>
+            ${p.page_url ? `<a href="${escapeHtml(p.page_url)}" class="fm-btn fm-btn-primary" style="font-size: 0.8rem; padding: 4px 12px; margin-right: 12px;">${t('common.open')}</a>` : ''}
             <button data-key="${escapeHtml(p.plugin_key)}" data-name="${escapeHtml(p.name)}" class="btn-uninstall" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('admin.uninstallPlugin')}</button>
           </td>
         </tr>
-      `).join('')
+      `}).join('')
       
       // Detail-Buttons
       document.querySelectorAll('.btn-detail').forEach(btn => {
@@ -299,8 +334,9 @@ import Layout from '../../layouts/Layout.astro'
       const rows = [
         { label: 'Plugin Key', value: plugin.plugin_key },
         { label: t('admin.pluginVersion'), value: plugin.version },
+        { label: t('admin.pluginType'), value: plugin.plugin_type },
         { label: t('admin.pluginAuthor'), value: plugin.author || '-' },
-        { label: t('admin.pluginDriver'), value: plugin.driver_key },
+        ...(plugin.driver_key ? [{ label: t('admin.pluginDriver'), value: plugin.driver_key }] : []),
         { label: t('admin.pluginDescription'), value: plugin.description || '-' },
         { label: t('admin.pluginHomepage'), value: plugin.homepage ? `<a href="${escapeHtml(plugin.homepage)}" target="_blank" style="color: var(--accent);">${escapeHtml(plugin.homepage)}</a>` : '-' },
         { label: t('admin.pluginLicense'), value: plugin.license || '-' },
@@ -498,6 +534,57 @@ import Layout from '../../layouts/Layout.astro'
       } finally {
         installSubmit.disabled = false
         installSubmit.textContent = t('admin.installPlugin')
+      }
+    })
+    
+    // ----------------------------------------------------------------
+    //  Killswitch
+    // ----------------------------------------------------------------
+    
+    document.getElementById('btn-killswitch')?.addEventListener('click', async () => {
+      // Erste Bestätigung
+      const msg1 = t('admin.killswitchConfirm')
+      if (!(await (window as any).__fmConfirm(msg1))) return
+      
+      // Zweite Bestätigung als zusätzliche Sicherheit
+      const msg2 = t('admin.killswitchConfirm2')
+      if (!(await (window as any).__fmConfirm(msg2))) return
+      
+      const btn = document.getElementById('btn-killswitch') as HTMLButtonElement
+      btn.disabled = true
+      btn.textContent = t('admin.killswitchExecuting')
+      
+      try {
+        const response = await fetch('/api/v1/admin/system/killswitch', {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+        })
+        
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('admin.killswitchFailed'))
+        }
+        
+        const result = await response.json()
+        
+        // Ergebnis anzeigen
+        const total = Object.values(result.deleted as Record<string, number>).reduce((a: number, b: number) => a + b, 0)
+        const details = Object.entries(result.deleted as Record<string, number>)
+          .filter(([_, count]) => count > 0)
+          .map(([table, count]) => `${table}: ${count}`)
+          .join('\n')
+        
+        await (window as any).__fmAlert(
+          t('admin.killswitchSuccess').replace('{count}', String(total))
+          + (details ? '\n\n' + details : '')
+        )
+        
+      } catch (err: any) {
+        await (window as any).__fmAlert(err.message || t('admin.killswitchFailed'))
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('admin.killswitchButton')
       }
     })
     

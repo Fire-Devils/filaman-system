@@ -1,0 +1,429 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Spoolman Import">
+  <div style="margin-bottom: 24px;">
+    <a href="/admin/system" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
+  </div>
+  
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="spoolman.title">Spoolman Import</h1>
+  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="spoolman.subtitle">Import filaments, spools, manufacturers, and locations from a Spoolman instance.</p>
+
+  <!-- Step 1: Connection -->
+  <div class="fm-card" style="margin-bottom: 24px; padding: 24px;" id="step-connection">
+    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">1</span>
+      <span data-i18n="spoolman.stepConnection">Connection</span>
+    </h2>
+    <div style="display: flex; gap: 12px; align-items: flex-end;">
+      <div style="flex: 1;">
+        <label class="fm-label" data-i18n="spoolman.spoolmanUrl">Spoolman URL</label>
+        <input type="url" id="spoolman-url" class="fm-input" placeholder="http://192.168.1.100:7912" style="width: 100%;" />
+      </div>
+      <button id="btn-test" class="fm-btn fm-btn-primary" data-i18n="spoolman.testConnection">Test Connection</button>
+    </div>
+    <div id="connection-result" style="margin-top: 12px; display: none;"></div>
+  </div>
+
+  <!-- Step 2: Preview -->
+  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-preview">
+    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">2</span>
+      <span data-i18n="spoolman.stepPreview">Preview</span>
+    </h2>
+    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="spoolman.previewDesc">Review the data that will be imported from Spoolman.</p>
+    <button id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="spoolman.loadPreview">Load Preview</button>
+    <div id="preview-result" style="margin-top: 16px; display: none;"></div>
+  </div>
+
+  <!-- Step 3: Import -->
+  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-import">
+    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">3</span>
+      <span data-i18n="spoolman.stepImport">Import</span>
+    </h2>
+    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="spoolman.importDesc">Start the import. Existing data will not be overwritten.</p>
+    <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="spoolman.startImport">Start Import</button>
+    <div id="import-progress" style="margin-top: 16px; display: none;">
+      <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
+        <div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
+      </div>
+      <p id="import-status" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; text-align: center;" data-i18n="spoolman.importing">Importing...</p>
+    </div>
+    <div id="import-result" style="margin-top: 16px; display: none;"></div>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../../lib/i18n'
+    await initI18n()
+
+    let connectedUrl = ''
+    let previewData: any = null
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
+    }
+
+    function enableStep(id: string) {
+      const el = document.getElementById(id)!
+      el.style.opacity = '1'
+      el.style.pointerEvents = 'auto'
+    }
+
+    function disableStep(id: string) {
+      const el = document.getElementById(id)!
+      el.style.opacity = '0.5'
+      el.style.pointerEvents = 'none'
+    }
+
+    // ----------------------------------------------------------------
+    //  Step 1: Test Connection
+    // ----------------------------------------------------------------
+
+    document.getElementById('btn-test')?.addEventListener('click', async () => {
+      const urlInput = document.getElementById('spoolman-url') as HTMLInputElement
+      const url = urlInput.value.trim()
+      const resultDiv = document.getElementById('connection-result')!
+      const btn = document.getElementById('btn-test') as HTMLButtonElement
+
+      if (!url) {
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = `<div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">${escapeHtml(t('spoolman.urlRequired'))}</div>`
+        return
+      }
+
+      btn.disabled = true
+      btn.textContent = t('spoolman.testing')
+      resultDiv.style.display = 'none'
+
+      try {
+        const response = await fetch('/api/v1/admin/system/spoolman-import/test-connection', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ url }),
+        })
+
+        resultDiv.style.display = 'block'
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('spoolman.connectionFailed'))
+        }
+
+        const data = await response.json()
+        connectedUrl = url
+
+        resultDiv.innerHTML = `
+          <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--accent-2); color: var(--text);">
+            <strong style="color: var(--accent);">${escapeHtml(t('spoolman.connectionSuccess'))}</strong>
+            <div style="font-size: 0.85rem; margin-top: 4px; color: var(--text-muted);">URL: ${escapeHtml(data.url)}</div>
+          </div>
+        `
+
+        // Enable step 2
+        enableStep('step-preview')
+
+      } catch (err: any) {
+        resultDiv.innerHTML = `
+          <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
+            ${escapeHtml(err.message)}
+          </div>
+        `
+        disableStep('step-preview')
+        disableStep('step-import')
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('spoolman.testConnection')
+      }
+    })
+
+    // ----------------------------------------------------------------
+    //  Step 2: Preview
+    // ----------------------------------------------------------------
+
+    document.getElementById('btn-preview')?.addEventListener('click', async () => {
+      const resultDiv = document.getElementById('preview-result')!
+      const btn = document.getElementById('btn-preview') as HTMLButtonElement
+
+      btn.disabled = true
+      btn.textContent = t('spoolman.loadingPreview')
+      resultDiv.style.display = 'none'
+
+      try {
+        const response = await fetch('/api/v1/admin/system/spoolman-import/preview', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ url: connectedUrl }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('spoolman.previewFailed'))
+        }
+
+        previewData = await response.json()
+        resultDiv.style.display = 'block'
+
+        const s = previewData.summary
+        resultDiv.innerHTML = `
+          <div class="fm-card" style="padding: 0; overflow: hidden;">
+            <table class="fm-table">
+              <thead style="background: var(--bg-soft);">
+                <tr>
+                  <th data-i18n="spoolman.dataType">${escapeHtml(t('spoolman.dataType'))}</th>
+                  <th style="text-align: right;" data-i18n="spoolman.count">${escapeHtml(t('spoolman.count'))}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>${escapeHtml(t('spoolman.previewVendors'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.vendors}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('spoolman.previewLocations'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.locations}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('spoolman.previewColors'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.colors}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('spoolman.previewFilaments'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.filaments}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('spoolman.previewSpools'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.spools}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          ${renderVendorPreview(previewData.vendors)}
+          ${renderFilamentPreview(previewData.filaments)}
+          ${renderSpoolPreview(previewData.spools)}
+        `
+
+        // Enable step 3
+        enableStep('step-import')
+
+      } catch (err: any) {
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = `
+          <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
+            ${escapeHtml(err.message)}
+          </div>
+        `
+        disableStep('step-import')
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('spoolman.loadPreview')
+      }
+    })
+
+    function renderVendorPreview(vendors: any[]): string {
+      if (!vendors.length) return ''
+      const rows = vendors.slice(0, 20).map(v => `
+        <tr>
+          <td>${escapeHtml(v.name || '-')}</td>
+          <td style="color: var(--text-muted); font-size: 0.85rem;">${escapeHtml(v.url || '-')}</td>
+        </tr>
+      `).join('')
+      const more = vendors.length > 20 ? `<tr><td colspan="2" style="text-align: center; color: var(--text-muted); font-style: italic;">... ${t('spoolman.andMore').replace('{count}', String(vendors.length - 20))}</td></tr>` : ''
+      return `
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent);">${escapeHtml(t('spoolman.previewVendors'))} (${vendors.length})</summary>
+          <table class="fm-table" style="margin-top: 8px;">
+            <thead style="background: var(--bg-soft);"><tr><th>${escapeHtml(t('common.name'))}</th><th>URL</th></tr></thead>
+            <tbody>${rows}${more}</tbody>
+          </table>
+        </details>
+      `
+    }
+
+    function renderFilamentPreview(filaments: any[]): string {
+      if (!filaments.length) return ''
+      const rows = filaments.slice(0, 20).map(f => {
+        const vendor = f.vendor?.name || '-'
+        const colorSwatch = f.color_hex
+          ? `<span style="display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: #${f.color_hex}; border: 1px solid var(--border); vertical-align: middle; margin-right: 6px;"></span>`
+          : ''
+        return `
+          <tr>
+            <td>${colorSwatch}${escapeHtml(f.name || '-')}</td>
+            <td>${escapeHtml(f.material || '-')}</td>
+            <td>${escapeHtml(vendor)}</td>
+          </tr>
+        `
+      }).join('')
+      const more = filaments.length > 20 ? `<tr><td colspan="3" style="text-align: center; color: var(--text-muted); font-style: italic;">... ${t('spoolman.andMore').replace('{count}', String(filaments.length - 20))}</td></tr>` : ''
+      return `
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent);">${escapeHtml(t('spoolman.previewFilaments'))} (${filaments.length})</summary>
+          <table class="fm-table" style="margin-top: 8px;">
+            <thead style="background: var(--bg-soft);"><tr><th>${escapeHtml(t('common.name'))}</th><th>${escapeHtml(t('filaments.type'))}</th><th>${escapeHtml(t('filaments.manufacturer'))}</th></tr></thead>
+            <tbody>${rows}${more}</tbody>
+          </table>
+        </details>
+      `
+    }
+
+    function renderSpoolPreview(spools: any[]): string {
+      if (!spools.length) return ''
+      const rows = spools.slice(0, 20).map(s => {
+        const filName = s.filament?.name || '-'
+        const remaining = s.remaining_weight != null ? `${s.remaining_weight}g` : '-'
+        const loc = s.location?.name || '-'
+        return `
+          <tr>
+            <td>#${s.id}</td>
+            <td>${escapeHtml(filName)}</td>
+            <td>${remaining}</td>
+            <td>${escapeHtml(loc)}</td>
+          </tr>
+        `
+      }).join('')
+      const more = spools.length > 20 ? `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); font-style: italic;">... ${t('spoolman.andMore').replace('{count}', String(spools.length - 20))}</td></tr>` : ''
+      return `
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent);">${escapeHtml(t('spoolman.previewSpools'))} (${spools.length})</summary>
+          <table class="fm-table" style="margin-top: 8px;">
+            <thead style="background: var(--bg-soft);"><tr><th>ID</th><th>${escapeHtml(t('spools.filament'))}</th><th>${escapeHtml(t('spools.remaining'))}</th><th>${escapeHtml(t('spools.location'))}</th></tr></thead>
+            <tbody>${rows}${more}</tbody>
+          </table>
+        </details>
+      `
+    }
+
+    // ----------------------------------------------------------------
+    //  Step 3: Import
+    // ----------------------------------------------------------------
+
+    document.getElementById('btn-import')?.addEventListener('click', async () => {
+      const resultDiv = document.getElementById('import-result')!
+      const progressDiv = document.getElementById('import-progress')!
+      const progressBar = document.getElementById('import-bar') as HTMLElement
+      const statusText = document.getElementById('import-status')!
+      const btn = document.getElementById('btn-import') as HTMLButtonElement
+
+      // Bestaetigung
+      if (!(await (window as any).__fmConfirm(t('spoolman.confirmImport'), { title: t('spoolman.startImport'), okLabel: t('spoolman.startImport'), isDanger: false }))) return
+
+      btn.disabled = true
+      btn.textContent = t('spoolman.importing')
+      progressDiv.style.display = 'block'
+      progressBar.style.width = '20%'
+      resultDiv.style.display = 'none'
+
+      try {
+        progressBar.style.width = '50%'
+        statusText.textContent = t('spoolman.importing')
+
+        const response = await fetch('/api/v1/admin/system/spoolman-import/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ url: connectedUrl }),
+        })
+
+        progressBar.style.width = '90%'
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('spoolman.importFailed'))
+        }
+
+        const result = await response.json()
+        progressBar.style.width = '100%'
+        statusText.textContent = t('spoolman.importComplete')
+
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = renderImportResult(result)
+
+      } catch (err: any) {
+        progressDiv.style.display = 'none'
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = `
+          <div style="padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
+            <strong>${escapeHtml(t('spoolman.importFailed'))}</strong><br>
+            ${escapeHtml(err.message)}
+          </div>
+        `
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('spoolman.startImport')
+      }
+    })
+
+    function renderImportResult(r: any): string {
+      const hasErrors = r.errors && r.errors.length > 0
+      const hasWarnings = r.warnings && r.warnings.length > 0
+
+      let html = `
+        <div style="padding: 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid ${hasErrors ? 'var(--error-text)' : 'var(--accent-2)'};">
+          <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 12px;">${escapeHtml(t('spoolman.importResults'))}</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+            ${resultCard(t('manufacturers.title'), r.manufacturers_created, r.manufacturers_skipped)}
+            ${resultCard(t('locations.title'), r.locations_created, r.locations_skipped)}
+            ${resultCard(t('filaments.colors'), r.colors_created, r.colors_skipped)}
+            ${resultCard(t('filaments.title'), r.filaments_created, r.filaments_skipped)}
+            ${resultCard(t('spools.title'), r.spools_created, r.spools_skipped)}
+          </div>
+      `
+
+      if (hasWarnings) {
+        html += `
+          <details style="margin-top: 16px;">
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--text-muted);">${escapeHtml(t('spoolman.warnings'))} (${r.warnings.length})</summary>
+            <ul style="margin-top: 8px; padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">
+              ${r.warnings.map((w: string) => `<li>${escapeHtml(w)}</li>`).join('')}
+            </ul>
+          </details>
+        `
+      }
+
+      if (hasErrors) {
+        html += `
+          <details style="margin-top: 12px;" open>
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--error-text);">${escapeHtml(t('spoolman.errors'))} (${r.errors.length})</summary>
+            <ul style="margin-top: 8px; padding-left: 20px; font-size: 0.85rem; color: var(--error-text);">
+              ${r.errors.map((e: string) => `<li>${escapeHtml(e)}</li>`).join('')}
+            </ul>
+          </details>
+        `
+      }
+
+      html += '</div>'
+      return html
+    }
+
+    function resultCard(label: string, created: number, skipped: number): string {
+      return `
+        <div style="background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(label)}</div>
+          <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent);">${created}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t('spoolman.created'))}</div>
+          ${skipped > 0 ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${skipped} ${escapeHtml(t('spoolman.skipped'))}</div>` : ''}
+        </div>
+      `
+    }
+  </script>
+</Layout>

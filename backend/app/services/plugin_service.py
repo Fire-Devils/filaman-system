@@ -29,8 +29,14 @@ ALLOWED_EXTENSIONS = {
     ".py", ".json", ".md", ".txt", ".cfg", ".ini", ".yaml", ".yml", ".toml",
 }
 
-# Pflichtfelder im Manifest
-REQUIRED_MANIFEST_FIELDS = {"plugin_key", "name", "version", "description", "author", "driver_key"}
+# Pflichtfelder im Manifest (Basisfelder, gelten fuer alle Plugin-Typen)
+REQUIRED_MANIFEST_FIELDS = {"plugin_key", "name", "version", "description", "author"}
+
+# Zusaetzliche Pflichtfelder je Plugin-Typ
+REQUIRED_DRIVER_FIELDS = {"driver_key"}
+
+# Gueltige Plugin-Typen
+VALID_PLUGIN_TYPES = {"driver", "import", "integration"}
 
 # Regex fuer plugin_key
 PLUGIN_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,49}$")
@@ -81,17 +87,19 @@ class PluginInstallService:
         with tempfile.TemporaryDirectory(prefix="filaman_plugin_") as tmpdir:
             plugin_dir = self._extract_zip(zip_data, tmpdir)
 
-            # 4. Struktur-Pruefung
-            self._validate_structure(plugin_dir)
-
-            # 5. Manifest lesen und pruefen
+            # 4. Manifest lesen (frueher, um plugin_type zu kennen)
             manifest = self._validate_manifest(plugin_dir)
+            plugin_type = manifest.get("plugin_type", "driver")
+
+            # 5. Struktur-Pruefung (abhaengig vom Typ)
+            self._validate_structure(plugin_dir, plugin_type)
 
             # 6. Sicherheits-Pruefung
             self._validate_security(plugin_dir)
 
-            # 7. Treiber-Klasse pruefen
-            self._validate_driver(plugin_dir, manifest)
+            # 7. Treiber-Klasse pruefen (nur fuer driver-Typ)
+            if plugin_type == "driver":
+                self._validate_driver(plugin_dir, manifest)
 
             # 8. Konflikt-Pruefung (DB)
             plugin_key = manifest["plugin_key"]
@@ -112,7 +120,9 @@ class PluginInstallService:
                 author=manifest.get("author"),
                 homepage=manifest.get("homepage"),
                 license=manifest.get("license"),
-                driver_key=manifest["driver_key"],
+                plugin_type=plugin_type,
+                driver_key=manifest.get("driver_key"),
+                page_url=manifest.get("page_url"),
                 config_schema=manifest.get("config_schema"),
                 is_active=True,
                 installed_by=installed_by,
@@ -248,9 +258,13 @@ class PluginInstallService:
         # Dateien liegen direkt im Root
         return Path(tmpdir)
 
-    def _validate_structure(self, plugin_dir: Path) -> None:
+    def _validate_structure(self, plugin_dir: Path, plugin_type: str = "driver") -> None:
         """Pruefen, ob die Pflichtdateien vorhanden sind."""
-        required_files = ["plugin.json", "__init__.py", "driver.py"]
+        required_files = ["plugin.json", "__init__.py"]
+
+        # Nur Treiber-Plugins brauchen eine driver.py
+        if plugin_type == "driver":
+            required_files.append("driver.py")
 
         for filename in required_files:
             filepath = plugin_dir / filename
@@ -273,13 +287,23 @@ class PluginInstallService:
                 "invalid_json",
             )
 
-        # Pflichtfelder pruefen
+        # Pflichtfelder pruefen (Basisfelder)
         for field in REQUIRED_MANIFEST_FIELDS:
             if field not in manifest or not manifest[field]:
                 raise PluginInstallError(
                     f"Pflichtfeld '{field}' fehlt im Manifest",
                     "missing_field",
                 )
+
+        # plugin_type validieren (Default: "driver")
+        plugin_type = manifest.get("plugin_type", "driver")
+        if plugin_type not in VALID_PLUGIN_TYPES:
+            raise PluginInstallError(
+                f"Ungueltiger plugin_type '{plugin_type}' "
+                f"(erlaubt: {', '.join(sorted(VALID_PLUGIN_TYPES))})",
+                "invalid_plugin_type",
+            )
+        manifest["plugin_type"] = plugin_type
 
         # plugin_key validieren
         plugin_key = manifest["plugin_key"]
@@ -299,13 +323,22 @@ class PluginInstallService:
                 "invalid_version",
             )
 
-        # driver_key muss mit plugin_key uebereinstimmen
-        if manifest["driver_key"] != plugin_key:
-            raise PluginInstallError(
-                f"driver_key '{manifest['driver_key']}' muss mit "
-                f"plugin_key '{plugin_key}' uebereinstimmen",
-                "key_mismatch",
-            )
+        # Treiber-spezifische Validierung
+        if plugin_type == "driver":
+            for field in REQUIRED_DRIVER_FIELDS:
+                if field not in manifest or not manifest[field]:
+                    raise PluginInstallError(
+                        f"Pflichtfeld '{field}' fehlt im Manifest (erforderlich fuer Typ 'driver')",
+                        "missing_field",
+                    )
+
+            # driver_key muss mit plugin_key uebereinstimmen
+            if manifest["driver_key"] != plugin_key:
+                raise PluginInstallError(
+                    f"driver_key '{manifest['driver_key']}' muss mit "
+                    f"plugin_key '{plugin_key}' uebereinstimmen",
+                    "key_mismatch",
+                )
 
         # Reservierte Keys pruefen
         reserved_keys = {"dummy", "base", "manager", "__pycache__"}
@@ -432,3 +465,57 @@ class PluginInstallService:
                 f"Ein integriertes Plugin mit dem Key '{plugin_key}' existiert bereits",
                 "builtin_conflict",
             )
+
+    # ------------------------------------------------------------------ #
+    #  Eingebaute Plugins registrieren
+    # ------------------------------------------------------------------ #
+
+    async def register_builtin(
+        self,
+        plugin_key: str,
+        name: str,
+        version: str,
+        description: str,
+        author: str,
+        plugin_type: str,
+        page_url: str | None = None,
+        homepage: str | None = None,
+    ) -> InstalledPlugin:
+        """Ein eingebautes Plugin registrieren (kein ZIP noetig).
+
+        Falls bereits vorhanden, wird Version/Beschreibung aktualisiert.
+        """
+        result = await self.db.execute(
+            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update metadata if version changed
+            existing.name = name
+            existing.version = version
+            existing.description = description
+            existing.plugin_type = plugin_type
+            existing.page_url = page_url
+            existing.homepage = homepage
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing
+
+        plugin = InstalledPlugin(
+            plugin_key=plugin_key,
+            name=name,
+            version=version,
+            description=description,
+            author=author,
+            plugin_type=plugin_type,
+            page_url=page_url,
+            homepage=homepage,
+            is_active=True,
+        )
+        self.db.add(plugin)
+        await self.db.commit()
+        await self.db.refresh(plugin)
+
+        logger.info(f"Eingebautes Plugin '{plugin_key}' v{version} registriert")
+        return plugin
