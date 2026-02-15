@@ -39,6 +39,10 @@ class PluginInstallResponse(BaseModel):
     plugin: PluginResponse
 
 
+class PluginToggleRequest(BaseModel):
+    is_active: bool
+
+
 # ------------------------------------------------------------------ #
 #  Endpoints
 # ------------------------------------------------------------------ #
@@ -140,6 +144,28 @@ async def uninstall_plugin(
                 "message": str(e),
             },
         )
+
+
+@router.patch("/plugins/{plugin_key}/active", response_model=PluginResponse)
+async def toggle_plugin_active(
+    plugin_key: str,
+    body: PluginToggleRequest,
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Plugin aktivieren oder deaktivieren."""
+    service = PluginInstallService(db)
+    try:
+        plugin = await service.set_active(plugin_key, body.is_active)
+    except PluginInstallError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": e.code,
+                "message": str(e),
+            },
+        )
+    return plugin
 
 
 @router.get("/plugins/{plugin_key}", response_model=PluginResponse)

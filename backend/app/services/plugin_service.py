@@ -171,6 +171,28 @@ class PluginInstallService:
         )
         return result.scalar_one_or_none()
 
+    async def set_active(self, plugin_key: str, is_active: bool) -> InstalledPlugin:
+        """Plugin aktivieren oder deaktivieren."""
+        result = await self.db.execute(
+            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
+        )
+        plugin = result.scalar_one_or_none()
+
+        if not plugin:
+            raise PluginInstallError(
+                f"Plugin '{plugin_key}' nicht gefunden",
+                "not_found",
+            )
+
+        plugin.is_active = is_active
+        await self.db.commit()
+        await self.db.refresh(plugin)
+
+        logger.info(
+            f"Plugin '{plugin_key}' {'aktiviert' if is_active else 'deaktiviert'}"
+        )
+        return plugin
+
     # ------------------------------------------------------------------ #
     #  Validierungs-Methoden
     # ------------------------------------------------------------------ #

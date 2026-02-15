@@ -3,6 +3,50 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - System">
+  <style>
+    /* Toggle Switch */
+    .fm-toggle {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .fm-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .fm-toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      transition: background 0.2s;
+    }
+    .fm-toggle-slider::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      bottom: 3px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .fm-toggle input:checked + .fm-toggle-slider {
+      background: var(--accent);
+    }
+    .fm-toggle input:checked + .fm-toggle-slider::before {
+      transform: translateX(18px);
+    }
+    .fm-toggle input:disabled + .fm-toggle-slider {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
   <div style="margin-bottom: 24px;">
     <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
   </div>
@@ -146,9 +190,10 @@ import Layout from '../../layouts/Layout.astro'
           <td style="color: var(--text-muted);">${escapeHtml(p.author || '-')}</td>
           <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.driver_key)}</td>
           <td>
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${p.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
-              ${p.is_active ? t('common.active') : t('common.inactive')}
-            </span>
+            <label class="fm-toggle" title="${p.is_active ? t('admin.pluginDeactivate') : t('admin.pluginActivate')}">
+              <input type="checkbox" class="toggle-active" data-key="${escapeHtml(p.plugin_key)}" ${p.is_active ? 'checked' : ''} />
+              <span class="fm-toggle-slider"></span>
+            </label>
           </td>
           <td style="text-align: right;">
             <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.pluginDetails')}</button>
@@ -189,6 +234,50 @@ import Layout from '../../layouts/Layout.astro'
             loadPlugins()
           } catch (err: any) {
             await (window as any).__fmAlert(err.message || t('admin.pluginUninstallFailed'))
+          }
+        })
+      })
+      
+      // Toggle active/inactive
+      document.querySelectorAll('.toggle-active').forEach(input => {
+        input.addEventListener('change', async (e) => {
+          const checkbox = e.currentTarget as HTMLInputElement
+          const key = checkbox.dataset.key!
+          const newState = checkbox.checked
+          
+          // Deaktivieren waehrend der Anfrage
+          checkbox.disabled = true
+          
+          try {
+            const response = await fetch(`/api/v1/admin/system/plugins/${key}/active`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfToken(),
+              },
+              credentials: 'include',
+              body: JSON.stringify({ is_active: newState }),
+            })
+            
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}))
+              throw new Error(data.detail?.message || t('admin.pluginToggleFailed'))
+            }
+            
+            // Lokalen State aktualisieren
+            const plugin = plugins.find(p => p.plugin_key === key)
+            if (plugin) plugin.is_active = newState
+            
+            // Tooltip aktualisieren
+            const label = checkbox.closest('.fm-toggle') as HTMLElement
+            if (label) label.title = newState ? t('admin.pluginDeactivate') : t('admin.pluginActivate')
+            
+          } catch (err: any) {
+            // Bei Fehler: Checkbox zuruecksetzen
+            checkbox.checked = !newState
+            await (window as any).__fmAlert(err.message || t('admin.pluginToggleFailed'))
+          } finally {
+            checkbox.disabled = false
           }
         })
       })
