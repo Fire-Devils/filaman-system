@@ -25,7 +25,7 @@ services:
   filaman:
     # IMPORTANT: Replace the image path with the actual image path
     # Example: ghcr.io/your-username/filaman-system:latest
-    image: ghcr.io/YOUR_GITEA_USERNAME/filaman-system:latest
+    image: ghcr.io/fire-devils/filaman-system:latest
     container_name: filaman-system-app
     restart: unless-stopped
     ports:
@@ -39,7 +39,7 @@ networks:
   default:
     name: filaman-network
 ```
-**Important:** You must replace `ghcr.io/YOUR_GITEA_USERNAME/filaman-system:latest` with the correct image path provided by the project developer.
+**Important:** You must replace `ghcr.io/fire-devils/filaman-system:latest` with the correct image path provided by the project developer.
 
 **Step 3: Create the `.env` Configuration File**  
 In the same folder, create another file named `.env`. This file holds the configuration. Paste the content below into this file.
