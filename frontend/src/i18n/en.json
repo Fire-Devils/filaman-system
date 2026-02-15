@@ -339,9 +339,25 @@
     "failedCreateDevice": "Failed to create device",
     "rolesTitle": "Roles",
     "permissions": "Permissions",
+    "createRole": "Create Role",
+    "editRole": "Edit Role",
+    "deleteRole": "Delete",
+    "roleName": "Name",
+    "roleKey": "Key",
+    "roleKeyHint": "Unique identifier (lowercase, no spaces)",
+    "roleDescription": "Description",
+    "noRoles": "No roles found",
+    "systemRole": "System",
+    "systemRoleHint": "System roles cannot be deleted",
+    "confirmDeleteRole": "Are you sure you want to delete this role? All users will lose this role assignment.",
+    "failedCreateRole": "Failed to create role",
+    "failedUpdateRole": "Failed to update role",
+    "failedDeleteRole": "Failed to delete role",
     "editPermissions": "Edit Permissions",
     "editRolePermissions": "Edit Role Permissions",
     "roleLabel": "Role: {name} ({key})",
-    "failedUpdatePermissions": "Failed to update permissions"
+    "failedUpdatePermissions": "Failed to update permissions",
+    "selectRoleHint": "Click on a role to see its permissions",
+    "permissionsForRole": "Permissions for"
   }
 }

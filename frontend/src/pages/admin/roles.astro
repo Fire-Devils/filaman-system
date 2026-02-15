@@ -7,7 +7,16 @@ import Layout from '../../layouts/Layout.astro'
     <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
   </div>
   
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.rolesPerms">Roles & Permissions</h1>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.rolesPerms">Roles & Permissions</h1>
+    <button
+      id="btn-new-role"
+      class="fm-btn fm-btn-primary"
+      data-i18n="admin.createRole"
+    >
+      Create Role
+    </button>
+  </div>
   
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
     <div>
@@ -18,27 +27,56 @@ import Layout from '../../layouts/Layout.astro'
     </div>
     
     <div>
-      <h2 style="font-size: 1.3rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.permissions">Permissions</h2>
+      <h2 id="permissions-header" style="font-size: 1.3rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.permissions">Permissions</h2>
       <div id="permissions-list" class="fm-card" style="padding: 16px;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
+  <!-- Role Create/Edit Modal -->
+  <div id="role-modal" class="fm-modal-overlay">
+    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
+      <h3 id="role-modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.createRole">Create Role</h3>
+      <form id="role-modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <input type="hidden" id="role-edit-id" />
+        <div id="role-key-field">
+          <label for="role-key" class="fm-label"><span data-i18n="admin.roleKey">Key</span> *</label>
+          <input type="text" id="role-key" required class="fm-input" pattern="[a-z][a-z0-9_]{1,48}[a-z0-9]" placeholder="e.g. editor" />
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" data-i18n="admin.roleKeyHint">Unique identifier (lowercase, no spaces)</p>
+        </div>
+        <div>
+          <label for="role-name" class="fm-label"><span data-i18n="admin.roleName">Name</span> *</label>
+          <input type="text" id="role-name-input" required class="fm-input" placeholder="e.g. Editor" />
+        </div>
+        <div>
+          <label for="role-description" class="fm-label" data-i18n="admin.roleDescription">Description</label>
+          <input type="text" id="role-description" class="fm-input" />
+        </div>
+        <div id="role-modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="role-modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+          <button type="button" id="role-modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Permissions Edit Modal -->
+  <div id="perm-modal" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editRolePermissions">Edit Role Permissions</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
-        <input type="hidden" id="role-id" />
-        <p id="role-name" style="color: var(--text-muted); margin-bottom: 8px;"></p>
+      <h3 id="perm-modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editRolePermissions">Edit Role Permissions</h3>
+      <form id="perm-modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <input type="hidden" id="perm-role-id" />
+        <p id="perm-role-name" style="color: var(--text-muted); margin-bottom: 8px;"></p>
         <div>
           <label class="fm-label" data-i18n="admin.permissions">Permissions</label>
           <div id="permissions-checkboxes" style="display: flex; flex-direction: column; gap: 8px; max-height: 15rem; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px;"></div>
         </div>
-        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div id="perm-modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+          <button type="submit" id="perm-modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+          <button type="button" id="perm-modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
         </div>
       </form>
     </div>
@@ -50,10 +88,18 @@ import Layout from '../../layouts/Layout.astro'
 
     let roles: any[] = []
     let permissions: any[] = []
+    let selectedRoleId: number | null = null
+    let selectedRolePermissions: string[] | null = null
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
     }
     
     async function loadData() {
@@ -75,29 +121,127 @@ import Layout from '../../layouts/Layout.astro'
     function renderRoles() {
       const container = document.getElementById('roles-list')!
       
+      if (roles.length === 0) {
+        container.innerHTML = `<p style="color: var(--text-muted);">${escapeHtml(t('admin.noRoles'))}</p>`
+        return
+      }
+      
       container.innerHTML = roles.map(r => `
-        <div class="fm-card" style="padding: 16px;">
+        <div class="fm-card role-card" data-role-id="${r.id}" style="padding: 16px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;${selectedRoleId === r.id ? ' border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent);' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-              <h3 style="font-weight: 600;">${r.name}</h3>
-              <p style="font-size: 0.85rem; color: var(--text-muted);">${r.key}</p>
-              ${r.description ? `<p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">${r.description}</p>` : ''}
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h3 style="font-weight: 600;">${escapeHtml(r.name)}</h3>
+                ${r.is_system ? `<span style="padding: 2px 8px; font-size: 0.65rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);" title="${escapeHtml(t('admin.systemRoleHint'))}">${escapeHtml(t('admin.systemRole'))}</span>` : ''}
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); font-family: monospace;">${escapeHtml(r.key)}</p>
+              ${r.description ? `<p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">${escapeHtml(r.description)}</p>` : ''}
             </div>
-            <button data-id="${r.id}" data-key="${r.key}" data-name="${r.name}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; font-size: 0.85rem;">${t('admin.editPermissions')}</button>
+            <div style="display: flex; gap: 4px; flex-shrink: 0; margin-left: 12px;">
+              <button data-id="${r.id}" class="btn-edit-role" style="color: var(--accent); background: var(--bg-soft); border: 1px solid var(--border); cursor: pointer; font-size: 0.75rem; padding: 4px 10px; border-radius: var(--radius-sm);">${escapeHtml(t('common.edit'))}</button>
+              <button data-id="${r.id}" data-key="${escapeHtml(r.key)}" data-name="${escapeHtml(r.name)}" class="btn-edit-perms" style="color: var(--accent); background: var(--bg-soft); border: 1px solid var(--border); cursor: pointer; font-size: 0.75rem; padding: 4px 10px; border-radius: var(--radius-sm);">${escapeHtml(t('admin.editPermissions'))}</button>
+              ${!r.is_system ? `<button data-id="${r.id}" data-name="${escapeHtml(r.name)}" class="btn-delete-role" style="color: var(--error-text); background: var(--bg-soft); border: 1px solid var(--border); cursor: pointer; font-size: 0.75rem; padding: 4px 10px; border-radius: var(--radius-sm);">${escapeHtml(t('admin.deleteRole'))}</button>` : ''}
+            </div>
           </div>
         </div>
       `).join('')
       
-      document.querySelectorAll('.btn-edit').forEach(btn => {
+      // Edit role (name/description)
+      document.querySelectorAll('.btn-edit-role').forEach(btn => {
         btn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          const role = roles.find(r => r.id === id)
+          if (role) openRoleModal(role)
+        })
+      })
+      
+      // Edit permissions
+      document.querySelectorAll('.btn-edit-perms').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation()
           const target = e.currentTarget as HTMLButtonElement
-          openModal(parseInt(target.dataset.id!), target.dataset.key!, target.dataset.name!)
+          openPermModal(parseInt(target.dataset.id!), target.dataset.key!, target.dataset.name!)
+        })
+      })
+      
+      // Delete role
+      document.querySelectorAll('.btn-delete-role').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation()
+          const target = e.currentTarget as HTMLButtonElement
+          const id = target.dataset.id!
+          const confirmed = await (window as any).__fmConfirm(t('admin.confirmDeleteRole'))
+          if (!confirmed) return
+          
+          try {
+            const response = await fetch(`/api/v1/admin/roles/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) {
+              const data = await response.json()
+              throw new Error(data.detail?.message || t('admin.failedDeleteRole'))
+            }
+            
+            loadData()
+          } catch (err: any) {
+            await (window as any).__fmAlert(err.message || t('admin.failedDeleteRole'))
+          }
+        })
+      })
+      
+      // Click on role card to show its permissions
+      document.querySelectorAll('.role-card').forEach(card => {
+        card.addEventListener('click', async (e) => {
+          const roleId = parseInt((card as HTMLElement).dataset.roleId!)
+          if (selectedRoleId === roleId) {
+            selectedRoleId = null
+            selectedRolePermissions = null
+            renderRoles()
+            renderPermissions()
+            return
+          }
+          selectedRoleId = roleId
+          renderRoles()
+          renderPermissions(true)
+          try {
+            const res = await fetch(`/api/v1/admin/roles/${roleId}`, { credentials: 'include' })
+            if (!res.ok) throw new Error()
+            const data = await res.json()
+            selectedRolePermissions = data.permissions || []
+          } catch {
+            selectedRolePermissions = []
+          }
+          renderPermissions()
         })
       })
     }
     
-    function renderPermissions() {
+    function renderPermissions(loading = false) {
       const container = document.getElementById('permissions-list')!
+      const header = document.getElementById('permissions-header')!
+      
+      // Update header to show role name when selected
+      const selectedRole = selectedRoleId ? roles.find(r => r.id === selectedRoleId) : null
+      if (selectedRole) {
+        header.innerHTML = `${escapeHtml(t('admin.permissionsForRole'))}: <strong>${escapeHtml(selectedRole.name)}</strong>`
+      } else {
+        header.textContent = t('admin.permissions')
+      }
+      
+      if (loading) {
+        container.innerHTML = `<p style="color: var(--text-muted);">${escapeHtml(t('common.loading'))}</p>`
+        return
+      }
+      
+      if (!selectedRoleId || selectedRolePermissions === null) {
+        // No role selected — show hint
+        container.innerHTML = `<p style="color: var(--text-muted);">${escapeHtml(t('admin.selectRoleHint'))}</p>`
+        return
+      }
       
       const grouped = permissions.reduce((acc: any, p) => {
         const cat = p.category || 'other'
@@ -106,27 +250,142 @@ import Layout from '../../layouts/Layout.astro'
         return acc
       }, {})
       
+      const rolePerms = new Set(selectedRolePermissions)
+      
       container.innerHTML = Object.entries(grouped).map(([category, perms]: [string, any]) => `
         <div style="margin-bottom: 16px;">
-          <h4 style="font-weight: 500; color: var(--text); margin-bottom: 8px; text-transform: capitalize;">${category}</h4>
+          <h4 style="font-weight: 500; color: var(--text); margin-bottom: 8px; text-transform: capitalize;">${escapeHtml(category)}</h4>
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            ${(perms as any[]).map(p => `
-              <div style="font-size: 0.85rem;">
-                <span style="font-family: monospace; font-size: 0.75rem; background: var(--bg-soft); padding: 1px 4px; border-radius: var(--radius-sm);">${p.key}</span>
-                ${p.description ? `<span style="color: var(--text-muted); margin-left: 8px;">${p.description}</span>` : ''}
-              </div>
-            `).join('')}
+            ${(perms as any[]).map(p => {
+              const active = rolePerms.has(p.key)
+              return `
+              <div style="font-size: 0.85rem; padding: 2px 4px; border-radius: var(--radius-sm);${active ? ' background: color-mix(in srgb, var(--accent) 12%, transparent);' : ' opacity: 0.45;'}">
+                <span style="margin-right: 6px;">${active ? '&#10003;' : '&#10007;'}</span>
+                <span style="font-family: monospace; font-size: 0.75rem; background: var(--bg-soft); padding: 1px 4px; border-radius: var(--radius-sm);">${escapeHtml(p.key)}</span>
+                ${p.description ? `<span style="color: var(--text-muted); margin-left: 8px;">${escapeHtml(p.description)}</span>` : ''}
+              </div>`
+            }).join('')}
           </div>
         </div>
       `).join('')
     }
     
-    async function openModal(id: number, key: string, name: string) {
-      const container = document.getElementById('modal-container')!
-      const roleName = document.getElementById('role-name')!
-      const error = document.getElementById('modal-error')!
+    /* ── Role Create/Edit Modal ──────────────────────────────── */
+    
+    function openRoleModal(role: any | null = null) {
+      const modal = document.getElementById('role-modal')!
+      const title = document.getElementById('role-modal-title')!
+      const idInput = document.getElementById('role-edit-id') as HTMLInputElement
+      const keyInput = document.getElementById('role-key') as HTMLInputElement
+      const keyField = document.getElementById('role-key-field')!
+      const nameInput = document.getElementById('role-name-input') as HTMLInputElement
+      const descInput = document.getElementById('role-description') as HTMLInputElement
+      const error = document.getElementById('role-modal-error')!
       
-      ;(document.getElementById('role-id') as HTMLInputElement).value = String(id)
+      error.classList.add('hidden')
+      
+      if (role) {
+        title.textContent = t('admin.editRole')
+        idInput.value = String(role.id)
+        keyInput.value = role.key
+        keyInput.disabled = true
+        keyField.style.display = 'none'
+        nameInput.value = role.name
+        descInput.value = role.description || ''
+      } else {
+        title.textContent = t('admin.createRole')
+        idInput.value = ''
+        keyInput.value = ''
+        keyInput.disabled = false
+        keyField.style.display = ''
+        nameInput.value = ''
+        descInput.value = ''
+      }
+      
+      modal.classList.add('open')
+      if (role) {
+        nameInput.focus()
+      } else {
+        keyInput.focus()
+      }
+    }
+    
+    function closeRoleModal() {
+      document.getElementById('role-modal')!.classList.remove('open')
+    }
+    
+    document.getElementById('btn-new-role')?.addEventListener('click', () => openRoleModal())
+    document.getElementById('role-modal-cancel')?.addEventListener('click', closeRoleModal)
+    document.getElementById('role-modal')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeRoleModal()
+    })
+    
+    // Filter disallowed characters and force lowercase on key input
+    document.getElementById('role-key')?.addEventListener('input', (e) => {
+      const input = e.target as HTMLInputElement
+      const pos = input.selectionStart
+      input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '')
+      input.setSelectionRange(pos, pos)
+    })
+
+    document.getElementById('role-modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const id = (document.getElementById('role-edit-id') as HTMLInputElement).value
+      const key = (document.getElementById('role-key') as HTMLInputElement).value
+      const name = (document.getElementById('role-name-input') as HTMLInputElement).value
+      const description = (document.getElementById('role-description') as HTMLInputElement).value || null
+      
+      const error = document.getElementById('role-modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('role-modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+      
+      try {
+        let response: Response
+        
+        if (id) {
+          response = await fetch(`/api/v1/admin/roles/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify({ name, description }),
+          })
+        } else {
+          response = await fetch('/api/v1/admin/roles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify({ key, name, description }),
+          })
+        }
+        
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.detail?.message || (id ? t('admin.failedUpdateRole') : t('admin.failedCreateRole')))
+        }
+        
+        closeRoleModal()
+        loadData()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+    
+    /* ── Permissions Edit Modal ──────────────────────────────── */
+    
+    async function openPermModal(id: number, key: string, name: string) {
+      const container = document.getElementById('perm-modal')!
+      const roleName = document.getElementById('perm-role-name')!
+      const error = document.getElementById('perm-modal-error')!
+      
+      ;(document.getElementById('perm-role-id') as HTMLInputElement).value = String(id)
       roleName.textContent = t('admin.roleLabel', { name, key })
       error.classList.add('hidden')
       
@@ -143,11 +402,11 @@ import Layout from '../../layouts/Layout.astro'
       
       checkboxesContainer.innerHTML = Object.entries(grouped).map(([category, perms]: [string, any]) => `
         <div style="margin-bottom: 12px;">
-          <div style="font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px;">${category}</div>
+          <div style="font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; margin-bottom: 4px;">${escapeHtml(category)}</div>
           ${(perms as any[]).map(p => `
             <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem;">
-              <input type="checkbox" value="${p.key}" class="perm-checkbox" ${role.permissions?.includes(p.key) ? 'checked' : ''} />
-              <span>${p.key}</span>
+              <input type="checkbox" value="${escapeHtml(p.key)}" class="perm-checkbox" ${role.permissions?.includes(p.key) ? 'checked' : ''} />
+              <span>${escapeHtml(p.key)}</span>
             </label>
           `).join('')}
         </div>
@@ -156,20 +415,23 @@ import Layout from '../../layouts/Layout.astro'
       container.classList.add('open')
     }
     
-    function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
+    function closePermModal() {
+      document.getElementById('perm-modal')!.classList.remove('open')
     }
     
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    document.getElementById('perm-modal-cancel')?.addEventListener('click', closePermModal)
+    document.getElementById('perm-modal')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closePermModal()
+    })
     
-    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+    document.getElementById('perm-modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      const id = (document.getElementById('role-id') as HTMLInputElement).value
+      const id = (document.getElementById('perm-role-id') as HTMLInputElement).value
       const selectedPerms = Array.from(document.querySelectorAll('.perm-checkbox:checked')).map((cb: any) => cb.value)
       
-      const error = document.getElementById('modal-error') as HTMLDivElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      const error = document.getElementById('perm-modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('perm-modal-submit') as HTMLButtonElement
       
       error.classList.add('hidden')
       submitBtn.disabled = true
@@ -188,7 +450,7 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(data.message || t('admin.failedUpdatePermissions'))
         }
         
-        closeModal()
+        closePermModal()
         loadData()
       } catch (err: any) {
         error.textContent = err.message

@@ -339,9 +339,25 @@
     "failedCreateDevice": "Gerät konnte nicht erstellt werden",
     "rolesTitle": "Rollen",
     "permissions": "Berechtigungen",
+    "createRole": "Rolle erstellen",
+    "editRole": "Rolle bearbeiten",
+    "deleteRole": "Löschen",
+    "roleName": "Name",
+    "roleKey": "Schlüssel",
+    "roleKeyHint": "Eindeutiger Bezeichner (Kleinbuchstaben, keine Leerzeichen)",
+    "roleDescription": "Beschreibung",
+    "noRoles": "Keine Rollen gefunden",
+    "systemRole": "System",
+    "systemRoleHint": "Systemrollen können nicht gelöscht werden",
+    "confirmDeleteRole": "Möchten Sie diese Rolle wirklich löschen? Alle Benutzer verlieren diese Rollenzuweisung.",
+    "failedCreateRole": "Rolle konnte nicht erstellt werden",
+    "failedUpdateRole": "Rolle konnte nicht aktualisiert werden",
+    "failedDeleteRole": "Rolle konnte nicht gelöscht werden",
     "editPermissions": "Berechtigungen bearbeiten",
     "editRolePermissions": "Rollenberechtigungen bearbeiten",
     "roleLabel": "Rolle: {name} ({key})",
-    "failedUpdatePermissions": "Berechtigungen konnten nicht aktualisiert werden"
+    "failedUpdatePermissions": "Berechtigungen konnten nicht aktualisiert werden",
+    "selectRoleHint": "Klicke auf eine Rolle, um ihre Berechtigungen anzuzeigen",
+    "permissionsForRole": "Berechtigungen f\u00fcr"
   }
 }

@@ -107,7 +107,7 @@ USER_PERMISSIONS = [
     "user_api_keys:delete_own",
 ]
 
-ADMIN_PERMISSIONS = None
+ADMIN_PERMISSIONS = [p["key"] for p in PERMISSIONS]
 
 
 async def seed_spool_statuses(db: AsyncSession) -> None:

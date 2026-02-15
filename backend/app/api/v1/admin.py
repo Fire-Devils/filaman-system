@@ -71,6 +71,17 @@ class PermissionResponse(BaseModel):
         from_attributes = True
 
 
+class RoleCreate(BaseModel):
+    key: str
+    name: str
+    description: str | None = None
+
+
+class RoleUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
 class DeviceResponse(BaseModel):
     id: int
     name: str
@@ -251,6 +262,89 @@ async def list_roles(
 ):
     result = await db.execute(select(Role).order_by(Role.name))
     return result.scalars().all()
+
+
+@router.post("/roles", response_model=RoleResponse, status_code=status.HTTP_201_CREATED)
+async def create_role(
+    data: RoleCreate,
+    db: DBSession,
+    principal = RequirePermission("admin:rbac_manage"),
+):
+    import re
+    if not re.match(r'^[a-z][a-z0-9_]{1,48}[a-z0-9]$', data.key):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "validation_error", "message": "Key must be 3-50 lowercase alphanumeric characters or underscores, starting with a letter"},
+        )
+
+    result = await db.execute(select(Role).where(Role.key == data.key))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "conflict", "message": "A role with this key already exists"},
+        )
+
+    role = Role(
+        key=data.key,
+        name=data.name,
+        description=data.description,
+        is_system=False,
+    )
+    db.add(role)
+    await db.commit()
+    await db.refresh(role)
+    return role
+
+
+@router.patch("/roles/{role_id}", response_model=RoleResponse)
+async def update_role(
+    role_id: int,
+    data: RoleUpdate,
+    db: DBSession,
+    principal = RequirePermission("admin:rbac_manage"),
+):
+    result = await db.execute(select(Role).where(Role.id == role_id))
+    role = result.scalar_one_or_none()
+
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Role not found"},
+        )
+
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(role, key, value)
+
+    await db.commit()
+    await db.refresh(role)
+    return role
+
+
+@router.delete("/roles/{role_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_role(
+    role_id: int,
+    db: DBSession,
+    principal = RequirePermission("admin:rbac_manage"),
+):
+    result = await db.execute(select(Role).where(Role.id == role_id))
+    role = result.scalar_one_or_none()
+
+    if not role:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Role not found"},
+        )
+
+    if role.is_system:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "System roles cannot be deleted"},
+        )
+
+    await db.execute(RolePermission.__table__.delete().where(RolePermission.role_id == role_id))
+    await db.execute(UserRole.__table__.delete().where(UserRole.role_id == role_id))
+    await db.delete(role)
+    await db.commit()
 
 
 @router.get("/roles/{role_id}", response_model=RoleDetailResponse)
