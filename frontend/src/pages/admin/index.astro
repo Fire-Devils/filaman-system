@@ -23,4 +23,75 @@ import Layout from '../../layouts/Layout.astro'
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.systemDesc">Plugins and system management</p>
     </a>
   </div>
+
+  <h2 style="font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; color: var(--error-text); font-family: var(--font-serif);" data-i18n="admin.dangerZone">Danger Zone</h2>
+  <div class="fm-card" style="border: 1px solid var(--error-text); padding: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;">
+      <div>
+        <h3 style="font-size: 1.05rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.killswitchTitle">Delete all data</h3>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;" data-i18n="admin.killswitchDesc">Permanently delete all spools, filaments, manufacturers, colors, locations, and printers including their logs and events. Users, roles, permissions, and devices are not affected.</p>
+      </div>
+      <button
+        id="btn-killswitch"
+        class="fm-btn"
+        style="background: var(--error-text); color: #fff; white-space: nowrap; flex-shrink: 0;"
+        data-i18n="admin.killswitchButton"
+      >
+        Delete all data
+      </button>
+    </div>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    document.getElementById('btn-killswitch')?.addEventListener('click', async () => {
+      const msg1 = t('admin.killswitchConfirm')
+      if (!(await (window as any).__fmConfirm(msg1))) return
+
+      const msg2 = t('admin.killswitchConfirm2')
+      if (!(await (window as any).__fmConfirm(msg2))) return
+
+      const btn = document.getElementById('btn-killswitch') as HTMLButtonElement
+      btn.disabled = true
+      btn.textContent = t('admin.killswitchExecuting')
+
+      try {
+        const response = await fetch('/api/v1/admin/system/killswitch', {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('admin.killswitchFailed'))
+        }
+
+        const result = await response.json()
+        const total = Object.values(result.deleted as Record<string, number>).reduce((a: number, b: number) => a + b, 0)
+        const details = Object.entries(result.deleted as Record<string, number>)
+          .filter(([_, count]) => count > 0)
+          .map(([table, count]) => `${table}: ${count}`)
+          .join('\n')
+
+        await (window as any).__fmAlert(
+          t('admin.killswitchSuccess').replace('{count}', String(total))
+          + (details ? '\n\n' + details : '')
+        )
+
+      } catch (err: any) {
+        await (window as any).__fmAlert(err.message || t('admin.killswitchFailed'))
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('admin.killswitchButton')
+      }
+    })
+  </script>
 </Layout>

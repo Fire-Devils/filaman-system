@@ -3,6 +3,13 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Filaments">
+  <style>
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background: var(--bg-hover); }
+    .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
+    .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
+    .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
+  </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="filaments.title">Filaments</h1>
     <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
@@ -14,12 +21,12 @@ import Layout from '../../layouts/Layout.astro'
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th data-i18n="filaments.designation">Designation</th>
-          <th data-i18n="filaments.colors">Colors</th>
-          <th data-i18n="filaments.type">Type</th>
-          <th data-i18n="filaments.diameter">Diameter</th>
-          <th data-i18n="filaments.manufacturer">Manufacturer</th>
-          <th style="text-align: right;" data-i18n="filaments.spools">Spools</th>
+          <th data-i18n="filaments.designation" data-sort="designation" class="sortable">Designation</th>
+          <th data-i18n="filaments.colors" data-sort="colors" class="sortable">Colors</th>
+          <th data-i18n="filaments.type" data-sort="type" class="sortable">Type</th>
+          <th data-i18n="filaments.diameter" data-sort="diameter_mm" class="sortable">Diameter</th>
+          <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable">Manufacturer</th>
+          <th style="text-align: right;" data-i18n="filaments.spools" data-sort="spool_count" class="sortable">Spools</th>
         </tr>
       </thead>
       <tbody id="filaments-table">
@@ -38,6 +45,58 @@ import Layout from '../../layouts/Layout.astro'
 
     let currentPage = 1
     const pageSize = 50
+    let allFilaments: any[] = []
+    let sortKey: string | null = null
+    let sortDirection: 'asc' | 'desc' | null = null
+
+    function setupSortableHeaders() {
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = (th as HTMLElement).dataset.sort!
+          if (sortKey === key) {
+            if (sortDirection === 'asc') sortDirection = 'desc'
+            else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
+            else sortDirection = 'asc'
+          } else {
+            sortKey = key
+            sortDirection = 'asc'
+          }
+          updateSortIndicators()
+          renderFilaments(allFilaments)
+        })
+      })
+    }
+
+    function updateSortIndicators() {
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        const key = (th as HTMLElement).dataset.sort!
+        th.classList.remove('sort-asc', 'sort-desc')
+        if (sortKey === key && sortDirection) {
+          th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
+        }
+      })
+    }
+
+    function getSortValue(item: any, key: string): any {
+      if (key === 'manufacturer') return item.manufacturer?.name || ''
+      if (key === 'colors') return item.colors?.length || 0
+      return item[key]
+    }
+
+    function sortFilaments(filaments: any[]): any[] {
+      if (!sortKey || !sortDirection) return filaments
+      return [...filaments].sort((a, b) => {
+        const aVal = getSortValue(a, sortKey)
+        const bVal = getSortValue(b, sortKey)
+        let cmp = 0
+        if (aVal == null && bVal == null) cmp = 0
+        else if (aVal == null) cmp = 1
+        else if (bVal == null) cmp = -1
+        else if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
+        else cmp = aVal - bVal
+        return sortDirection === 'asc' ? cmp : -cmp
+      })
+    }
     
     async function loadFilaments(page: number = 1) {
       try {
@@ -48,7 +107,8 @@ import Layout from '../../layouts/Layout.astro'
         if (!response.ok) throw new Error('Failed to fetch filaments')
         
         const data = await response.json()
-        renderFilaments(data.items)
+        allFilaments = data.items
+        renderFilaments(allFilaments)
         renderPagination(data.total, data.page)
       } catch (error) {
         console.error('Failed to load filaments:', error)
@@ -71,8 +131,9 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderFilaments(filaments: any[]) {
       const tbody = document.getElementById('filaments-table')!
+      const sorted = sortFilaments(filaments)
       
-      if (filaments.length === 0) {
+      if (sorted.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="6" style="text-align: center; color: var(--text-muted);">
@@ -83,7 +144,7 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = filaments.map(f => `
+      tbody.innerHTML = sorted.map(f => `
         <tr style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
           <td style="padding: 12px;">
             <div style="font-weight: 500;">${f.designation}</div>
@@ -139,6 +200,7 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
+    setupSortableHeaders()
     loadFilaments()
   </script>
 </Layout>

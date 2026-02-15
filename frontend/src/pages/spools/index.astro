@@ -3,6 +3,13 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Spools">
+  <style>
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { background: var(--bg-hover); }
+    .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
+    .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
+    .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
+  </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="spools.title">Spools</h1>
     <a href="/spools/new" class="fm-btn fm-btn-primary" data-i18n="spools.addSpool">
@@ -23,11 +30,11 @@ import Layout from '../../layouts/Layout.astro'
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th data-i18n="spools.id">ID</th>
-          <th data-i18n="spools.filament">Filament</th>
-          <th data-i18n="spools.status">Status</th>
-          <th data-i18n="spools.remaining">Remaining</th>
-          <th data-i18n="spools.location">Location</th>
+          <th data-i18n="spools.id" data-sort="id" class="sortable">ID</th>
+          <th data-i18n="spools.filament" data-sort="filament_id" class="sortable">Filament</th>
+          <th data-i18n="spools.status" data-sort="status_id" class="sortable">Status</th>
+          <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable">Remaining</th>
+          <th data-i18n="spools.location" data-sort="location_id" class="sortable">Location</th>
         </tr>
       </thead>
       <tbody id="spools-table">
@@ -49,6 +56,59 @@ import Layout from '../../layouts/Layout.astro'
     let statuses: any[] = []
     let locations: any[] = []
     let filaments: any[] = []
+    let allSpools: any[] = []
+    let sortKey: string | null = null
+    let sortDirection: 'asc' | 'desc' | null = null
+
+    function setupSortableHeaders() {
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = (th as HTMLElement).dataset.sort!
+          if (sortKey === key) {
+            if (sortDirection === 'asc') sortDirection = 'desc'
+            else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
+            else sortDirection = 'asc'
+          } else {
+            sortKey = key
+            sortDirection = 'asc'
+          }
+          updateSortIndicators()
+          renderSpools(allSpools)
+        })
+      })
+    }
+
+    function updateSortIndicators() {
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        const key = (th as HTMLElement).dataset.sort!
+        th.classList.remove('sort-asc', 'sort-desc')
+        if (sortKey === key && sortDirection) {
+          th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
+        }
+      })
+    }
+
+    function getSortValue(item: any, key: string): any {
+      if (key === 'filament_id') return getFilamentName(item.filament_id)
+      if (key === 'status_id') return getStatusLabel(item.status_id)
+      if (key === 'location_id') return getLocationName(item.location_id)
+      return item[key]
+    }
+
+    function sortSpools(spools: any[]): any[] {
+      if (!sortKey || !sortDirection) return spools
+      return [...spools].sort((a, b) => {
+        const aVal = getSortValue(a, sortKey)
+        const bVal = getSortValue(b, sortKey)
+        let cmp = 0
+        if (aVal == null && bVal == null) cmp = 0
+        else if (aVal == null) cmp = 1
+        else if (bVal == null) cmp = -1
+        else if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
+        else cmp = aVal - bVal
+        return sortDirection === 'asc' ? cmp : -cmp
+      })
+    }
     
     async function loadFilters() {
       try {
@@ -105,7 +165,8 @@ import Layout from '../../layouts/Layout.astro'
         if (!response.ok) throw new Error('Failed to fetch spools')
         
         const data = await response.json()
-        renderSpools(data.items)
+        allSpools = data.items
+        renderSpools(allSpools)
         renderPagination(data.total, data.page)
       } catch (error) {
         console.error('Failed to load spools:', error)
@@ -137,8 +198,9 @@ import Layout from '../../layouts/Layout.astro'
     
     function renderSpools(spools: any[]) {
       const tbody = document.getElementById('spools-table')!
+      const sorted = sortSpools(spools)
       
-      if (spools.length === 0) {
+      if (sorted.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="5" style="text-align: center; color: var(--text-muted);">
@@ -149,7 +211,7 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = spools.map(s => {
+      tbody.innerHTML = sorted.map(s => {
         const isLow = s.remaining_weight_g !== null && 
                       s.remaining_weight_g > 0 && 
                       s.remaining_weight_g <= s.low_weight_threshold_g
@@ -217,6 +279,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('filter-status')?.addEventListener('change', () => loadSpools(1))
     document.getElementById('filter-location')?.addEventListener('change', () => loadSpools(1))
     
+    setupSortableHeaders()
     loadFilters().then(() => loadSpools())
   </script>
 </Layout>
