@@ -25,6 +25,7 @@ class Permission(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     is_system: Mapped[bool] = mapped_column(default=False)
 
     roles: Mapped[list["Role"]] = relationship(secondary="role_permissions", back_populates="permissions")

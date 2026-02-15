@@ -24,7 +24,7 @@ async def ensure_tables_exist():
         if result.fetchone() is None:
             await conn.run_sync(Base.metadata.create_all)
             await conn.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"))
-            await conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('initial')"))
+            await conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('a1b2c3d4e5f6')"))
 
 
 @asynccontextmanager
