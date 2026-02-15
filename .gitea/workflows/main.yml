@@ -23,7 +23,7 @@ jobs:
           echo "CORS_ORIGINS=*" >> .env
           echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
           echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)" >> .env
-          echo "DATABASE_URL=sqlite+aiosqlite:////app/filaman.db" >> .env
+          echo "DATABASE_URL=sqlite+aiosqlite:////app/data/filaman.db" >> .env
           echo "Generated .env file for build:"
           cat .env
 
