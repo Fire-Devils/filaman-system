@@ -35,7 +35,8 @@ RUN pip install uv
 COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install backend dependencies (including mysql and postgres drivers)
-RUN uv pip install --system --no-cache -r pyproject.toml[all]
+RUN uv pip install --system --no-cache -r pyproject.toml
+RUN uv pip install --system --no-cache aiomysql>=0.2.0 asyncpg>=0.29.0
 
 # Copy backend source
 COPY backend/ ./
