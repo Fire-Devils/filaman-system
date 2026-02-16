@@ -94,10 +94,12 @@ import Layout from '../../layouts/Layout.astro'
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     let filterManufacturerId: string | null = null
+    let filterLocationId: string | null = null
     let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
     filterManufacturerId = urlParams.get('manufacturer_id')
+    filterLocationId = urlParams.get('location_id')
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -309,6 +311,10 @@ import Layout from '../../layouts/Layout.astro'
             opt.textContent = l.name
             select.appendChild(opt)
           })
+          
+          if (filterLocationId) {
+            select.value = filterLocationId
+          }
         }
         
         if (filamentsRes?.ok) {

@@ -116,11 +116,11 @@ import Layout from '../../layouts/Layout.astro'
       }
       
       tbody.innerHTML = locations.map(loc => `
-        <tr>
+        <tr style="cursor: pointer;" onclick="window.location='/spools?location_id=${loc.id}'">
           <td style="padding: 12px; font-weight: 500;">${loc.name}</td>
           <td style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${loc.identifier || '-'}</td>
           <td style="padding: 12px; text-align: right; color: var(--text-muted);">${loc.spool_count || 0}</td>
-          <td style="padding: 12px; text-align: right;">
+          <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
             <button data-id="${loc.id}" data-name="${loc.name}" data-identifier="${loc.identifier || ''}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
             <button data-id="${loc.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
           </td>
