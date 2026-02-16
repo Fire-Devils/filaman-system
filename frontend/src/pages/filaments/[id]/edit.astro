@@ -268,6 +268,19 @@ const { id } = Astro.params
             class="fm-input"
           />
         </div>
+
+        <!-- Custom Fields -->
+        <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <label class="fm-label" style="margin: 0;">Extra Fields (JSON)</label>
+            <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
+              + Add Field
+            </button>
+          </div>
+          <div id="custom-fields-container" style="display: grid; gap: 8px;">
+            <!-- Dynamic fields go here -->
+          </div>
+        </div>
         
         <div id="error-message" class="fm-alert-error hidden"></div>
         
@@ -327,6 +340,95 @@ const { id } = Astro.params
     const btnCancelNewColor = document.getElementById('btn-cancel-new-color') as HTMLButtonElement
     const newColorHex = document.getElementById('new-color-hex') as HTMLInputElement
     const newColorName = document.getElementById('new-color-name') as HTMLInputElement
+    
+    // Custom Fields
+    const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLDivElement
+    const btnAddField = document.getElementById('btn-add-field') as HTMLButtonElement
+
+    // ── Custom Fields Logic ──
+    let customFields: Array<{ key: string, value: string }> = []
+
+    function flattenObject(obj: any, prefix = '', res: any = {}) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key]
+          const newKey = prefix ? `${prefix}.${key}` : key
+          if (typeof val === 'object' && val !== null) {
+            flattenObject(val, newKey, res)
+          } else {
+            res[newKey] = String(val)
+          }
+        }
+      }
+      return res
+    }
+
+    function unflattenObject(data: Record<string, any>) {
+      const result: any = {}
+      for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          const keys = key.split('.')
+          let current = result
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i]
+            if (i === keys.length - 1) {
+              // Try to parse number if possible, else string
+              const val = data[key]
+              const num = Number(val)
+              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
+            } else {
+              current[k] = current[k] || {}
+              current = current[k]
+            }
+          }
+        }
+      }
+      return result
+    }
+
+    function renderCustomFields() {
+      customFieldsContainer.innerHTML = ''
+      customFields.forEach((field, index) => {
+        const row = document.createElement('div')
+        row.style.display = 'grid'
+        row.style.gridTemplateColumns = '1fr 1fr auto'
+        row.style.gap = '8px'
+        row.style.alignItems = 'center'
+        
+        row.innerHTML = `
+          <input type="text" placeholder="Key" class="fm-input custom-field-key" data-index="${index}" value="${field.key}" />
+          <input type="text" placeholder="Value" class="fm-input custom-field-value" data-index="${index}" value="${field.value}" />
+          <button type="button" class="fm-btn fm-btn-danger custom-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
+        `
+        customFieldsContainer.appendChild(row)
+      })
+
+      // Wire up inputs to update state
+      document.querySelectorAll('.custom-field-key').forEach((input: any) => {
+        input.addEventListener('input', (e: any) => {
+          customFields[parseInt(e.target.dataset.index)].key = e.target.value
+        })
+      })
+      document.querySelectorAll('.custom-field-value').forEach((input: any) => {
+        input.addEventListener('input', (e: any) => {
+          customFields[parseInt(e.target.dataset.index)].value = e.target.value
+        })
+      })
+      
+      // Wire up remove buttons
+      document.querySelectorAll('.custom-field-remove').forEach((btn: any) => {
+        btn.addEventListener('click', (e: any) => {
+          const index = parseInt(e.target.closest('button').dataset.index)
+          customFields.splice(index, 1)
+          renderCustomFields()
+        })
+      })
+    }
+
+    btnAddField.addEventListener('click', () => {
+      customFields.push({ key: '', value: '' })
+      renderCustomFields()
+    })
 
     // ── Color mode radio handling ──
     const colorModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="color_mode"]')
@@ -618,6 +720,15 @@ const { id } = Astro.params
 
       // Shop URL
       ;(document.getElementById('shop_url') as HTMLInputElement).value = f.shop_url || ''
+
+      // Custom Fields
+      if (f.custom_fields && Object.keys(f.custom_fields).length > 0) {
+        const flat = flattenObject(f.custom_fields)
+        customFields = Object.entries(flat).map(([key, value]) => ({ key, value: String(value) }))
+      } else {
+        customFields = []
+      }
+      renderCustomFields()
     }
 
     // ── Form Submit ──
@@ -681,6 +792,19 @@ const { id } = Astro.params
 
       const shopUrl = (formData.get('shop_url') as string || '').trim()
       patchData.shop_url = shopUrl || null
+
+      // Custom Fields
+      if (customFields.length > 0) {
+        const fieldsObj: Record<string, any> = {}
+        customFields.forEach(f => {
+          if (f.key.trim()) {
+            fieldsObj[f.key.trim()] = f.value
+          }
+        })
+        patchData.custom_fields = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+      } else {
+        patchData.custom_fields = null
+      }
 
       // Build PUT /colors payload
       const colorsData = {

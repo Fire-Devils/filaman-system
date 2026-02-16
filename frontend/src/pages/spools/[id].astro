@@ -34,6 +34,9 @@ const { id } = Astro.params
       <button id="btn-move" class="fm-btn fm-btn-outline" data-i18n="spools.move">
         Move
       </button>
+      <button id="btn-custom-fields" class="fm-btn fm-btn-outline" data-i18n="spools.manageCustomFields">
+        Extra Fields
+      </button>
     </div>
   </div>
   
@@ -85,7 +88,46 @@ const { id } = Astro.params
     let spool = null
     let statuses = []
     let locations = []
+    // Local state for custom fields modal
+    let modalCustomFields = []
     
+    function flattenObject(obj, prefix = '', res = {}) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key]
+          const newKey = prefix ? `${prefix}.${key}` : key
+          if (typeof val === 'object' && val !== null) {
+            flattenObject(val, newKey, res)
+          } else {
+            res[newKey] = String(val)
+          }
+        }
+      }
+      return res
+    }
+
+    function unflattenObject(data) {
+      const result = {}
+      for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          const keys = key.split('.')
+          let current = result
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i]
+            if (i === keys.length - 1) {
+              const val = data[key]
+              const num = Number(val)
+              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
+            } else {
+              current[k] = current[k] || {}
+              current = current[k]
+            }
+          }
+        }
+      }
+      return result
+    }
+
     function getCsrfToken() {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
@@ -207,6 +249,20 @@ const { id } = Astro.params
             <div style="font-size: 1.1rem; font-weight: 600;">${spool.lot_number}</div>
           </div>
         ` : ''}
+
+        ${spool.custom_fields && Object.keys(spool.custom_fields).length > 0 ? `
+          <div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.customFields') || 'Extra Fields'}</div>
+            <div>
+              ${Object.entries(flattenObject(spool.custom_fields)).map(([key, value]) => `
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                  <span style="color: var(--text-muted); font-weight: 500;">${key}</span>
+                  <span style="font-family: monospace; word-break: break-all;">${value}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
       `
       
       document.getElementById('actions-section').classList.remove('hidden')
@@ -293,6 +349,7 @@ const { id } = Astro.params
       document.getElementById('btn-adjustment')?.addEventListener('click', () => showModal('adjustment'))
       document.getElementById('btn-status')?.addEventListener('click', () => showModal('status'))
       document.getElementById('btn-move')?.addEventListener('click', () => showModal('move'))
+      document.getElementById('btn-custom-fields')?.addEventListener('click', () => showModal('custom_fields'))
     }
     
     function showModal(type) {
@@ -309,6 +366,7 @@ const { id } = Astro.params
         adjustment: t('spools.modalAdjust'),
         status: t('spools.modalChangeStatus'),
         move: t('spools.modalMove'),
+        custom_fields: t('spools.manageCustomFields'),
       }
       title.textContent = titles[type]
       
@@ -390,6 +448,31 @@ const { id } = Astro.params
             </div>
           </div>
         `
+      } else if (type === 'custom_fields') {
+        // Init state from spool object
+        if (spool.custom_fields && Object.keys(spool.custom_fields).length > 0) {
+          const flat = flattenObject(spool.custom_fields)
+          modalCustomFields = Object.entries(flat).map(([key, value]) => ({ key, value: String(value) }))
+        } else {
+          modalCustomFields = []
+        }
+        
+        fields.innerHTML = `
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span class="fm-label" style="margin: 0;">Fields (JSON)</span>
+              <button type="button" id="modal-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">+ Add</button>
+            </div>
+            <div id="modal-custom-fields-container" style="display: grid; gap: 8px; max-height: 300px; overflow-y: auto;"></div>
+          </div>
+        `
+        
+        document.getElementById('modal-add-field')?.addEventListener('click', () => {
+          modalCustomFields.push({ key: '', value: '' })
+          renderModalCustomFields()
+        })
+        
+        renderModalCustomFields()
       }
       
       container.classList.remove('hidden')
@@ -397,6 +480,48 @@ const { id } = Astro.params
       
       document.getElementById('modal-cancel')?.addEventListener('click', () => {
         container.classList.add('hidden')
+      })
+    }
+
+    function renderModalCustomFields() {
+      const container = document.getElementById('modal-custom-fields-container')
+      if (!container) return
+      
+      container.innerHTML = ''
+      modalCustomFields.forEach((field, index) => {
+        const row = document.createElement('div')
+        row.style.display = 'grid'
+        row.style.gridTemplateColumns = '1fr 1fr auto'
+        row.style.gap = '8px'
+        row.style.alignItems = 'center'
+        
+        row.innerHTML = `
+          <input type="text" placeholder="Key" class="fm-input modal-field-key" data-index="${index}" value="${field.key}" />
+          <input type="text" placeholder="Value" class="fm-input modal-field-value" data-index="${index}" value="${field.value}" />
+          <button type="button" class="fm-btn fm-btn-danger modal-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
+        `
+        container.appendChild(row)
+      })
+
+      // Wire up inputs
+      document.querySelectorAll('.modal-field-key').forEach((input: any) => {
+        input.addEventListener('input', (e: any) => {
+          modalCustomFields[parseInt(e.target.dataset.index)].key = e.target.value
+        })
+      })
+      document.querySelectorAll('.modal-field-value').forEach((input: any) => {
+        input.addEventListener('input', (e: any) => {
+          modalCustomFields[parseInt(e.target.dataset.index)].value = e.target.value
+        })
+      })
+      
+      // Wire up remove buttons
+      document.querySelectorAll('.modal-field-remove').forEach((btn: any) => {
+        btn.addEventListener('click', (e: any) => {
+          const index = parseInt(e.target.closest('button').dataset.index)
+          modalCustomFields.splice(index, 1)
+          renderModalCustomFields()
+        })
       })
     }
     
@@ -442,6 +567,21 @@ const { id } = Astro.params
           location_id: locId ? parseInt(locId) : null,
           note: document.getElementById('field-note').value || null,
         }
+      } else if (type === 'custom_fields') {
+        url = `/api/v1/spools/${id}`
+        // Use PATCH for updating resource fields
+        // But fetch defaults to POST if not specified, so we need to handle method
+        
+        const fieldsObj = {}
+        modalCustomFields.forEach(f => {
+          if (f.key.trim()) {
+            fieldsObj[f.key.trim()] = f.value
+          }
+        })
+        
+        body = {
+          custom_fields: Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+        }
       }
       
       error.classList.add('hidden')
@@ -450,7 +590,7 @@ const { id } = Astro.params
       
       try {
         const response = await fetch(url, {
-          method: 'POST',
+          method: type === 'custom_fields' ? 'PATCH' : 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-CSRF-Token': getCsrfToken(),

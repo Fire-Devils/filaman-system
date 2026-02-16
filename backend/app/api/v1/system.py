@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import delete
 
@@ -275,7 +276,6 @@ async def spoolman_test_connection(
 
 @router.post(
     "/spoolman-import/preview",
-    response_model=SpoolmanPreviewResponse,
 )
 async def spoolman_preview(
     body: SpoolmanUrlRequest,
@@ -286,19 +286,33 @@ async def spoolman_preview(
     service = SpoolmanImportService(db)
     try:
         preview = await service.preview(body.url)
-        return {
+        return JSONResponse({
             "summary": preview.summary,
             "vendors": preview.vendors,
             "filaments": preview.filaments,
             "spools": preview.spools,
             "locations": preview.locations,
             "colors": preview.colors,
-        }
+        })
     except SpoolmanImportError as e:
-        raise HTTPException(
+        logger.warning(f"Spoolman Import Error: {e}", exc_info=True)
+        return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": e.code, "message": str(e)},
+            content={"detail": {"code": e.code, "message": str(e)}},
         )
+    except Exception as e:
+        logger.exception("Unexpected error in Spoolman preview")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler: {str(e)}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
 
 
 @router.post(
@@ -316,9 +330,23 @@ async def spoolman_execute(
         result = await service.execute(body.url)
         return result
     except SpoolmanImportError as e:
+        logger.warning(f"Spoolman Import Execution Error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": e.code, "message": str(e)},
+        )
+    except Exception as e:
+        logger.exception("Unexpected error in Spoolman import execution")
+        # Return JSONResponse for 500 errors to give more details
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler beim Import: {str(e)}",
+                    "type": type(e).__name__,
+                }
+            },
         )
 
 

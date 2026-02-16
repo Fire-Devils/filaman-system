@@ -36,13 +36,31 @@ async def list_locations(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    result = await db.execute(
-        select(Location)
+    # Query Locations with Spool Count
+    stmt = (
+        select(Location, func.count(Spool.id).label("spool_count"))
+        .outerjoin(Spool, (Spool.location_id == Location.id) & (Spool.deleted_at.is_(None)))
+        .group_by(Location.id)
         .order_by(Location.name)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = result.scalars().all()
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # Convert to response objects
+    items = []
+    for loc, count in rows:
+        # Dynamically attach count to location object so Pydantic can read it
+        # or construct dict
+        loc_dict = {
+            "id": loc.id,
+            "name": loc.name,
+            "identifier": loc.identifier,
+            "custom_fields": loc.custom_fields,
+            "spool_count": count,
+        }
+        items.append(LocationResponse(**loc_dict))
 
     count_result = await db.execute(select(func.count()).select_from(Location))
     total = count_result.scalar() or 0

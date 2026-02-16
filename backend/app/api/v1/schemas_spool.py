@@ -32,6 +32,7 @@ class LocationResponse(BaseModel):
     name: str
     identifier: str | None
     custom_fields: dict[str, Any] | None
+    spool_count: int = 0
 
     class Config:
         from_attributes = True

@@ -82,12 +82,19 @@ class SpoolmanImportService:
         """
         base_url = base_url.rstrip("/")
 
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        # Timeout für Verbindungstest
+        async with httpx.AsyncClient(timeout=10.0) as client:
             try:
                 # Try /api/v1/info first, fall back to /api/v1/health
-                resp = await client.get(f"{base_url}/api/v1/info")
-                if resp.status_code == 404:
-                    resp = await client.get(f"{base_url}/api/v1/health")
+                try:
+                    resp = await client.get(f"{base_url}/api/v1/info")
+                    if resp.status_code == 404:
+                        resp = await client.get(f"{base_url}/api/v1/health")
+                except httpx.RequestError as e:
+                    raise SpoolmanImportError(
+                        f"Verbindung zu '{base_url}' fehlgeschlagen: {e}",
+                        "connection_failed",
+                    )
 
                 if resp.status_code != 200:
                     raise SpoolmanImportError(
@@ -95,21 +102,30 @@ class SpoolmanImportService:
                         "connection_failed",
                     )
 
-                data = resp.json()
+                try:
+                    data = resp.json()
+                except Exception:
+                    raise SpoolmanImportError(
+                        "Ungültige JSON-Antwort von Spoolman",
+                        "invalid_response",
+                    )
+
                 return {
                     "status": "ok",
                     "url": base_url,
                     "info": data,
                 }
-            except httpx.ConnectError:
-                raise SpoolmanImportError(
-                    f"Verbindung zu '{base_url}' fehlgeschlagen",
-                    "connection_failed",
-                )
             except httpx.TimeoutException:
                 raise SpoolmanImportError(
                     f"Timeout bei Verbindung zu '{base_url}'",
                     "connection_timeout",
+                )
+            except SpoolmanImportError:
+                raise
+            except Exception as e:
+                raise SpoolmanImportError(
+                    f"Fehler beim Verbindungstest: {e}",
+                    "connection_error",
                 )
 
     # ------------------------------------------------------------------ #
@@ -119,21 +135,56 @@ class SpoolmanImportService:
     async def _fetch_all(self, client: httpx.AsyncClient, base_url: str, endpoint: str) -> list[dict[str, Any]]:
         """Alle Eintraege eines Spoolman-Endpoints abrufen (mit Pagination)."""
         results: list[dict[str, Any]] = []
-        limit = 100
+        limit = 50  # Reduziertes Limit um Timeouts bei großen Payloads zu vermeiden
         offset = 0
 
         while True:
-            resp = await client.get(
-                f"{base_url}/api/v1/{endpoint}",
-                params={"limit": limit, "offset": offset},
-            )
-            if resp.status_code != 200:
+            try:
+                resp = await client.get(
+                    f"{base_url}/api/v1/{endpoint}",
+                    params={"limit": limit, "offset": offset},
+                )
+            except httpx.TimeoutException:
                 raise SpoolmanImportError(
-                    f"Fehler beim Abrufen von /{endpoint}: Status {resp.status_code}",
+                    f"Timeout beim Abrufen von /{endpoint} (Offset {offset})",
+                    "fetch_timeout",
+                )
+            except httpx.RequestError as e:
+                raise SpoolmanImportError(
+                    f"Netzwerkfehler beim Abrufen von /{endpoint}: {e}",
+                    "fetch_network_error",
+                )
+
+            if resp.status_code != 200:
+                # Versuche Fehlermeldung aus Body zu lesen
+                try:
+                    err_body = resp.text[:200]
+                except Exception:
+                    err_body = "n/a"
+                
+                raise SpoolmanImportError(
+                    f"Fehler beim Abrufen von /{endpoint}: Status {resp.status_code}. Response: {err_body}",
                     "fetch_error",
                 )
 
-            batch = resp.json()
+            try:
+                batch = resp.json()
+            except Exception:
+                 raise SpoolmanImportError(
+                    f"Ungültige JSON-Antwort von /{endpoint}",
+                    "invalid_json",
+                )
+
+            # Sicherheitscheck: Spoolman muss eine Liste zurueckgeben
+            if not isinstance(batch, list):
+                # Manche Endpoints geben vielleicht kein Array zurück? 
+                # Falls es ein Dictionary ist, verpacken wir es in eine Liste (falls sinnvoll) 
+                # oder werfen Fehler. Spoolman list endpoints sollten Listen sein.
+                raise SpoolmanImportError(
+                    f"Unerwartete Antwort von /{endpoint}: Liste erwartet, aber {type(batch).__name__} erhalten.",
+                    "invalid_response_format",
+                )
+                
             if not batch:
                 break
 
@@ -153,28 +204,64 @@ class SpoolmanImportService:
         """Vorschau: Welche Daten wuerden importiert?"""
         base_url = base_url.rstrip("/")
 
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-            vendors = await self._fetch_all(client, base_url, "vendor")
-            filaments = await self._fetch_all(client, base_url, "filament")
-            spools = await self._fetch_all(client, base_url, "spool")
+        # Erhöhter Timeout für den Preview-Prozess
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # 1. Vendors
+            try:
+                vendors = await self._fetch_all(client, base_url, "vendor")
+            except Exception as e:
+                raise SpoolmanImportError(f"Fehler beim Laden der Hersteller (vendor): {e}")
 
+            # 2. Filaments
+            try:
+                filaments = await self._fetch_all(client, base_url, "filament")
+            except Exception as e:
+                raise SpoolmanImportError(f"Fehler beim Laden der Filamente (filament): {e}")
+
+            # 3. Spools
+            try:
+                spools = await self._fetch_all(client, base_url, "spool")
+            except Exception as e:
+                raise SpoolmanImportError(f"Fehler beim Laden der Spulen (spool): {e}")
+
+            # 4. Locations
             # Locations aus Spools extrahieren (Spoolman hat kein /location Endpoint in allen Versionen)
+            # Auch bei Fehlern im Location-Endpoint (z.B. 500 oder falsches Format) Fallback nutzen
+            locations = []
             try:
                 locations = await self._fetch_all(client, base_url, "location")
-            except SpoolmanImportError:
-                # Fallback: Locations aus Spools extrahieren
-                locations = []
-                seen_locations: set[str] = set()
-                for spool in spools:
-                    loc = spool.get("location")
-                    if loc and isinstance(loc, dict):
-                        loc_name = loc.get("name", "")
-                        if loc_name and loc_name not in seen_locations:
-                            seen_locations.add(loc_name)
-                            locations.append(loc)
+            except Exception as e:
+                logger.warning(f"Could not fetch locations from endpoint: {e}. Using fallback.")
+            
+            # Fallback & Supplement: Locations aus Spools extrahieren
+            # Spoolman kann Locations als String oder Objekt speichern
+            seen_locations: set[str] = {
+                str(l.get("name")) for l in locations 
+                if isinstance(l, dict) and l.get("name")
+            }
+            
+            for spool in spools:
+                loc = spool.get("location")
+                if not loc:
+                    continue
+
+                if isinstance(loc, dict):
+                    loc_name = loc.get("name", "")
+                    if loc_name and loc_name not in seen_locations:
+                        seen_locations.add(loc_name)
+                        locations.append(loc)
+                elif isinstance(loc, str):
+                    loc_name = loc.strip()
+                    if loc_name and loc_name not in seen_locations:
+                        seen_locations.add(loc_name)
+                        # Pseudo-Objekt erstellen für den Import
+                        locations.append({"name": loc_name})
 
         # Farben aus Filamenten extrahieren
-        colors = self._extract_colors(filaments)
+        try:
+            colors = self._extract_colors(filaments)
+        except Exception as e:
+             raise SpoolmanImportError(f"Fehler beim Extrahieren der Farben: {e}")
 
         return ImportPreview(
             vendors=vendors,
@@ -227,7 +314,7 @@ class SpoolmanImportService:
         status_map = await self._load_status_map()
 
         # 2. Locations importieren
-        location_map = await self._import_locations(preview.locations, result)
+        location_map, name_map = await self._import_locations(preview.locations, result)
 
         # 3. Manufacturers importieren
         manufacturer_map = await self._import_manufacturers(preview.vendors, result)
@@ -242,7 +329,7 @@ class SpoolmanImportService:
 
         # 6. Spools importieren
         await self._import_spools(
-            preview.spools, filament_map, location_map, status_map, result
+            preview.spools, filament_map, location_map, name_map, status_map, result
         )
 
         await self.db.commit()
@@ -270,40 +357,67 @@ class SpoolmanImportService:
 
     async def _import_locations(
         self, locations: list[dict[str, Any]], result: ImportResult
-    ) -> dict[int, int]:
-        """Locations importieren. Gibt Spoolman-ID -> FilaMan-ID Mapping zurueck."""
-        loc_map: dict[int, int] = {}
+    ) -> tuple[dict[Any, int], dict[str, int]]:
+        """Locations importieren. Gibt (Spoolman-ID -> FilaMan-ID, Name -> FilaMan-ID) zurueck."""
+        loc_map: dict[Any, int] = {}
+        name_map: dict[str, int] = {}
 
         for loc_data in locations:
+            # Safety Check: Falls loc_data kein Dict ist
+            if not isinstance(loc_data, dict):
+                continue
+                
             spoolman_id = loc_data.get("id")
             name = self._clean(loc_data.get("name"))
+            
+            # Fallback name if missing but ID exists
+            if not name and spoolman_id:
+                name = f"Spoolman Location #{spoolman_id}"
+            
             if not name:
                 continue
 
-            # Pruefen ob Location mit gleichem Namen existiert
+            # Pruefen ob Location mit gleichem Namen existiert (Case-Insensitive Check wäre gut, aber hier exakt)
             existing = await self.db.execute(
                 select(Location).where(Location.name == name)
             )
             existing_loc = existing.scalar_one_or_none()
 
+            final_id: int
             if existing_loc:
-                if spoolman_id:
-                    loc_map[spoolman_id] = existing_loc.id
+                final_id = existing_loc.id
                 result.locations_skipped += 1
-                continue
+            else:
+                new_loc = Location(
+                    name=name,
+                    custom_fields={"spoolman_id": spoolman_id} if spoolman_id else None,
+                )
+                self.db.add(new_loc)
+                await self.db.flush()  # ID erhalten
+                final_id = new_loc.id
+                result.locations_created += 1
 
-            new_loc = Location(
-                name=name,
-                custom_fields={"spoolman_id": spoolman_id} if spoolman_id else None,
-            )
-            self.db.add(new_loc)
-            await self.db.flush()  # ID erhalten
-
+            # Mapping pflegen
             if spoolman_id:
-                loc_map[spoolman_id] = new_loc.id
-            result.locations_created += 1
+                # Store ID as is
+                loc_map[spoolman_id] = final_id
+                
+                # Try storing int/str variants
+                try:
+                    loc_map[int(spoolman_id)] = final_id
+                except (ValueError, TypeError):
+                    pass
+                try:
+                    loc_map[str(spoolman_id)] = final_id
+                except (ValueError, TypeError):
+                    pass
+            
+            # Map name (normalized for better hit rate?)
+            name_map[name] = final_id
+            # Also map lower case for robust lookup
+            name_map[name.lower()] = final_id
 
-        return loc_map
+        return loc_map, name_map
 
     async def _import_manufacturers(
         self, vendors: list[dict[str, Any]], result: ImportResult
@@ -312,6 +426,10 @@ class SpoolmanImportService:
         mfr_map: dict[int, int] = {}
 
         for vendor in vendors:
+            # Safety Check
+            if not isinstance(vendor, dict):
+                continue
+                
             spoolman_id = vendor.get("id")
             name = self._clean(vendor.get("name"))
             if not name:
@@ -366,6 +484,10 @@ class SpoolmanImportService:
             color_map[color.hex_code.lower()] = color.id
 
         for color_data in colors:
+            # Safety Check
+            if not isinstance(color_data, dict):
+                continue
+
             hex_code = color_data["hex_code"].lower()
             if hex_code in color_map:
                 result.colors_skipped += 1
@@ -395,11 +517,16 @@ class SpoolmanImportService:
         fil_map: dict[int, int] = {}
 
         for fil_data in filaments:
+            # Safety Check
+            if not isinstance(fil_data, dict):
+                continue
+                
             spoolman_id = fil_data.get("id")
 
             # Manufacturer auflösen
             vendor = fil_data.get("vendor")
-            vendor_id = vendor.get("id") if vendor else None
+            # Safety: Ensure vendor is a dict
+            vendor_id = vendor.get("id") if vendor and isinstance(vendor, dict) else None
             filaman_mfr_id = manufacturer_map.get(vendor_id) if vendor_id else None
 
             if not filaman_mfr_id:
@@ -420,7 +547,7 @@ class SpoolmanImportService:
             raw_weight = fil_data.get("weight")  # Net filament weight in g
             spool_weight = fil_data.get("spool_weight")  # Empty spool weight
             # Vendor empty_spool_weight -> filament default_spool_weight_g
-            if not spool_weight and vendor:
+            if not spool_weight and vendor and isinstance(vendor, dict):
                 spool_weight = vendor.get("empty_spool_weight")
 
             # Farb-Modus erkennen
@@ -558,7 +685,8 @@ class SpoolmanImportService:
         self,
         spools: list[dict[str, Any]],
         filament_map: dict[int, int],
-        location_map: dict[int, int],
+        location_map: dict[Any, int],
+        location_name_map: dict[str, int],
         status_map: dict[str, int],
         result: ImportResult,
     ) -> None:
@@ -568,7 +696,7 @@ class SpoolmanImportService:
 
             # Filament auflösen
             fil = spool_data.get("filament")
-            fil_spoolman_id = fil.get("id") if fil else None
+            fil_spoolman_id = fil.get("id") if fil and isinstance(fil, dict) else None
             filaman_fil_id = filament_map.get(fil_spoolman_id) if fil_spoolman_id else None
 
             if not filaman_fil_id:
@@ -597,11 +725,50 @@ class SpoolmanImportService:
             status_id = status_map.get(status_key, status_map.get("active", 1))
 
             # Location auflösen
+            # Location kann ein Objekt {id: 1, name: "Regal"} oder ein String "Regal" sein
             loc = spool_data.get("location")
-            loc_spoolman_id = loc.get("id") if loc and isinstance(loc, dict) else None
-            location_id = location_map.get(loc_spoolman_id) if loc_spoolman_id else None
+            location_id = None
+            
+            if loc:
+                if isinstance(loc, dict):
+                    loc_spoolman_id = loc.get("id")
+                    if loc_spoolman_id is not None:
+                        # Try exact match (int)
+                        location_id = location_map.get(loc_spoolman_id)
+                        # Try string/int conversion mismatch
+                        if not location_id:
+                             try:
+                                 location_id = location_map.get(int(loc_spoolman_id))
+                             except (ValueError, TypeError):
+                                 pass
+                        if not location_id:
+                             try:
+                                 location_id = location_map.get(str(loc_spoolman_id))
+                             except (ValueError, TypeError):
+                                 pass
+
+                    # Fallback auf Name, falls ID nicht gefunden (z.B. neu erstellt ohne ID)
+                    if not location_id:
+                        loc_name = self._clean(loc.get("name"))
+                        if loc_name:
+                            location_id = location_name_map.get(loc_name)
+                            if not location_id:
+                                location_id = location_name_map.get(loc_name.lower())
+                
+                elif isinstance(loc, str):
+                    loc_name = self._clean(loc)
+                    if loc_name:
+                        location_id = location_name_map.get(loc_name)
+                        if not location_id:
+                             location_id = location_name_map.get(loc_name.lower())
+
+                if not location_id:
+                     result.warnings.append(
+                         f"Spule Spoolman #{spoolman_id}: Location '{loc}' konnte nicht zugeordnet werden."
+                     )
 
             # Gewichte berechnen
+
             initial_weight = spool_data.get("initial_weight")  # Net filament
             spool_weight = spool_data.get("spool_weight")
             remaining_weight = spool_data.get("remaining_weight")
@@ -665,20 +832,24 @@ class SpoolmanImportService:
             last_used = spool_data.get("last_used")
 
             try:
-                new_spool = Spool(
-                    filament_id=filaman_fil_id,
-                    status_id=status_id,
-                    lot_number=self._clean(spool_data.get("lot_nr")),
-                    rfid_uid=rfid_uid,
-                    external_id=external_id,
-                    location_id=location_id,
-                    purchase_price=spool_data.get("price"),
-                    initial_total_weight_g=initial_total,
-                    empty_spool_weight_g=spool_weight,
-                    remaining_weight_g=remaining_weight,
-                    custom_fields=custom if custom else None,
-                )
-                self.db.add(new_spool)
+                # Nested transaction damit ein Fehler nicht den ganzen Import abbricht
+                async with self.db.begin_nested():
+                    new_spool = Spool(
+                        filament_id=filaman_fil_id,
+                        status_id=status_id,
+                        lot_number=self._clean(spool_data.get("lot_nr")),
+                        rfid_uid=rfid_uid,
+                        external_id=external_id,
+                        location_id=location_id,
+                        purchase_price=spool_data.get("price"),
+                        initial_total_weight_g=initial_total,
+                        empty_spool_weight_g=spool_weight,
+                        remaining_weight_g=remaining_weight,
+                        custom_fields=custom if custom else None,
+                    )
+                    self.db.add(new_spool)
+                    await self.db.flush()
+                
                 result.spools_created += 1
 
             except Exception as e:

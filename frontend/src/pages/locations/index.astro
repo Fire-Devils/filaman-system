@@ -76,7 +76,6 @@ import Layout from '../../layouts/Layout.astro'
     await initI18n()
 
     let locations: any[] = []
-    let spoolCounts: Record<number, number> = {}
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -85,24 +84,11 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadLocations() {
       try {
-        const [locRes, spoolsRes] = await Promise.all([
-          fetch('/api/v1/locations?page_size=200', { credentials: 'include' }),
-          fetch('/api/v1/spools?page_size=1000', { credentials: 'include' }),
-        ])
+        const locRes = await fetch('/api/v1/locations?page_size=200', { credentials: 'include' })
         
         if (!locRes.ok) throw new Error('Failed to fetch locations')
         
         locations = await locRes.json().then(d => d.items)
-        
-        spoolCounts = {}
-        if (spoolsRes.ok) {
-          const spools = await spoolsRes.json().then(d => d.items)
-          spools.forEach((s: any) => {
-            if (s.location_id) {
-              spoolCounts[s.location_id] = (spoolCounts[s.location_id] || 0) + 1
-            }
-          })
-        }
         
         renderLocations()
       } catch (error) {
@@ -133,7 +119,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="padding: 12px; font-weight: 500;">${loc.name}</td>
           <td style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${loc.identifier || '-'}</td>
-          <td style="padding: 12px; text-align: right; color: var(--text-muted);">${spoolCounts[loc.id] || 0}</td>
+          <td style="padding: 12px; text-align: right; color: var(--text-muted);">${loc.spool_count || 0}</td>
           <td style="padding: 12px; text-align: right;">
             <button data-id="${loc.id}" data-name="${loc.name}" data-identifier="${loc.identifier || ''}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
             <button data-id="${loc.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>

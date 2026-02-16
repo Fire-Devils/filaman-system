@@ -169,6 +169,43 @@ const { id } = Astro.params
           </div>`
         : ''
 
+      // Custom Fields
+      let customFieldsHtml = ''
+      if (f.custom_fields && Object.keys(f.custom_fields).length > 0) {
+        // Simple flatten for display
+        const flatten = (obj, prefix = '', res = {}) => {
+          for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+              const val = obj[key];
+              const newKey = prefix ? `${prefix}.${key}` : key;
+              if (typeof val === 'object' && val !== null) {
+                flatten(val, newKey, res);
+              } else {
+                res[newKey] = val;
+              }
+            }
+          }
+          return res;
+        }
+
+        const flatFields = flatten(f.custom_fields)
+        const rows = Object.entries(flatFields).map(([key, value]) => {
+          return `
+          <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
+            <span style="color: var(--text-muted); font-weight: 500;">${key}</span>
+            <span style="font-family: monospace; word-break: break-all;">${value}</span>
+          </div>
+          `
+        }).join('')
+        
+        customFieldsHtml = `
+          <div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.customFields') || 'Extra Fields'}</div>
+            <div>${rows}</div>
+          </div>
+        `
+      }
+
       document.getElementById('filament-content')!.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
@@ -187,6 +224,7 @@ const { id } = Astro.params
         ${colorsHtml}
         ${mfgColorHtml}
         ${shopHtml}
+        ${customFieldsHtml}
       `
     }
     
