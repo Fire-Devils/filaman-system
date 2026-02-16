@@ -44,8 +44,8 @@ jobs:
           git tag "v$NEW_VERSION"
 
           # Push to Gitea
-          git push origin HEAD:main
-          git push origin "v$NEW_VERSION"
+          git push origin HEAD:main --force
+          git push origin "v$NEW_VERSION" --force
 
           # Push to GitHub
           git remote remove github 2>/dev/null || true
