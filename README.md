@@ -22,6 +22,9 @@ docker run -d \
 
 Die Anwendung ist dann unter http://localhost:8083 erreichbar.
 
+Default EMail: admin@example.com
+Default Passwort: admin123
+
 ### Docker Container selber bauen
 
 #### Voraussetzungen
@@ -136,20 +139,6 @@ ADMIN_PASSWORD=secure-password
 - Astro + Tailwind CSS
 - Statischer Build
 
-### CI/CD
-
-Dieses Repository enthält einen Gitea Workflow, der das Docker-Image automatisch zum GitHub Container Registry (ghcr.io) pusht.
-
-Der Workflow ist in `.gitea/workflows/main.yml` definiert.
-
-**Setup:**
-
-1. Füge in den Gitea Repository-Einstellungen folgende Secrets hinzu:
-   - `GHCR_USERNAME`: Dein GitHub Benutzername
-   - `GHCR_TOKEN`: Ein GitHub Personal Access Token (PAT) mit `read:packages` und `write:packages` Berechtigungen
-
-Nach der Konfiguration wird der Workflow bei jedem Push auf den `main` Branch ausgeführt.
-
 ### Lizenz
 
 MIT
@@ -236,6 +225,9 @@ npm run dev
 
 The frontend will be available at http://localhost:4321.
 
+Default EMail: admin@example.com
+Default Password: admin123
+
 #### Build Frontend for Production
 
 ```bash
@@ -287,20 +279,6 @@ ADMIN_PASSWORD=secure-password
 **Frontend:**
 - Astro + Tailwind CSS
 - Static Build
-
-### CI/CD
-
-This repository contains a Gitea workflow to automatically build and push the Docker image to the GitHub Container Registry (ghcr.io).
-
-The workflow is defined in `.gitea/workflows/main.yml`.
-
-**Setup:**
-
-1. Add the following secrets in your Gitea repository settings:
-   - `GHCR_USERNAME`: Your GitHub username
-   - `GHCR_TOKEN`: A GitHub Personal Access Token (PAT) with `read:packages` and `write:packages` scopes
-
-Once configured, the workflow will trigger on every push to the `main` branch.
 
 ### License
 
