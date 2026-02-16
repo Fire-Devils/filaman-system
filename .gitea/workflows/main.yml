@@ -66,6 +66,15 @@ jobs:
             git push github ":refs/tags/$t"
           done
 
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          name: Release v${{ steps.version.outputs.new_version }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
+
       - name: Install Docker CLI
         run: |
           sudo apt-get update
