@@ -2,11 +2,12 @@ import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import tailwindcss from '@tailwindcss/vite';
 
+const isStatic = process.env.BUILD_MODE === 'static';
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
 
 export default defineConfig({
-  output: 'server',
-  adapter: node({
+  output: isStatic ? 'static' : 'server',
+  adapter: isStatic ? undefined : node({
     mode: 'standalone',
   }),
   vite: {

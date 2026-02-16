@@ -15,7 +15,7 @@ RUN npm install --production
 COPY frontend/ ./
 
 # Build the frontend
-RUN npm run build
+RUN BUILD_MODE=static npm run build
 
 # --- Backend Build Stage ---
 FROM python:3.11-slim AS backend-builder

@@ -3,6 +3,7 @@ import os  # Added import
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 
 from app.api.auth import router as auth_router
@@ -128,7 +129,6 @@ async def health_ready():
 
 if not settings.debug:
     from fastapi.staticfiles import StaticFiles
-    import os
 
     static_files_path = "/app/static"
     if not os.path.exists(static_files_path) or not os.path.isdir(static_files_path):
@@ -138,4 +138,22 @@ if not settings.debug:
         )
     else:
         logger.info(f"Serving static files from '{static_files_path}'")
+        
+        # Serve detail pages for dynamic routes
+        @app.get("/spools/{id}")
+        async def serve_spool_detail(id: int):
+            return FileResponse(os.path.join(static_files_path, "spools/detail/index.html"))
+
+        @app.get("/printers/{id}")
+        async def serve_printer_detail(id: int):
+            return FileResponse(os.path.join(static_files_path, "printers/detail/index.html"))
+
+        @app.get("/filaments/{id}")
+        async def serve_filament_detail(id: int):
+            return FileResponse(os.path.join(static_files_path, "filaments/detail/index.html"))
+            
+        @app.get("/filaments/{id}/edit")
+        async def serve_filament_edit(id: int):
+            return FileResponse(os.path.join(static_files_path, "filaments/detail/edit/index.html"))
+
         app.mount("/", StaticFiles(directory=static_files_path, html=True), name="static")
