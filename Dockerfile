@@ -48,6 +48,8 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Disable in-app migrations because the entrypoint handles them
+ENV RUN_MIGRATIONS_IN_APP=false
 
 # Install uv in the final image
 RUN pip install uv

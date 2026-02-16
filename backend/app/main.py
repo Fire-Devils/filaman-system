@@ -39,9 +39,21 @@ def run_migrations() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting FilaMan backend...")
-    logger.info(f"Using database URL: {settings.database_url}")  # DEBUG LOG
-    run_migrations()
-    logger.info("Database migrations checked/applied")
+    logger.info(f"Using database URL: {settings.database_url}")
+
+    # Skip migrations in app context if configured (e.g. in Docker where entrypoint handles it)
+    if os.getenv("RUN_MIGRATIONS_IN_APP", "true").lower() == "true":
+        try:
+            run_migrations()
+            logger.info("Database migrations checked/applied")
+        except Exception as e:
+            logger.error(f"Error running migrations in app startup: {e}")
+            # We don't raise here to allow app to try starting, or we could raise to fail hard.
+            # Given entrypoint handles it in prod, this is mostly for dev safety.
+            raise e
+    else:
+        logger.info("Skipping in-app migrations (RUN_MIGRATIONS_IN_APP is false)")
+
     async with async_session_maker() as db:
         await run_all_seeds(db)
     await plugin_manager.start_all()
