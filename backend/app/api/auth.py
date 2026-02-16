@@ -81,12 +81,23 @@ async def login(
     session_token = f"sess.{session.id}.{secret}"
     csrf_token = generate_token_secret()
 
+    # Determine cookie security
+    # In production (debug=False), we default to Secure=True.
+    # However, if the request is plainly HTTP (not HTTPS and not behind an HTTPS proxy),
+    # setting Secure=True will cause the browser to drop the cookie.
+    # So we relax Secure=True if we detect an insecure connection.
+    secure_cookie = not settings.debug
+    if secure_cookie:
+        is_ssl = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        if not is_ssl:
+            secure_cookie = False
+
     response.set_cookie(
         key="session_id",
         value=session_token,
         path="/",
         httponly=True,
-        secure=not settings.debug,
+        secure=secure_cookie,
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )
@@ -95,7 +106,7 @@ async def login(
         value=csrf_token,
         path="/",
         httponly=False,
-        secure=not settings.debug,
+        secure=secure_cookie,
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )
