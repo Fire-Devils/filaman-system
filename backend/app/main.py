@@ -17,9 +17,30 @@ setup_logging()
 logger = __import__('logging').getLogger(__name__)
 
 
+def run_migrations() -> None:
+    """Alembic-Migrationen programmatisch ausfuehren (upgrade head).
+
+    Wird synchron ausgefuehrt. Dank der Anpassung in env.py wird dabei
+    automatisch ein synchroner DB-Treiber verwendet, auch wenn die App
+    asynchron konfiguriert ist.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("script_location", str(
+        __import__("pathlib").Path(__file__).resolve().parent.parent / "alembic"
+    ))
+    # Wir muessen hier nichts mehr an der URL drehen, das macht env.py jetzt selbst.
+
+    command.upgrade(alembic_cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting FilaMan backend...")
+    run_migrations()
+    logger.info("Database migrations checked/applied")
     async with async_session_maker() as db:
         await run_all_seeds(db)
     await plugin_manager.start_all()

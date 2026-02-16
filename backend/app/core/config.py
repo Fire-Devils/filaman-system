@@ -1,9 +1,10 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Go up three levels from config.py -> core -> app -> .env
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ENV_PATH = PROJECT_ROOT / ".env"
 
 
@@ -23,6 +24,17 @@ class Settings(BaseSettings):
 
     # Default to a file in the project root if not specified in env
     database_url: str = f"sqlite+aiosqlite:///{PROJECT_ROOT}/filaman.db"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def resolve_relative_db_path(cls, v: str) -> str:
+        """Resolve relative sqlite paths against PROJECT_ROOT."""
+        if v and (v.startswith("sqlite:///") or v.startswith("sqlite+aiosqlite:///")):
+            # Check for relative path indicator ./
+            if "/./" in v:
+                # Replace /./ with /<PROJECT_ROOT>/
+                return v.replace("/./", f"/{PROJECT_ROOT}/")
+        return v
 
     admin_email: str | None = None
     admin_password: str | None = None
