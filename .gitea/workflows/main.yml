@@ -48,7 +48,7 @@ jobs:
           git config user.email "actions@local"
 
           git remote remove github 2>/dev/null || true
-          git remote add github https://${{ secrets.GHCR_TOKEN }}@github.com/Fire-Devils/filaman-system.git
+          git remote add github https://x-access-token:${{ secrets.GHCR_TOKEN }}@github.com/Fire-Devils/filaman-system.git
 
           # main spiegeln
           git push github HEAD:refs/heads/main --force
@@ -68,11 +68,12 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           tag_name: v${{ steps.version.outputs.new_version }}
           name: Release v${{ steps.version.outputs.new_version }}
           generate_release_notes: true
-          token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Install Docker CLI
         run: |
