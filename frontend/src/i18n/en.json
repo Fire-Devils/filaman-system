@@ -247,7 +247,11 @@
     "allMaterials": "All Materials",
     "groupByFilament": "Group by Filament",
     "noResults": "No spools match the current filters.",
-    "spoolsInGroup": "{count} spool(s)"
+    "spoolsInGroup": "{count} spool(s)",
+    "manageCustomFields": "Manage Custom Fields",
+    "editSpool": "Edit Spool",
+    "saveSpool": "Save Spool",
+    "failedUpdate": "Failed to update spool"
   },
   "printers": {
     "title": "Printers",

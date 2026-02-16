@@ -1,0 +1,563 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  return [
+    {params: {id: 'detail'}},
+  ];
+}
+
+const { id } = Astro.params
+---
+
+<Layout title="FilaMan - Edit Spool">
+  <div style="margin-bottom: 24px;">
+    <a href={`/spools/${id}`} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spool</span></a>
+  </div>
+  
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.editSpool">Edit Spool</h1>
+  
+  <div id="edit-loading">
+    <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  </div>
+
+  <div id="edit-error" class="hidden">
+    <p style="color: var(--error-text);" data-i18n="spools.failedLoadSingle">Failed to load spool</p>
+  </div>
+
+  <div id="edit-form-wrapper" class="hidden">
+    <div class="fm-card" style="max-width: 720px; padding: 24px;">
+      <form id="spool-form" style="display: grid; gap: 16px;">
+        
+        <!-- Filament -->
+        <div>
+          <label for="filament_id" class="fm-label" data-i18n="spools.filament">Filament *</label>
+          <select 
+            id="filament_id" 
+            name="filament_id" 
+            required
+            class="fm-select"
+          >
+            <option value="" data-i18n="spools.selectFilament">Select filament...</option>
+          </select>
+        </div>
+        
+        <!-- Status -->
+        <div>
+          <label for="status_id" class="fm-label" data-i18n="spools.status">Status</label>
+          <select 
+            id="status_id" 
+            name="status_id" 
+            class="fm-select"
+          >
+            <option value="">-</option>
+          </select>
+        </div>
+
+        <!-- Weights row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="initial_total_weight_g" class="fm-label" data-i18n="spools.initialWeight">Initial Total Weight (g)</label>
+            <input
+              type="number"
+              id="initial_total_weight_g"
+              name="initial_total_weight_g"
+              step="1"
+              placeholder="e.g. 1250"
+              data-i18n-placeholder="spools.initialWeightPlaceholder"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
+            <input
+              type="number"
+              id="empty_spool_weight_g"
+              name="empty_spool_weight_g"
+              step="1"
+              placeholder="e.g. 250"
+              data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
+              class="fm-input"
+            />
+          </div>
+        </div>
+
+        <!-- Low Threshold -->
+        <div>
+          <label for="low_weight_threshold_g" class="fm-label" data-i18n="spools.lowThreshold">Low Weight Threshold (g)</label>
+          <input
+            type="number"
+            id="low_weight_threshold_g"
+            name="low_weight_threshold_g"
+            step="1"
+            value="100"
+            class="fm-input"
+          />
+        </div>
+
+        <!-- Lot Number -->
+        <div>
+          <label for="lot_number" class="fm-label" data-i18n="spools.lotNumber">Lot Number</label>
+          <input
+            type="text"
+            id="lot_number"
+            name="lot_number"
+            placeholder="e.g. LOT-2024-001"
+            data-i18n-placeholder="spools.lotNumberPlaceholder"
+            class="fm-input"
+          />
+        </div>
+
+        <!-- RFID + External ID row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="rfid_uid" class="fm-label" data-i18n="spools.rfidUid">RFID UID</label>
+            <input
+              type="text"
+              id="rfid_uid"
+              name="rfid_uid"
+              placeholder="e.g. 04A2B3C4D5"
+              data-i18n-placeholder="spools.rfidUidPlaceholder"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="external_id" class="fm-label" data-i18n="spools.externalId">External ID</label>
+            <input
+              type="text"
+              id="external_id"
+              name="external_id"
+              placeholder="e.g. MY-SPOOL-001"
+              data-i18n-placeholder="spools.externalIdPlaceholder"
+              class="fm-input"
+            />
+          </div>
+        </div>
+
+        <!-- Location -->
+        <div>
+          <label for="location_id" class="fm-label" data-i18n="spools.location">Location</label>
+          <select 
+            id="location_id" 
+            name="location_id" 
+            class="fm-select"
+          >
+            <option value="" data-i18n="spools.noLocation">No location</option>
+          </select>
+        </div>
+
+        <!-- Spool Dimensions row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameter">Spool Outer Diameter (mm)</label>
+            <input
+              type="number"
+              id="spool_outer_diameter_mm"
+              name="spool_outer_diameter_mm"
+              step="0.1"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="spool_width_mm" class="fm-label" data-i18n="spools.spoolWidth">Spool Width (mm)</label>
+            <input
+              type="number"
+              id="spool_width_mm"
+              name="spool_width_mm"
+              step="0.1"
+              class="fm-input"
+            />
+          </div>
+        </div>
+
+        <!-- Purchase Info row -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="purchase_price" class="fm-label" data-i18n="spools.purchasePrice">Purchase Price</label>
+            <input
+              type="number"
+              id="purchase_price"
+              name="purchase_price"
+              step="0.01"
+              class="fm-input"
+            />
+          </div>
+          
+          <div>
+            <label for="purchase_date" class="fm-label" data-i18n="spools.purchaseDate">Purchase Date</label>
+            <input
+              type="date"
+              id="purchase_date"
+              name="purchase_date"
+              class="fm-input"
+            />
+          </div>
+        </div>
+
+        <!-- Expiration Date -->
+        <div>
+          <label for="expiration_date" class="fm-label" data-i18n="spools.expirationDate">Expiration Date</label>
+          <input
+            type="date"
+            id="expiration_date"
+            name="expiration_date"
+            class="fm-input"
+          />
+        </div>
+
+        <!-- Custom Fields -->
+        <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span class="fm-label" style="margin: 0;" data-i18n="common.customFields">Extra Fields</span>
+            <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
+              + <span data-i18n="common.add">Add</span>
+            </button>
+          </div>
+          <div id="custom-fields-container" style="display: grid; gap: 8px;">
+          </div>
+        </div>
+        
+        <div id="error-message" class="fm-alert-error hidden"></div>
+        
+        <div style="display: flex; gap: 12px; padding-top: 8px;">
+          <button
+            type="submit"
+            id="submit-btn"
+            class="fm-btn fm-btn-primary"
+            data-i18n="spools.saveSpool"
+          >
+            Save Spool
+          </button>
+          <a
+            href={`/spools/${id}`}
+            class="fm-btn fm-btn-outline"
+            data-i18n="common.cancel"
+          >
+            Cancel
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../../lib/i18n'
+    await initI18n()
+
+    const pathParts = window.location.pathname.split('/').filter(Boolean)
+    const spoolId = pathParts[pathParts.length - 2]
+
+    let allFilaments = []
+    let allStatuses = []
+    let allLocations = []
+
+    const customFieldsContainer = document.getElementById('custom-fields-container')
+    const btnAddField = document.getElementById('btn-add-field')
+    let customFields = []
+
+    function flattenObject(obj, prefix = '', res = {}) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key]
+          const newKey = prefix ? prefix + '.' + key : key
+          if (typeof val === 'object' && val !== null) {
+            flattenObject(val, newKey, res)
+          } else {
+            res[newKey] = String(val)
+          }
+        }
+      }
+      return res
+    }
+
+    function unflattenObject(data) {
+      const result = {}
+      for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          const keys = key.split('.')
+          let current = result
+          for (let i = 0; i < keys.length; i++) {
+            const k = keys[i]
+            if (i === keys.length - 1) {
+              const val = data[key]
+              const num = Number(val)
+              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
+            } else {
+              current[k] = current[k] || {}
+              current = current[k]
+            }
+          }
+        }
+      }
+      return result
+    }
+
+    function renderCustomFields() {
+      customFieldsContainer.innerHTML = ''
+      customFields.forEach((field, index) => {
+        const row = document.createElement('div')
+        row.style.display = 'grid'
+        row.style.gridTemplateColumns = '1fr 1fr auto'
+        row.style.gap = '8px'
+        row.style.alignItems = 'center'
+        
+        row.innerHTML = `
+          <input type="text" placeholder="Key" class="fm-input custom-field-key" data-index="${index}" value="${field.key}" />
+          <input type="text" placeholder="Value" class="fm-input custom-field-value" data-index="${index}" value="${field.value}" />
+          <button type="button" class="fm-btn fm-btn-danger custom-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
+        `
+        customFieldsContainer.appendChild(row)
+      })
+
+      document.querySelectorAll('.custom-field-key').forEach(input => {
+        input.addEventListener('input', e => {
+          customFields[parseInt(e.target.dataset.index)].key = e.target.value
+        })
+      })
+      document.querySelectorAll('.custom-field-value').forEach(input => {
+        input.addEventListener('input', e => {
+          customFields[parseInt(e.target.dataset.index)].value = e.target.value
+        })
+      })
+      
+      document.querySelectorAll('.custom-field-remove').forEach(btn => {
+        btn.addEventListener('click', e => {
+          const index = parseInt(e.target.closest('button').dataset.index)
+          customFields.splice(index, 1)
+          renderCustomFields()
+        })
+      })
+    }
+
+    btnAddField.addEventListener('click', () => {
+      customFields.push({ key: '', value: '' })
+      renderCustomFields()
+    })
+
+    function getCsrfToken() {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    async function loadFilaments() {
+      try {
+        const response = await fetch('/api/v1/filaments?page_size=200', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch filaments')
+        const data = await response.json()
+        const select = document.getElementById('filament_id')
+        allFilaments = data.items
+        allFilaments.forEach(f => {
+          const option = document.createElement('option')
+          option.value = String(f.id)
+          const mfgName = f.manufacturer?.name || ''
+          option.textContent = mfgName ? f.designation + ' (' + mfgName + ')' : f.designation
+          select.appendChild(option)
+        })
+      } catch (error) {
+        console.error('Failed to load filaments:', error)
+      }
+    }
+
+    async function loadStatuses() {
+      try {
+        const response = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch statuses')
+        allStatuses = await response.json()
+        const select = document.getElementById('status_id')
+        allStatuses.forEach(s => {
+          const option = document.createElement('option')
+          option.value = String(s.id)
+          const i18nKey = 'spools.status' + s.key.charAt(0).toUpperCase() + s.key.slice(1)
+          option.textContent = t(i18nKey) || s.label
+          select.appendChild(option)
+        })
+      } catch (error) {
+        console.error('Failed to load statuses:', error)
+      }
+    }
+
+    async function loadLocations() {
+      try {
+        const response = await fetch('/api/v1/locations?page_size=200', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch locations')
+        const data = await response.json()
+        const select = document.getElementById('location_id')
+        allLocations = data.items
+        allLocations.forEach(l => {
+          const option = document.createElement('option')
+          option.value = String(l.id)
+          option.textContent = l.name
+          select.appendChild(option)
+        })
+      } catch (error) {
+        console.error('Failed to load locations:', error)
+      }
+    }
+
+    function prefillForm(s) {
+      document.getElementById('filament_id').value = String(s.filament_id)
+
+      if (s.status_id) {
+        document.getElementById('status_id').value = String(s.status_id)
+      }
+
+      document.getElementById('initial_total_weight_g').value = s.initial_total_weight_g != null ? String(s.initial_total_weight_g) : ''
+      document.getElementById('empty_spool_weight_g').value = s.empty_spool_weight_g != null ? String(s.empty_spool_weight_g) : ''
+      document.getElementById('low_weight_threshold_g').value = s.low_weight_threshold_g != null ? String(s.low_weight_threshold_g) : '100'
+
+      document.getElementById('lot_number').value = s.lot_number || ''
+
+      document.getElementById('rfid_uid').value = s.rfid_uid || ''
+      document.getElementById('external_id').value = s.external_id || ''
+
+      if (s.location_id) {
+        document.getElementById('location_id').value = String(s.location_id)
+      }
+
+      document.getElementById('spool_outer_diameter_mm').value = s.spool_outer_diameter_mm != null ? String(s.spool_outer_diameter_mm) : ''
+      document.getElementById('spool_width_mm').value = s.spool_width_mm != null ? String(s.spool_width_mm) : ''
+
+      document.getElementById('purchase_price').value = s.purchase_price != null ? String(s.purchase_price) : ''
+      if (s.purchase_date) {
+        document.getElementById('purchase_date').value = s.purchase_date.split('T')[0]
+      }
+      if (s.expiration_date) {
+        document.getElementById('expiration_date').value = s.expiration_date.split('T')[0]
+      }
+
+      if (s.custom_fields && Object.keys(s.custom_fields).length > 0) {
+        const flat = flattenObject(s.custom_fields)
+        customFields = Object.entries(flat).map(([key, value]) => ({ key, value: String(value) }))
+      } else {
+        customFields = []
+      }
+      renderCustomFields()
+    }
+
+    const form = document.getElementById('spool-form')
+    const errorMessage = document.getElementById('error-message')
+    const submitBtn = document.getElementById('submit-btn')
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(form)
+
+      const patchData = {}
+
+      const filamentId = formData.get('filament_id')
+      if (filamentId) {
+        patchData.filament_id = parseInt(filamentId)
+      }
+
+      const statusId = formData.get('status_id')
+      patchData.status_id = statusId ? parseInt(statusId) : null
+
+      const locationId = formData.get('location_id')
+      patchData.location_id = locationId ? parseInt(locationId) : null
+
+      const initialWeight = formData.get('initial_total_weight_g')
+      patchData.initial_total_weight_g = initialWeight ? parseFloat(initialWeight) : null
+
+      const emptySpoolWeight = formData.get('empty_spool_weight_g')
+      patchData.empty_spool_weight_g = emptySpoolWeight ? parseFloat(emptySpoolWeight) : null
+
+      const lowThreshold = formData.get('low_weight_threshold_g')
+      patchData.low_weight_threshold_g = lowThreshold ? parseInt(lowThreshold) : null
+
+      const lotNumber = (formData.get('lot_number') || '').trim()
+      patchData.lot_number = lotNumber || null
+
+      const rfidUid = (formData.get('rfid_uid') || '').trim()
+      patchData.rfid_uid = rfidUid || null
+
+      const externalId = (formData.get('external_id') || '').trim()
+      patchData.external_id = externalId || null
+
+      const outerDiameter = formData.get('spool_outer_diameter_mm')
+      patchData.spool_outer_diameter_mm = outerDiameter ? parseFloat(outerDiameter) : null
+
+      const width = formData.get('spool_width_mm')
+      patchData.spool_width_mm = width ? parseFloat(width) : null
+
+      const price = formData.get('purchase_price')
+      patchData.purchase_price = price ? parseFloat(price) : null
+
+      const purchaseDate = formData.get('purchase_date')
+      patchData.purchase_date = purchaseDate || null
+
+      const expirationDate = formData.get('expiration_date')
+      patchData.expiration_date = expirationDate || null
+
+      if (customFields.length > 0) {
+        const fieldsObj = {}
+        customFields.forEach(f => {
+          if (f.key.trim()) {
+            fieldsObj[f.key.trim()] = f.value
+          }
+        })
+        patchData.custom_fields = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+      } else {
+        patchData.custom_fields = null
+      }
+
+      errorMessage.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+
+      try {
+        const response = await fetch('/api/v1/spools/' + spoolId, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify(patchData),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail?.message || errorData.message || t('spools.failedUpdate'))
+        }
+
+        window.location.href = '/spools/' + spoolId
+      } catch (error) {
+        errorMessage.textContent = error.message || t('spools.failedUpdate')
+        errorMessage.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('spools.saveSpool')
+      }
+    })
+
+    async function init() {
+      try {
+        await Promise.all([loadFilaments(), loadStatuses(), loadLocations()])
+
+        const response = await fetch('/api/v1/spools/' + spoolId, {
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch spool')
+        }
+
+        const spool = await response.json()
+        prefillForm(spool)
+
+        document.getElementById('edit-loading').classList.add('hidden')
+        document.getElementById('edit-form-wrapper').classList.remove('hidden')
+      } catch (error) {
+        console.error('Failed to load spool for editing:', error)
+        document.getElementById('edit-loading').classList.add('hidden')
+        document.getElementById('edit-error').classList.remove('hidden')
+      }
+    }
+
+    init()
+  </script>
+</Layout>

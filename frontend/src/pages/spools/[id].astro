@@ -199,9 +199,8 @@ const { id } = Astro.params
             <p style="color: var(--text-muted); margin: 4px 0 0;">${t('spools.filament')}: <a href="/filaments/${spool.filament_id}" style="color: var(--accent); text-decoration: none;">${t('spools.filament')} #${spool.filament_id}</a></p>
           </div>
           <div style="display: flex; gap: 8px;">
-            <button id="btn-delete" class="fm-btn fm-btn-danger">
-              ${t('common.delete')}
-            </button>
+            <a href="/spools/${id}/edit" class="fm-btn fm-btn-outline">${t('common.edit')}</a>
+            <button id="btn-delete" class="fm-btn fm-btn-danger">${t('common.delete')}</button>
           </div>
         </div>
         

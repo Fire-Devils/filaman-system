@@ -247,7 +247,11 @@
     "allMaterials": "Alle Materialien",
     "groupByFilament": "Nach Filament gruppieren",
     "noResults": "Keine Spulen entsprechen den aktuellen Filtern.",
-    "spoolsInGroup": "{count} Spule(n)"
+    "spoolsInGroup": "{count} Spule(n)",
+    "manageCustomFields": "Eigene Felder verwalten",
+    "editSpool": "Spule bearbeiten",
+    "saveSpool": "Spule speichern",
+    "failedUpdate": "Spule konnte nicht aktualisiert werden"
   },
   "printers": {
     "title": "Drucker",
