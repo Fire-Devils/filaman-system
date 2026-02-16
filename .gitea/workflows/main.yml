@@ -24,6 +24,11 @@ jobs:
           echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
           echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)" >> .env
           echo "DATABASE_URL=sqlite+aiosqlite:////app/data/filaman.db" >> .env
+          echo "ADMIN_EMAIL=admin@example.com" >> .env
+          echo "ADMIN_PASSWORD=admin123" >> .env
+          echo "ADMIN_DISPLAY_NAME=Admin" >> .env
+          echo "ADMIN_LANGUAGE=en" >> .env
+          echo "ADMIN_SUPERADMIN=true" >> .env
           echo "Generated .env file for build:"
           cat .env
 
