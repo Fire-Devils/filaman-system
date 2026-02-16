@@ -72,6 +72,7 @@ COPY --from=frontend-builder /app/frontend/dist /app/static
 
 # Copy version.txt and generate version.js
 COPY version.txt /app/version.txt
+RUN mkdir -p /app/frontend/src
 RUN echo "export const VERSION='$(cat /app/version.txt)'" > /app/frontend/src/version.js
 
 # Copy backup script
