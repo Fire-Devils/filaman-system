@@ -69,6 +69,10 @@ COPY .env /app/.env
 # The FastAPI app must be configured to serve static files from this directory.
 COPY --from=frontend-builder /app/frontend/dist /app/static
 
+# Copy backup script
+COPY backend/backup_db.sh /app/backup_db.sh
+RUN chmod +x /app/backup_db.sh
+
 # Expose the port the app runs on
 EXPOSE 8000
 

@@ -1,37 +1,37 @@
 #!/bin/bash
 set -e
 
-# This script runs database migrations and then starts the main application.
-
-# Ensure the data directory exists for the database
 if [ ! -d "/app/data" ]; then
   mkdir -p /app/data
 fi
 
-# Load environment variables from .env file to ensure Alembic sees them
 if [ -f /app/.env ]; then
   export $(grep -v '^#' /app/.env | xargs)
 fi
 
-# Run Alembic migrations
-echo "Running database migrations..."
+echo "Checking for database migrations..."
+ALEMBIC_DRY_RUN=$(alembic upgrade head --dry-run 2>&1 || true)
 
-# DEBUG: Check environment variables
-echo "--- DEBUG INFO START ---"
-echo "Checking .env file:"
-cat /app/.env || echo "Could not read /app/.env"
-echo "------------------------"
+if echo "$ALEMBIC_DRY_RUN" | grep -q "will upgrade"; then
+    echo "Migration required - creating backup first..."
+    
+    chmod +x /app/backup_db.sh
+    /app/backup_db.sh
+    
+    echo "Running migration..."
+    alembic upgrade head
+    echo "Migration complete."
+else
+    echo "No migration required."
+fi
 
-alembic upgrade head
+if ! command -v crond &> /dev/null; then
+    apt-get update && apt-get install -y cron
+fi
 
-echo "Database migrations complete."
+echo "0 2 * * * /app/backup_db.sh >> /var/log/backup.log 2>&1" > /etc/cron.d/filaman-backup
+chmod 0644 /etc/cron.d/filaman-backup
 
-# DEBUG: Check created database file
-echo "Checking database file location:"
-ls -la /app/data/ || echo "Could not list /app/data"
-ls -la /app/ || echo "Could not list /app"
-echo "--- DEBUG INFO END ---"
+crond
 
-# Execute the command passed to this script (e.g., uvicorn)
 exec "$@"
-
