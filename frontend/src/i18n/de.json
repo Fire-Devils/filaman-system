@@ -50,7 +50,8 @@
     "unknown": "Unbekannt",
     "confirmTitle": "Bestätigung",
     "errorTitle": "Fehler",
-    "open": "Öffnen"
+    "open": "Öffnen",
+    "customFields": "Eigene Felder"
   },
   "login": {
     "title": "Anmeldung - FilaMan",
@@ -251,7 +252,12 @@
     "manageCustomFields": "Eigene Felder verwalten",
     "editSpool": "Spule bearbeiten",
     "saveSpool": "Spule speichern",
-    "failedUpdate": "Spule konnte nicht aktualisiert werden"
+    "failedUpdate": "Spule konnte nicht aktualisiert werden",
+    "spoolOuterDiameter": "Spulen-Außendurchmesser (mm)",
+    "spoolWidth": "Spulenbreite (mm)",
+    "purchasePrice": "Kaufpreis",
+    "purchaseDate": "Kaufdatum",
+    "expirationDate": "Ablaufdatum"
   },
   "printers": {
     "title": "Drucker",

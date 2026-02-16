@@ -50,7 +50,8 @@
     "unknown": "Unknown",
     "confirmTitle": "Confirm",
     "errorTitle": "Error",
-    "open": "Open"
+    "open": "Open",
+    "customFields": "Custom Fields"
   },
   "login": {
     "title": "Login - FilaMan",
@@ -251,7 +252,12 @@
     "manageCustomFields": "Manage Custom Fields",
     "editSpool": "Edit Spool",
     "saveSpool": "Save Spool",
-    "failedUpdate": "Failed to update spool"
+    "failedUpdate": "Failed to update spool",
+    "spoolOuterDiameter": "Spool Outer Diameter (mm)",
+    "spoolWidth": "Spool Width (mm)",
+    "purchasePrice": "Purchase Price",
+    "purchaseDate": "Purchase Date",
+    "expirationDate": "Expiration Date"
   },
   "printers": {
     "title": "Printers",
