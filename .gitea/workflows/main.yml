@@ -19,52 +19,39 @@ jobs:
         shell: bash
         run: |
           set -eu
-          
-          # Read current version
-          VERSION=$(cat version.txt)
-          echo "Current version: $VERSION"
-          
-          # Split version into major.minor.patch
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
-          
-          # Increment patch version
+          VERSION="$(cat version.txt)"
+          MAJOR="$(echo "$VERSION" | cut -d. -f1)"
+          MINOR="$(echo "$VERSION" | cut -d. -f2)"
+          PATCH="$(echo "$VERSION" | cut -d. -f3)"
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          
-          echo "New version: $NEW_VERSION"
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Mirror main + tags to GitHub (incl. deletions)
+      - name: Bump version, create tag, push to Gitea + GitHub
         shell: bash
         env:
           GIT_TERMINAL_PROMPT: 0
         run: |
           set -eu
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
 
-          git config --global credential.helper ""
+          echo "$NEW_VERSION" > version.txt
           git config user.name "gitea-actions"
           git config user.email "actions@local"
 
+          git add version.txt
+          git commit -m "chore: bump version to $NEW_VERSION"
+          git tag "v$NEW_VERSION"
+
+          # Push to Gitea
+          git push origin HEAD:main
+          git push origin "v$NEW_VERSION"
+
+          # Push to GitHub
           git remote remove github 2>/dev/null || true
           git remote add github https://x-access-token:${{ secrets.GHCR_TOKEN }}@github.com/Fire-Devils/filaman-system.git
-
-          # main spiegeln
-          git push github HEAD:refs/heads/main --force
-
-          # tags hochschieben
-          git push github --tags --force
-
-          # Tag-Prune (Tags, die lokal fehlen, auf GitHub löschen)
-          git fetch github --tags
-          local_tags="$(git tag -l | sort)"
-          github_tags="$(git ls-remote --tags --refs github | awk '{print $2}' | sed 's#refs/tags/##' | sort)"
-
-          for t in $(comm -13 <(printf "%s\n" "$local_tags") <(printf "%s\n" "$github_tags")); do
-            echo "Deleting tag on GitHub: $t"
-            git push github ":refs/tags/$t"
-          done
+          git push github HEAD:refs/heads/main --force-with-lease
+          git push github "v$NEW_VERSION" --force-with-lease
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -79,21 +66,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y docker.io
-
-      - name: Generate production .env file
-        run: |
-          echo "DEBUG=false" > .env
-          echo "CORS_ORIGINS=*" >> .env
-          echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
-          echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)" >> .env
-          echo "DATABASE_URL=sqlite+aiosqlite:////app/data/filaman.db" >> .env
-          echo "ADMIN_EMAIL=admin@example.com" >> .env
-          echo "ADMIN_PASSWORD=admin123" >> .env
-          echo "ADMIN_DISPLAY_NAME=Admin" >> .env
-          echo "ADMIN_LANGUAGE=en" >> .env
-          echo "ADMIN_SUPERADMIN=true" >> .env
-          echo "Generated .env file for build:"
-          cat .env
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -122,32 +94,3 @@ jobs:
             ghcr.io/fire-devils/filaman-system:${{ gitea.sha }}
           cache-from: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache
           cache-to: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache,mode=max
-
-      - name: Commit and push version bump
-        if: success()
-        shell: bash
-        env:
-          GIT_TERMINAL_PROMPT: 0
-        run: |
-          set -eu
-          
-          NEW_VERSION=${{ steps.version.outputs.new_version }}
-          
-          # Write new version to file
-          echo "$NEW_VERSION" > version.txt
-          
-          # Configure git
-          git config --global credential.helper ""
-          git config user.name "gitea-actions"
-          git config user.email "actions@local"
-          
-          # Add and commit version bump
-          git add version.txt
-          git commit -m "chore: bump version to $NEW_VERSION"
-          
-          # Create tag
-          git tag "v$NEW_VERSION"
-          
-          # Push to Gitea (this won't trigger another workflow since we're already on main)
-          git push origin main
-          git push origin "v$NEW_VERSION"
