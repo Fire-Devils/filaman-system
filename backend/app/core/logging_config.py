@@ -34,7 +34,11 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
 
 
 def setup_logging():
-    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    # Use WARNING level in production (debug=false), INFO in development
+    if settings.debug:
+        log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    else:
+        log_level = logging.WARNING
 
     handler = logging.StreamHandler(sys.stdout)
 
@@ -55,5 +59,10 @@ def setup_logging():
     root_logger.setLevel(log_level)
     root_logger.handlers = [handler]
 
-    for logger_name in ["uvicorn", "uvicorn.access", "sqlalchemy.engine"]:
+    for logger_name in ["uvicorn", "uvicorn.access"]:
         logging.getLogger(logger_name).setLevel(log_level)
+    
+    # SQLAlchemy: only show warnings in production, info in debug
+    sqlalchemy_level = logging.INFO if settings.debug else logging.WARNING
+    logging.getLogger("sqlalchemy.engine").setLevel(sqlalchemy_level)
+    logging.getLogger("sqlalchemy.pool").setLevel(sqlalchemy_level)
