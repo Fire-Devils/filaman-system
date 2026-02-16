@@ -3,7 +3,8 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Go up three levels from config.py -> core -> app -> .env
-ENV_PATH = Path(__file__).parent.parent.parent / ".env"
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+ENV_PATH = PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -20,7 +21,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"
 
-    database_url: str = "sqlite+aiosqlite:///./filaman.db"
+    # Default to a file in the project root if not specified in env
+    database_url: str = f"sqlite+aiosqlite:///{PROJECT_ROOT}/filaman.db"
 
     admin_email: str | None = None
     admin_password: str | None = None
