@@ -75,9 +75,13 @@
     "noRecentActivity": "Keine aktuelle Aktivität",
     "spoolId": "Spule #{id}",
     "manufacturersWithSpools": "Hersteller (nicht leer)",
-    "manufacturersLowStock": "Hersteller (fast leer)",
     "filamentTypes": "Filament-Arten",
-    "noData": "Keine Daten"
+    "noData": "Keine Daten",
+    "lowStockSpools": "Spulen (fast leer)",
+    "spool": "Spule",
+    "filament": "Filament",
+    "manufacturer": "Hersteller",
+    "remaining": "Rest"
   },
   "settings": {
     "title": "Einstellungen",

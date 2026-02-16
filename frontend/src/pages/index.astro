@@ -78,15 +78,15 @@ interface PaginatedResponse<T> {
   
   <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
     <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.manufacturersWithSpools">Hersteller (nicht leer)</h2>
-      <div id="manufacturers-with-spools" style="max-height: 280px; overflow-y: auto;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--accent-3);" data-i18n="dashboard.lowStockSpools">Spulen (fast leer)</h2>
+      <div id="low-stock-spools" style="max-height: 280px; overflow-y: auto;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
     
     <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--accent-3);" data-i18n="dashboard.manufacturersLowStock">Hersteller (fast leer)</h2>
-      <div id="manufacturers-low-stock" style="max-height: 280px; overflow-y: auto;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.manufacturersWithSpools">Hersteller (nicht leer)</h2>
+      <div id="manufacturers-with-spools" style="max-height: 280px; overflow-y: auto;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
@@ -184,13 +184,25 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
-          const mfrLowStockContainer = document.getElementById('manufacturers-low-stock')!
-          if (dashboardData.manufacturers_with_low_stock.length === 0) {
+          const mfrLowStockContainer = document.getElementById('low-stock-spools')!
+          if (dashboardData.low_stock_spools.length === 0) {
             mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
           } else {
-            mfrLowStockContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
-              dashboardData.manufacturers_with_low_stock.map((m: any) => 
-                `<tr><td>${m.name}</td><td style="text-align: right; font-family: monospace; color: var(--accent-3);">${m.spool_count}</td></tr>`
+            mfrLowStockContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+              <thead><tr>
+                <th style="padding: 6px 8px;">${t('dashboard.spool')}</th>
+                <th style="padding: 6px 8px;">${t('dashboard.filament')}</th>
+                <th style="padding: 6px 8px;">${t('dashboard.manufacturer')}</th>
+                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+              </tr></thead>
+              <tbody>` + 
+              dashboardData.low_stock_spools.map((s: any) => 
+                `<tr style="cursor: pointer;" onclick="window.location.href='/spools/${s.spool_id}'">
+                  <td style="padding: 6px 8px;">#${s.spool_id}</td>
+                  <td style="padding: 6px 8px;">${s.filament_designation} (${s.filament_type})</td>
+                  <td style="padding: 6px 8px;">${s.manufacturer_name}</td>
+                  <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: var(--accent-3);">${s.remaining_weight_g.toFixed(0)}g</td>
+                </tr>`
               ).join('') +
               `</tbody></table>`
           }

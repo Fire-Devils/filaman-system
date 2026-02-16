@@ -75,9 +75,13 @@
     "noRecentActivity": "No recent activity",
     "spoolId": "Spool #{id}",
     "manufacturersWithSpools": "Manufacturers (non-empty)",
-    "manufacturersLowStock": "Manufacturers (low stock)",
     "filamentTypes": "Filament Types",
-    "noData": "No data"
+    "noData": "No data",
+    "lowStockSpools": "Low Stock Spools",
+    "spool": "Spool",
+    "filament": "Filament",
+    "manufacturer": "Manufacturer",
+    "remaining": "Remaining"
   },
   "settings": {
     "title": "Settings",

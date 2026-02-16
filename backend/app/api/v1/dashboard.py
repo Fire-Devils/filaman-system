@@ -19,9 +19,18 @@ class FilamentTypeCount(BaseModel):
     count: int
 
 
+class LowStockSpool(BaseModel):
+    spool_id: int
+    filament_designation: str
+    filament_type: str
+    manufacturer_name: str
+    remaining_weight_g: float
+    low_weight_threshold_g: int
+
+
 class DashboardStatsResponse(BaseModel):
     manufacturers_with_spools: list[ManufacturerSpoolCount]
-    manufacturers_with_low_stock: list[ManufacturerSpoolCount]
+    low_stock_spools: list[LowStockSpool]
     filament_types: list[FilamentTypeCount]
 
 
@@ -49,22 +58,35 @@ async def get_dashboard_stats(
         for row in non_empty_result.all()
     ]
 
-    # Hersteller mit fast-leeren Spulen (remaining_weight_g > 0 AND remaining_weight_g <= low_weight_threshold_g)
+    # Spulen mit fast-leeren Restgewicht (remaining_weight_g > 0 AND remaining_weight_g <= low_weight_threshold_g)
     low_stock_stmt = (
-        select(Manufacturer.id, Manufacturer.name, func.count(Spool.id).label("spool_count"))
-        .join(Filament, Filament.manufacturer_id == Manufacturer.id)
-        .join(Spool, Spool.filament_id == Filament.id)
+        select(
+            Spool.id.label("spool_id"),
+            Filament.designation.label("filament_designation"),
+            Filament.type.label("filament_type"),
+            Manufacturer.name.label("manufacturer_name"),
+            Spool.remaining_weight_g,
+            Spool.low_weight_threshold_g,
+        )
+        .join(Filament, Spool.filament_id == Filament.id)
+        .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
         .where(Spool.deleted_at.is_(None))
         .where(Spool.remaining_weight_g.isnot(None))
         .where(Spool.remaining_weight_g > 0)
         .where(Spool.remaining_weight_g <= Spool.low_weight_threshold_g)
-        .group_by(Manufacturer.id, Manufacturer.name)
-        .order_by(func.count(Spool.id).desc())
+        .order_by(Spool.remaining_weight_g.asc())
         .limit(limit)
     )
     low_stock_result = await db.execute(low_stock_stmt)
-    manufacturers_with_low_stock = [
-        ManufacturerSpoolCount(id=row[0], name=row[1], spool_count=row[2])
+    low_stock_spools = [
+        LowStockSpool(
+            spool_id=row[0],
+            filament_designation=row[1],
+            filament_type=row[2],
+            manufacturer_name=row[3],
+            remaining_weight_g=float(row[4]),
+            low_weight_threshold_g=int(row[5]),
+        )
         for row in low_stock_result.all()
     ]
 
@@ -84,6 +106,6 @@ async def get_dashboard_stats(
 
     return DashboardStatsResponse(
         manufacturers_with_spools=manufacturers_with_spools,
-        manufacturers_with_low_stock=manufacturers_with_low_stock,
+        low_stock_spools=low_stock_spools,
         filament_types=filament_types,
     )
