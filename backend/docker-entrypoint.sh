@@ -19,25 +19,26 @@ if [ -f /app/.env ]; then
 fi
 
 echo "Checking for database migrations..."
-ALEMBIC_DRY_RUN=$(alembic upgrade head --dry-run 2>&1 || true)
 
-if echo "$ALEMBIC_DRY_RUN" | grep -q "will upgrade"; then
-    echo "Migration required - creating backup first..."
-    
-    chmod +x /app/backup_db.sh
+# Ensure backup script is executable
+chmod +x /app/backup_db.sh
+
+# Only backup if the database file exists and has size > 0
+# Path adjusted to /app/data/filaman.db as requested
+if [ -f "/app/data/filaman.db" ] && [ -s "/app/data/filaman.db" ]; then
+    echo "Existing database found, creating backup..."
     /app/backup_db.sh
-    
-    echo "Running migration..."
-    alembic upgrade head
-    echo "Migration complete."
-else
-    echo "No migration required."
 fi
+
+echo "Running migrations..."
+alembic upgrade head
+echo "Database migrations complete."
 
 # Cron already installed via Dockerfile
 echo "0 2 * * * /app/backup_db.sh >> /var/log/backup.log 2>&1" > /etc/cron.d/filaman-backup
 chmod 0644 /etc/cron.d/filaman-backup
 
+# Start cron
 cron
 
 exec "$@"
