@@ -53,8 +53,8 @@ ENV PYTHONUNBUFFERED=1
 # Disable in-app migrations because the entrypoint handles them
 ENV RUN_MIGRATIONS_IN_APP=false
 
-# Install uv in the final image
-RUN pip install uv
+# Install uv and cron in the final image
+RUN pip install uv && apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 
 # Copy installed dependencies from backend-builder
 COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages

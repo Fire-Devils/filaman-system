@@ -25,13 +25,10 @@ else
     echo "No migration required."
 fi
 
-if ! command -v crond &> /dev/null; then
-    apt-get update && apt-get install -y cron
-fi
-
+# Cron already installed via Dockerfile
 echo "0 2 * * * /app/backup_db.sh >> /var/log/backup.log 2>&1" > /etc/cron.d/filaman-backup
 chmod 0644 /etc/cron.d/filaman-backup
 
-crond
+cron
 
 exec "$@"
