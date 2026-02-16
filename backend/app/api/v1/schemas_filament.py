@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ManufacturerCreate(BaseModel):
@@ -71,8 +71,8 @@ class FilamentColorResponse(BaseModel):
 
 class FilamentColorsReplace(BaseModel):
     """Body for PUT /filaments/{id}/colors."""
-    color_mode: str  # "single" | "multi"
-    multi_color_style: str | None = None  # "striped" | "gradient"
+    color_mode: str = Field(..., pattern="^(single|multi)$")
+    multi_color_style: str | None = Field(None, pattern="^(striped|gradient)$")
     colors: list[FilamentColorEntry] = []
 
 

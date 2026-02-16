@@ -489,6 +489,8 @@ async def replace_filament_colors(
     for fc in existing.scalars().all():
         await db.delete(fc)
 
+    await db.flush()
+
     # Create new color entries
     new_colors = []
     for entry in data.colors:
@@ -501,7 +503,14 @@ async def replace_filament_colors(
         db.add(fc)
         new_colors.append(fc)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "color_update_failed", "message": str(e)},
+        )
 
     # Reload with color relationships
     result = await db.execute(
