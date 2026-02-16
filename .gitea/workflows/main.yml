@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to Github
+name: Build and Push Docker Image to ghcr.io
 
 on:
   push:
