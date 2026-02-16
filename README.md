@@ -32,12 +32,12 @@ Default Passwort: admin123
 - Docker
 - Docker Buildx mit Multi-Architektur-Unterstützung (für ARM/AMD)
 
-#### Get repo
-git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
-
 #### Build
 
 ```bash
+# Clone repo
+git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
+
 # Image bauen
 docker build -t filaman-system:latest .
 
@@ -179,6 +179,9 @@ git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 #### Build
 
 ```bash
+# Clone repo
+git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
+
 # Build image
 docker build -t filaman-system:latest .
 
