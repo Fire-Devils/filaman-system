@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import os  # Added import
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
