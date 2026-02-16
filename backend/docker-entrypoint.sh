@@ -5,8 +5,17 @@ if [ ! -d "/app/data" ]; then
   mkdir -p /app/data
 fi
 
+# Load .env but don't override existing environment variables
+# Docker -e variables take precedence over .env file
 if [ -f /app/.env ]; then
-  export $(grep -v '^#' /app/.env | xargs)
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[^#] ]] && [[ -n "$line" ]] || continue
+    key="${line%%=*}"
+    eval "val=\$$key"
+    if [ -z "$val" ]; then
+      export "$line"
+    fi
+  done < /app/.env
 fi
 
 echo "Checking for database migrations..."
