@@ -50,8 +50,8 @@ jobs:
           # Push to GitHub
           git remote remove github 2>/dev/null || true
           git remote add github https://x-access-token:${{ secrets.GHCR_TOKEN }}@github.com/Fire-Devils/filaman-system.git
-          git push github HEAD:refs/heads/main --force-with-lease
-          git push github "v$NEW_VERSION" --force-with-lease
+          git push github HEAD:refs/heads/main --force
+          git push github "v$NEW_VERSION" --force
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
