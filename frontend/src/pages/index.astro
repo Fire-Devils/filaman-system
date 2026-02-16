@@ -76,6 +76,29 @@ interface PaginatedResponse<T> {
     </div>
   </div>
   
+  <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+    <div class="fm-card">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.manufacturersWithSpools">Hersteller (nicht leer)</h2>
+      <div id="manufacturers-with-spools" style="max-height: 280px; overflow-y: auto;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+    
+    <div class="fm-card">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--accent-3);" data-i18n="dashboard.manufacturersLowStock">Hersteller (fast leer)</h2>
+      <div id="manufacturers-low-stock" style="max-height: 280px; overflow-y: auto;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+    
+    <div class="fm-card">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentTypes">Filament-Arten</h2>
+      <div id="filament-types" style="max-height: 280px; overflow-y: auto;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+  </div>
+  
   <script>
     import { t, initI18n } from '../lib/i18n'
     await initI18n()
@@ -83,9 +106,10 @@ interface PaginatedResponse<T> {
     async function loadDashboard() {
 
       try {
-        const [spoolsRes, filamentsRes] = await Promise.all([
+        const [spoolsRes, filamentsRes, dashboardRes] = await Promise.all([
           fetch('/api/v1/spools?page_size=200', { credentials: 'include' }),
           fetch('/api/v1/filaments?page_size=200', { credentials: 'include' }),
+          fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include' }),
         ])
         
         if (!spoolsRes.ok || !filamentsRes.ok) {
@@ -94,6 +118,7 @@ interface PaginatedResponse<T> {
         
         const spoolsData = await spoolsRes.json()
         const filamentsData = await filamentsRes.json()
+        const dashboardData = dashboardRes.ok ? await dashboardRes.json() : null
         
         const spools = spoolsData.items
         const filaments = filamentsData.items
@@ -145,6 +170,41 @@ interface PaginatedResponse<T> {
               </div>
             </div>
           `).join('')
+        }
+
+        if (dashboardData) {
+          const mfrContainer = document.getElementById('manufacturers-with-spools')!
+          if (dashboardData.manufacturers_with_spools.length === 0) {
+            mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+          } else {
+            mfrContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
+              dashboardData.manufacturers_with_spools.map((m: any) => 
+                `<tr><td>${m.name}</td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
+              ).join('') +
+              `</tbody></table>`
+          }
+
+          const mfrLowStockContainer = document.getElementById('manufacturers-low-stock')!
+          if (dashboardData.manufacturers_with_low_stock.length === 0) {
+            mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
+          } else {
+            mfrLowStockContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
+              dashboardData.manufacturers_with_low_stock.map((m: any) => 
+                `<tr><td>${m.name}</td><td style="text-align: right; font-family: monospace; color: var(--accent-3);">${m.spool_count}</td></tr>`
+              ).join('') +
+              `</tbody></table>`
+          }
+
+          const typesContainer = document.getElementById('filament-types')!
+          if (dashboardData.filament_types.length === 0) {
+            typesContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+          } else {
+            typesContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
+              dashboardData.filament_types.map((t: any) => 
+                `<tr><td>${t.type}</td><td style="text-align: right; font-family: monospace;">${t.count}</td></tr>`
+              ).join('') +
+              `</tbody></table>`
+          }
         }
       } catch (error) {
         console.error('Failed to load dashboard:', error)

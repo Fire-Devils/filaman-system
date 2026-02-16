@@ -73,7 +73,11 @@
     "emptySpools": "Empty Spools",
     "allSufficient": "All spools have sufficient filament",
     "noRecentActivity": "No recent activity",
-    "spoolId": "Spool #{id}"
+    "spoolId": "Spool #{id}",
+    "manufacturersWithSpools": "Manufacturers (non-empty)",
+    "manufacturersLowStock": "Manufacturers (low stock)",
+    "filamentTypes": "Filament Types",
+    "noData": "No data"
   },
   "settings": {
     "title": "Settings",
