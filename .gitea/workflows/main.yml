@@ -16,9 +16,12 @@ jobs:
 
       - name: Mirror main + tags to GitHub (incl. deletions)
         shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: 0
         run: |
           set -eu
 
+          git config --global credential.helper ""
           git config user.name "gitea-actions"
           git config user.email "actions@local"
 
