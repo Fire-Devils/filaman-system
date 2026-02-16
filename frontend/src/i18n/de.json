@@ -81,7 +81,16 @@
     "spool": "Spule",
     "filament": "Filament",
     "manufacturer": "Hersteller",
-    "remaining": "Rest"
+    "remaining": "Rest",
+    "spools": "Spulen",
+    "spoolStatus": "Spulen-Status",
+    "filamentStats": "Filament-Statistik",
+    "locationStats": "Lagerorte",
+    "statusFull": "Voll",
+    "statusNormal": "Normal",
+    "statusLow": "Niedrig",
+    "statusCritical": "Kritisch",
+    "statusEmpty": "Leer"
   },
   "settings": {
     "title": "Einstellungen",

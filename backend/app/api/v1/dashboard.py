@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from pydantic import BaseModel
 
 from app.api.deps import DBSession, PrincipalDep
-from app.models import Filament, Manufacturer, Spool
+from app.models import Filament, Location, Manufacturer, Spool
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -19,6 +19,18 @@ class FilamentTypeCount(BaseModel):
     count: int
 
 
+class FilamentStat(BaseModel):
+    filament_type: str
+    spool_count: int
+    total_weight_g: float
+
+
+class LocationStat(BaseModel):
+    location_name: str
+    spool_count: int
+    total_weight_g: float
+
+
 class LowStockSpool(BaseModel):
     spool_id: int
     filament_designation: str
@@ -29,6 +41,9 @@ class LowStockSpool(BaseModel):
 
 
 class DashboardStatsResponse(BaseModel):
+    spool_distribution: dict[str, int]
+    filament_stats: list[FilamentStat]
+    location_stats: list[LocationStat]
     manufacturers_with_spools: list[ManufacturerSpoolCount]
     low_stock_spools: list[LowStockSpool]
     filament_types: list[FilamentTypeCount]
@@ -40,6 +55,67 @@ async def get_dashboard_stats(
     principal: PrincipalDep,
     limit: int = Query(20, ge=1, le=50),
 ):
+    # Spulen-Verteilung berechnen
+    all_spools_stmt = (
+        select(
+            Spool.remaining_weight_g,
+            Spool.low_weight_threshold_g,
+            Spool.initial_total_weight_g,
+        )
+        .where(Spool.deleted_at.is_(None))
+        .where(Spool.remaining_weight_g.isnot(None))
+    )
+    all_spools_result = await db.execute(all_spools_stmt)
+    
+    spool_distribution = {"full": 0, "normal": 0, "low": 0, "critical": 0, "empty": 0}
+    
+    for row in all_spools_result.all():
+        remaining = row[0]
+        threshold = row[1]
+        initial = row[2]
+        
+        if remaining <= 0:
+            spool_distribution["empty"] += 1
+        elif initial and initial > 0:
+            pct = (remaining / initial) * 100
+            if pct > 75:
+                spool_distribution["full"] += 1
+            elif pct > 50:
+                spool_distribution["normal"] += 1
+            elif pct > 20:
+                spool_distribution["low"] += 1
+            else:
+                spool_distribution["critical"] += 1
+        elif remaining <= threshold:
+            spool_distribution["critical"] += 1
+        else:
+            spool_distribution["low"] += 1
+    
+    # Filament-Statistik nach Typ
+    filament_stats_stmt = (
+        select(
+            Filament.type,
+            func.count(Spool.id).label("spool_count"),
+            func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
+        )
+        .join(Spool, Spool.filament_id == Filament.id)
+        .where(Spool.deleted_at.is_(None))
+        .where(Spool.remaining_weight_g.isnot(None))
+        .where(Spool.remaining_weight_g > 0)
+        .where(Filament.type.isnot(None))
+        .where(Filament.type != "")
+        .group_by(Filament.type)
+        .order_by(func.sum(Spool.remaining_weight_g).desc())
+    )
+    filament_stats_result = await db.execute(filament_stats_stmt)
+    filament_stats = [
+        FilamentStat(
+            filament_type=row[0],
+            spool_count=row[1],
+            total_weight_g=float(row[2]),
+        )
+        for row in filament_stats_result.all()
+    ]
     # Hersteller mit nicht-leeren Spulen (remaining_weight_g > 0)
     non_empty_stmt = (
         select(Manufacturer.id, Manufacturer.name, func.count(Spool.id).label("spool_count"))
@@ -104,7 +180,33 @@ async def get_dashboard_stats(
         for row in types_result.all()
     ]
 
+    # Lagerorte-Statistik
+    location_stats_stmt = (
+        select(
+            Location.name.label("location_name"),
+            func.count(Spool.id).label("spool_count"),
+            func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
+        )
+        .outerjoin(Spool, (Spool.location_id == Location.id) & (Spool.deleted_at.is_(None)))
+        .where(Location.name.isnot(None))
+        .group_by(Location.id, Location.name)
+        .order_by(func.count(Spool.id).desc())
+    )
+    location_stats_result = await db.execute(location_stats_stmt)
+    location_stats = [
+        LocationStat(
+            location_name=row[0] or "Unzugewiesen",
+            spool_count=int(row[1] or 0),
+            total_weight_g=float(row[2]),
+        )
+        for row in location_stats_result.all()
+        if row[1] and row[1] > 0
+    ]
+
     return DashboardStatsResponse(
+        spool_distribution=spool_distribution,
+        filament_stats=filament_stats,
+        location_stats=location_stats,
         manufacturers_with_spools=manufacturers_with_spools,
         low_stock_spools=low_stock_spools,
         filament_types=filament_types,

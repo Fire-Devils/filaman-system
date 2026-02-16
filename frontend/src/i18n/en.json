@@ -81,7 +81,16 @@
     "spool": "Spool",
     "filament": "Filament",
     "manufacturer": "Manufacturer",
-    "remaining": "Remaining"
+    "remaining": "Remaining",
+    "spools": "Spools",
+    "spoolStatus": "Spool Status",
+    "filamentStats": "Filament Statistics",
+    "locationStats": "Locations",
+    "statusFull": "Full",
+    "statusNormal": "Normal",
+    "statusLow": "Low",
+    "statusCritical": "Critical",
+    "statusEmpty": "Empty"
   },
   "settings": {
     "title": "Settings",

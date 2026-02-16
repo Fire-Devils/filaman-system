@@ -41,17 +41,26 @@ interface PaginatedResponse<T> {
 <Layout title="FilaMan - Dashboard">
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
   
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-    <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.lowSpools">Low Spools</h2>
-      <div id="low-spools" style="display: grid; gap: 8px;">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  <div class="grid grid-cols-2 gap-5">
+    <div class="flex flex-col gap-5">
+      <div class="fm-card">
+        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.spoolStatus">Spulen-Status</h2>
+        <div id="spool-status" style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
+          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+        </div>
+      </div>
+      
+      <div class="fm-card">
+        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.locationStats">Lagerorte</h2>
+        <div id="location-stats" style="overflow-y: auto;">
+          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+        </div>
       </div>
     </div>
     
-    <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.recentActivity">Recent Activity</h2>
-      <div id="recent-activity" style="display: grid; gap: 8px;">
+    <div class="fm-card overflow-y-auto" style="max-height: 400px;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentStats">Filament-Statistik</h2>
+      <div id="filament-stats">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
@@ -103,6 +112,12 @@ interface PaginatedResponse<T> {
     import { t, initI18n } from '../lib/i18n'
     await initI18n()
 
+    function formatWeight(g: number): string {
+      if (g >= 1000000) return (g / 1000000).toFixed(1) + ' t'
+      if (g >= 1000) return (g / 1000).toFixed(1) + ' kg'
+      return g.toFixed(0) + ' g'
+    }
+
     async function loadDashboard() {
 
       try {
@@ -139,40 +154,69 @@ interface PaginatedResponse<T> {
         document.getElementById('stat-low-spools')!.textContent = lowSpools.length
         document.getElementById('stat-empty-spools')!.textContent = emptySpools.length
         
-        const lowSpoolsContainer = document.getElementById('low-spools')!
-        if (lowSpools.length === 0) {
-          lowSpoolsContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
-        } else {
-          lowSpoolsContainer.innerHTML = lowSpools.slice(0, 5).map((s: any) => `
-            <a href="/spools/${s.id}" class="fm-surface-soft" style="display: block; padding: 12px; border-radius: var(--radius-sm); border-color: var(--accent-3); text-decoration: none; transition: background var(--transition);">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 500;">${t('dashboard.spoolId', { id: s.id })}</span>
-                <span style="color: var(--accent-3); font-family: monospace;">${s.remaining_weight_g?.toFixed(0)}g</span>
-              </div>
-            </a>
-          `).join('')
-        }
-        
-        const activityContainer = document.getElementById('recent-activity')!
-        const recentEvents = spools
-          .filter((s: any) => s.last_used_at)
-          .sort((a: any, b: any) => new Date(b.last_used_at).getTime() - new Date(a.last_used_at).getTime())
-          .slice(0, 5)
-        
-        if (recentEvents.length === 0) {
-          activityContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noRecentActivity')}</p>`
-        } else {
-          activityContainer.innerHTML = recentEvents.map((s: any) => `
-            <div class="fm-surface-soft" style="padding: 8px 12px; border-radius: var(--radius-sm);">
-              <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-                <span>${t('dashboard.spoolId', { id: s.id })}</span>
-                <span style="color: var(--text-muted);">${new Date(s.last_used_at).toLocaleDateString()}</span>
-              </div>
+        if (dashboardData) {
+          // Spulen-Status Indikatoren
+          const statusContainer = document.getElementById('spool-status')!
+          const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
+          const statusItems = [
+            { key: 'full', label: t('dashboard.statusFull'), color: '#22c55e', count: dist.full },
+            { key: 'normal', label: t('dashboard.statusNormal'), color: '#3b82f6', count: dist.normal },
+            { key: 'low', label: t('dashboard.statusLow'), color: '#eab308', count: dist.low },
+            { key: 'critical', label: t('dashboard.statusCritical'), color: '#ef4444', count: dist.critical },
+            { key: 'empty', label: t('dashboard.statusEmpty'), color: '#6b7280', count: dist.empty },
+          ]
+          statusContainer.innerHTML = statusItems.map(s => `
+            <div style="text-align: center; min-width: 60px;">
+              <div style="font-size: 1.5rem; font-weight: 700; color: ${s.color};">${s.count}</div>
+              <div style="font-size: 0.7rem; color: var(--text-muted);">${s.label}</div>
             </div>
           `).join('')
-        }
 
-        if (dashboardData) {
+          // Lagerorte-Statistik
+          const locationStatsContainer = document.getElementById('location-stats')!
+          if (!dashboardData.location_stats || dashboardData.location_stats.length === 0) {
+            locationStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+          } else {
+            locationStatsContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+              <thead><tr>
+                <th style="padding: 6px 8px;">${t('locations.name') || 'Location'}</th>
+                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.spools')}</th>
+                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+              </tr></thead>
+              <tbody>` + 
+              dashboardData.location_stats.map((l: any) => 
+                `<tr>
+                  <td style="padding: 6px 8px;">${l.location_name}</td>
+                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${l.spool_count}</td>
+                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(l.total_weight_g)}</td>
+                </tr>`
+              ).join('') +
+              `</tbody></table>`
+          }
+
+          // Filament-Statistik
+          const filamentStatsContainer = document.getElementById('filament-stats')!
+          if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
+            filamentStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+          } else {
+            filamentStatsContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+              <thead><tr>
+                <th style="padding: 6px 8px;">${t('dashboard.filament')}</th>
+                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.spools')}</th>
+                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+              </tr></thead>
+              <tbody>` + 
+              dashboardData.filament_stats.map((f: any) => 
+                `<tr>
+                  <td style="padding: 6px 8px;">${f.filament_type}</td>
+                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${f.spool_count}</td>
+                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
+                </tr>`
+              ).join('') +
+              `</tbody></table>`
+          }
+
+          // Hersteller mit Spulen
           const mfrContainer = document.getElementById('manufacturers-with-spools')!
           if (dashboardData.manufacturers_with_spools.length === 0) {
             mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
@@ -184,6 +228,7 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
+          // Low-stock Spulen
           const mfrLowStockContainer = document.getElementById('low-stock-spools')!
           if (dashboardData.low_stock_spools.length === 0) {
             mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
@@ -207,6 +252,7 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
+          // Filament-Typen
           const typesContainer = document.getElementById('filament-types')!
           if (dashboardData.filament_types.length === 0) {
             typesContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
