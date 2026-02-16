@@ -39,6 +39,7 @@ def run_migrations() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting FilaMan backend...")
+    logger.info(f"Using database URL: {settings.database_url}")  # DEBUG LOG
     run_migrations()
     logger.info("Database migrations checked/applied")
     async with async_session_maker() as db:
