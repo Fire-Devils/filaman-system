@@ -63,3 +63,4 @@ coverage/
 *.tmp
 *.db
 spec
+bump-version.sh

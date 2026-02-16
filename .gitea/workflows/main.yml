@@ -87,8 +87,8 @@ jobs:
           {
             echo "## Artefakte"
             echo ""
-            echo "- Docker: `ghcr.io/fire-devils/filaman-system:${TAG}`"
-            echo "- Docker: `ghcr.io/fire-devils/filaman-system:latest`"
+            echo "- Docker: \`ghcr.io/fire-devils/filaman-system:$TAG\`"
+            echo "- Docker: \`ghcr.io/fire-devils/filaman-system:latest\`"
             echo ""
 
             echo "## Änderungen"
