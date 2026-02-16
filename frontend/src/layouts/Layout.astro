@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css'
+import { VERSION } from '../version.js'
 
 interface Props {
   title: string
@@ -101,6 +102,7 @@ const { title } = Astro.props
             <button type="button" data-theme="light" data-i18n="theme.light">Light</button>
             <button type="button" data-theme="dark" data-i18n="theme.dark">Dark</button>
           </div>
+          <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">v{VERSION}</div>
         </div>
       </aside>
 

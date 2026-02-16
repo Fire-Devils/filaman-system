@@ -14,6 +14,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Calculate new version
+        id: version
+        shell: bash
+        run: |
+          set -eu
+          
+          # Read current version
+          VERSION=$(cat version.txt)
+          echo "Current version: $VERSION"
+          
+          # Split version into major.minor.patch
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          
+          # Increment patch version
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
       - name: Mirror main + tags to GitHub (incl. deletions)
         shell: bash
         env:
@@ -87,6 +109,36 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: |
             ghcr.io/fire-devils/filaman-system:latest
+            ghcr.io/fire-devils/filaman-system:v${{ steps.version.outputs.new_version }}
             ghcr.io/fire-devils/filaman-system:${{ gitea.sha }}
           cache-from: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache
           cache-to: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache,mode=max
+
+      - name: Commit and push version bump
+        if: success()
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: 0
+        run: |
+          set -eu
+          
+          NEW_VERSION=${{ steps.version.outputs.new_version }}
+          
+          # Write new version to file
+          echo "$NEW_VERSION" > version.txt
+          
+          # Configure git
+          git config --global credential.helper ""
+          git config user.name "gitea-actions"
+          git config user.email "actions@local"
+          
+          # Add and commit version bump
+          git add version.txt
+          git commit -m "chore: bump version to $NEW_VERSION"
+          
+          # Create tag
+          git tag "v$NEW_VERSION"
+          
+          # Push to Gitea (this won't trigger another workflow since we're already on main)
+          git push origin main
+          git push origin "v$NEW_VERSION"
