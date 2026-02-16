@@ -24,6 +24,9 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
 ]
+mysql = ["aiomysql>=0.2.0"]
+postgres = ["asyncpg>=0.29.0"]
+all = ["aiomysql>=0.2.0", "asyncpg>=0.29.0"]
 
 [build-system]
 requires = ["hatchling"]

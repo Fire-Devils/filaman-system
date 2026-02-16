@@ -101,15 +101,32 @@ Die statischen Dateien liegen in `frontend/dist/`.
 
 ### Umgebungsvariablen
 
-Erstelle eine `.env` Datei im Projektverzeichnis:
+Erstelle eine `.env` Datei im Projektverzeichnis. Verwende `.env.example` als Vorlage:
 
-```env
+```bash
+# Datenbank-Konfiguration
+# SQLite (Standard):
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
-SECRET_KEY=your-secret-key
-CSRF_SECRET_KEY=your-csrf-secret
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=secure-password
+
+# MySQL:
+# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+
+# PostgreSQL:
+# DATABASE_URL=asyncpg://username:password@hostname:5432/database
 ```
+
+#### Secrets generieren
+
+```bash
+# Einzelne Secrets generieren
+openssl rand -hex 32
+
+# Alle Secrets auf einmal generieren
+echo "SECRET_KEY=$(openssl rand -hex 32)"
+echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
+```
+
+**Hinweis:** Bei Verwendung von MySQL oder PostgreSQL muss das Backup vom Administrator extern verwaltet werden. Das automatische SQLite-Backup ist in diesem Fall deaktiviert.
 
 ### Projektstruktur
 
@@ -248,15 +265,32 @@ The static files will be in `frontend/dist/`.
 
 ### Environment Variables
 
-Create a `.env` file in the project root directory:
+Create a `.env` file in the project root directory. Use `.env.example` as a template:
 
-```env
+```bash
+# Database Configuration
+# SQLite (default):
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
-SECRET_KEY=your-secret-key
-CSRF_SECRET_KEY=your-csrf-secret
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=secure-password
+
+# MySQL:
+# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+
+# PostgreSQL:
+# DATABASE_URL=asyncpg://username:password@hostname:5432/database
 ```
+
+#### Generate Secrets
+
+```bash
+# Generate single secret
+openssl rand -hex 32
+
+# Generate all secrets at once
+echo "SECRET_KEY=$(openssl rand -hex 32)"
+echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
+```
+
+**Note:** When using MySQL or PostgreSQL, backups must be managed externally by the administrator. The automatic SQLite backup is disabled in this case.
 
 ### Project Structure
 

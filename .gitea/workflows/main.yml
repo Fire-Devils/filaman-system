@@ -53,6 +53,78 @@ jobs:
           git push github HEAD:refs/heads/main --force
           git push github "v$NEW_VERSION" --force
 
+      - name: Generate release notes from git log (Conventional Commits)
+        id: notes
+        shell: bash
+        run: |
+          set -eu
+          TAG="v${{ steps.version.outputs.new_version }}"
+
+          # letzten Tag finden (falls keiner existiert: erstes Commit)
+          PREV_TAG="$(git tag --sort=-creatordate \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v "^${TAG}$" \
+            | head -n 1 || true)"
+
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..HEAD"
+          else
+            FIRST="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+            RANGE="${FIRST}..HEAD"
+          fi
+
+          echo "Using range: $RANGE"
+
+          # Hilfsfunktion: Kategorie ausgeben + Version-Bump rausfiltern
+          list_cat () {
+            local pattern="$1"
+            git log "$RANGE" --pretty=format:"- %s (%h)" \
+              | grep -E "$pattern" \
+              | grep -v -E '^- chore: bump version to ' \
+              || true
+          }
+
+          {
+            echo "## Artefakte"
+            echo ""
+            echo "- Docker: `ghcr.io/fire-devils/filaman-system:${TAG}`"
+            echo "- Docker: `ghcr.io/fire-devils/filaman-system:latest`"
+            echo ""
+
+            echo "## Änderungen"
+            echo ""
+
+            echo "### Features"
+            list_cat '^- feat(\(.+\))?: '
+            echo ""
+
+            echo "### Fixes"
+            list_cat '^- fix(\(.+\))?: '
+            echo ""
+
+            echo "### Chore/Refactor/Deps"
+            list_cat '^- (chore|refactor|perf|build|ci|deps)(\(.+\))?: '
+            echo ""
+
+            echo "### Dokumentation/Tests"
+            list_cat '^- (docs|test)(\(.+\))?: '
+            echo ""
+
+            # Optional: wenn Du ein "sonstiges" willst (alles, was nicht matcht)
+            # echo "### Sonstiges"
+            # git log "$RANGE" --pretty=format:"- %s (%h)" \
+            #   | grep -v -E '^- (feat|fix|chore|refactor|perf|build|ci|deps|docs|test)(\(.+\))?: ' \
+            #   | grep -v -E '^- chore: bump version to ' \
+            #   || true
+            # echo ""
+
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full diff:** https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${TAG}"
+            fi
+          } > RELEASE_NOTES.md
+
+          echo "notes_path=RELEASE_NOTES.md" >> "$GITHUB_OUTPUT"
+
       - name: Install jq
         run: |
           sudo apt-get update
@@ -66,11 +138,11 @@ jobs:
         run: |
           set -eu
 
-          # Release anlegen (idempotent: wenn schon vorhanden -> kein harter Fail)
           payload="$(jq -n \
             --arg tag "$TAG" \
             --arg name "Release $TAG" \
-            '{ tag_name: $tag, name: $name, generate_release_notes: true, draft: false, prerelease: false }')"
+            --rawfile body "${{ steps.notes.outputs.notes_path }}" \
+            '{ tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false }')"
 
           code="$(curl -sS -o resp.json -w "%{http_code}" \
             -H "Authorization: token $GH_TOKEN" \
@@ -80,7 +152,6 @@ jobs:
 
           if [ "$code" = "201" ]; then
             echo "Release created."
-            cat resp.json
           elif [ "$code" = "422" ]; then
             echo "Release already exists (422)."
             cat resp.json
