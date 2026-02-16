@@ -9,8 +9,37 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (full history)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror main + tags to GitHub (incl. deletions)
+        shell: bash
+        run: |
+          set -eu
+
+          git config user.name "gitea-actions"
+          git config user.email "actions@local"
+
+          git remote remove github 2>/dev/null || true
+          git remote add github https://${{ secrets.GITHUB_TOKEN }}@github.com/Fire-Devils/filaman-system.git
+
+          # main spiegeln
+          git push github HEAD:refs/heads/main --force-with-lease
+
+          # tags hochschieben
+          git push github --tags --force-with-lease
+
+          # Tag-Prune (Tags, die lokal fehlen, auf GitHub löschen)
+          git fetch github --tags
+          local_tags="$(git tag -l | sort)"
+          github_tags="$(git ls-remote --tags --refs github | awk '{print $2}' | sed 's#refs/tags/##' | sort)"
+
+          for t in $(comm -13 <(printf "%s\n" "$local_tags") <(printf "%s\n" "$github_tags")); do
+            echo "Deleting tag on GitHub: $t"
+            git push github ":refs/tags/$t"
+          done
 
       - name: Install Docker CLI
         run: |
