@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
     libffi-dev \
+    default-libmysqlclient-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -34,9 +36,8 @@ RUN pip install uv
 # Copy backend dependency files
 COPY backend/pyproject.toml backend/uv.lock ./
 
-# Install backend dependencies (including mysql and postgres drivers)
+# Install backend dependencies
 RUN uv pip install --system --no-cache -r pyproject.toml
-RUN uv pip install --system --no-cache aiomysql>=0.2.0 asyncpg>=0.29.0
 
 # Copy backend source
 COPY backend/ ./

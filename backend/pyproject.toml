@@ -15,6 +15,8 @@ dependencies = [
     "passlib[argon2]>=1.7.4",
     "python-multipart>=0.0.6",
     "aiosqlite>=0.19.0",
+    "aiomysql>=0.2.0",
+    "asyncpg>=0.29.0",
     "python-json-logger>=2.0.0",
     "httpx>=0.26.0",
 ]
@@ -24,9 +26,6 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
 ]
-mysql = ["aiomysql>=0.2.0"]
-postgres = ["asyncpg>=0.29.0"]
-all = ["aiomysql>=0.2.0", "asyncpg>=0.29.0"]
 
 [build-system]
 requires = ["hatchling"]
