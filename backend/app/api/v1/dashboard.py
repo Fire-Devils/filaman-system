@@ -40,12 +40,20 @@ class LowStockSpool(BaseModel):
     low_weight_threshold_g: int
 
 
+class EmptySpool(BaseModel):
+    spool_id: int
+    filament_designation: str
+    filament_type: str
+    manufacturer_name: str
+
+
 class DashboardStatsResponse(BaseModel):
     spool_distribution: dict[str, int]
     filament_stats: list[FilamentStat]
     location_stats: list[LocationStat]
     manufacturers_with_spools: list[ManufacturerSpoolCount]
     low_stock_spools: list[LowStockSpool]
+    empty_spools: list[EmptySpool]
     filament_types: list[FilamentTypeCount]
 
 
@@ -76,21 +84,19 @@ async def get_dashboard_stats(
         
         if remaining <= 0:
             spool_distribution["empty"] += 1
-        elif initial and initial > 0:
-            pct = (remaining / initial) * 100
-            if pct > 75:
-                spool_distribution["full"] += 1
-            elif pct > 50:
+        elif remaining > threshold:
+            if initial and initial > 0:
+                pct = (remaining / initial) * 100
+                if pct > 75:
+                    spool_distribution["full"] += 1
+                else:
+                    spool_distribution["normal"] += 1
+            else:
                 spool_distribution["normal"] += 1
-            elif remaining > threshold / 2:
-                spool_distribution["low"] += 1
-            else:
-                spool_distribution["critical"] += 1
+        elif remaining > threshold / 2:
+            spool_distribution["low"] += 1
         else:
-            if remaining > threshold / 2:
-                spool_distribution["low"] += 1
-            else:
-                spool_distribution["critical"] += 1
+            spool_distribution["critical"] += 1
     
     # Filament-Statistik nach Typ
     filament_stats_stmt = (
@@ -167,6 +173,33 @@ async def get_dashboard_stats(
         for row in low_stock_result.all()
     ]
 
+    # Leere Spulen (remaining_weight_g <= 0)
+    empty_stmt = (
+        select(
+            Spool.id.label("spool_id"),
+            Filament.designation.label("filament_designation"),
+            Filament.type.label("filament_type"),
+            Manufacturer.name.label("manufacturer_name"),
+        )
+        .join(Filament, Spool.filament_id == Filament.id)
+        .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        .where(Spool.deleted_at.is_(None))
+        .where(Spool.remaining_weight_g.isnot(None))
+        .where(Spool.remaining_weight_g <= 0)
+        .order_by(Spool.remaining_weight_g.asc())
+        .limit(limit)
+    )
+    empty_result = await db.execute(empty_stmt)
+    empty_spools = [
+        EmptySpool(
+            spool_id=row[0],
+            filament_designation=row[1],
+            filament_type=row[2],
+            manufacturer_name=row[3],
+        )
+        for row in empty_result.all()
+    ]
+
     # Filament-Typen mit Anzahl
     types_stmt = (
         select(Filament.type, func.count(Filament.id).label("filament_count"))
@@ -210,5 +243,6 @@ async def get_dashboard_stats(
         location_stats=location_stats,
         manufacturers_with_spools=manufacturers_with_spools,
         low_stock_spools=low_stock_spools,
+        empty_spools=empty_spools,
         filament_types=filament_types,
     )

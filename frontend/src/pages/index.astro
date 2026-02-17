@@ -50,11 +50,11 @@ interface PaginatedResponse<T> {
       <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-filaments">-</div>
       <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.filaments">Filaments</div>
     </div>
-    <div class="fm-card">
+    <div class="fm-card" style="cursor: pointer;" onclick="openSpoolModal('low')">
       <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
       <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowSpools">Low Spools</div>
     </div>
-    <div class="fm-card">
+    <div class="fm-card" style="cursor: pointer;" onclick="openSpoolModal('empty')">
       <div style="font-size: 1.6rem; font-weight: 700;" id="stat-empty-spools">-</div>
       <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.emptySpools">Empty Spools</div>
     </div>
@@ -107,17 +107,102 @@ interface PaginatedResponse<T> {
       </div>
     </div>
   </div>
+  
+  <!-- Spool Modal -->
+  <div id="spool-modal" class="fm-modal-overlay">
+    <div class="fm-modal" style="max-width: 800px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 id="modal-title" style="margin: 0; font-weight: 600; font-size: 1.1rem;">Spulen</h2>
+        <button onclick="closeSpoolModal()" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 4px 8px; color: var(--text-muted);">✕</button>
+      </div>
+      <div id="modal-content" style="max-height: 60vh; overflow-y: auto;">
+        <p style="color: var(--text-muted);">Loading...</p>
+      </div>
+    </div>
+  </div>
   <script>
     import { t, initI18n } from '../lib/i18n'
 
     let allSpools: any[] = []
     let allFilaments: any[] = []
 
+    function getFilamentName(filamentId: number): string {
+      const f = allFilaments.find(fil => fil.id === filamentId)
+      if (!f) return '-'
+      return `${f.designation} (${f.type || '-'})`
+    }
+
     function formatWeight(g: number): string {
       if (g >= 1000000) return (g / 1000000).toFixed(1) + ' t'
       if (g >= 1000) return (g / 1000).toFixed(1) + ' kg'
       return g.toFixed(0) + ' g'
     }
+
+    // Modal functions
+    (window as any).openSpoolModal = function(type: 'low' | 'empty') {
+      const modal = document.getElementById('spool-modal') as HTMLElement
+      const title = document.getElementById('modal-title') as HTMLElement
+      const content = document.getElementById('modal-content') as HTMLElement
+
+      let filteredSpools: any[] = []
+      
+      if (type === 'low') {
+        title.textContent = t('dashboard.lowSpools')
+        filteredSpools = allSpools.filter(s => 
+          s.remaining_weight_g !== null && 
+          s.remaining_weight_g <= s.low_weight_threshold_g &&
+          s.remaining_weight_g > 0
+        )
+      } else {
+        title.textContent = t('dashboard.emptySpools')
+        filteredSpools = allSpools.filter(s => 
+          s.remaining_weight_g !== null && 
+          s.remaining_weight_g <= 0
+        )
+      }
+
+      if (filteredSpools.length === 0) {
+        content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
+      } else {
+        content.innerHTML = `
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th style="padding: 8px;">ID</th>
+                <th style="padding: 8px;">${t('dashboard.filament')}</th>
+                <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredSpools.map(s => `
+                <tr style="cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">
+                  <td style="padding: 8px;">#${s.id}</td>
+                  <td style="padding: 8px;">${getFilamentName(s.filament_id)}</td>
+                  <td style="padding: 8px; text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)}g</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `
+      }
+
+      modal.classList.add('open')
+    }
+
+    ;(window as any).closeSpoolModal = function() {
+      const modal = document.getElementById('spool-modal') as HTMLElement
+      modal.classList.remove('open')
+    }
+
+    // Close on escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') (window as any).closeSpoolModal()
+    })
+
+    // Close on backdrop click
+    document.getElementById('spool-modal')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) (window as any).closeSpoolModal()
+    })
 
     async function init() {
       await initI18n()
