@@ -12,6 +12,7 @@ config = context.config
 # Migration operations don't need to be async and using the sync driver
 # eliminates complex event loop handling and potential aiosqlite issues during startup.
 sync_url = settings.database_url.replace("sqlite+aiosqlite", "sqlite")
+sync_url = sync_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
 config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
