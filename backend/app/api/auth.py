@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, require_auth
 from app.core.config import settings
-from app.core.security import generate_token_secret, hash_password, parse_token, pwd_context, Principal
+from app.core.security import generate_token_secret, hash_password_async, parse_token, pwd_context, Principal, verify_password_async
 from app.models import Role, User, UserSession
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -62,7 +62,7 @@ async def login(
             detail={"code": "account_disabled", "message": "Account is disabled"},
         )
 
-    if not pwd_context.verify(data.password, user.password_hash):
+    if not await verify_password_async(data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "invalid_credentials", "message": "Invalid email or password"},
@@ -71,7 +71,7 @@ async def login(
     secret = generate_token_secret()
     session = UserSession(
         user_id=user.id,
-        session_token_hash=hash_password(secret),
+        session_token_hash=await hash_password_async(secret),
         expires_at=datetime.utcnow() + timedelta(days=30),
     )
     db.add(session)

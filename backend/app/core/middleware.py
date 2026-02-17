@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
-from app.core.security import parse_token, pwd_context, Principal
+from app.core.security import parse_token, pwd_context, Principal, verify_password_async
 from app.core.logging_config import set_request_id
 
 
@@ -71,7 +71,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return None
             if session.expires_at and session.expires_at < datetime.utcnow():
                 return None
-            if not pwd_context.verify(secret, session.session_token_hash):
+            if not await verify_password_async(secret, session.session_token_hash):
                 return None
 
             result = await db.execute(select(User).where(User.id == session.user_id))
@@ -112,7 +112,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             if api_key is None:
                 return None
-            if not pwd_context.verify(secret, api_key.key_hash):
+            if not await verify_password_async(secret, api_key.key_hash):
                 return None
 
             result = await db.execute(select(User).where(User.id == api_key.user_id))
@@ -156,7 +156,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return None
             if not device.is_active or device.deleted_at is not None:
                 return None
-            if not pwd_context.verify(secret, device.token_hash):
+            if not await verify_password_async(secret, device.token_hash):
                 return None
 
             await db.execute(

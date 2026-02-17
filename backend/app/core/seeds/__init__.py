@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Permission, Role, SpoolStatus, User, UserRole
 from app.core.config import settings
+from app.core.security import hash_password_async
 from app.services.plugin_service import PluginInstallService
 
 
@@ -187,10 +188,7 @@ async def seed_admin_user_from_env(db: AsyncSession) -> None:
     if result.scalar_one_or_none() is not None:
         return
 
-    from passlib.context import CryptContext
-
-    pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-    password_hash = pwd_context.hash(settings.admin_password)
+    password_hash = await hash_password_async(settings.admin_password)
 
     admin_role_result = await db.execute(select(Role).where(Role.key == "admin"))
     admin_role = admin_role_result.scalar_one_or_none()
