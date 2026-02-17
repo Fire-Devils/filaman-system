@@ -212,3 +212,77 @@ async def get_dashboard_stats(
         low_stock_spools=low_stock_spools,
         filament_types=filament_types,
     )
+
+
+class SpoolListItem(BaseModel):
+    id: int
+    filament_designation: str
+    filament_type: str
+    remaining_weight_g: float
+
+
+@router.get("/spools/low", response_model=list[SpoolListItem])
+async def get_low_spools(
+    db: DBSession,
+    principal: PrincipalDep,
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Spulen mit remaining_weight_g > 0 UND remaining_weight_g <= threshold (niedrig oder kritisch)"""
+    stmt = (
+        select(
+            Spool.id,
+            Filament.designation.label("filament_designation"),
+            Filament.type.label("filament_type"),
+            Spool.remaining_weight_g,
+        )
+        .join(Filament, Spool.filament_id == Filament.id)
+        .where(Spool.deleted_at.is_(None))
+        .where(Spool.remaining_weight_g.isnot(None))
+        .where(Spool.remaining_weight_g > 0)
+        .where(Spool.remaining_weight_g <= Spool.low_weight_threshold_g)
+        .order_by(Spool.remaining_weight_g.asc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return [
+        SpoolListItem(
+            id=row[0],
+            filament_designation=row[1] or "-",
+            filament_type=row[2] or "-",
+            remaining_weight_g=float(row[3]),
+        )
+        for row in result.all()
+    ]
+
+
+@router.get("/spools/empty", response_model=list[SpoolListItem])
+async def get_empty_spools(
+    db: DBSession,
+    principal: PrincipalDep,
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Spulen mit remaining_weight_g <= 0 (leer)"""
+    stmt = (
+        select(
+            Spool.id,
+            Filament.designation.label("filament_designation"),
+            Filament.type.label("filament_type"),
+            Spool.remaining_weight_g,
+        )
+        .join(Filament, Spool.filament_id == Filament.id)
+        .where(Spool.deleted_at.is_(None))
+        .where(Spool.remaining_weight_g.isnot(None))
+        .where(Spool.remaining_weight_g <= 0)
+        .order_by(Spool.remaining_weight_g.asc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    return [
+        SpoolListItem(
+            id=row[0],
+            filament_designation=row[1] or "-",
+            filament_type=row[2] or "-",
+            remaining_weight_g=float(row[3]),
+        )
+        for row in result.all()
+    ]

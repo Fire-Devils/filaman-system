@@ -141,54 +141,62 @@ interface PaginatedResponse<T> {
     }
 
     // Modal functions
-    (window as any).openSpoolModal = function(type: 'low' | 'empty') {
+    (window as any).openSpoolModal = async function(type: 'low' | 'empty') {
       const modal = document.getElementById('spool-modal') as HTMLElement
       const title = document.getElementById('modal-title') as HTMLElement
       const content = document.getElementById('modal-content') as HTMLElement
 
-      let filteredSpools: any[] = []
-      
-      if (type === 'low') {
-        title.textContent = t('dashboard.lowSpools')
-        filteredSpools = allSpools.filter(s => 
-          s.remaining_weight_g !== null && 
-          s.remaining_weight_g <= s.low_weight_threshold_g &&
-          s.remaining_weight_g > 0
-        )
-      } else {
-        title.textContent = t('dashboard.emptySpools')
-        filteredSpools = allSpools.filter(s => 
-          s.remaining_weight_g !== null && 
-          s.remaining_weight_g <= 0
-        )
-      }
-
-      if (filteredSpools.length === 0) {
-        content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
-      } else {
-        content.innerHTML = `
-          <table class="fm-table">
-            <thead>
-              <tr>
-                <th style="padding: 8px;">ID</th>
-                <th style="padding: 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredSpools.map(s => `
-                <tr style="cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">
-                  <td style="padding: 8px;">#${s.id}</td>
-                  <td style="padding: 8px;">${getFilamentName(s.filament_id)}</td>
-                  <td style="padding: 8px; text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)}g</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        `
-      }
-
+      // Zeige Loading-Zustand
+      content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('common.loading')}</p>`
       modal.classList.add('open')
+
+      try {
+        const endpoint = type === 'low' 
+          ? '/api/v1/dashboard/spools/low?limit=100' 
+          : '/api/v1/dashboard/spools/empty?limit=100'
+        
+        const res = await fetch(endpoint, { credentials: 'include' })
+        
+        if (!res.ok) {
+          throw new Error('Failed to fetch')
+        }
+        
+        const spools = await res.json()
+        
+        if (type === 'low') {
+          title.textContent = t('dashboard.lowSpools')
+        } else {
+          title.textContent = t('dashboard.emptySpools')
+        }
+
+        if (spools.length === 0) {
+          content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
+        } else {
+          content.innerHTML = `
+            <table class="fm-table">
+              <thead>
+                <tr>
+                  <th style="padding: 8px;">ID</th>
+                  <th style="padding: 8px;">${t('dashboard.filament')}</th>
+                  <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${spools.map((s: any) => `
+                  <tr style="cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">
+                    <td style="padding: 8px;">#${s.id}</td>
+                    <td style="padding: 8px;">${s.filament_designation} (${s.filament_type})</td>
+                    <td style="padding: 8px; text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)}g</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `
+        }
+      } catch (error) {
+        console.error('Error loading spools:', error)
+        content.innerHTML = `<p style="color: var(--accent-3); text-align: center; padding: 20px;">Error loading data</p>`
+      }
     }
 
     ;(window as any).closeSpoolModal = function() {
