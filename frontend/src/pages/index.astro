@@ -249,16 +249,17 @@ interface PaginatedResponse<T> {
           const statusContainer = document.getElementById('spool-status')!
           const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
           const statusItems = [
-            { key: 'full', label: t('dashboard.statusFull'), color: '#22c55e', count: dist.full },
-            { key: 'normal', label: t('dashboard.statusNormal'), color: '#3b82f6', count: dist.normal },
-            { key: 'low', label: t('dashboard.statusLow'), color: '#eab308', count: dist.low },
-            { key: 'critical', label: t('dashboard.statusCritical'), color: '#ef4444', count: dist.critical },
-            { key: 'empty', label: t('dashboard.statusEmpty'), color: '#6b7280', count: dist.empty },
+            { key: 'full', label: t('dashboard.statusFull'), color: '#22c55e', count: dist.full, hint: '>75%' },
+            { key: 'normal', label: t('dashboard.statusNormal'), color: '#3b82f6', count: dist.normal, hint: '50-75%' },
+            { key: 'low', label: t('dashboard.statusLow'), color: '#eab308', count: dist.low, hint: '>½min' },
+            { key: 'critical', label: t('dashboard.statusCritical'), color: '#ef4444', count: dist.critical, hint: '≤½min' },
+            { key: 'empty', label: t('dashboard.statusEmpty'), color: '#6b7280', count: dist.empty, hint: '0g' },
           ]
           statusContainer.innerHTML = statusItems.map(s => `
             <div style="text-align: center; min-width: 60px;">
               <div style="font-size: 1.5rem; font-weight: 700; color: ${s.color};">${s.count}</div>
               <div style="font-size: 0.7rem; color: var(--text-muted);">${s.label}</div>
+              <div style="font-size: 0.6rem; color: var(--text-muted); opacity: 0.7;">${s.hint}</div>
             </div>
           `).join('')
 

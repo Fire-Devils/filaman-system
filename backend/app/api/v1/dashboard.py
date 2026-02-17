@@ -82,14 +82,15 @@ async def get_dashboard_stats(
                 spool_distribution["full"] += 1
             elif pct > 50:
                 spool_distribution["normal"] += 1
-            elif pct > 20:
+            elif remaining > threshold / 2:
                 spool_distribution["low"] += 1
             else:
                 spool_distribution["critical"] += 1
-        elif remaining <= threshold:
-            spool_distribution["critical"] += 1
         else:
-            spool_distribution["low"] += 1
+            if remaining > threshold / 2:
+                spool_distribution["low"] += 1
+            else:
+                spool_distribution["critical"] += 1
     
     # Filament-Statistik nach Typ
     filament_stats_stmt = (
