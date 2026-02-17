@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep
-from app.core.security import hash_password, pwd_context
+from app.core.security import hash_password_async, verify_password_async
 from app.models import User, Role, Permission, UserRole, RolePermission
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -132,13 +132,13 @@ async def change_password(
             detail={"code": "no_password", "message": "User has no password set (OAuth only)"},
         )
 
-    if not pwd_context.verify(data.current_password, user.password_hash):
+    if not await verify_password_async(data.current_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_password", "message": "Current password is incorrect"},
         )
 
-    user.password_hash = hash_password(data.new_password)
+    user.password_hash = await hash_password_async(data.new_password)
     await db.commit()
 
     return {"message": "Password changed successfully"}

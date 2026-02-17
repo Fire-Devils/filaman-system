@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.api.v1.schemas import PaginatedResponse
-from app.core.security import generate_token_secret, hash_password, pwd_context
+from app.core.security import generate_token_secret, hash_password_async
 from app.models import Device, Permission, Role, User, UserRole, RolePermission
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -134,7 +134,7 @@ async def create_user(
 
     user = User(
         email=data.email,
-        password_hash=hash_password(data.password),
+        password_hash=await hash_password_async(data.password),
         display_name=data.display_name,
         language=data.language,
         is_superadmin=data.is_superadmin,
@@ -218,7 +218,7 @@ async def reset_user_password(
             detail={"code": "not_found", "message": "User not found"},
         )
 
-    user.password_hash = hash_password(data.new_password)
+    user.password_hash = await hash_password_async(data.new_password)
     await db.commit()
 
     return {"message": "Password reset successfully"}
@@ -443,7 +443,7 @@ async def create_device(
     secret = generate_token_secret()
     device = Device(
         name=data.name,
-        token_hash=hash_password(secret),
+        token_hash=await hash_password_async(secret),
         scopes=data.scopes,
     )
     db.add(device)
@@ -493,7 +493,7 @@ async def rotate_device_token(
         )
 
     secret = generate_token_secret()
-    device.token_hash = hash_password(secret)
+    device.token_hash = await hash_password_async(secret)
     await db.commit()
 
     token = f"dev.{device.id}.{secret}"
