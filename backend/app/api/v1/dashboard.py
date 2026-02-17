@@ -26,6 +26,7 @@ class FilamentStat(BaseModel):
 
 
 class LocationStat(BaseModel):
+    location_id: int
     location_name: str
     spool_count: int
     total_weight_g: float
@@ -217,6 +218,7 @@ async def get_dashboard_stats(
     # Lagerorte-Statistik
     location_stats_stmt = (
         select(
+            Location.id.label("location_id"),
             Location.name.label("location_name"),
             func.count(Spool.id).label("spool_count"),
             func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
@@ -229,12 +231,13 @@ async def get_dashboard_stats(
     location_stats_result = await db.execute(location_stats_stmt)
     location_stats = [
         LocationStat(
-            location_name=row[0] or "Unzugewiesen",
-            spool_count=int(row[1] or 0),
-            total_weight_g=float(row[2]),
+            location_id=int(row[0]),
+            location_name=row[1] or "Unzugewiesen",
+            spool_count=int(row[2] or 0),
+            total_weight_g=float(row[3]),
         )
         for row in location_stats_result.all()
-        if row[1] and row[1] > 0
+        if row[2] and row[2] > 0
     ]
 
     return DashboardStatsResponse(

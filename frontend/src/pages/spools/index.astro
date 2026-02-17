@@ -95,11 +95,13 @@ import Layout from '../../layouts/Layout.astro'
     let sortDirection: 'asc' | 'desc' | null = null
     let filterManufacturerId: string | null = null
     let filterLocationId: string | null = null
+    let filterMaterial: string | null = null
     let searchTimeout: ReturnType<typeof setTimeout> | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
     filterManufacturerId = urlParams.get('manufacturer_id')
     filterLocationId = urlParams.get('location_id')
+    filterMaterial = urlParams.get('material')
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -279,6 +281,11 @@ import Layout from '../../layouts/Layout.astro'
         opt.textContent = mat
         matSelect.appendChild(opt)
       })
+
+      // Pre-select material from URL param
+      if (filterMaterial) {
+        matSelect.value = filterMaterial
+      }
     }
     
     async function loadFilters() {

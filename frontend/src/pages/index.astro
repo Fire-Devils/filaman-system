@@ -265,7 +265,7 @@ interface PaginatedResponse<T> {
               </tr></thead>
               <tbody>` + 
               dashboardData.location_stats.map((l: any) => 
-                `<tr>
+                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?location_id=${l.location_id}'">
                   <td style="padding: 6px 8px;">${l.location_name}</td>
                   <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${l.spool_count}</td>
                   <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(l.total_weight_g)}</td>
@@ -287,7 +287,7 @@ interface PaginatedResponse<T> {
               </tr></thead>
               <tbody>` + 
               dashboardData.filament_stats.map((f: any) => 
-                `<tr>
+                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?material=${encodeURIComponent(f.filament_type)}'">
                   <td style="padding: 6px 8px;">${f.filament_type}</td>
                   <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${f.spool_count}</td>
                   <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
@@ -303,7 +303,7 @@ interface PaginatedResponse<T> {
           } else {
             mfrContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
               dashboardData.manufacturers_with_spools.map((m: any) => 
-                `<tr><td>${m.name}</td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
+                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?manufacturer_id=${m.id}'"><td>${m.name}</td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
               ).join('') +
               `</tbody></table>`
           }
@@ -339,7 +339,7 @@ interface PaginatedResponse<T> {
           } else {
             typesContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
               dashboardData.filament_types.map((t: any) => 
-                `<tr><td>${t.type}</td><td style="text-align: right; font-family: monospace;">${t.count}</td></tr>`
+                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?material=${encodeURIComponent(t.type)}'"><td>${t.type}</td><td style="text-align: right; font-family: monospace;">${t.count}</td></tr>`
               ).join('') +
               `</tbody></table>`
           }
