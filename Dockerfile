@@ -14,6 +14,9 @@ RUN npm install --production
 # Copy frontend source
 COPY frontend/ ./
 
+# Copy version.txt before build so it can be embedded into the frontend
+COPY version.txt ./
+
 # Build the frontend
 RUN BUILD_MODE=static npm run build
 
@@ -70,11 +73,6 @@ COPY .env /app/.env
 # Copy built frontend to the static directory
 # The FastAPI app must be configured to serve static files from this directory.
 COPY --from=frontend-builder /app/frontend/dist /app/static
-
-# Copy version.txt and generate version.js
-COPY version.txt /app/version.txt
-RUN mkdir -p /app/frontend/src
-RUN echo "export const VERSION='$(cat /app/version.txt)'" > /app/frontend/src/version.js
 
 # Copy backup script
 COPY backend/backup_db.sh /app/backup_db.sh
