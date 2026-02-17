@@ -1,23 +1,23 @@
-version: '3.8'
-
 services:
-  filaman:
-    # IMPORTANT: Replace the image path with your actual image path on ghcr.io
-    # Example: ghcr.io/your-username/filaman-system:latest
+  filaman-system-app:
     image: ghcr.io/fire-devils/filaman-system:latest
     container_name: filaman-system-app
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - CSRF_SECRET_KEY=${CSRF_SECRET_KEY}
+      - DEBUG=${DEBUG}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_DISPLAY_NAME=${ADMIN_DISPLAY_NAME}
+      - ADMIN_LANGUAGE=${ADMIN_LANGUAGE}
+      - ADMIN_SUPERADMIN=${ADMIN_SUPERADMIN}
+    volumes:
+      - filaman_data:/app/data
     restart: unless-stopped
     ports:
-      - "8000:8000"
-    volumes:
-      # This will create a 'filaman.db' file in the same directory as this compose file
-      # to persist your database data.
-      - ./filaman.db:/app/filaman.db
-    env_file:
-      # This tells Docker Compose to load environment variables from a file named '.env'
-      # in the same directory.
-      - .env
+      - "${PORT}:8000"
 
-networks:
-  default:
-    name: filaman-network
+volumes:
+  filaman_data:
