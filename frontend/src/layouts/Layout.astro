@@ -68,7 +68,7 @@ const { title } = Astro.props
             <span data-i18n="nav.printers">Printers</span>
           </a>
 
-          <div id="admin-nav" class="hidden" style="margin-top: 8px;">
+          <div id="admin-nav" class="invisible" style="margin-top: 8px;">
             <hr class="fm-divider" style="margin-bottom: 8px;" />
             <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
             <a href="/admin" class="fm-nav-item">
@@ -86,8 +86,9 @@ const { title } = Astro.props
 
         <!-- Sidebar Footer: User + Theme -->
         <div style="margin-top: auto; display: grid; gap: 12px;">
-          <div id="user-info" style="font-size: 0.85rem;">
-            <span style="color: var(--text-muted);" data-i18n="common.loading">Loading...</span>
+          <div style="font-size: 0.85rem;">
+            <div id="user-name" style="font-weight: 600; color: var(--text);"><span style="color: var(--text-muted);" data-i18n="common.loading">Loading...</span></div>
+            <div id="user-role" class="invisible" style="color: var(--text-muted); font-size: 0.75rem;">User</div>
           </div>
           <button
             id="logout-btn"
@@ -238,7 +239,8 @@ const { title } = Astro.props
       })
 
       /* ── Auth check ──────────────────────────────────────────── */
-      const userInfo = document.getElementById('user-info')!
+      const userName = document.getElementById('user-name')!
+      const userRole = document.getElementById('user-role')!
       const logoutBtn = document.getElementById('logout-btn')!
       const adminNav = document.getElementById('admin-nav')!
 
@@ -258,13 +260,13 @@ const { title } = Astro.props
           // Sync language from user profile
           syncLangFromUser(user.language)
 
-          userInfo.innerHTML = `
-            <div style="font-weight: 600; color: var(--text);">${user.display_name || user.email}</div>
-            <div style="color: var(--text-muted); font-size: 0.75rem;">${user.roles.join(', ')}</div>
-          `
+
+          userName.innerHTML = user.display_name || user.email
+          userRole.innerHTML = user.roles.join(', ')
+          userRole.classList.remove('invisible');
 
           if (user.is_superadmin || user.permissions.some((p: string) => p.startsWith('admin:'))) {
-            adminNav.classList.remove('hidden')
+            adminNav.classList.remove('invisible')
           }
         } catch {
           window.location.href = '/login'
