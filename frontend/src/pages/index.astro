@@ -41,32 +41,7 @@ interface PaginatedResponse<T> {
 <Layout title="FilaMan - Dashboard">
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
   
-  <div class="grid grid-cols-2 gap-5">
-    <div class="flex flex-col gap-5">
-      <div class="fm-card">
-        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.spoolStatus">Spulen-Status</h2>
-        <div id="spool-status" style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
-          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-        </div>
-      </div>
-      
-      <div class="fm-card">
-        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.locationStats">Lagerorte</h2>
-        <div id="location-stats" style="overflow-y: auto;">
-          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-        </div>
-      </div>
-    </div>
-    
-    <div class="fm-card overflow-y-auto" style="max-height: 400px;">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentStats">Filament-Statistik</h2>
-      <div id="filament-stats">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-      </div>
-    </div>
-  </div>
-  
-  <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
     <div class="fm-card">
       <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-spools">-</div>
       <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalSpools">Total Spools</div>
@@ -103,6 +78,31 @@ interface PaginatedResponse<T> {
     <div class="fm-card">
       <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentTypes">Filament-Arten</h2>
       <div id="filament-types" style="max-height: 280px; overflow-y: auto;">
+        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-5" style="margin-top: 24px;">
+    <div class="flex flex-col gap-5">
+      <div class="fm-card">
+        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.spoolStatus">Spulen-Status</h2>
+        <div id="spool-status" style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
+          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+        </div>
+      </div>
+      
+      <div class="fm-card">
+        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.locationStats">Lagerorte</h2>
+        <div id="location-stats" style="overflow-y: auto;">
+          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="fm-card overflow-y-auto" style="max-height: 400px;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentStats">Filament-Statistik</h2>
+      <div id="filament-stats">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
