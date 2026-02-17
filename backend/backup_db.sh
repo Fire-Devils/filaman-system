@@ -10,7 +10,7 @@ if [ -n "$DATABASE_URL" ] && [[ "$DATABASE_URL" == *"sqlite"* ]]; then
     # Use custom DB_PATH if set in DATABASE_URL
     if [[ "$DATABASE_URL" == *"://"* ]]; then
         # Extract path from sqlite URL (e.g., sqlite+aiosqlite:///./filaman.db)
-        EXTRACTED_PATH=$(echo "$DATABASE_URL" | sed -n 's/.*:\/\/\/*.*\/\(.*\)/\1/p')
+        EXTRACTED_PATH=$(echo "$DATABASE_URL" | sed 's|^.*:///||')
         if [ -n "$EXTRACTED_PATH" ]; then
             DB_PATH="$EXTRACTED_PATH"
         fi
