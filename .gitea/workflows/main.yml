@@ -78,7 +78,7 @@ jobs:
           # Hilfsfunktion: Kategorie ausgeben + Version-Bump rausfiltern
           list_cat () {
             local pattern="$1"
-            git log "$RANGE" --pretty=format:"- %s (%h)" \
+            git log "$RANGE" --pretty=format:"- %s (%an, %h)" \
               | grep -E "$pattern" \
               | grep -v -E '^- chore: bump version to ' \
               || true
