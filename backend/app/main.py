@@ -138,8 +138,17 @@ if not settings.debug:
         )
     else:
         logger.info(f"Serving static files from '{static_files_path}'")
-        
+
         # Serve detail pages for dynamic routes
+        # IMPORTANT: These must come BEFORE the /{id} routes to avoid "new" being parsed as int
+        @app.get("/filaments/new")
+        async def serve_filament_new():
+            return FileResponse(os.path.join(static_files_path, "filaments/new/index.html"))
+
+        @app.get("/spools/new")
+        async def serve_spool_new():
+            return FileResponse(os.path.join(static_files_path, "spools/new/index.html"))
+
         @app.get("/spools/{id}")
         async def serve_spool_detail(id: int):
             return FileResponse(os.path.join(static_files_path, "spools/detail/index.html"))
@@ -151,7 +160,7 @@ if not settings.debug:
         @app.get("/filaments/{id}")
         async def serve_filament_detail(id: int):
             return FileResponse(os.path.join(static_files_path, "filaments/detail/index.html"))
-            
+
         @app.get("/filaments/{id}/edit")
         async def serve_filament_edit(id: int):
             return FileResponse(os.path.join(static_files_path, "filaments/detail/edit/index.html"))
