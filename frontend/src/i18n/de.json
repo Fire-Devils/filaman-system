@@ -61,10 +61,14 @@
     "selectDevice": "Gerät auswählen",
     "confirmWrite": "Möchten Sie den RFID-Tag mit dem Gerät \"{device}\" schreiben?",
     "selectDeviceToWrite": "Wählen Sie ein Gerät zum Schreiben des RFID-Tags:",
+    "waitingWithCountdown": "Warte auf Gerät... ({seconds}s)",
     "writing": "RFID-Tag wird geschrieben...",
     "writeSuccess": "RFID-Tag erfolgreich geschrieben!",
-    "writeError": "Fehler beim Schreiben des RFID-Tags. Ist das Gerät erreichbar?"
+    "writeError": "Fehler beim Schreiben des RFID-Tags.",
+    "deviceTimeout": "Zeitüberschreitung: Das Gerät hat nicht innerhalb von 180 Sekunden geantwortet.",
+    "deviceUnreachable": "Gerät nicht erreichbar. Bitte Netzwerk prüfen."
   },
+
   "login": {
     "title": "Anmeldung - FilaMan",
     "heading": "FilaMan",

@@ -1,12 +1,13 @@
+import httpx
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy import select
 
 from app.api.deps import DBSession
-from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse
+from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse
 from app.core.security import Principal, generate_token_secret, hash_password_async
-from app.models import Device, Location
+from app.models import Device, Location, Spool
 from app.services.spool_service import SpoolService
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -123,6 +124,79 @@ async def list_active_devices(
         }
         for d in devices
     ]
+
+
+@router.post("/{device_id}/write-tag", response_model=WriteTagResponse)
+async def write_rfid_tag(
+    device_id: int,
+    data: WriteTagRequest,
+    db: DBSession,
+):
+    # Find Device
+    result = await db.execute(select(Device).where(Device.id == device_id))
+    device = result.scalar_one_or_none()
+    
+    if not device or not device.is_active or device.deleted_at or not device.ip_address:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Device not found, inactive or has no IP address"},
+        )
+
+    # Prepare request to device
+    device_url = f"http://{device.ip_address}/api/v1/rfid/write"
+    payload = {}
+    if data.spool_id:
+        payload["spool_id"] = data.spool_id
+    elif data.location_id:
+        payload["location_id"] = data.location_id
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "bad_request", "message": "Either spool_id or location_id must be provided"},
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(device_url, json=payload)
+            
+            if response.status_code == 200:
+                resp_data = response.json()
+                tag_uuid = resp_data.get("tag_uuid")
+                
+                if tag_uuid:
+                    if data.spool_id:
+                        spool_res = await db.execute(select(Spool).where(Spool.id == data.spool_id))
+                        spool = spool_res.scalar_one_or_none()
+                        if spool:
+                            spool.rfid_uid = tag_uuid
+                    elif data.location_id:
+                        loc_res = await db.execute(select(Location).where(Location.id == data.location_id))
+                        loc = loc_res.scalar_one_or_none()
+                        if loc:
+                            loc.identifier = tag_uuid
+                    
+                    await db.commit()
+                    return WriteTagResponse(success=True, message="RFID tag written and saved", tag_uuid=tag_uuid)
+                else:
+                    return WriteTagResponse(success=False, message="Device reported success but no tag UUID was returned")
+            else:
+                return WriteTagResponse(success=False, message=f"Device returned error: {response.status_code}")
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            detail={"code": "timeout", "message": "Das Gerät hat nicht innerhalb von 180 Sekunden geantwortet."},
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "device_unreachable", "message": "Das Gerät ist im Netzwerk nicht erreichbar."},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "internal_error", "message": f"Ein Fehler ist aufgetreten: {str(e)}"},
+        )
 
 
 @router.post("/scale/weight", response_model=WeighResponse)

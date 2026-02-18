@@ -21,6 +21,20 @@ import Layout from '../../layouts/Layout.astro'
       min-width: 200px;
       max-width: 400px;
     }
+    .spinner {
+      display: inline-block;
+      width: 1.25rem;
+      height: 1.25rem;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      border-top-color: var(--accent);
+      animation: spin 1s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   
   </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
@@ -123,6 +137,11 @@ import Layout from '../../layouts/Layout.astro'
     filterManufacturerId = urlParams.get('manufacturer_id')
     filterLocationId = urlParams.get('location_id')
     filterMaterial = urlParams.get('material')
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -631,40 +650,79 @@ import Layout from '../../layouts/Layout.astro'
         : (document.getElementById('rfid-device-select') as HTMLSelectElement).value
       
       const device = activeDevices.find(d => String(d.id) === String(deviceId))
-      if (!device || !device.ip_address) return
+      if (!device) return
       
       const confirmBtn = document.getElementById('rfid-confirm') as HTMLButtonElement
       const cancelBtn = document.getElementById('rfid-cancel') as HTMLButtonElement
       const status = document.getElementById('rfid-status')!
       
       confirmBtn.disabled = true
-      cancelBtn.disabled = true
-      status.textContent = t('rfid.writing')
+      cancelBtn.disabled = false // Keep cancel active
+      
+      let secondsLeft = 180
+      const updateStatusText = () => {
+        status.innerHTML = `<span class="spinner"></span> ${t('rfid.waitingWithCountdown', { seconds: secondsLeft })}`
+      }
+      
       status.className = 'fm-alert fm-alert-info'
       status.classList.remove('hidden')
+      updateStatusText()
+      
+      const timer = setInterval(() => {
+        secondsLeft--
+        if (secondsLeft <= 0) {
+          clearInterval(timer)
+        } else {
+          updateStatusText()
+        }
+      }, 1000)
+
+      // Handle Cancel while waiting
+      const onCancel = () => {
+        clearInterval(timer)
+        confirmBtn.disabled = false
+      }
+      cancelBtn.addEventListener('click', onCancel, { once: true })
       
       try {
-        const response = await fetch(`http://${device.ip_address}/api/v1/rfid/write`, {
+        const response = await fetch(`/api/v1/devices/${deviceId}/write-tag`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken()
+          },
+          credentials: 'include',
           body: JSON.stringify({ spool_id: currentRfidSpoolId }),
         })
         
-        if (!response.ok) throw new Error('Failed to write tag')
+        clearInterval(timer)
+        cancelBtn.removeEventListener('click', onCancel)
+
+        const result = await response.json()
         
-        status.textContent = t('rfid.writeSuccess')
-        status.className = 'fm-alert fm-alert-success'
-        
-        setTimeout(() => {
-          document.getElementById('rfid-modal')!.classList.remove('open')
+        if (response.ok && result.success) {
+          status.textContent = t('rfid.writeSuccess')
+          status.className = 'fm-alert fm-alert-success'
+          
+          setTimeout(() => {
+            document.getElementById('rfid-modal')!.classList.remove('open')
+            confirmBtn.disabled = false
+          }, 1500)
+          
+          // Optionally reload spools to see new RFID UID
+          loadSpools()
+        } else {
+          const msg = result.detail?.message || result.message || t('rfid.writeError')
+          status.textContent = msg
+          status.className = 'fm-alert fm-alert-error'
           confirmBtn.disabled = false
-          cancelBtn.disabled = false
-        }, 1500)
+        }
       } catch (err) {
+        clearInterval(timer)
+        cancelBtn.removeEventListener('click', onCancel)
         status.textContent = t('rfid.writeError')
         status.className = 'fm-alert fm-alert-error'
         confirmBtn.disabled = false
-        cancelBtn.disabled = false
       }
     })
   </script>

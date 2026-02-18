@@ -29,3 +29,14 @@ class LocateResponse(BaseModel):
 
 class HeartbeatRequest(BaseModel):
     ip_address: str
+
+
+class WriteTagRequest(BaseModel):
+    spool_id: int | None = None
+    location_id: int | None = None
+
+
+class WriteTagResponse(BaseModel):
+    success: bool
+    message: str
+    tag_uuid: str | None = None

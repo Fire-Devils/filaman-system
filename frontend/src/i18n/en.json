@@ -61,9 +61,12 @@
     "selectDevice": "Select Device",
     "confirmWrite": "Do you want to write the RFID tag using device \"{device}\"?",
     "selectDeviceToWrite": "Select a device to write the RFID tag:",
+    "waitingWithCountdown": "Waiting for device... ({seconds}s)",
     "writing": "Writing RFID tag...",
     "writeSuccess": "RFID tag written successfully!",
-    "writeError": "Error writing RFID tag. Is the device reachable?"
+    "writeError": "Error writing RFID tag.",
+    "deviceTimeout": "Timeout: The device did not respond within 180 seconds.",
+    "deviceUnreachable": "Device unreachable. Please check the network."
   },
   "login": {
     "title": "Login - FilaMan",
