@@ -173,8 +173,13 @@ async def list_spools(
         query = query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
         query = query.where(Spool.filament_id == filament_id)
+    
     if status_id:
         query = query.where(Spool.status_id == status_id)
+    else:
+        # Exclude archived spools by default
+        query = query.join(SpoolStatus).where(SpoolStatus.key != "archived")
+
     if location_id:
         query = query.where(Spool.location_id == location_id)
 
@@ -188,8 +193,13 @@ async def list_spools(
         count_query = count_query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
         count_query = count_query.where(Spool.filament_id == filament_id)
+    
     if status_id:
         count_query = count_query.where(Spool.status_id == status_id)
+    else:
+        # Exclude archived spools by default
+        count_query = count_query.join(SpoolStatus).where(SpoolStatus.key != "archived")
+
     if location_id:
         count_query = count_query.where(Spool.location_id == location_id)
 

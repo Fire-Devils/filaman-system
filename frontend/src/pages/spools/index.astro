@@ -353,15 +353,21 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     async function loadSpools() {
+      const { statusId } = getFilterValues()
+      let url = `/api/v1/spools?page=1&page_size=200`
+      if (statusId) url += `&status_id=${statusId}`
+      
       try {
-        const response = await fetch(`/api/v1/spools?page=1&page_size=200`, { credentials: 'include' })
+        const response = await fetch(url, { credentials: 'include' })
         if (!response.ok) throw new Error('Failed to fetch spools')
         const data = await response.json()
         allSpools = data.items
         if (data.total > 200) {
           const totalPages = Math.ceil(data.total / 200)
           for (let p = 2; p <= totalPages; p++) {
-            const res = await fetch(`/api/v1/spools?page=${p}&page_size=200`, { credentials: 'include' })
+            let pUrl = `/api/v1/spools?page=${p}&page_size=200`
+            if (statusId) pUrl += `&status_id=${statusId}`
+            const res = await fetch(pUrl, { credentials: 'include' })
             if (res.ok) {
               const d = await res.json()
               allSpools = allSpools.concat(d.items)
@@ -602,7 +608,7 @@ import Layout from '../../layouts/Layout.astro'
       if (searchTimeout) clearTimeout(searchTimeout)
       searchTimeout = setTimeout(() => applyFiltersAndRender(), 250)
     })
-    document.getElementById('filter-status')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-status')?.addEventListener('change', () => loadSpools())
     document.getElementById('filter-location')?.addEventListener('change', () => applyFiltersAndRender())
     document.getElementById('filter-manufacturer')?.addEventListener('change', () => applyFiltersAndRender())
     document.getElementById('filter-material')?.addEventListener('change', () => applyFiltersAndRender())

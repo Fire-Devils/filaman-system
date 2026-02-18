@@ -299,8 +299,7 @@ interface PaginatedResponse<T> {
         })
 
         if (response.ok) {
-          document.getElementById('modal-content')!.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
-          document.getElementById('modal-footer')!.classList.add('hidden')
+          (window as any).closeSpoolModal()
           loadDashboardData()
         }
       } catch (err) {
@@ -345,8 +344,8 @@ interface PaginatedResponse<T> {
         allSpools = spoolsData.items
         allFilaments = filamentsData.items
         
-        document.getElementById('stat-total-spools')!.textContent = allSpools.length
-        document.getElementById('stat-total-filaments')!.textContent = allFilaments.length
+        document.getElementById('stat-total-spools')!.textContent = spoolsData.total
+        document.getElementById('stat-total-filaments')!.textContent = filamentsData.total
         
         if (dashboardData) {
           const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }

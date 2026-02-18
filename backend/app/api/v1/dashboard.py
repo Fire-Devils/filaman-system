@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from pydantic import BaseModel
 
 from app.api.deps import DBSession, PrincipalDep
-from app.models import Filament, Location, Manufacturer, Spool
+from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -71,7 +71,9 @@ async def get_dashboard_stats(
             Spool.low_weight_threshold_g,
             Spool.initial_total_weight_g,
         )
+        .join(SpoolStatus)
         .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
         .where(Spool.remaining_weight_g.isnot(None))
     )
     all_spools_result = await db.execute(all_spools_stmt)
@@ -107,7 +109,9 @@ async def get_dashboard_stats(
             func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
         )
         .join(Spool, Spool.filament_id == Filament.id)
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
         .where(Spool.remaining_weight_g.isnot(None))
         .where(Spool.remaining_weight_g > 0)
         .where(Filament.type.isnot(None))
@@ -129,7 +133,9 @@ async def get_dashboard_stats(
         select(Manufacturer.id, Manufacturer.name, func.count(Spool.id).label("spool_count"))
         .join(Filament, Filament.manufacturer_id == Manufacturer.id)
         .join(Spool, Spool.filament_id == Filament.id)
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
         .where(Spool.remaining_weight_g.isnot(None))
         .where(Spool.remaining_weight_g > 0)
         .group_by(Manufacturer.id, Manufacturer.name)
@@ -154,7 +160,9 @@ async def get_dashboard_stats(
         )
         .join(Filament, Spool.filament_id == Filament.id)
         .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
         .where(Spool.remaining_weight_g.isnot(None))
         .where(Spool.remaining_weight_g > 0)
         .where(Spool.remaining_weight_g <= Spool.low_weight_threshold_g)
@@ -184,7 +192,9 @@ async def get_dashboard_stats(
         )
         .join(Filament, Spool.filament_id == Filament.id)
         .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
         .where(Spool.remaining_weight_g.isnot(None))
         .where(Spool.remaining_weight_g <= 0)
         .order_by(Spool.remaining_weight_g.asc())
@@ -204,6 +214,10 @@ async def get_dashboard_stats(
     # Filament-Typen mit Anzahl
     types_stmt = (
         select(Filament.type, func.count(Filament.id).label("filament_count"))
+        .join(Spool, Spool.filament_id == Filament.id)
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(SpoolStatus.key != "archived")
+        .where(Spool.deleted_at.is_(None))
         .where(Filament.type.isnot(None))
         .where(Filament.type != "")
         .group_by(Filament.type)
@@ -224,7 +238,9 @@ async def get_dashboard_stats(
             func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
         )
         .outerjoin(Spool, (Spool.location_id == Location.id) & (Spool.deleted_at.is_(None)))
+        .outerjoin(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(Location.name.isnot(None))
+        .where((SpoolStatus.key != "archived") | (SpoolStatus.key.is_(None)))
         .group_by(Location.id, Location.name)
         .order_by(func.count(Spool.id).desc())
     )
