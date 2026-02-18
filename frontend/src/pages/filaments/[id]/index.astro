@@ -46,6 +46,9 @@ const { id } = Astro.params
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
 
+    let statuses: any[] = []
+    let locations: any[] = []
+
     const finishLabels: Record<string, string> = {
       solid: 'filaments.finishSolid',
       translucent: 'filaments.finishTranslucent',
@@ -230,18 +233,43 @@ const { id } = Astro.params
     
     async function loadSpools(filamentId: number) {
       try {
-        const response = await fetch(`/api/v1/spools?filament_id=${filamentId}&page_size=100`, {
-          credentials: 'include',
-        })
+        const [spoolsRes, statusesRes, locationsRes] = await Promise.all([
+          fetch(`/api/v1/spools?filament_id=${filamentId}&page_size=100`, { credentials: 'include' }),
+          fetch('/api/v1/spools/statuses', { credentials: 'include' }),
+          fetch('/api/v1/locations', { credentials: 'include' }),
+        ])
         
-        if (!response.ok) throw new Error('Failed to fetch spools')
+        if (!spoolsRes.ok) throw new Error('Failed to fetch spools')
         
-        const data = await response.json()
+        if (statusesRes.ok) {
+          const statusData = await statusesRes.json()
+          statuses = statusData.items || statusData || []
+        }
+        
+        if (locationsRes.ok) {
+          const locationData = await locationsRes.json()
+          locations = locationData.items || locationData || []
+        }
+        
+        const data = await spoolsRes.json()
         document.getElementById('spools-section')!.classList.remove('hidden')
         renderSpools(data.items)
       } catch (error) {
         console.error('Failed to load spools:', error)
       }
+    }
+    
+    function getStatusLabel(statusId: number): string {
+      const s = statuses.find((s: any) => s.id === statusId)
+      if (!s) return `#${statusId}`
+      const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
+      return t(i18nKey) || s.label
+    }
+    
+    function getLocationName(locationId: number | null): string {
+      if (!locationId) return '-'
+      const l = locations.find(l => l.id === locationId)
+      return l ? l.name : `#${locationId}`
     }
     
     function renderSpools(spools: any[]) {
@@ -261,11 +289,11 @@ const { id } = Astro.params
       tbody.innerHTML = spools.map(s => `
         <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
           <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
-          <td style="padding: 12px;">${s.status_id || '-'}</td>
+          <td style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
           <td style="padding: 12px; ${s.remaining_weight_g !== null && s.remaining_weight_g <= s.low_weight_threshold_g ? 'color: var(--accent-3); font-weight: 500;' : ''}">
             ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
           </td>
-          <td style="padding: 12px; color: var(--text-muted);">${s.location_id || t('spools.noLocation')}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${getLocationName(s.location_id)}</td>
         </tr>
       `).join('')
     }
