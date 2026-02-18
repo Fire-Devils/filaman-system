@@ -46,13 +46,13 @@ import Layout from '../../layouts/Layout.astro'
           <label for="user-email" class="fm-label"><span data-i18n="admin.email">Email</span> *</label>
           <input type="email" id="user-email" required class="fm-input" />
         </div>
-        <div id="password-field">
-          <label for="user-password" class="fm-label" data-i18n="admin.password">Password *</label>
-          <input type="password" id="user-password" class="fm-input" />
-        </div>
         <div>
           <label for="user-display-name" class="fm-label" data-i18n="admin.displayName">Display Name</label>
           <input type="text" id="user-display-name" class="fm-input" />
+        </div>
+        <div id="password-field">
+          <label for="user-password" class="fm-label" data-i18n="admin.password">Password *</label>
+          <input type="password" id="user-password" class="fm-input" autocomplete="new-password" />
         </div>
         <div>
           <label class="fm-label" data-i18n="admin.roles">Roles</label>
