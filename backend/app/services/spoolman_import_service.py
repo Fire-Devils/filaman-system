@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
@@ -132,17 +132,21 @@ class SpoolmanImportService:
     #  Daten von Spoolman abrufen
     # ------------------------------------------------------------------ #
 
-    async def _fetch_all(self, client: httpx.AsyncClient, base_url: str, endpoint: str) -> list[dict[str, Any]]:
+    async def _fetch_all(self, client: httpx.AsyncClient, base_url: str, endpoint: str, extra_params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Alle Eintraege eines Spoolman-Endpoints abrufen (mit Pagination)."""
         results: list[dict[str, Any]] = []
         limit = 50  # Reduziertes Limit um Timeouts bei großen Payloads zu vermeiden
         offset = 0
 
         while True:
+            params = {"limit": limit, "offset": offset}
+            if extra_params:
+                params.update(extra_params)
+                
             try:
                 resp = await client.get(
                     f"{base_url}/api/v1/{endpoint}",
-                    params={"limit": limit, "offset": offset},
+                    params=params,
                 )
             except httpx.TimeoutException:
                 raise SpoolmanImportError(
@@ -206,21 +210,23 @@ class SpoolmanImportService:
 
         # Erhöhter Timeout für den Preview-Prozess
         async with httpx.AsyncClient(timeout=60.0) as client:
+            params = {"allow_archived": "true"}
+            
             # 1. Vendors
             try:
-                vendors = await self._fetch_all(client, base_url, "vendor")
+                vendors = await self._fetch_all(client, base_url, "vendor", extra_params=params)
             except Exception as e:
                 raise SpoolmanImportError(f"Fehler beim Laden der Hersteller (vendor): {e}")
 
             # 2. Filaments
             try:
-                filaments = await self._fetch_all(client, base_url, "filament")
+                filaments = await self._fetch_all(client, base_url, "filament", extra_params=params)
             except Exception as e:
                 raise SpoolmanImportError(f"Fehler beim Laden der Filamente (filament): {e}")
 
             # 3. Spools
             try:
-                spools = await self._fetch_all(client, base_url, "spool")
+                spools = await self._fetch_all(client, base_url, "spool", extra_params=params)
             except Exception as e:
                 raise SpoolmanImportError(f"Fehler beim Laden der Spulen (spool): {e}")
 
@@ -377,9 +383,14 @@ class SpoolmanImportService:
             if not name:
                 continue
 
-            # Pruefen ob Location mit gleichem Namen existiert (Case-Insensitive Check wäre gut, aber hier exakt)
+            # Pruefen ob Location mit gleichem Namen oder Spoolman-ID existiert
+            # Wir nutzen json_extract für maximale Kompatibilität (besonders SQLite)
             existing = await self.db.execute(
-                select(Location).where(Location.name == name)
+                select(Location).where(
+                    (Location.name == name) |
+                    (func.json_extract(Location.custom_fields, '$.spoolman_id') == spoolman_id) |
+                    (func.json_extract(Location.custom_fields, '$.spoolman_id') == str(spoolman_id))
+                )
             )
             existing_loc = existing.scalar_one_or_none()
 
@@ -435,9 +446,14 @@ class SpoolmanImportService:
             if not name:
                 continue
 
-            # Pruefen ob Manufacturer mit gleichem Namen existiert
+            # Pruefen ob Manufacturer mit gleichem Namen oder Spoolman-ID existiert
+            # Wir nutzen json_extract für maximale Kompatibilität (besonders SQLite)
             existing = await self.db.execute(
-                select(Manufacturer).where(Manufacturer.name == name)
+                select(Manufacturer).where(
+                    (Manufacturer.name == name) |
+                    (func.json_extract(Manufacturer.custom_fields, '$.spoolman_id') == spoolman_id) |
+                    (func.json_extract(Manufacturer.custom_fields, '$.spoolman_id') == str(spoolman_id))
+                )
             )
             existing_mfr = existing.scalar_one_or_none()
 
@@ -522,6 +538,20 @@ class SpoolmanImportService:
                 continue
                 
             spoolman_id = fil_data.get("id")
+
+            # Pruefen ob Filament mit dieser Spoolman-ID bereits existiert
+            if spoolman_id:
+                existing_fil_res = await self.db.execute(
+                    select(Filament).where(
+                        (func.json_extract(Filament.custom_fields, '$.spoolman_id') == spoolman_id) |
+                        (func.json_extract(Filament.custom_fields, '$.spoolman_id') == str(spoolman_id))
+                    )
+                )
+                existing_fil = existing_fil_res.scalar_one_or_none()
+                if existing_fil:
+                    fil_map[spoolman_id] = existing_fil.id
+                    result.filaments_skipped += 1
+                    continue
 
             # Manufacturer auflösen
             vendor = fil_data.get("vendor")
@@ -794,10 +824,14 @@ class SpoolmanImportService:
             # external_id: Spoolman-ID als Referenz
             external_id = f"spoolman:{spoolman_id}" if spoolman_id else None
 
-            # Pruefen ob external_id schon existiert (Duplikat-Vermeidung)
-            if external_id:
+            # Pruefen ob Spule bereits existiert (via external_id oder spoolman_id in custom_fields)
+            if spoolman_id:
                 dup_check = await self.db.execute(
-                    select(Spool).where(Spool.external_id == external_id)
+                    select(Spool).where(
+                        (Spool.external_id == external_id) |
+                        (func.json_extract(Spool.custom_fields, '$.spoolman_id') == spoolman_id) |
+                        (func.json_extract(Spool.custom_fields, '$.spoolman_id') == str(spoolman_id))
+                    )
                 )
                 if dup_check.scalar_one_or_none():
                     result.spools_skipped += 1
