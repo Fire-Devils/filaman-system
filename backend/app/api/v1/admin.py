@@ -225,12 +225,65 @@ async def reset_user_password(
 
     user.password_hash = await hash_password_async(data.new_password)
     await db.commit()
-
     return {"message": "Password reset successfully"}
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: int,
+    db: DBSession,
+    principal = RequirePermission("admin:users_manage"),
+):
+    # 1. Fetch target user
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at.is_(None)))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "User not found"},
+        )
+
+    # 2. Prevent self-deletion
+    if user.id == principal.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "bad_request", "message": "You cannot delete your own account"},
+        )
+
+    # 3. Superuser safety checks
+    if user.is_superadmin:
+        # Only a superuser can delete another superuser
+        if not principal.is_superadmin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "forbidden", "message": "Only superadmins can delete other superadmins"},
+            )
+        
+        # Check if this is the last superuser
+        # We count all ACTIVE superadmins
+        count_res = await db.execute(
+            select(func.count())
+            .select_from(User)
+            .where(User.is_superadmin.is_(True))
+            .where(User.deleted_at.is_(None))
+        )
+        superadmin_count = count_res.scalar() or 0
+        
+        if superadmin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "bad_request", "message": "Cannot delete the last superuser"},
+            )
+
+    # 4. Soft delete
+    user.deleted_at = datetime.utcnow()
+    await db.commit()
 
 
 @router.put("/users/{user_id}/roles")
 async def set_user_roles(
+
     user_id: int,
     role_keys: list[str],
     db: DBSession,

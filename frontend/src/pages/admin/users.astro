@@ -79,6 +79,7 @@ import Layout from '../../layouts/Layout.astro'
 
     let users: any[] = []
     let roles: any[] = []
+    let currentUser: any = null
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -87,15 +88,18 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadData() {
       try {
-        const [usersRes, rolesRes] = await Promise.all([
+        const [usersRes, rolesRes, meRes] = await Promise.all([
           fetch('/api/v1/admin/users', { credentials: 'include' }),
           fetch('/api/v1/admin/roles', { credentials: 'include' }),
+          fetch('/api/v1/me', { credentials: 'include' }),
         ])
         
         if (!usersRes.ok) throw new Error('Failed to fetch users')
         
         users = await usersRes.json().then(d => d.items)
         roles = await rolesRes.json()
+        currentUser = meRes.ok ? await meRes.json() : null
+        
         renderUsers()
         renderRoleCheckboxes()
       } catch (error) {
@@ -131,6 +135,9 @@ import Layout from '../../layouts/Layout.astro'
           <td style="text-align: right;">
             <button data-id="${u.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
             <button data-id="${u.id}" class="btn-reset" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.resetPw')}</button>
+            ${currentUser && currentUser.id !== u.id ? `
+              <button data-id="${u.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
+            ` : ''}
           </td>
         </tr>
       `).join('')
@@ -160,6 +167,33 @@ import Layout from '../../layouts/Layout.astro'
             await (window as any).__fmAlert(t('admin.resetPwSuccess'))
           } catch {
             await (window as any).__fmAlert(t('admin.resetPwFailed'))
+          }
+        })
+      })
+
+      document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          
+          if (!(await (window as any).__fmConfirm(t('admin.deleteUserConfirm')))) return
+          
+          try {
+            const response = await fetch(`/api/v1/admin/users/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) {
+              const data = await response.json()
+              const msg = data.detail?.message || t('admin.failedDeleteUser')
+              await (window as any).__fmAlert(msg)
+              return
+            }
+            
+            loadData()
+          } catch {
+            await (window as any).__fmAlert(t('admin.failedDeleteUser'))
           }
         })
       })
