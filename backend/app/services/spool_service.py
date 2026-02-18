@@ -385,6 +385,45 @@ class SpoolService:
         await self.db.commit()
         return event
 
+    async def change_statuses_bulk(
+        self,
+        spool_ids: list[int],
+        status_key: str,
+        principal: Principal | None = None,
+        source: str = "ui",
+        note: str | None = None,
+    ) -> int:
+        new_status = await self._get_status_by_key(status_key)
+        if new_status is None:
+            raise ValueError(f"Status not found: {status_key}")
+
+        event_at = datetime.utcnow()
+        count = 0
+        
+        # We process one by one to ensure events are created. 
+        # For small numbers (dashboard modals), this is fine.
+        for sid in spool_ids:
+            spool = await self.get_spool(sid)
+            if not spool:
+                continue
+            
+            old_status_id = spool.status_id
+            await self._create_event(
+                spool_id=spool.id,
+                event_type=status_key,
+                event_at=event_at,
+                user_id=principal.user_id if principal else None,
+                source=source,
+                from_status_id=old_status_id,
+                to_status_id=new_status.id,
+                note=note,
+            )
+            spool.status_id = new_status.id
+            count += 1
+            
+        await self.db.commit()
+        return count
+
     async def move_location(
         self,
         spool: Spool,

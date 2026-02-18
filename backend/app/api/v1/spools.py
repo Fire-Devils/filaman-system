@@ -22,6 +22,7 @@ from app.api.v1.schemas_spool import (
     SpoolStatusResponse,
     SpoolUpdate,
     StatusChangeRequest,
+    BulkStatusChangeRequest,
 )
 from app.models import Filament, Location, Spool, SpoolEvent, SpoolStatus
 from app.services.spool_service import SpoolService
@@ -292,6 +293,26 @@ async def delete_spool(
 
     spool.deleted_at = datetime.utcnow()
     await db.commit()
+
+
+@router_spools.post("/bulk/status", status_code=status.HTTP_200_OK)
+async def change_statuses_bulk(
+    data: BulkStatusChangeRequest,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Change status for multiple spools (e.g. bulk archiving)."""
+    service = SpoolService(db)
+    # Check permission (using a general update permission for now, or create a specific one if needed)
+    RequirePermission("spools:update")
+    
+    count = await service.change_statuses_bulk(
+        spool_ids=data.spool_ids,
+        status_key=data.status,
+        principal=principal,
+        note=data.note,
+    )
+    return {"success": True, "count": count}
 
 
 @router_spools.post("/{spool_id}/measurements", response_model=SpoolEventResponse)

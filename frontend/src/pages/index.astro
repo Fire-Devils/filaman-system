@@ -141,8 +141,12 @@ interface PaginatedResponse<T> {
       <div id="modal-content" style="max-height: 60vh; overflow-y: auto;">
         <p style="color: var(--text-muted);">Loading...</p>
       </div>
+      <div id="modal-footer" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;" class="hidden">
+        <button id="btn-archive-all" class="fm-btn fm-btn-warning" style="width: 100%;"></button>
+      </div>
     </div>
   </div>
+
   <script>
     import { t, initI18n } from '../lib/i18n'
 
@@ -161,11 +165,18 @@ interface PaginatedResponse<T> {
       return g.toFixed(0) + ' g'
     }
 
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
     // Modal functions
     (window as any).openSpoolModal = function(type: 'low' | 'empty') {
       const modal = document.getElementById('spool-modal') as HTMLElement
       const title = document.getElementById('modal-title') as HTMLElement
       const content = document.getElementById('modal-content') as HTMLElement
+      const footer = document.getElementById('modal-footer') as HTMLElement
+      const bulkBtn = document.getElementById('btn-archive-all') as HTMLButtonElement
 
       let filteredSpools: any[] = []
       
@@ -186,6 +197,7 @@ interface PaginatedResponse<T> {
 
       if (filteredSpools.length === 0) {
         content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
+        footer.classList.add('hidden')
       } else {
         content.innerHTML = `
           <table class="fm-table">
@@ -194,23 +206,110 @@ interface PaginatedResponse<T> {
                 <th style="padding: 8px;">ID</th>
                 <th style="padding: 8px;">${t('dashboard.filament')}</th>
                 <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
+                <th style="padding: 8px; text-align: right;">${t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               ${filteredSpools.map(s => `
-                <tr style="cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">
-                  <td style="padding: 8px;">#${s.id}</td>
-                  <td style="padding: 8px;">${getFilamentName(s.filament_id)}</td>
-                  <td style="padding: 8px; text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)}g</td>
+                <tr data-spool-id="${s.id}">
+                  <td style="padding: 8px; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">#${s.id}</td>
+                  <td style="padding: 8px; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">${getFilamentName(s.filament_id)}</td>
+                  <td style="padding: 8px; text-align: right; font-family: monospace; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">${s.remaining_weight_g?.toFixed(0)}g</td>
+                  <td style="padding: 8px; text-align: right;">
+                    <button class="fm-btn fm-btn-outline" style="padding: 4px 10px; font-size: 0.75rem;" onclick="archiveSpool(${s.id})">
+                      ${t('dashboard.archive')}
+                    </button>
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         `
+        
+        footer.classList.remove('hidden')
+        bulkBtn.textContent = type === 'low' ? t('dashboard.archiveAllLow') : t('dashboard.archiveAllEmpty')
+        bulkBtn.onclick = () => archiveAll(filteredSpools.map(s => s.id))
       }
 
       modal.classList.add('open')
     }
+
+    async function archiveSpool(id: number) {
+      if (!(await (window as any).__fmConfirm(t('dashboard.confirmArchiveOne') || t('dashboard.archive') + '?', {
+        okLabel: t('dashboard.archive'),
+        isDanger: false
+      }))) return
+
+      const btn = document.querySelector(`tr[data-spool-id="${id}"] button`) as HTMLButtonElement
+      if (btn) {
+        btn.disabled = true
+        btn.textContent = '...'
+      }
+
+      try {
+        const response = await fetch(`/api/v1/spools/${id}/status`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken()
+          },
+          credentials: 'include',
+          body: JSON.stringify({ status: 'archived' }),
+        })
+
+        if (response.ok) {
+          const row = document.querySelector(`tr[data-spool-id="${id}"]`)
+          row?.remove()
+          const tbody = document.querySelector('#modal-content tbody')
+          if (tbody && tbody.children.length === 0) {
+            document.getElementById('modal-content')!.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
+            document.getElementById('modal-footer')!.classList.add('hidden')
+          }
+          loadDashboardData()
+        }
+      } catch (err) {
+        console.error('Failed to archive spool:', err)
+        if (btn) {
+          btn.disabled = false
+          btn.textContent = t('dashboard.archive')
+        }
+      }
+    }
+    (window as any).archiveSpool = archiveSpool
+
+    async function archiveAll(ids: number[]) {
+      if (!(await (window as any).__fmConfirm(t('dashboard.confirmArchiveAll'), { 
+        okLabel: t('dashboard.archive'),
+        isDanger: false 
+      }))) return
+
+      const bulkBtn = document.getElementById('btn-archive-all') as HTMLButtonElement
+      bulkBtn.disabled = true
+      bulkBtn.textContent = t('dashboard.archiving')
+
+      try {
+        const response = await fetch('/api/v1/spools/bulk/status', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken()
+          },
+          credentials: 'include',
+          body: JSON.stringify({ spool_ids: ids, status: 'archived' }),
+        })
+
+        if (response.ok) {
+          document.getElementById('modal-content')!.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
+          document.getElementById('modal-footer')!.classList.add('hidden')
+          loadDashboardData()
+        }
+      } catch (err) {
+        console.error('Failed bulk archive:', err)
+      } finally {
+        bulkBtn.disabled = false
+      }
+    }
+    (window as any).archiveAll = archiveAll
 
     ;(window as any).closeSpoolModal = function() {
       const modal = document.getElementById('spool-modal') as HTMLElement
@@ -227,9 +326,7 @@ interface PaginatedResponse<T> {
       if (e.target === e.currentTarget) (window as any).closeSpoolModal()
     })
 
-    async function init() {
-      await initI18n()
-
+    async function loadDashboardData() {
       try {
         const [spoolsRes, filamentsRes, dashboardRes] = await Promise.all([
           fetch('/api/v1/spools?page_size=200', { credentials: 'include' }),
@@ -247,18 +344,15 @@ interface PaginatedResponse<T> {
         
         allSpools = spoolsData.items
         allFilaments = filamentsData.items
-        const spools = allSpools
-        const filaments = allFilaments
         
-        document.getElementById('stat-total-spools')!.textContent = spools.length
-        document.getElementById('stat-total-filaments')!.textContent = filaments.length
+        document.getElementById('stat-total-spools')!.textContent = allSpools.length
+        document.getElementById('stat-total-filaments')!.textContent = allFilaments.length
         
         if (dashboardData) {
           const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
           document.getElementById('stat-low-spools')!.textContent = (dist.low + dist.critical).toString()
           document.getElementById('stat-empty-spools')!.textContent = dist.empty.toString()
           
-          // Spulen-Status Indikatoren
           const statusContainer = document.getElementById('spool-status')!
           const statusItems = [
             { key: 'full', label: t('dashboard.statusFull'), color: '#22c55e', count: dist.full, hint: '>75%' },
@@ -275,7 +369,6 @@ interface PaginatedResponse<T> {
             </div>
           `).join('')
 
-          // Lagerorte-Statistik
           const locationStatsContainer = document.getElementById('location-stats')!
           if (!dashboardData.location_stats || dashboardData.location_stats.length === 0) {
             locationStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
@@ -297,7 +390,6 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
-          // Filament-Statistik
           const filamentStatsContainer = document.getElementById('filament-stats')!
           if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
             filamentStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
@@ -319,7 +411,6 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
-          // Hersteller mit Spulen
           const mfrContainer = document.getElementById('manufacturers-with-spools')!
           if (dashboardData.manufacturers_with_spools.length === 0) {
             mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
@@ -331,7 +422,6 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
-          // Low-stock Spulen
           const mfrLowStockContainer = document.getElementById('low-stock-spools')!
           if (dashboardData.low_stock_spools.length === 0) {
             mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
@@ -355,7 +445,6 @@ interface PaginatedResponse<T> {
               `</tbody></table>`
           }
 
-          // Filament-Typen
           const typesContainer = document.getElementById('filament-types')!
           if (dashboardData.filament_types.length === 0) {
             typesContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
@@ -371,7 +460,11 @@ interface PaginatedResponse<T> {
         console.error('Failed to load dashboard:', error)
       }
     }
-    
+
+    async function init() {
+      await initI18n()
+      await loadDashboardData()
+    }
     init()
   </script>
 </Layout>

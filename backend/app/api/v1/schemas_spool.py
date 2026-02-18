@@ -129,6 +129,12 @@ class StatusChangeRequest(BaseModel):
     meta: dict[str, Any] | None = None
 
 
+class BulkStatusChangeRequest(BaseModel):
+    spool_ids: list[int]
+    status: str
+    note: str | None = None
+
+
 class MoveLocationRequest(BaseModel):
     location_id: int | None
     event_at: datetime | None = None

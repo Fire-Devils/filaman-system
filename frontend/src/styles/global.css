@@ -196,6 +196,16 @@ body {
   background: rgba(239, 68, 68, 0.25);
 }
 
+.fm-btn-warning {
+  background: rgba(234, 179, 8, 0.15);
+  border-color: rgba(234, 179, 8, 0.3);
+  color: var(--accent-3);
+}
+
+.fm-btn-warning:hover {
+  background: rgba(234, 179, 8, 0.25);
+}
+
 /* Form fields */
 .fm-input {
   background: var(--input-bg);
