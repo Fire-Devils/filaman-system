@@ -39,24 +39,47 @@ interface PaginatedResponse<T> {
 ---
 
 <Layout title="FilaMan - Dashboard">
+  <style>
+    .db-icon {
+      transition: transform var(--transition), fill var(--transition);
+    }
+    .fm-card-hover:hover .db-icon {
+      transform: scale(1.1);
+    }
+  </style>
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
   
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px;">
-    <div class="fm-card">
-      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-spools">-</div>
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalSpools">Total Spools</div>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+    <div class="fm-card fm-card-hover" style="display: flex; align-items: center; gap: 20px; cursor: pointer;" onclick="window.location.href='/spools'">
+      <svg width="36" height="36" style="fill: var(--accent); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
+      <div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-spools">-</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalSpools">Total Spools</div>
+      </div>
     </div>
-    <div class="fm-card">
-      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-filaments">-</div>
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.filaments">Filaments</div>
+
+    <div class="fm-card fm-card-hover" style="display: flex; align-items: center; gap: 20px; cursor: pointer;" onclick="window.location.href='/filaments'">
+      <svg width="36" height="36" style="fill: var(--accent-2); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-filaments"></use></svg>
+      <div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-filaments">-</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.filaments">Filaments</div>
+      </div>
     </div>
-    <div class="fm-card" style="cursor: pointer;" onclick="openSpoolModal('low')">
-      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowSpools">Low Spools</div>
+
+    <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('low')">
+      <svg width="36" height="36" style="fill: var(--accent-3); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
+      <div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowSpools">Low Spools</div>
+      </div>
     </div>
-    <div class="fm-card" style="cursor: pointer;" onclick="openSpoolModal('empty')">
-      <div style="font-size: 1.6rem; font-weight: 700;" id="stat-empty-spools">-</div>
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.emptySpools">Empty Spools</div>
+
+    <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('empty')">
+      <svg width="36" height="36" style="fill: var(--error-text); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
+      <div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-empty-spools">-</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.emptySpools">Empty Spools</div>
+      </div>
     </div>
   </div>
   
