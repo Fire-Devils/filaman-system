@@ -67,11 +67,12 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="spools.status" data-sort="status_id" class="sortable">Status</th>
           <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable">Remaining</th>
           <th data-i18n="spools.location" data-sort="location_id" class="sortable">Location</th>
+          <th style="width: 40px;"></th>
         </tr>
       </thead>
       <tbody id="spools-table">
         <tr>
-          <td colspan="7" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="8" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -79,8 +80,27 @@ import Layout from '../../layouts/Layout.astro'
   
   <div id="pagination" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;"></div>
   
+  <!-- RFID Modal -->
+  <div id="rfid-modal" class="fm-modal-overlay">
+    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
+      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="rfid.writeTag">Write RFID Tag</h3>
+      <div id="rfid-content">
+        <p style="margin-bottom: 16px;" id="rfid-text"></p>
+        <div id="rfid-device-select-container" class="hidden">
+          <label for="rfid-device-select" class="fm-label" data-i18n="rfid.selectDevice">Select Device</label>
+          <select id="rfid-device-select" class="fm-select" style="margin-bottom: 16px;"></select>
+        </div>
+      </div>
+      <div id="rfid-status" class="fm-alert hidden" style="margin-bottom: 16px;"></div>
+      <div style="display: flex; gap: 12px;">
+        <button id="rfid-confirm" class="fm-btn fm-btn-primary" data-i18n="common.confirm">Confirm</button>
+        <button id="rfid-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    import { t, initI18n } from '../../lib/i18n'
+    import { t, initI18n, translatePage } from '../../lib/i18n'
     await initI18n()
 
     let currentPage = 1
@@ -91,6 +111,7 @@ import Layout from '../../layouts/Layout.astro'
     let manufacturers: any[] = []
     let allSpools: any[] = []
     let filteredSpools: any[] = []
+    let activeDevices: any[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     let filterManufacturerId: string | null = null
@@ -184,25 +205,16 @@ import Layout from '../../layouts/Layout.astro'
       const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
 
       return spools.filter(s => {
-        // Status filter (server-side was removed, now client-side)
         if (statusId && String(s.status_id) !== statusId) return false
-
-        // Location filter
         if (locationId && String(s.location_id) !== locationId) return false
-
-        // Manufacturer filter
         if (manufacturerId) {
           const fil = getFilamentForSpool(s)
           if (!fil || String(fil.manufacturer_id) !== manufacturerId) return false
         }
-
-        // Material/type filter
         if (material) {
           const fil = getFilamentForSpool(s)
           if (!fil || fil.type !== material) return false
         }
-
-        // Text search across filament name, manufacturer name, material type, color names
         if (search) {
           const fil = getFilamentForSpool(s)
           const filName = fil ? (fil.designation || '').toLowerCase() : ''
@@ -221,7 +233,6 @@ import Layout from '../../layouts/Layout.astro'
           const haystack = `${filName} ${filType} ${mfName} ${mfColorName} ${colorNames} ${locationName} ${statusLabel}`
           if (!haystack.includes(search)) return false
         }
-
         return true
       })
     }
@@ -249,7 +260,6 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function populateFilterDropdowns() {
-      // Manufacturers from filaments data
       const mfSelect = document.getElementById('filter-manufacturer') as HTMLSelectElement
       const mfMap = new Map<string, string>()
       filaments.forEach(f => {
@@ -264,13 +274,8 @@ import Layout from '../../layouts/Layout.astro'
         opt.textContent = name
         mfSelect.appendChild(opt)
       })
+      if (filterManufacturerId) mfSelect.value = filterManufacturerId
 
-      // Pre-select manufacturer from URL param
-      if (filterManufacturerId) {
-        mfSelect.value = filterManufacturerId
-      }
-
-      // Materials/types from filaments
       const matSelect = document.getElementById('filter-material') as HTMLSelectElement
       const materials = new Set<string>()
       filaments.forEach(f => { if (f.type) materials.add(f.type) })
@@ -281,11 +286,7 @@ import Layout from '../../layouts/Layout.astro'
         opt.textContent = mat
         matSelect.appendChild(opt)
       })
-
-      // Pre-select material from URL param
-      if (filterMaterial) {
-        matSelect.value = filterMaterial
-      }
+      if (filterMaterial) matSelect.value = filterMaterial
     }
     
     async function loadFilters() {
@@ -318,10 +319,7 @@ import Layout from '../../layouts/Layout.astro'
             opt.textContent = l.name
             select.appendChild(opt)
           })
-          
-          if (filterLocationId) {
-            select.value = filterLocationId
-          }
+          if (filterLocationId) select.value = filterLocationId
         }
         
         if (filamentsRes?.ok) {
@@ -336,16 +334,11 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     async function loadSpools() {
-      // Load all spools for client-side filtering
       try {
         const response = await fetch(`/api/v1/spools?page=1&page_size=200`, { credentials: 'include' })
-        
         if (!response.ok) throw new Error('Failed to fetch spools')
-        
         const data = await response.json()
         allSpools = data.items
-
-        // If there are more, load remaining pages
         if (data.total > 200) {
           const totalPages = Math.ceil(data.total / 200)
           for (let p = 2; p <= totalPages; p++) {
@@ -356,13 +349,12 @@ import Layout from '../../layouts/Layout.astro'
             }
           }
         }
-
         applyFiltersAndRender()
       } catch (error) {
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
-            <td colspan="7" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
+            <td colspan="8" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
           </tr>
         `
       }
@@ -396,6 +388,17 @@ import Layout from '../../layouts/Layout.astro'
       }).join('')
     }
 
+    async function loadActiveDevices() {
+      try {
+        const res = await fetch('/api/v1/devices/active', { credentials: 'include' })
+        if (res.ok) {
+          activeDevices = await res.json()
+        }
+      } catch (e) {
+        console.error('Failed to load active devices:', e)
+      }
+    }
+
     function renderSpoolRow(s: any): string {
       const isLow = s.remaining_weight_g !== null && 
                     s.remaining_weight_g > 0 && 
@@ -408,6 +411,14 @@ import Layout from '../../layouts/Layout.astro'
 
       const colorDots = getColorDots(s)
       
+      const rfidIcon = activeDevices.length > 0 ? `
+        <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation(); window.openRfidModal(${s.id})">
+          <button class="fm-btn fm-btn-outline" style="padding: 4px; line-height: 0;" data-i18n-title="rfid.writeTag">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 135.18028 115.18283" fill="currentColor"><g transform="translate(-37.583451,-63.372624)"><path d="m 70.222963,178.33313 c -2.040926,-0.39862 -7.168348,-4.13124 -11.835405,-8.61585 -11.236022,-10.7968 -18.197641,-24.54085 -20.318866,-40.11476 -0.914987,-6.71777 -0.506732,-16.35742 0.977968,-23.09161 2.31059,-10.480198 7.418829,-20.910018 14.204507,-29.002258 4.136212,-4.93262 11.33237,-11.25913 15.203175,-13.36589 3.228084,-1.75694 6.735163,-0.32453 7.658584,3.12804 0.247595,0.92573 0.239278,1.4288 -0.04012,2.4267 -0.455391,1.6265 -1.235816,2.52818 -3.546301,4.0973 -2.718612,1.84629 -6.655458,5.21243 -8.886438,7.5982 -8.337084,8.91553 -13.388674,19.334498 -15.242672,31.438188 -0.606927,3.96229 -0.606927,12.1773 0,16.13959 2.48356,16.21374 10.951629,29.82811 24.433921,39.28314 2.570726,1.80283 3.338858,2.98296 3.338858,5.12972 0,1.75821 -0.610733,3.02689 -1.972927,4.0984 -0.557741,0.43872 -2.492716,1.15289 -2.888792,1.06621 -0.07276,-0.0159 -0.561233,-0.11273 -1.085496,-0.21512 z m 67.475117,-0.10858 c -2.76471,-1.00625 -4.15566,-3.49487 -3.42065,-6.12008 0.4554,-1.6265 1.23582,-2.52818 3.54631,-4.0973 2.71861,-1.84629 6.65545,-5.21242 8.88643,-7.5982 8.33709,-8.91553 13.38868,-19.3345 15.24267,-31.43819 0.60693,-3.96229 0.60693,-12.1773 0,-16.13959 -2.48355,-16.213738 -10.95162,-29.828108 -24.43392,-39.283138 -2.57072,-1.80283 -3.33885,-2.98296 -3.33885,-5.12972 0,-1.31289 0.13178,-1.83293 0.66238,-2.61377 1.79517,-2.64183 4.51786,-3.15763 7.48598,-1.4182 3.97325,2.32848 10.82063,8.41172 14.77065,13.12229 6.78568,8.09224 11.89391,18.52206 14.2045,29.002258 1.94688,8.83047 1.94688,19.94969 0,28.78015 -2.31059,10.4802 -7.41882,20.91002 -14.2045,29.00226 -4.09611,4.8848 -11.38152,11.30257 -15.09913,13.30093 -1.58248,0.85065 -3.08971,1.07148 -4.30187,0.6303 z M 82.288667,161.67534 c -3.491247,-1.68198 -8.945231,-6.03926 -12.155513,-9.71126 -15.69411,-17.9513 -15.69411,-44.17488 0,-62.126188 3.158005,-3.6122 8.441186,-7.84766 12.143984,-9.73567 1.364318,-0.69565 1.767927,-0.78376 3.005287,-0.65605 2.768189,0.2857 4.656699,2.35691 4.633219,5.08147 -0.0205,2.38883 -1.613279,4.40879 -4.018978,5.10091 -1.487805,0.42805 -2.030508,0.76741 -3.856006,2.41151 -1.588824,1.43097 -4.108253,4.24273 -5.598731,6.24835 -7.264639,9.775838 -9.623192,23.361958 -6.315577,36.435728 2.054483,8.12056 7.073436,16.48834 13.067341,21.78201 1.721471,1.52037 4.455437,4.35414 6.07548,6.29727 1.582156,1.89768 2.378906,3.61347 2.378906,5.12061 0,1.38531 -0.472851,2.50367 -1.428753,3.37684 -1.139626,1.04098 -3.107412,1.35086 -4.895359,0.85848 -0.07276,-0.02 -0.561233,-0.12 -1.085496,-0.22 z m 45.748383,-0.10858 c -2.14777,-0.78241 -3.61453,-2.68417 -3.95111,-5.12998 -0.19794,-1.43831 0.45781,-3.10903 1.83852,-4.68652 1.43936,-1.64452 4.3948,-4.68729 6.56764,-6.7617 7.39956,-7.06456 12.37199,-16.29918 14.15228,-26.29828 1.15546,-6.48972 1.15546,-13.43477 0,-19.924488 -1.78029,-9.9991 -6.75272,-19.23372 -14.15228,-26.29828 -2.17284,-2.07441 -5.12828,-5.11718 -6.56764,-6.7617 -1.43194,-1.63604 -2.00843,-3.32832 -1.74567,-5.12328 0.42065,-2.87353 3.0132,-4.88729 6.27964,-4.88052 1.58334,0.003 2.16279,0.22462 3.85601,1.47467 4.1923,3.09503 9.47548,8.23933 13.04505,12.69532 15.69411,19.587848 15.69411,48.169128 0,67.756978 -3.15801,3.94276 -8.44119,8.56715 -12.14399,10.62828 -1.63852,0.91206 -4.12059,1.60256 -5.17845,1.43124 -0.0728,-0.0159 -0.56123,-0.11273 -1.0855,-0.21512 z M 94.354381,145.01755 c -2.932479,-1.20592 -6.136015,-5.24241 -8.324424,-10.47772 -3.737156,-8.94042 -3.737156,-20.13924 0,-29.079658 2.01222,-4.80665 4.881268,-8.74902 7.828621,-10.74902 1.259276,-0.85452 2.09115,-1.02537 3.42436,-0.70295 2.142517,0.51817 3.513411,2.02897 3.735417,4.12214 0.170462,1.60718 -0.329759,2.83685 -1.76495,4.33943 -1.240562,1.29881 -3.37699,4.40989 -4.39417,6.39129 -3.812328,7.426358 -3.812328,15.720348 0,23.146708 1.01718,1.9814 3.153608,5.09248 4.39417,6.39129 1.435191,1.50258 1.935412,2.73225 1.76495,4.33943 -0.252061,2.37687 -1.970221,4.0322 -4.329712,4.16853 -0.749722,0.0433 -1.821379,-0.38076 -2.334262,-0.88948 z m 21.617549,-0.10858 c -2.18526,-0.86475 -3.42588,-2.6883 -3.23847,-4.74718 0.15842,-1.74026 0.81404,-3.21008 2.37891,-4.74751 1.24056,-1.22026 3.37699,-4.14304 4.39417,-6.0071 3.81233,-6.9765 3.81233,-14.76678 0,-21.743288 -1.01718,-1.86406 -3.15361,-4.78684 -4.39417,-6.0071 -1.56487,-1.53743 -2.22049,-3.00725 -2.37891,-4.74751 -0.21006,-2.30752 1.34685,-4.43954 3.69239,-5.0559 1.1395,-0.29944 2.21369,-0.14798 3.25049,0.45938 3.03362,1.77717 6.13636,5.72025 8.13426,10.33941 3.73715,8.633538 3.73715,19.434858 0,28.068398 -2.14811,4.96023 -5.44141,9.08803 -8.53856,10.68651 -1.41249,0.72901 -2.39659,0.85465 -3.30011,0.50189 z M 105.17359,127.93043 c -5.047575,-2.68452 -5.047575,-9.2458 0,-11.930318 2.80936,-1.49397 6.04634,0.089 6.84365,3.33799 0.44621,1.81845 0.15049,3.64024 -0.83856,5.16104 -1.48784,2.28779 -4.01768,3.95758 -5.9189,3.88214 -0.0242,-10e-4 -0.0538,-0.0463 -0.0862,-0.11085 z"/></g></svg>
+          </button>
+        </td>
+      ` : '<td></td>'
+      
       return `
         <tr style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
           <td style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
@@ -419,19 +430,19 @@ import Layout from '../../layouts/Layout.astro'
             ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
           </td>
           <td style="padding: 12px;">${getLocationName(s.location_id)}</td>
+          ${rfidIcon}
         </tr>
       `
     }
     
     function renderSpools(spools: any[]) {
       const tbody = document.getElementById('spools-table')!
-      
       if (spools.length === 0) {
         const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
         const hasFilters = search || statusId || locationId || manufacturerId || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" style="text-align: center; color: var(--text-muted);">
+            <td colspan="8" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
@@ -440,6 +451,7 @@ import Layout from '../../layouts/Layout.astro'
       }
       
       tbody.innerHTML = spools.map(s => renderSpoolRow(s)).join('')
+      translatePage()
     }
 
     function renderGroupedSpools(spools: any[]) {
@@ -450,7 +462,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || statusId || locationId || manufacturerId || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" style="text-align: center; color: var(--text-muted);">
+            <td colspan="8" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
@@ -483,7 +495,7 @@ import Layout from '../../layouts/Layout.astro'
         const gid = `group-${groupIdx}`
         html += `
           <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
-            <td colspan="7" style="padding: 10px 12px; color: var(--text);">
+            <td colspan="8" style="padding: 10px 12px; color: var(--text);">
               <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.colorDots} ${group.label}</span>
               <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${group.manufacturer} &middot; ${group.material} &middot; ${t('spools.spoolsInGroup', { count: group.spools.length })}</span>
             </td>
@@ -496,6 +508,7 @@ import Layout from '../../layouts/Layout.astro'
       })
 
       tbody.innerHTML = html
+      translatePage()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -577,6 +590,82 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('filter-group')?.addEventListener('change', () => applyFiltersAndRender())
     
     setupSortableHeaders()
-    loadFilters().then(() => loadSpools())
+    loadFilters()
+      .then(() => loadActiveDevices())
+      .then(() => loadSpools())
+
+    // RFID Modal Logic
+    let currentRfidSpoolId: number | null = null
+    
+    ;(window as any).openRfidModal = (spoolId: number) => {
+      currentRfidSpoolId = spoolId
+      const modal = document.getElementById('rfid-modal')!
+      const text = document.getElementById('rfid-text')!
+      const deviceSelectContainer = document.getElementById('rfid-device-select-container')!
+      const deviceSelect = document.getElementById('rfid-device-select') as HTMLSelectElement
+      const status = document.getElementById('rfid-status')!
+      
+      status.classList.add('hidden')
+      
+      if (activeDevices.length === 1) {
+        text.textContent = t('rfid.confirmWrite', { device: activeDevices[0].name })
+        deviceSelectContainer.classList.add('hidden')
+      } else {
+        text.textContent = t('rfid.selectDeviceToWrite')
+        deviceSelectContainer.classList.remove('hidden')
+        deviceSelect.innerHTML = activeDevices.map(d => `<option value="${d.id}">${d.name} (${d.ip_address})</option>`).join('')
+      }
+      
+      modal.classList.add('open')
+    }
+    
+    document.getElementById('rfid-cancel')?.addEventListener('click', () => {
+      document.getElementById('rfid-modal')!.classList.remove('open')
+    })
+    
+    document.getElementById('rfid-confirm')?.addEventListener('click', async () => {
+      if (!currentRfidSpoolId) return
+      
+      const deviceId = activeDevices.length === 1 
+        ? activeDevices[0].id 
+        : (document.getElementById('rfid-device-select') as HTMLSelectElement).value
+      
+      const device = activeDevices.find(d => String(d.id) === String(deviceId))
+      if (!device || !device.ip_address) return
+      
+      const confirmBtn = document.getElementById('rfid-confirm') as HTMLButtonElement
+      const cancelBtn = document.getElementById('rfid-cancel') as HTMLButtonElement
+      const status = document.getElementById('rfid-status')!
+      
+      confirmBtn.disabled = true
+      cancelBtn.disabled = true
+      status.textContent = t('rfid.writing')
+      status.className = 'fm-alert fm-alert-info'
+      status.classList.remove('hidden')
+      
+      try {
+        const response = await fetch(`http://${device.ip_address}/api/v1/rfid/write`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ spool_id: currentRfidSpoolId }),
+        })
+        
+        if (!response.ok) throw new Error('Failed to write tag')
+        
+        status.textContent = t('rfid.writeSuccess')
+        status.className = 'fm-alert fm-alert-success'
+        
+        setTimeout(() => {
+          document.getElementById('rfid-modal')!.classList.remove('open')
+          confirmBtn.disabled = false
+          cancelBtn.disabled = false
+        }, 1500)
+      } catch (err) {
+        status.textContent = t('rfid.writeError')
+        status.className = 'fm-alert fm-alert-error'
+        confirmBtn.disabled = false
+        cancelBtn.disabled = false
+      }
+    })
   </script>
 </Layout>

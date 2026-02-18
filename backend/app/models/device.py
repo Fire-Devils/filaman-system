@@ -20,12 +20,23 @@ class Device(Base, TimestampMixin):
     scopes: Mapped[list[str] | None] = mapped_column(nullable=True)
 
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    
+    @property
+    def is_online(self) -> bool:
+        if not self.last_seen_at:
+            return False
+        from datetime import datetime
+        delta = datetime.utcnow() - self.last_seen_at
+        return delta.total_seconds() < 180 # 3 minutes
 
     spool_events: Mapped[list["SpoolEvent"]] = relationship(back_populates="device")
+
 
 
 from app.models.spool import SpoolEvent

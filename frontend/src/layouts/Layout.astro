@@ -125,30 +125,10 @@ const { title } = Astro.props
     </div>
 
     <script>
-      import { t, initI18n, syncLangFromUser } from '../lib/i18n'
+      import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
-
-      // Translate all elements with data-i18n attribute
-      function translatePage() {
-        document.querySelectorAll('[data-i18n]').forEach(el => {
-          const key = el.getAttribute('data-i18n')!
-          el.textContent = t(key)
-        })
-        // Also translate placeholder attributes
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-          const key = el.getAttribute('data-i18n-placeholder')!
-          ;(el as HTMLInputElement).placeholder = t(key)
-        })
-        // Translate title attributes
-        document.querySelectorAll('[data-i18n-title]').forEach(el => {
-          const key = el.getAttribute('data-i18n-title')!
-          el.setAttribute('title', t(key))
-        })
-      }
-
-      translatePage()
 
       // Expose t and translatePage globally for page scripts
       ;(window as any).__t = t

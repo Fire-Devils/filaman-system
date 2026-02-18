@@ -25,3 +25,7 @@ class LocateResponse(BaseModel):
     spool_id: int
     location_id: int | None
     location_name: str | None
+
+
+class HeartbeatRequest(BaseModel):
+    ip_address: str

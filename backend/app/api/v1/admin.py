@@ -88,8 +88,11 @@ class DeviceResponse(BaseModel):
     is_active: bool
     scopes: list[str] | None
     last_used_at: datetime | None
+    last_seen_at: datetime | None
+    ip_address: str | None
     created_at: datetime | None
     token_hash: str | None  # Needed for frontend status logic
+    is_online: bool = False
 
     class Config:
         from_attributes = True
@@ -101,6 +104,7 @@ class DeviceCreate(BaseModel):
 
 
 @router.get("/users", response_model=PaginatedResponse[UserResponse])
+
 async def list_users(
     db: DBSession,
     principal = RequirePermission("admin:users_manage"),

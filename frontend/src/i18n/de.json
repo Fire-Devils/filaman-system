@@ -48,10 +48,21 @@
     "never": "Nie",
     "empty": "Leer",
     "unknown": "Unbekannt",
+    "online": "Online",
+    "offline": "Offline",
     "confirmTitle": "Bestätigung",
     "errorTitle": "Fehler",
     "open": "Öffnen",
     "customFields": "Eigene Felder"
+  },
+  "rfid": {
+    "writeTag": "RFID-Tag schreiben",
+    "selectDevice": "Gerät auswählen",
+    "confirmWrite": "Möchten Sie den RFID-Tag mit dem Gerät \"{device}\" schreiben?",
+    "selectDeviceToWrite": "Wählen Sie ein Gerät zum Schreiben des RFID-Tags:",
+    "writing": "RFID-Tag wird geschrieben...",
+    "writeSuccess": "RFID-Tag erfolgreich geschrieben!",
+    "writeError": "Fehler beim Schreiben des RFID-Tags. Ist das Gerät erreichbar?"
   },
   "login": {
     "title": "Anmeldung - FilaMan",
@@ -405,6 +416,7 @@
     "scopes": "Bereiche",
     "scopesLabel": "Bereiche (kommagetrennt)",
     "lastUsed": "Zuletzt verwendet",
+    "ipAddress": "IP-Adresse",
     "noDevices": "Keine Geräte gefunden",
     "rotateToken": "Token erneuern",
     "rotateConfirm": "Sind Sie sicher? Der alte Token wird sofort ungültig.",

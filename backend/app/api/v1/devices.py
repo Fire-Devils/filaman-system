@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy import select
 
 from app.api.deps import DBSession
-from app.api.v1.schemas_device import LocateRequest, LocateResponse, WeighRequest, WeighResponse
+from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse
 from app.core.security import Principal, generate_token_secret, hash_password_async
 from app.models import Device, Location
 from app.services.spool_service import SpoolService
@@ -81,6 +81,48 @@ async def register_device(
     
     token = f"dev.{device.id}.{secret}"
     return {"token": token}
+
+
+@router.post("/heartbeat", response_model=dict)
+async def device_heartbeat(
+    data: HeartbeatRequest,
+    db: DBSession,
+    device: Device = Depends(get_current_device),
+):
+    device.ip_address = data.ip_address
+    device.last_seen_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/active", response_model=list[dict])
+async def list_active_devices(
+    db: DBSession,
+):
+    # Find active devices (last seen < 3 min)
+    now = datetime.utcnow()
+    # We filter in Python because of the 3 min logic, or we can do it in SQL
+    # select * from devices where last_seen_at > now - 3min
+    from datetime import timedelta
+    threshold = now - timedelta(minutes=3)
+    
+    result = await db.execute(
+        select(Device).where(
+            Device.last_seen_at >= threshold,
+            Device.deleted_at.is_(None),
+            Device.is_active.is_(True)
+        )
+    )
+    devices = result.scalars().all()
+    
+    return [
+        {
+            "id": d.id,
+            "name": d.name,
+            "ip_address": d.ip_address,
+        }
+        for d in devices
+    ]
 
 
 @router.post("/scale/weight", response_model=WeighResponse)

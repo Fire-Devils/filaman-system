@@ -48,10 +48,21 @@
     "never": "Never",
     "empty": "Empty",
     "unknown": "Unknown",
+    "online": "Online",
+    "offline": "Offline",
     "confirmTitle": "Confirm",
     "errorTitle": "Error",
     "open": "Open",
     "customFields": "Custom Fields"
+  },
+  "rfid": {
+    "writeTag": "Write RFID Tag",
+    "selectDevice": "Select Device",
+    "confirmWrite": "Do you want to write the RFID tag using device \"{device}\"?",
+    "selectDeviceToWrite": "Select a device to write the RFID tag:",
+    "writing": "Writing RFID tag...",
+    "writeSuccess": "RFID tag written successfully!",
+    "writeError": "Error writing RFID tag. Is the device reachable?"
   },
   "login": {
     "title": "Login - FilaMan",
@@ -405,6 +416,7 @@
     "scopes": "Scopes",
     "scopesLabel": "Scopes (comma-separated)",
     "lastUsed": "Last Used",
+    "ipAddress": "IP Address",
     "noDevices": "No devices found",
     "rotateToken": "Rotate Token",
     "rotateConfirm": "Are you sure? The old token will stop working immediately.",

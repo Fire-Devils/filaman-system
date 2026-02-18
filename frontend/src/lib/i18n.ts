@@ -78,7 +78,37 @@ export async function initI18n(): Promise<void> {
   const stored = localStorage.getItem('lang')
   const lang = stored || FALLBACK
   setLang(lang)
+  translatePage()
   _ready = true
+}
+
+/**
+ * Scan the DOM for data-i18n attributes and update them.
+ */
+export function translatePage(): void {
+  // Translate text content
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n')
+    if (key) {
+      el.textContent = t(key)
+    }
+  })
+
+  // Translate placeholders
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-placeholder')
+    if (key && el instanceof HTMLInputElement) {
+      el.placeholder = t(key)
+    }
+  })
+  
+  // Translate titles (tooltips)
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-title')
+    if (key && el instanceof HTMLElement) {
+      el.title = t(key)
+    }
+  })
 }
 
 /**
