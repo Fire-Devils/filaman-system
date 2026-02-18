@@ -24,7 +24,6 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <th data-i18n="common.name">Name</th>
           <th data-i18n="common.status">Status</th>
-          <th data-i18n="admin.scopes">Scopes</th>
           <th data-i18n="admin.lastUsed">Last Used</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
@@ -44,10 +43,6 @@ import Layout from '../../layouts/Layout.astro'
         <div>
           <label for="device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
           <input type="text" id="device-name" required class="fm-input" />
-        </div>
-        <div>
-          <label for="device-scopes" class="fm-label" data-i18n="admin.scopesLabel">Scopes (comma-separated)</label>
-          <input type="text" id="device-scopes" placeholder="spool_events:create_measurement" class="fm-input" />
         </div>
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
@@ -97,62 +92,60 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = devices.map(d => `
+      tbody.innerHTML = devices.map(d => {
+        // Determine status
+        let statusLabel = t('common.active')
+        let statusColor = 'var(--accent-2)' // Green
+        
+        if (!d.is_active) {
+          if (d.token_hash === 'pending_registration') {
+            statusLabel = t('admin.pending')
+            statusColor = 'orange'
+          } else {
+            statusLabel = t('admin.inactive')
+            statusColor = 'var(--error-text)'
+          }
+        }
+        
+        return `
         <tr>
           <td>${d.name}</td>
           <td>
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${d.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
-              ${d.is_active ? t('common.active') : t('common.inactive')}
+            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${statusColor};">
+              ${statusLabel}
             </span>
           </td>
-          <td style="color: var(--text-muted); font-size: 0.85rem;">${d.scopes?.join(', ') || '-'}</td>
           <td style="color: var(--text-muted); font-size: 0.85rem;">${d.last_used_at ? new Date(d.last_used_at).toLocaleString() : t('common.never')}</td>
           <td style="text-align: right;">
-            <button data-id="${d.id}" class="btn-rotate" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.rotateToken')}</button>
             <button data-id="${d.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
           </td>
         </tr>
-      `).join('')
-      
-      document.querySelectorAll('.btn-rotate').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          if (!(await (window as any).__fmConfirm(t('admin.rotateConfirm')))) return
-          
-          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          
-          try {
-            const response = await fetch(`/api/v1/admin/devices/${id}/rotate`, {
-              method: 'POST',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-            })
-            
-            if (!response.ok) throw new Error('Failed to rotate token')
-            
-            const data = await response.json()
-            showToken(data.token)
-            loadDevices()
-          } catch {
-            await (window as any).__fmAlert(t('admin.failedRotate'))
-          }
-        })
-      })
+      `
+      }).join('')
       
       document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
+          const button = e.currentTarget as HTMLButtonElement
+          const id = parseInt(button.dataset.id!)
+          
           if (!(await (window as any).__fmConfirm(t('admin.confirmDeleteDevice')))) return
           
-          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          
           try {
-            await fetch(`/api/v1/admin/devices/${id}`, {
+            const response = await fetch(`/api/v1/admin/devices/${id}`, {
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
             })
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}))
+              throw new Error(errorData.message || 'Failed to delete device')
+            }
+            
             loadDevices()
-          } catch {
-            await (window as any).__fmAlert(t('admin.failedDeleteDevice'))
+          } catch (err: any) {
+            console.error('Delete device error:', err)
+            await (window as any).__fmAlert(err.message || t('admin.failedDeleteDevice'))
           }
         })
       })
@@ -178,7 +171,6 @@ import Layout from '../../layouts/Layout.astro'
     
     document.getElementById('btn-new')?.addEventListener('click', () => {
       ;(document.getElementById('device-name') as HTMLInputElement).value = ''
-      ;(document.getElementById('device-scopes') as HTMLInputElement).value = ''
       document.getElementById('modal-container')!.classList.add('open')
     })
     
@@ -190,8 +182,6 @@ import Layout from '../../layouts/Layout.astro'
       e.preventDefault()
       
       const name = (document.getElementById('device-name') as HTMLInputElement).value
-      const scopesInput = (document.getElementById('device-scopes') as HTMLInputElement).value
-      const scopes = scopesInput ? scopesInput.split(',').map(s => s.trim()).filter(Boolean) : null
       
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
@@ -205,7 +195,7 @@ import Layout from '../../layouts/Layout.astro'
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
-          body: JSON.stringify({ name, scopes }),
+          body: JSON.stringify({ name }),
         })
         
         if (!response.ok) {
@@ -215,7 +205,7 @@ import Layout from '../../layouts/Layout.astro'
         
         const data = await response.json()
         document.getElementById('modal-container')!.classList.remove('open')
-        showToken(data.token)
+        showToken(data.device_code)
         loadDevices()
       } catch (err: any) {
         error.textContent = err.message

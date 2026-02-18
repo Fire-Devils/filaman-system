@@ -13,6 +13,7 @@ class Device(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     device_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    device_code: Mapped[str | None] = mapped_column(String(6), unique=True, nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     token_hash: Mapped[str] = mapped_column(String(255), nullable=False)

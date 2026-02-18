@@ -416,6 +416,8 @@
     "copyToClipboard": "Copy to Clipboard",
     "copied": "Copied!",
     "failedCreateDevice": "Failed to create device",
+    "pending": "Pending",
+    "inactive": "Inactive",
     "rolesTitle": "Roles",
     "permissions": "Permissions",
     "createRole": "Create Role",

@@ -55,3 +55,9 @@ class Principal:
     user_email: str | None = None
     user_display_name: str | None = None
     user_language: str = "en"
+
+
+def generate_device_code() -> str:
+    """Generate a 6-character alphanumeric code for device registration."""
+    alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    return "".join(secrets.choice(alphabet) for _ in range(6))

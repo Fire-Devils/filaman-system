@@ -416,6 +416,8 @@
     "copyToClipboard": "In Zwischenablage kopieren",
     "copied": "Kopiert!",
     "failedCreateDevice": "Gerät konnte nicht erstellt werden",
+    "pending": "Ausstehend",
+    "inactive": "Inaktiv",
     "rolesTitle": "Rollen",
     "permissions": "Berechtigungen",
     "createRole": "Rolle erstellen",

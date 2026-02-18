@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.api.v1.schemas import PaginatedResponse
-from app.core.security import generate_token_secret, hash_password_async
+from app.core.security import generate_token_secret, hash_password_async, generate_device_code
 from app.models import Device, Permission, Role, User, UserRole, RolePermission
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -89,6 +89,7 @@ class DeviceResponse(BaseModel):
     scopes: list[str] | None
     last_used_at: datetime | None
     created_at: datetime | None
+    token_hash: str | None  # Needed for frontend status logic
 
     class Config:
         from_attributes = True
@@ -96,7 +97,7 @@ class DeviceResponse(BaseModel):
 
 class DeviceCreate(BaseModel):
     name: str
-    scopes: list[str] | None = None
+    device_type: str = "scale"
 
 
 @router.get("/users", response_model=PaginatedResponse[UserResponse])
@@ -440,18 +441,35 @@ async def create_device(
     db: DBSession,
     principal = RequirePermission("admin:devices_manage"),
 ):
-    secret = generate_token_secret()
+    print(f"Creating device with name: {data.name}, type: {data.device_type}")
+    
+    # Generate unique device_code
+    code = None
+    for _ in range(10):
+        code = generate_device_code()
+        result = await db.execute(select(Device).where(Device.device_code == code))
+        if not result.scalar_one_or_none():
+            break
+        code = None
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "server_error", "message": "Failed to generate unique device code"},
+        )
+
     device = Device(
         name=data.name,
-        token_hash=await hash_password_async(secret),
-        scopes=data.scopes,
+        device_type=data.device_type,
+        device_code=code,
+        token_hash="pending_registration",  # Placeholder until registered
+        is_active=False,  # Pending registration
     )
     db.add(device)
     await db.commit()
     await db.refresh(device)
 
-    token = f"dev.{device.id}.{secret}"
-    return {"id": device.id, "name": device.name, "token": token}
+    print(f"Device created: {device.id}, code: {device.device_code}")
+    return {"id": device.id, "name": device.name, "device_code": device.device_code}
 
 
 @router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
