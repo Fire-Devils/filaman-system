@@ -42,7 +42,7 @@ const { title } = Astro.props
         </div>
 
         <!-- Navigation -->
-        <nav style="display: grid; gap: 6px; flex: 1;">
+        <nav style="display: grid; gap: 6px;">
           <a href="/" class="fm-nav-item">
             <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-dashboard"></use></svg></span>
             <span data-i18n="nav.dashboard">Dashboard</span>
@@ -68,7 +68,7 @@ const { title } = Astro.props
             <span data-i18n="nav.printers">Printers</span>
           </a>
 
-          <div id="admin-nav" class="invisible" style="margin-top: 8px;">
+          <div id="admin-nav" class="invisible" style="margin-top: 4px;">
             <hr class="fm-divider" style="margin-bottom: 8px;" />
             <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
             <a href="/admin" class="fm-nav-item">
@@ -79,7 +79,7 @@ const { title } = Astro.props
         </nav>
 
         <!-- Sidebar Footer: User + Theme -->
-        <div style="margin-top: auto; display: grid; gap: 12px;">
+        <div style="margin-top: 8px; display: grid; gap: 12px;">
           <!-- User Profile Row -->
           <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-soft); border-radius: 12px; border: 1px solid var(--border);">
             <div style="overflow: hidden; padding-right: 8px;">
@@ -115,9 +115,10 @@ const { title } = Astro.props
           </div>
 
           <!-- Buy Me A Coffee -->
-          <div style="text-align: center;">
+          <div style="text-align: center; margin-top: 4px;">
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-bottom: 6px;" data-i18n="nav.supportProject">Unterstütze das Projekt</div>
             <a href="https://www.buymeacoffee.com/manuelw" target="_blank" style="display: inline-block; transition: transform var(--transition);" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'">
-              <img src="/img/buymeacoffy.png" alt="Buy Me A Coffee" style="height: 36px; width: auto; display: block;" >
+              <img src="/img/buymeacoffy.png" alt="Buy Me A Coffee" style="height: 44px; width: auto; display: block;" >
             </a>
           </div>
 

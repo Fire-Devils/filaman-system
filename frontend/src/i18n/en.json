@@ -14,7 +14,8 @@
     "admin": "Admin",
     "adminPanel": "Admin Panel",
     "settings": "Settings",
-    "logout": "Logout"
+    "logout": "Logout",
+    "supportProject": "Support the project"
   },
   "theme": {
     "default": "Default",
