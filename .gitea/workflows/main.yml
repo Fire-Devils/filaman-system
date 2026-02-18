@@ -14,12 +14,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from version.txt
+      - name: Calculate new version
         id: version
         shell: bash
         run: |
           set -eu
-          NEW_VERSION="$(cat version.txt | tr -d ' \n')"
+          VERSION="$(cat version.txt)"
+          MAJOR="$(echo "$VERSION" | cut -d. -f1)"
+          MINOR="$(echo "$VERSION" | cut -d. -f2)"
+          PATCH="$(echo "$VERSION" | cut -d. -f3)"
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
           echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Bump version, create tag, push to Gitea + GitHub
