@@ -24,9 +24,14 @@ import Layout from '../../layouts/Layout.astro'
   </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="filaments.title">Filaments</h1>
-    <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
-      Add Filament
-    </a>
+    <div style="display: flex; gap: 12px;">
+      <a href="/filaments/colors" class="fm-btn fm-btn-outline" data-i18n="filaments.manageColors">
+        Manage Colors
+      </a>
+      <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
+        Add Filament
+      </a>
+    </div>
   </div>
   
   <div class="filter-bar">

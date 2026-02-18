@@ -1,0 +1,299 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Manage Colors">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <a href="/filaments" class="fm-btn fm-btn-outline" style="padding: 8px;" data-i18n-title="common.back">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="colors.title">Manage Colors</h1>
+    </div>
+    <button
+      id="btn-new"
+      class="fm-btn fm-btn-primary"
+      data-i18n="colors.addColor"
+    >
+      Add Color
+    </button>
+  </div>
+  
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead>
+        <tr style="background: var(--bg-soft);">
+          <th data-i18n="colors.name">Name</th>
+          <th data-i18n="colors.hexCode">Hex Code</th>
+          <th data-i18n="colors.usage">Usage</th>
+          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="colors-table">
+        <tr>
+          <td colspan="4" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div id="modal-container" class="fm-modal-overlay">
+    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
+      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="colors.addColor">Add Color</h3>
+      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <input type="hidden" id="color-id" />
+        <div>
+          <label for="color-name" class="fm-label">
+            <span data-i18n="colors.name">Name</span> *
+          </label>
+          <input
+            type="text"
+            id="color-name"
+            required
+            class="fm-input"
+          />
+        </div>
+        <div>
+          <label for="color-hex" class="fm-label" data-i18n="colors.hexCode">
+            Hex Code
+          </label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input
+              type="color"
+              id="color-picker"
+              style="width: 42px; height: 42px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: none;"
+            />
+            <input
+              type="text"
+              id="color-hex"
+              required
+              pattern="^#[0-9a-fA-F]{6}$"
+              class="fm-input"
+              placeholder="#000000"
+              style="flex: 1;"
+            />
+          </div>
+        </div>
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
+            Save
+          </button>
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n, translatePage } from '../../lib/i18n'
+    await initI18n()
+
+    let colors: any[] = []
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadColors() {
+      try {
+        const res = await fetch('/api/v1/colors?page_size=200', { credentials: 'include' })
+        if (!res.ok) throw new Error('Failed to fetch colors')
+        
+        const data = await res.json()
+        colors = data.items
+        renderColors()
+      } catch (error) {
+        console.error('Failed to load colors:', error)
+        document.getElementById('colors-table')!.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--error-text);">${t('colors.failedLoad')}</td>
+          </tr>
+        `
+      }
+    }
+    
+    function renderColors() {
+      const tbody = document.getElementById('colors-table')!
+      
+      if (colors.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">
+              ${t('colors.noColors')}
+            </td>
+          </tr>
+        `
+        return
+      }
+      
+      tbody.innerHTML = colors.map(c => `
+        <tr>
+          <td style="padding: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${c.hex_code}; border: 1px solid var(--border);"></span>
+              <span style="font-weight: 500;">${c.name}</span>
+            </div>
+          </td>
+          <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${c.hex_code.toUpperCase()}</td>
+          <td style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">
+            ${t('colors.usedIn', { count: c.usage_count })}
+          </td>
+          <td style="padding: 12px; text-align: right;">
+            <button 
+              data-id="${c.id}" 
+              data-name="${c.name}" 
+              data-hex="${c.hex_code}" 
+              class="btn-edit" 
+              style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;"
+            >
+              ${t('common.edit')}
+            </button>
+            <button 
+              data-id="${c.id}" 
+              data-usage="${c.usage_count}"
+              class="btn-delete" 
+              style="color: ${c.usage_count > 0 ? 'var(--text-muted)' : 'var(--error-text)'}; background: none; border: none; cursor: ${c.usage_count > 0 ? 'not-allowed' : 'pointer'};"
+              ${c.usage_count > 0 ? `title="${t('colors.inUseWarning')}"` : ''}
+            >
+              ${t('common.delete')}
+            </button>
+          </td>
+        </tr>
+      `).join('')
+      
+      translatePage()
+
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const target = e.currentTarget as HTMLButtonElement
+          openModal(
+            parseInt(target.dataset.id!),
+            target.dataset.name!,
+            target.dataset.hex!
+          )
+        })
+      })
+      
+      document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const target = e.currentTarget as HTMLButtonElement
+          const id = parseInt(target.dataset.id!)
+          const usage = parseInt(target.dataset.usage!)
+          
+          if (usage > 0) return
+          
+          if (!(await (window as any).__fmConfirm(t('colors.confirmDelete')))) return
+          
+          try {
+            const response = await fetch(`/api/v1/colors/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) {
+              const data = await response.json()
+              await (window as any).__fmAlert(data.message || t('colors.failedDelete'))
+              return
+            }
+            
+            loadColors()
+          } catch {
+            await (window as any).__fmAlert(t('colors.failedDelete'))
+          }
+        })
+      })
+    }
+    
+    function openModal(id: number | null = null, name: string = '', hex: string = '#000000') {
+      const container = document.getElementById('modal-container')!
+      const title = document.getElementById('modal-title')!
+      const idInput = document.getElementById('color-id') as HTMLInputElement
+      const nameInput = document.getElementById('color-name') as HTMLInputElement
+      const hexInput = document.getElementById('color-hex') as HTMLInputElement
+      const picker = document.getElementById('color-picker') as HTMLInputElement
+      const error = document.getElementById('modal-error')!
+      
+      title.textContent = id ? t('colors.editColor') : t('colors.addColor')
+      idInput.value = id ? String(id) : ''
+      nameInput.value = name
+      hexInput.value = hex
+      picker.value = hex
+      error.classList.add('hidden')
+      
+      container.classList.add('open')
+      nameInput.focus()
+    }
+    
+    function closeModal() {
+      document.getElementById('modal-container')!.classList.remove('open')
+    }
+    
+    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
+    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    
+    // Sync picker and hex input
+    const hexInput = document.getElementById('color-hex') as HTMLInputElement
+    const picker = document.getElementById('color-picker') as HTMLInputElement
+    
+    hexInput.addEventListener('input', (e) => {
+      const val = (e.target as HTMLInputElement).value
+      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+        picker.value = val
+      }
+    })
+    
+    picker.addEventListener('input', (e) => {
+      hexInput.value = (e.target as HTMLInputElement).value
+    })
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const id = (document.getElementById('color-id') as HTMLInputElement).value
+      const name = (document.getElementById('color-name') as HTMLInputElement).value
+      const hex_code = (document.getElementById('color-hex') as HTMLInputElement).value
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+      
+      try {
+        const url = id ? `/api/v1/colors/${id}` : '/api/v1/colors'
+        const method = id ? 'PATCH' : 'POST'
+        
+        const response = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ name, hex_code }),
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.message || t('colors.failedSave'))
+        }
+        
+        closeModal()
+        loadColors()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+    
+    loadColors()
+  </script>
+</Layout>

@@ -44,9 +44,11 @@ class ColorResponse(BaseModel):
     id: int
     name: str
     hex_code: str
-    custom_fields: dict[str, Any] | None
+    custom_fields: dict[str, Any] | None = None
+    usage_count: int = 0
 
     class Config:
+
         from_attributes = True
 
 

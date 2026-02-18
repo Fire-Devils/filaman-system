@@ -198,6 +198,7 @@
     "editFilament": "Edit Filament",
     "saveFilament": "Save Filament",
     "failedUpdate": "Failed to update filament",
+    "manageColors": "Manage Colors",
     "searchPlaceholder": "Search designation, color, manufacturer...",
     "allManufacturers": "All Manufacturers",
     "allTypes": "All Types",
@@ -290,6 +291,21 @@
     "purchasePrice": "Purchase Price",
     "purchaseDate": "Purchase Date",
     "expirationDate": "Expiration Date"
+  },
+  "colors": {
+    "title": "Manage Colors",
+    "addColor": "Add Color",
+    "editColor": "Edit Color",
+    "name": "Name",
+    "hexCode": "Hex Code",
+    "usage": "Usage",
+    "usedIn": "Used in {count} filament(s)",
+    "noColors": "No colors found.",
+    "failedLoad": "Failed to load colors",
+    "failedSave": "Failed to save color",
+    "failedDelete": "Failed to delete color",
+    "confirmDelete": "Are you sure you want to delete this color?",
+    "inUseWarning": "This color is in use and cannot be deleted."
   },
   "printers": {
     "title": "Printers",

@@ -199,6 +199,7 @@
     "editFilament": "Filament bearbeiten",
     "saveFilament": "Filament speichern",
     "failedUpdate": "Filament konnte nicht aktualisiert werden",
+    "manageColors": "Farben verwalten",
     "searchPlaceholder": "Bezeichnung, Farbe, Hersteller suchen...",
     "allManufacturers": "Alle Hersteller",
     "allTypes": "Alle Typen",
@@ -291,6 +292,21 @@
     "purchasePrice": "Kaufpreis",
     "purchaseDate": "Kaufdatum",
     "expirationDate": "Ablaufdatum"
+  },
+  "colors": {
+    "title": "Farben verwalten",
+    "addColor": "Farbe hinzufügen",
+    "editColor": "Farbe bearbeiten",
+    "name": "Name",
+    "hexCode": "Hex-Code",
+    "usage": "Verwendung",
+    "usedIn": "In {count} Filament(en) verwendet",
+    "noColors": "Keine Farben gefunden.",
+    "failedLoad": "Farben konnten nicht geladen werden",
+    "failedSave": "Farbe konnte nicht gespeichert werden",
+    "failedDelete": "Farbe konnte nicht gelöscht werden",
+    "confirmDelete": "Möchten Sie diese Farbe wirklich löschen?",
+    "inUseWarning": "Diese Farbe wird verwendet und kann nicht gelöscht werden."
   },
   "printers": {
     "title": "Drucker",

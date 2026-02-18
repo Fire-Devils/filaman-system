@@ -194,13 +194,26 @@ async def list_colors(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    result = await db.execute(
-        select(Color)
+    # Select colors with usage count
+    # Note: FilamentColor links Color to Filament
+    query = (
+        select(Color, func.count(FilamentColor.id).label("usage_count"))
+        .outerjoin(FilamentColor, Color.id == FilamentColor.color_id)
+        .group_by(Color.id)
         .order_by(Color.name)
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = result.scalars().all()
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    items = []
+    for color, usage_count in rows:
+        # Convert to dict to include usage_count in the response model validation
+        color_dict = {**color.__dict__}
+        color_dict["usage_count"] = usage_count
+        items.append(ColorResponse.model_validate(color_dict))
 
     count_result = await db.execute(select(func.count()).select_from(Color))
     total = count_result.scalar() or 0
