@@ -30,12 +30,16 @@ const { title } = Astro.props
     </script>
   </head>
   <body>
-    <div class="fm-page" style="display: grid; grid-template-columns: 260px 1fr; min-height: 100vh;">
-      <aside class="fm-surface" style="border-right: 1px solid var(--border); padding: 24px 18px; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto;">
+    <div id="fm-page" class="fm-page">
+      <aside class="fm-sidebar fm-surface">
+        <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+
         <!-- Logo -->
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <img src="/logo.png" alt="FilaMan" style="width: 42px; height: 42px; border-radius: 14px;" />
-          <div>
+        <div class="fm-logo-container">
+          <img src="/logo.png" alt="FilaMan" style="width: 42px; height: 42px; border-radius: 14px; flex-shrink: 0;" />
+          <div class="fm-logo-text">
             <div style="font-weight: 700; letter-spacing: 0.6px;">FilaMan</div>
             <small style="color: var(--text-muted); font-size: 0.7rem;" data-i18n="app.subtitle">Filament Management</small>
           </div>
@@ -70,7 +74,7 @@ const { title } = Astro.props
 
           <div id="admin-nav" class="invisible" style="margin-top: 4px;">
             <hr class="fm-divider" style="margin-bottom: 8px;" />
-            <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
+            <div class="hide-collapsed" style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
             <a href="/admin" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-admin"></use></svg></span>
               <span data-i18n="nav.adminPanel">Admin Panel</span>
@@ -79,7 +83,7 @@ const { title } = Astro.props
         </nav>
 
         <!-- Sidebar Footer: User + Theme -->
-        <div style="margin-top: 8px; display: grid; gap: 12px;">
+        <div class="hide-collapsed" style="margin-top: auto; display: grid; gap: 12px;">
           <!-- User Profile Row -->
           <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-soft); border-radius: 12px; border: 1px solid var(--border);">
             <div style="overflow: hidden; padding-right: 8px;">
@@ -300,6 +304,32 @@ const { title } = Astro.props
         if (href === currentPath || (href !== '/' && currentPath.startsWith(href!))) {
           item.classList.add('active')
         }
+      })
+
+      /* ── Sidebar toggle ──────────────────────────────────────── */
+      const page = document.getElementById('fm-page')!
+      const sidebarToggle = document.getElementById('sidebar-toggle')!
+
+      function setSidebarCollapsed(collapsed: boolean) {
+        if (collapsed) {
+          page.classList.add('collapsed')
+        } else {
+          page.classList.remove('collapsed')
+        }
+        localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
+      }
+
+      // Initial state
+      const isMobile = window.innerWidth <= 768
+      const storedCollapsed = localStorage.getItem('sidebar-collapsed')
+      
+      if (storedCollapsed === 'true' || (storedCollapsed === null && isMobile)) {
+        setSidebarCollapsed(true)
+      }
+
+      sidebarToggle.addEventListener('click', () => {
+        const isCollapsed = page.classList.contains('collapsed')
+        setSidebarCollapsed(!isCollapsed)
       })
     </script>
   </body>

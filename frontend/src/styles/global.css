@@ -9,6 +9,8 @@
   --radius-lg: 20px;
   --radius-md: 14px;
   --radius-sm: 12px;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 82px;
   --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.18);
   --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.12);
   --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.08);
@@ -609,4 +611,134 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ── Sidebar Collapse Logic ───────────────────────────────────────── */
+
+.fm-page {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  transition: grid-template-columns var(--transition);
+}
+
+.fm-page.collapsed {
+  grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+}
+
+.fm-sidebar {
+  border-right: 1px solid var(--border);
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: width var(--transition), padding var(--transition);
+}
+
+.fm-page.collapsed .fm-sidebar {
+  padding: 24px 12px;
+}
+
+/* Hide elements when collapsed */
+.fm-page.collapsed .hide-collapsed {
+  display: none !important;
+}
+
+/* Adjust nav items when collapsed */
+.fm-page.collapsed .fm-nav-item {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.fm-page.collapsed .fm-nav-item span:not(.fm-nav-icon) {
+  display: none;
+}
+
+.fm-page.collapsed .fm-nav-icon {
+  margin: 0;
+}
+
+/* Sidebar toggle button */
+.fm-sidebar-toggle {
+  position: absolute;
+  right: -12px;
+  top: 32px;
+  width: 24px;
+  height: 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 100;
+  color: var(--text-muted);
+  transition: transform var(--transition), color var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+
+.fm-sidebar-toggle:hover {
+  color: var(--accent);
+  transform: scale(1.1);
+}
+
+.fm-page.collapsed .fm-sidebar-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* Logo adjustments */
+.fm-logo-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all var(--transition);
+}
+
+.fm-page.collapsed .fm-logo-container {
+  justify-content: center;
+}
+
+.fm-page.collapsed .fm-logo-text {
+  display: none;
+}
+
+/* Media query for mobile */
+@media (max-width: 768px) {
+  .fm-sidebar-toggle {
+    display: none !important;
+  }
+  
+  /* On small screens, we always want the collapsed look unless we implement a mobile drawer */
+  .fm-page {
+    grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+  }
+  
+  .fm-sidebar {
+    padding: 24px 12px;
+  }
+  
+  .fm-nav-item {
+    justify-content: center;
+    padding: 10px 0;
+  }
+  
+  .fm-nav-item span:not(.fm-nav-icon) {
+    display: none;
+  }
+  
+  .fm-logo-container {
+    justify-content: center;
+  }
+  
+  .fm-logo-text {
+    display: none;
+  }
+
+  .hide-collapsed {
+    display: none !important;
+  }
 }
