@@ -627,19 +627,29 @@ body {
 
 .fm-sidebar {
   border-right: 1px solid var(--border);
-  padding: 24px 18px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  transition: width var(--transition), padding var(--transition);
+  transition: width var(--transition);
+  z-index: 50;
+  /* overflow: visible to allow the toggle button to hang out */
+  overflow: visible;
 }
 
-.fm-page.collapsed .fm-sidebar {
+.fm-sidebar-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: padding var(--transition);
+}
+
+.fm-page.collapsed .fm-sidebar-content {
   padding: 24px 12px;
 }
 
