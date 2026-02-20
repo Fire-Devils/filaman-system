@@ -230,20 +230,18 @@ class SpoolmanImportService:
             except Exception as e:
                 raise SpoolmanImportError(f"Fehler beim Laden der Spulen (spool): {e}")
 
-            # 4. Locations
-            # Locations aus Spools extrahieren (Spoolman hat kein /location Endpoint in allen Versionen)
-            # Auch bei Fehlern im Location-Endpoint (z.B. 500 oder falsches Format) Fallback nutzen
+            # 4. Locations aus dem /locations Endpoint laden
+            # Die Spulen werden später den importierten Standorten zugeordnet
             locations = []
             try:
-                locations = await self._fetch_all(client, base_url, "location")
+                locations = await self._fetch_all(client, base_url, "locations")
             except Exception as e:
-                logger.warning(f"Could not fetch locations from endpoint: {e}. Using fallback.")
+                logger.warning(f"Could not fetch locations from endpoint: {e}. Using fallback from spools.")
             
-            # Fallback & Supplement: Locations aus Spools extrahieren
-            # Spoolman kann Locations als String oder Objekt speichern
-            seen_locations: set[str] = {
-                str(l.get("name")).strip() for l in locations 
-                if isinstance(l, dict) and l.get("name")
+            # Fallback: Locations aus Spools extrahieren (falls Endpoint fehlschlägt)
+            seen_names: set[str] = {
+                str(l.get("name")).strip().lower() 
+                for l in locations if isinstance(l, dict) and l.get("name")
             }
             
             for spool in spools:
@@ -253,15 +251,27 @@ class SpoolmanImportService:
 
                 if isinstance(loc, dict):
                     loc_name = loc.get("name", "").strip()
-                    if loc_name and loc_name not in seen_locations:
-                        seen_locations.add(loc_name)
-                        locations.append(loc)
                 elif isinstance(loc, str):
                     loc_name = loc.strip()
-                    if loc_name and loc_name not in seen_locations:
-                        seen_locations.add(loc_name)
-                        # Pseudo-Objekt erstellen für den Import
+                else:
+                    continue
+                    
+                if loc_name:
+                    name_lower = loc_name.lower()
+                    if name_lower not in seen_names:
+                        seen_names.add(name_lower)
                         locations.append({"name": loc_name})
+            
+            # Deduplizierung nach name (case-insensitive)
+            seen_names = set()
+            unique_locations: list[dict[str, Any]] = []
+            for loc in locations:
+                if isinstance(loc, dict) and loc.get("name"):
+                    name = str(loc.get("name")).strip().lower()
+                    if name and name not in seen_names:
+                        seen_names.add(name)
+                        unique_locations.append(loc)
+            locations = unique_locations
 
         # Farben aus Filamenten extrahieren
         try:
