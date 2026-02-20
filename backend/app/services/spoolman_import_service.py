@@ -230,47 +230,38 @@ class SpoolmanImportService:
             except Exception as e:
                 raise SpoolmanImportError(f"Fehler beim Laden der Spulen (spool): {e}")
 
-            # 4. Locations aus dem /locations Endpoint laden
+            # 4. Locations aus dem /location Endpoint laden
             # Die Spulen werden später den importierten Standorten zugeordnet
             locations = []
             try:
-                locations = await self._fetch_all(client, base_url, "locations")
+                locations = await self._fetch_all(client, base_url, "location")
             except Exception as e:
-                logger.warning(f"Could not fetch locations from endpoint: {e}. Using fallback from spools.")
-            
-            # Fallback: Locations aus Spools extrahieren (falls Endpoint fehlschlägt)
-            seen_names: set[str] = {
-                str(l.get("name")).strip().lower() 
-                for l in locations if isinstance(l, dict) and l.get("name")
-            }
-            
-            for spool in spools:
-                loc = spool.get("location")
-                if not loc:
-                    continue
-
-                if isinstance(loc, dict):
-                    loc_name = loc.get("name", "").strip()
-                elif isinstance(loc, str):
-                    loc_name = loc.strip()
-                else:
-                    continue
-                    
-                if loc_name:
-                    name_lower = loc_name.lower()
-                    if name_lower not in seen_names:
-                        seen_names.add(name_lower)
-                        locations.append({"name": loc_name})
+                logger.warning(f"Could not fetch locations from endpoint: {e}.")
             
             # Deduplizierung nach name (case-insensitive)
-            seen_names = set()
+            # Spoolman kann Locations als String-Array oder als Objekte zurückgeben
+            seen_names: set[str] = set()
             unique_locations: list[dict[str, Any]] = []
+            temp_id = 1  # Temporäre ID für Standorte ohne spoolman_id
             for loc in locations:
-                if isinstance(loc, dict) and loc.get("name"):
-                    name = str(loc.get("name")).strip().lower()
-                    if name and name not in seen_names:
-                        seen_names.add(name)
-                        unique_locations.append(loc)
+                if isinstance(loc, str):
+                    # String-Standort behandeln (z.B. ["Regal", "Neuer Ort"])
+                    name = loc.strip()
+                    if name:
+                        name_lower = name.lower()
+                        if name_lower not in seen_names:
+                            seen_names.add(name_lower)
+                            # Temporäre ID vergeben, da Spoolman keine ID liefert
+                            unique_locations.append({"id": f"temp_{temp_id}", "name": name})
+                            temp_id += 1
+                elif isinstance(loc, dict) and loc.get("name"):
+                    # Objekt-Standort behandeln (z.B. [{"id": 1, "name": "Regal"}])
+                    name = str(loc.get("name")).strip()
+                    if name:
+                        name_lower = name.lower()
+                        if name_lower not in seen_names:
+                            seen_names.add(name_lower)
+                            unique_locations.append(loc)
             locations = unique_locations
 
         # Farben aus Filamenten extrahieren
@@ -393,15 +384,26 @@ class SpoolmanImportService:
             if not name:
                 continue
 
-            # Pruefen ob Location mit gleichem Namen oder Spoolman-ID existiert
-            # Wir nutzen json_extract für maximale Kompatibilität (besonders SQLite)
-            existing = await self.db.execute(
-                select(Location).where(
-                    (Location.name == name) |
-                    (func.json_extract(Location.custom_fields, '$.spoolman_id') == spoolman_id) |
-                    (func.json_extract(Location.custom_fields, '$.spoolman_id') == str(spoolman_id))
+            # Pruefen ob Location mit gleichem Namen existiert
+            # Case-insensitive Vergleich fuer Namen
+            # Nur echte spoolman_ids verwenden (keine temporären IDs)
+            is_temp_id = spoolman_id and str(spoolman_id).startswith("temp_")
+            
+            name_lower = name.lower()
+            if is_temp_id:
+                # Temporaere ID - nur nach Namen suchen
+                existing = await self.db.execute(
+                    select(Location).where(func.lower(Location.name) == name_lower)
                 )
-            )
+            else:
+                # Echte spoolman_id - nach Namen oder ID suchen
+                existing = await self.db.execute(
+                    select(Location).where(
+                        (func.lower(Location.name) == name_lower) |
+                        (func.json_extract(Location.custom_fields, '$.spoolman_id') == spoolman_id) |
+                        (func.json_extract(Location.custom_fields, '$.spoolman_id') == str(spoolman_id))
+                    )
+                )
             existing_loc = existing.scalar_one_or_none()
 
             final_id: int
@@ -409,17 +411,19 @@ class SpoolmanImportService:
                 final_id = existing_loc.id
                 result.locations_skipped += 1
             else:
+                # Keine temporaere ID speichern
+                store_spoolman_id = spoolman_id if spoolman_id and not is_temp_id else None
                 new_loc = Location(
                     name=name,
-                    custom_fields={"spoolman_id": spoolman_id} if spoolman_id else None,
+                    custom_fields={"spoolman_id": store_spoolman_id} if store_spoolman_id else None,
                 )
                 self.db.add(new_loc)
                 await self.db.flush()  # ID erhalten
                 final_id = new_loc.id
                 result.locations_created += 1
 
-            # Mapping pflegen
-            if spoolman_id:
+            # Mapping pflegen (nur fuer echte spoolman_ids)
+            if spoolman_id and not is_temp_id:
                 # Store ID as is
                 loc_map[spoolman_id] = final_id
                 
