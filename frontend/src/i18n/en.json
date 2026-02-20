@@ -357,7 +357,7 @@
     "addLocation": "Add Location",
     "editLocation": "Edit Location",
     "name": "Name",
-    "identifier": "Identifier",
+    "identifier": "RFID UID",
     "spools": "Spools",
     "failedLoad": "Failed to load locations",
     "failedSave": "Failed to save location",

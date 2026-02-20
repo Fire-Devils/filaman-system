@@ -358,7 +358,7 @@
     "addLocation": "Standort hinzufügen",
     "editLocation": "Standort bearbeiten",
     "name": "Name",
-    "identifier": "Kennung",
+    "identifier": "RFID UID",
     "spools": "Spulen",
     "failedLoad": "Standorte konnten nicht geladen werden",
     "failedSave": "Standort konnte nicht gespeichert werden",
