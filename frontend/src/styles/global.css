@@ -46,6 +46,9 @@ html[data-theme="brand"] {
   --group-header-bg: rgba(78, 227, 162, 0.15);
   --group-header-bg-hover: rgba(78, 227, 162, 0.22);
   --group-header-border: #4ee3a2;
+  --info-bg: rgba(59, 130, 246, 0.15);
+  --info-border: rgba(59, 130, 246, 0.5);
+  --info-text: #93c5fd;
 }
 
 /* ── Light theme ───────────────────────────────────────────────────── */
@@ -76,6 +79,9 @@ html[data-theme="light"] {
   --group-header-bg: rgba(28, 155, 107, 0.12);
   --group-header-bg-hover: rgba(28, 155, 107, 0.20);
   --group-header-border: #1c9b6b;
+  --info-bg: #dbeafe;
+  --info-border: #3b82f6;
+  --info-text: #1e40af;
 }
 
 /* ── Dark theme ────────────────────────────────────────────────────── */
@@ -106,6 +112,9 @@ html[data-theme="dark"] {
   --group-header-bg: rgba(115, 209, 255, 0.15);
   --group-header-bg-hover: rgba(115, 209, 255, 0.22);
   --group-header-border: #73d1ff;
+  --info-bg: rgba(59, 130, 246, 0.15);
+  --info-border: rgba(59, 130, 246, 0.5);
+  --info-text: #93c5fd;
 }
 
 /* ── Base element styles ───────────────────────────────────────────── */
@@ -326,6 +335,51 @@ body {
   border-radius: var(--radius-sm);
   color: var(--success-text);
   font-size: 0.875rem;
+}
+
+.fm-alert-info {
+  padding: 16px;
+  background: var(--info-bg);
+  border: 2px solid var(--info-border);
+  border-radius: var(--radius-sm);
+  color: var(--info-text);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.rfid-write-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rfid-write-progress .message-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.countdown-bar {
+  height: 8px;
+  background: var(--bg-soft);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.countdown-fill {
+  height: 100%;
+  transition: width 1s linear, background-color 0.3s ease;
+  border-radius: 4px;
+}
+
+.countdown-fill.green { background: #22c55e; }
+.countdown-fill.yellow { background: #eab308; }
+.countdown-fill.orange { background: #f97316; }
+
+.countdown-text {
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 /* Tables */

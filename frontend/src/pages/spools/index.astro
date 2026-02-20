@@ -684,9 +684,19 @@ import Layout from '../../layouts/Layout.astro'
       confirmBtn.disabled = true
       cancelBtn.disabled = false // Keep cancel active
       
-      status.className = 'fm-alert fm-alert-info'
+      const maxWaitSeconds = 120
+      status.className = 'fm-alert fm-alert-info rfid-write-progress'
       status.classList.remove('hidden')
-      status.innerHTML = `<span class="spinner"></span> ${t('rfid.writeStarted')}`
+      status.innerHTML = `
+        <div class="message-row">
+          <span class="spinner"></span>
+          <span>${t('rfid.writeStarted')}</span>
+        </div>
+        <div class="countdown-bar">
+          <div class="countdown-fill green" id="countdown-fill" style="width: 100%"></div>
+        </div>
+        <span class="countdown-text" id="countdown-text">${maxWaitSeconds}s</span>
+      `
       
       // Handle Cancel while waiting
       let isPolling = true
@@ -719,6 +729,27 @@ import Layout from '../../layouts/Layout.astro'
             if (!isPolling) return
             
             attempts++
+            
+            const elapsedSeconds = attempts * 2
+            const remainingSeconds = 120 - elapsedSeconds
+            const percentage = Math.max(0, (remainingSeconds / 120) * 100)
+            
+            const fill = document.getElementById('countdown-fill')
+            const text = document.getElementById('countdown-text')
+            
+            if (fill && text) {
+              fill.style.width = percentage + '%'
+              text.textContent = Math.max(0, remainingSeconds) + 's'
+              
+              fill.className = 'countdown-fill'
+              if (percentage > 66) {
+                fill.classList.add('green')
+              } else if (percentage > 33) {
+                fill.classList.add('yellow')
+              } else {
+                fill.classList.add('orange')
+              }
+            }
             
             try {
               const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include' })
