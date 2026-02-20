@@ -64,10 +64,14 @@
     "selectDeviceToWrite": "Select a device to write the RFID tag:",
     "waitingWithCountdown": "Waiting for device... ({seconds}s)",
     "writing": "Writing RFID tag...",
+    "writeStarted": "Write process started. Please hold the tag ready...",
     "writeSuccess": "RFID tag written successfully!",
+    "writeSuccessWithCleanup": "RFID tag written successfully! It was removed from {source}.",
     "writeError": "Error writing RFID tag.",
+    "tagAlreadyExistsWarning": "Note: This object already has an RFID tag assigned. A new write operation will overwrite it.",
     "deviceTimeout": "Timeout: The device did not respond within 180 seconds.",
-    "deviceUnreachable": "Device unreachable. Please check the network."
+    "deviceUnreachable": "Device unreachable. Please check the network.",
+    "noDeviceOnlineTooltip": "No RFID device online"
   },
   "login": {
     "title": "Login - FilaMan",

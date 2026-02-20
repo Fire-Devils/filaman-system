@@ -242,7 +242,7 @@ class SpoolmanImportService:
             # Fallback & Supplement: Locations aus Spools extrahieren
             # Spoolman kann Locations als String oder Objekt speichern
             seen_locations: set[str] = {
-                str(l.get("name")) for l in locations 
+                str(l.get("name")).strip() for l in locations 
                 if isinstance(l, dict) and l.get("name")
             }
             
@@ -252,7 +252,7 @@ class SpoolmanImportService:
                     continue
 
                 if isinstance(loc, dict):
-                    loc_name = loc.get("name", "")
+                    loc_name = loc.get("name", "").strip()
                     if loc_name and loc_name not in seen_locations:
                         seen_locations.add(loc_name)
                         locations.append(loc)

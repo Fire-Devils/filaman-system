@@ -64,10 +64,14 @@
     "selectDeviceToWrite": "Wählen Sie ein Gerät zum Schreiben des RFID-Tags:",
     "waitingWithCountdown": "Warte auf Gerät... ({seconds}s)",
     "writing": "RFID-Tag wird geschrieben...",
+    "writeStarted": "Schreibvorgang wurde gestartet. Bitte Tag bereit halten...",
     "writeSuccess": "RFID-Tag erfolgreich geschrieben!",
+    "writeSuccessWithCleanup": "RFID-Tag erfolgreich geschrieben! Er wurde von {source} entfernt.",
     "writeError": "Fehler beim Schreiben des RFID-Tags.",
+    "tagAlreadyExistsWarning": "Hinweis: Dieses Objekt hat bereits einen RFID-Tag hinterlegt. Ein neuer Schreibvorgang wird diesen überschreiben.",
     "deviceTimeout": "Zeitüberschreitung: Das Gerät hat nicht innerhalb von 180 Sekunden geantwortet.",
-    "deviceUnreachable": "Gerät nicht erreichbar. Bitte Netzwerk prüfen."
+    "deviceUnreachable": "Gerät nicht erreichbar. Bitte Netzwerk prüfen.",
+    "noDeviceOnlineTooltip": "Kein RFID-Schreibgerät online"
   },
 
   "login": {

@@ -40,3 +40,24 @@ class WriteTagResponse(BaseModel):
     success: bool
     message: str
     tag_uuid: str | None = None
+
+
+class RfidResultRequest(BaseModel):
+    success: bool
+    tag_uuid: str | None = None
+    error_message: str | None = None
+    spool_id: int | None = None
+    location_id: int | None = None
+
+
+class RfidResultResponse(BaseModel):
+    status: str
+    message: str
+
+
+class WriteStatusResponse(BaseModel):
+    status: str  # "pending", "success", "error"
+    tag_uuid: str | None = None
+    removed_from: str | None = None
+    error_message: str | None = None
+    timestamp: str | None = None
