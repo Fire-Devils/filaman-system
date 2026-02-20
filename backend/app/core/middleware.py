@@ -26,6 +26,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         request.state.principal = None
 
+        # Optimization: Skip auth for static files and health checks
+        path = request.url.path
+        is_api = path.startswith("/api/") or path.startswith("/auth/")
+        if not is_api and (
+            path.startswith("/_astro/") or
+            path.startswith("/img/") or
+            path.startswith("/health") or
+            path in ("/favicon.png", "/logo.png", "/icons.svg") or
+            path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))
+        ):
+            return await call_next(request)
+
         session_token = request.cookies.get("session_id")
         if session_token:
             principal = await self._authenticate_session(session_token)

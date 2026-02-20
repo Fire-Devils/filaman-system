@@ -3,6 +3,7 @@ import os  # Added import
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 
@@ -90,6 +91,24 @@ if cors_origins:
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(CsrfMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# Cache-Control Middleware for static files
+@app.middleware("http")
+async def add_cache_control_header(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    is_api = path.startswith("/api/") or path.startswith("/auth/")
+    if not is_api and (
+        path.startswith("/_astro/") or
+        path.startswith("/img/") or
+        path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))
+    ):
+        # Cache static assets for 1 year
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
+
 
 app.include_router(auth_router)
 app.include_router(api_router)
