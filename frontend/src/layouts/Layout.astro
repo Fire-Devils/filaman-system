@@ -31,6 +31,15 @@ const { title } = Astro.props
   </head>
   <body>
     <div id="fm-page" class="fm-page">
+      <script is:inline>
+        (function() {
+          const stored = localStorage.getItem('sidebar-collapsed');
+          const isMobile = window.innerWidth <= 768;
+          if (stored === 'true' || (stored === null && isMobile)) {
+            document.getElementById('fm-page').classList.add('collapsed');
+          }
+        })();
+      </script>
       <aside class="fm-sidebar fm-surface">
         <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -321,14 +330,7 @@ const { title } = Astro.props
         localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
       }
 
-      // Initial state
-      const isMobile = window.innerWidth <= 768
-      const storedCollapsed = localStorage.getItem('sidebar-collapsed')
-      
-      if (storedCollapsed === 'true' || (storedCollapsed === null && isMobile)) {
-        setSidebarCollapsed(true)
-      }
-
+      // Update sidebar state
       sidebarToggle.addEventListener('click', () => {
         const isCollapsed = page.classList.contains('collapsed')
         setSidebarCollapsed(!isCollapsed)
