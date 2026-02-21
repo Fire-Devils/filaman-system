@@ -268,11 +268,14 @@ async def device_rfid_result(
         await db.commit()
         return RfidResultResponse(status="error", message="No tag_uuid provided")
 
-    # Duplicate check and cleanup
+    # Duplicate check and cleanup (only for active spools, not archived/deleted)
     removed_info = []
     
-    # Check spools
-    spool_query = select(Spool).where(Spool.rfid_uid == data.tag_uuid)
+    # Check spools - only active spools (not deleted/archived)
+    spool_query = select(Spool).where(
+        Spool.rfid_uid == data.tag_uuid,
+        Spool.deleted_at.is_(None)  # Ignore archived/deleted spools
+    )
     if data.spool_id:
         spool_query = spool_query.where(Spool.id != data.spool_id)
     
