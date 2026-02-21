@@ -13,7 +13,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
 <Layout title="FilaMan - Edit Spool">
   <div style="margin-bottom: 24px;">
-    <a href={backHref} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spool</span></a>
+    <a id="back-link" href={backHref} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spool</span></a>
   </div>
   
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.editSpool">Edit Spool</h1>
@@ -233,6 +233,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
             Save Spool
           </button>
           <a
+            id="cancel-btn"
             href={backHref}
             class="fm-btn fm-btn-outline"
             data-i18n="common.cancel"
@@ -250,6 +251,22 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
     const pathParts = window.location.pathname.split('/').filter(Boolean)
     const spoolId = pathParts[pathParts.length - 2]
+
+    // Set correct back links dynamically
+    if (spoolId !== 'detail') {
+      const backLink = document.getElementById('back-link') as HTMLAnchorElement
+      const cancelBtn = document.getElementById('cancel-btn') as HTMLAnchorElement
+      if (backLink) backLink.href = `/spools/${spoolId}`
+      if (cancelBtn) {
+        cancelBtn.href = `/spools/${spoolId}`
+        cancelBtn.addEventListener('click', (e) => {
+          if (window.history.length > 1) {
+            e.preventDefault()
+            window.history.back()
+          }
+        })
+      }
+    }
 
     let allFilaments = []
     let allStatuses = []
