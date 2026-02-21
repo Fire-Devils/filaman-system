@@ -8,11 +8,12 @@ export function getStaticPaths() {
 }
 
 const { id } = Astro.params
+const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 ---
 
 <Layout title="FilaMan - Edit Filament">
   <div style="margin-bottom: 24px;">
-    <a href={`/filaments/${id}`} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filament</span></a>
+    <a href={backHref} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filament</span></a>
   </div>
   
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="filaments.editFilament">Edit Filament</h1>
@@ -294,7 +295,7 @@ const { id } = Astro.params
             Save Filament
           </button>
           <a
-            href={`/filaments/${id}`}
+            href={backHref}
             class="fm-btn fm-btn-outline"
             data-i18n="common.cancel"
           >
@@ -866,6 +867,10 @@ const { id } = Astro.params
 
     // ── Init: load reference data, then load filament ──
     async function init() {
+      if (filamentId === 'detail') {
+        window.location.href = '/filaments'
+        return
+      }
       try {
         // Load reference data in parallel
         await Promise.all([loadManufacturers(), loadTypes(), loadColors()])

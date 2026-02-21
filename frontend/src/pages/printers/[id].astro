@@ -95,6 +95,9 @@ const { id } = Astro.params
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
+    if (id === 'detail') {
+      window.location.href = '/printers'
+    }
 
     let printer: any = null
     

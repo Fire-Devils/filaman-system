@@ -8,11 +8,12 @@ export function getStaticPaths() {
 }
 
 const { id } = Astro.params
+const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 ---
 
 <Layout title="FilaMan - Edit Spool">
   <div style="margin-bottom: 24px;">
-    <a href={`/spools/${id}`} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spool</span></a>
+    <a href={backHref} style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spool</span></a>
   </div>
   
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.editSpool">Edit Spool</h1>
@@ -232,7 +233,7 @@ const { id } = Astro.params
             Save Spool
           </button>
           <a
-            href={`/spools/${id}`}
+            href={backHref}
             class="fm-btn fm-btn-outline"
             data-i18n="common.cancel"
           >
@@ -535,6 +536,10 @@ const { id } = Astro.params
     })
 
     async function init() {
+      if (spoolId === 'detail') {
+        window.location.href = '/spools'
+        return
+      }
       try {
         await Promise.all([loadFilaments(), loadStatuses(), loadLocations()])
 
