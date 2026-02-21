@@ -1,6 +1,6 @@
 # FilaMan - Filament Management System
 
-<a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 20px !important;" ></a>
+<a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 10px !important;" ></a>
 
 ### ♻️ Unterstütze die Recycling Fabrik
 Leere Spulen gehören nicht in den Müll! Wir unterstützen die [Recycling Fabrik](https://recyclingfabrik.com/). Sende deine leeren Filamentspulen und 3D-Druck-Reste dorthin, damit daraus wieder neues Filament gewonnen werden kann.
