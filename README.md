@@ -1,9 +1,11 @@
 # FilaMan - Filament Management System
 
-<a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+<a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 40px !important;width: 145px !important;" ></a>
 
 ### ♻️ Support Recycling Fabrik
 Empty spools don't belong in the trash! We support the [Recycling Fabrik](https://recyclingfabrik.com/). Send your empty filament spools and 3D printing waste there to have it recycled into new filament.
+
+**Exciting News:** Recycling Fabrik is the first manufacturer that will soon start shipping their filament spools with pre-programmed, FilaMan-compatible RFID tags!
 
 *Looking for the German version? Read the [README.de.md](README.de.md).*
 
