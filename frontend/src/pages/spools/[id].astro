@@ -231,8 +231,8 @@ const { id } = Astro.params
             <p style="color: var(--text-muted); margin: 4px 0 0;">${t('spools.filament')}: <a href="/filaments/${spool.filament_id}" style="color: var(--accent); text-decoration: none;">${t('spools.filament')} #${spool.filament_id}</a></p>
           </div>
           <div style="display: flex; gap: 8px;">
-            <button id="btn-rfid" class="fm-btn fm-btn-outline" style="${spool.rfid_uid ? 'color: #10b981;' : ''}" title="${t('rfid.writeTag')}">
-              <img src="/rfid.svg" alt="RFID" style="width: 16px; height: 16px; vertical-align: middle;">
+            <button id="btn-rfid" class="fm-btn" style="border: none !important; background: transparent; padding: 4px; ${spool.rfid_uid ? 'color: #10b981;' : 'color: var(--text-muted);'}" title="${t('rfid.writeTag')}">
+              <img src="/rfid.svg" alt="RFID" style="width: 18px; height: 18px; vertical-align: middle; filter: brightness(0) saturate(100%);">
             </button>
             <a href="/spools/${id}/edit" class="fm-btn fm-btn-outline">${t('common.edit')}</a>
             <button id="btn-delete" class="fm-btn fm-btn-danger">${t('common.delete')}</button>

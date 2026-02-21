@@ -169,11 +169,11 @@ import Layout from '../../layouts/Layout.astro'
         
         const rfidIcon = `
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation(); ${isOnline ? `window.openRfidModal(${loc.id})` : ''}">
-            <button class="fm-btn fm-btn-outline" 
-                    style="padding: 4px; line-height: 0; ${iconColor} ${!isOnline ? 'cursor: not-allowed; opacity: 0.6;' : ''}" 
+            <button class="fm-btn" 
+                    style="border: none !important; background: transparent; padding: 4px; line-height: 0; ${iconColor} ${!isOnline ? 'cursor: not-allowed; opacity: 0.6;' : ''}" 
                     title="${tooltip}"
                     ${!isOnline ? 'disabled' : ''}>
-              <img src="/rfid.svg" alt="RFID" style="width: 16px; height: 16px; vertical-align: middle;">
+              <img src="/rfid.svg" alt="RFID" style="width: 18px; height: 18px; vertical-align: middle; filter: brightness(0) saturate(100%);">
             </button>
           </td>
         `;
