@@ -1,175 +1,40 @@
 # FilaMan - Filament Management System
 
-A filament management system for 3D printing with spool tracking, AMS integration, and multi-user support.
+<a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
----
+*Looking for the German version? Read the [README.de.md](README.de.md).*
 
-## Deutsch
+## About the Project
+FilaMan is a comprehensive filament management system for 3D printing. It helps you keep track of your filament spools, manufacturers, colors, and current stock levels. It also features integrations with printers and AMS (Automatic Material System) units.
 
-### Schnellstart (Docker)
+### 💡 Hardware Extension: FilaMan ESP32 Scale
+To unlock the full potential of this system, we highly recommend our companion hardware project:
+**[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
+With this ESP32-based smart scale and RFID integration, you can simply place your spools on the scale, automatically measure the remaining weight, and sync the data seamlessly with this software via RFID tags!
 
-Der einfachste Weg, FilaMan zu starten:
+### 🏠 Home Assistant Integration
+If you are using Home Assistant, there is a very convenient Add-on available:
+**[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
+This allows you to install and run the FilaMan System directly within your Home Assistant environment with just a few clicks.
 
-```bash
-docker run -d \
-  --name filaman-system-app \
-  --restart unless-stopped \
-  --pull always \
-  -p 8083:8000 \
-  -v filaman_data:/app/data \
-  ghcr.io/fire-devils/filaman-system:latest
-```
+## Features
+- **Spool Management:** Track remaining weight, location, and status.
+- **Multi-User:** Role-based access control and tenant support.
+- **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
+- **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
+- **Responsive UI:** Modern design with light, dark, and brand themes.
 
-Die Anwendung ist dann unter http://localhost:8083 erreichbar.
+## 🗺️ Roadmap
+We have exciting plans for the future of FilaMan:
+- **Printer Plugins:** Develop plugins to connect with various 3D printers (community contributions are highly welcome!).
+- **Mobile Apps:** Dedicated apps for iOS and Android.
+- **Printable Labels:** Generate and print custom labels for your spools.
+- **OIDC (OAuth2) Login:** Support for Single Sign-On (SSO) via OpenID Connect.
 
-Default EMail: admin@example.com
-Default Passwort: admin123
-
-### Docker Container selber bauen
-
-#### Voraussetzungen
-
-- Docker
-- Docker Buildx mit Multi-Architektur-Unterstützung (für ARM/AMD)
-
-#### Build
-
-```bash
-# Clone repo
-git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
-
-# Image bauen
-docker build -t filaman-system:latest .
-
-# Oder mit docker-compose
-docker-compose up --build
-```
-
-#### Ausführen
-
-```bash
-# Container starten
-docker run -d \
-  --name filaman-system-app \
-  --restart unless-stopped \
-  -p 8083:8000 \
-  -v filaman_data:/app/data \
-  -e DEBUG=false \
-  -e SECRET_KEY=your-secret-key \
-  -e CSRF_SECRET_KEY=your-csrf-secret \
-  -e ADMIN_EMAIL=admin@example.com \
-  -e ADMIN_PASSWORD=your-admin-password \
-  filaman-system:latest
-```
-
-### Lokale Entwicklung
-
-#### Voraussetzungen
-
-- Python 3.11+
-- Node.js 18+
-- uv (Python Package Manager)
-
-#### Backend starten
-
-```bash
-cd backend
-uv sync
-uv run uvicorn app.main:app --reload
-```
-
-Das Backend ist unter http://localhost:8000 verfügbar.
-
-#### Frontend starten
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Das Frontend ist unter http://localhost:4321 verfügbar.
-
-#### Frontend für Produktion bauen
-
-```bash
-cd frontend
-npm run build
-```
-
-Die statischen Dateien liegen in `frontend/dist/`.
-
-### Umgebungsvariablen
-
-Erstelle eine `.env` Datei im Projektverzeichnis. Verwende `.env.example` als Vorlage:
-
-```bash
-# Datenbank-Konfiguration
-# SQLite (Standard):
-DATABASE_URL=sqlite+aiosqlite:///./filaman.db
-
-# MySQL:
-# DATABASE_URL=aiomysql://username:password@hostname:3306/database
-
-# PostgreSQL:
-# DATABASE_URL=asyncpg://username:password@hostname:5432/database
-```
-
-#### Secrets generieren
-
-```bash
-# Einzelne Secrets generieren
-openssl rand -hex 32
-
-# Alle Secrets auf einmal generieren
-echo "SECRET_KEY=$(openssl rand -hex 32)"
-echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
-```
-
-**Hinweis:** Bei Verwendung von MySQL oder PostgreSQL muss das Backup vom Administrator extern verwaltet werden. Das automatische SQLite-Backup ist in diesem Fall deaktiviert.
-
-### Projektstruktur
-
-```
-/
-├── backend/
-│   ├── app/
-│   │   ├── core/          # Konfiguration, Datenbank, Sicherheit
-│   │   ├── modules/       # Domain-Module
-│   │   └── plugins/       # Drucker-Plugins
-│   ├── alembic/           # Datenbank-Migrationen
-│   └── tests/             # Backend-Tests
-├── frontend/
-│   ├── src/
-│   │   ├── pages/         # Astro-Seiten
-│   │   ├── layouts/       # Seiten-Layouts
-│   │   └── components/    # UI-Komponenten
-│   └── dist/              # Produktions-Build
-└── spec/                  # Projektspezifikationen
-```
-
-### Technologie
-
-**Backend:**
-- FastAPI
-- SQLAlchemy 2.0 + Alembic
-- Python 3.11+
-
-**Frontend:**
-- Astro + Tailwind CSS
-- Statischer Build
-
-### Lizenz
-
-MIT
-
----
-
-## English
+## Installation
 
 ### Quick Start (Docker)
-
-The easiest way to start FilaMan:
+The easiest way to start FilaMan is using Docker:
 
 ```bash
 docker run -d \
@@ -181,22 +46,18 @@ docker run -d \
   ghcr.io/fire-devils/filaman-system:latest
 ```
 
-The application will be available at http://localhost:8083.
+The application will be available at `http://localhost:8083`.
+- **Default Email:** `admin@example.com`
+- **Default Password:** `admin123`
 
 ### Build Docker Container Yourself
 
 #### Prerequisites
-
 - Docker
 - Docker Buildx with multi-architecture support (for ARM/AMD)
 
-#### Get repo
-git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
-
-#### Build
-
+#### Build and Run
 ```bash
-# Clone repo
 git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 
 # Build image
@@ -204,11 +65,7 @@ docker build -t filaman-system:latest .
 
 # Or with docker-compose
 docker-compose up --build
-```
 
-#### Run
-
-```bash
 # Start container
 docker run -d \
   --name filaman-system-app \
@@ -223,48 +80,37 @@ docker run -d \
   filaman-system:latest
 ```
 
-### Local Development
+## Local Development
 
 #### Prerequisites
-
 - Python 3.11+
 - Node.js 18+
-- uv (Python package manager)
+- uv (Python Package Manager)
 
 #### Start Backend
-
 ```bash
 cd backend
 uv sync
 uv run uvicorn app.main:app --reload
 ```
-
-The API will be available at http://localhost:8000.
+The API will be available at `http://localhost:8000`.
 
 #### Start Frontend
-
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-
-The frontend will be available at http://localhost:4321.
-
-Default EMail: admin@example.com
-Default Password: admin123
+The frontend will be available at `http://localhost:4321`.
 
 #### Build Frontend for Production
-
 ```bash
 cd frontend
 npm run build
 ```
-
 The static files will be in `frontend/dist/`.
 
-### Environment Variables
-
+## Configuration (Environment Variables)
 Create a `.env` file in the project root directory. Use `.env.example` as a template:
 
 ```bash
@@ -280,7 +126,6 @@ DATABASE_URL=sqlite+aiosqlite:///./filaman.db
 ```
 
 #### Generate Secrets
-
 ```bash
 # Generate single secret
 openssl rand -hex 32
@@ -292,9 +137,9 @@ echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
 
 **Note:** When using MySQL or PostgreSQL, backups must be managed externally by the administrator. The automatic SQLite backup is disabled in this case.
 
-### Project Structure
+## Project Structure
 
-```
+```text
 /
 ├── backend/
 │   ├── app/
@@ -312,7 +157,7 @@ echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
 └── spec/                  # Project specifications
 ```
 
-### Technology
+## Technology
 
 **Backend:**
 - FastAPI
@@ -323,6 +168,5 @@ echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
 - Astro + Tailwind CSS
 - Static Build
 
-### License
-
+## License
 MIT
