@@ -71,7 +71,10 @@
     "tagAlreadyExistsWarning": "Hinweis: Dieses Objekt hat bereits einen RFID-Tag hinterlegt. Ein neuer Schreibvorgang wird diesen überschreiben.",
     "deviceTimeout": "Zeitüberschreitung: Das Gerät hat nicht innerhalb von 180 Sekunden geantwortet.",
     "deviceUnreachable": "Gerät nicht erreichbar. Bitte Netzwerk prüfen.",
-    "noDeviceOnlineTooltip": "Kein RFID-Schreibgerät online"
+    "noDeviceOnlineTooltip": "Kein RFID-Schreibgerät online",
+    "noDeviceOnline": "Kein RFID-Gerät online",
+    "removedFrom": "Er wurde von {item} entfernt",
+    "writeTimeout": "Zeitüberschreitung beim Schreibvorgang"
   },
 
   "login": {

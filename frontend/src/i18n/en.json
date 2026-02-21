@@ -71,7 +71,10 @@
     "tagAlreadyExistsWarning": "Note: This object already has an RFID tag assigned. A new write operation will overwrite it.",
     "deviceTimeout": "Timeout: The device did not respond within 180 seconds.",
     "deviceUnreachable": "Device unreachable. Please check the network.",
-    "noDeviceOnlineTooltip": "No RFID device online"
+    "noDeviceOnlineTooltip": "No RFID device online",
+    "noDeviceOnline": "No RFID device online",
+    "removedFrom": "It was removed from {item}",
+    "writeTimeout": "Write operation timed out"
   },
   "login": {
     "title": "Login - FilaMan",
