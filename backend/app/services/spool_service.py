@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,7 +28,7 @@ class SpoolService:
         if rfid_uid:
             result = await self.db.execute(
                 select(Spool)
-                .where(Spool.rfid_uid == rfid_uid, Spool.deleted_at.is_(None))
+                .where(func.lower(Spool.rfid_uid) == rfid_uid.lower(), Spool.deleted_at.is_(None))
                 .options(
                     selectinload(Spool.filament).selectinload(Filament.manufacturer),
                     selectinload(Spool.status),

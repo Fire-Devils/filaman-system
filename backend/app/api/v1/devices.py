@@ -379,7 +379,11 @@ async def weigh_spool(
     spool = None
     
     if data.tag_uuid:
-        spool = await service.get_spool_by_identifier(rfid_uid=data.tag_uuid, external_id=None)
+        # Normalize UUID to lowercase for case-insensitive comparison
+        normalized_uuid = data.tag_uuid.lower()
+        logger.info(f"Searching for spool with tag_uuid: '{data.tag_uuid}' (normalized: '{normalized_uuid}')")
+        spool = await service.get_spool_by_identifier(rfid_uid=normalized_uuid, external_id=None)
+        logger.info(f"Found spool: {spool.id if spool else 'NONE'}")
     
     if not spool and data.spool_id:
         spool = await service.get_spool(data.spool_id)
