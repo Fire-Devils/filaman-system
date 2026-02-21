@@ -244,15 +244,43 @@ const filamentId = Astro.url.searchParams.get('filament_id')
           const data = await filamentsRes.json()
           filaments = data.items
           const select = document.getElementById('filament_id')
+          
+          // Group filaments by manufacturer
+          const grouped = {}
           data.items.forEach((f) => {
-            const option = document.createElement('option')
-            option.value = f.id
-            option.textContent = `${f.designation} (${f.type}) - ${f.manufacturer?.name || t('common.unknown')}`
-            if (filamentId && f.id === parseInt(filamentId)) {
-              option.selected = true
+            const manufacturerName = f.manufacturer?.name || t('common.unknown')
+            if (!grouped[manufacturerName]) {
+              grouped[manufacturerName] = []
             }
-            select.appendChild(option)
+            grouped[manufacturerName].push(f)
           })
+
+          // Sort manufacturers alphabetically
+          const sortedManufacturers = Object.keys(grouped).sort()
+
+          // Create optgroups for each manufacturer
+          sortedManufacturers.forEach((manufacturerName) => {
+            const optgroup = document.createElement('optgroup')
+            optgroup.label = manufacturerName
+            
+            // Sort filaments within manufacturer by name
+            const sortedFilaments = grouped[manufacturerName].sort((a, b) => 
+              a.designation.localeCompare(b.designation)
+            )
+            
+            sortedFilaments.forEach((f) => {
+              const option = document.createElement('option')
+              option.value = f.id
+              option.textContent = `${f.designation} (${f.type})`
+              if (filamentId && f.id === parseInt(filamentId)) {
+                option.selected = true
+              }
+              optgroup.appendChild(option)
+            })
+            
+            select.appendChild(optgroup)
+          })
+          
           // Apply defaults if filament is pre-selected via URL param
           if (filamentId) {
             applyFilamentDefaults(parseInt(filamentId))
