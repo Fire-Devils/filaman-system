@@ -593,6 +593,9 @@ class SpoolmanImportService:
             # Vendor empty_spool_weight -> filament default_spool_weight_g
             if not spool_weight and vendor and isinstance(vendor, dict):
                 spool_weight = vendor.get("empty_spool_weight")
+            # Default to 250g if not provided
+            if not spool_weight:
+                spool_weight = 250
 
             # Farb-Modus erkennen
             multi_hexes = fil_data.get("multi_color_hexes")

@@ -234,6 +234,11 @@ async def create_spool(
         )
 
     spool_data = data.model_dump()
+    
+    # Set default empty_spool_weight_g to 250g if not provided
+    if "empty_spool_weight_g" not in spool_data or spool_data["empty_spool_weight_g"] is None:
+        spool_data["empty_spool_weight_g"] = 250
+    
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id
 
