@@ -121,6 +121,29 @@ Das System sendet eine Anfrage an die IP des Geräts.
   }
   ```
 
+### RFID Ergebnis zurückmelden
+Das Device meldet das Ergebnis des Schreibvorgangs an das System zurück.
+
+- **Endpunkt:** `POST /api/v1/devices/rfid-result`
+- **Request Body:**
+  ```json
+  {
+    "success": true,
+    "tag_uuid": "sf:25:s5:a1:00",
+    "spool_id": 123,
+    "remaining_weight_g": 850.5
+  }
+  ```
+  *Hinweis: `remaining_weight_g` ist optional und wird beim erstmaligen Beschreiben einer neuen Spule benötigt.*
+
+- **Felder:**
+  - `success` (boolean): War der Schreibvorgang erfolgreich?
+  - `tag_uuid` (string): Die UID des geschriebenen Tags
+  - `spool_id` (int, optional): DB-ID der Spule falls vorhanden
+  - `remaining_weight_g` (float, optional): Aktuelles Gewicht der Spule beim Schreibvorgang
+
+- **Response:** `{"status": "ok", "message": "Processed successfully"}`
+
 ---
 
 ## 6. Fehlercodes

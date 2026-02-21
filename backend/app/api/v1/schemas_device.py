@@ -48,6 +48,7 @@ class RfidResultRequest(BaseModel):
     error_message: str | None = None
     spool_id: int | None = None
     location_id: int | None = None
+    remaining_weight_g: float | None = None
 
 
 class RfidResultResponse(BaseModel):

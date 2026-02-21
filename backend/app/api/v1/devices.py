@@ -317,6 +317,25 @@ async def device_rfid_result(
             write_result["status"] = "error"
             write_result["error_message"] = "Target location not found"
 
+    # Update spool weight if provided (e.g., when writing tag to new spool)
+    if data.remaining_weight_g is not None:
+        spool = None
+        if data.tag_uuid:
+            spool_res = await db.execute(
+                select(Spool).where(Spool.rfid_uid == data.tag_uuid)
+            )
+            spool = spool_res.scalar_one_or_none()
+        
+        if not spool and data.spool_id:
+            spool_res = await db.execute(
+                select(Spool).where(Spool.id == data.spool_id)
+            )
+            spool = spool_res.scalar_one_or_none()
+        
+        if spool:
+            spool.remaining_weight_g = data.remaining_weight_g
+            logger.info(f"Updated spool {spool.id} remaining weight to {data.remaining_weight_g}g")
+
     # Save result to device status
     if device.custom_fields is None: device.custom_fields = {}
     new_cf = dict(device.custom_fields)
