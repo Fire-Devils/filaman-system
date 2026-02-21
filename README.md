@@ -2,6 +2,9 @@
 
 <a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
+### ♻️ Support Recycling Fabrik
+Empty spools don't belong in the trash! We support the [Recycling Fabrik](https://recyclingfabrik.com/). Send your empty filament spools and 3D printing waste there to have it recycled into new filament.
+
 *Looking for the German version? Read the [README.de.md](README.de.md).*
 
 ## About the Project
