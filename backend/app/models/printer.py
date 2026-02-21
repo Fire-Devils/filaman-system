@@ -53,10 +53,10 @@ class PrinterSlot(Base, TimestampMixin):
     __tablename__ = "printer_slots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    printer_id: Mapped[int] = mapped_column(Integer, ForeignKey("printers.id", ondelete="CASCADE"), nullable=False)
+    printer_id: Mapped[int] = mapped_column(Integer, ForeignKey("printers.id", ondelete="CASCADE"), nullable=False, index=True)
 
     is_ams_slot: Mapped[bool] = mapped_column(nullable=False)
-    ams_unit_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("printer_ams_units.id", ondelete="SET NULL"), nullable=True)
+    ams_unit_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("printer_ams_units.id", ondelete="SET NULL"), nullable=True, index=True)
     slot_no: Mapped[int] = mapped_column(Integer, nullable=False)
 
     name: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -77,7 +77,7 @@ class PrinterSlotAssignment(Base):
 
     slot_id: Mapped[int] = mapped_column(Integer, ForeignKey("printer_slots.id", ondelete="CASCADE"), primary_key=True)
 
-    spool_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("spools.id", ondelete="SET NULL"), nullable=True)
+    spool_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("spools.id", ondelete="SET NULL"), nullable=True, index=True)
 
     present: Mapped[bool] = mapped_column(nullable=False, default=False)
 

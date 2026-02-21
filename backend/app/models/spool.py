@@ -11,7 +11,7 @@ class SpoolStatus(Base, TimestampMixin):
     __tablename__ = "spool_statuses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    key: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    key: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
@@ -26,15 +26,15 @@ class Spool(Base, TimestampMixin):
     __tablename__ = "spools"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    filament_id: Mapped[int] = mapped_column(Integer, ForeignKey("filaments.id"), nullable=False)
-    status_id: Mapped[int] = mapped_column(Integer, ForeignKey("spool_statuses.id"), nullable=False)
+    filament_id: Mapped[int] = mapped_column(Integer, ForeignKey("filaments.id"), nullable=False, index=True)
+    status_id: Mapped[int] = mapped_column(Integer, ForeignKey("spool_statuses.id"), nullable=False, index=True)
 
-    lot_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lot_number: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
-    rfid_uid: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
-    external_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    rfid_uid: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True, index=True)
+    external_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True, index=True)
 
-    location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("locations.id"), nullable=True)
+    location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("locations.id"), nullable=True, index=True)
 
     purchase_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     expiration_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -45,14 +45,14 @@ class Spool(Base, TimestampMixin):
 
     initial_total_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
-    remaining_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    remaining_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
 
     spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     spool_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     low_weight_threshold_g: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
 
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 

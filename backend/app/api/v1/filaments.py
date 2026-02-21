@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,12 +34,11 @@ async def list_manufacturers(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    result = await db.execute(
-        select(Manufacturer)
-        .order_by(Manufacturer.name)
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
+    # Base query for manufacturers
+    query = select(Manufacturer).order_by(Manufacturer.name)
+    
+    # Executing the pagination slice
+    result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
     items = list(result.scalars().all())
 
     mfr_ids = [m.id for m in items]
@@ -48,30 +47,26 @@ async def list_manufacturers(
     materials_map: dict[int, list[str]] = {m.id: [] for m in items}
 
     if mfr_ids:
-        fc_result = await db.execute(
-            select(Filament.manufacturer_id, func.count(Filament.id))
-            .where(Filament.manufacturer_id.in_(mfr_ids))
-            .group_by(Filament.manufacturer_id)
-        )
-        fil_counts = {row[0]: row[1] for row in fc_result.all()}
+        # Run the count queries concurrently for better performance
+        import asyncio
+        
+        fc_stmt = select(Filament.manufacturer_id, func.count(Filament.id)).where(Filament.manufacturer_id.in_(mfr_ids)).group_by(Filament.manufacturer_id)
+        types_stmt = select(Filament.manufacturer_id, Filament.type).where(Filament.manufacturer_id.in_(mfr_ids)).distinct()
+        spool_stmt = select(Filament.manufacturer_id, func.count(Spool.id)).join(Filament, Spool.filament_id == Filament.id).where(Filament.manufacturer_id.in_(mfr_ids)).where(Spool.deleted_at.is_(None)).group_by(Filament.manufacturer_id)
 
-        types_result = await db.execute(
-            select(Filament.manufacturer_id, Filament.type)
-            .where(Filament.manufacturer_id.in_(mfr_ids))
-            .distinct()
+        fc_result, types_result, spool_result = await asyncio.gather(
+            db.execute(fc_stmt),
+            db.execute(types_stmt),
+            db.execute(spool_stmt)
         )
+
+        fil_counts = {row[0]: row[1] for row in fc_result.all()}
+        
         for row in types_result.all():
             mfr_id, mat_type = row[0], row[1]
             if mfr_id in materials_map and mat_type:
                 materials_map[mfr_id].append(mat_type)
-
-        spool_result = await db.execute(
-            select(Filament.manufacturer_id, func.count(Spool.id))
-            .join(Filament, Spool.filament_id == Filament.id)
-            .where(Filament.manufacturer_id.in_(mfr_ids))
-            .where(Spool.deleted_at.is_(None))
-            .group_by(Filament.manufacturer_id)
-        )
+                
         spool_counts = {row[0]: row[1] for row in spool_result.all()}
 
     items_out = [
@@ -340,15 +335,25 @@ async def list_filaments(
         selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
     )
 
+    count_query = select(func.count()).select_from(Filament)
+
     if type:
         query = query.where(Filament.type == type)
+        count_query = count_query.where(Filament.type == type)
     if manufacturer_id:
         query = query.where(Filament.manufacturer_id == manufacturer_id)
+        count_query = count_query.where(Filament.manufacturer_id == manufacturer_id)
 
     query = query.order_by(Filament.designation).offset((page - 1) * page_size).limit(page_size)
 
-    result = await db.execute(query)
+    import asyncio
+    result, count_result = await asyncio.gather(
+        db.execute(query),
+        db.execute(count_query)
+    )
+    
     items = result.scalars().unique().all()
+    total = count_result.scalar() or 0
 
     # Compute spool counts for the fetched filaments (excluding soft-deleted spools)
     filament_ids = [f.id for f in items]
@@ -374,15 +379,6 @@ async def list_filaments(
         )
         for f in items
     ]
-
-    count_query = select(func.count()).select_from(Filament)
-    if type:
-        count_query = count_query.where(Filament.type == type)
-    if manufacturer_id:
-        count_query = count_query.where(Filament.manufacturer_id == manufacturer_id)
-
-    count_result = await db.execute(count_query)
-    total = count_result.scalar() or 0
 
     return PaginatedResponse(items=items_with_count, page=page, page_size=page_size, total=total)
 

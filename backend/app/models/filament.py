@@ -11,7 +11,7 @@ class Manufacturer(Base, TimestampMixin):
     __tablename__ = "manufacturers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
@@ -35,11 +35,11 @@ class Filament(Base, TimestampMixin):
     __tablename__ = "filaments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    manufacturer_id: Mapped[int] = mapped_column(Integer, ForeignKey("manufacturers.id"), nullable=False)
+    manufacturer_id: Mapped[int] = mapped_column(Integer, ForeignKey("manufacturers.id"), nullable=False, index=True)
 
-    designation: Mapped[str] = mapped_column(String(255), nullable=False)
-    type: Mapped[str] = mapped_column(String(50), nullable=False)
-    material_subgroup: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    designation: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    material_subgroup: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     diameter_mm: Mapped[float] = mapped_column(Float, nullable=False)
 
     manufacturer_color_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -67,8 +67,8 @@ class FilamentColor(Base):
     __tablename__ = "filament_colors"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    filament_id: Mapped[int] = mapped_column(Integer, ForeignKey("filaments.id", ondelete="CASCADE"), nullable=False)
-    color_id: Mapped[int] = mapped_column(Integer, ForeignKey("colors.id"), nullable=False)
+    filament_id: Mapped[int] = mapped_column(Integer, ForeignKey("filaments.id", ondelete="CASCADE"), nullable=False, index=True)
+    color_id: Mapped[int] = mapped_column(Integer, ForeignKey("colors.id"), nullable=False, index=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     display_name_override: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)

@@ -123,7 +123,7 @@ import Layout from '../../layouts/Layout.astro'
             </span>
           </td>
           <td style="font-family: monospace; font-size: 0.85rem;">
-            ${d.ip_address ? \`<a href="http://\${d.ip_address}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">\${d.ip_address}</a>\` : '-'}
+            ${d.ip_address ? `<a href="http://${d.ip_address}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${d.ip_address}</a>` : '-'}
           </td>
           <td style="color: var(--text-muted); font-size: 0.85rem;">${d.last_used_at ? new Date(d.last_used_at).toLocaleString() : t('common.never')}</td>
           <td style="text-align: right;">
