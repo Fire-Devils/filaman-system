@@ -17,7 +17,7 @@ To unlock the full potential of this system, we highly recommend our companion h
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
 With this ESP32-based smart scale and RFID integration, you can simply place your spools on the scale, automatically measure the remaining weight, and sync the data seamlessly with this software via RFID tags!
 
-### 🏠 Home Assistant Integration
+### 🏠 Home Assistant Add-On
 If you are using Home Assistant, there is a very convenient Add-on available:
 **[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
 This allows you to install and run the FilaMan System directly within your Home Assistant environment with just a few clicks.
