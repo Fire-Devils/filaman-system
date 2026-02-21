@@ -57,12 +57,12 @@ Geräte sollten regelmäßig einen Heartbeat senden, um ihren Status auf "Online
 - **Request Body:**
   ```json
   {
-    "spool_id": 123,           // Optional: Interne ID der Spule
-    "tag_uuid": "E280...",     // Optional: RFID Tag UID
+    "tag_uuid": "sf:25:s5:...", // Optional: RFID Tag UID (bevorzugt)
+    "spool_id": 123,           // Optional: Interne ID der Spule (Fallback)
     "measured_weight_g": 850.5 // Aktuelles Gesamtgewicht in Gramm
   }
   ```
-  *Hinweis: Mindestens `spool_id` oder `tag_uuid` muss angegeben werden.*
+  *Hinweis: Mindestens `tag_uuid` oder `spool_id` muss angegeben werden. `tag_uuid` hat Vorrang vor `spool_id`.*
 
 - **Response:**
   ```json
@@ -80,12 +80,14 @@ Verknüpft eine Spule mit einem Lagerort.
 - **Request Body:**
   ```json
   {
-    "spool_id": 123,             // Optional: ID der Spule
-    "spool_tag_uuid": "E280...", // Optional: RFID UID der Spule
-    "location_id": 1,            // Optional: ID des Ortes
-    "location_tag_uuid": "LOC-1" // Optional: RFID UID des Ortes
+    "spool_tag_uuid": "sf:25:s5:...", // Optional: RFID UID der Spule (bevorzugt)
+    "spool_id": 123,             // Optional: ID der Spule (Fallback)
+    "location_tag_uuid": "LOC-1" // Optional: RFID UID des Ortes (bevorzugt)
+    "location_id": 1             // Optional: ID des Ortes (Fallback)
   }
   ```
+  *Hinweis: RFID UUIDs haben Vorrang vor IDs. Mindestens Spule und Standort müssen durch UUID oder ID identifiziert werden.*
+
 - **Response:**
   ```json
   {
@@ -115,7 +117,7 @@ Das System sendet eine Anfrage an die IP des Geräts.
 - **Erwartete Response vom Gerät:**
   ```json
   {
-    "tag_uuid": "E2801234..." // Die UID des beschriebenen Tags
+    "tag_uuid": "sf:25:s5:..." // Die UID des beschriebenen Tags
   }
   ```
 

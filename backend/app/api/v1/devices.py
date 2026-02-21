@@ -335,8 +335,12 @@ async def weigh_spool(
 ):
     service = SpoolService(db)
     
-    # Find Spool
-    spool = await service.get_spool_by_identifier(rfid_uid=data.tag_uuid, external_id=None)
+    # Find Spool: UUID has priority over ID (backward compatible)
+    spool = None
+    
+    if data.tag_uuid:
+        spool = await service.get_spool_by_identifier(rfid_uid=data.tag_uuid, external_id=None)
+    
     if not spool and data.spool_id:
         spool = await service.get_spool(data.spool_id)
         
@@ -373,7 +377,7 @@ async def locate_spool(
 ):
     service = SpoolService(db)
     
-    # Find Spool
+    # Find Spool: UUID has priority over ID (backward compatible)
     spool = None
     if data.spool_tag_uuid:
         spool = await service.get_spool_by_identifier(rfid_uid=data.spool_tag_uuid, external_id=None)
@@ -386,7 +390,7 @@ async def locate_spool(
             detail={"code": "not_found", "message": "Spool not found"},
         )
 
-    # Find Location
+    # Find Location: UUID has priority over ID (backward compatible)
     location = None
     if data.location_tag_uuid:
         result = await db.execute(select(Location).where(Location.identifier == data.location_tag_uuid))
