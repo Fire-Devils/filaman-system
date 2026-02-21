@@ -232,7 +232,7 @@ const { id } = Astro.params
           </div>
           <div style="display: flex; gap: 8px;">
             <button id="btn-rfid" class="fm-btn" style="border: none !important; background: transparent; padding: 4px; ${spool.rfid_uid ? 'color: #10b981;' : 'color: var(--text-muted);'}" title="${t('rfid.writeTag')}">
-              <img src="/rfid.svg" alt="RFID" style="width: 18px; height: 18px; vertical-align: middle; filter: brightness(0) saturate(100%);">
+              <img src="/rfid.svg" alt="RFID" style="width: 22px; height: 22px; vertical-align: middle;">
             </button>
             <a href="/spools/${id}/edit" class="fm-btn fm-btn-outline">${t('common.edit')}</a>
             <button id="btn-delete" class="fm-btn fm-btn-danger">${t('common.delete')}</button>
