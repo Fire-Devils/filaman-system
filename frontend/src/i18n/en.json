@@ -215,7 +215,10 @@
     "allManufacturers": "All Manufacturers",
     "allTypes": "All Types",
     "allColors": "All Colors",
-    "noResults": "No filaments match the current filters."
+    "noResults": "No filaments match the current filters.",
+    "confirmDelete": "Are you sure you want to delete this filament?",
+    "confirmCascadeDelete": "This filament still has associated spools. Are you sure you want to delete this filament along with all its spools? This action cannot be undone!",
+    "failedDelete": "Failed to delete filament"
   },
   "spools": {
     "title": "Spools",
@@ -381,6 +384,8 @@
     "failedDelete": "Failed to delete manufacturer",
     "noManufacturers": "No manufacturers found. Click \"Add Manufacturer\" to create one.",
     "confirmDelete": "Are you sure you want to delete this manufacturer?",
+    "confirmCascadeDelete": "This manufacturer still has filaments and/or spools. Are you sure you want to delete this manufacturer along with all associated filaments and spools? This action cannot be undone!",
+    "forceDelete": "Delete Anyway",
     "searchPlaceholder": "Search manufacturers...",
     "allMaterials": "All Materials",
     "noResults": "No manufacturers match the current filters."

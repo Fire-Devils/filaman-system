@@ -164,6 +164,7 @@ async def delete_manufacturer(
     manufacturer_id: int,
     db: DBSession,
     principal = RequirePermission("manufacturers:delete"),
+    force: bool = False,
 ):
     result = await db.execute(select(Manufacturer).where(Manufacturer.id == manufacturer_id))
     manufacturer = result.scalar_one_or_none()
@@ -175,10 +176,25 @@ async def delete_manufacturer(
 
     result = await db.execute(select(Filament).where(Filament.manufacturer_id == manufacturer_id).limit(1))
     if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "conflict", "message": "Manufacturer has filaments, cannot delete"},
-        )
+        if not force:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "conflict", "message": "Manufacturer has filaments, cannot delete without force flag"},
+            )
+        else:
+            # If force is true, we delete the spools first
+            # The filament deletion is handled by cascade delete in the DB if configured,
+            # or we do it explicitly. SQLAlchemy often handles relationships, but let's be safe:
+            filaments_result = await db.execute(select(Filament).where(Filament.manufacturer_id == manufacturer_id))
+            filaments_to_delete = filaments_result.scalars().all()
+            for f in filaments_to_delete:
+                # Delete associated spools first
+                from app.models import Spool
+                spools_result = await db.execute(select(Spool).where(Spool.filament_id == f.id))
+                spools_to_delete = spools_result.scalars().all()
+                for s in spools_to_delete:
+                    await db.delete(s)
+                await db.delete(f)
 
     await db.delete(manufacturer)
     await db.commit()
@@ -540,6 +556,7 @@ async def delete_filament(
     filament_id: int,
     db: DBSession,
     principal = RequirePermission("filaments:delete"),
+    force: bool = False,
 ):
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
     filament = result.scalar_one_or_none()
@@ -553,10 +570,16 @@ async def delete_filament(
 
     result = await db.execute(select(Spool).where(Spool.filament_id == filament_id).limit(1))
     if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "conflict", "message": "Filament has spools, cannot delete"},
-        )
+        if not force:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "conflict", "message": "Filament has spools, cannot delete without force flag"},
+            )
+        else:
+            # Force delete all spools associated with this filament
+            spools_result = await db.execute(select(Spool).where(Spool.filament_id == filament_id))
+            for s in spools_result.scalars().all():
+                await db.delete(s)
 
     await db.delete(filament)
     await db.commit()

@@ -216,7 +216,10 @@
     "allManufacturers": "Alle Hersteller",
     "allTypes": "Alle Typen",
     "allColors": "Alle Farben",
-    "noResults": "Keine Filamente entsprechen den aktuellen Filtern."
+    "noResults": "Keine Filamente entsprechen den aktuellen Filtern.",
+    "confirmDelete": "Möchten Sie dieses Filament wirklich löschen?",
+    "confirmCascadeDelete": "Dieses Filament hat noch zugehörige Spulen. Möchten Sie das Filament und alle zugehörigen Spulen wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden!",
+    "failedDelete": "Filament konnte nicht gelöscht werden"
   },
   "spools": {
     "title": "Spulen",
@@ -382,6 +385,8 @@
     "failedDelete": "Hersteller konnte nicht gelöscht werden",
     "noManufacturers": "Keine Hersteller gefunden. Klicken Sie auf \"Hersteller hinzufügen\".",
     "confirmDelete": "Möchten Sie diesen Hersteller wirklich löschen?",
+    "confirmCascadeDelete": "Dieser Hersteller hat noch Filamente und/oder Spulen. Möchten Sie diesen Hersteller zusammen mit allen zugehörigen Filamenten und Spulen wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden!",
+    "forceDelete": "Trotzdem löschen",
     "searchPlaceholder": "Hersteller suchen...",
     "allMaterials": "Alle Materialien",
     "noResults": "Keine Hersteller entsprechen den aktuellen Filtern."

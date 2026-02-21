@@ -263,6 +263,9 @@ const { title } = Astro.props
           })
 
           if (!response.ok) {
+            // Delete cookies manually on client side to ensure clean slate
+            document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
+            document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
             window.location.href = '/login'
             return
           }
@@ -281,6 +284,9 @@ const { title } = Astro.props
             adminNav.classList.remove('invisible')
           }
         } catch {
+          // Clean cookies on network error (like disconnected Docker container)
+          document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
+          document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
           window.location.href = '/login'
         }
       }

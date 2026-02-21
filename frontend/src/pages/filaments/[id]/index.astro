@@ -218,9 +218,14 @@ const { id } = Astro.params
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
             <p style="color: var(--text-muted); margin: 4px 0 0;">${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
           </div>
-          <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
-            ${t('common.edit')}
-          </a>
+          <div style="display: flex; gap: 8px;">
+            <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
+              ${t('common.edit')}
+            </a>
+            <button id="btn-delete-filament" class="fm-btn fm-btn-danger">
+              ${t('common.delete')}
+            </button>
+          </div>
         </div>
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
@@ -232,6 +237,55 @@ const { id } = Astro.params
         ${shopHtml}
         ${customFieldsHtml}
       `
+
+      document.getElementById('btn-delete-filament')?.addEventListener('click', async () => {
+        if (!(await (window as any).__fmConfirm(t('filaments.confirmDelete')))) return
+
+        function getCsrfToken(): string {
+          const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+          return match ? decodeURIComponent(match[1]) : ''
+        }
+
+        try {
+          // First attempt to delete normally
+          let response = await fetch(`/api/v1/filaments/${f.id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+          })
+
+          // If conflict (409), prompt for cascade delete
+          if (response.status === 409) {
+            const confirmCascade = await (window as any).__fmConfirm(
+              t('filaments.confirmCascadeDelete'),
+              { 
+                title: t('common.confirmTitle'), 
+                okLabel: t('common.delete'), 
+                isDanger: true 
+              }
+            )
+
+            if (!confirmCascade) return
+
+            // Attempt to delete with force flag
+            response = await fetch(`/api/v1/filaments/${f.id}?force=true`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+          }
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}))
+            await (window as any).__fmAlert(data.detail?.message || data.message || t('filaments.failedDelete'))
+            return
+          }
+
+          window.location.href = '/filaments'
+        } catch {
+          await (window as any).__fmAlert(t('filaments.failedDelete'))
+        }
+      })
     }
     
     async function loadSpools(filamentId: number) {

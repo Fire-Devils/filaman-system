@@ -55,6 +55,7 @@ class Principal:
     user_email: str | None = None
     user_display_name: str | None = None
     user_language: str = "en"
+    needs_cookie_extension: bool = False
 
 
 def generate_device_code() -> str:

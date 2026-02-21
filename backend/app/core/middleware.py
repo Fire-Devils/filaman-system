@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 import uuid
 
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_maker
 from app.core.security import parse_token, pwd_context, Principal, verify_password_async
 from app.core.logging_config import set_request_id
+from app.core.config import settings
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -43,7 +44,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
             principal = await self._authenticate_session(session_token)
             if principal:
                 request.state.principal = principal
-                return await call_next(request)
+                response = await call_next(request)
+                
+                # Check if session needs extension and update the cookie
+                if getattr(principal, "needs_cookie_extension", False):
+                    secure_cookie = not settings.debug
+                    if secure_cookie:
+                        is_ssl = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+                        if not is_ssl:
+                            secure_cookie = False
+                            
+                    response.set_cookie(
+                        key="session_id",
+                        value=session_token,
+                        path="/",
+                        httponly=True,
+                        secure=secure_cookie,
+                        samesite="lax",
+                        max_age=60 * 60 * 24 * 30, # Extend by 30 days
+                    )
+                return response
 
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("ApiKey "):
@@ -92,14 +112,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if user is None or not user.is_active or user.deleted_at is not None:
                 return None
 
+            now = datetime.utcnow()
+            update_values = {"last_used_at": now}
+            
+            # Rolling session: If session expires in less than 15 days, extend it by another 30 days
+            needs_extension = False
+            if session.expires_at and (session.expires_at - now).days < 15:
+                update_values["expires_at"] = now + timedelta(days=30)
+                needs_extension = True
+
             await db.execute(
                 update(UserSession)
                 .where(UserSession.id == session_id)
-                .values(last_used_at=datetime.utcnow())
+                .values(**update_values)
             )
             await db.commit()
 
-            return Principal(
+            principal = Principal(
                 auth_type="session",
                 user_id=user.id,
                 session_id=session_id,
@@ -108,6 +137,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_display_name=user.display_name,
                 user_language=user.language,
             )
+            
+            # Attach a flag so we can update the cookie in the response
+            if needs_extension:
+                principal.needs_cookie_extension = True
+                
+            return principal
 
     async def _authenticate_api_key(self, token: str) -> Principal | None:
         parsed = parse_token(token)
