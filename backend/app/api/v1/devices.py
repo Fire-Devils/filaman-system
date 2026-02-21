@@ -296,22 +296,36 @@ async def device_rfid_result(
     if removed_info:
         write_result["removed_from"] = ", ".join(removed_info)
     
-    # Update target spool or location
+    # Determine target: spool_id OR tag_uuid (find spool by tag_uuid if no spool_id provided)
+    target_spool = None
+    target_location = None
+    
+    # Try to find spool by spool_id first, then by tag_uuid
     if data.spool_id:
-        target_res = await db.execute(select(Spool).where(Spool.id == data.spool_id))
-        target = target_res.scalar_one_or_none()
-        if target:
-            target.rfid_uid = data.tag_uuid
+        spool_res = await db.execute(select(Spool).where(Spool.id == data.spool_id))
+        target_spool = spool_res.scalar_one_or_none()
+        if target_spool:
+            target_spool.rfid_uid = data.tag_uuid
             logger.info(f"Updated spool {data.spool_id} with RFID UID {data.tag_uuid}")
         else:
             write_result["status"] = "error"
             write_result["error_message"] = "Target spool not found"
-            
-    elif data.location_id:
-        target_res = await db.execute(select(Location).where(Location.id == data.location_id))
-        target = target_res.scalar_one_or_none()
-        if target:
-            target.identifier = data.tag_uuid
+    elif data.tag_uuid:
+        # No spool_id provided, try to find spool by tag_uuid
+        spool_res = await db.execute(select(Spool).where(Spool.rfid_uid == data.tag_uuid))
+        target_spool = spool_res.scalar_one_or_none()
+        if target_spool:
+            logger.info(f"Found spool {target_spool.id} by tag_uuid {data.tag_uuid}")
+        else:
+            # Spool not found by tag_uuid - this is expected for new spools without tags
+            logger.info(f"No spool found with tag_uuid {data.tag_uuid}")
+    
+    # Handle location
+    if data.location_id:
+        loc_res = await db.execute(select(Location).where(Location.id == data.location_id))
+        target_location = loc_res.scalar_one_or_none()
+        if target_location:
+            target_location.identifier = data.tag_uuid
             logger.info(f"Updated location {data.location_id} with identifier {data.tag_uuid}")
         else:
             write_result["status"] = "error"
@@ -319,22 +333,29 @@ async def device_rfid_result(
 
     # Update spool weight if provided (e.g., when writing tag to new spool)
     if data.remaining_weight_g is not None:
-        spool = None
-        if data.tag_uuid:
+        spool_to_update = None
+        
+        # Priority: 1. target_spool (already found above), 2. find by tag_uuid, 3. find by spool_id
+        if target_spool:
+            spool_to_update = target_spool
+        elif data.tag_uuid:
+            # Try to find spool by tag_uuid (might have been assigned above or already existed)
             spool_res = await db.execute(
                 select(Spool).where(Spool.rfid_uid == data.tag_uuid)
             )
-            spool = spool_res.scalar_one_or_none()
+            spool_to_update = spool_res.scalar_one_or_none()
         
-        if not spool and data.spool_id:
+        if not spool_to_update and data.spool_id:
             spool_res = await db.execute(
                 select(Spool).where(Spool.id == data.spool_id)
             )
-            spool = spool_res.scalar_one_or_none()
+            spool_to_update = spool_res.scalar_one_or_none()
         
-        if spool:
-            spool.remaining_weight_g = data.remaining_weight_g
-            logger.info(f"Updated spool {spool.id} remaining weight to {data.remaining_weight_g}g")
+        if spool_to_update:
+            spool_to_update.remaining_weight_g = data.remaining_weight_g
+            logger.info(f"Updated spool {spool_to_update.id} remaining weight to {data.remaining_weight_g}g")
+        else:
+            logger.warning(f"Could not find spool to update weight for tag_uuid {data.tag_uuid}, spool_id {data.spool_id}")
 
     # Save result to device status
     if device.custom_fields is None: device.custom_fields = {}
