@@ -13,6 +13,12 @@ class Manufacturer(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    
+    empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     filaments: Mapped[list["Filament"]] = relationship(back_populates="manufacturer")
@@ -47,6 +53,10 @@ class Filament(Base, TimestampMixin):
 
     raw_material_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     default_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
     shop_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     density_g_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)

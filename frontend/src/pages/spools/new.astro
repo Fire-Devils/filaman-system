@@ -13,19 +13,19 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   
   <div class="fm-card" style="max-width: 640px; padding: 24px;">
     <form id="spool-form" style="display: grid; gap: 16px;">
-      <div>
-        <label for="filament_id" class="fm-label" data-i18n="spools.filament">Filament *</label>
-        <select 
-          id="filament_id" 
-          name="filament_id" 
-          required
-          class="fm-select"
-        >
-          <option value="" data-i18n="spools.selectFilament">Select filament...</option>
-        </select>
-      </div>
-      
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label for="filament_id" class="fm-label" data-i18n="spools.filament">Filament *</label>
+          <select 
+            id="filament_id" 
+            name="filament_id" 
+            required
+            class="fm-select"
+          >
+            <option value="" data-i18n="spools.selectFilament">Select filament...</option>
+          </select>
+        </div>
+
         <div>
           <label for="initial_total_weight_g" class="fm-label" data-i18n="spools.initialWeight">Initial Total Weight (g)</label>
           <input
@@ -38,19 +38,56 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             class="fm-input"
           />
         </div>
-        
-        <div>
-          <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
-          <input
-            type="number"
-            id="empty_spool_weight_g"
-            name="empty_spool_weight_g"
-            step="1"
-            value="250"
-            data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
-            placeholder="e.g. 250"
-            class="fm-input"
-          />
+      </div>
+      
+      <!-- Spool Dimensions -->
+      <div class="fm-card" style="padding: 16px; margin-top: 8px;">
+        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Properties</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
+            <input
+              type="number"
+              id="empty_spool_weight_g"
+              name="empty_spool_weight_g"
+              step="1"
+              data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
+              placeholder="e.g. 250"
+              class="fm-input"
+            />
+          </div>
+          <div>
+            <label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label>
+            <select id="spool_material" name="spool_material" class="fm-select">
+              <option value="">-</option>
+              <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
+              <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
+              <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
+              <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+          <div>
+            <label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameter">Spool Outer Diameter (mm)</label>
+            <input
+              type="number"
+              id="spool_outer_diameter_mm"
+              name="spool_outer_diameter_mm"
+              step="0.1"
+              class="fm-input"
+            />
+          </div>
+          <div>
+            <label for="spool_width_mm" class="fm-label" data-i18n="spools.spoolWidth">Spool Width (mm)</label>
+            <input
+              type="number"
+              id="spool_width_mm"
+              name="spool_width_mm"
+              step="0.1"
+              class="fm-input"
+            />
+          </div>
         </div>
       </div>
       
@@ -343,6 +380,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
 
       const initialWeightInput = document.getElementById('initial_total_weight_g')
       const emptySpoolInput = document.getElementById('empty_spool_weight_g')
+      const matInput = document.getElementById('spool_material') as HTMLSelectElement
+      const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
+      const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
 
       const rawWeight = filament.raw_material_weight_g
       const spoolWeight = filament.default_spool_weight_g
@@ -360,6 +400,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       } else {
         emptySpoolInput.value = ''
       }
+
+      if (filament.spool_material) matInput.value = filament.spool_material
+      if (filament.spool_outer_diameter_mm != null) odInput.value = filament.spool_outer_diameter_mm
+      if (filament.spool_width_mm != null) wInput.value = filament.spool_width_mm
     }
 
     document.getElementById('filament_id').addEventListener('change', (e) => {
@@ -396,6 +440,15 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       const emptyWeight = formData.get('empty_spool_weight_g')
       if (emptyWeight) data.empty_spool_weight_g = parseFloat(emptyWeight)
+
+      const spoolOuterDiameter = formData.get('spool_outer_diameter_mm')
+      if (spoolOuterDiameter) data.spool_outer_diameter_mm = parseFloat(spoolOuterDiameter)
+
+      const spoolWidth = formData.get('spool_width_mm')
+      if (spoolWidth) data.spool_width_mm = parseFloat(spoolWidth)
+
+      const spoolMaterial = formData.get('spool_material')
+      if (spoolMaterial) data.spool_material = spoolMaterial
 
       // Set remaining_weight_g: use filament raw_material_weight_g as default
       const selectedFilament = filaments.find((f) => f.id === selectedFilamentId)

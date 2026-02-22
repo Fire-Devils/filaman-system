@@ -49,6 +49,7 @@ class Spool(Base, TimestampMixin):
 
     spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     spool_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     low_weight_threshold_g: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
 

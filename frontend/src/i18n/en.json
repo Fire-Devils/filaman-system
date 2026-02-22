@@ -306,6 +306,11 @@
     "failedUpdate": "Failed to update spool",
     "spoolOuterDiameter": "Spool Outer Diameter (mm)",
     "spoolWidth": "Spool Width (mm)",
+    "spoolMaterial": "Spool Material",
+    "spoolMaterialPlastic": "Plastic",
+    "spoolMaterialCardboard": "Cardboard",
+    "spoolMaterialMetal": "Metal",
+    "spoolMaterialOther": "Other",
     "purchasePrice": "Purchase Price",
     "purchaseDate": "Purchase Date",
     "expirationDate": "Expiration Date"

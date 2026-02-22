@@ -69,18 +69,56 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
               class="fm-input"
             />
           </div>
-          
-          <div>
-            <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
-            <input
-              type="number"
-              id="empty_spool_weight_g"
-              name="empty_spool_weight_g"
-              step="1"
-              placeholder="e.g. 250"
-              data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
-              class="fm-input"
-            />
+        </div>
+
+        <!-- Spool Properties -->
+        <div class="fm-card" style="padding: 16px; margin-top: 8px;">
+          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Properties</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
+              <input
+                type="number"
+                id="empty_spool_weight_g"
+                name="empty_spool_weight_g"
+                step="1"
+                placeholder="e.g. 250"
+                data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
+                class="fm-input"
+              />
+            </div>
+            <div>
+              <label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label>
+              <select id="spool_material" name="spool_material" class="fm-select">
+                <option value="">-</option>
+                <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
+                <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
+                <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
+                <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+            <div>
+              <label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameter">Spool Outer Diameter (mm)</label>
+              <input
+                type="number"
+                id="spool_outer_diameter_mm"
+                name="spool_outer_diameter_mm"
+                step="0.1"
+                class="fm-input"
+              />
+            </div>
+            <div>
+              <label for="spool_width_mm" class="fm-label" data-i18n="spools.spoolWidth">Spool Width (mm)</label>
+              <input
+                type="number"
+                id="spool_width_mm"
+                name="spool_width_mm"
+                step="0.1"
+                class="fm-input"
+              />
+            </div>
           </div>
         </div>
 
@@ -150,7 +188,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         </div>
 
         <!-- Spool Dimensions row -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div style="display: none; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
             <label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameter">Spool Outer Diameter (mm)</label>
             <input
@@ -474,6 +512,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       document.getElementById('empty_spool_weight_g').value = s.empty_spool_weight_g != null ? String(s.empty_spool_weight_g) : ''
       document.getElementById('low_weight_threshold_g').value = s.low_weight_threshold_g != null ? String(s.low_weight_threshold_g) : '100'
 
+      document.getElementById('spool_material').value = s.spool_material || ''
+      
       document.getElementById('lot_number').value = s.lot_number || ''
 
       document.getElementById('rfid_uid').value = s.rfid_uid || ''
@@ -537,6 +577,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
       const emptySpoolWeight = formData.get('empty_spool_weight_g')
       patchData.empty_spool_weight_g = emptySpoolWeight ? parseFloat(emptySpoolWeight) : null
+
+      const spoolMaterial = formData.get('spool_material')
+      patchData.spool_material = spoolMaterial || null
 
       const lowThreshold = formData.get('low_weight_threshold_g')
       patchData.low_weight_threshold_g = lowThreshold ? parseInt(lowThreshold) : null

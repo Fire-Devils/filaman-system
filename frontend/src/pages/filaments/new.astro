@@ -195,19 +195,58 @@ import Layout from '../../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
+      </div>
         
-        <div>
-          <label for="default_spool_weight_g" class="fm-label" data-i18n="filaments.defaultSpoolWeight">Default Spool Weight (g)</label>
-          <input
-            type="number"
-            id="default_spool_weight_g"
-            name="default_spool_weight_g"
-            step="1"
-            placeholder="e.g. 250"
-            data-i18n-placeholder="filaments.defaultSpoolWeightPlaceholder"
-            class="fm-input"
-          />
+      <!-- Spool Settings row -->
+      <div class="fm-card" style="margin-top: 8px; padding: 16px;">
+        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Default Settings</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="default_spool_weight_g" class="fm-label" data-i18n="filaments.defaultSpoolWeight">Empty Spool Weight (g)</label>
+            <input
+              type="number"
+              id="default_spool_weight_g"
+              name="default_spool_weight_g"
+              step="1"
+              placeholder="e.g. 250"
+              data-i18n-placeholder="filaments.defaultSpoolWeightPlaceholder"
+              class="fm-input"
+            />
+          </div>
+          <div>
+            <label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label>
+            <select id="spool_material" name="spool_material" class="fm-select">
+              <option value="">-</option>
+              <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
+              <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
+              <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
+              <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
+            </select>
+          </div>
         </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+          <div>
+            <label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameter">Spool Outer Diameter (mm)</label>
+            <input
+              type="number"
+              id="spool_outer_diameter_mm"
+              name="spool_outer_diameter_mm"
+              step="0.1"
+              class="fm-input"
+            />
+          </div>
+          <div>
+            <label for="spool_width_mm" class="fm-label" data-i18n="spools.spoolWidth">Spool Width (mm)</label>
+            <input
+              type="number"
+              id="spool_width_mm"
+              name="spool_width_mm"
+              step="0.1"
+              class="fm-input"
+            />
+          </div>
+        </div>
+      </div>
       </div>
       
       <!-- Price + Density row -->
@@ -311,6 +350,7 @@ import Layout from '../../layouts/Layout.astro'
     const errorMessage = document.getElementById('error-message') as HTMLDivElement
     const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
     const typeSelect = document.getElementById('type') as HTMLSelectElement
+    const manufacturerSelect = document.getElementById('manufacturer_id') as HTMLSelectElement
     const customTypeWrapper = document.getElementById('custom-type-wrapper') as HTMLDivElement
     const customTypeInput = document.getElementById('custom_type') as HTMLInputElement
     const colorGrid = document.getElementById('color-grid') as HTMLDivElement
@@ -441,14 +481,17 @@ import Layout from '../../layouts/Layout.astro'
       customTypeInput.value = customTypeInput.value.toUpperCase()
     })
 
+    let allManufacturers: any[] = []
+
     // ── Load data ──
     async function loadManufacturers() {
       try {
         const response = await fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' })
         if (!response.ok) throw new Error('Failed to fetch manufacturers')
         const data = await response.json()
+        allManufacturers = data.items
         const select = document.getElementById('manufacturer_id') as HTMLSelectElement
-        data.items.forEach((m: any) => {
+        allManufacturers.forEach((m: any) => {
           const option = document.createElement('option')
           option.value = m.id
           option.textContent = m.name || t('common.unknown')
@@ -458,6 +501,26 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load manufacturers:', error)
       }
     }
+
+    // Autofill spool settings when manufacturer is selected
+    manufacturerSelect.addEventListener('change', () => {
+      const selectedId = parseInt(manufacturerSelect.value)
+      if (!selectedId) return
+
+      const mfr = allManufacturers.find(m => m.id === selectedId)
+      if (mfr) {
+        const ewInput = document.getElementById('default_spool_weight_g') as HTMLInputElement
+        const matInput = document.getElementById('spool_material') as HTMLSelectElement
+        const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
+        const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
+
+        // Only prefill if the fields are currently empty to not overwrite user input
+        if (!ewInput.value && mfr.empty_spool_weight_g != null) ewInput.value = String(mfr.empty_spool_weight_g)
+        if (!matInput.value && mfr.spool_material) matInput.value = mfr.spool_material
+        if (!odInput.value && mfr.spool_outer_diameter_mm != null) odInput.value = String(mfr.spool_outer_diameter_mm)
+        if (!wInput.value && mfr.spool_width_mm != null) wInput.value = String(mfr.spool_width_mm)
+      }
+    })
 
     async function loadTypes() {
       try {
@@ -710,6 +773,15 @@ import Layout from '../../layouts/Layout.astro'
 
       const spoolWeight = formData.get('default_spool_weight_g')
       if (spoolWeight) data.default_spool_weight_g = parseFloat(spoolWeight as string)
+
+      const spoolOuterDiameter = formData.get('spool_outer_diameter_mm')
+      if (spoolOuterDiameter) data.spool_outer_diameter_mm = parseFloat(spoolOuterDiameter as string)
+
+      const spoolWidth = formData.get('spool_width_mm')
+      if (spoolWidth) data.spool_width_mm = parseFloat(spoolWidth as string)
+
+      const spoolMaterial = formData.get('spool_material')
+      if (spoolMaterial) data.spool_material = spoolMaterial as string
 
       const price = formData.get('price')
       if (price) data.price = parseFloat(price as string)

@@ -309,6 +309,11 @@
     "failedUpdate": "Spule konnte nicht aktualisiert werden",
     "spoolOuterDiameter": "Spulen-Außendurchmesser (mm)",
     "spoolWidth": "Spulenbreite (mm)",
+    "spoolMaterial": "Spulenmaterial",
+    "spoolMaterialPlastic": "Plastik",
+    "spoolMaterialCardboard": "Pappe",
+    "spoolMaterialMetal": "Metall",
+    "spoolMaterialOther": "Sonstiges",
     "purchasePrice": "Kaufpreis",
     "purchaseDate": "Kaufdatum",
     "expirationDate": "Ablaufdatum"

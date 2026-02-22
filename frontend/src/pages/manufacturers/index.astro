@@ -93,6 +93,55 @@ import Layout from '../../layouts/Layout.astro'
             placeholder="e.g. https://bambulab.com"
           />
         </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="manufacturer-empty-weight" class="fm-label" data-i18n="spools.emptySpoolWeight">
+              Empty Spool Weight (g)
+            </label>
+            <input
+              type="number"
+              step="1"
+              id="manufacturer-empty-weight"
+              class="fm-input"
+            />
+          </div>
+          <div>
+            <label for="manufacturer-material" class="fm-label" data-i18n="spools.spoolMaterial">
+              Spool Material
+            </label>
+            <select id="manufacturer-material" class="fm-select">
+              <option value="">-</option>
+              <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
+              <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
+              <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
+              <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="manufacturer-outer-diameter" class="fm-label" data-i18n="spools.spoolOuterDiameter">
+              Spool Outer Diameter (mm)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              id="manufacturer-outer-diameter"
+              class="fm-input"
+            />
+          </div>
+          <div>
+            <label for="manufacturer-width" class="fm-label" data-i18n="spools.spoolWidth">
+              Spool Width (mm)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              id="manufacturer-width"
+              class="fm-input"
+            />
+          </div>
+        </div>
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
           <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
@@ -255,7 +304,7 @@ import Layout from '../../layouts/Layout.astro'
           <td><a href="/spools?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
           <td>${mf.materials && mf.materials.length > 0 ? mf.materials.map(m => escapeHtml(m)).join(', ') : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td style="text-align: right; white-space: nowrap;">
-            <button data-id="${mf.id}" data-name="${escapeHtml(mf.name)}" data-url="${escapeHtml(mf.url || '')}" class="btn-edit fm-btn fm-btn-outline" style="padding: 5px 12px; font-size: 0.8rem;">${t('common.edit')}</button>
+            <button data-mf='${escapeHtml(JSON.stringify(mf))}' class="btn-edit fm-btn fm-btn-outline" style="padding: 5px 12px; font-size: 0.8rem;">${t('common.edit')}</button>
             <button data-id="${mf.id}" class="btn-delete fm-btn fm-btn-danger" style="padding: 5px 12px; font-size: 0.8rem; margin-left: 6px;">${t('common.delete')}</button>
           </td>
         </tr>
@@ -264,11 +313,8 @@ import Layout from '../../layouts/Layout.astro'
       document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
-          openModal(
-            parseInt(target.dataset.id!),
-            target.dataset.name!,
-            target.dataset.url!
-          )
+          const mf = JSON.parse(target.dataset.mf!)
+          openModal(mf)
         })
       })
 
@@ -322,18 +368,27 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    function openModal(id: number | null = null, name: string = '', url: string = '') {
+    function openModal(mf: any = null) {
       const container = document.getElementById('modal-container')!
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('manufacturer-id') as HTMLInputElement
       const nameInput = document.getElementById('manufacturer-name') as HTMLInputElement
       const urlInput = document.getElementById('manufacturer-url') as HTMLInputElement
+      const emptyWeightInput = document.getElementById('manufacturer-empty-weight') as HTMLInputElement
+      const materialInput = document.getElementById('manufacturer-material') as HTMLSelectElement
+      const outerDiameterInput = document.getElementById('manufacturer-outer-diameter') as HTMLInputElement
+      const widthInput = document.getElementById('manufacturer-width') as HTMLInputElement
       const error = document.getElementById('modal-error')!
 
-      title.textContent = id ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
-      idInput.value = id ? String(id) : ''
-      nameInput.value = name
-      urlInput.value = url
+      title.textContent = mf ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
+      idInput.value = mf ? String(mf.id) : ''
+      nameInput.value = mf ? mf.name : ''
+      urlInput.value = mf && mf.url ? mf.url : ''
+      emptyWeightInput.value = mf && mf.empty_spool_weight_g != null ? mf.empty_spool_weight_g : ''
+      materialInput.value = mf && mf.spool_material ? mf.spool_material : ''
+      outerDiameterInput.value = mf && mf.spool_outer_diameter_mm != null ? mf.spool_outer_diameter_mm : ''
+      widthInput.value = mf && mf.spool_width_mm != null ? mf.spool_width_mm : ''
+      
       error.classList.add('hidden')
 
       container.style.display = 'flex'
@@ -363,12 +418,21 @@ import Layout from '../../layouts/Layout.astro'
       const id = (document.getElementById('manufacturer-id') as HTMLInputElement).value
       const name = (document.getElementById('manufacturer-name') as HTMLInputElement).value
       const url = (document.getElementById('manufacturer-url') as HTMLInputElement).value || null
+      const emptyWeight = (document.getElementById('manufacturer-empty-weight') as HTMLInputElement).value
+      const material = (document.getElementById('manufacturer-material') as HTMLSelectElement).value || null
+      const outerDiameter = (document.getElementById('manufacturer-outer-diameter') as HTMLInputElement).value
+      const width = (document.getElementById('manufacturer-width') as HTMLInputElement).value
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
 
-      const data: Record<string, any> = { name }
-      if (url !== null) data.url = url
-      else data.url = null
+      const data: Record<string, any> = { 
+        name,
+        url,
+        empty_spool_weight_g: emptyWeight ? parseFloat(emptyWeight) : null,
+        spool_material: material,
+        spool_outer_diameter_mm: outerDiameter ? parseFloat(outerDiameter) : null,
+        spool_width_mm: width ? parseFloat(width) : null
+      }
 
       error.classList.add('hidden')
       submitBtn.disabled = true

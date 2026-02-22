@@ -6,12 +6,20 @@ from pydantic import BaseModel, Field
 class ManufacturerCreate(BaseModel):
     name: str
     url: str | None = None
+    empty_spool_weight_g: float | None = None
+    spool_outer_diameter_mm: float | None = None
+    spool_width_mm: float | None = None
+    spool_material: str | None = None
     custom_fields: dict[str, Any] | None = None
 
 
 class ManufacturerUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
+    empty_spool_weight_g: float | None = None
+    spool_outer_diameter_mm: float | None = None
+    spool_width_mm: float | None = None
+    spool_material: str | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -19,6 +27,10 @@ class ManufacturerResponse(BaseModel):
     id: int
     name: str
     url: str | None
+    empty_spool_weight_g: float | None = None
+    spool_outer_diameter_mm: float | None = None
+    spool_width_mm: float | None = None
+    spool_material: str | None = None
     custom_fields: dict[str, Any] | None
     filament_count: int = 0
     spool_count: int = 0
@@ -88,6 +100,9 @@ class FilamentCreate(BaseModel):
     finish_type: str | None = None
     raw_material_weight_g: float | None = None
     default_spool_weight_g: float | None = None
+    spool_outer_diameter_mm: float | None = None
+    spool_width_mm: float | None = None
+    spool_material: str | None = None
     price: float | None = None
     shop_url: str | None = None
     density_g_cm3: float | None = None
@@ -107,6 +122,9 @@ class FilamentUpdate(BaseModel):
     finish_type: str | None = None
     raw_material_weight_g: float | None = None
     default_spool_weight_g: float | None = None
+    spool_outer_diameter_mm: float | None = None
+    spool_width_mm: float | None = None
+    spool_material: str | None = None
     price: float | None = None
     shop_url: str | None = None
     density_g_cm3: float | None = None
@@ -126,6 +144,9 @@ class FilamentResponse(BaseModel):
     finish_type: str | None
     raw_material_weight_g: float | None
     default_spool_weight_g: float | None
+    spool_outer_diameter_mm: float | None = None
+    spool_width_mm: float | None = None
+    spool_material: str | None = None
     price: float | None
     shop_url: str | None
     density_g_cm3: float | None

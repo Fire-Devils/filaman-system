@@ -389,6 +389,19 @@ async def create_filament(
     db: DBSession,
     principal = RequirePermission("filaments:create"),
 ):
+    # Fetch manufacturer to cascade properties if they are not provided
+    m_result = await db.execute(select(Manufacturer).where(Manufacturer.id == data.manufacturer_id))
+    manufacturer = m_result.scalar_one_or_none()
+    if manufacturer:
+        if data.default_spool_weight_g is None:
+            data.default_spool_weight_g = manufacturer.empty_spool_weight_g
+        if data.spool_outer_diameter_mm is None:
+            data.spool_outer_diameter_mm = manufacturer.spool_outer_diameter_mm
+        if data.spool_width_mm is None:
+            data.spool_width_mm = manufacturer.spool_width_mm
+        if data.spool_material is None:
+            data.spool_material = manufacturer.spool_material
+
     # Separate colors from the filament data
     color_entries = data.colors or []
     filament_data = data.model_dump(exclude={"colors"})

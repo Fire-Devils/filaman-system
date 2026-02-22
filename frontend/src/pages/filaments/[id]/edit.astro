@@ -347,6 +347,8 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     let loadedTypes: string[] = []
     let systemFields: any[] = []
 
+    let allManufacturers: any[] = []
+
     // ── DOM refs ──
     const editLoading = document.getElementById('edit-loading') as HTMLDivElement
     const editError = document.getElementById('edit-error') as HTMLDivElement
@@ -355,6 +357,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     const errorMessage = document.getElementById('error-message') as HTMLDivElement
     const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
     const typeSelect = document.getElementById('type') as HTMLSelectElement
+    const manufacturerSelect = document.getElementById('manufacturer_id') as HTMLSelectElement
     const customTypeWrapper = document.getElementById('custom-type-wrapper') as HTMLDivElement
     const customTypeInput = document.getElementById('custom_type') as HTMLInputElement
     const colorGrid = document.getElementById('color-grid') as HTMLDivElement
@@ -507,8 +510,9 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         const response = await fetch('/api/v1/manufacturers?page_size=200', { credentials: 'include' })
         if (!response.ok) throw new Error('Failed to fetch manufacturers')
         const data = await response.json()
+        allManufacturers = data.items
         const select = document.getElementById('manufacturer_id') as HTMLSelectElement
-        data.items.forEach((m: any) => {
+        allManufacturers.forEach((m: any) => {
           const option = document.createElement('option')
           option.value = m.id
           option.textContent = m.name || t('common.unknown')
@@ -518,6 +522,25 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         console.error('Failed to load manufacturers:', error)
       }
     }
+
+    manufacturerSelect.addEventListener('change', () => {
+      const selectedId = parseInt(manufacturerSelect.value)
+      if (!selectedId) return
+
+      const mfr = allManufacturers.find(m => m.id === selectedId)
+      if (mfr) {
+        const ewInput = document.getElementById('default_spool_weight_g') as HTMLInputElement
+        const matInput = document.getElementById('spool_material') as HTMLSelectElement
+        const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
+        const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
+
+        // Only prefill if the fields are currently empty to not overwrite user input
+        if (!ewInput.value && mfr.empty_spool_weight_g != null) ewInput.value = String(mfr.empty_spool_weight_g)
+        if (!matInput.value && mfr.spool_material) matInput.value = mfr.spool_material
+        if (!odInput.value && mfr.spool_outer_diameter_mm != null) odInput.value = String(mfr.spool_outer_diameter_mm)
+        if (!wInput.value && mfr.spool_width_mm != null) wInput.value = String(mfr.spool_width_mm)
+      }
+    })
 
     async function loadTypes(): Promise<void> {
       try {
@@ -777,6 +800,9 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       // Weights
       ;(document.getElementById('raw_material_weight_g') as HTMLInputElement).value = f.raw_material_weight_g != null ? String(f.raw_material_weight_g) : ''
       ;(document.getElementById('default_spool_weight_g') as HTMLInputElement).value = f.default_spool_weight_g != null ? String(f.default_spool_weight_g) : ''
+      ;(document.getElementById('spool_material') as HTMLSelectElement).value = f.spool_material || ''
+      ;(document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = f.spool_outer_diameter_mm != null ? String(f.spool_outer_diameter_mm) : ''
+      ;(document.getElementById('spool_width_mm') as HTMLInputElement).value = f.spool_width_mm != null ? String(f.spool_width_mm) : ''
 
       // Price
       ;(document.getElementById('price') as HTMLInputElement).value = f.price != null ? String(f.price) : ''
@@ -856,6 +882,15 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
       const spoolWeight = formData.get('default_spool_weight_g') as string
       patchData.default_spool_weight_g = spoolWeight ? parseFloat(spoolWeight) : null
+
+      const spoolOuterDiameter = formData.get('spool_outer_diameter_mm') as string
+      patchData.spool_outer_diameter_mm = spoolOuterDiameter ? parseFloat(spoolOuterDiameter) : null
+
+      const spoolWidth = formData.get('spool_width_mm') as string
+      patchData.spool_width_mm = spoolWidth ? parseFloat(spoolWidth) : null
+
+      const spoolMaterial = formData.get('spool_material') as string
+      patchData.spool_material = spoolMaterial || null
 
       const price = formData.get('price') as string
       patchData.price = price ? parseFloat(price) : null

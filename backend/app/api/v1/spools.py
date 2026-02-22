@@ -216,7 +216,8 @@ async def create_spool(
     principal = RequirePermission("spools:create"),
 ):
     result = await db.execute(select(Filament).where(Filament.id == data.filament_id))
-    if not result.scalar_one_or_none():
+    filament = result.scalar_one_or_none()
+    if not filament:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "validation_error", "message": "Filament not found"},
@@ -235,9 +236,18 @@ async def create_spool(
 
     spool_data = data.model_dump()
     
-    # Set default empty_spool_weight_g to 250g if not provided
-    if "empty_spool_weight_g" not in spool_data or spool_data["empty_spool_weight_g"] is None:
-        spool_data["empty_spool_weight_g"] = 250
+    # Cascade fields from Filament if not provided
+    if spool_data.get("empty_spool_weight_g") is None:
+        spool_data["empty_spool_weight_g"] = filament.default_spool_weight_g if filament.default_spool_weight_g is not None else 250
+        
+    if spool_data.get("spool_outer_diameter_mm") is None:
+        spool_data["spool_outer_diameter_mm"] = filament.spool_outer_diameter_mm if filament.spool_outer_diameter_mm is not None else 200
+        
+    if spool_data.get("spool_width_mm") is None:
+        spool_data["spool_width_mm"] = filament.spool_width_mm if filament.spool_width_mm is not None else 65
+        
+    if spool_data.get("spool_material") is None:
+        spool_data["spool_material"] = filament.spool_material
     
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id

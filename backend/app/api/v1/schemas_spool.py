@@ -54,6 +54,7 @@ class SpoolCreate(BaseModel):
     remaining_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
+    spool_material: str | None = None
     low_weight_threshold_g: int = 100
     custom_fields: dict[str, Any] | None = None
 
@@ -72,6 +73,7 @@ class SpoolUpdate(BaseModel):
     empty_spool_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
+    spool_material: str | None = None
     low_weight_threshold_g: int | None = None
     custom_fields: dict[str, Any] | None = None
 
@@ -94,6 +96,7 @@ class SpoolResponse(BaseModel):
     remaining_weight_g: float | None
     spool_outer_diameter_mm: float | None
     spool_width_mm: float | None
+    spool_material: str | None
     low_weight_threshold_g: int
     deleted_at: datetime | None
     custom_fields: dict[str, Any] | None
