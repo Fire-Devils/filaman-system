@@ -11,7 +11,7 @@ from app.api.deps import DBSession
 logger = logging.getLogger(__name__)
 from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse
 from app.core.security import Principal, generate_token_secret, hash_password_async
-from app.models import Device, Location, Spool
+from app.models import Device, Location, Spool, SpoolStatus
 from app.services.spool_service import SpoolService
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -268,13 +268,15 @@ async def device_rfid_result(
         await db.commit()
         return RfidResultResponse(status="error", message="No tag_uuid provided")
 
-    # Duplicate check and cleanup (only for active spools, not archived/deleted)
+    # Duplicate check and cleanup (only for active spools, not archived)
     removed_info = []
     
-    # Check spools - only active spools (not deleted/archived)
-    spool_query = select(Spool).where(
-        Spool.rfid_uid == data.tag_uuid,
-        Spool.deleted_at.is_(None)  # Ignore archived/deleted spools
+    # Check spools - only active spools (not archived)
+    spool_query = (
+        select(Spool)
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(Spool.rfid_uid == data.tag_uuid)
+        .where(SpoolStatus.key != "archived")  # Ignore archived spools
     )
     if data.spool_id:
         spool_query = spool_query.where(Spool.id != data.spool_id)

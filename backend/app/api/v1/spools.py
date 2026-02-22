@@ -40,7 +40,8 @@ async def list_locations(
     # Query Locations with Spool Count
     stmt = (
         select(Location, func.count(Spool.id).label("spool_count"))
-        .outerjoin(Spool, (Spool.location_id == Location.id) & (Spool.deleted_at.is_(None)))
+        .outerjoin(Spool, Spool.location_id == Location.id)
+        .where(Spool.status_id != select(SpoolStatus.id).where(SpoolStatus.key == "archived").scalar_subquery())
         .group_by(Location.id)
         .order_by(Location.name)
         .offset((page - 1) * page_size)
@@ -168,7 +169,7 @@ async def list_spools(
     manufacturer_id: int | None = None,
     include_archived: bool = Query(False),
 ):
-    query = select(Spool).where(Spool.deleted_at.is_(None))
+    query = select(Spool)
 
     if manufacturer_id:
         query = query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
@@ -195,7 +196,7 @@ async def list_spools(
     result = await db.execute(query)
     items = list(result.scalars().all())
 
-    count_query = select(func.count()).select_from(Spool).where(Spool.deleted_at.is_(None))
+    count_query = select(func.count()).select_from(Spool)
     if manufacturer_id:
         count_query = count_query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
@@ -280,7 +281,7 @@ async def create_spool(
 async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):
     result = await db.execute(
         select(Spool)
-        .where(Spool.id == spool_id, Spool.deleted_at.is_(None))
+        .where(Spool.id == spool_id)
         .options(
             selectinload(Spool.filament).selectinload(Filament.manufacturer)
         )
@@ -302,7 +303,7 @@ async def update_spool(
     principal = RequirePermission("spools:update"),
 ):
     result = await db.execute(
-        select(Spool).where(Spool.id == spool_id, Spool.deleted_at.is_(None))
+        select(Spool).where(Spool.id == spool_id)
     )
     spool = result.scalar_one_or_none()
     if not spool:
@@ -332,7 +333,7 @@ async def delete_spool(
     principal = RequirePermission("spools:delete"),
 ):
     result = await db.execute(
-        select(Spool).where(Spool.id == spool_id, Spool.deleted_at.is_(None))
+        select(Spool).where(Spool.id == spool_id)
     )
     spool = result.scalar_one_or_none()
     if not spool:

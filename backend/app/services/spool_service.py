@@ -16,7 +16,7 @@ class SpoolService:
     async def get_spool(self, spool_id: int) -> Spool | None:
         result = await self.db.execute(
             select(Spool)
-            .where(Spool.id == spool_id, Spool.deleted_at.is_(None))
+            .where(Spool.id == spool_id)
             .options(
                 selectinload(Spool.filament).selectinload(Filament.manufacturer),
                 selectinload(Spool.status),
@@ -28,7 +28,7 @@ class SpoolService:
         if rfid_uid:
             result = await self.db.execute(
                 select(Spool)
-                .where(func.lower(Spool.rfid_uid) == rfid_uid.lower(), Spool.deleted_at.is_(None))
+                .where(func.lower(Spool.rfid_uid) == rfid_uid.lower())
                 .options(
                     selectinload(Spool.filament).selectinload(Filament.manufacturer),
                     selectinload(Spool.status),
@@ -40,7 +40,7 @@ class SpoolService:
         if external_id:
             result = await self.db.execute(
                 select(Spool)
-                .where(Spool.external_id == external_id, Spool.deleted_at.is_(None))
+                .where(Spool.external_id == external_id)
                 .options(
                     selectinload(Spool.filament).selectinload(Filament.manufacturer),
                     selectinload(Spool.status),

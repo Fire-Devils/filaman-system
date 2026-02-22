@@ -69,7 +69,6 @@ async def list_manufacturers(
             .join(Spool, Spool.filament_id == Filament.id)
             .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
             .where(Filament.manufacturer_id.in_(mfr_ids))
-            .where(Spool.deleted_at.is_(None))
             .group_by(Filament.manufacturer_id)
         )
 
@@ -388,8 +387,9 @@ async def list_filaments(
     if filament_ids:
         spool_count_query = (
             select(Spool.filament_id, func.count(Spool.id))
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
             .where(Spool.filament_id.in_(filament_ids))
-            .where(Spool.deleted_at.is_(None))
+            .where(SpoolStatus.key != "archived")
             .group_by(Spool.filament_id)
         )
         spool_result = await db.execute(spool_count_query)
@@ -486,11 +486,12 @@ async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep)
             detail={"code": "not_found", "message": "Filament not found"},
         )
 
-    # Compute spool count (excluding soft-deleted spools)
+    # Compute spool count (excluding archived spools)
     spool_count_result = await db.execute(
         select(func.count(Spool.id))
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(Spool.filament_id == filament_id)
-        .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
     )
     spool_count = spool_count_result.scalar() or 0
 

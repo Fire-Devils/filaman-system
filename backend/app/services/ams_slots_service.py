@@ -93,7 +93,7 @@ class AmsSlotsService:
     ) -> Spool | None:
         if rfid_uid:
             result = await self.db.execute(
-                select(Spool).where(Spool.rfid_uid == rfid_uid, Spool.deleted_at.is_(None))
+                select(Spool).where(Spool.rfid_uid == rfid_uid)
             )
             spool = result.scalar_one_or_none()
             if spool:
@@ -101,7 +101,7 @@ class AmsSlotsService:
 
         if external_id:
             result = await self.db.execute(
-                select(Spool).where(Spool.external_id == external_id, Spool.deleted_at.is_(None))
+                select(Spool).where(Spool.external_id == external_id)
             )
             return result.scalar_one_or_none()
 

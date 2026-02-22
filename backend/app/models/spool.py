@@ -25,10 +25,6 @@ class SpoolStatus(Base, TimestampMixin):
 class Spool(Base, TimestampMixin):
     __tablename__ = "spools"
 
-    __table_args__ = (
-        Index("ix_spools_filament_deleted", "filament_id", "deleted_at"),
-    )
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     filament_id: Mapped[int] = mapped_column(Integer, ForeignKey("filaments.id"), nullable=False, index=True)
     status_id: Mapped[int] = mapped_column(Integer, ForeignKey("spool_statuses.id"), nullable=False, index=True)
@@ -56,8 +52,6 @@ class Spool(Base, TimestampMixin):
     spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     low_weight_threshold_g: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 

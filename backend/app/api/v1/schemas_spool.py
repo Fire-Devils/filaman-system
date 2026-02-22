@@ -99,7 +99,6 @@ class SpoolResponse(BaseModel):
     spool_width_mm: float | None
     spool_material: str | None
     low_weight_threshold_g: int
-    deleted_at: datetime | None
     created_at: datetime
     custom_fields: dict[str, Any] | None
     filament: FilamentDetailResponse | None = None
