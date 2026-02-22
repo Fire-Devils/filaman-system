@@ -69,8 +69,18 @@ interface PaginatedResponse<T> {
     <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('problem')">
       <svg width="36" height="36" style="fill: var(--accent-3); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
       <div>
-        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-problem-spools">-</div>
-        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowAndEmptySpools">Low & Empty Spools</div>
+        <div style="display: flex; align-items: baseline; gap: 12px;">
+          <div style="display: flex; flex-direction: column; align-items: center;">
+            <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: -4px;" data-i18n="dashboard.statusLow">Low</div>
+          </div>
+          <div style="height: 20px; width: 1px; background: var(--border); align-self: center;"></div>
+          <div style="display: flex; flex-direction: column; align-items: center;">
+            <div style="font-size: 1.6rem; font-weight: 700; color: var(--error-text);" id="stat-empty-spools">-</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: -4px;" data-i18n="dashboard.statusEmpty">Empty</div>
+          </div>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;" data-i18n="dashboard.lowAndEmptySpools">Low & Empty Spools</div>
       </div>
     </div>
 
@@ -342,7 +352,8 @@ interface PaginatedResponse<T> {
         
         if (dashboardData) {
           const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
-          document.getElementById('stat-problem-spools')!.textContent = (dist.low + dist.critical + dist.empty).toString()
+          document.getElementById('stat-low-spools')!.textContent = (dist.low + dist.critical).toString()
+          document.getElementById('stat-empty-spools')!.textContent = dist.empty.toString()
           document.getElementById('stat-total-value')!.textContent = (dashboardData.total_value_available || 0).toFixed(2)
           
           const statusContainer = document.getElementById('spool-status')!
