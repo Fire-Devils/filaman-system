@@ -184,7 +184,9 @@ async def list_spools(
     if location_id:
         query = query.where(Spool.location_id == location_id)
 
-    query = query.order_by(Spool.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    query = query.options(
+        selectinload(Spool.filament).selectinload(Filament.manufacturer)
+    ).order_by(Spool.id.desc()).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
     items = list(result.scalars().all())
@@ -256,8 +258,14 @@ async def create_spool(
     spool = Spool(**spool_data)
     db.add(spool)
     await db.commit()
-    await db.refresh(spool)
-    return spool
+    
+    # Reload with relationships for schema validation
+    result = await db.execute(
+        select(Spool)
+        .where(Spool.id == spool.id)
+        .options(selectinload(Spool.filament).selectinload(Filament.manufacturer))
+    )
+    return result.scalar_one()
 
 
 @router_spools.get("/{spool_id}", response_model=SpoolResponse)
@@ -299,8 +307,14 @@ async def update_spool(
         setattr(spool, key, value)
 
     await db.commit()
-    await db.refresh(spool)
-    return spool
+    
+    # Reload with relationships
+    result = await db.execute(
+        select(Spool)
+        .where(Spool.id == spool.id)
+        .options(selectinload(Spool.filament).selectinload(Filament.manufacturer))
+    )
+    return result.scalar_one()
 
 
 @router_spools.delete("/{spool_id}", status_code=status.HTTP_204_NO_CONTENT)
