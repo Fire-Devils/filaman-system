@@ -57,7 +57,8 @@
     "open": "Öffnen",
     "customFields": "Eigene Felder",
     "systemFields": "Systemfelder",
-    "extraFields": "Extrafelder"
+    "extraFields": "Extrafelder",
+    "spoolDefaultSettings": "Spool-Standardwerte"
   },
   "rfid": {
     "writeTag": "RFID-Tag schreiben",
@@ -316,8 +317,7 @@
     "spoolMaterialOther": "Sonstiges",
     "purchasePrice": "Kaufpreis",
     "purchaseDate": "Kaufdatum",
-    "expirationDate": "Ablaufdatum",
-    "spoolDefaultSettings": "Spool-Standardwerte"
+    "expirationDate": "Ablaufdatum"
   },
   "colors": {
     "title": "Farben verwalten",

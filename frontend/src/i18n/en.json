@@ -55,7 +55,8 @@
     "confirm": "Confirm",
     "errorTitle": "Error",
     "open": "Open",
-    "customFields": "Custom Fields"
+    "customFields": "Custom Fields",
+    "spoolDefaultSettings": "Spool Default Settings"
   },
   "rfid": {
     "writeTag": "Write RFID Tag",
@@ -313,8 +314,7 @@
     "spoolMaterialOther": "Other",
     "purchasePrice": "Purchase Price",
     "purchaseDate": "Purchase Date",
-    "expirationDate": "Expiration Date",
-    "spoolDefaultSettings": "Spool Default Settings"
+    "expirationDate": "Expiration Date"
   },
   "colors": {
     "title": "Manage Colors",
