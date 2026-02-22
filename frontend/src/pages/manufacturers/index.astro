@@ -93,55 +93,61 @@ import Layout from '../../layouts/Layout.astro'
             placeholder="e.g. https://bambulab.com"
           />
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div>
-            <label for="manufacturer-empty-weight" class="fm-label" data-i18n="spools.emptySpoolWeight">
-              Empty Spool Weight (g)
-            </label>
-            <input
-              type="number"
-              step="1"
-              id="manufacturer-empty-weight"
-              class="fm-input"
-            />
+        
+        <!-- Spool Defaults -->
+        <div class="fm-card" style="padding: 16px; margin-top: 8px;">
+          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Defaults</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+              <label for="manufacturer-empty-weight" class="fm-label" data-i18n="spools.emptySpoolWeight">
+                Empty Spool Weight (g)
+              </label>
+              <input
+                type="number"
+                step="1"
+                id="manufacturer-empty-weight"
+                class="fm-input"
+              />
+            </div>
+            <div>
+              <label for="manufacturer-material" class="fm-label" data-i18n="spools.spoolMaterial">
+                Spool Material
+              </label>
+              <select id="manufacturer-material" class="fm-select">
+                <option value="">-</option>
+                <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
+                <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
+                <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
+                <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label for="manufacturer-material" class="fm-label" data-i18n="spools.spoolMaterial">
-              Spool Material
-            </label>
-            <select id="manufacturer-material" class="fm-select">
-              <option value="">-</option>
-              <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
-              <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
-              <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
-              <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
-            </select>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+            <div>
+              <label for="manufacturer-outer-diameter" class="fm-label" data-i18n="spools.spoolOuterDiameter">
+                Spool Outer Diameter (mm)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                id="manufacturer-outer-diameter"
+                class="fm-input"
+              />
+            </div>
+            <div>
+              <label for="manufacturer-width" class="fm-label" data-i18n="spools.spoolWidth">
+                Spool Width (mm)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                id="manufacturer-width"
+                class="fm-input"
+              />
+            </div>
           </div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div>
-            <label for="manufacturer-outer-diameter" class="fm-label" data-i18n="spools.spoolOuterDiameter">
-              Spool Outer Diameter (mm)
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              id="manufacturer-outer-diameter"
-              class="fm-input"
-            />
-          </div>
-          <div>
-            <label for="manufacturer-width" class="fm-label" data-i18n="spools.spoolWidth">
-              Spool Width (mm)
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              id="manufacturer-width"
-              class="fm-input"
-            />
-          </div>
-        </div>
+        
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
           <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
@@ -384,10 +390,19 @@ import Layout from '../../layouts/Layout.astro'
       idInput.value = mf ? String(mf.id) : ''
       nameInput.value = mf ? mf.name : ''
       urlInput.value = mf && mf.url ? mf.url : ''
-      emptyWeightInput.value = mf && mf.empty_spool_weight_g != null ? mf.empty_spool_weight_g : ''
-      materialInput.value = mf && mf.spool_material ? mf.spool_material : ''
-      outerDiameterInput.value = mf && mf.spool_outer_diameter_mm != null ? mf.spool_outer_diameter_mm : ''
-      widthInput.value = mf && mf.spool_width_mm != null ? mf.spool_width_mm : ''
+      
+      if (mf) {
+        emptyWeightInput.value = mf.empty_spool_weight_g != null ? String(mf.empty_spool_weight_g) : ''
+        materialInput.value = mf.spool_material || ''
+        outerDiameterInput.value = mf.spool_outer_diameter_mm != null ? String(mf.spool_outer_diameter_mm) : ''
+        widthInput.value = mf.spool_width_mm != null ? String(mf.spool_width_mm) : ''
+      } else {
+        // Default values for new manufacturer
+        emptyWeightInput.value = '250'
+        materialInput.value = ''
+        outerDiameterInput.value = '200'
+        widthInput.value = '65'
+      }
       
       error.classList.add('hidden')
 
