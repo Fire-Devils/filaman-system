@@ -70,29 +70,54 @@ const { id } = Astro.params
     #label-text-container {
       flex: 1;
       min-width: 0;
+      color: black;
     }
 
     @media print {
-      body {
-        background: white;
-        height: auto;
-        display: block;
-      }
-      .sidebar {
+      /* Hide everything except preview container */
+      body > *:not(.preview-container) {
         display: none !important;
       }
+      
+      body {
+        background: white !important;
+        height: auto !important;
+        display: block !important;
+        overflow: visible !important;
+      }
+      
       .preview-container {
-        padding: 0;
-        margin: 0;
-        display: block;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important;
+        overflow: visible !important;
       }
+      
       .label-preview {
-        box-shadow: none;
+        box-shadow: none !important;
         border: none !important;
-        position: fixed;
-        left: 0;
-        top: 0;
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        display: flex !important;
+        background: white !important;
+        color: black !important;
+        /* Safari-Fix: Explizite Dimensionen */
+        width: 60mm !important;
+        height: 25mm !important;
+        min-width: 60mm !important;
+        min-height: 25mm !important;
+        /* Farben erzwingen */
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
+
+      /* Ensure text is black for printing even if OS is in dark mode */
+      .label-preview div, 
+      .label-preview span {
+        color: black !important;
+      }
+
       @page {
         margin: 0;
       }
@@ -137,32 +162,6 @@ const { id } = Astro.params
     .fm-btn-outline {
       background: transparent;
       border: 1px solid var(--border);
-    }
-
-    @media print {
-      body {
-        background: white;
-        height: auto;
-        display: block;
-      }
-      .sidebar {
-        display: none !important;
-      }
-      .preview-container {
-        padding: 0;
-        margin: 0;
-        display: block;
-      }
-      .label-preview {
-        box-shadow: none;
-        border: none;
-        position: fixed;
-        left: 0;
-        top: 0;
-      }
-      @page {
-        margin: 0;
-      }
     }
   </style>
 </head>
@@ -357,7 +356,12 @@ const { id } = Astro.params
     })
 
     document.getElementById('btn-print').addEventListener('click', () => {
-      window.print()
+      // Safari-Fix: Kurz warten bis alles gerendert ist
+      if (/Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)) {
+        setTimeout(() => window.print(), 100)
+      } else {
+        window.print()
+      }
     })
 
     document.getElementById('btn-reset').addEventListener('click', () => {
