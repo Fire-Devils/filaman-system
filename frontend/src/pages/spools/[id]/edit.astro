@@ -122,42 +122,16 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           </div>
         </div>
 
-        <!-- Low Threshold -->
-        <div>
-          <label for="low_weight_threshold_g" class="fm-label" data-i18n="spools.lowThreshold">Low Weight Threshold (g)</label>
-          <input
-            type="number"
-            id="low_weight_threshold_g"
-            name="low_weight_threshold_g"
-            step="1"
-            value="100"
-            class="fm-input"
-          />
-        </div>
-
-        <!-- Lot Number -->
-        <div>
-          <label for="lot_number" class="fm-label" data-i18n="spools.lotNumber">Lot Number</label>
-          <input
-            type="text"
-            id="lot_number"
-            name="lot_number"
-            placeholder="e.g. LOT-2024-001"
-            data-i18n-placeholder="spools.lotNumberPlaceholder"
-            class="fm-input"
-          />
-        </div>
-
-        <!-- RFID + External ID row -->
+        <!-- Lot Number + External ID -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
-            <label for="rfid_uid" class="fm-label" data-i18n="spools.rfidUid">RFID UID</label>
+            <label for="lot_number" class="fm-label" data-i18n="spools.lotNumber">Lot Number</label>
             <input
               type="text"
-              id="rfid_uid"
-              name="rfid_uid"
-              placeholder="e.g. 04A2B3C4D5"
-              data-i18n-placeholder="spools.rfidUidPlaceholder"
+              id="lot_number"
+              name="lot_number"
+              placeholder="e.g. LOT-2024-001"
+              data-i18n-placeholder="spools.lotNumberPlaceholder"
               class="fm-input"
             />
           </div>
@@ -175,20 +149,18 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           </div>
         </div>
 
-        <!-- Location -->
-        <div>
-          <label for="location_id" class="fm-label" data-i18n="spools.location">Location</label>
-          <select 
-            id="location_id" 
-            name="location_id" 
-            class="fm-select"
-          >
-            <option value="" data-i18n="spools.noLocation">No location</option>
-          </select>
-        </div>
-
-        <!-- Purchase Info row -->
+        <!-- Purchase Date + Purchase Price -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label for="purchase_date" class="fm-label" data-i18n="spools.purchaseDate">Purchase Date</label>
+            <input
+              type="date"
+              id="purchase_date"
+              name="purchase_date"
+              class="fm-input"
+            />
+          </div>
+          
           <div>
             <label for="purchase_price" class="fm-label" data-i18n="spools.purchasePrice">Purchase Price</label>
             <input
@@ -199,15 +171,36 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
               class="fm-input"
             />
           </div>
-          
+        </div>
+
+        <!-- Low Threshold + RFID UID -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
-            <label for="purchase_date" class="fm-label" data-i18n="spools.purchaseDate">Purchase Date</label>
+            <label for="low_weight_threshold_g" class="fm-label" data-i18n="spools.lowThreshold">Low Weight Threshold (g)</label>
             <input
-              type="date"
-              id="purchase_date"
-              name="purchase_date"
+              type="number"
+              id="low_weight_threshold_g"
+              name="low_weight_threshold_g"
+              step="1"
+              value="100"
               class="fm-input"
             />
+          </div>
+          
+          <div>
+            <label for="rfid_uid" class="fm-label" data-i18n="spools.rfidUid">RFID UID</label>
+            <input
+              type="text"
+              id="rfid_uid"
+              name="rfid_uid"
+              placeholder="e.g. 04A2B3C4D5"
+              data-i18n-placeholder="spools.rfidUidPlaceholder"
+              class="fm-input"
+            />
+          </div>
+        </div>
+
+        <!-- Location -->
           </div>
         </div>
 

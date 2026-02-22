@@ -116,6 +116,20 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         </div>
 
         <div>
+          <label for="external_id" class="fm-label" data-i18n="spools.externalId">External ID</label>
+          <input
+            type="text"
+            id="external_id"
+            name="external_id"
+            data-i18n-placeholder="spools.externalIdPlaceholder"
+            placeholder="e.g. MY-SPOOL-001"
+            class="fm-input"
+          />
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
           <label for="purchase_date" class="fm-label" data-i18n="spools.purchaseDate">Purchase Date</label>
           <input
             type="date"
@@ -157,20 +171,6 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             name="rfid_uid"
             data-i18n-placeholder="spools.rfidUidPlaceholder"
             placeholder="e.g. 04A2B3C4D5"
-            class="fm-input"
-          />
-        </div>
-      </div>
-      
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div>
-          <label for="external_id" class="fm-label" data-i18n="spools.externalId">External ID</label>
-          <input
-            type="text"
-            id="external_id"
-            name="external_id"
-            data-i18n-placeholder="spools.externalIdPlaceholder"
-            placeholder="e.g. MY-SPOOL-001"
             class="fm-input"
           />
         </div>
