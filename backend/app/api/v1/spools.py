@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.api.v1.schemas import PaginatedResponse
@@ -265,7 +265,9 @@ async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):
     result = await db.execute(
         select(Spool)
         .where(Spool.id == spool_id, Spool.deleted_at.is_(None))
-        .options(selectinload(Spool.filament))
+        .options(
+            selectinload(Spool.filament).selectinload(Filament.manufacturer)
+        )
     )
     spool = result.scalar_one_or_none()
     if not spool:

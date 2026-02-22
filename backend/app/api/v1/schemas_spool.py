@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
+from .schemas_filament import FilamentDetailResponse
 
 
 class SpoolStatusResponse(BaseModel):
@@ -101,6 +102,7 @@ class SpoolResponse(BaseModel):
     deleted_at: datetime | None
     created_at: datetime
     custom_fields: dict[str, Any] | None
+    filament: FilamentDetailResponse | None = None
 
     class Config:
         from_attributes = True

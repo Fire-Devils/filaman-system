@@ -266,6 +266,7 @@
     "spoolId": "Spool #{id}",
     "spoolCount": "{count} spool(s)",
     "confirmDelete": "Are you sure you want to delete this spool?",
+    "printLabel": "Print Label",
     "quickActions": "Quick Actions",
     "recordWeight": "Record Weight",
     "adjust": "Adjust",

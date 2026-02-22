@@ -270,6 +270,7 @@
     "spoolId": "Spule #{id}",
     "spoolCount": "{count} Spule(n)",
     "confirmDelete": "Möchten Sie diese Spule wirklich löschen?",
+    "printLabel": "Label drucken",
     "quickActions": "Schnellaktionen",
     "recordWeight": "Gewicht erfassen",
     "adjust": "Anpassen",
