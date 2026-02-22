@@ -567,20 +567,27 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
     manufacturerSelect.addEventListener('change', () => {
       const selectedId = parseInt(manufacturerSelect.value)
-      if (!selectedId) return
+      
+      const ewInput = document.getElementById('default_spool_weight_g') as HTMLInputElement
+      const matInput = document.getElementById('spool_material') as HTMLSelectElement
+      const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
+      const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
+
+      if (!selectedId) {
+        ewInput.value = ''
+        matInput.value = ''
+        odInput.value = ''
+        wInput.value = ''
+        return
+      }
 
       const mfr = allManufacturers.find(m => m.id === selectedId)
       if (mfr) {
-        const ewInput = document.getElementById('default_spool_weight_g') as HTMLInputElement
-        const matInput = document.getElementById('spool_material') as HTMLSelectElement
-        const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
-        const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
-
-        // Only prefill if the fields are currently empty to not overwrite user input
-        if (!ewInput.value && mfr.empty_spool_weight_g != null) ewInput.value = String(mfr.empty_spool_weight_g)
-        if (!matInput.value && mfr.spool_material) matInput.value = mfr.spool_material
-        if (!odInput.value && mfr.spool_outer_diameter_mm != null) odInput.value = String(mfr.spool_outer_diameter_mm)
-        if (!wInput.value && mfr.spool_width_mm != null) wInput.value = String(mfr.spool_width_mm)
+        // Update fields with manufacturer defaults
+        ewInput.value = mfr.empty_spool_weight_g != null ? String(mfr.empty_spool_weight_g) : ''
+        matInput.value = mfr.spool_material || ''
+        odInput.value = mfr.spool_outer_diameter_mm != null ? String(mfr.spool_outer_diameter_mm) : ''
+        wInput.value = mfr.spool_width_mm != null ? String(mfr.spool_width_mm) : ''
       }
     })
 

@@ -377,6 +377,52 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       renderCustomFields()
     })
 
+    function applyFilamentDefaults(selectedFilamentId) {
+      const filament = allFilaments.find((f) => f.id === selectedFilamentId)
+      if (!filament) return
+
+      const initialWeightInput = document.getElementById('initial_total_weight_g') as HTMLInputElement
+      const emptySpoolInput = document.getElementById('empty_spool_weight_g') as HTMLInputElement
+      const matInput = document.getElementById('spool_material') as HTMLSelectElement
+      const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
+      const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
+
+      const rawWeight = filament.raw_material_weight_g
+      // Fallback to manufacturer settings if filament defaults are null
+      const spoolWeight = filament.default_spool_weight_g ?? filament.manufacturer?.empty_spool_weight_g
+
+      if (rawWeight != null && spoolWeight != null) {
+        initialWeightInput.value = String(rawWeight + spoolWeight)
+      } else if (rawWeight != null) {
+        initialWeightInput.value = String(rawWeight)
+      } else {
+        initialWeightInput.value = ''
+      }
+
+      if (spoolWeight != null) {
+        emptySpoolInput.value = String(spoolWeight)
+      } else {
+        emptySpoolInput.value = ''
+      }
+
+      matInput.value = filament.spool_material || filament.manufacturer?.spool_material || ''
+      odInput.value = filament.spool_outer_diameter_mm != null ? String(filament.spool_outer_diameter_mm) : (filament.manufacturer?.spool_outer_diameter_mm != null ? String(filament.manufacturer.spool_outer_diameter_mm) : '')
+      wInput.value = filament.spool_width_mm != null ? String(filament.spool_width_mm) : (filament.manufacturer?.spool_width_mm != null ? String(filament.manufacturer.spool_width_mm) : '')
+    }
+
+    document.getElementById('filament_id').addEventListener('change', (e) => {
+      const selectedId = parseInt((e.target as HTMLSelectElement).value)
+      if (selectedId) {
+        applyFilamentDefaults(selectedId)
+      } else {
+        (document.getElementById('initial_total_weight_g') as HTMLInputElement).value = '';
+        (document.getElementById('empty_spool_weight_g') as HTMLInputElement).value = '';
+        (document.getElementById('spool_material') as HTMLSelectElement).value = '';
+        (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = '';
+        (document.getElementById('spool_width_mm') as HTMLInputElement).value = '';
+      }
+    })
+
     function getCsrfToken() {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
