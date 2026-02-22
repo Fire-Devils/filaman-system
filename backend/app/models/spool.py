@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -24,6 +24,10 @@ class SpoolStatus(Base, TimestampMixin):
 
 class Spool(Base, TimestampMixin):
     __tablename__ = "spools"
+
+    __table_args__ = (
+        Index("ix_spools_filament_deleted", "filament_id", "deleted_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     filament_id: Mapped[int] = mapped_column(Integer, ForeignKey("filaments.id"), nullable=False, index=True)
