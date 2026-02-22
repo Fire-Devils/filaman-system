@@ -302,6 +302,10 @@ const { id } = Astro.params
         ` : ''}
       `
       
+      const printUrl = `/spools/${spool.id}/print?designation=${encodeURIComponent(spool.filament?.designation || '')}&mfr=${encodeURIComponent(spool.filament?.manufacturer?.name || '')}&type=${encodeURIComponent(spool.filament?.type || '')}&color=${encodeURIComponent(spool.filament?.manufacturer_color_name || '')}`
+      const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
+      if (printBtn) printBtn.href = printUrl
+      
       document.getElementById('actions-section').classList.remove('hidden')
       
       document.getElementById('btn-delete')?.addEventListener('click', async () => {

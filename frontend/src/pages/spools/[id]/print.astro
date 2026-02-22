@@ -237,7 +237,16 @@ const { id } = Astro.params
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
-    let spool = null
+    
+    // Get data from URL parameters
+    const params = new URLSearchParams(window.location.search)
+    const labelData = {
+      id: id,
+      designation: params.get('designation') || '',
+      manufacturer: params.get('mfr') || '',
+      type: params.get('type') || '',
+      color: params.get('color') || ''
+    }
 
     // Elements
     const widthInput = document.getElementById('input-width')
@@ -268,21 +277,7 @@ const { id } = Astro.params
     document.getElementById('btn-reset').textContent = t('spools.resetDefaults')
     document.getElementById('btn-close').textContent = t('common.close')
 
-    async function loadData() {
-      try {
-        const response = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
-        if (!response.ok) throw new Error('Failed to fetch spool')
-        spool = await response.json()
-        updatePreview()
-      } catch (error) {
-        console.error(error)
-        alert('Error loading spool data')
-      }
-    }
-
     async function updatePreview() {
-      if (!spool) return
-
       // Load qrcode.min.js dynamically if not already loaded
       if (typeof (window as any).QRCode === 'undefined') {
         await new Promise((resolve, reject) => {
@@ -295,10 +290,10 @@ const { id } = Astro.params
       }
 
       // Dimensions
-      const w = widthInput.value
-      const h = heightInput.value
-      const qrSize = qrSizeInput.value
-      const fontSizeBase = fontSizeInput.value / 100
+      const w = (widthInput as HTMLInputElement).value
+      const h = (heightInput as HTMLInputElement).value
+      const qrSize = (qrSizeInput as HTMLInputElement).value
+      const fontSizeBase = parseInt((fontSizeInput as HTMLInputElement).value) / 100
 
       labelPreview.style.width = w + 'mm'
       labelPreview.style.height = h + 'mm'
@@ -310,25 +305,25 @@ const { id } = Astro.params
       document.getElementById('prev-color').style.fontSize = (fontSizeBase * 7.5) + 'pt'
 
       // Content Visibility
-      qrContainer.style.display = checkQR.checked ? 'block' : 'none'
-      document.getElementById('prev-id').style.display = checkID.checked ? 'block' : 'none'
+      qrContainer.style.display = (checkQR as HTMLInputElement).checked ? 'block' : 'none'
+      document.getElementById('prev-id').style.display = (checkID as HTMLInputElement).checked ? 'block' : 'none'
       
-      const mfrText = checkMfr.checked ? (spool.filament?.manufacturer?.name || '') : ''
-      const matText = checkMat.checked ? (spool.filament?.type || '') : ''
+      const mfrText = (checkMfr as HTMLInputElement).checked ? labelData.manufacturer : ''
+      const matText = (checkMat as HTMLInputElement).checked ? labelData.type : ''
       document.getElementById('prev-mfr').textContent = [mfrText, matText].filter(Boolean).join(' - ')
-      document.getElementById('prev-mfr').style.display = (checkMfr.checked || checkMat.checked) ? 'block' : 'none'
+      document.getElementById('prev-mfr').style.display = ((checkMfr as HTMLInputElement).checked || (checkMat as HTMLInputElement).checked) ? 'block' : 'none'
 
-      document.getElementById('prev-color').textContent = checkColor.checked ? (spool.filament?.manufacturer_color_name || '') : ''
-      document.getElementById('prev-color').style.display = checkColor.checked ? 'block' : 'none'
+      document.getElementById('prev-color').textContent = (checkColor as HTMLInputElement).checked ? labelData.color : ''
+      document.getElementById('prev-color').style.display = (checkColor as HTMLInputElement).checked ? 'block' : 'none'
       
-      document.getElementById('prev-id').textContent = `#${spool.id}`
-      document.getElementById('prev-filament').textContent = spool.filament?.designation || ''
+      document.getElementById('prev-id').textContent = `#${labelData.id}`
+      document.getElementById('prev-filament').textContent = labelData.designation
 
       // Update QR Code
-      if (checkQR.checked) {
+      if ((checkQR as HTMLInputElement).checked) {
         qrContainer.innerHTML = ''
-        const url = window.location.origin + '/spools/' + spool.id
-        const qrPx = Math.round(qrSize * 3.78) // mm to px approx at 96dpi
+        const url = window.location.origin + '/spools/' + labelData.id
+        const qrPx = Math.round(parseInt(qrSize) * 3.78) // mm to px approx at 96dpi
         
         // @ts-ignore
         new QRCode(qrContainer, {
@@ -354,9 +349,9 @@ const { id } = Astro.params
     }
 
     // Events
-    [widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach(el => {
+    ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach(el => {
       el.addEventListener('change', updatePreview)
-      if (el.type === 'range' || el.type === 'number') {
+      if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number') {
         el.addEventListener('input', updatePreview)
       }
     })
@@ -366,15 +361,15 @@ const { id } = Astro.params
     })
 
     document.getElementById('btn-reset').addEventListener('click', () => {
-      widthInput.value = 60
-      heightInput.value = 25
-      fontSizeInput.value = 100
-      qrSizeInput.value = 22
-      checkQR.checked = true
-      checkID.checked = true
-      checkMfr.checked = true
-      checkMat.checked = true
-      checkColor.checked = true
+      (widthInput as HTMLInputElement).value = '60';
+      (heightInput as HTMLInputElement).value = '25';
+      (fontSizeInput as HTMLInputElement).value = '100';
+      (qrSizeInput as HTMLInputElement).value = '22';
+      (checkQR as HTMLInputElement).checked = true;
+      (checkID as HTMLInputElement).checked = true;
+      (checkMfr as HTMLInputElement).checked = true;
+      (checkMat as HTMLInputElement).checked = true;
+      (checkColor as HTMLInputElement).checked = true;
       updatePreview()
     })
 
@@ -382,7 +377,7 @@ const { id } = Astro.params
       window.close()
     })
 
-    loadData()
+    updatePreview()
   </script>
 </body>
 </html>
