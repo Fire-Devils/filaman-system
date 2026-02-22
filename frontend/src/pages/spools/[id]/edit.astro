@@ -211,7 +211,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
         <!-- System Fields -->
         <div id="system-fields-container" style="display: none; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
-          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;">System Fields</h3>
+          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;" data-i18n="common.systemFields">System Fields</h3>
           <div id="system-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <!-- Dynamic system fields go here -->
           </div>
@@ -220,7 +220,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         <!-- Custom Fields -->
         <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <span class="fm-label" style="margin: 0;" data-i18n="common.customFields">Extra Fields</span>
+            <span class="fm-label" style="margin: 0;" data-i18n="common.extraFields">Extra Fields</span>
             <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
               + <span data-i18n="common.add">Add</span>
             </button>

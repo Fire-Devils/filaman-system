@@ -35,7 +35,7 @@ const { id } = Astro.params
         Move
       </button>
       <button id="btn-custom-fields" class="fm-btn fm-btn-outline" data-i18n="spools.manageCustomFields">
-        Extra Fields
+        Manage Custom Fields
       </button>
     </div>
   </div>
@@ -286,7 +286,7 @@ const { id } = Astro.params
 
         ${spool.custom_fields && Object.keys(spool.custom_fields).length > 0 ? `
           <div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.customFields') || 'Extra Fields'}</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;" data-i18n="common.extraFields">Extra Fields</div>
             <div>
               ${Object.entries(flattenObject(spool.custom_fields)).map(([key, value]) => `
                 <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">

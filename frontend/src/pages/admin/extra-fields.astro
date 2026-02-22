@@ -8,16 +8,17 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">System Extra Fields</h1>
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.extraFieldsTitle">System Extra Fields</h1>
     <button
       id="btn-new"
       class="fm-btn fm-btn-primary"
+      data-i18n="admin.addField"
     >
       Add Field
     </button>
   </div>
 
-  <p style="color: var(--text-muted); margin-bottom: 24px;">
+  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="admin.extraFieldsHint">
     These fields will be automatically added to all filaments or spools. 
   </p>
   
@@ -25,10 +26,10 @@ import Layout from '../../layouts/Layout.astro'
     <table class="fm-table">
       <thead style="background: var(--bg-soft);">
         <tr>
-          <th>Target Type</th>
-          <th>Key (JSON)</th>
-          <th>Label</th>
-          <th>Default Value</th>
+          <th data-i18n="admin.targetType">Target Type</th>
+          <th data-i18n="admin.keyJson">Key (JSON)</th>
+          <th data-i18n="admin.displayLabel">Label</th>
+          <th data-i18n="admin.defaultValue">Default Value</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
@@ -42,33 +43,33 @@ import Layout from '../../layouts/Layout.astro'
   
   <div id="modal-container" class="fm-modal-overlay">
     <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;">Add System Field</h3>
+      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.addField">Add System Field</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
         <input type="hidden" id="field-id" />
         
         <div>
-          <label for="field-target" class="fm-label">Target Type *</label>
+          <label for="field-target" class="fm-label"><span data-i18n="admin.targetType">Target Type</span> *</label>
           <select id="field-target" required class="fm-select">
-            <option value="filament">Filament</option>
-            <option value="spool">Spool</option>
+            <option value="filament" data-i18n="dashboard.filament">Filament</option>
+            <option value="spool" data-i18n="dashboard.spool">Spool</option>
           </select>
         </div>
         
         <div>
-          <label for="field-key" class="fm-label">Key (JSON) *</label>
+          <label for="field-key" class="fm-label"><span data-i18n="admin.keyJson">Key (JSON)</span> *</label>
           <input type="text" id="field-key" required class="fm-input" placeholder="e.g. material_type" pattern="[a-zA-Z0-9_]+" title="Only letters, numbers, and underscores allowed" />
-          <small style="color: var(--text-muted); font-size: 0.75rem;">Used as key in the custom_fields JSON.</small>
+          <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.keyJsonHint">Used as key in the custom_fields JSON.</small>
         </div>
         
         <div>
-          <label for="field-label" class="fm-label">Display Label *</label>
+          <label for="field-label" class="fm-label"><span data-i18n="admin.displayLabel">Display Label</span> *</label>
           <input type="text" id="field-label" required class="fm-input" placeholder="e.g. Material Type" />
         </div>
         
         <div>
-          <label for="field-default" class="fm-label">Default Value (Optional)</label>
+          <label for="field-default" class="fm-label" data-i18n="admin.defaultValue">Default Value (Optional)</label>
           <input type="text" id="field-default" class="fm-input" placeholder="e.g. PLA" />
-          <small style="color: var(--text-muted); font-size: 0.75rem;">This value will be pre-filled when creating new items.</small>
+          <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.defaultValueHint">This value will be pre-filled when creating new items.</small>
         </div>
         
         <div id="modal-error" class="fm-alert-error hidden"></div>
@@ -113,7 +114,7 @@ import Layout from '../../layouts/Layout.astro'
       const tbody = document.getElementById('fields-table')!
       
       if (fields.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No fields defined</td></tr>`
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">${t('admin.noFieldsDefined')}</td></tr>`
         return
       }
       
@@ -132,7 +133,7 @@ import Layout from '../../layouts/Layout.astro'
       document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          if (!(await (window as any).__fmConfirm(t('common.confirmTitle') || "Delete field?"))) return
+          if (!(await (window as any).__fmConfirm(t('admin.deleteFieldConfirm') || "Delete field?"))) return
           
           try {
             const response = await fetch(`/api/v1/system-extra-fields/${id}`, {
@@ -144,7 +145,7 @@ import Layout from '../../layouts/Layout.astro'
             if (!response.ok) throw new Error('Failed to delete field')
             loadData()
           } catch {
-            await (window as any).__fmAlert(t('common.errorTitle') || "Failed to delete field")
+            await (window as any).__fmAlert(t('admin.failedDeleteField') || "Failed to delete field")
           }
         })
       })
@@ -200,7 +201,7 @@ import Layout from '../../layouts/Layout.astro'
         
         if (!response.ok) {
           const data = await response.json()
-          throw new Error(data.detail || data.message || "Failed to create field")
+          throw new Error(data.detail?.message || data.detail || data.message || "Failed to create field")
         }
         
         closeModal()
