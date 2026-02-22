@@ -337,6 +337,27 @@ async def delete_spool(
     await db.commit()
 
 
+@router_spools.delete("/{spool_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
+async def permanently_delete_spool(
+    spool_id: int,
+    db: DBSession,
+    principal = RequirePermission("spools:delete"),
+):
+    """Permanently delete a spool and all its data (including events) from the database."""
+    result = await db.execute(
+        select(Spool).where(Spool.id == spool_id)
+    )
+    spool = result.scalar_one_or_none()
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+
+    await db.delete(spool)
+    await db.commit()
+
+
 @router_spools.post("/bulk/status", status_code=status.HTTP_200_OK)
 async def change_statuses_bulk(
     data: BulkStatusChangeRequest,

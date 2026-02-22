@@ -77,6 +77,27 @@ const { id } = Astro.params
       </div>
     </div>
   </div>
+
+  <!-- Delete Modal -->
+  <div id="delete-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="fm-card" style="padding: 24px; width: 100%; max-width: 400px; margin: 16px;">
+      <h3 id="delete-modal-title" style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="spools.archiveSpool">Archivieren</h3>
+      <div id="delete-modal-content" style="margin-bottom: 20px;">
+        <p id="delete-modal-message" style="margin: 0 0 16px 0; color: var(--text-muted);" data-i18n="spools.confirmDelete">Möchten Sie diese Spule wirklich löschen?</p>
+        <label class="fm-checkbox-group" style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
+          <input type="checkbox" id="delete-permanent-checkbox" style="width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent);">
+          <span data-i18n="spools.permanentDeleteLabel">Endgültig löschen statt archivieren</span>
+        </label>
+        <p id="delete-permanent-warning" class="hidden" style="margin: 12px 0 0 0; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; font-size: 0.85rem; color: var(--error-text);" data-i18n="spools.permanentDeleteWarning">
+          Diese Spule wird dauerhaft aus der Datenbank gelöscht und fließt nicht mehr in Statistiken ein.
+        </p>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button id="btn-delete-confirm" class="fm-btn fm-btn-danger" data-i18n="spools.archiveSpool">Archivieren</button>
+        <button id="btn-delete-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
   
   <div id="events-section" class="hidden" style="margin-top: 32px;">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.eventHistory">Event History</h2>
@@ -303,11 +324,44 @@ const { id } = Astro.params
       
       document.getElementById('actions-section').classList.remove('hidden')
       
-      document.getElementById('btn-delete')?.addEventListener('click', async () => {
-        if (!(await (window as any).__fmConfirm(t('spools.confirmDelete')))) return
+      // Delete Modal Logic
+      const deleteModal = document.getElementById('delete-modal')
+      const deleteCheckbox = document.getElementById('delete-permanent-checkbox') as HTMLInputElement
+      const deleteWarning = document.getElementById('delete-permanent-warning')
+      const deleteConfirmBtn = document.getElementById('btn-delete-confirm')
+      
+      document.getElementById('btn-delete')?.addEventListener('click', () => {
+        deleteModal?.classList.remove('hidden')
+        deleteCheckbox.checked = false
+        deleteWarning?.classList.add('hidden')
+        deleteConfirmBtn.textContent = t('spools.archiveSpool')
+        document.getElementById('delete-modal-title').textContent = t('spools.archiveSpool')
+      })
+      
+      deleteCheckbox?.addEventListener('change', () => {
+        if (deleteCheckbox.checked) {
+          deleteWarning?.classList.remove('hidden')
+          deleteConfirmBtn.textContent = t('spools.deleteSpool')
+          document.getElementById('delete-modal-title').textContent = t('spools.deleteSpool')
+        } else {
+          deleteWarning?.classList.add('hidden')
+          deleteConfirmBtn.textContent = t('spools.archiveSpool')
+          document.getElementById('delete-modal-title').textContent = t('spools.archiveSpool')
+        }
+      })
+      
+      document.getElementById('btn-delete-cancel')?.addEventListener('click', () => {
+        deleteModal?.classList.add('hidden')
+      })
+      
+      document.getElementById('btn-delete-confirm')?.addEventListener('click', async () => {
+        const isPermanent = deleteCheckbox.checked
+        const url = isPermanent 
+          ? `/api/v1/spools/${id}/permanent` 
+          : `/api/v1/spools/${id}`
         
         try {
-          const response = await fetch(`/api/v1/spools/${id}`, {
+          const response = await fetch(url, {
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
