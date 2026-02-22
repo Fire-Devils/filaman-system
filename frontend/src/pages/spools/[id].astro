@@ -11,98 +11,6 @@ const { id } = Astro.params
 ---
 
 <Layout title="FilaMan - Spool">
-  <style>
-    /* Print Label Styles */
-    #label-modal-container {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    
-    #label-preview {
-      background: white;
-      width: 60mm;
-      height: 25mm;
-      box-sizing: border-box;
-      padding: 1.5mm;
-      display: flex;
-      align-items: center;
-      gap: 3mm;
-      border: 1px solid #ccc;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-      color: black;
-      overflow: hidden;
-    }
-
-    @media print {
-      /* Hide all top-level layout elements except the one containing our modal */
-      body > *:not(#fm-page) {
-        display: none !important;
-      }
-      
-      #fm-page {
-        display: block !important;
-        background: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-      }
-
-      /* Hide sidebar and other main content */
-      .fm-sidebar, 
-      main > *:not(#label-modal-container) {
-        display: none !important;
-      }
-
-      main {
-        padding: 0 !important;
-        margin: 0 !important;
-        display: block !important;
-      }
-      
-      #label-modal-container {
-        display: block !important;
-        position: static !important;
-        background: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        visibility: visible !important;
-      }
-
-      /* Only show the label preview */
-      #label-preview {
-        display: flex !important;
-        visibility: visible !important;
-        position: fixed !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 60mm !important;
-        height: 25mm !important;
-        padding: 1.5mm !important;
-        border: none !important;
-        box-shadow: none !important;
-        background: white !important;
-        color: black !important;
-      }
-
-      #label-preview * {
-        visibility: visible !important;
-      }
-
-      /* Hide the buttons in the modal during print */
-      #label-modal-container > div > div:last-child {
-        display: none !important;
-      }
-
-      @page {
-        size: 60mm 25mm;
-        margin: 0;
-      }
-    }
-  </style>
   <div style="margin-bottom: 24px;">
     <a href="/spools" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
   </div>
@@ -129,9 +37,9 @@ const { id } = Astro.params
       <button id="btn-custom-fields" class="fm-btn fm-btn-outline" data-i18n="spools.manageCustomFields">
         Manage Custom Fields
       </button>
-      <button id="btn-print-label" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981;" data-i18n="spools.printLabel">
-        Print Label
-      </button>
+      <a href={`/spools/${id}/print`} target="_blank" id="btn-print-label" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981; text-decoration: none; display: flex; align-items: center; justify-content: center;">
+        <span data-i18n="spools.printLabel">Print Label</span>
+      </a>
     </div>
   </div>
   
@@ -191,31 +99,6 @@ const { id } = Astro.params
           </tr>
         </tbody>
       </table>
-    </div>
-  </div>
-
-  <!-- Label Print Modal -->
-  <div id="label-modal-container">
-    <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
-      <div id="label-preview">
-        <div id="label-qr" style="flex-shrink: 0; width: 22mm; height: 22mm; background: white;"></div>
-        <div style="display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.1;">
-          <div id="label-id" style="font-size: 14pt; font-weight: 700; margin-bottom: 1pt;"></div>
-          <div id="label-filament" style="font-size: 8pt; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          <div id="label-mfr" style="font-size: 7pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          <div id="label-color" style="font-size: 7pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-        </div>
-      </div>
-      
-      <div style="display: flex; gap: 12px;">
-        <button id="btn-do-print" class="fm-btn fm-btn-primary">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-          <span data-i18n="common.print">Print</span>
-        </button>
-        <button id="btn-close-label" class="fm-btn fm-btn-outline" style="background: white;" data-i18n="common.close">
-          Close
-        </button>
-      </div>
     </div>
   </div>
 

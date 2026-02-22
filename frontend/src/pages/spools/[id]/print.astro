@@ -1,0 +1,388 @@
+---
+export function getStaticPaths() {
+  return [
+    {params: {id: 'detail'}},
+  ];
+}
+
+const { id } = Astro.params
+---
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FilaMan - Print Label</title>
+  <style>
+    :root {
+      --bg: #f8f6f1;
+      --accent: #1c9b6b;
+      --text: #1a231e;
+      --border: rgba(0, 0, 0, 0.1);
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, sans-serif;
+      background: #e5e7eb;
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 320px;
+      background: white;
+      border-right: 1px solid var(--border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .preview-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      overflow: auto;
+    }
+
+    .label-preview {
+      background: white;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      padding: 1.5mm;
+      box-sizing: border-box;
+      gap: 3mm;
+      overflow: hidden;
+      position: relative;
+      border: 1px dashed #ccc; /* Preview border */
+    }
+
+    /* Target just the text container for font scaling */
+    #label-text-container {
+      flex: 1;
+      min-width: 0;
+    }
+
+    @media print {
+      body {
+        background: white;
+        height: auto;
+        display: block;
+      }
+      .sidebar {
+        display: none !important;
+      }
+      .preview-container {
+        padding: 0;
+        margin: 0;
+        display: block;
+      }
+      .label-preview {
+        box-shadow: none;
+        border: none !important;
+        position: fixed;
+        left: 0;
+        top: 0;
+      }
+      @page {
+        margin: 0;
+      }
+    }
+
+    .fm-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .fm-input, .fm-select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+
+    .fm-checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .fm-btn {
+      padding: 12px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .fm-btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .fm-btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+    }
+
+    @media print {
+      body {
+        background: white;
+        height: auto;
+        display: block;
+      }
+      .sidebar {
+        display: none !important;
+      }
+      .preview-container {
+        padding: 0;
+        margin: 0;
+        display: block;
+      }
+      .label-preview {
+        box-shadow: none;
+        border: none;
+        position: fixed;
+        left: 0;
+        top: 0;
+      }
+      @page {
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h2 id="title-settings">Print Settings</h2>
+    
+    <div>
+      <label class="fm-label" id="label-width-text">Width (mm)</label>
+      <input type="number" id="input-width" value="60" class="fm-input">
+    </div>
+    
+    <div>
+      <label class="fm-label" id="label-height-text">Height (mm)</label>
+      <input type="number" id="input-height" value="25" class="fm-input">
+    </div>
+
+    <div>
+      <label class="fm-label" id="label-font-size-text">Font Size (%)</label>
+      <input type="range" id="input-font-size" min="50" max="200" value="100" class="fm-input">
+    </div>
+
+    <div>
+      <label class="fm-label" id="label-qr-size-text">QR Size (mm)</label>
+      <input type="number" id="input-qr-size" value="22" class="fm-input">
+    </div>
+
+    <div style="display: grid; gap: 10px;">
+      <label class="fm-checkbox-group">
+        <input type="checkbox" id="check-qr" checked>
+        <span id="label-show-qr">Show QR Code</span>
+      </label>
+      <label class="fm-checkbox-group">
+        <input type="checkbox" id="check-id" checked>
+        <span id="label-show-id">Show Spool ID</span>
+      </label>
+      <label class="fm-checkbox-group">
+        <input type="checkbox" id="check-mfr" checked>
+        <span id="label-show-mfr">Show Manufacturer</span>
+      </label>
+      <label class="fm-checkbox-group">
+        <input type="checkbox" id="check-mat" checked>
+        <span id="label-show-mat">Show Material</span>
+      </label>
+      <label class="fm-checkbox-group">
+        <input type="checkbox" id="check-color" checked>
+        <span id="label-show-color">Show Color</span>
+      </label>
+    </div>
+
+    <div style="margin-top: auto; display: grid; gap: 12px;">
+      <button id="btn-print" class="fm-btn fm-btn-primary">Print Now</button>
+      <button id="btn-reset" class="fm-btn fm-btn-outline">Reset Defaults</button>
+      <button id="btn-close" class="fm-btn fm-btn-outline">Close</button>
+    </div>
+  </div>
+
+  <div class="preview-container">
+    <div id="label-preview" class="label-preview">
+      <div id="label-qr-container"></div>
+      <div id="label-text-container" style="display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.1;">
+        <div id="prev-id" style="font-size: 1.4em; font-weight: 700; margin-bottom: 2px;"></div>
+        <div id="prev-filament" style="font-size: 0.9em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+        <div id="prev-mfr" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+        <div id="prev-color" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../../lib/i18n'
+    await initI18n()
+
+    const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
+    let spool = null
+
+    // Elements
+    const widthInput = document.getElementById('input-width')
+    const heightInput = document.getElementById('input-height')
+    const fontSizeInput = document.getElementById('input-font-size')
+    const qrSizeInput = document.getElementById('input-qr-size')
+    const checkQR = document.getElementById('check-qr')
+    const checkID = document.getElementById('check-id')
+    const checkMfr = document.getElementById('check-mfr')
+    const checkMat = document.getElementById('check-mat')
+    const checkColor = document.getElementById('check-color')
+    const labelPreview = document.getElementById('label-preview')
+    const qrContainer = document.getElementById('label-qr-container')
+    const textContainer = document.getElementById('label-text-container')
+
+    // Translations
+    document.getElementById('title-settings').textContent = t('spools.printSettings')
+    document.getElementById('label-width-text').textContent = t('spools.labelWidth')
+    document.getElementById('label-height-text').textContent = t('spools.labelHeight')
+    document.getElementById('label-font-size-text').textContent = t('spools.fontSize')
+    document.getElementById('label-qr-size-text').textContent = t('spools.qrSize')
+    document.getElementById('label-show-qr').textContent = t('spools.showQRCode')
+    document.getElementById('label-show-id').textContent = t('spools.showSpoolId')
+    document.getElementById('label-show-mfr').textContent = t('spools.showManufacturer')
+    document.getElementById('label-show-mat').textContent = t('spools.showMaterial')
+    document.getElementById('label-show-color').textContent = t('spools.showColor')
+    document.getElementById('btn-print').textContent = t('common.print')
+    document.getElementById('btn-reset').textContent = t('spools.resetDefaults')
+    document.getElementById('btn-close').textContent = t('common.close')
+
+    async function loadData() {
+      try {
+        const response = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch spool')
+        spool = await response.json()
+        updatePreview()
+      } catch (error) {
+        console.error(error)
+        alert('Error loading spool data')
+      }
+    }
+
+    async function updatePreview() {
+      if (!spool) return
+
+      // Load qrcode.min.js dynamically if not already loaded
+      if (typeof (window as any).QRCode === 'undefined') {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = '/vendor/qrcode.min.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      // Dimensions
+      const w = widthInput.value
+      const h = heightInput.value
+      const qrSize = qrSizeInput.value
+      const fontSizeBase = fontSizeInput.value / 100
+
+      labelPreview.style.width = w + 'mm'
+      labelPreview.style.height = h + 'mm'
+      
+      // Scale fonts
+      document.getElementById('prev-id').style.fontSize = (fontSizeBase * 14) + 'pt'
+      document.getElementById('prev-filament').style.fontSize = (fontSizeBase * 9) + 'pt'
+      document.getElementById('prev-mfr').style.fontSize = (fontSizeBase * 7.5) + 'pt'
+      document.getElementById('prev-color').style.fontSize = (fontSizeBase * 7.5) + 'pt'
+
+      // Content Visibility
+      qrContainer.style.display = checkQR.checked ? 'block' : 'none'
+      document.getElementById('prev-id').style.display = checkID.checked ? 'block' : 'none'
+      
+      const mfrText = checkMfr.checked ? (spool.filament?.manufacturer?.name || '') : ''
+      const matText = checkMat.checked ? (spool.filament?.type || '') : ''
+      document.getElementById('prev-mfr').textContent = [mfrText, matText].filter(Boolean).join(' - ')
+      document.getElementById('prev-mfr').style.display = (checkMfr.checked || checkMat.checked) ? 'block' : 'none'
+
+      document.getElementById('prev-color').textContent = checkColor.checked ? (spool.filament?.manufacturer_color_name || '') : ''
+      document.getElementById('prev-color').style.display = checkColor.checked ? 'block' : 'none'
+      
+      document.getElementById('prev-id').textContent = `#${spool.id}`
+      document.getElementById('prev-filament').textContent = spool.filament?.designation || ''
+
+      // Update QR Code
+      if (checkQR.checked) {
+        qrContainer.innerHTML = ''
+        const url = window.location.origin + '/spools/' + spool.id
+        const qrPx = Math.round(qrSize * 3.78) // mm to px approx at 96dpi
+        
+        // @ts-ignore
+        new QRCode(qrContainer, {
+          text: url,
+          width: qrPx,
+          height: qrPx,
+          colorDark: "#000000",
+          colorLight: "#ffffff",
+          correctLevel: (window as any).QRCode.CorrectLevel.M
+        })
+        
+        qrContainer.style.width = qrSize + 'mm'
+        qrContainer.style.height = qrSize + 'mm'
+      }
+
+      // Update Page Size for printing
+      const style = document.createElement('style')
+      style.innerHTML = `@page { size: ${w}mm ${h}mm; margin: 0; }`
+      const oldStyle = document.querySelector('style#page-style')
+      if (oldStyle) oldStyle.remove()
+      style.id = 'page-style'
+      document.head.appendChild(style)
+    }
+
+    // Events
+    [widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach(el => {
+      el.addEventListener('change', updatePreview)
+      if (el.type === 'range' || el.type === 'number') {
+        el.addEventListener('input', updatePreview)
+      }
+    })
+
+    document.getElementById('btn-print').addEventListener('click', () => {
+      window.print()
+    })
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      widthInput.value = 60
+      heightInput.value = 25
+      fontSizeInput.value = 100
+      qrSizeInput.value = 22
+      checkQR.checked = true
+      checkID.checked = true
+      checkMfr.checked = true
+      checkMat.checked = true
+      checkColor.checked = true
+      updatePreview()
+    })
+
+    document.getElementById('btn-close').addEventListener('click', () => {
+      window.close()
+    })
+
+    loadData()
+  </script>
+</body>
+</html>
