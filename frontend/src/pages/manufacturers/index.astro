@@ -161,6 +161,21 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
 
+  <!-- Info Modal -->
+  <div id="info-modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
+    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
+      <h3 id="info-modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Manufacturer Details</h3>
+      <div id="info-modal-content" style="display: grid; gap: 12px;">
+        <!-- Filled via JS -->
+      </div>
+      <div style="margin-top: 24px;">
+        <button type="button" id="info-modal-close" class="fm-btn fm-btn-outline" style="width: 100%;" data-i18n="common.close">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     import { t, initI18n } from '../../lib/i18n'
     await initI18n()
@@ -304,7 +319,11 @@ import Layout from '../../layouts/Layout.astro'
 
       tbody.innerHTML = sorted.map(mf => `
         <tr>
-          <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td style="font-weight: 500;">
+            <span class="btn-info" style="cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; text-decoration-color: rgba(78, 227, 162, 0.3);" data-mf='${escapeHtml(JSON.stringify(mf))}'>
+              ${escapeHtml(mf.name)}
+            </span>
+          </td>
           <td>${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td><a href="/filaments?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
           <td><a href="/spools?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
@@ -315,6 +334,14 @@ import Layout from '../../layouts/Layout.astro'
           </td>
         </tr>
       `).join('')
+
+      document.querySelectorAll('.btn-info').forEach(span => {
+        span.addEventListener('click', (e) => {
+          const target = e.currentTarget as HTMLElement
+          const mf = JSON.parse(target.dataset.mf!)
+          openInfoModal(mf)
+        })
+      })
 
       document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -414,17 +441,72 @@ import Layout from '../../layouts/Layout.astro'
       document.getElementById('modal-container')!.style.display = 'none'
     }
 
+    function openInfoModal(mf: any) {
+      const container = document.getElementById('info-modal-container')!
+      const content = document.getElementById('info-modal-content')!
+      const title = document.getElementById('info-modal-title')!
+
+      title.textContent = mf.name
+
+      content.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.filaments')}</div>
+            <div style="font-size: 1.2rem; font-weight: 600;">${mf.filament_count || 0}</div>
+          </div>
+          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.availableSpools')}</div>
+            <div style="font-size: 1.2rem; font-weight: 600;">${mf.spool_count || 0}</div>
+          </div>
+          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.archivedSpools')}</div>
+            <div style="font-size: 1.2rem; font-weight: 600;">${mf.archived_spool_count || 0}</div>
+          </div>
+          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
+             <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.materials')}</div>
+             <div style="font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${(mf.materials || []).join(', ')}">
+               ${(mf.materials || []).join(', ') || '-'}
+             </div>
+          </div>
+        </div>
+
+        <div style="display: grid; gap: 12px; margin-top: 8px;">
+          <div class="fm-card" style="border-left: 4px solid var(--accent); padding: 12px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.totalValueAvailable')}</div>
+            <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">${(mf.total_price_available || 0).toFixed(2)}</div>
+          </div>
+          <div class="fm-card" style="border-left: 4px solid var(--text-muted); padding: 12px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.totalSpentAllTime')}</div>
+            <div style="font-size: 1.4rem; font-weight: 700;">${(mf.total_price_all || 0).toFixed(2)}</div>
+          </div>
+        </div>
+      `
+
+      container.style.display = 'flex'
+    }
+
+    function closeInfoModal() {
+      document.getElementById('info-modal-container')!.style.display = 'none'
+    }
+
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    document.getElementById('info-modal-close')?.addEventListener('click', closeInfoModal)
 
-    // Close modal on backdrop click
+    // Close modals on backdrop click
     document.getElementById('modal-container')?.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) closeModal()
     })
+    document.getElementById('info-modal-container')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeInfoModal()
+    })
 
-    // Close modal on Escape key
+    // Close modals on Escape key
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeModal()
+      if (e.key === 'Escape') {
+        closeModal()
+        closeInfoModal()
+      }
     })
 
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {

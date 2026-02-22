@@ -403,7 +403,12 @@
     "forceDelete": "Trotzdem löschen",
     "searchPlaceholder": "Hersteller suchen...",
     "allMaterials": "Alle Materialien",
-    "noResults": "Keine Hersteller entsprechen den aktuellen Filtern."
+    "noResults": "Keine Hersteller entsprechen den aktuellen Filtern.",
+    "infoTitle": "Herstellerinformationen",
+    "availableSpools": "Verfügbare Spulen",
+    "archivedSpools": "Archivierte Spulen",
+    "totalValueAvailable": "Gesamtwert (verfügbar)",
+    "totalSpentAllTime": "Gesamtausgaben (historisch)"
   },
   "admin": {
     "title": "Admin",

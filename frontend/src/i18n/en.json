@@ -400,7 +400,12 @@
     "forceDelete": "Delete Anyway",
     "searchPlaceholder": "Search manufacturers...",
     "allMaterials": "All Materials",
-    "noResults": "No manufacturers match the current filters."
+    "noResults": "No manufacturers match the current filters.",
+    "infoTitle": "Manufacturer Information",
+    "availableSpools": "Available Spools",
+    "archivedSpools": "Archived Spools",
+    "totalValueAvailable": "Total Value (available)",
+    "totalSpentAllTime": "Total Spent (all time)"
   },
   "admin": {
     "title": "Admin",

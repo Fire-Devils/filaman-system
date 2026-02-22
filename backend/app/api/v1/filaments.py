@@ -22,7 +22,7 @@ from app.api.v1.schemas_filament import (
     ManufacturerResponse,
     ManufacturerUpdate,
 )
-from app.models import Color, Filament, FilamentColor, Manufacturer, Spool
+from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
 
 router = APIRouter(prefix="/manufacturers", tags=["manufacturers"])
 
@@ -43,7 +43,10 @@ async def list_manufacturers(
 
     mfr_ids = [m.id for m in items]
     fil_counts: dict[int, int] = {}
-    spool_counts: dict[int, int] = {}
+    active_spool_counts: dict[int, int] = {}
+    archived_spool_counts: dict[int, int] = {}
+    total_price_available: dict[int, float] = {}
+    total_price_all: dict[int, float] = {}
     materials_map: dict[int, list[str]] = {m.id: [] for m in items}
 
     if mfr_ids:
@@ -52,12 +55,28 @@ async def list_manufacturers(
         
         fc_stmt = select(Filament.manufacturer_id, func.count(Filament.id)).where(Filament.manufacturer_id.in_(mfr_ids)).group_by(Filament.manufacturer_id)
         types_stmt = select(Filament.manufacturer_id, Filament.type).where(Filament.manufacturer_id.in_(mfr_ids)).distinct()
-        spool_stmt = select(Filament.manufacturer_id, func.count(Spool.id)).join(Filament, Spool.filament_id == Filament.id).where(Filament.manufacturer_id.in_(mfr_ids)).where(Spool.deleted_at.is_(None)).group_by(Filament.manufacturer_id)
+        
+        # Comprehensive spool stats query
+        # We need sum of prices and counts for both active and archived
+        spool_stats_stmt = (
+            select(
+                Filament.manufacturer_id,
+                func.count(Spool.id).filter(SpoolStatus.key != "archived").label("active_count"),
+                func.count(Spool.id).filter(SpoolStatus.key == "archived").label("archived_count"),
+                func.sum(Spool.purchase_price).filter(SpoolStatus.key != "archived").label("active_price"),
+                func.sum(Spool.purchase_price).label("total_price")
+            )
+            .join(Spool, Spool.filament_id == Filament.id)
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+            .where(Filament.manufacturer_id.in_(mfr_ids))
+            .where(Spool.deleted_at.is_(None))
+            .group_by(Filament.manufacturer_id)
+        )
 
-        fc_result, types_result, spool_result = await asyncio.gather(
+        fc_result, types_result, spool_stats_result = await asyncio.gather(
             db.execute(fc_stmt),
             db.execute(types_stmt),
-            db.execute(spool_stmt)
+            db.execute(spool_stats_stmt)
         )
 
         fil_counts = {row[0]: row[1] for row in fc_result.all()}
@@ -66,15 +85,23 @@ async def list_manufacturers(
             mfr_id, mat_type = row[0], row[1]
             if mfr_id in materials_map and mat_type:
                 materials_map[mfr_id].append(mat_type)
-                
-        spool_counts = {row[0]: row[1] for row in spool_result.all()}
+        
+        for row in spool_stats_result.all():
+            mfr_id, active_c, archived_c, active_p, total_p = row
+            active_spool_counts[mfr_id] = active_c or 0
+            archived_spool_counts[mfr_id] = archived_c or 0
+            total_price_available[mfr_id] = active_p or 0.0
+            total_price_all[mfr_id] = total_p or 0.0
 
     items_out = [
         ManufacturerResponse.model_validate(
             {
                 **m.__dict__,
                 "filament_count": fil_counts.get(m.id, 0),
-                "spool_count": spool_counts.get(m.id, 0),
+                "spool_count": active_spool_counts.get(m.id, 0),
+                "archived_spool_count": archived_spool_counts.get(m.id, 0),
+                "total_price_available": total_price_available.get(m.id, 0.0),
+                "total_price_all": total_price_all.get(m.id, 0.0),
                 "materials": sorted(materials_map.get(m.id, [])),
             }
         )
