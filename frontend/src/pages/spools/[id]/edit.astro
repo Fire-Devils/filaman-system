@@ -39,41 +39,39 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
             required
             class="fm-select"
           >
-            <option value="" data-i18n="spools.selectFilament">Select filament...</option>
-          </select>
-        </div>
-        
-        <!-- Status -->
-        <div>
-          <label for="status_id" class="fm-label" data-i18n="spools.status">Status</label>
-          <select 
-            id="status_id" 
-            name="status_id" 
-            class="fm-select"
-          >
-            <option value="">-</option>
-          </select>
-        </div>
+          <option value="" data-i18n="spools.selectFilament">Select filament...</option>
+        </select>
+      </div>
 
-        <!-- Weights row -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div>
-            <label for="initial_total_weight_g" class="fm-label" data-i18n="spools.initialWeight">Initial Total Weight (g)</label>
-            <input
-              type="number"
-              id="initial_total_weight_g"
-              name="initial_total_weight_g"
-              step="1"
-              placeholder="e.g. 1250"
-              data-i18n-placeholder="spools.initialWeightPlaceholder"
-              class="fm-input"
-            />
-          </div>
-        </div>
+      <!-- Status -->
+      <div>
+        <label for="status_id" class="fm-label" data-i18n="spools.status">Status</label>
+        <select 
+          id="status_id" 
+          name="status_id" 
+          class="fm-select"
+        >
+          <option value="">-</option>
+        </select>
+      </div>
 
-        <!-- Spool Properties -->
-        <div class="fm-card" style="padding: 16px; margin-top: 8px;">
-          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Properties</h3>
+      <!-- Initial Total Weight -->
+      <div>
+        <label for="initial_total_weight_g" class="fm-label" data-i18n="spools.initialWeight">Initial Total Weight (g)</label>
+        <input
+          type="number"
+          id="initial_total_weight_g"
+          name="initial_total_weight_g"
+          step="1"
+          placeholder="e.g. 1250"
+          data-i18n-placeholder="spools.initialWeightPlaceholder"
+          class="fm-input"
+        />
+      </div>
+
+      <!-- Spool Properties -->
+      <div class="fm-card" style="padding: 16px; margin-top: 8px;">
+        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);" data-i18n="common.spoolDefaultSettings">Spool Properties</h3>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div>
               <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
