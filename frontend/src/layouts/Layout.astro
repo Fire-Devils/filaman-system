@@ -94,12 +94,12 @@ const { title } = Astro.props
           <!-- Sidebar Footer: User + Theme -->
           <div class="hide-collapsed" style="margin-top: auto; display: grid; gap: 12px;">
             <!-- User Profile Row -->
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-soft); border-radius: 12px; border: 1px solid var(--border);">
-              <div style="flex: 1; min-width: 0; overflow: hidden; padding-right: 8px;">
-                <div id="user-name" style="font-weight: 600; color: var(--text); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-soft); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
+              <div style="flex: 1 1 0%; min-width: 0; padding-right: 8px;">
+                <div id="user-name" style="font-weight: 600; color: var(--text); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">
                   <span style="color: var(--text-muted);" data-i18n="common.loading">Loading...</span>
                 </div>
-                <div id="user-role" class="invisible" style="color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">User</div>
+                <div id="user-role" class="invisible" style="color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">User</div>
               </div>
               <div style="display: flex; gap: 4px; flex-shrink: 0;">
                 <a
