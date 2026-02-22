@@ -181,7 +181,7 @@ import Layout from '../../layouts/Layout.astro'
         />
       </div>
       
-      <!-- Weights row -->
+      <!-- Weights + Density row -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
           <label for="raw_material_weight_g" class="fm-label" data-i18n="filaments.rawMaterialWeight">Raw Material Weight (g)</label>
@@ -195,11 +195,23 @@ import Layout from '../../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
+        <div>
+          <label for="density_g_cm3" class="fm-label" data-i18n="filaments.density">Density (g/cm³)</label>
+          <input
+            type="number"
+            id="density_g_cm3"
+            name="density_g_cm3"
+            step="0.01"
+            placeholder="e.g. 1.24"
+            data-i18n-placeholder="filaments.densityPlaceholder"
+            class="fm-input"
+          />
+        </div>
       </div>
         
       <!-- Spool Settings row -->
       <div class="fm-card" style="margin-top: 8px; padding: 16px;">
-        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Default Settings</h3>
+        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);" data-i18n="common.spoolDefaultSettings">Spool Default Settings</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div>
             <label for="default_spool_weight_g" class="fm-label" data-i18n="filaments.defaultSpoolWeight">Empty Spool Weight (g)</label>
@@ -248,7 +260,7 @@ import Layout from '../../layouts/Layout.astro'
         </div>
       </div>
       
-      <!-- Price + Density row -->
+      <!-- Price + Shop URL -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
           <label for="price" class="fm-label" data-i18n="filaments.price">Price</label>
@@ -264,30 +276,16 @@ import Layout from '../../layouts/Layout.astro'
         </div>
         
         <div>
-          <label for="density_g_cm3" class="fm-label" data-i18n="filaments.density">Density (g/cm³)</label>
+          <label for="shop_url" class="fm-label" data-i18n="filaments.shopUrl">Shop URL</label>
           <input
-            type="number"
-            id="density_g_cm3"
-            name="density_g_cm3"
-            step="0.01"
-            placeholder="e.g. 1.24"
-            data-i18n-placeholder="filaments.densityPlaceholder"
+            type="url"
+            id="shop_url"
+            name="shop_url"
+            placeholder="e.g. https://shop.example.com/filament"
+            data-i18n-placeholder="filaments.shopUrlPlaceholder"
             class="fm-input"
           />
         </div>
-      </div>
-      
-      <!-- Shop URL -->
-      <div>
-        <label for="shop_url" class="fm-label" data-i18n="filaments.shopUrl">Shop URL</label>
-        <input
-          type="url"
-          id="shop_url"
-          name="shop_url"
-          placeholder="e.g. https://shop.example.com/filament"
-          data-i18n-placeholder="filaments.shopUrlPlaceholder"
-          class="fm-input"
-        />
       </div>
 
       <!-- System Fields -->

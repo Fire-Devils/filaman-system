@@ -316,7 +316,8 @@
     "spoolMaterialOther": "Sonstiges",
     "purchasePrice": "Kaufpreis",
     "purchaseDate": "Kaufdatum",
-    "expirationDate": "Ablaufdatum"
+    "expirationDate": "Ablaufdatum",
+    "spoolDefaultSettings": "Spool-Standardwerte"
   },
   "colors": {
     "title": "Farben verwalten",

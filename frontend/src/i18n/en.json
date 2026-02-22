@@ -313,7 +313,8 @@
     "spoolMaterialOther": "Other",
     "purchasePrice": "Purchase Price",
     "purchaseDate": "Purchase Date",
-    "expirationDate": "Expiration Date"
+    "expirationDate": "Expiration Date",
+    "spoolDefaultSettings": "Spool Default Settings"
   },
   "colors": {
     "title": "Manage Colors",
