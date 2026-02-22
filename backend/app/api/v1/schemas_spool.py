@@ -47,7 +47,6 @@ class SpoolCreate(BaseModel):
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
-    expiration_date: datetime | None = None
     purchase_price: float | None = None
     stocked_in_at: datetime | None = None
     initial_total_weight_g: float | None = None
@@ -68,7 +67,6 @@ class SpoolUpdate(BaseModel):
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
-    expiration_date: datetime | None = None
     purchase_price: float | None = None
     initial_total_weight_g: float | None = None
     empty_spool_weight_g: float | None = None
@@ -88,7 +86,6 @@ class SpoolResponse(BaseModel):
     external_id: str | None
     location_id: int | None
     purchase_date: datetime | None
-    expiration_date: datetime | None
     purchase_price: float | None
     stocked_in_at: datetime | None
     last_used_at: datetime | None

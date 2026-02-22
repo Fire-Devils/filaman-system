@@ -114,6 +114,16 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             class="fm-input"
           />
         </div>
+
+        <div>
+          <label for="purchase_date" class="fm-label" data-i18n="spools.purchaseDate">Purchase Date</label>
+          <input
+            type="date"
+            id="purchase_date"
+            name="purchase_date"
+            class="fm-input"
+          />
+        </div>
         
         <div>
           <label for="purchase_price" class="fm-label" data-i18n="spools.purchasePrice">Purchase Price</label>
@@ -212,6 +222,12 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   <script>
     import { t, initI18n } from '../../lib/i18n'
     await initI18n()
+
+    // Set default purchase_date to today
+    const purchaseDateInput = document.getElementById('purchase_date') as HTMLInputElement
+    if (purchaseDateInput) {
+      purchaseDateInput.value = new Date().toISOString().split('T')[0]
+    }
 
     const filamentId = new URLSearchParams(window.location.search).get('filament_id')
     
@@ -467,6 +483,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
 
       const purchasePrice = formData.get('purchase_price')
       if (purchasePrice) data.purchase_price = parseFloat(purchasePrice as string)
+
+      const purchaseDate = formData.get('purchase_date')
+      if (purchaseDate) data.purchase_date = purchaseDate
 
       const spoolOuterDiameter = formData.get('spool_outer_diameter_mm')
       if (spoolOuterDiameter) data.spool_outer_diameter_mm = parseFloat(spoolOuterDiameter)

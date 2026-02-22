@@ -37,7 +37,6 @@ class Spool(Base, TimestampMixin):
     location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("locations.id"), nullable=True, index=True)
 
     purchase_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    expiration_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     purchase_price: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     stocked_in_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -211,17 +211,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           </div>
         </div>
 
-        <!-- Expiration Date -->
-        <div>
-          <label for="expiration_date" class="fm-label" data-i18n="spools.expirationDate">Expiration Date</label>
-          <input
-            type="date"
-            id="expiration_date"
-            name="expiration_date"
-            class="fm-input"
-          />
-        </div>
-
         <!-- System Fields -->
         <div id="system-fields-container" style="display: none; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
           <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;" data-i18n="common.systemFields">System Fields</h3>
@@ -559,9 +548,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       if (s.purchase_date) {
         document.getElementById('purchase_date').value = s.purchase_date.split('T')[0]
       }
-      if (s.expiration_date) {
-        document.getElementById('expiration_date').value = s.expiration_date.split('T')[0]
-      }
 
       if (s.custom_fields && Object.keys(s.custom_fields).length > 0) {
         const flat = flattenObject(s.custom_fields)
@@ -633,9 +619,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
       const purchaseDate = formData.get('purchase_date')
       patchData.purchase_date = purchaseDate || null
-
-      const expirationDate = formData.get('expiration_date')
-      patchData.expiration_date = expirationDate || null
 
       const fieldsObj = {}
 
