@@ -13,14 +13,39 @@ const { id } = Astro.params
 <Layout title="FilaMan - Spool">
   <style>
     /* Print Label Styles */
+    #label-modal-container {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    
+    #label-preview {
+      background: white;
+      width: 60mm;
+      height: 25mm;
+      box-sizing: border-box;
+      padding: 1.5mm;
+      display: flex;
+      align-items: center;
+      gap: 3mm;
+      border: 1px solid #ccc;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      color: black;
+      overflow: hidden;
+    }
+
     @media print {
       body * {
         visibility: hidden;
       }
-      #print-label-template, #print-label-template * {
+      #label-preview, #label-preview * {
         visibility: visible;
       }
-      #print-label-template {
+      #label-preview {
         display: flex !important;
         position: fixed;
         left: 0;
@@ -28,12 +53,8 @@ const { id } = Astro.params
         width: 60mm;
         height: 25mm;
         padding: 1.5mm;
-        background: white;
-        color: black;
-        box-sizing: border-box;
-        align-items: center;
-        gap: 2mm;
-        overflow: hidden;
+        border: none;
+        box-shadow: none;
       }
       @page {
         size: 60mm 25mm;
@@ -132,18 +153,31 @@ const { id } = Astro.params
     </div>
   </div>
 
-  <!-- Hidden Print Label Template (60x25mm) -->
-  <div id="print-label-template">
-    <div id="label-qr" style="flex-shrink: 0; width: 22mm; height: 22mm; background: white;"></div>
-    <div style="display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.1;">
-      <div id="label-id" style="font-size: 14pt; font-weight: 700; margin-bottom: 1pt;"></div>
-      <div id="label-filament" style="font-size: 8pt; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-      <div id="label-mfr" style="font-size: 7pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-      <div id="label-color" style="font-size: 7pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+  <!-- Label Print Modal -->
+  <div id="label-modal-container">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+      <div id="label-preview">
+        <div id="label-qr" style="flex-shrink: 0; width: 22mm; height: 22mm; background: white;"></div>
+        <div style="display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.1;">
+          <div id="label-id" style="font-size: 14pt; font-weight: 700; margin-bottom: 1pt;"></div>
+          <div id="label-filament" style="font-size: 8pt; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+          <div id="label-mfr" style="font-size: 7pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+          <div id="label-color" style="font-size: 7pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+        </div>
+      </div>
+      
+      <div style="display: flex; gap: 12px;">
+        <button id="btn-do-print" class="fm-btn fm-btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+          <span data-i18n="common.print">Print</span>
+        </button>
+        <button id="btn-close-label" class="fm-btn fm-btn-outline" style="background: white;" data-i18n="common.close">
+          Close
+        </button>
+      </div>
     </div>
   </div>
-  
-  <script is:inline src="/vendor/qrcode.min.js"></script>
+
   <script>
     import { t, initI18n } from '../../lib/i18n'
     await initI18n()
@@ -445,9 +479,21 @@ const { id } = Astro.params
       })
     }
 
-    function printLabel() {
+    async function printLabel() {
       if (!spool) return
 
+      // Load qrcode.min.js dynamically if not already loaded
+      if (typeof (window as any).QRCode === 'undefined') {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = '/vendor/qrcode.min.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      const modal = document.getElementById('label-modal-container')!
       const qrContainer = document.getElementById('label-qr')!
       const idEl = document.getElementById('label-id')!
       const filEl = document.getElementById('label-filament')!
@@ -465,18 +511,29 @@ const { id } = Astro.params
       // @ts-ignore
       new QRCode(qrContainer, {
         text: url,
-        width: 80, // approx 21mm at 96dpi
-        height: 80,
+        width: 84, // approx 22mm at 96dpi
+        height: 84,
         colorDark: "#000000",
         colorLight: "#ffffff",
-        correctLevel: QRCode.CorrectLevel.M
+        correctLevel: (window as any).QRCode.CorrectLevel.M
       })
 
-      // Wait a tiny bit for QR to render
-      setTimeout(() => {
-        window.print()
-      }, 250)
+      modal.style.display = 'flex'
     }
+
+    document.getElementById('btn-do-print')?.addEventListener('click', () => {
+      window.print()
+    })
+
+    document.getElementById('btn-close-label')?.addEventListener('click', () => {
+      document.getElementById('label-modal-container')!.style.display = 'none'
+    })
+
+    document.getElementById('label-modal-container')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) {
+        document.getElementById('label-modal-container')!.style.display = 'none'
+      }
+    })
     
     // RFID Modal Logic
     ;(window as any).openRfidModal = () => {
