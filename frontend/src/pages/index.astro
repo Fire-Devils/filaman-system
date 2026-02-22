@@ -360,8 +360,8 @@ interface PaginatedResponse<T> {
           const statusItems = [
             { key: 'full', label: t('dashboard.statusFull'), color: '#22c55e', count: dist.full, hint: '>75%' },
             { key: 'normal', label: t('dashboard.statusNormal'), color: '#3b82f6', count: dist.normal, hint: '50-75%' },
-            { key: 'low', label: t('dashboard.statusLow'), color: '#eab308', count: dist.low, hint: '>½min' },
-            { key: 'critical', label: t('dashboard.statusCritical'), color: '#ef4444', count: dist.critical, hint: '≤½min' },
+            { key: 'low', label: t('dashboard.statusLow'), color: '#eab308', count: dist.low, hint: '< Min' },
+            { key: 'critical', label: t('dashboard.statusCritical'), color: '#ef4444', count: dist.critical, hint: '< 50% Min' },
             { key: 'empty', label: t('dashboard.statusEmpty'), color: '#6b7280', count: dist.empty, hint: '0g' },
           ]
           statusContainer.innerHTML = statusItems.map(s => `
