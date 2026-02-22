@@ -67,16 +67,16 @@ interface PaginatedResponse<T> {
     </div>
 
     <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('problem')">
-      <svg width="36" height="36" style="fill: var(--accent-3); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
+      <svg width="36" height="36" style="fill: var(--error-text); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
       <div>
         <div style="display: flex; align-items: baseline; gap: 12px;">
           <div style="display: flex; flex-direction: column; align-items: center;">
-            <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: var(--error-text);" id="stat-low-spools">-</div>
             <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: -4px;" data-i18n="dashboard.statusLow">Low</div>
           </div>
           <div style="height: 20px; width: 1px; background: var(--border); align-self: center;"></div>
           <div style="display: flex; flex-direction: column; align-items: center;">
-            <div style="font-size: 1.6rem; font-weight: 700; color: var(--error-text);" id="stat-empty-spools">-</div>
+            <div style="font-size: 1.6rem; font-weight: 700; color: #6b7280;" id="stat-empty-spools">-</div>
             <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: -4px;" data-i18n="dashboard.statusEmpty">Empty</div>
           </div>
         </div>
@@ -95,7 +95,7 @@ interface PaginatedResponse<T> {
   
   <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
     <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--accent-3);" data-i18n="dashboard.lowStockSpools">Spulen (fast leer)</h2>
+      <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--error-text);" data-i18n="dashboard.lowStockSpools">Spulen (fast leer)</h2>
       <div id="low-stock-spools" style="max-height: 280px; overflow-y: auto;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
@@ -442,7 +442,7 @@ interface PaginatedResponse<T> {
                   <td style="padding: 6px 8px;">#${s.spool_id}</td>
                   <td style="padding: 6px 8px;">${s.filament_designation} (${s.filament_type})</td>
                   <td style="padding: 6px 8px;">${s.manufacturer_name}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: var(--accent-3);">${s.remaining_weight_g.toFixed(0)}g</td>
+                  <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
                 </tr>`
               ).join('') +
               `</tbody></table>`
