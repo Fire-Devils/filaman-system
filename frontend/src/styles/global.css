@@ -393,6 +393,13 @@ body {
   font-size: 0.9rem;
 }
 
+/* Enable horizontal scroll on mobile for tables inside cards */
+.fm-card:has(> .fm-table),
+.fm-card:has(> table) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .fm-table th,
 .fm-table td {
   text-align: left;
