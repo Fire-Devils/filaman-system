@@ -341,7 +341,13 @@ async def delete_spool(
             detail={"code": "not_found", "message": "Spool not found"},
         )
 
-    spool.deleted_at = datetime.utcnow()
+    # Archive the spool by setting status to "archived"
+    result = await db.execute(
+        select(SpoolStatus).where(SpoolStatus.key == "archived")
+    )
+    archived_status = result.scalar_one_or_none()
+    if archived_status:
+        spool.status_id = archived_status.id
     await db.commit()
 
 
