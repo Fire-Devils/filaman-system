@@ -1,5 +1,5 @@
 ---
-import Layout from '../../layouts/Layout.astro'
+import Layout from '../../../layouts/Layout.astro'
 
 export function getStaticPaths() {
   return [
@@ -103,7 +103,7 @@ const { id } = Astro.params
   </div>
 
   <script>
-    import { t, initI18n } from '../../lib/i18n'
+    import { t, initI18n } from '../../../lib/i18n'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
