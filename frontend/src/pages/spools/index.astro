@@ -355,8 +355,14 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadSpools() {
       const { statusId } = getFilterValues()
+      
+      // Check if archived status is selected
+      const archivedStatus = statuses.find((s: any) => s.key === 'archived')
+      const isArchivedSelected = archivedStatus && String(statusId) === String(archivedStatus.id)
+      
       let url = `/api/v1/spools?page=1&page_size=200`
       if (statusId) url += `&status_id=${statusId}`
+      if (isArchivedSelected) url += `&include_archived=true`
       
       try {
         const response = await fetch(url, { credentials: 'include' })
@@ -368,6 +374,7 @@ import Layout from '../../layouts/Layout.astro'
           for (let p = 2; p <= totalPages; p++) {
             let pUrl = `/api/v1/spools?page=${p}&page_size=200`
             if (statusId) pUrl += `&status_id=${statusId}`
+            if (isArchivedSelected) pUrl += `&include_archived=true`
             const res = await fetch(pUrl, { credentials: 'include' })
             if (res.ok) {
               const d = await res.json()

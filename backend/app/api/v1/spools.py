@@ -174,11 +174,15 @@ async def list_spools(
         query = query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
         query = query.where(Spool.filament_id == filament_id)
-    
-    if status_id:
+
+    if include_archived:
+        # Include all spools (archived and non-archived) - no additional filter
+        pass
+    elif status_id:
+        # Specific status selected - use that status
         query = query.where(Spool.status_id == status_id)
-    elif not include_archived:
-        # Exclude archived spools by default
+    else:
+        # Default: exclude archived spools
         query = query.join(SpoolStatus).where(SpoolStatus.key != "archived")
 
     if location_id:
@@ -196,11 +200,15 @@ async def list_spools(
         count_query = count_query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
     if filament_id:
         count_query = count_query.where(Spool.filament_id == filament_id)
-    
-    if status_id:
+
+    if include_archived:
+        # Include all spools - no additional filter
+        pass
+    elif status_id:
+        # Specific status selected - use that status
         count_query = count_query.where(Spool.status_id == status_id)
-    elif not include_archived:
-        # Exclude archived spools by default
+    else:
+        # Default: exclude archived spools
         count_query = count_query.join(SpoolStatus).where(SpoolStatus.key != "archived")
 
     if location_id:
