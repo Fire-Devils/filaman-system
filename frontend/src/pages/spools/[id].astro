@@ -39,23 +39,64 @@ const { id } = Astro.params
     }
 
     @media print {
-      body * {
-        visibility: hidden;
+      /* Hide all top-level layout elements except the one containing our modal */
+      body > *:not(#fm-page) {
+        display: none !important;
       }
-      #label-preview, #label-preview * {
-        visibility: visible;
+      
+      #fm-page {
+        display: block !important;
+        background: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
       }
+
+      /* Hide sidebar and other main content */
+      .fm-sidebar, 
+      main > *:not(#label-modal-container) {
+        display: none !important;
+      }
+
+      main {
+        padding: 0 !important;
+        margin: 0 !important;
+        display: block !important;
+      }
+      
+      #label-modal-container {
+        display: block !important;
+        position: static !important;
+        background: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        visibility: visible !important;
+      }
+
+      /* Only show the label preview */
       #label-preview {
         display: flex !important;
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 60mm;
-        height: 25mm;
-        padding: 1.5mm;
-        border: none;
-        box-shadow: none;
+        visibility: visible !important;
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 60mm !important;
+        height: 25mm !important;
+        padding: 1.5mm !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: white !important;
+        color: black !important;
       }
+
+      #label-preview * {
+        visibility: visible !important;
+      }
+
+      /* Hide the buttons in the modal during print */
+      #label-modal-container > div > div:last-child {
+        display: none !important;
+      }
+
       @page {
         size: 60mm 25mm;
         margin: 0;
