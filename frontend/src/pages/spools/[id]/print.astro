@@ -9,24 +9,48 @@ const { id } = Astro.params
 ---
 
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FilaMan - Print Label</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Fraunces:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
+      --font-sans: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+      --font-serif: "Fraunces", "Georgia", serif;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 12px;
+      --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.18);
+      --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.12);
+      --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.08);
+      --transition: 220ms ease;
+
       --bg: #f8f6f1;
-      --accent: #1c9b6b;
+      --bg-elevated: #ffffff;
+      --bg-soft: #f1ece3;
       --text: #1a231e;
-      --border: rgba(0, 0, 0, 0.1);
+      --text-muted: #53645a;
+      --accent: #1c9b6b;
+      --accent-2: #2b7bc7;
+      --accent-3: #d38e2c;
+      --border: rgba(26, 35, 30, 0.12);
+      --glow: 0 0 45px rgba(28, 155, 107, 0.18);
+      --btn-primary-text: #ffffff;
+      --input-bg: var(--bg-soft);
+      --focus-ring: rgba(28, 155, 107, 0.18);
     }
-    
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       padding: 0;
-      font-family: system-ui, sans-serif;
-      background: #e5e7eb;
+      font-family: var(--font-sans);
+      background: var(--bg);
       color: var(--text);
       display: flex;
       height: 100vh;
@@ -34,14 +58,52 @@ const { id } = Astro.params
     }
 
     .sidebar {
-      width: 320px;
-      background: white;
+      width: 340px;
+      background: var(--bg-elevated);
       border-right: 1px solid var(--border);
       padding: 24px;
       display: flex;
       flex-direction: column;
       gap: 20px;
       overflow-y: auto;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header img {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+    }
+
+    .sidebar-header h1 {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: 0.5px;
+    }
+
+    .settings-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .settings-section h3 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin: 0;
     }
 
     .preview-container {
@@ -51,11 +113,12 @@ const { id } = Astro.params
       justify-content: center;
       padding: 40px;
       overflow: auto;
+      background: var(--bg-soft);
     }
 
     .label-preview {
       background: white;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      box-shadow: var(--shadow-lg);
       display: flex;
       align-items: center;
       padding: 1.5mm;
@@ -63,10 +126,10 @@ const { id } = Astro.params
       gap: 3mm;
       overflow: hidden;
       position: relative;
-      border: 1px dashed #ccc; /* Preview border */
+      border: 1px dashed #ccc;
+      border-radius: 4px;
     }
 
-    /* Target just the text container for font scaling */
     #label-text-container {
       flex: 1;
       min-width: 0;
@@ -74,25 +137,24 @@ const { id } = Astro.params
     }
 
     @media print {
-      /* Hide everything except preview container */
       body > *:not(.preview-container) {
         display: none !important;
       }
-      
+
       body {
         background: white !important;
         height: auto !important;
         display: block !important;
         overflow: visible !important;
       }
-      
+
       .preview-container {
         padding: 0 !important;
         margin: 0 !important;
         display: block !important;
         overflow: visible !important;
       }
-      
+
       .label-preview {
         box-shadow: none !important;
         border: none !important;
@@ -102,18 +164,15 @@ const { id } = Astro.params
         display: flex !important;
         background: white !important;
         color: black !important;
-        /* Safari-Fix: Explizite Dimensionen */
         width: 60mm !important;
         height: 25mm !important;
         min-width: 60mm !important;
         min-height: 25mm !important;
-        /* Farben erzwingen */
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
 
-      /* Ensure text is black for printing even if OS is in dark mode */
-      .label-preview div, 
+      .label-preview div,
       .label-preview span {
         color: black !important;
       }
@@ -124,98 +183,166 @@ const { id } = Astro.params
     }
 
     .fm-label {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
       display: block;
+      color: var(--text);
     }
 
-    .fm-input, .fm-select {
-      width: 100%;
-      padding: 8px;
+    .fm-input {
+      background: var(--input-bg);
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 0.9rem;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      width: 100%;
+      height: 42px;
       box-sizing: border-box;
+    }
+
+    .fm-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--focus-ring);
     }
 
     .fm-checkbox-group {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      cursor: pointer;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      transition: background var(--transition);
+    }
+
+    .fm-checkbox-group:hover {
+      background: var(--bg-soft);
+    }
+
+    .fm-checkbox-group input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
       cursor: pointer;
     }
 
+    .fm-checkbox-group span {
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+
     .fm-btn {
-      padding: 12px;
-      border-radius: 8px;
-      border: none;
+      padding: 12px 20px;
+      border-radius: 999px;
+      border: 1px solid transparent;
       font-weight: 600;
+      font-size: 0.875rem;
+      letter-spacing: 0.2px;
       cursor: pointer;
-      text-align: center;
+      transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
+      font-family: var(--font-sans);
     }
 
     .fm-btn-primary {
       background: var(--accent);
-      color: white;
+      color: var(--btn-primary-text);
+      box-shadow: var(--glow);
+    }
+
+    .fm-btn-primary:hover {
+      transform: translateY(-2px);
     }
 
     .fm-btn-outline {
       background: transparent;
-      border: 1px solid var(--border);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .fm-btn-outline:hover {
+      background: var(--bg-soft);
+    }
+
+    .action-buttons {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
     }
   </style>
 </head>
 <body>
   <div class="sidebar">
-    <h2 id="title-settings">Print Settings</h2>
-    
-    <div>
-      <label class="fm-label" id="label-width-text">Width (mm)</label>
-      <input type="number" id="input-width" value="60" class="fm-input">
-    </div>
-    
-    <div>
-      <label class="fm-label" id="label-height-text">Height (mm)</label>
-      <input type="number" id="input-height" value="25" class="fm-input">
+    <div class="sidebar-header">
+      <img src="/logo.png" alt="FilaMan">
+      <h1>FilaMan</h1>
     </div>
 
-    <div>
-      <label class="fm-label" id="label-font-size-text">Font Size (%)</label>
-      <input type="range" id="input-font-size" min="50" max="200" value="100" class="fm-input">
+    <div class="settings-section">
+      <h3 id="title-settings">Print Settings</h3>
+
+      <div>
+        <label class="fm-label" id="label-width-text">Breite (mm)</label>
+        <input type="number" id="input-width" value="60" class="fm-input">
+      </div>
+
+      <div>
+        <label class="fm-label" id="label-height-text">Höhe (mm)</label>
+        <input type="number" id="input-height" value="25" class="fm-input">
+      </div>
+
+      <div>
+        <label class="fm-label" id="label-font-size-text">Schriftgröße (%)</label>
+        <input type="range" id="input-font-size" min="50" max="200" value="100" class="fm-input" style="padding: 8px;">
+      </div>
+
+      <div>
+        <label class="fm-label" id="label-qr-size-text">QR-Größe (mm)</label>
+        <input type="number" id="input-qr-size" value="22" class="fm-input">
+      </div>
+
+      <h3>Anzeige</h3>
+      <div class="checkbox-grid">
+        <label class="fm-checkbox-group">
+          <input type="checkbox" id="check-qr" checked>
+          <span id="label-show-qr">QR-Code</span>
+        </label>
+        <label class="fm-checkbox-group">
+          <input type="checkbox" id="check-id" checked>
+          <span id="label-show-id">Spool-ID</span>
+        </label>
+        <label class="fm-checkbox-group">
+          <input type="checkbox" id="check-mfr" checked>
+          <span id="label-show-mfr">Hersteller</span>
+        </label>
+        <label class="fm-checkbox-group">
+          <input type="checkbox" id="check-mat" checked>
+          <span id="label-show-mat">Material</span>
+        </label>
+        <label class="fm-checkbox-group">
+          <input type="checkbox" id="check-color" checked>
+          <span id="label-show-color">Farbe</span>
+        </label>
+      </div>
     </div>
 
-    <div>
-      <label class="fm-label" id="label-qr-size-text">QR Size (mm)</label>
-      <input type="number" id="input-qr-size" value="22" class="fm-input">
-    </div>
-
-    <div style="display: grid; gap: 10px;">
-      <label class="fm-checkbox-group">
-        <input type="checkbox" id="check-qr" checked>
-        <span id="label-show-qr">Show QR Code</span>
-      </label>
-      <label class="fm-checkbox-group">
-        <input type="checkbox" id="check-id" checked>
-        <span id="label-show-id">Show Spool ID</span>
-      </label>
-      <label class="fm-checkbox-group">
-        <input type="checkbox" id="check-mfr" checked>
-        <span id="label-show-mfr">Show Manufacturer</span>
-      </label>
-      <label class="fm-checkbox-group">
-        <input type="checkbox" id="check-mat" checked>
-        <span id="label-show-mat">Show Material</span>
-      </label>
-      <label class="fm-checkbox-group">
-        <input type="checkbox" id="check-color" checked>
-        <span id="label-show-color">Show Color</span>
-      </label>
-    </div>
-
-    <div style="margin-top: auto; display: grid; gap: 12px;">
-      <button id="btn-print" class="fm-btn fm-btn-primary">Print Now</button>
-      <button id="btn-reset" class="fm-btn fm-btn-outline">Reset Defaults</button>
-      <button id="btn-close" class="fm-btn fm-btn-outline">Close</button>
+    <div class="action-buttons">
+      <button id="btn-print" class="fm-btn fm-btn-primary">Drucken</button>
+      <button id="btn-reset" class="fm-btn fm-btn-outline">Zurücksetzen</button>
+      <button id="btn-close" class="fm-btn fm-btn-outline">Schließen</button>
     </div>
   </div>
 
@@ -236,8 +363,7 @@ const { id } = Astro.params
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
-    
-    // Get data from URL parameters
+
     const params = new URLSearchParams(window.location.search)
     const labelData = {
       id: id,
@@ -247,7 +373,6 @@ const { id } = Astro.params
       color: params.get('color') || ''
     }
 
-    // Elements
     const widthInput = document.getElementById('input-width')
     const heightInput = document.getElementById('input-height')
     const fontSizeInput = document.getElementById('input-font-size')
@@ -259,9 +384,7 @@ const { id } = Astro.params
     const checkColor = document.getElementById('check-color')
     const labelPreview = document.getElementById('label-preview')
     const qrContainer = document.getElementById('label-qr-container')
-    const textContainer = document.getElementById('label-text-container')
 
-    // Translations
     document.getElementById('title-settings').textContent = t('spools.printSettings')
     document.getElementById('label-width-text').textContent = t('spools.labelWidth')
     document.getElementById('label-height-text').textContent = t('spools.labelHeight')
@@ -277,7 +400,6 @@ const { id } = Astro.params
     document.getElementById('btn-close').textContent = t('common.close')
 
     async function updatePreview() {
-      // Load qrcode.min.js dynamically if not already loaded
       if (typeof (window as any).QRCode === 'undefined') {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script')
@@ -288,7 +410,6 @@ const { id } = Astro.params
         })
       }
 
-      // Dimensions
       const w = (widthInput as HTMLInputElement).value
       const h = (heightInput as HTMLInputElement).value
       const qrSize = (qrSizeInput as HTMLInputElement).value
@@ -296,17 +417,15 @@ const { id } = Astro.params
 
       labelPreview.style.width = w + 'mm'
       labelPreview.style.height = h + 'mm'
-      
-      // Scale fonts
+
       document.getElementById('prev-id').style.fontSize = (fontSizeBase * 14) + 'pt'
       document.getElementById('prev-filament').style.fontSize = (fontSizeBase * 9) + 'pt'
       document.getElementById('prev-mfr').style.fontSize = (fontSizeBase * 7.5) + 'pt'
       document.getElementById('prev-color').style.fontSize = (fontSizeBase * 7.5) + 'pt'
 
-      // Content Visibility
       qrContainer.style.display = (checkQR as HTMLInputElement).checked ? 'block' : 'none'
       document.getElementById('prev-id').style.display = (checkID as HTMLInputElement).checked ? 'block' : 'none'
-      
+
       const mfrText = (checkMfr as HTMLInputElement).checked ? labelData.manufacturer : ''
       const matText = (checkMat as HTMLInputElement).checked ? labelData.type : ''
       document.getElementById('prev-mfr').textContent = [mfrText, matText].filter(Boolean).join(' - ')
@@ -314,16 +433,15 @@ const { id } = Astro.params
 
       document.getElementById('prev-color').textContent = (checkColor as HTMLInputElement).checked ? labelData.color : ''
       document.getElementById('prev-color').style.display = (checkColor as HTMLInputElement).checked ? 'block' : 'none'
-      
+
       document.getElementById('prev-id').textContent = `#${labelData.id}`
       document.getElementById('prev-filament').textContent = labelData.designation
 
-      // Update QR Code
       if ((checkQR as HTMLInputElement).checked) {
         qrContainer.innerHTML = ''
         const url = window.location.origin + '/spools/' + labelData.id
-        const qrPx = Math.round(parseInt(qrSize) * 3.78) // mm to px approx at 96dpi
-        
+        const qrPx = Math.round(parseInt(qrSize) * 3.78)
+
         // @ts-ignore
         new QRCode(qrContainer, {
           text: url,
@@ -333,12 +451,11 @@ const { id } = Astro.params
           colorLight: "#ffffff",
           correctLevel: (window as any).QRCode.CorrectLevel.M
         })
-        
+
         qrContainer.style.width = qrSize + 'mm'
         qrContainer.style.height = qrSize + 'mm'
       }
 
-      // Update Page Size for printing
       const style = document.createElement('style')
       style.innerHTML = `@page { size: ${w}mm ${h}mm; margin: 0; }`
       const oldStyle = document.querySelector('style#page-style')
@@ -347,7 +464,6 @@ const { id } = Astro.params
       document.head.appendChild(style)
     }
 
-    // Events
     ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach(el => {
       el.addEventListener('change', updatePreview)
       if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number') {
@@ -356,7 +472,6 @@ const { id } = Astro.params
     })
 
     document.getElementById('btn-print').addEventListener('click', () => {
-      // Safari-Fix: Kurz warten bis alles gerendert ist
       if (/Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)) {
         setTimeout(() => window.print(), 100)
       } else {
