@@ -7,6 +7,7 @@ from app.models.spool import Spool, SpoolEvent, SpoolStatus
 from app.models.user import OAuthIdentity, User, UserApiKey, UserSession
 from app.models.device import Device
 from app.models.plugin import InstalledPlugin
+from app.models.system_extra_field import SystemExtraField
 
 __all__ = [
     "Base",
@@ -36,4 +37,5 @@ __all__ = [
     "UserSession",
     "Device",
     "InstalledPlugin",
+    "SystemExtraField",
 ]

@@ -252,6 +252,14 @@ import Layout from '../../layouts/Layout.astro'
         />
       </div>
 
+      <!-- System Fields -->
+      <div id="system-fields-container" style="display: none; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
+        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;">System Fields</h3>
+        <div id="system-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <!-- Dynamic system fields go here -->
+        </div>
+      </div>
+
       <!-- Custom Fields -->
       <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -296,6 +304,7 @@ import Layout from '../../layouts/Layout.astro'
     // ── State ──
     let allColors: Array<{ id: number; name: string; hex_code: string }> = []
     let selectedColorIds: number[] = []  // ordered by position
+    let systemFields: any[] = []
 
     // ── DOM refs ──
     const form = document.getElementById('filament-form') as HTMLFormElement
@@ -489,6 +498,37 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
+    async function loadSystemFields() {
+      try {
+        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch system fields')
+        systemFields = await response.json()
+        renderSystemFields()
+      } catch (error) {
+        console.error('Failed to load system fields:', error)
+      }
+    }
+
+    function renderSystemFields() {
+      const container = document.getElementById('system-fields-container') as HTMLDivElement
+      const grid = document.getElementById('system-fields-grid') as HTMLDivElement
+      if (!systemFields || systemFields.length === 0) {
+        container.style.display = 'none'
+        return
+      }
+      container.style.display = 'block'
+      grid.innerHTML = ''
+      
+      systemFields.forEach(field => {
+        const div = document.createElement('div')
+        div.innerHTML = `
+          <label class="fm-label">${field.label}</label>
+          <input type="text" class="fm-input system-field-input" data-key="${field.key}" value="${field.default_value || ''}" />
+        `
+        grid.appendChild(div)
+      })
+    }
+
     // ── Render color grid (all available colors) ──
     function renderColorGrid() {
       if (allColors.length === 0) {
@@ -680,15 +720,29 @@ import Layout from '../../layouts/Layout.astro'
       const shopUrl = formData.get('shop_url')
       if (shopUrl) data.shop_url = shopUrl
 
-      // Custom Fields
+      // System Fields + Custom Fields
+      const fieldsObj: Record<string, any> = {}
+
+      // Collect System Fields
+      document.querySelectorAll('.system-field-input').forEach((input: any) => {
+        const key = input.dataset.key
+        const value = input.value.trim()
+        if (key && value) {
+          fieldsObj[key] = value
+        }
+      })
+
+      // Collect Custom Fields
       if (customFields.length > 0) {
-        const fieldsObj: Record<string, any> = {}
         customFields.forEach(f => {
           if (f.key.trim()) {
             fieldsObj[f.key.trim()] = f.value
           }
         })
-        data.custom_fields = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+      }
+
+      if (Object.keys(fieldsObj).length > 0) {
+        data.custom_fields = unflattenObject(fieldsObj)
       }
 
       errorMessage.classList.add('hidden')
@@ -726,5 +780,6 @@ import Layout from '../../layouts/Layout.astro'
     loadManufacturers()
     loadTypes()
     loadColors()
+    loadSystemFields()
   </script>
 </Layout>

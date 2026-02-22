@@ -1,0 +1,219 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - System Extra Fields">
+  <div style="margin-bottom: 24px;">
+    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+  
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">System Extra Fields</h1>
+    <button
+      id="btn-new"
+      class="fm-btn fm-btn-primary"
+    >
+      Add Field
+    </button>
+  </div>
+
+  <p style="color: var(--text-muted); margin-bottom: 24px;">
+    These fields will be automatically added to all filaments or spools. 
+  </p>
+  
+  <div class="fm-card" style="padding: 0; overflow: hidden;">
+    <table class="fm-table">
+      <thead style="background: var(--bg-soft);">
+        <tr>
+          <th>Target Type</th>
+          <th>Key (JSON)</th>
+          <th>Label</th>
+          <th>Default Value</th>
+          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="fields-table">
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div id="modal-container" class="fm-modal-overlay">
+    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
+      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;">Add System Field</h3>
+      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <input type="hidden" id="field-id" />
+        
+        <div>
+          <label for="field-target" class="fm-label">Target Type *</label>
+          <select id="field-target" required class="fm-select">
+            <option value="filament">Filament</option>
+            <option value="spool">Spool</option>
+          </select>
+        </div>
+        
+        <div>
+          <label for="field-key" class="fm-label">Key (JSON) *</label>
+          <input type="text" id="field-key" required class="fm-input" placeholder="e.g. material_type" pattern="[a-zA-Z0-9_]+" title="Only letters, numbers, and underscores allowed" />
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Used as key in the custom_fields JSON.</small>
+        </div>
+        
+        <div>
+          <label for="field-label" class="fm-label">Display Label *</label>
+          <input type="text" id="field-label" required class="fm-input" placeholder="e.g. Material Type" />
+        </div>
+        
+        <div>
+          <label for="field-default" class="fm-label">Default Value (Optional)</label>
+          <input type="text" id="field-default" class="fm-input" placeholder="e.g. PLA" />
+          <small style="color: var(--text-muted); font-size: 0.75rem;">This value will be pre-filled when creating new items.</small>
+        </div>
+        
+        <div id="modal-error" class="fm-alert-error hidden"></div>
+        <div style="display: flex; gap: 12px;">
+          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    let fields: any[] = []
+    
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    async function loadData() {
+      try {
+        const res = await fetch('/api/v1/system-extra-fields', { credentials: 'include' })
+        if (!res.ok) throw new Error('Failed to fetch fields')
+        fields = await res.json()
+        renderFields()
+      } catch (error) {
+        console.error('Failed to load data:', error)
+      }
+    }
+    
+    function escapeHtml(str: string): string {
+      if (!str) return ''
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
+    }
+    
+    function renderFields() {
+      const tbody = document.getElementById('fields-table')!
+      
+      if (fields.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No fields defined</td></tr>`
+        return
+      }
+      
+      tbody.innerHTML = fields.map(f => `
+        <tr>
+          <td><span class="fm-pill" style="text-transform: capitalize;">${escapeHtml(f.target_type)}</span></td>
+          <td style="font-family: monospace; color: var(--accent-2);">${escapeHtml(f.key)}</td>
+          <td>${escapeHtml(f.label)}</td>
+          <td style="color: var(--text-muted);">${escapeHtml(f.default_value || '-')}</td>
+          <td style="text-align: right;">
+            <button data-id="${f.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
+          </td>
+        </tr>
+      `).join('')
+      
+      document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          if (!(await (window as any).__fmConfirm(t('common.confirmTitle') || "Delete field?"))) return
+          
+          try {
+            const response = await fetch(`/api/v1/system-extra-fields/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+            })
+            
+            if (!response.ok) throw new Error('Failed to delete field')
+            loadData()
+          } catch {
+            await (window as any).__fmAlert(t('common.errorTitle') || "Failed to delete field")
+          }
+        })
+      })
+    }
+    
+    function openModal() {
+      const container = document.getElementById('modal-container')!
+      const error = document.getElementById('modal-error')!
+      
+      error.classList.add('hidden')
+      ;(document.getElementById('modal-form') as HTMLFormElement).reset()
+      
+      container.classList.add('open')
+    }
+    
+    function closeModal() {
+      document.getElementById('modal-container')!.classList.remove('open')
+    }
+    
+    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
+    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    document.getElementById('modal-container')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal()
+    })
+    
+    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const targetType = (document.getElementById('field-target') as HTMLSelectElement).value
+      const key = (document.getElementById('field-key') as HTMLInputElement).value
+      const label = (document.getElementById('field-label') as HTMLInputElement).value
+      const defaultValue = (document.getElementById('field-default') as HTMLInputElement).value || null
+      
+      const error = document.getElementById('modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+      
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+      
+      try {
+        const response = await fetch('/api/v1/system-extra-fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ 
+            target_type: targetType, 
+            key, 
+            label, 
+            default_value: defaultValue 
+          }),
+        })
+        
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.detail || data.message || "Failed to create field")
+        }
+        
+        closeModal()
+        loadData()
+      } catch (err: any) {
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+    
+    loadData()
+  </script>
+</Layout>
