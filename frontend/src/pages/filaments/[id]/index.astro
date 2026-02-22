@@ -238,6 +238,17 @@ const { id } = Astro.params
           </div>
         </div>
         
+        <div id="price-summary" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div class="fm-card" style="border-left: 4px solid var(--accent);">
+            <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalValueAvailable">Total Value (available)</div>
+            <div id="total-available-price" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00</div>
+          </div>
+          <div class="fm-card" style="border-left: 4px solid var(--text-muted);">
+            <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</div>
+            <div id="total-spent-price" style="font-size: 1.4rem; font-weight: 700;">0.00</div>
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
           ${cards.join('\n')}
         </div>
@@ -301,7 +312,7 @@ const { id } = Astro.params
     async function loadSpools(filamentId: number) {
       try {
         const [spoolsRes, statusesRes, locationsRes] = await Promise.all([
-          fetch(`/api/v1/spools?filament_id=${filamentId}&page_size=100`, { credentials: 'include' }),
+          fetch(`/api/v1/spools?filament_id=${filamentId}&page_size=200&include_archived=true`, { credentials: 'include' }),
           fetch('/api/v1/spools/statuses', { credentials: 'include' }),
           fetch('/api/v1/locations', { credentials: 'include' }),
         ])
@@ -319,11 +330,47 @@ const { id } = Astro.params
         }
         
         const data = await spoolsRes.json()
+        const allSpools = data.items
+        
+        // Find archived status ID
+        const archivedStatus = statuses.find(s => s.key === 'archived')
+        const archivedStatusId = archivedStatus ? archivedStatus.id : -1
+
+        // 1. Render Table (exclude archived)
+        const activeSpools = allSpools.filter(s => s.status_id !== archivedStatusId)
         document.getElementById('spools-section')!.classList.remove('hidden')
-        renderSpools(data.items)
-        renderPriceChart(data.items)
+        renderSpools(activeSpools)
+
+        // 2. Render Chart (include archived)
+        renderPriceChart(allSpools)
+
+        // 3. Calculate and render Price Summary
+        renderPriceSummary(allSpools, archivedStatusId)
+
       } catch (error) {
         console.error('Failed to load spools:', error)
+      }
+    }
+
+    function renderPriceSummary(spools: any[], archivedStatusId: number) {
+      let totalSpent = 0
+      let totalAvailable = 0
+      let hasPrices = false
+
+      spools.forEach(s => {
+        if (s.purchase_price != null) {
+          hasPrices = true
+          totalSpent += s.purchase_price
+          if (s.status_id !== archivedStatusId) {
+            totalAvailable += s.purchase_price
+          }
+        }
+      })
+
+      if (hasPrices) {
+        document.getElementById('price-summary')!.classList.remove('hidden')
+        document.getElementById('total-available-price')!.textContent = totalAvailable.toFixed(2)
+        document.getElementById('total-spent-price')!.textContent = totalSpent.toFixed(2)
       }
     }
     

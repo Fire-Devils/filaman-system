@@ -166,6 +166,7 @@ async def list_spools(
     status_id: int | None = None,
     location_id: int | None = None,
     manufacturer_id: int | None = None,
+    include_archived: bool = Query(False),
 ):
     query = select(Spool).where(Spool.deleted_at.is_(None))
 
@@ -176,7 +177,7 @@ async def list_spools(
     
     if status_id:
         query = query.where(Spool.status_id == status_id)
-    else:
+    elif not include_archived:
         # Exclude archived spools by default
         query = query.join(SpoolStatus).where(SpoolStatus.key != "archived")
 
@@ -186,7 +187,7 @@ async def list_spools(
     query = query.order_by(Spool.id.desc()).offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
-    items = result.scalars().all()
+    items = list(result.scalars().all())
 
     count_query = select(func.count()).select_from(Spool).where(Spool.deleted_at.is_(None))
     if manufacturer_id:
@@ -196,7 +197,7 @@ async def list_spools(
     
     if status_id:
         count_query = count_query.where(Spool.status_id == status_id)
-    else:
+    elif not include_archived:
         # Exclude archived spools by default
         count_query = count_query.join(SpoolStatus).where(SpoolStatus.key != "archived")
 
@@ -488,7 +489,7 @@ async def list_spool_events(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = result.scalars().all()
+    items = list(result.scalars().all())
 
     count_result = await db.execute(
         select(func.count()).select_from(SpoolEvent).where(SpoolEvent.spool_id == spool_id)

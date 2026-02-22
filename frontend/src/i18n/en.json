@@ -160,6 +160,8 @@
     "color": "Color",
     "colors": "Colors",
     "priceHistory": "Price History",
+    "totalValueAvailable": "Total Value (available)",
+    "totalSpentAllTime": "Total Spent (all time)",
     "colorName": "Color Name",
     "colorNamePlaceholder": "e.g. Fire Engine Red",
     "designationPlaceholder": "e.g. PLA Basic Red",
