@@ -19,17 +19,6 @@ const { id } = Astro.params
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
 
-  <div id="price-summary" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 32px;">
-    <div class="fm-card" style="border-left: 4px solid var(--accent);">
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalValueAvailable">Total Value (available)</div>
-      <div id="total-available-price" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00</div>
-    </div>
-    <div class="fm-card" style="border-left: 4px solid var(--text-muted);">
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</div>
-      <div id="total-spent-price" style="font-size: 1.4rem; font-weight: 700;">0.00</div>
-    </div>
-  </div>
-  
   <div id="spools-section" class="hidden" style="margin-top: 32px;">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.spools">Spools</h2>
     <div class="fm-card" style="padding: 0; overflow: hidden;">
@@ -51,6 +40,17 @@ const { id } = Astro.params
     </div>
   </div>
 
+  <div id="price-summary" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 32px;">
+    <div class="fm-card" style="border-left: 4px solid var(--accent);">
+      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalValueAvailable">Total Value (available)</div>
+      <div id="total-available-price" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00</div>
+    </div>
+    <div class="fm-card" style="border-left: 4px solid var(--text-muted);">
+      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</div>
+      <div id="total-spent-price" style="font-size: 1.4rem; font-weight: 700;">0.00</div>
+    </div>
+  </div>
+  
   <div id="price-history-section" class="hidden" style="margin-top: 32px; margin-bottom: 32px;">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.priceHistory">Price History</h2>
     <div class="fm-card" style="padding: 24px;">
@@ -250,8 +250,6 @@ const { id } = Astro.params
         </div>
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
-          ${cards.join('\n')}
-        </div>
           ${cards.join('\n')}
         </div>
 

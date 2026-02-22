@@ -95,6 +95,8 @@
     "totalSpools": "Total Spools",
     "filaments": "Filaments",
     "emptySpools": "Empty Spools",
+    "lowAndEmptySpools": "Low & Empty Spools",
+    "totalValue": "Total Value (available)",
     "allSufficient": "All spools have sufficient filament",
     "noRecentActivity": "No recent activity",
     "spoolId": "Spool #{id}",

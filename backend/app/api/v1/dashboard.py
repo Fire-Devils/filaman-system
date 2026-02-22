@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select, case, literal_column
+from fastapi import APIRouter, Query
+from sqlalchemy import func, select, case
 from pydantic import BaseModel
 import asyncio
 
@@ -51,6 +51,7 @@ class EmptySpool(BaseModel):
 
 class DashboardStatsResponse(BaseModel):
     spool_distribution: dict[str, int]
+    total_value_available: float
     filament_stats: list[FilamentStat]
     location_stats: list[LocationStat]
     manufacturers_with_spools: list[ManufacturerSpoolCount]
@@ -220,6 +221,14 @@ async def get_dashboard_stats(
         .order_by(func.count(Spool.id).desc())
     )
 
+    # Gesamtwert verfügbarer Spulen
+    total_value_stmt = (
+        select(func.coalesce(func.sum(Spool.purchase_price), 0))
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(Spool.deleted_at.is_(None))
+        .where(SpoolStatus.key != "archived")
+    )
+
     # Execute all queries concurrently
     (
         dist_res, 
@@ -228,7 +237,8 @@ async def get_dashboard_stats(
         low_stock_res, 
         empty_res, 
         types_res, 
-        loc_res
+        loc_res,
+        total_val_res
     ) = await asyncio.gather(
         db.execute(spool_distribution_stmt),
         db.execute(filament_stats_stmt),
@@ -237,7 +247,10 @@ async def get_dashboard_stats(
         db.execute(empty_stmt),
         db.execute(types_stmt),
         db.execute(location_stats_stmt),
+        db.execute(total_value_stmt),
     )
+
+    total_value_available = float(total_val_res.scalar() or 0.0)
 
     dist_row = dist_res.first()
     spool_distribution = {
@@ -302,6 +315,7 @@ async def get_dashboard_stats(
 
     return DashboardStatsResponse(
         spool_distribution=spool_distribution,
+        total_value_available=total_value_available,
         filament_stats=filament_stats,
         location_stats=location_stats,
         manufacturers_with_spools=manufacturers_with_spools,

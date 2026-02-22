@@ -66,19 +66,19 @@ interface PaginatedResponse<T> {
       </div>
     </div>
 
-    <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('low')">
+    <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('problem')">
       <svg width="36" height="36" style="fill: var(--accent-3); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
       <div>
-        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-low-spools">-</div>
-        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowSpools">Low Spools</div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-problem-spools">-</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.lowAndEmptySpools">Low & Empty Spools</div>
       </div>
     </div>
 
-    <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('empty')">
-      <svg width="36" height="36" style="fill: var(--error-text); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
+    <div class="fm-card" style="display: flex; align-items: center; gap: 20px;">
+      <svg width="36" height="36" style="fill: var(--accent); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-dashboard"></use></svg>
       <div>
-        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-empty-spools">-</div>
-        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.emptySpools">Empty Spools</div>
+        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-value">-</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalValue">Total Value (available)</div>
       </div>
     </div>
   </div>
@@ -171,7 +171,7 @@ interface PaginatedResponse<T> {
     }
 
     // Modal functions
-    (window as any).openSpoolModal = function(type: 'low' | 'empty') {
+    (window as any).openSpoolModal = function(type: 'problem') {
       const modal = document.getElementById('spool-modal') as HTMLElement
       const title = document.getElementById('modal-title') as HTMLElement
       const content = document.getElementById('modal-content') as HTMLElement
@@ -180,18 +180,11 @@ interface PaginatedResponse<T> {
 
       let filteredSpools: any[] = []
       
-      if (type === 'low') {
-        title.textContent = t('dashboard.lowSpools')
+      if (type === 'problem') {
+        title.textContent = t('dashboard.lowAndEmptySpools')
         filteredSpools = allSpools.filter(s => 
           s.remaining_weight_g !== null && 
-          s.remaining_weight_g <= s.low_weight_threshold_g &&
-          s.remaining_weight_g > 0
-        )
-      } else {
-        title.textContent = t('dashboard.emptySpools')
-        filteredSpools = allSpools.filter(s => 
-          s.remaining_weight_g !== null && 
-          s.remaining_weight_g <= 0
+          s.remaining_weight_g <= s.low_weight_threshold_g
         )
       }
 
@@ -227,7 +220,7 @@ interface PaginatedResponse<T> {
         `
         
         footer.classList.remove('hidden')
-        bulkBtn.textContent = type === 'low' ? t('dashboard.archiveAllLow') : t('dashboard.archiveAllEmpty')
+        bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
         bulkBtn.onclick = () => archiveAll(filteredSpools.map(s => s.id))
       }
 
@@ -349,8 +342,8 @@ interface PaginatedResponse<T> {
         
         if (dashboardData) {
           const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
-          document.getElementById('stat-low-spools')!.textContent = (dist.low + dist.critical).toString()
-          document.getElementById('stat-empty-spools')!.textContent = dist.empty.toString()
+          document.getElementById('stat-problem-spools')!.textContent = (dist.low + dist.critical + dist.empty).toString()
+          document.getElementById('stat-total-value')!.textContent = (dashboardData.total_value_available || 0).toFixed(2)
           
           const statusContainer = document.getElementById('spool-status')!
           const statusItems = [
