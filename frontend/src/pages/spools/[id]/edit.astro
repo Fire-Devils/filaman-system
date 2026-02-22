@@ -1,5 +1,5 @@
 ---
-import Layout from '../../../layouts/Layout.astro'
+import Layout from '../../layouts/Layout.astro'
 
 export function getStaticPaths() {
   return [
@@ -267,7 +267,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   </div>
   
   <script>
-    import { t, initI18n } from '../../../lib/i18n'
+    import { t, initI18n } from '../../lib/i18n'
     await initI18n()
 
     const pathParts = window.location.pathname.split('/').filter(Boolean)

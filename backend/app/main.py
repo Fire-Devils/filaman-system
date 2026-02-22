@@ -184,6 +184,14 @@ if not settings.debug:
         async def serve_spool_edit(id: int):
             return FileResponse(os.path.join(static_files_path, "spools/detail/edit/index.html"))
 
+        @app.get("/spools/detail/print")
+        async def serve_spool_print_placeholder():
+            return FileResponse(os.path.join(static_files_path, "spools/detail/print/index.html"))
+
+        @app.get("/spools/{id}/print")
+        async def serve_spool_print(id: int):
+            return FileResponse(os.path.join(static_files_path, "spools/detail/print/index.html"))
+
         @app.get("/printers/detail")
         async def serve_printer_detail_placeholder():
             return FileResponse(os.path.join(static_files_path, "printers/detail/index.html"))

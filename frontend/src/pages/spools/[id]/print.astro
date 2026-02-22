@@ -233,7 +233,7 @@ const { id } = Astro.params
   </div>
 
   <script>
-    import { t, initI18n } from '../../../lib/i18n'
+    import { t, initI18n } from '../../lib/i18n'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
