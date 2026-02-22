@@ -99,6 +99,7 @@ class SpoolResponse(BaseModel):
     spool_material: str | None
     low_weight_threshold_g: int
     deleted_at: datetime | None
+    created_at: datetime
     custom_fields: dict[str, Any] | None
 
     class Config:

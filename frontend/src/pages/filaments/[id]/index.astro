@@ -39,7 +39,17 @@ const { id } = Astro.params
       </table>
     </div>
   </div>
+
+  <div id="price-history-section" class="hidden" style="margin-top: 32px; margin-bottom: 32px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.priceHistory">Price History</h2>
+    <div class="fm-card" style="padding: 24px;">
+      <div style="height: 300px; width: 100%;">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+  </div>
   
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     await initI18n()
@@ -311,6 +321,7 @@ const { id } = Astro.params
         const data = await spoolsRes.json()
         document.getElementById('spools-section')!.classList.remove('hidden')
         renderSpools(data.items)
+        renderPriceChart(data.items)
       } catch (error) {
         console.error('Failed to load spools:', error)
       }
@@ -353,6 +364,75 @@ const { id } = Astro.params
           <td style="padding: 12px; color: var(--text-muted);">${getLocationName(s.location_id)}</td>
         </tr>
       `).join('')
+    }
+
+    function renderPriceChart(spools: any[]) {
+      const priceData = spools
+        .filter(s => s.purchase_price != null)
+        .map(s => ({
+          date: new Date(s.purchase_date || s.stocked_in_at || s.created_at),
+          price: s.purchase_price
+        }))
+        .filter(d => !isNaN(d.date.getTime()))
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+
+      if (priceData.length === 0) return
+
+      document.getElementById('price-history-section')!.classList.remove('hidden')
+
+      const ctx = (document.getElementById('priceChart') as HTMLCanvasElement).getContext('2d')
+      if (!ctx) return
+
+      // @ts-ignore - Chart is loaded via CDN
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: priceData.map(d => d.date.toLocaleDateString()),
+          datasets: [{
+            label: t('filaments.price') || 'Price',
+            data: priceData.map(d => d.price),
+            borderColor: '#3b82f6', // var(--accent) fallback
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointBackgroundColor: '#3b82f6',
+            pointRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: (context: any) => {
+                  return `${context.parsed.y.toFixed(2)}`
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: false,
+              grid: {
+                color: 'rgba(156, 163, 175, 0.1)'
+              },
+              ticks: {
+                callback: (value: any) => value.toFixed(2)
+              }
+            },
+            x: {
+              grid: {
+                display: false
+              }
+            }
+          }
+        }
+      })
     }
     
     loadFilament()
