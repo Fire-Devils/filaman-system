@@ -386,6 +386,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       const matInput = document.getElementById('spool_material') as HTMLSelectElement
       const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
       const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
+      const priceInput = document.getElementById('purchase_price') as HTMLInputElement
 
       const rawWeight = filament.raw_material_weight_g
       // Fallback to manufacturer settings if filament defaults are null
@@ -408,6 +409,12 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       matInput.value = filament.spool_material || filament.manufacturer?.spool_material || ''
       odInput.value = filament.spool_outer_diameter_mm != null ? String(filament.spool_outer_diameter_mm) : (filament.manufacturer?.spool_outer_diameter_mm != null ? String(filament.manufacturer.spool_outer_diameter_mm) : '')
       wInput.value = filament.spool_width_mm != null ? String(filament.spool_width_mm) : (filament.manufacturer?.spool_width_mm != null ? String(filament.manufacturer.spool_width_mm) : '')
+      
+      if (filament.price != null) {
+        priceInput.value = String(filament.price)
+      } else {
+        priceInput.value = ''
+      }
     }
 
     document.getElementById('filament_id').addEventListener('change', (e) => {
@@ -420,6 +427,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         (document.getElementById('spool_material') as HTMLSelectElement).value = '';
         (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = '';
         (document.getElementById('spool_width_mm') as HTMLInputElement).value = '';
+        (document.getElementById('purchase_price') as HTMLInputElement).value = '';
       }
     })
 

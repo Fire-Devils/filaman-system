@@ -116,6 +116,19 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         </div>
         
         <div>
+          <label for="purchase_price" class="fm-label" data-i18n="spools.purchasePrice">Purchase Price</label>
+          <input
+            type="number"
+            id="purchase_price"
+            name="purchase_price"
+            step="0.01"
+            class="fm-input"
+          />
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
           <label for="low_weight_threshold_g" class="fm-label" data-i18n="spools.lowThreshold">Low Weight Threshold (g)</label>
           <input
             type="number"
@@ -126,9 +139,6 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             class="fm-input"
           />
         </div>
-      </div>
-      
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
           <label for="rfid_uid" class="fm-label" data-i18n="spools.rfidUid">RFID UID</label>
           <input
@@ -140,7 +150,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             class="fm-input"
           />
         </div>
-        
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
           <label for="external_id" class="fm-label" data-i18n="spools.externalId">External ID</label>
           <input
@@ -383,6 +395,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       const matInput = document.getElementById('spool_material') as HTMLSelectElement
       const odInput = document.getElementById('spool_outer_diameter_mm') as HTMLInputElement
       const wInput = document.getElementById('spool_width_mm') as HTMLInputElement
+      const priceInput = document.getElementById('purchase_price') as HTMLInputElement
 
       const rawWeight = filament.raw_material_weight_g
       // Fallback to manufacturer settings if filament defaults are null
@@ -405,6 +418,12 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       matInput.value = filament.spool_material || filament.manufacturer?.spool_material || ''
       odInput.value = filament.spool_outer_diameter_mm != null ? String(filament.spool_outer_diameter_mm) : (filament.manufacturer?.spool_outer_diameter_mm != null ? String(filament.manufacturer.spool_outer_diameter_mm) : '')
       wInput.value = filament.spool_width_mm != null ? String(filament.spool_width_mm) : (filament.manufacturer?.spool_width_mm != null ? String(filament.manufacturer.spool_width_mm) : '')
+      
+      if (filament.price != null) {
+        priceInput.value = String(filament.price)
+      } else {
+        priceInput.value = ''
+      }
     }
 
     document.getElementById('filament_id').addEventListener('change', (e) => {
@@ -417,6 +436,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         (document.getElementById('spool_material') as HTMLSelectElement).value = '';
         (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = '';
         (document.getElementById('spool_width_mm') as HTMLInputElement).value = '';
+        (document.getElementById('purchase_price') as HTMLInputElement).value = '';
       }
     })
     
@@ -443,7 +463,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       if (initialWeight) data.initial_total_weight_g = parseFloat(initialWeight)
       
       const emptyWeight = formData.get('empty_spool_weight_g')
-      if (emptyWeight) data.empty_spool_weight_g = parseFloat(emptyWeight)
+      if (emptyWeight) data.empty_spool_weight_g = parseFloat(emptyWeight as string)
+
+      const purchasePrice = formData.get('purchase_price')
+      if (purchasePrice) data.purchase_price = parseFloat(purchasePrice as string)
 
       const spoolOuterDiameter = formData.get('spool_outer_diameter_mm')
       if (spoolOuterDiameter) data.spool_outer_diameter_mm = parseFloat(spoolOuterDiameter)
