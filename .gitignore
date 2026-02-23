@@ -66,3 +66,4 @@ spec
 bump-version.sh
 _*
 local_cache
+.sisyphus/

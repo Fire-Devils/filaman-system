@@ -199,7 +199,15 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         </div>
 
         <!-- Location -->
-          </div>
+        <div>
+          <label for="location_id" class="fm-label" data-i18n="spools.location">Location</label>
+          <select 
+            id="location_id" 
+            name="location_id" 
+            class="fm-select"
+          >
+            <option value="" data-i18n="spools.noLocation">No location</option>
+          </select>
         </div>
 
         <!-- System Fields -->
@@ -224,7 +232,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         
         <div id="error-message" class="fm-alert-error hidden"></div>
         
-        <div style="display: flex; gap: 12px; padding-top: 8px;">
+        <div style="display: flex; gap: 12px; padding-top: 24px;">
           <button
             type="submit"
             id="submit-btn"
