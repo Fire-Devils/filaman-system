@@ -44,7 +44,7 @@ class Filament(Base, TimestampMixin):
     manufacturer_id: Mapped[int] = mapped_column(Integer, ForeignKey("manufacturers.id"), nullable=False, index=True)
 
     designation: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    material_type: Mapped[str] = mapped_column("type", String(50), nullable=False, index=True)
     material_subgroup: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     diameter_mm: Mapped[float] = mapped_column(Float, nullable=False)
 

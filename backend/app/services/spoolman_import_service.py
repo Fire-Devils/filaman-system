@@ -655,7 +655,7 @@ class SpoolmanImportService:
                 new_fil = Filament(
                     manufacturer_id=filaman_mfr_id,
                     designation=designation,
-                    type=material,
+                    material_type=material,
                     diameter_mm=diameter,
                     raw_material_weight_g=raw_weight,
                     default_spool_weight_g=spool_weight,

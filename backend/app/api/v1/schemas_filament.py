@@ -96,7 +96,7 @@ class FilamentColorsReplace(BaseModel):
 class FilamentCreate(BaseModel):
     manufacturer_id: int
     designation: str
-    type: str
+    material_type: str
     material_subgroup: str | None = None
     diameter_mm: float
     manufacturer_color_name: str | None = None
@@ -118,7 +118,7 @@ class FilamentCreate(BaseModel):
 class FilamentUpdate(BaseModel):
     manufacturer_id: int | None = None
     designation: str | None = None
-    type: str | None = None
+    material_type: str | None = None
     material_subgroup: str | None = None
     diameter_mm: float | None = None
     manufacturer_color_name: str | None = None
@@ -140,7 +140,7 @@ class FilamentResponse(BaseModel):
     id: int
     manufacturer_id: int
     designation: str
-    type: str
+    material_type: str
     material_subgroup: str | None
     diameter_mm: float
     manufacturer_color_name: str | None

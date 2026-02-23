@@ -60,7 +60,7 @@ async def test_filament(db_session):
     filament = Filament(
         manufacturer_id=mfr.id,
         designation="Test PLA",
-        type="PLA",
+        material_type="PLA",
         diameter_mm=1.75,
     )
     db_session.add(filament)

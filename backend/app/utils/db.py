@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import Column, func
+from sqlalchemy import Column, String, func
 from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
 from sqlalchemy.dialects.postgresql import dialect as postgresql_dialect
 from sqlalchemy.dialects.mysql import dialect as mysql_dialect
@@ -52,14 +52,14 @@ def json_extract_cast_string(column: Column, path: str, dialect: Any = None) -> 
     """
     if dialect is None or isinstance(dialect, sqlite_dialect):
         # SQLite: CAST(json_extract(...) AS TEXT)
-        return func.cast(func.json_extract(column, path), str)
+        return func.cast(func.json_extract(column, path), String())
     elif isinstance(dialect, postgresql_dialect):
         # PostgreSQL: column->>'key'
         key = path.lstrip('$.')
         return column[key].astext
     elif isinstance(dialect, mysql_dialect):
         # MySQL: CAST(JSON_EXTRACT(...) AS CHAR)
-        return func.cast(column.op('JSON_EXTRACT')(path), str)
+        return func.cast(column.op('JSON_EXTRACT')(path), String())
     else:
         # Fallback
-        return func.cast(func.json_extract(column, path), str)
+        return func.cast(func.json_extract(column, path), String())

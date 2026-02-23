@@ -119,7 +119,7 @@ async def get_dashboard_stats(
     # Filament-Statistik nach Typ
     filament_stats_stmt = (
         select(
-            Filament.type,
+            Filament.material_type,
             func.count(Spool.id).label("spool_count"),
             func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
         )
@@ -128,9 +128,9 @@ async def get_dashboard_stats(
         .where(SpoolStatus.key != "archived")
         .where(Spool.remaining_weight_g.isnot(None))
         .where(Spool.remaining_weight_g > 0)
-        .where(Filament.type.isnot(None))
-        .where(Filament.type != "")
-        .group_by(Filament.type)
+        .where(Filament.material_type.isnot(None))
+        .where(Filament.material_type != "")
+        .group_by(Filament.material_type)
         .order_by(func.sum(Spool.remaining_weight_g).desc())
     )
     
@@ -153,7 +153,7 @@ async def get_dashboard_stats(
         select(
             Spool.id.label("spool_id"),
             Filament.designation.label("filament_designation"),
-            Filament.type.label("filament_type"),
+            Filament.material_type.label("filament_type"),
             Manufacturer.name.label("manufacturer_name"),
             Spool.remaining_weight_g,
             Spool.low_weight_threshold_g,
@@ -174,7 +174,7 @@ async def get_dashboard_stats(
         select(
             Spool.id.label("spool_id"),
             Filament.designation.label("filament_designation"),
-            Filament.type.label("filament_type"),
+            Filament.material_type.label("filament_type"),
             Manufacturer.name.label("manufacturer_name"),
         )
         .join(Filament, Spool.filament_id == Filament.id)
@@ -189,13 +189,13 @@ async def get_dashboard_stats(
     
     # Filament-Typen mit Anzahl
     types_stmt = (
-        select(Filament.type, func.count(Filament.id).label("filament_count"))
+        select(Filament.material_type, func.count(Filament.id).label("filament_count"))
         .join(Spool, Spool.filament_id == Filament.id)
         .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(SpoolStatus.key != "archived")
-        .where(Filament.type.isnot(None))
-        .where(Filament.type != "")
-        .group_by(Filament.type)
+        .where(Filament.material_type.isnot(None))
+        .where(Filament.material_type != "")
+        .group_by(Filament.material_type)
         .order_by(func.count(Filament.id).desc())
     )
     

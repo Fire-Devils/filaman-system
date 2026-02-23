@@ -54,7 +54,7 @@ async def list_manufacturers(
         import asyncio
         
         fc_stmt = select(Filament.manufacturer_id, func.count(Filament.id)).where(Filament.manufacturer_id.in_(mfr_ids)).group_by(Filament.manufacturer_id)
-        types_stmt = select(Filament.manufacturer_id, Filament.type).where(Filament.manufacturer_id.in_(mfr_ids)).distinct()
+        types_stmt = select(Filament.manufacturer_id, Filament.material_type).where(Filament.manufacturer_id.in_(mfr_ids)).distinct()
         
         # Comprehensive spool stats query
         # We need sum of prices and counts for both active and archived
@@ -340,7 +340,7 @@ DEFAULT_FILAMENT_TYPES = ["PLA", "PETG", "ABS", "ASA", "TPU", "NYLON", "PC"]
 @router_filaments.get("/types", response_model=list[str])
 async def list_filament_types(db: DBSession, principal: PrincipalDep):
     """Return all known filament types: defaults merged with distinct types from DB, sorted."""
-    result = await db.execute(select(Filament.type).distinct())
+    result = await db.execute(select(Filament.material_type).distinct())
     db_types = {row[0] for row in result.all() if row[0]}
 
     all_types = sorted(set(DEFAULT_FILAMENT_TYPES) | db_types)
@@ -364,8 +364,8 @@ async def list_filaments(
     count_query = select(func.count()).select_from(Filament)
 
     if type:
-        query = query.where(Filament.type == type)
-        count_query = count_query.where(Filament.type == type)
+        query = query.where(Filament.material_type == type)
+        count_query = count_query.where(Filament.material_type == type)
     if manufacturer_id:
         query = query.where(Filament.manufacturer_id == manufacturer_id)
         count_query = count_query.where(Filament.manufacturer_id == manufacturer_id)

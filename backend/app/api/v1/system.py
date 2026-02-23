@@ -301,13 +301,15 @@ async def spoolman_preview(
             content={"detail": {"code": e.code, "message": str(e)}},
         )
     except Exception as e:
-        logger.exception("Unexpected error in Spoolman preview")
+        import traceback
+        tb = traceback.format_exc()
+        logger.exception(f"Unexpected error in Spoolman preview: {tb}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "detail": {
                     "code": "internal_error",
-                    "message": f"Unerwarteter Fehler: {str(e)}",
+                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },
@@ -336,14 +338,16 @@ async def spoolman_execute(
             detail={"code": e.code, "message": str(e)},
         )
     except Exception as e:
-        logger.exception("Unexpected error in Spoolman import execution")
+        import traceback
+        tb = traceback.format_exc()
+        logger.exception(f"Unexpected error in Spoolman import execution: {tb}")
         # Return JSONResponse for 500 errors to give more details
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "detail": {
                     "code": "internal_error",
-                    "message": f"Unerwarteter Fehler beim Import: {str(e)}",
+                    "message": f"Unerwarteter Fehler beim Import: {str(e)}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },
