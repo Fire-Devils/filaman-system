@@ -910,7 +910,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       const patchData: any = {
         manufacturer_id: parseInt(formData.get('manufacturer_id') as string),
         designation: formData.get('designation'),
-        type: filamentType,
+        material_type: filamentType,
         diameter_mm: parseFloat(formData.get('diameter_mm') as string),
         color_mode: colorMode,
         multi_color_style: colorMode === 'multi' ? (formData.get('multi_color_style') || null) : null,
