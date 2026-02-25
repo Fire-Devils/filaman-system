@@ -394,7 +394,8 @@
     "startDriver": "Treiber starten",
     "stopDriver": "Treiber stoppen",
     "driverStarting": "Wird gestartet...",
-    "driverStopping": "Wird gestoppt..."
+    "driverStopping": "Wird gestoppt...",
+    "checkAll": "Alle Drucker prüfen"
   },
   "locations": {
     "title": "Standorte",

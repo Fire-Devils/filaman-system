@@ -390,7 +390,8 @@
     "startDriver": "Start Driver",
     "stopDriver": "Stop Driver",
     "driverStarting": "Starting...",
-    "driverStopping": "Stopping..."
+    "driverStopping": "Stopping...",
+    "checkAll": "Check All Printers"
   },
   "locations": {
     "title": "Locations",

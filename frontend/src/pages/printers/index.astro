@@ -5,13 +5,22 @@ import Layout from '../../layouts/Layout.astro'
 <Layout title="FilaMan - Printers">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printers.title">Printers</h1>
-    <button
-      id="btn-new"
-      class="fm-btn fm-btn-primary"
-      data-i18n="printers.addPrinter"
-    >
-      Add Printer
-    </button>
+    <div style="display: flex; gap: 8px;">
+      <button
+        id="btn-check-all"
+        class="fm-btn fm-btn-outline"
+        data-i18n="printers.checkAll"
+      >
+        Check All Printers
+      </button>
+      <button
+        id="btn-new"
+        class="fm-btn fm-btn-primary"
+        data-i18n="printers.addPrinter"
+      >
+        Add Printer
+      </button>
+    </div>
   </div>
   
   <div class="fm-card" style="padding: 0;">
@@ -423,6 +432,24 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('printer-driver')?.addEventListener('change', (e) => {
       renderConfigFields((e.target as HTMLSelectElement).value)
     })
+
+    document.getElementById('btn-check-all')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-check-all') as HTMLButtonElement
+      btn.disabled = true
+      btn.textContent = '...'
+      // Reset all online badges to '—' before checking
+      printers.forEach((p: any) => {
+        const badge = document.getElementById(`online-badge-${p.id}`)
+        if (badge) {
+          badge.textContent = '\u2014'
+          badge.style.color = 'var(--text-muted)'
+        }
+      })
+      await fetchHealthForAll()
+      btn.disabled = false
+      btn.textContent = t('printers.checkAll')
+    })
+
     loadPrinters()
   </script>
 </Layout>
