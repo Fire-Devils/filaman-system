@@ -3,6 +3,7 @@ import logging
 from typing import Any, Callable
 
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import async_session_maker
 from app.models import Printer
@@ -60,71 +61,74 @@ class PluginManager:
 
     async def _handle_slots_update(self, printer_id: int, slots_data: list[dict], ams_info: dict | None = None) -> None:
         """Upsert PrinterSlot and PrinterSlotAssignment from driver slot events."""
-        if not slots_data:
-            return
+        try:
+            async with async_session_maker() as db:
+                # Upsert slots if any
+                if slots_data:
+                    for slot_data in slots_data:
+                        slot_index = slot_data.get("slot_index", "")
+                        slot_no = self._slot_index_to_no(slot_index)
+                        slot_name = slot_data.get("slot_name", f"Slot {slot_no}")
+                        present = slot_data.get("present", False)
 
-        async with async_session_maker() as db:
-            for slot_data in slots_data:
-                slot_index = slot_data.get("slot_index", "")
-                slot_no = self._slot_index_to_no(slot_index)
-                slot_name = slot_data.get("slot_name", f"Slot {slot_no}")
-                present = slot_data.get("present", False)
+                        # Upsert PrinterSlot
+                        result = await db.execute(
+                            select(PrinterSlot).where(
+                                PrinterSlot.printer_id == printer_id,
+                                PrinterSlot.slot_no == slot_no,
+                            )
+                        )
+                        printer_slot = result.scalar_one_or_none()
 
-                # Upsert PrinterSlot
-                result = await db.execute(
-                    select(PrinterSlot).where(
-                        PrinterSlot.printer_id == printer_id,
-                        PrinterSlot.slot_no == slot_no,
-                    )
-                )
-                printer_slot = result.scalar_one_or_none()
+                        if not printer_slot:
+                            printer_slot = PrinterSlot(
+                                printer_id=printer_id,
+                                slot_no=slot_no,
+                                name=slot_name,
+                                is_active=True,
+                                custom_fields={"slot_index": slot_index},
+                            )
+                            db.add(printer_slot)
+                            await db.flush()
+                        else:
+                            printer_slot.name = slot_name
+                            printer_slot.custom_fields = {
+                                **(printer_slot.custom_fields or {}),
+                                "slot_index": slot_index,
+                            }
 
-                if not printer_slot:
-                    printer_slot = PrinterSlot(
-                        printer_id=printer_id,
-                        slot_no=slot_no,
-                        name=slot_name,
-                        is_active=True,
-                        custom_fields={"slot_index": slot_index},
-                    )
-                    db.add(printer_slot)
-                    await db.flush()
-                else:
-                    printer_slot.name = slot_name
-                    printer_slot.custom_fields = {
-                        **(printer_slot.custom_fields or {}),
-                        "slot_index": slot_index,
-                    }
+                        # Build meta dict from driver-specific fields
+                        meta = {}
+                        for key in ("tray_type", "tray_color", "tray_info_idx",
+                                    "nozzle_temp_min", "nozzle_temp_max"):
+                            if key in slot_data:
+                                meta[key] = slot_data[key]
 
-                # Build meta dict from driver-specific fields
-                meta = {}
-                for key in ("tray_type", "tray_color", "tray_info_idx",
-                            "nozzle_temp_min", "nozzle_temp_max"):
-                    if key in slot_data:
-                        meta[key] = slot_data[key]
+                        # Upsert PrinterSlotAssignment
+                        if printer_slot.assignment:
+                            printer_slot.assignment.present = present
+                            printer_slot.assignment.meta = meta
+                        else:
+                            assignment = PrinterSlotAssignment(
+                                slot_id=printer_slot.id,
+                                present=present,
+                                meta=meta,
+                            )
+                            db.add(assignment)
 
-                # Upsert PrinterSlotAssignment
-                if printer_slot.assignment:
-                    printer_slot.assignment.present = present
-                    printer_slot.assignment.meta = meta
-                else:
-                    assignment = PrinterSlotAssignment(
-                        slot_id=printer_slot.id,
-                        present=present,
-                        meta=meta,
-                    )
-                    db.add(assignment)
-
-            await db.commit()
-            logger.info(f"Updated {len(slots_data)} slots for printer {printer_id}")
-
-            # Persist AMS/slot summary to Printer.custom_fields
-            if ams_info:
-                printer = await db.get(Printer, printer_id)
-                if printer:
-                    printer.custom_fields = {**(printer.custom_fields or {}), "slot_summary": ams_info}
                     await db.commit()
-                    logger.info(f"Persisted slot_summary for printer {printer_id}")
+                    logger.info(f"Updated {len(slots_data)} slots for printer {printer_id}")
+
+                # Persist AMS/slot summary to Printer.custom_fields
+                if ams_info:
+                    printer = await db.get(Printer, printer_id)
+                    if printer:
+                        printer.custom_fields = {**(printer.custom_fields or {}), "slot_summary": ams_info}
+                        flag_modified(printer, "custom_fields")
+                        await db.commit()
+                        logger.info(f"Persisted slot_summary for printer {printer_id}")
+        except Exception as e:
+            logger.error(f"Error in _handle_slots_update for printer {printer_id}: {e}", exc_info=True)
 
     def load_driver(self, driver_key: str) -> type[BaseDriver] | None:
         try:
