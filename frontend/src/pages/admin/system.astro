@@ -53,13 +53,22 @@ import Layout from '../../layouts/Layout.astro'
   
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.systemPlugins">Plugins</h1>
-    <button
-      id="btn-install"
-      class="fm-btn fm-btn-primary"
-      data-i18n="admin.installPlugin"
-    >
-      Install Plugin
-    </button>
+    <div style="display: flex; gap: 8px;">
+      <button
+        id="btn-check-updates"
+        class="fm-btn fm-btn-outline"
+        data-i18n="admin.pluginCheckUpdates"
+      >
+        Check for Updates
+      </button>
+      <button
+        id="btn-install"
+        class="fm-btn fm-btn-primary"
+        data-i18n="admin.installPlugin"
+      >
+        Install Plugin
+      </button>
+    </div>
   </div>
   
   <!-- Plugin-Liste -->
@@ -89,6 +98,22 @@ import Layout from '../../layouts/Layout.astro'
       <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.installPlugin">Install Plugin</h3>
       
       <form id="install-form" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Registry Plugin Auswahl -->
+        <div>
+          <label class="fm-label" data-i18n="admin.pluginFromRegistry">Install from Registry</label>
+          <select id="registry-select" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 0.9rem;">
+            <option value="" data-i18n="admin.pluginSelectFromRegistry">-- Select a plugin --</option>
+          </select>
+          <p id="registry-status" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;"></p>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
+          <span style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="admin.pluginOrUpload">or upload manually</span>
+          <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
+        </div>
+
+        <!-- ZIP Upload -->
         <div>
           <label class="fm-label" data-i18n="admin.pluginZipFile">Plugin ZIP File</label>
           <div id="drop-zone" style="border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 32px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;">
@@ -143,6 +168,8 @@ import Layout from '../../layouts/Layout.astro'
 
     let plugins: any[] = []
     let selectedFile: File | null = null
+    let availablePlugins: any[] = []
+    let selectedRegistryUrl: string = ''
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -358,10 +385,14 @@ import Layout from '../../layouts/Layout.astro'
     const fileName = document.getElementById('file-name')!
     const installSubmit = document.getElementById('install-submit') as HTMLButtonElement
     
+    const registrySelect = document.getElementById('registry-select') as HTMLSelectElement
+    const registryStatus = document.getElementById('registry-status')!
+
     // Oeffnen
     document.getElementById('btn-install')?.addEventListener('click', () => {
       resetInstallModal()
       document.getElementById('install-modal')!.classList.add('open')
+      loadAvailablePlugins()
     })
     
     document.getElementById('install-cancel')?.addEventListener('click', () => {
@@ -374,6 +405,8 @@ import Layout from '../../layouts/Layout.astro'
     
     function resetInstallModal() {
       selectedFile = null
+      selectedRegistryUrl = ''
+      registrySelect.value = ''
       fileInput.value = ''
       fileName.style.display = 'none'
       fileName.textContent = ''
@@ -432,6 +465,10 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
+      // Registry-Auswahl zuruecksetzen wenn ZIP gewaehlt
+      selectedRegistryUrl = ''
+      registrySelect.value = ''
+      
       selectedFile = file
       fileName.textContent = file.name + ` (${(file.size / 1024).toFixed(1)} KB)`
       fileName.style.display = 'block'
@@ -456,7 +493,8 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('install-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      if (!selectedFile) return
+      // Registry oder ZIP?
+      const useRegistry = selectedRegistryUrl && !selectedFile
       
       installSubmit.disabled = true
       installSubmit.textContent = t('admin.pluginInstalling')
@@ -467,17 +505,32 @@ import Layout from '../../layouts/Layout.astro'
       progressBar.style.width = '30%'
       
       try {
-        const formData = new FormData()
-        formData.append('file', selectedFile)
-        
-        progressBar.style.width = '60%'
-        
-        const response = await fetch('/api/v1/admin/system/plugins/install', {
-          method: 'POST',
-          headers: { 'X-CSRF-Token': getCsrfToken() },
-          credentials: 'include',
-          body: formData,
-        })
+        let response: Response
+
+        if (useRegistry) {
+          progressBar.style.width = '50%'
+          response = await fetch('/api/v1/admin/system/plugins/install-from-registry', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': getCsrfToken(),
+            },
+            credentials: 'include',
+            body: JSON.stringify({ download_url: selectedRegistryUrl }),
+          })
+        } else if (selectedFile) {
+          const formData = new FormData()
+          formData.append('file', selectedFile)
+          progressBar.style.width = '60%'
+          response = await fetch('/api/v1/admin/system/plugins/install', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: formData,
+          })
+        } else {
+          return
+        }
         
         progressBar.style.width = '90%'
         
@@ -513,6 +566,88 @@ import Layout from '../../layouts/Layout.astro'
       } finally {
         installSubmit.disabled = false
         installSubmit.textContent = t('admin.installPlugin')
+      }
+    })
+
+    // ----------------------------------------------------------------
+    //  Registry: Verfuegbare Plugins laden
+    // ----------------------------------------------------------------
+
+    async function loadAvailablePlugins() {
+      registryStatus.textContent = t('common.loading')
+      try {
+        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch available plugins')
+        availablePlugins = await response.json()
+
+        // Dropdown befuellen
+        registrySelect.innerHTML = `<option value="" data-i18n="admin.pluginSelectFromRegistry">-- ${t('admin.pluginSelectFromRegistry')} --</option>`
+        for (const p of availablePlugins) {
+          const label = p.update_available
+            ? `${p.name} v${p.version} (Update von ${p.installed_version})`
+            : p.is_installed
+              ? `${p.name} v${p.version} (${t('admin.pluginAlreadyInstalled')})`
+              : `${p.name} v${p.version}`
+          const opt = document.createElement('option')
+          opt.value = p.download_url
+          opt.textContent = label
+          registrySelect.appendChild(opt)
+        }
+
+        registryStatus.textContent = availablePlugins.length === 0
+          ? t('admin.pluginNoAvailable')
+          : ''
+      } catch (err) {
+        console.error('Failed to load available plugins:', err)
+        registryStatus.textContent = t('admin.pluginRegistryFailed')
+      }
+    }
+
+    registrySelect.addEventListener('change', () => {
+      selectedRegistryUrl = registrySelect.value
+      if (selectedRegistryUrl) {
+        // ZIP-Auswahl zuruecksetzen
+        selectedFile = null
+        fileInput.value = ''
+        fileName.style.display = 'none'
+        installSubmit.disabled = false
+      } else {
+        if (!selectedFile) installSubmit.disabled = true
+      }
+      // Validierung zuruecksetzen
+      document.getElementById('validation-result')!.style.display = 'none'
+      document.getElementById('validation-success')!.style.display = 'none'
+      document.getElementById('validation-error')!.style.display = 'none'
+    })
+
+    // ----------------------------------------------------------------
+    //  Auf Aktualisierungen pruefen
+    // ----------------------------------------------------------------
+
+    document.getElementById('btn-check-updates')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-check-updates') as HTMLButtonElement
+      btn.disabled = true
+      btn.textContent = t('admin.pluginCheckingUpdates')
+
+      try {
+        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to fetch')
+        const available: any[] = await response.json()
+
+        const updates = available.filter(p => p.update_available)
+        if (updates.length === 0) {
+          await (window as any).__fmAlert(t('admin.pluginUpToDate'))
+        } else {
+          const msg = t('admin.pluginUpdatesAvailable').replace('{count}', String(updates.length))
+            + '\n\n' + updates.map(p => `${p.name}: ${p.installed_version} → ${p.version}`).join('\n')
+          await (window as any).__fmAlert(msg)
+        }
+      } catch (err) {
+        console.error('Update check failed:', err)
+        await (window as any).__fmAlert(t('admin.pluginRegistryFailed'))
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('admin.pluginCheckUpdates')
       }
     })
     

@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import re
 from datetime import datetime
 from typing import Any
 
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 
+import httpx
 from app.api.deps import DBSession, RequirePermission
 from app.models import (
     Color,
@@ -65,6 +67,20 @@ class PluginInstallResponse(BaseModel):
     plugin: PluginResponse
 
 
+class AvailablePluginResponse(BaseModel):
+    plugin_key: str
+    name: str
+    version: str
+    description: str | None = None
+    download_url: str
+    is_installed: bool = False
+    installed_version: str | None = None
+    update_available: bool = False
+
+
+class RegistryInstallRequest(BaseModel):
+    download_url: str
+
 class PluginToggleRequest(BaseModel):
     is_active: bool
 
@@ -84,6 +100,200 @@ async def list_plugins(
     return plugins
 
 
+GITHUB_RELEASES_URL = "https://api.github.com/repos/Fire-Devils/filaman-plugins/releases"
+
+_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
+
+
+def _parse_semver(ver: str) -> tuple[int, ...] | None:
+    """Semver-String in vergleichbares Tuple parsen, None bei ungueltigem Format."""
+    m = _SEMVER_RE.match(ver)
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+
+@router.get("/plugins/available", response_model=list[AvailablePluginResponse])
+async def list_available_plugins(
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Verfuegbare Plugins aus dem GitHub-Registry abrufen.
+
+    Fragt die GitHub Releases API ab, parst Tags im Format
+    '{plugin_key}-v{version}' und gibt die jeweils neueste
+    Version je Plugin zurueck, inklusive Install-/Update-Status.
+    """
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.get(
+                GITHUB_RELEASES_URL,
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "registry_unavailable",
+                    "message": f"GitHub-Registry nicht erreichbar: {e}",
+                },
+            )
+
+    releases = resp.json()
+
+    # Releases nach plugin_key gruppieren, nur neueste Version behalten
+    latest: dict[str, dict] = {}
+    for rel in releases:
+        tag = rel.get("tag_name", "")
+        # Format: {plugin_key}-v{version}
+        if "-v" not in tag:
+            continue
+        key, _, ver = tag.rpartition("-v")
+        if not key or not ver:
+            continue
+
+        semver = _parse_semver(ver)
+        if semver is None:
+            continue
+
+        # ZIP-Asset finden
+        assets = rel.get("assets", [])
+        zip_asset = next(
+            (a for a in assets if a["name"].endswith(".zip")),
+            None,
+        )
+        if not zip_asset:
+            continue
+
+        if key not in latest or (_parse_semver(latest[key]["version"]) or ()) < semver:
+            latest[key] = {
+                "plugin_key": key,
+                "name": rel.get("name", key),
+                "version": ver,
+                "description": rel.get("body", "")[:200] if rel.get("body") else None,
+                "download_url": zip_asset["browser_download_url"],
+            }
+
+    # Install-Status ermitteln
+    service = PluginInstallService(db)
+    installed = await service.list_installed()
+    installed_map = {p.plugin_key: p for p in installed}
+
+    result: list[AvailablePluginResponse] = []
+    for info in latest.values():
+        existing = installed_map.get(info["plugin_key"])
+        result.append(AvailablePluginResponse(
+            plugin_key=info["plugin_key"],
+            name=info["name"],
+            version=info["version"],
+            description=info["description"],
+            download_url=info["download_url"],
+            is_installed=existing is not None,
+            installed_version=existing.version if existing else None,
+            update_available=(
+                existing is not None
+                and (_parse_semver(info["version"]) or ()) > (_parse_semver(existing.version) or ())
+            ),
+        ))
+
+    return result
+
+
+@router.post(
+    "/plugins/install-from-registry",
+    response_model=PluginInstallResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def install_from_registry(
+    body: RegistryInstallRequest,
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Plugin aus der Registry (GitHub Release) installieren.
+
+    Laedt die ZIP-Datei von der angegebenen URL herunter und
+    leitet sie an die bestehende install_from_zip-Pipeline weiter.
+    """
+    from app.plugins.manager import plugin_manager
+
+    # URL validieren: nur GitHub-Release-Assets erlauben
+    if not body.download_url.startswith("https://github.com/Fire-Devils/filaman-plugins/"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_download_url",
+                "message": "Nur Downloads aus dem offiziellen Plugin-Repository sind erlaubt",
+            },
+        )
+
+    # ZIP herunterladen
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        try:
+            resp = await client.get(body.download_url)
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "download_failed",
+                    "message": f"ZIP-Download fehlgeschlagen: {e}",
+                },
+            )
+
+    zip_data = resp.content
+
+    if not zip_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "empty_download",
+                "message": "Heruntergeladene Datei ist leer",
+            },
+        )
+
+    async def stop_drivers_for_upgrade(driver_key: str) -> None:
+        """Laufende Treiber stoppen und Module-Cache bereinigen."""
+        for pid, drv in list(plugin_manager.drivers.items()):
+            if drv.driver_key == driver_key:
+                await plugin_manager.stop_printer(pid)
+        prefix = f"app.plugins.{driver_key}"
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith(prefix):
+                del sys.modules[mod_name]
+
+    service = PluginInstallService(db)
+    try:
+        plugin, is_upgrade = await service.install_from_zip(
+            zip_data=zip_data,
+            installed_by=principal.user_id,
+            stop_callback=stop_drivers_for_upgrade,
+        )
+    except PluginInstallError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": e.code,
+                "message": str(e),
+            },
+        )
+
+    # Treiber fuer zugehoerige Drucker (neu) starten
+    if plugin.driver_key:
+        result = await db.execute(
+            select(Printer).where(
+                Printer.driver_key == plugin.driver_key,
+                Printer.is_active == True,
+                Printer.deleted_at.is_(None),
+            )
+        )
+        for p in result.scalars().all():
+            await plugin_manager.start_printer(p)
+
+    action = "aktualisiert" if is_upgrade else "installiert"
+    return PluginInstallResponse(
+        message=f"Plugin '{plugin.name}' v{plugin.version} erfolgreich {action}",
+        plugin=PluginResponse.model_validate(plugin),
+    )
 @router.post(
     "/plugins/install",
     response_model=PluginInstallResponse,
