@@ -105,6 +105,22 @@ import Layout from '../../layouts/Layout.astro'
         `
       }
     }
+
+    function renderSlotTags(summary: any): string {
+      if (!summary) return '\u2014'
+      const tags: string[] = []
+      const tagStyle = 'display:inline-block;padding:2px 8px;font-size:0.7rem;border-radius:999px;background:var(--bg-soft);color:var(--text-muted);margin-right:4px;white-space:nowrap;'
+      if (summary.external_spool) {
+        tags.push(`<span style="${tagStyle}">Ext: 1 Slot</span>`)
+      }
+      if (summary.ams_units && summary.ams_units.length > 0) {
+        for (const unit of summary.ams_units) {
+          const label = summary.ams_type === 'AMS Lite' ? 'AMS Lite' : `AMS ${unit.ams_id + 1}`
+          tags.push(`<span style="${tagStyle}">${label}: ${unit.tray_count} Slots</span>`)
+        }
+      }
+      return tags.length > 0 ? tags.join('') : '\u2014'
+    }
     
     async function fetchHealthForAll() {
       await Promise.all(printers.map(async (p: any) => {
@@ -126,15 +142,18 @@ import Layout from '../../layouts/Layout.astro'
             badge.textContent = t('common.offline')
             badge.style.color = 'var(--error-text)'
           }
-          // Slot info from driver
+          // Slot info from driver — render as tag cards
           if (slotsEl && health.running && health.connected) {
-            const parts: string[] = []
-            if (health.ams_count > 0) parts.push(`${health.ams_count} AMS`)
-            if (health.slot_count > 0) parts.push(`${health.slot_count} Slots`)
-            if (health.external_spool) parts.push('1 Ext.')
-            if (parts.length > 0) {
-              slotsEl.textContent = parts.join(' \u00b7 ')
-              slotsEl.style.color = 'var(--text)'
+            const slotSummary = {
+              ams_count: health.ams_count,
+              ams_type: health.ams_type || 'AMS',
+              slot_count: health.slot_count,
+              external_spool: health.external_spool,
+              ams_units: health.ams_units || [],
+            }
+            const html = renderSlotTags(slotSummary)
+            if (html !== '\u2014') {
+              slotsEl.innerHTML = html
             }
           }
         } catch {
@@ -173,15 +192,7 @@ import Layout from '../../layouts/Layout.astro'
             <span id="online-badge-${p.id}" style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);">—</span>
           </td>
           <td style="padding: 12px;">
-            <span id="slots-info-${p.id}" style="font-size: 0.8rem; color: var(--text-muted);">${(() => {
-              const s = p.custom_fields?.slot_summary;
-              if (!s) return '\u2014';
-              const parts: string[] = [];
-              if (s.ams_count > 0) parts.push(s.ams_count + ' AMS');
-              if (s.slot_count > 0) parts.push(s.slot_count + ' Slots');
-              if (s.external_spool) parts.push('1 Ext.');
-              return parts.length > 0 ? parts.join(' \u00b7 ') : '\u2014';
-            })()}</span>
+            <span id="slots-info-${p.id}" style="font-size: 0.8rem;">${renderSlotTags(p.custom_fields?.slot_summary)}</span>
           </td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
             <button data-id="${p.id}" data-name="${p.name}" data-driver="${p.driver_key}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
