@@ -62,7 +62,7 @@ const { id } = Astro.params
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; font-family: var(--font-serif);">${printer.name}</h1>
-            <p style="color: var(--text-muted); margin-top: 4px;">${printer.manufacturer || ''} ${printer.model || ''}</p>
+
           </div>
           <div style="display: flex; gap: 8px;">
             <button id="btn-toggle-active" class="${printer.is_active ? 'fm-btn fm-btn-outline' : 'fm-btn fm-btn-primary'}">
@@ -78,10 +78,6 @@ const { id } = Astro.params
           <div class="fm-card">
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.driver')}</div>
             <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">${printer.driver_key}</div>
-          </div>
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.serialNumber')}</div>
-            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px; font-family: monospace; font-size: 0.85rem;">${printer.serial_number || '-'}</div>
           </div>
           <div class="fm-card">
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('common.status')}</div>

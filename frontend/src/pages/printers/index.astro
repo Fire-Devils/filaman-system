@@ -19,7 +19,6 @@ import Layout from '../../layouts/Layout.astro'
       <thead>
         <tr style="background: var(--bg-soft);">
           <th data-i18n="printers.name">Name</th>
-          <th data-i18n="printers.model">Model</th>
           <th data-i18n="printers.driver">Driver</th>
           <th data-i18n="common.status">Status</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
@@ -27,7 +26,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="printers-table">
         <tr>
-          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="4" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -49,28 +48,6 @@ import Layout from '../../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div>
-            <label for="printer-manufacturer" class="fm-label">
-              Manufacturer
-            </label>
-            <input
-              type="text"
-              id="printer-manufacturer"
-              class="fm-input"
-            />
-          </div>
-          <div>
-            <label for="printer-model" class="fm-label" data-i18n="printers.model">
-              Model
-            </label>
-            <input
-              type="text"
-              id="printer-model"
-              class="fm-input"
-            />
-          </div>
-        </div>
         <div>
           <label for="printer-driver" class="fm-label" data-i18n="printers.driver">
             Driver *
@@ -80,18 +57,7 @@ import Layout from '../../layouts/Layout.astro'
             required
             class="fm-select"
           >
-            <option value="dummy" data-i18n="printers.driverDummy">Dummy (Testing)</option>
           </select>
-        </div>
-        <div>
-          <label for="printer-serial" class="fm-label" data-i18n="printers.serialNumber">
-            Serial Number
-          </label>
-          <input
-            type="text"
-            id="printer-serial"
-            class="fm-input"
-          />
         </div>
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
@@ -129,7 +95,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load printers:', error)
         document.getElementById('printers-table')!.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('printers.failedLoad')}</td>
+            <td colspan="4" style="text-align: center; color: var(--error-text);">${t('printers.failedLoad')}</td>
           </tr>
         `
       }
@@ -141,7 +107,7 @@ import Layout from '../../layouts/Layout.astro'
       if (printers.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--text-muted);">
+            <td colspan="4" style="text-align: center; color: var(--text-muted);">
               ${t('printers.noPrinters')}
             </td>
           </tr>
@@ -152,9 +118,6 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = printers.map(p => `
         <tr style="cursor: pointer;" onclick="window.location='/printers/${p.id}'">
           <td style="padding: 12px; font-weight: 500;">${p.name}</td>
-          <td style="padding: 12px; color: var(--text-muted);">
-            ${p.manufacturer || ''} ${p.model || '-'}
-          </td>
           <td style="padding: 12px;">
             <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);">${p.driver_key}</span>
           </td>
@@ -164,7 +127,7 @@ import Layout from '../../layouts/Layout.astro'
             </span>
           </td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
-            <button data-id="${p.id}" data-name="${p.name}" data-manufacturer="${p.manufacturer || ''}" data-model="${p.model || ''}" data-driver="${p.driver_key}" data-serial="${p.serial_number || ''}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
+            <button data-id="${p.id}" data-name="${p.name}" data-driver="${p.driver_key}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
             <button data-id="${p.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
           </td>
         </tr>
@@ -176,10 +139,7 @@ import Layout from '../../layouts/Layout.astro'
           openModal(
             parseInt(target.dataset.id!),
             target.dataset.name!,
-            target.dataset.manufacturer!,
-            target.dataset.model!,
-            target.dataset.driver!,
-            target.dataset.serial!
+            target.dataset.driver!
           )
         })
       })
@@ -212,24 +172,18 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
-    function openModal(id: number | null = null, name: string = '', manufacturer: string = '', model: string = '', driver: string = 'dummy', serial: string = '') {
+    function openModal(id: number | null = null, name: string = '', driver: string = '') {
       const container = document.getElementById('modal-container')!
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('printer-id') as HTMLInputElement
       const nameInput = document.getElementById('printer-name') as HTMLInputElement
-      const mfrInput = document.getElementById('printer-manufacturer') as HTMLInputElement
-      const modelInput = document.getElementById('printer-model') as HTMLInputElement
       const driverInput = document.getElementById('printer-driver') as HTMLSelectElement
-      const serialInput = document.getElementById('printer-serial') as HTMLInputElement
       const error = document.getElementById('modal-error')!
       
       title.textContent = id ? t('printers.editPrinter') : t('printers.addPrinter')
       idInput.value = id ? String(id) : ''
       nameInput.value = name
-      mfrInput.value = manufacturer
-      modelInput.value = model
       driverInput.value = driver
-      serialInput.value = serial
       error.classList.add('hidden')
       
       container.classList.add('open')
@@ -248,14 +202,11 @@ import Layout from '../../layouts/Layout.astro'
       
       const id = (document.getElementById('printer-id') as HTMLInputElement).value
       const name = (document.getElementById('printer-name') as HTMLInputElement).value
-      const manufacturer = (document.getElementById('printer-manufacturer') as HTMLInputElement).value || null
-      const model = (document.getElementById('printer-model') as HTMLInputElement).value || null
       const driver_key = (document.getElementById('printer-driver') as HTMLSelectElement).value
-      const serial_number = (document.getElementById('printer-serial') as HTMLInputElement).value || null
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
-      const data = { name, manufacturer, model, driver_key, serial_number }
+      const data = { name, driver_key }
       
       error.classList.add('hidden')
       submitBtn.disabled = true
@@ -291,6 +242,21 @@ import Layout from '../../layouts/Layout.astro'
       }
     })
     
+    async function loadDrivers() {
+      const select = document.getElementById('printer-driver') as HTMLSelectElement
+      try {
+        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include' })
+        if (!response.ok) return
+        const plugins: any[] = await response.json()
+        const drivers = plugins.filter((p: any) => p.driver_key && p.is_active)
+        select.innerHTML = '<option value="">' + t('printers.selectDriver') + '</option>'
+          + drivers.map((d: any) => `<option value="${d.driver_key}">${d.name}</option>`).join('')
+      } catch {
+        console.error('Failed to load drivers')
+      }
+    }
+
+    await loadDrivers()
     loadPrinters()
   </script>
 </Layout>

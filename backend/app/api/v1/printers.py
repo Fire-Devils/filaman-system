@@ -12,9 +12,6 @@ router = APIRouter(prefix="/printers", tags=["printers"])
 
 class PrinterCreate(BaseModel):
     name: str
-    manufacturer: str | None = None
-    model: str | None = None
-    serial_number: str | None = None
     location_id: int | None = None
     driver_key: str
     driver_config: dict | None = None
@@ -22,9 +19,6 @@ class PrinterCreate(BaseModel):
 
 class PrinterUpdate(BaseModel):
     name: str | None = None
-    manufacturer: str | None = None
-    model: str | None = None
-    serial_number: str | None = None
     location_id: int | None = None
     is_active: bool | None = None
     driver_key: str | None = None
@@ -46,9 +40,6 @@ class SlotResponse(BaseModel):
 class PrinterResponse(BaseModel):
     id: int
     name: str
-    manufacturer: str | None
-    model: str | None
-    serial_number: str | None
     location_id: int | None
     is_active: bool
     driver_key: str

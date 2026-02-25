@@ -12,9 +12,6 @@ class Printer(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    manufacturer: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("locations.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
@@ -26,7 +23,6 @@ class Printer(Base, TimestampMixin):
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     location: Mapped["Location"] = relationship(back_populates="printers")
-    slots: Mapped[list["PrinterSlot"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
     slots: Mapped[list["PrinterSlot"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
     slot_events: Mapped[list["PrinterSlotEvent"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
     filament_profiles: Mapped[list["FilamentPrinterProfile"]] = relationship(back_populates="printer")
