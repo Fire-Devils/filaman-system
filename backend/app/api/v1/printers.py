@@ -47,6 +47,7 @@ class PrinterResponse(BaseModel):
     location_id: int | None
     is_active: bool
     driver_key: str
+    custom_fields: dict | None = None
 
     class Config:
         from_attributes = True

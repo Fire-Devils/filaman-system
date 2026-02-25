@@ -42,7 +42,7 @@ class PluginManager:
         logger.info(f"Received event {event_type} for printer {printer_id}")
 
         if event_type == "slots_update":
-            await self._handle_slots_update(printer_id, event.get("slots", []))
+            await self._handle_slots_update(printer_id, event.get("slots", []), event.get("ams_info"))
 
     @staticmethod
     def _slot_index_to_no(slot_index: str) -> int:
@@ -58,7 +58,7 @@ class PluginManager:
                 pass
         return hash(slot_index) % 10000
 
-    async def _handle_slots_update(self, printer_id: int, slots_data: list[dict]) -> None:
+    async def _handle_slots_update(self, printer_id: int, slots_data: list[dict], ams_info: dict | None = None) -> None:
         """Upsert PrinterSlot and PrinterSlotAssignment from driver slot events."""
         if not slots_data:
             return
@@ -117,6 +117,14 @@ class PluginManager:
 
             await db.commit()
             logger.info(f"Updated {len(slots_data)} slots for printer {printer_id}")
+
+            # Persist AMS/slot summary to Printer.custom_fields
+            if ams_info:
+                printer = await db.get(Printer, printer_id)
+                if printer:
+                    printer.custom_fields = {**(printer.custom_fields or {}), "slot_summary": ams_info}
+                    await db.commit()
+                    logger.info(f"Persisted slot_summary for printer {printer_id}")
 
     def load_driver(self, driver_key: str) -> type[BaseDriver] | None:
         try:

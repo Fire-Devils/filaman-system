@@ -231,6 +231,14 @@ const { id } = Astro.params
                 <button id="btn-debug-console" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.debugConsole')}</button>
               </div>
             </div>
+            ${driverHealth?.running && driverHealth?.connected ? `
+              <div id="health-summary" style="display: flex; gap: 16px; margin-top: 10px; font-size: 0.85rem; color: var(--text-muted);">
+                ${driverHealth.ams_count > 0 ? `<span>${driverHealth.ams_count} ${driverHealth.ams_type || 'AMS'}</span>` : ''}
+                ${driverHealth.slot_count > 0 ? `<span>${driverHealth.slot_count} Slots</span>` : ''}
+                ${driverHealth.external_spool ? `<span>1 External</span>` : ''}
+                ${driverHealth.printer_model ? `<span>${escapeHtml(driverHealth.printer_model)}</span>` : ''}
+              </div>
+            ` : ''}
           </div>`
       }
 
@@ -244,10 +252,11 @@ const { id } = Astro.params
           return `
             <div class="fm-card" style="padding: 12px 16px;">
               <div style="font-weight: 600; font-size: 0.95rem;">${amsType} #${ams.ams_id}</div>
+              ${ams.serial ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">SN: ${escapeHtml(ams.serial)}</div>` : ''}
               <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 0.8rem; color: var(--text-muted);">
-                <span>💧 ${humidity}</span>
-                <span>🌡️ ${temp}</span>
-                <span>📥 ${ams.tray_count} Trays</span>
+                <span>${humidity}</span>
+                <span>${temp}</span>
+                <span>${ams.tray_count} Trays</span>
               </div>
             </div>`
         }).join('')
@@ -520,21 +529,8 @@ const { id } = Astro.params
         const prevConnected = driverHealth?.connected
         await loadDriverHealth()
         if (driverHealth?.connected !== prevConnected) {
-          // Update just the status dot + text without full re-render
-          const dot = document.getElementById('health-dot')
-          const txt = document.getElementById('health-text')
-          if (dot && txt) {
-            if (!driverHealth || !driverHealth.running) {
-              dot.style.background = 'var(--text-muted)'
-              txt.textContent = t('printers.driverNotRunning')
-            } else if (driverHealth.connected) {
-              dot.style.background = '#22c55e'
-              txt.textContent = t('printers.connected')
-            } else {
-              dot.style.background = 'var(--error-text)'
-              txt.textContent = t('printers.disconnected')
-            }
-          }
+          // Connection state changed — full re-render to show/hide summary + AMS
+          renderPrinter()
         }
       }, 5000)
     }
