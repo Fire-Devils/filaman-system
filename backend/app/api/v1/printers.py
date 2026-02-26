@@ -44,6 +44,8 @@ class SlotAssignmentResponse(BaseModel):
     tray_info_idx: str | None = None
     nozzle_temp_min: int | None = None
     nozzle_temp_max: int | None = None
+    setting_id: str | None = None
+    cali_idx: int | None = None
 
     class Config:
         from_attributes = True
@@ -187,6 +189,8 @@ async def get_printer(
             tray_info_idx = meta.get("tray_info_idx")
             nozzle_temp_min = meta.get("nozzle_temp_min")
             nozzle_temp_max = meta.get("nozzle_temp_max")
+            setting_id = meta.get("setting_id")
+            cali_idx = meta.get("cali_idx")
             assignment_data = SlotAssignmentResponse(
                 present=a.present,
                 spool_id=a.spool_id,
@@ -201,6 +205,8 @@ async def get_printer(
                 tray_info_idx=tray_info_idx,
                 nozzle_temp_min=nozzle_temp_min,
                 nozzle_temp_max=nozzle_temp_max,
+                setting_id=setting_id,
+                cali_idx=cali_idx,
             )
         slot_responses.append(SlotResponse(
             id=slot.id,

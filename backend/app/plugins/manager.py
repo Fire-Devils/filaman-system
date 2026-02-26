@@ -115,7 +115,8 @@ class PluginManager:
                         # Build meta dict from driver-specific fields
                         meta = {}
                         for key in ("tray_type", "tray_color", "tray_info_idx",
-                                    "nozzle_temp_min", "nozzle_temp_max"):
+                                    "nozzle_temp_min", "nozzle_temp_max",
+                                    "setting_id", "cali_idx"):
                             if key in slot_data:
                                 meta[key] = slot_data[key]
 

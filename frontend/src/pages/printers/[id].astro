@@ -246,14 +246,16 @@ const { id } = Astro.params
             let trayDetailsHtml = ''
             if (a && a.present) {
               const details: string[] = []
-              if (a.tray_info_idx) details.push(`<span>Index: ${escapeHtml(a.tray_info_idx)}</span>`)
+              if (a.tray_info_idx) details.push(`<span title="Tray Info Index">Tray Info: ${escapeHtml(a.tray_info_idx)}</span>`)
+              if (a.setting_id) details.push(`<span title="Setting ID">Setting: ${escapeHtml(a.setting_id)}</span>`)
+              if (a.cali_idx != null) details.push(`<span title="Calibration Index">Cali: ${a.cali_idx}</span>`)
               if (a.nozzle_temp_min != null || a.nozzle_temp_max != null) {
                 const min = a.nozzle_temp_min ?? '?'
                 const max = a.nozzle_temp_max ?? '?'
-                details.push(`<span>Nozzle: ${min}\u2013${max}\u00B0C</span>`)
+                details.push(`<span title="Nozzle Temperature Range">Nozzle: ${min}\u2013${max}\u00B0C</span>`)
               }
               if (details.length > 0) {
-                trayDetailsHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.7rem;color:var(--text-muted);margin-top:4px;">${details.join('')}</div>`
+                trayDetailsHtml = `<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:0.7rem;color:var(--text-muted);margin-top:4px;">${details.join('<span style="opacity:0.3;">|</span>')}</div>`
               }
             }
 
