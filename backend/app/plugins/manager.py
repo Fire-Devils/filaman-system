@@ -272,7 +272,8 @@ class PluginManager:
             {"key": "bambu_k_value", "label": "K Value", "field_type": "number", "options": None},
             {"key": "bambu_flow_ratio", "label": "Flow Ratio", "field_type": "number", "options": None},
             {"key": "bambu_bed_temp", "label": "Bed Temperature", "field_type": "number", "options": None},
-            {"key": "bambu_nozzle_temp", "label": "Nozzle Temperature", "field_type": "number", "options": None},
+            {"key": "bambu_nozzle_temp_min", "label": "Nozzle Temp Min", "field_type": "number", "options": None},
+            {"key": "bambu_nozzle_temp_max", "label": "Nozzle Temp Max", "field_type": "number", "options": None},
             {"key": "bambu_max_volumetric_speed", "label": "Max Volumetric Speed", "field_type": "number", "options": None},
         ]
 
@@ -315,19 +316,25 @@ class PluginManager:
                         ))
                         logger.info(f"Created {target_type}/{fdef['key']} SystemExtraField")
 
-            # Clean up legacy bambu_idx field with target_type='filament' if it exists
-            legacy = await db.execute(
-                select(SystemExtraField).where(
-                    SystemExtraField.target_type == "filament",
-                    SystemExtraField.key == "bambu_idx",
-                    SystemExtraField.source == "bambulab",
+            # Clean up legacy fields with old target_type or renamed keys
+            LEGACY_CLEANUP = [
+                {"target_type": "filament", "key": "bambu_idx"},
+            ]
+            # bambu_nozzle_temp was split into bambu_nozzle_temp_min + bambu_nozzle_temp_max
+            for tt in TARGET_TYPES:
+                LEGACY_CLEANUP.append({"target_type": tt, "key": "bambu_nozzle_temp"})
+            for lc in LEGACY_CLEANUP:
+                legacy = await db.execute(
+                    select(SystemExtraField).where(
+                        SystemExtraField.target_type == lc["target_type"],
+                        SystemExtraField.key == lc["key"],
+                        SystemExtraField.source == "bambulab",
+                    )
                 )
-            )
-            legacy_field = legacy.scalar_one_or_none()
-            if legacy_field:
-                await db.delete(legacy_field)
-                logger.info("Removed legacy bambu_idx SystemExtraField (target_type=filament)")
-
+                legacy_field = legacy.scalar_one_or_none()
+                if legacy_field:
+                    await db.delete(legacy_field)
+                    logger.info(f"Removed legacy {lc['target_type']}/{lc['key']} SystemExtraField")
             await db.commit()
 
     async def _migrate_spoolman_bambu_fields(self, driver_key: str) -> None:
@@ -366,6 +373,7 @@ class PluginManager:
                 "bambu_cali_id": "bambu_cali_idx",
                 "bambu_k": "bambu_k_value",
                 "bambu_max_volspeed": "bambu_max_volumetric_speed",
+                "bambu_nozzle_temp": "bambu_nozzle_temp_min",  # split: old single value -> min
             }
             for old_key, new_key in LEGACY_KEY_RENAMES.items():
                 await db.execute(
@@ -483,6 +491,41 @@ class PluginManager:
             if k.startswith("bambu_") and k not in keep_keys and k != "spoolman_extra" and v:
                 mapped_key = rename_keys.get(k, k)
                 params[mapped_key] = str(v)
+
+        # Migrate settings_bed_temp -> bambu_bed_temp (low priority, bambu_* wins)
+        if "bambu_bed_temp" not in params:
+            bed_temp = cf.get("settings_bed_temp")
+            if bed_temp:
+                params["bambu_bed_temp"] = str(bed_temp)
+
+        # Migrate nozzle temperatures (priority: bambu_* > spoolman_extra.nozzle_temperature > settings_extruder_temp > old bambu_nozzle_temp)
+        nozzle_range = spoolman_extra.get("nozzle_temperature")
+        if isinstance(nozzle_range, (list, tuple)) and len(nozzle_range) >= 2:
+            nozzle_min, nozzle_max = nozzle_range[0], nozzle_range[1]
+        elif isinstance(nozzle_range, (list, tuple)) and len(nozzle_range) == 1:
+            nozzle_min = nozzle_max = nozzle_range[0]
+        else:
+            nozzle_min = nozzle_max = None
+
+        if "bambu_nozzle_temp_min" not in params:
+            if nozzle_min is not None:
+                params["bambu_nozzle_temp_min"] = str(nozzle_min)
+            elif cf.get("settings_extruder_temp"):
+                params["bambu_nozzle_temp_min"] = str(cf["settings_extruder_temp"])
+            else:
+                # Fallback: old bambu_nozzle_temp value
+                old_nozzle = params.pop("bambu_nozzle_temp", None)
+                if old_nozzle:
+                    params["bambu_nozzle_temp_min"] = old_nozzle
+        else:
+            params.pop("bambu_nozzle_temp", None)
+
+        if "bambu_nozzle_temp_max" not in params:
+            if nozzle_max is not None:
+                params["bambu_nozzle_temp_max"] = str(nozzle_max)
+            elif cf.get("settings_extruder_temp"):
+                params["bambu_nozzle_temp_max"] = str(cf["settings_extruder_temp"])
+
         return params
 
     @staticmethod
@@ -493,14 +536,17 @@ class PluginManager:
         cf = entity.custom_fields or {}
 
         # Remove top-level bambu_* keys (except keep_keys)
+        # Keys to remove after migration (bambu_* except keep_keys + settings_* temps)
+        SETTINGS_MIGRATE_KEYS = {"settings_bed_temp", "settings_extruder_temp"}
         new_cf = {k: v for k, v in cf.items()
-                  if not (k.startswith("bambu_") and k not in keep_keys)}
+                  if not ((k.startswith("bambu_") and k not in keep_keys) or k in SETTINGS_MIGRATE_KEYS)}
 
-        # Clean bambu_* from spoolman_extra
+        # Clean bambu_* and nozzle_temperature from spoolman_extra
         spoolman_extra = new_cf.get("spoolman_extra")
         if isinstance(spoolman_extra, dict):
+            SPOOLMAN_MIGRATE_KEYS = {"nozzle_temperature"}
             cleaned = {k: v for k, v in spoolman_extra.items()
-                       if not k.startswith("bambu_")}
+                       if not k.startswith("bambu_") and k not in SPOOLMAN_MIGRATE_KEYS}
             if cleaned:
                 new_cf["spoolman_extra"] = cleaned
             else:
