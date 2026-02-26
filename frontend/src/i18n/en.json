@@ -373,7 +373,7 @@
     "failedUpdate": "Failed to update printer",
     "noPrinters": "No printers found. Click \"Add Printer\" to create one.",
     "confirmDelete": "Are you sure you want to delete this printer?",
-    "confirmDeleteParams": "Also delete calibration data (printer parameters) for this printer?",
+    "confirmDeleteParams": "Also delete printer-specific data for this printer?",
     "notFound": "Printer not found",
     "failedLoadSingle": "Failed to load printer",
     "activate": "Activate",

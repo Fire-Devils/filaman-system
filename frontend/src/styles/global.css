@@ -569,6 +569,23 @@ body {
   line-height: 1.5;
 }
 
+.fm-modal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.fm-modal-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--danger, #e53e3e);
+  cursor: pointer;
+}
+
 .fm-modal-actions {
   display: flex;
   gap: 12px;

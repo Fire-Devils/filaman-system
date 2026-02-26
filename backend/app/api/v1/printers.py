@@ -445,3 +445,144 @@ async def stop_driver(
 
     await plugin_manager.stop_printer(printer_id)
     return DriverActionResponse(success=True, message="Driver stopped")
+
+
+# ─── Printer Params Import/Export ─────────────────────────────────────────────
+
+
+class PrinterParamExportItem(BaseModel):
+    param_key: str
+    param_value: str | None = None
+
+
+class PrinterParamsExportData(BaseModel):
+    printer_id: int
+    printer_name: str
+    driver_key: str
+    filament_params: dict[int, list[PrinterParamExportItem]]  # filament_id -> params
+    spool_params: dict[int, list[PrinterParamExportItem]]  # spool_id -> params
+
+
+class PrinterParamsImportData(BaseModel):
+    filament_params: dict[int, list[PrinterParamExportItem]] = {}
+    spool_params: dict[int, list[PrinterParamExportItem]] = {}
+
+
+@router.get("/{printer_id}/params/export")
+async def export_printer_params(
+    printer_id: int,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Export all printer-specific params for this printer as JSON."""
+    result = await db.execute(
+        select(Printer).where(Printer.id == printer_id, Printer.deleted_at.is_(None))
+    )
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Printer not found"},
+        )
+
+    from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+
+    # Filament params grouped by filament_id
+    result = await db.execute(
+        select(FilamentPrinterParam).where(FilamentPrinterParam.printer_id == printer_id)
+    )
+    filament_params: dict[int, list[dict]] = {}
+    for p in result.scalars().all():
+        filament_params.setdefault(p.filament_id, []).append(
+            {"param_key": p.param_key, "param_value": p.param_value}
+        )
+
+    # Spool params grouped by spool_id
+    result = await db.execute(
+        select(SpoolPrinterParam).where(SpoolPrinterParam.printer_id == printer_id)
+    )
+    spool_params: dict[int, list[dict]] = {}
+    for p in result.scalars().all():
+        spool_params.setdefault(p.spool_id, []).append(
+            {"param_key": p.param_key, "param_value": p.param_value}
+        )
+
+    return {
+        "printer_id": printer.id,
+        "printer_name": printer.name,
+        "driver_key": printer.driver_key,
+        "filament_params": filament_params,
+        "spool_params": spool_params,
+    }
+
+
+@router.post("/{printer_id}/params/import")
+async def import_printer_params(
+    printer_id: int,
+    body: PrinterParamsImportData,
+    db: DBSession,
+    principal=RequirePermission("printers:update"),
+):
+    """Import printer-specific params from JSON. Upserts all entries."""
+    result = await db.execute(
+        select(Printer).where(Printer.id == printer_id, Printer.deleted_at.is_(None))
+    )
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Printer not found"},
+        )
+
+    from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+
+    imported_count = 0
+
+    # Import filament params
+    for filament_id_str, params in body.filament_params.items():
+        filament_id = int(filament_id_str)
+        for item in params:
+            result = await db.execute(
+                select(FilamentPrinterParam).where(
+                    FilamentPrinterParam.filament_id == filament_id,
+                    FilamentPrinterParam.printer_id == printer_id,
+                    FilamentPrinterParam.param_key == item.param_key,
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.param_value = item.param_value
+            else:
+                db.add(FilamentPrinterParam(
+                    filament_id=filament_id,
+                    printer_id=printer_id,
+                    param_key=item.param_key,
+                    param_value=item.param_value,
+                ))
+            imported_count += 1
+
+    # Import spool params
+    for spool_id_str, params in body.spool_params.items():
+        spool_id = int(spool_id_str)
+        for item in params:
+            result = await db.execute(
+                select(SpoolPrinterParam).where(
+                    SpoolPrinterParam.spool_id == spool_id,
+                    SpoolPrinterParam.printer_id == printer_id,
+                    SpoolPrinterParam.param_key == item.param_key,
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.param_value = item.param_value
+            else:
+                db.add(SpoolPrinterParam(
+                    spool_id=spool_id,
+                    printer_id=printer_id,
+                    param_key=item.param_key,
+                    param_value=item.param_value,
+                ))
+            imported_count += 1
+
+    await db.commit()
+    return {"imported": imported_count, "message": f"Imported {imported_count} params for printer {printer.name}"}

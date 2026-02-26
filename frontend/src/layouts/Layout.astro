@@ -157,10 +157,13 @@ const { title } = Astro.props
       <div class="fm-modal">
         <h3 id="fm-confirm-title" class="fm-modal-title"></h3>
         <p id="fm-confirm-message" class="fm-modal-message"></p>
+        <label id="fm-confirm-checkbox-row" class="fm-modal-checkbox" style="display:none">
+          <input type="checkbox" id="fm-confirm-checkbox" />
+          <span id="fm-confirm-checkbox-label"></span>
+        </label>
         <div class="fm-modal-actions">
           <button id="fm-confirm-cancel" class="fm-btn fm-btn-outline"></button>
           <button id="fm-confirm-ok" class="fm-btn fm-btn-danger"></button>
-        </div>
       </div>
     </div>
 
@@ -183,9 +186,14 @@ const { title } = Astro.props
         const okBtn = document.getElementById('fm-confirm-ok')!
         const cancelBtn = document.getElementById('fm-confirm-cancel')!
 
-        let resolveFn: ((v: boolean) => void) | null = null
+        const checkboxRow = document.getElementById('fm-confirm-checkbox-row')!
+        const checkboxInput = document.getElementById('fm-confirm-checkbox') as HTMLInputElement
+        const checkboxLabel = document.getElementById('fm-confirm-checkbox-label')!
 
-        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean): Promise<boolean> {
+        let resolveFn: ((v: any) => void) | null = null
+        let checkboxMode = false
+
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox?: { label: string; checked?: boolean }): Promise<any> {
           titleEl.textContent = title
           messageEl.textContent = message
           okBtn.textContent = okLabel
@@ -198,9 +206,19 @@ const { title } = Astro.props
             cancelBtn.style.display = 'none'
           }
 
+          if (checkbox) {
+            checkboxMode = true
+            checkboxLabel.textContent = checkbox.label
+            checkboxInput.checked = checkbox.checked ?? false
+            checkboxRow.style.display = ''
+          } else {
+            checkboxMode = false
+            checkboxRow.style.display = 'none'
+          }
+
           overlay.classList.add('open')
 
-          return new Promise<boolean>(resolve => {
+          return new Promise<any>(resolve => {
             resolveFn = resolve
           })
         }
@@ -208,7 +226,11 @@ const { title } = Astro.props
         function closeModal(result: boolean) {
           overlay.classList.remove('open')
           if (resolveFn) {
-            resolveFn(result)
+            if (checkboxMode) {
+              resolveFn(result ? { confirmed: true, checked: checkboxInput.checked } : { confirmed: false, checked: false })
+            } else {
+              resolveFn(result)
+            }
             resolveFn = null
           }
         }
@@ -223,11 +245,11 @@ const { title } = Astro.props
         })
 
         // fmConfirm(message, options?) – replacement for window.confirm()
-        ;(window as any).__fmConfirm = function(message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }): Promise<boolean> {
+        ;(window as any).__fmConfirm = function(message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean; checkbox?: { label: string; checked?: boolean } }): Promise<any> {
           const title = options?.title || t('common.confirmTitle') || t('common.delete')
           const okLabel = options?.okLabel || t('common.delete')
           const isDanger = options?.isDanger !== undefined ? options.isDanger : true
-          return openModal(title, message, okLabel, t('common.cancel'), isDanger)
+          return openModal(title, message, okLabel, t('common.cancel'), isDanger, options?.checkbox)
         }
 
         // fmAlert(message) – replacement for window.alert()

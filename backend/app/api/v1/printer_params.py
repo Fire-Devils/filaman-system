@@ -4,7 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import PrincipalDep, RequirePermission
+from app.models import Printer
 from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+from app.models.system_extra_field import SystemExtraField
 from app.api.v1.schemas_printer_params import (
     FilamentPrinterParamResponse,
     PrinterParamBulkRequest,
@@ -16,6 +18,29 @@ from app.api.v1.schemas_printer_params import (
 router_filament_params = APIRouter()
 router_spool_params = APIRouter()
 
+
+async def _get_valid_param_keys(db: AsyncSession, printer_id: int, target_type: str) -> set[str] | None:
+    """Get valid param_keys for a printer from its driver's SystemExtraField definitions.
+
+    Returns None if no definitions exist (validation skipped).
+    Returns a set of valid keys if definitions exist.
+    """
+    result = await db.execute(
+        select(Printer.driver_key).where(Printer.id == printer_id)
+    )
+    row = result.one_or_none()
+    if not row or not row[0]:
+        return None  # No driver, skip validation
+
+    driver_key = row[0]
+    result = await db.execute(
+        select(SystemExtraField.key).where(
+            SystemExtraField.source == driver_key,
+            SystemExtraField.target_type == target_type,
+        )
+    )
+    keys = {r[0] for r in result.all()}
+    return keys if keys else None  # Skip validation if no definitions
 
 # ─── Filament Printer Params ──────────────────────────────────────────────────
 
@@ -50,6 +75,20 @@ async def upsert_filament_printer_params(
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk upsert printer params for a filament + printer combination."""
+    # Validate param_keys against driver's SystemExtraField definitions
+    valid_keys = await _get_valid_param_keys(db, printer_id, "filament_printer_param")
+    if valid_keys is not None:
+        invalid = [item.param_key for item in body.params if item.param_key not in valid_keys]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_param_keys",
+                    "message": f"Unknown param_key(s): {', '.join(invalid)}",
+                    "valid_keys": sorted(valid_keys),
+                },
+            )
+
     results = []
     for item in body.params:
         query = select(FilamentPrinterParam).where(
@@ -134,6 +173,20 @@ async def upsert_spool_printer_params(
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk upsert printer params for a spool + printer combination."""
+    # Validate param_keys against driver's SystemExtraField definitions
+    valid_keys = await _get_valid_param_keys(db, printer_id, "spool_printer_param")
+    if valid_keys is not None:
+        invalid = [item.param_key for item in body.params if item.param_key not in valid_keys]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_param_keys",
+                    "message": f"Unknown param_key(s): {', '.join(invalid)}",
+                    "valid_keys": sorted(valid_keys),
+                },
+            )
+
     results = []
     for item in body.params:
         query = select(SpoolPrinterParam).where(

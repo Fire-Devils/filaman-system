@@ -183,7 +183,7 @@ class PluginManager:
             # Ensure plugin-specific extra fields exist before starting the driver
             await self._ensure_plugin_extra_fields(printer.driver_key)
             await self._migrate_spoolman_bambu_fields(printer.driver_key)
-            await self._copy_bambu_params_to_new_printer(printer.driver_key, printer.id)
+            await self._copy_params_to_new_printer(printer.driver_key, printer.id)
 
             driver = driver_class(
                 printer_id=printer.id,
@@ -237,51 +237,78 @@ class PluginManager:
 
     # -- Plugin Extra-Field Management ----------------------------------------
 
-    async def _ensure_plugin_extra_fields(self, driver_key: str) -> None:
-        """Ensure plugin-specific SystemExtraFields exist. Idempotent — safe to call on every start."""
-        if driver_key == "bambulab":
-            await self._ensure_bambu_extra_fields()
-
-    async def _ensure_bambu_extra_fields(self) -> None:
-        """Create or update Bambu printer-param field definitions as SystemExtraFields.
-
-        Each field is created for both 'filament_printer_param' and 'spool_printer_param'
-        target_types so the frontend knows which fields to render in the printer-params
-        section.  The bambu_idx dropdown gets its options from bambu_filaments.json.
-        """
-        # Load filament index from plugin JSON for bambu_idx dropdown
-        json_path = Path(__file__).parent / "bambulab" / "bambu_filaments.json"
-        idx_options: list[str] = []
+    def _load_plugin_json(self, driver_key: str) -> dict[str, Any] | None:
+        """Load and return the parsed plugin.json for a given driver."""
+        json_path = Path(__file__).parent / driver_key / "plugin.json"
         try:
-            raw = json.loads(json_path.read_text(encoding="utf-8"))
-            for idx, info in raw.items():
-                if idx.startswith("_"):  # skip comments
-                    continue
-                name = info.get("name", idx)
-                idx_options.append(f"{idx} \u2014 {name}")
-            idx_options.sort()
+            return json.loads(json_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as e:
-            logger.warning(f"bambu_filaments.json not found or invalid ({e}); bambu_idx dropdown will have no options")
+            logger.warning(f"Could not load plugin.json for {driver_key}: {e}")
+            return None
 
-        # Complete list of Bambu printer-param field definitions
-        BAMBU_FIELDS: list[dict[str, Any]] = [
-            {"key": "bambu_idx", "label": "Bambu Material Index", "field_type": "dropdown", "options": idx_options},
-            {"key": "bambu_tray_idx", "label": "Tray Info Index", "field_type": "text", "options": None},
-            {"key": "bambu_setting_id", "label": "Setting ID", "field_type": "text", "options": None},
-            {"key": "bambu_cali_idx", "label": "Calibration Index", "field_type": "text", "options": None},
-            {"key": "bambu_k_value", "label": "K Value", "field_type": "number", "options": None},
-            {"key": "bambu_flow_ratio", "label": "Flow Ratio", "field_type": "number", "options": None},
-            {"key": "bambu_bed_temp", "label": "Bed Temperature", "field_type": "number", "options": None},
-            {"key": "bambu_nozzle_temp_min", "label": "Nozzle Temp Min", "field_type": "number", "options": None},
-            {"key": "bambu_nozzle_temp_max", "label": "Nozzle Temp Max", "field_type": "number", "options": None},
-            {"key": "bambu_max_volumetric_speed", "label": "Max Volumetric Speed", "field_type": "number", "options": None},
-        ]
+    def _resolve_options(self, driver_key: str, field_def: dict[str, Any]) -> list[str] | None:
+        """Resolve dropdown options for a field definition.
 
-        TARGET_TYPES = ["filament_printer_param", "spool_printer_param"]
+        If field_def has 'options_file', loads the JSON file from the plugin directory
+        and builds 'key — name' strings.  If field_def has static 'options', returns those.
+        """
+        options_file = field_def.get("options_file")
+        if options_file:
+            file_path = Path(__file__).parent / driver_key / options_file
+            try:
+                raw = json.loads(file_path.read_text(encoding="utf-8"))
+                options: list[str] = []
+                for idx, info in raw.items():
+                    if idx.startswith("_"):  # skip comments
+                        continue
+                    name = info.get("name", idx) if isinstance(info, dict) else str(info)
+                    options.append(f"{idx} \u2014 {name}")
+                options.sort()
+                return options
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(f"{options_file} not found or invalid ({e}); dropdown will have no options")
+                return []
+        return field_def.get("options")
+
+    async def _ensure_plugin_extra_fields(self, driver_key: str) -> None:
+        """Create or update plugin-defined SystemExtraFields from plugin.json.
+
+        Reads printer_params.fields from the plugin's plugin.json and creates/updates
+        corresponding SystemExtraField entries for each target_type.  Also cleans up
+        legacy fields listed in printer_params.migration.legacy_renames.
+        Idempotent — safe to call on every start.
+        """
+        plugin_json = self._load_plugin_json(driver_key)
+        if not plugin_json:
+            return
+
+        printer_params_cfg = plugin_json.get("printer_params")
+        if not printer_params_cfg:
+            return  # Plugin defines no printer params
+
+        target_types = printer_params_cfg.get("target_types", [])
+        field_defs = printer_params_cfg.get("fields", [])
+        migration = printer_params_cfg.get("migration", {})
+        legacy_renames = migration.get("legacy_renames", {})
+
+        if not target_types or not field_defs:
+            return
+
+        # Build resolved field definitions (with dropdown options loaded)
+        resolved_fields: list[dict[str, Any]] = []
+        for fdef in field_defs:
+            options = self._resolve_options(driver_key, fdef)
+            resolved_fields.append({
+                "key": fdef["key"],
+                "label": fdef["label"],
+                "field_type": fdef.get("field_type", "text"),
+                "options": options,
+            })
 
         async with async_session_maker() as db:
-            for target_type in TARGET_TYPES:
-                for fdef in BAMBU_FIELDS:
+            # Create or update field definitions
+            for target_type in target_types:
+                for fdef in resolved_fields:
                     result = await db.execute(
                         select(SystemExtraField).where(
                             SystemExtraField.target_type == target_type,
@@ -291,7 +318,7 @@ class PluginManager:
                     field = result.scalar_one_or_none()
 
                     if field:
-                        # Update options/label if changed (plugin may have been updated)
+                        # Update options/label/field_type if changed (plugin may have been updated)
                         changed = False
                         if field.options != fdef["options"]:
                             field.options = fdef["options"]
@@ -312,29 +339,39 @@ class PluginManager:
                             label=fdef["label"],
                             field_type=fdef["field_type"],
                             options=fdef["options"],
-                            source="bambulab",
+                            source=driver_key,
                         ))
                         logger.info(f"Created {target_type}/{fdef['key']} SystemExtraField")
 
-            # Clean up legacy fields with old target_type or renamed keys
-            LEGACY_CLEANUP = [
-                {"target_type": "filament", "key": "bambu_idx"},
-            ]
-            # bambu_nozzle_temp was split into bambu_nozzle_temp_min + bambu_nozzle_temp_max
-            for tt in TARGET_TYPES:
-                LEGACY_CLEANUP.append({"target_type": tt, "key": "bambu_nozzle_temp"})
-            for lc in LEGACY_CLEANUP:
-                legacy = await db.execute(
-                    select(SystemExtraField).where(
-                        SystemExtraField.target_type == lc["target_type"],
-                        SystemExtraField.key == lc["key"],
-                        SystemExtraField.source == "bambulab",
+            # Clean up legacy fields: renamed keys that now have new names
+            current_keys = {f["key"] for f in resolved_fields}
+            for old_key in legacy_renames:
+                if old_key in current_keys:
+                    continue  # Old key is still a valid current key, skip
+                for target_type in target_types:
+                    legacy = await db.execute(
+                        select(SystemExtraField).where(
+                            SystemExtraField.target_type == target_type,
+                            SystemExtraField.key == old_key,
+                            SystemExtraField.source == driver_key,
+                        )
                     )
+                    legacy_field = legacy.scalar_one_or_none()
+                    if legacy_field:
+                        await db.delete(legacy_field)
+                        logger.info(f"Removed legacy {target_type}/{old_key} SystemExtraField")
+
+            # Clean up legacy fields with old target_type (e.g. 'filament' instead of 'filament_printer_param')
+            legacy_target_cleanup = await db.execute(
+                select(SystemExtraField).where(
+                    SystemExtraField.source == driver_key,
+                    SystemExtraField.target_type.notin_(target_types),
                 )
-                legacy_field = legacy.scalar_one_or_none()
-                if legacy_field:
-                    await db.delete(legacy_field)
-                    logger.info(f"Removed legacy {lc['target_type']}/{lc['key']} SystemExtraField")
+            )
+            for legacy_field in legacy_target_cleanup.scalars().all():
+                await db.delete(legacy_field)
+                logger.info(f"Removed legacy {legacy_field.target_type}/{legacy_field.key} SystemExtraField (wrong target_type)")
+
             await db.commit()
 
     async def _migrate_spoolman_bambu_fields(self, driver_key: str) -> None:
@@ -342,40 +379,41 @@ class PluginManager:
 
         Extracts per-printer calibration fields (bambu_setting_id, bambu_k_value, etc.)
         from custom_fields.spoolman_extra and top-level custom_fields, creates
-        FilamentPrinterParam / SpoolPrinterParam entries for all existing Bambu printers,
-        then removes the migrated keys from custom_fields.
+        FilamentPrinterParam / SpoolPrinterParam entries for all existing printers of
+        this driver, then removes the migrated keys from custom_fields.
 
-        Note: spoolman_extra.bambu_idx is actually tray_info_idx and is renamed to
-        bambu_tray_idx during migration.
-        Idempotent — skips entities that already have printer_params for any Bambu printer.
-        """
-        if driver_key != "bambulab":
+        Uses legacy_renames from plugin.json to rename old field keys.
+        Idempotent — skips entities that already have printer_params for any printer."""
+        # Load legacy_renames from plugin.json
+        plugin_json = self._load_plugin_json(driver_key)
+        if not plugin_json:
             return
+        printer_params_cfg = plugin_json.get("printer_params", {})
+        migration = printer_params_cfg.get("migration", {})
+        legacy_renames = migration.get("legacy_renames", {})
 
-        KEEP_IN_CUSTOM_FIELDS: set[str] = set()  # Nothing kept — bambu_idx is actually tray_info_idx
-        # Rename map: spoolman field name -> printer_param key
-        RENAME_KEYS = {"bambu_idx": "bambu_tray_idx", "bambu_cali_id": "bambu_cali_idx", "bambu_k": "bambu_k_value", "bambu_max_volspeed": "bambu_max_volumetric_speed"}
+        # Build rename map: includes legacy_renames + spoolman-specific renames
+        # (bambu_idx in spoolman is actually tray_info_idx)
+        RENAME_KEYS = {**legacy_renames}
+        if driver_key == "bambulab":
+            RENAME_KEYS["bambu_idx"] = "bambu_tray_idx"  # spoolman-specific rename
+
+        KEEP_IN_CUSTOM_FIELDS: set[str] = set()  # Nothing kept
 
         async with async_session_maker() as db:
-            # Find all active Bambu printers
+            # Find all active printers for this driver
             result = await db.execute(
                 select(Printer).where(
-                    Printer.driver_key == "bambulab",
+                    Printer.driver_key == driver_key,
                     Printer.deleted_at.is_(None),
                 )
             )
-            bambu_printers = result.scalars().all()
-            if not bambu_printers:
+            printers = result.scalars().all()
+            if not printers:
                 return
 
-            # --- Fix legacy param_key names from earlier migration ---
-            LEGACY_KEY_RENAMES = {
-                "bambu_cali_id": "bambu_cali_idx",
-                "bambu_k": "bambu_k_value",
-                "bambu_max_volspeed": "bambu_max_volumetric_speed",
-                "bambu_nozzle_temp": "bambu_nozzle_temp_min",  # split: old single value -> min
-            }
-            for old_key, new_key in LEGACY_KEY_RENAMES.items():
+            # --- Fix legacy param_key names from earlier migrations ---
+            for old_key, new_key in legacy_renames.items():
                 await db.execute(
                     update(FilamentPrinterParam)
                     .where(FilamentPrinterParam.param_key == old_key)
@@ -388,8 +426,7 @@ class PluginManager:
                 )
             await db.commit()
             logger.debug("Legacy param_key renames applied (if any)")
-
-            bambu_printer_ids = [p.id for p in bambu_printers]
+            printer_ids = [p.id for p in printers]
 
             # --- Filaments ---
             result = await db.execute(select(Filament).where(Filament.custom_fields.isnot(None)))
@@ -405,7 +442,7 @@ class PluginManager:
                 existing = await db.execute(
                     select(FilamentPrinterParam.id).where(
                         FilamentPrinterParam.filament_id == filament.id,
-                        FilamentPrinterParam.printer_id.in_(bambu_printer_ids),
+                        FilamentPrinterParam.printer_id.in_(printer_ids),
                     ).limit(1)
                 )
                 if existing.scalar_one_or_none() is not None:
@@ -413,8 +450,8 @@ class PluginManager:
                     self._clean_bambu_keys_from_cf(filament, KEEP_IN_CUSTOM_FIELDS)
                     continue
 
-                # Create printer_params for each Bambu printer
-                for pid in bambu_printer_ids:
+                # Create printer_params for each printer of this driver
+                for pid in printer_ids:
                     for param_key, param_value in bambu_params.items():
                         db.add(FilamentPrinterParam(
                             filament_id=filament.id,
@@ -439,14 +476,14 @@ class PluginManager:
                 existing = await db.execute(
                     select(SpoolPrinterParam.id).where(
                         SpoolPrinterParam.spool_id == spool.id,
-                        SpoolPrinterParam.printer_id.in_(bambu_printer_ids),
+                        SpoolPrinterParam.printer_id.in_(printer_ids),
                     ).limit(1)
                 )
                 if existing.scalar_one_or_none() is not None:
                     self._clean_bambu_keys_from_cf(spool, KEEP_IN_CUSTOM_FIELDS)
                     continue
 
-                for pid in bambu_printer_ids:
+                for pid in printer_ids:
                     for param_key, param_value in bambu_params.items():
                         db.add(SpoolPrinterParam(
                             spool_id=spool.id,
@@ -461,9 +498,9 @@ class PluginManager:
             await db.commit()
             if migrated_filaments or migrated_spools:
                 logger.info(
-                    f"Migrated Spoolman bambu_* fields to printer_params: "
+                    f"Migrated Spoolman fields to printer_params: "
                     f"{migrated_filaments} filaments, {migrated_spools} spools "
-                    f"(for {len(bambu_printer_ids)} Bambu printers)"
+                    f"(for {len(printer_ids)} {driver_key} printers)"
                 )
 
     @staticmethod
@@ -555,20 +592,18 @@ class PluginManager:
         entity.custom_fields = new_cf if new_cf else None
         flag_modified(entity, "custom_fields")
 
-    async def _copy_bambu_params_to_new_printer(
+    async def _copy_params_to_new_printer(
         self, driver_key: str, printer_id: int,
     ) -> None:
-        """Copy printer_params from an existing Bambu printer to a new one.
+        """Copy printer_params from an existing printer of the same driver to a new one.
 
-        Called on every Bambu printer start. If this printer has no printer_params
-        but another Bambu printer does, copies all params to this printer.
+        Called on every printer start.  If this printer has no printer_params
+        but another printer with the same driver_key does, copies all params.
+        Also searches soft-deleted printers as fallback source (for 'data kept' scenario).
         Idempotent — skips if printer already has params.
         """
-        if driver_key != "bambulab":
-            return
-
         async with async_session_maker() as db:
-            # Check if this printer already has any filament params
+            # Check if this printer already has any params
             existing = await db.execute(
                 select(FilamentPrinterParam.id).where(
                     FilamentPrinterParam.printer_id == printer_id,
@@ -586,25 +621,28 @@ class PluginManager:
             if has_filament_params and has_spool_params:
                 return  # Already has params
 
-            # Find another Bambu printer that has params
-            result = await db.execute(
-                select(Printer.id).where(
-                    Printer.driver_key == "bambulab",
-                    Printer.id != printer_id,
-                    Printer.deleted_at.is_(None),
-                )
-            )
-            other_printer_ids = [row[0] for row in result.all()]
-
+            # Find source printer: first try active printers, then soft-deleted
             source_id: int | None = None
-            for other_id in other_printer_ids:
-                check = await db.execute(
-                    select(FilamentPrinterParam.id).where(
-                        FilamentPrinterParam.printer_id == other_id,
-                    ).limit(1)
+            for include_deleted in (False, True):
+                query = select(Printer.id).where(
+                    Printer.driver_key == driver_key,
+                    Printer.id != printer_id,
                 )
-                if check.scalar_one_or_none() is not None:
-                    source_id = other_id
+                if not include_deleted:
+                    query = query.where(Printer.deleted_at.is_(None))
+                result = await db.execute(query)
+                candidate_ids = [row[0] for row in result.all()]
+
+                for cid in candidate_ids:
+                    check = await db.execute(
+                        select(FilamentPrinterParam.id).where(
+                            FilamentPrinterParam.printer_id == cid,
+                        ).limit(1)
+                    )
+                    if check.scalar_one_or_none() is not None:
+                        source_id = cid
+                        break
+                if source_id is not None:
                     break
 
             if source_id is None:

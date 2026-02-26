@@ -229,11 +229,11 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          if (!(await (window as any).__fmConfirm(t('printers.confirmDelete')))) return
-          
-          // Ask whether to also delete calibration data
-          const deleteParams = await (window as any).__fmConfirm(t('printers.confirmDeleteParams'), { title: t('common.delete'), okLabel: t('common.yes') || 'Yes', isDanger: false })
-          const qs = deleteParams ? '?delete_params=true' : ''
+          const result = await (window as any).__fmConfirm(t('printers.confirmDelete'), {
+            checkbox: { label: t('printers.confirmDeleteParams') },
+          })
+          if (!result || !result.confirmed) return
+          const qs = result.checked ? '?delete_params=true' : ''
           
           try {
             const response = await fetch(`/api/v1/printers/${id}${qs}`, {

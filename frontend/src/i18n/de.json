@@ -377,7 +377,7 @@
     "failedUpdate": "Drucker konnte nicht aktualisiert werden",
     "noPrinters": "Keine Drucker gefunden. Klicken Sie auf \"Drucker hinzufügen\".",
     "confirmDelete": "Möchten Sie diesen Drucker wirklich löschen?",
-    "confirmDeleteParams": "Kalibrierungsdaten (Drucker-Parameter) für diesen Drucker ebenfalls löschen?",
+    "confirmDeleteParams": "Druckerspezifische Daten zu diesem Drucker mitlöschen?",
     "notFound": "Drucker nicht gefunden",
     "failedLoadSingle": "Drucker konnte nicht geladen werden",
     "activate": "Aktivieren",
