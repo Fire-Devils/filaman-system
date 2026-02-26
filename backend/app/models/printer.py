@@ -26,6 +26,8 @@ class Printer(Base, TimestampMixin):
     slots: Mapped[list["PrinterSlot"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
     slot_events: Mapped[list["PrinterSlotEvent"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
     filament_profiles: Mapped[list["FilamentPrinterProfile"]] = relationship(back_populates="printer")
+    filament_params: Mapped[list["FilamentPrinterParam"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
+    spool_params: Mapped[list["SpoolPrinterParam"]] = relationship(back_populates="printer", cascade="all, delete-orphan")
 
 
 
@@ -95,3 +97,4 @@ class PrinterSlotEvent(Base):
 from app.models.location import Location
 from app.models.spool import Spool
 from app.models.filament import FilamentPrinterProfile
+from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam

@@ -71,6 +71,7 @@ class Filament(Base, TimestampMixin):
     spools: Mapped[list["Spool"]] = relationship(back_populates="filament")
     printer_profiles: Mapped[list["FilamentPrinterProfile"]] = relationship(back_populates="filament", cascade="all, delete-orphan")
     ratings: Mapped[list["FilamentRating"]] = relationship(back_populates="filament", cascade="all, delete-orphan")
+    printer_params: Mapped[list["FilamentPrinterParam"]] = relationship(back_populates="filament", cascade="all, delete-orphan")
 
 
 class FilamentColor(Base):
@@ -156,3 +157,4 @@ class FilamentPrinterProfile(Base, TimestampMixin):
 from app.models.spool import Spool
 from app.models.user import User
 from app.models.printer import Printer
+from app.models.printer_params import FilamentPrinterParam

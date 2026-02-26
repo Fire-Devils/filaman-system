@@ -99,6 +99,25 @@ const { id } = Astro.params
     </div>
   </div>
   
+
+  <div id="printer-params-section" class="hidden" style="margin-top: 32px;">
+    <h2 style="font-weight: 600; margin-bottom: 16px;">Printer Parameters</h2>
+    <div class="fm-card" style="padding: 24px;">
+      <div style="margin-bottom: 16px;">
+        <label class="fm-label">Printer</label>
+        <select id="printer-select" class="fm-select">
+          <option value="">\u2014</option>
+        </select>
+      </div>
+      <div id="printer-params-list">
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Select a printer to view parameters</p>
+      </div>
+      <div id="printer-params-actions" class="hidden" style="margin-top: 12px; display: flex; gap: 8px;">
+        <button id="btn-add-param" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">+ Parameter</button>
+        <button id="btn-save-params" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;">Save</button>
+      </div>
+    </div>
+  </div>
   <div id="events-section" class="hidden" style="margin-top: 32px;">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.eventHistory">Event History</h2>
     <div class="fm-card" style="padding: 0;">
@@ -135,6 +154,8 @@ const { id } = Astro.params
     // RFID state
     let activeDevices = []
     let currentRfidSpoolId = null
+    let printersList = []
+    let currentPrinterParams = []
     
     function flattenObject(obj, prefix = '', res = {}) {
       for (const key in obj) {
@@ -212,6 +233,7 @@ const { id } = Astro.params
         }
         
         renderSpool()
+        loadPrintersForParams()
         loadEvents()
         setupActions()
       } catch (error) {
@@ -865,6 +887,133 @@ const { id } = Astro.params
       }
     })
     
+    async function loadPrintersForParams() {
+      try {
+        const res = await fetch('/api/v1/printers', { credentials: 'include' })
+        if (!res.ok) return
+        const data = await res.json()
+        printersList = data.items || data || []
+        if (printersList.length === 0) return
+
+        document.getElementById('printer-params-section').classList.remove('hidden')
+        const select = document.getElementById('printer-select')
+        select.innerHTML = '<option value="">\u2014</option>' +
+          printersList.map(p => `<option value="${p.id}">${p.name}</option>`).join('')
+
+        select.addEventListener('change', async () => {
+          const printerId = select.value
+          if (printerId) {
+            await loadSpoolPrinterParams(parseInt(printerId))
+          } else {
+            currentPrinterParams = []
+            renderPrinterParams()
+          }
+        })
+      } catch (e) {
+        console.error('Failed to load printers:', e)
+      }
+    }
+
+    async function loadSpoolPrinterParams(printerId) {
+      try {
+        const res = await fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include' })
+        if (!res.ok) throw new Error('Failed')
+        currentPrinterParams = await res.json()
+        renderPrinterParams()
+      } catch (e) {
+        console.error('Failed to load printer params:', e)
+      }
+    }
+
+    function renderPrinterParams() {
+      const container = document.getElementById('printer-params-list')
+      const actions = document.getElementById('printer-params-actions')
+      const printerId = document.getElementById('printer-select').value
+
+      if (!printerId) {
+        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">Select a printer to view parameters</p>'
+        actions.classList.add('hidden')
+        return
+      }
+
+      actions.classList.remove('hidden')
+
+      if (currentPrinterParams.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">No parameters set for this printer.</p>'
+        return
+      }
+
+      container.innerHTML = currentPrinterParams.map((p, i) => `
+        <div class="param-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+          <input type="text" class="fm-input param-key" value="${p.param_key}" style="flex: 1;" placeholder="Key" />
+          <input type="text" class="fm-input param-value" value="${p.param_value || ''}" style="flex: 1;" placeholder="Value" />
+          <button class="fm-btn fm-btn-danger btn-remove-param" style="padding: 4px 8px; font-size: 0.85rem;">\u2715</button>
+        </div>
+      `).join('')
+
+      container.querySelectorAll('.btn-remove-param').forEach(btn => {
+        btn.addEventListener('click', () => btn.closest('.param-row').remove())
+      })
+    }
+
+    document.getElementById('btn-add-param')?.addEventListener('click', () => {
+      const container = document.getElementById('printer-params-list')
+      const msg = container.querySelector('p')
+      if (msg) msg.remove()
+
+      const row = document.createElement('div')
+      row.className = 'param-row'
+      row.style.cssText = 'display: flex; gap: 8px; align-items: center; margin-bottom: 8px;'
+      row.innerHTML = `
+        <input type="text" class="fm-input param-key" value="" style="flex: 1;" placeholder="Key" />
+        <input type="text" class="fm-input param-value" value="" style="flex: 1;" placeholder="Value" />
+        <button class="fm-btn fm-btn-danger btn-remove-param" style="padding: 4px 8px; font-size: 0.85rem;">\u2715</button>
+      `
+      row.querySelector('.btn-remove-param').addEventListener('click', () => row.remove())
+      container.appendChild(row)
+    })
+
+    document.getElementById('btn-save-params')?.addEventListener('click', async () => {
+      const printerId = document.getElementById('printer-select').value
+      if (!printerId) return
+
+      const rows = document.querySelectorAll('#printer-params-list .param-row')
+      const params = []
+      rows.forEach(row => {
+        const key = row.querySelector('.param-key').value.trim()
+        const value = row.querySelector('.param-value').value.trim()
+        if (key) params.push({ param_key: key, param_value: value || null })
+      })
+
+      if (params.length === 0) {
+        try {
+          await fetch(`/api/v1/spools/${id}/printer-params/${printerId}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+          })
+          currentPrinterParams = []
+          renderPrinterParams()
+        } catch (e) { console.error('Failed to delete params:', e) }
+        return
+      }
+
+      try {
+        const res = await fetch(`/api/v1/spools/${id}/printer-params/${printerId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ params }),
+        })
+        if (res.ok) {
+          currentPrinterParams = await res.json()
+          renderPrinterParams()
+        }
+      } catch (e) {
+        console.error('Failed to save printer params:', e)
+      }
+    })
+
     loadData()
   </script>
 </Layout>

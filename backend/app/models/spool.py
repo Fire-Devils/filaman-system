@@ -60,6 +60,7 @@ class Spool(Base, TimestampMixin):
     events: Mapped[list["SpoolEvent"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
     slot_assignments: Mapped[list["PrinterSlotAssignment"]] = relationship(back_populates="spool")
     slot_events: Mapped[list["PrinterSlotEvent"]] = relationship(back_populates="spool")
+    printer_params: Mapped[list["SpoolPrinterParam"]] = relationship(back_populates="spool", cascade="all, delete-orphan")
 
 
 class SpoolEvent(Base):
@@ -101,3 +102,4 @@ from app.models.user import User
 from app.models.device import Device
 from app.models.location import Location
 from app.models.printer import PrinterSlotAssignment, PrinterSlotEvent
+from app.models.printer_params import SpoolPrinterParam

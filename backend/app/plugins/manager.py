@@ -1,5 +1,7 @@
 import importlib
+import json
 import logging
+from pathlib import Path
 from typing import Any, Callable
 
 from sqlalchemy import select
@@ -8,7 +10,11 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.database import async_session_maker
 from app.models import Printer
+from app.models.filament import Filament
+from app.models.spool import Spool
 from app.models.printer import PrinterSlot, PrinterSlotAssignment
+from app.models.system_extra_field import SystemExtraField
+from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
 from app.plugins.base import BaseDriver
 
 logger = logging.getLogger(__name__)
@@ -174,6 +180,10 @@ class PluginManager:
         config = printer.driver_config or {}
 
         try:
+            # Ensure plugin-specific extra fields exist before starting the driver
+            await self._ensure_plugin_extra_fields(printer.driver_key)
+            await self._migrate_spoolman_bambu_fields(printer.driver_key)
+
             driver = driver_class(
                 printer_id=printer.id,
                 config=config,
@@ -224,5 +234,165 @@ class PluginManager:
             self.health_status[printer_id] = driver.health()
         return self.health_status
 
+    # -- Plugin Extra-Field Management ----------------------------------------
+
+    async def _ensure_plugin_extra_fields(self, driver_key: str) -> None:
+        """Ensure plugin-specific SystemExtraFields exist. Idempotent — safe to call on every start."""
+        if driver_key == "bambulab":
+            await self._ensure_bambu_extra_fields()
+
+    async def _ensure_bambu_extra_fields(self) -> None:
+        """Create or update the bambu_idx dropdown field for filaments."""
+        # Load filament index from plugin JSON
+        json_path = Path(__file__).parent / "bambulab" / "bambu_filaments.json"
+        try:
+            raw = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to load bambu_filaments.json: {e}")
+            return
+
+        # Build dropdown options: "GFA00 — Bambu PLA Basic"
+        options: list[str] = []
+        for idx, info in raw.items():
+            if idx.startswith("_"):  # skip comments
+                continue
+            name = info.get("name", idx)
+            options.append(f"{idx} \u2014 {name}")
+        options.sort()
+
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(SystemExtraField).where(
+                    SystemExtraField.target_type == "filament",
+                    SystemExtraField.key == "bambu_idx",
+                )
+            )
+            field = result.scalar_one_or_none()
+
+            if field:
+                # Update options from JSON (plugin may have been updated)
+                if field.options != options:
+                    field.options = options
+                    flag_modified(field, "options")
+                    await db.commit()
+                    logger.info("Updated bambu_idx dropdown options")
+            else:
+                field = SystemExtraField(
+                    target_type="filament",
+                    key="bambu_idx",
+                    label="Bambu Lab Material Index",
+                    field_type="dropdown",
+                    options=options,
+                    source="bambulab",
+                )
+                db.add(field)
+                await db.commit()
+                logger.info("Created bambu_idx SystemExtraField (dropdown)")
+
+    async def _migrate_spoolman_bambu_fields(self, driver_key: str) -> None:
+        """One-time migration: copy bambu_* keys from spoolman_extra to top-level custom_fields.
+
+        Runs only for bambulab driver. Idempotent — skips filaments that already have
+        a top-level bambu_idx in custom_fields.
+        """
+        if driver_key != "bambulab":
+            return
+
+        async with async_session_maker() as db:
+            # Migrate filaments
+            result = await db.execute(select(Filament).where(Filament.custom_fields.isnot(None)))
+            filaments = result.scalars().all()
+            migrated_filaments = 0
+            for filament in filaments:
+                cf = filament.custom_fields or {}
+                spoolman_extra = cf.get("spoolman_extra", {})
+                if not isinstance(spoolman_extra, dict):
+                    continue
+                # Skip if already migrated
+                if "bambu_idx" in cf:
+                    continue
+                bambu_keys = {k: v for k, v in spoolman_extra.items() if k.startswith("bambu_")}
+                if not bambu_keys:
+                    continue
+                # Copy bambu_* keys to top-level (originals stay in spoolman_extra)
+                new_cf = {**cf, **bambu_keys}
+                filament.custom_fields = new_cf
+                flag_modified(filament, "custom_fields")
+                migrated_filaments += 1
+
+            # Migrate spools
+            result = await db.execute(select(Spool).where(Spool.custom_fields.isnot(None)))
+            spools = result.scalars().all()
+            migrated_spools = 0
+            for spool in spools:
+                cf = spool.custom_fields or {}
+                spoolman_extra = cf.get("spoolman_extra", {})
+                if not isinstance(spoolman_extra, dict):
+                    continue
+                if "bambu_idx" in cf:
+                    continue
+                bambu_keys = {k: v for k, v in spoolman_extra.items() if k.startswith("bambu_")}
+                if not bambu_keys:
+                    continue
+                new_cf = {**cf, **bambu_keys}
+                spool.custom_fields = new_cf
+                flag_modified(spool, "custom_fields")
+                migrated_spools += 1
+
+            if migrated_filaments or migrated_spools:
+                await db.commit()
+                logger.info(
+                    f"Migrated Spoolman bambu_* fields: "
+                    f"{migrated_filaments} filaments, {migrated_spools} spools"
+                )
+
+    # -- Filament Data Enrichment (Fallback Logic) ----------------------------
+
+    async def enrich_filament_data(
+        self, spool_id: int, printer_id: int, filament_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Enrich filament_data dict with printer-specific params.
+
+        Fallback order:
+        1. Spool-level printer_params for this printer
+        2. Filament-level printer_params for this printer
+        3. Values already in filament_data (unchanged)
+        """
+        async with async_session_maker() as db:
+            # 1. Get spool to find filament_id
+            spool = await db.get(Spool, spool_id)
+            if not spool:
+                return filament_data
+
+            filament_id = spool.filament_id
+
+            # 2. Load filament-level params for this printer
+            result = await db.execute(
+                select(FilamentPrinterParam).where(
+                    FilamentPrinterParam.filament_id == filament_id,
+                    FilamentPrinterParam.printer_id == printer_id,
+                )
+            )
+            filament_params = {p.param_key: p.param_value for p in result.scalars().all()}
+
+            # 3. Load spool-level params for this printer (overrides filament-level)
+            result = await db.execute(
+                select(SpoolPrinterParam).where(
+                    SpoolPrinterParam.spool_id == spool_id,
+                    SpoolPrinterParam.printer_id == printer_id,
+                )
+            )
+            spool_params = {p.param_key: p.param_value for p in result.scalars().all()}
+
+        # 4. Merge: spool_params override filament_params
+        merged_params = {**filament_params, **spool_params}
+
+        # 5. Only set non-empty values into filament_data
+        enriched = {**filament_data}
+        for key, value in merged_params.items():
+            if value is not None and value != "":
+                enriched[key] = value
+
+        return enriched
 
 plugin_manager = PluginManager()

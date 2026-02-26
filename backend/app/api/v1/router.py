@@ -13,6 +13,7 @@ from app.api.v1.spools import (
 )
 from app.api.v1.system import router as system_router
 from app.api.v1.system_extra_fields import router as system_extra_fields_router
+from app.api.v1.printer_params import router_filament_params, router_spool_params
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -29,3 +30,5 @@ api_router.include_router(admin_router)
 api_router.include_router(devices_router)
 api_router.include_router(system_router)
 api_router.include_router(system_extra_fields_router, prefix="/system-extra-fields", tags=["System Extra Fields"])
+api_router.include_router(router_filament_params, prefix="/filaments", tags=["Filament Printer Params"])
+api_router.include_router(router_spool_params, prefix="/spools", tags=["Spool Printer Params"])

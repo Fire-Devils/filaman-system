@@ -57,5 +57,11 @@ async def delete_system_extra_field(
     if not field:
         raise HTTPException(status_code=404, detail="Field not found")
 
+    if field.source:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot delete plugin-managed field (source: {field.source}). Uninstall the plugin to remove its fields.",
+        )
+
     await db.delete(field)
     await db.commit()

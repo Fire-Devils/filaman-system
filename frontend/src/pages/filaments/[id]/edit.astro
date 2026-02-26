@@ -775,13 +775,36 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       grid.innerHTML = ''
       
       systemFields.forEach(field => {
-        const currentValue = filamentCustomFieldsFlat[field.key] !== undefined ? filamentCustomFieldsFlat[field.key] : ''
-        
+        const currentValue = filamentCustomFieldsFlat[field.key] !== undefined ? String(filamentCustomFieldsFlat[field.key]) : (field.default_value || '')
         const div = document.createElement('div')
-        div.innerHTML = `
-          <label class="fm-label">${escapeHtml(field.label)}</label>
-          <input type="text" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" value="${escapeHtml(String(currentValue))}" />
-        `
+        let inputHtml = ''
+
+        switch (field.field_type) {
+          case 'number':
+            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" step="any" />`
+            break
+          case 'dropdown': {
+            const opts = (field.options || []).map((opt: string) => {
+              const selected = opt === currentValue ? ' selected' : ''
+              return `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
+            }).join('')
+            inputHtml = `<select class="fm-select system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
+            break
+          }
+          case 'checkbox': {
+            const checked = currentValue === 'true' ? ' checked' : ''
+            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"${checked} /> ${escapeHtml(field.label)}</label>`
+            break
+          }
+          default:
+            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" />`
+        }
+
+        if (field.field_type === 'checkbox') {
+          div.innerHTML = inputHtml
+        } else {
+          div.innerHTML = `<label class="fm-label">${escapeHtml(field.label)}</label>${inputHtml}`
+        }
         grid.appendChild(div)
       })
     }
@@ -955,9 +978,13 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
       document.querySelectorAll('.system-field-input').forEach((input: any) => {
         const key = input.dataset.key
-        const value = input.value.trim()
-        if (key && value) {
-          fieldsObj[key] = value
+        const type = input.dataset.type
+        if (!key) return
+        if (type === 'checkbox') {
+          fieldsObj[key] = input.checked ? 'true' : 'false'
+        } else {
+          const value = input.value.trim()
+          if (value) fieldsObj[key] = value
         }
       })
 
