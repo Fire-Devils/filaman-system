@@ -57,6 +57,7 @@
     "confirm": "Confirm",
     "print": "Print",
     "errorTitle": "Error",
+    "successTitle": "Success",
     "open": "Open",
     "customFields": "Custom Fields",
     "spoolDefaultSettings": "Spool Default Settings",

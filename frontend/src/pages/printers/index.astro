@@ -451,7 +451,7 @@ import Layout from '../../layouts/Layout.astro'
       })
       try {
         await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include' })
-        await (window as any).__fmAlert(t('printers.reconnectDone'))
+        await (window as any).__fmSuccess(t('printers.reconnectDone'))
       } catch {}
       await fetchHealthForAll()
       btn.disabled = false

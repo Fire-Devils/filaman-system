@@ -256,6 +256,11 @@ const { title } = Astro.props
         ;(window as any).__fmAlert = function(message: string): Promise<boolean> {
           return openModal(t('common.errorTitle') || 'Error', message, t('common.close'), null, false)
         }
+
+        // fmSuccess(message) – success-style alert with green title
+        ;(window as any).__fmSuccess = function(message: string): Promise<boolean> {
+          return openModal(t('common.successTitle') || 'Success', message, t('common.close'), null, false)
+        }
       })()
 
       /* ── Theme switcher ──────────────────────────────────────── */

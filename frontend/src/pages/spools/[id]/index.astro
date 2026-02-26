@@ -1299,14 +1299,14 @@ const { id } = Astro.params
           })
         })
         if (res.ok) {
-          window.__fmAlert?.(t('spools.slotAssignSuccess'), 'success')
+          window.__fmSuccess?.(t('spools.slotAssignSuccess'))
         } else {
           const err = await res.json().catch(() => null)
-          window.__fmAlert?.(err?.detail?.message || t('spools.slotAssignError'), 'error')
+          window.__fmAlert?.(err?.detail?.message || t('spools.slotAssignError'))
         }
       } catch (e) {
         console.error('Failed to assign spool to tray:', e)
-        window.__fmAlert?.(t('spools.slotAssignError'), 'error')
+        window.__fmAlert?.(t('spools.slotAssignError'))
       }
     }
 
@@ -1318,7 +1318,7 @@ const { id } = Astro.params
       if (slot.nozzle_temp_max != null) params.push({ param_key: 'bambu_nozzle_temp_max', param_value: String(slot.nozzle_temp_max) })
 
       if (params.length === 0) {
-        window.__fmAlert?.(t('spools.slotNoData'), 'warning')
+        window.__fmAlert?.(t('spools.slotNoData'))
         return false
       }
 
@@ -1346,12 +1346,12 @@ const { id } = Astro.params
     async function handleImportTrayToSpool(slot, printerId) {
       const ok = await saveTrayParamsToEntity(slot, printerId, 'spool')
       if (ok) {
-        window.__fmAlert?.(t('spools.slotImportSpoolSuccess'), 'success')
+        window.__fmSuccess?.(t('spools.slotImportSpoolSuccess'))
         // Refresh printer params display if same printer is selected
         const sel = document.getElementById('printer-select')
         if (sel && parseInt(sel.value) === printerId) loadSpoolPrinterParams(printerId)
       } else {
-        window.__fmAlert?.(t('spools.slotImportError'), 'error')
+        window.__fmAlert?.(t('spools.slotImportError'))
       }
     }
 
@@ -1361,11 +1361,11 @@ const { id } = Astro.params
         saveTrayParamsToEntity(slot, printerId, 'filament'),
       ])
       if (spoolOk && filamentOk) {
-        window.__fmAlert?.(t('spools.slotImportBothSuccess'), 'success')
+        window.__fmSuccess?.(t('spools.slotImportBothSuccess'))
         const sel = document.getElementById('printer-select')
         if (sel && parseInt(sel.value) === printerId) loadSpoolPrinterParams(printerId)
       } else {
-        window.__fmAlert?.(t('spools.slotImportError'), 'error')
+        window.__fmAlert?.(t('spools.slotImportError'))
       }
     }
 
