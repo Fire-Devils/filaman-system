@@ -178,6 +178,24 @@ const { id } = Astro.params
           </div>`
       }
 
+      let paramsSection = ''
+      if (printer.driver_key) {
+        paramsSection = `
+          <div class="fm-card" style="margin-top: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h2 style="font-size: 1.2rem; font-weight: 600;">${t('printers.printerParameters')}</h2>
+              <div style="display: flex; gap: 8px;">
+                <button id="btn-export-params" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.exportParams')}</button>
+                <label id="btn-import-params" class="fm-btn fm-btn-outline" style="font-size: 0.85rem; cursor: pointer;">
+                  ${t('printers.importParams')}
+                  <input type="file" accept=".json" id="import-params-file" style="display: none;" />
+                </label>
+              </div>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.paramsManagement')}</p>
+          </div>`
+      }
+
       let slotsSection = ''
       if (printer.slots && printer.slots.length > 0) {
         const slotItems = printer.slots
@@ -381,6 +399,7 @@ const { id } = Astro.params
         </div>
 
         ${configSection}
+        ${paramsSection}
         ${connectionSection}
         ${amsSection}
         ${slotsSection}
@@ -510,6 +529,55 @@ const { id } = Astro.params
         debugLog = []
         lastDebugTs = null
         renderPrinter()
+      })
+
+
+      // Export params button
+      document.getElementById('btn-export-params')?.addEventListener('click', async () => {
+        try {
+          const response = await fetch(`/api/v1/printers/${id}/params/export`, { credentials: 'include' })
+          if (!response.ok) throw new Error('Failed')
+          const data = await response.json()
+          const hasData = (data.filament_params && Object.keys(data.filament_params).length > 0) || (data.spool_params && Object.keys(data.spool_params).length > 0)
+          if (!hasData) {
+            await (window as any).__fmAlert(t('printers.noParamsToExport'))
+            return
+          }
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `printer-params-${printer.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URL.revokeObjectURL(url)
+        } catch {
+          await (window as any).__fmAlert(t('printers.importFailed'))
+        }
+      })
+
+      // Import params file input
+      document.getElementById('import-params-file')?.addEventListener('change', async (e) => {
+        const input = e.target as HTMLInputElement
+        const file = input.files?.[0]
+        if (!file) return
+        try {
+          const text = await file.text()
+          const data = JSON.parse(text)
+          const response = await fetch(`/api/v1/printers/${id}/params/import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify(data),
+          })
+          if (!response.ok) throw new Error('Failed')
+          const result = await response.json()
+          await (window as any).__fmAlert(t('printers.importSuccess').replace('{count}', String(result.imported || 0)))
+        } catch {
+          await (window as any).__fmAlert(t('printers.importFailed'))
+        }
+        input.value = ''
       })
 
       // Auto-scroll debug log

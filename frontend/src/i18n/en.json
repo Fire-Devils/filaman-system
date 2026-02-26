@@ -59,7 +59,9 @@
     "errorTitle": "Error",
     "open": "Open",
     "customFields": "Custom Fields",
-    "spoolDefaultSettings": "Spool Default Settings"
+    "spoolDefaultSettings": "Spool Default Settings",
+    "systemFields": "System Fields",
+    "extraFields": "Extra Fields"
   },
   "rfid": {
     "writeTag": "Write RFID Tag",
@@ -398,7 +400,18 @@
     "externalSlot": "External Spool",
     "slotOccupied": "Occupied",
     "slotEmpty": "Empty",
-    "unknownFilament": "Unknown filament"
+    "unknownFilament": "Unknown filament",
+    "printerParameters": "Printer Parameters",
+    "selectPrinter": "Printer",
+    "selectPrinterHint": "Select a printer to view parameters",
+    "noFieldDefinitions": "No field definitions for this printer type.",
+    "exportParams": "Export",
+    "importParams": "Import",
+    "exportSuccess": "Parameters exported successfully.",
+    "importSuccess": "{count} parameters imported successfully.",
+    "importFailed": "Failed to import parameters.",
+    "noParamsToExport": "No parameters to export.",
+    "paramsManagement": "Manage printer-specific filament and spool parameters here."
   },
   "locations": {
     "title": "Locations",

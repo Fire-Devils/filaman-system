@@ -20,19 +20,19 @@ const { id } = Astro.params
   </div>
 
   <div id="printer-params-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;">Printer Parameters</h2>
+    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.printerParameters">Printer Parameters</h2>
     <div class="fm-card" style="padding: 24px;">
       <div style="margin-bottom: 16px;">
-        <label class="fm-label">Printer</label>
+        <label class="fm-label" data-i18n="printers.selectPrinter">Printer</label>
         <select id="printer-select" class="fm-select">
           <option value="">\u2014</option>
         </select>
       </div>
       <div id="printer-params-list">
-        <p style="color: var(--text-muted); font-size: 0.85rem;">Select a printer to view parameters</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="printers.selectPrinterHint">Select a printer to view parameters</p>
       </div>
       <div id="printer-params-actions" class="hidden" style="margin-top: 12px;">
-        <button id="btn-save-params" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;">Save</button>
+        <button id="btn-save-params" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;" data-i18n="common.save">Save</button>
       </div>
     </div>
   </div>
@@ -572,7 +572,7 @@ const { id } = Astro.params
       const printerId = (document.getElementById('printer-select') as HTMLSelectElement).value
 
       if (!printerId) {
-        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">Select a printer to view parameters</p>'
+        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('printers.selectPrinterHint')}</p>`
         actions.classList.add('hidden')
         return
       }
@@ -584,7 +584,7 @@ const { id } = Astro.params
       currentPrinterParams.forEach((p: any) => { valuesMap[p.param_key] = p.param_value || '' })
 
       if (fieldDefinitions.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">No field definitions for this printer type.</p>'
+        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('printers.noFieldDefinitions')}</p>`
         actions.classList.add('hidden')
         return
       }

@@ -402,7 +402,18 @@
     "externalSlot": "Externer Slot",
     "slotOccupied": "Belegt",
     "slotEmpty": "Leer",
-    "unknownFilament": "Unbekanntes Filament"
+    "unknownFilament": "Unbekanntes Filament",
+    "printerParameters": "Drucker-Parameter",
+    "selectPrinter": "Drucker",
+    "selectPrinterHint": "Drucker auswählen, um Parameter anzuzeigen",
+    "noFieldDefinitions": "Keine Felddefinitionen für diesen Druckertyp.",
+    "exportParams": "Exportieren",
+    "importParams": "Importieren",
+    "exportSuccess": "Parameter erfolgreich exportiert.",
+    "importSuccess": "{count} Parameter erfolgreich importiert.",
+    "importFailed": "Parameter konnten nicht importiert werden.",
+    "noParamsToExport": "Keine Parameter zum Exportieren vorhanden.",
+    "paramsManagement": "Druckerspezifische Filament- und Spulen-Parameter hier verwalten."
   },
   "locations": {
     "title": "Standorte",
