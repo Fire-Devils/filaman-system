@@ -430,11 +430,11 @@ async def weigh_spool(
         note=f"Recorded by device {device.name}",
     )
     # Auto-assign: if device has auto_assign_enabled, notify all running drivers
-    logger.warning(f"Auto-assign check: device={device.name} (id={device.id}), auto_assign_enabled={device.auto_assign_enabled}")
+    logger.debug(f"Auto-assign check: device={device.name} (id={device.id}), auto_assign_enabled={device.auto_assign_enabled}")
     if device.auto_assign_enabled:
         try:
             from app.plugins.manager import plugin_manager
-            logger.warning(f"Auto-assign: plugin_manager has {len(plugin_manager.drivers)} active drivers: {list(plugin_manager.drivers.keys())}")
+            logger.debug(f"Auto-assign: plugin_manager has {len(plugin_manager.drivers)} active drivers: {list(plugin_manager.drivers.keys())}")
 
             base_filament_data = {
                 "tray_info_idx": "GFL99",
@@ -467,7 +467,7 @@ async def weigh_spool(
         except Exception as e:
             logger.error(f"Auto-assign error: {e}")
     else:
-        logger.warning(f"Auto-assign SKIPPED: device '{device.name}' (id={device.id}) has auto_assign_enabled=False")
+        logger.debug(f"Auto-assign SKIPPED: device '{device.name}' (id={device.id}) has auto_assign_enabled=False")
 
     return WeighResponse(
         remaining_weight_g=remaining if remaining is not None else 0.0,
