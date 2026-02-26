@@ -260,8 +260,12 @@ import Layout from '../../layouts/Layout.astro'
           const msg = t('admin.confirmUninstall').replace('{name}', name)
           if (!(await (window as any).__fmConfirm(msg))) return
           
+          // Ask whether to also delete plugin data
+          const deleteData = await (window as any).__fmConfirm(t('admin.confirmUninstallDeleteData'), { title: t('admin.uninstallPlugin'), okLabel: t('common.yes') || 'Yes', isDanger: false })
+          const qs = deleteData ? '?delete_data=true' : ''
+          
           try {
-            const response = await fetch(`/api/v1/admin/system/plugins/${key}`, {
+            const response = await fetch(`/api/v1/admin/system/plugins/${key}${qs}`, {
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',

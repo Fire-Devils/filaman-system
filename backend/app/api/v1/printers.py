@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
@@ -258,8 +258,11 @@ async def delete_printer(
     printer_id: int,
     db: DBSession,
     principal = RequirePermission("printers:delete"),
+    delete_params: bool = Query(False, description="Also hard-delete printer_params for this printer"),
 ):
     from datetime import datetime
+
+    from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
 
     result = await db.execute(
         select(Printer).where(Printer.id == printer_id, Printer.deleted_at.is_(None))
@@ -274,6 +277,12 @@ async def delete_printer(
 
     # Stop driver before soft-delete
     await plugin_manager.stop_printer(printer_id)
+
+    # Optionally hard-delete calibration data
+    if delete_params:
+        await db.execute(sa_delete(FilamentPrinterParam).where(FilamentPrinterParam.printer_id == printer_id))
+        await db.execute(sa_delete(SpoolPrinterParam).where(SpoolPrinterParam.printer_id == printer_id))
+        logger.info(f"Deleted printer_params for printer {printer_id}")
 
     printer.deleted_at = datetime.utcnow()
     await db.commit()

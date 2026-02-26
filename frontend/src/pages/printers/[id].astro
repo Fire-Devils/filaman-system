@@ -394,8 +394,12 @@ const { id } = Astro.params
       document.getElementById('btn-delete')?.addEventListener('click', async () => {
         if (!(await (window as any).__fmConfirm(t('printers.confirmDelete')))) return
         
+        // Ask whether to also delete calibration data
+        const deleteParams = await (window as any).__fmConfirm(t('printers.confirmDeleteParams'), { title: t('common.delete'), okLabel: t('common.yes') || 'Yes', isDanger: false })
+        const qs = deleteParams ? '?delete_params=true' : ''
+        
         try {
-          const response = await fetch(`/api/v1/printers/${id}`, {
+          const response = await fetch(`/api/v1/printers/${id}${qs}`, {
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',

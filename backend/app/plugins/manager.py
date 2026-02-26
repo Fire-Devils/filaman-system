@@ -183,6 +183,7 @@ class PluginManager:
             # Ensure plugin-specific extra fields exist before starting the driver
             await self._ensure_plugin_extra_fields(printer.driver_key)
             await self._migrate_spoolman_bambu_fields(printer.driver_key)
+            await self._copy_bambu_params_to_new_printer(printer.driver_key, printer.id)
 
             driver = driver_class(
                 printer_id=printer.id,
@@ -290,62 +291,260 @@ class PluginManager:
                 logger.info("Created bambu_idx SystemExtraField (dropdown)")
 
     async def _migrate_spoolman_bambu_fields(self, driver_key: str) -> None:
-        """One-time migration: copy bambu_* keys from spoolman_extra to top-level custom_fields.
+        """Migrate bambu_* calibration data from custom_fields into printer_params tables.
 
-        Runs only for bambulab driver. Idempotent — skips filaments that already have
-        a top-level bambu_idx in custom_fields.
+        Extracts per-printer calibration fields (bambu_setting_id, bambu_k_value, etc.)
+        from custom_fields.spoolman_extra and top-level custom_fields, creates
+        FilamentPrinterParam / SpoolPrinterParam entries for all existing Bambu printers,
+        then removes the migrated keys from custom_fields.
+
+        Note: spoolman_extra.bambu_idx is actually tray_info_idx and is renamed to
+        bambu_tray_idx during migration.
+        Idempotent — skips entities that already have printer_params for any Bambu printer.
+        """
+        if driver_key != "bambulab":
+            return
+
+        KEEP_IN_CUSTOM_FIELDS: set[str] = set()  # Nothing kept — bambu_idx is actually tray_info_idx
+        # Rename map: spoolman field name -> printer_param key
+        RENAME_KEYS = {"bambu_idx": "bambu_tray_idx"}
+
+        async with async_session_maker() as db:
+            # Find all active Bambu printers
+            result = await db.execute(
+                select(Printer).where(
+                    Printer.driver_key == "bambulab",
+                    Printer.deleted_at.is_(None),
+                )
+            )
+            bambu_printers = result.scalars().all()
+            if not bambu_printers:
+                return
+
+            bambu_printer_ids = [p.id for p in bambu_printers]
+
+            # --- Filaments ---
+            result = await db.execute(select(Filament).where(Filament.custom_fields.isnot(None)))
+            filaments = result.scalars().all()
+            migrated_filaments = 0
+
+            for filament in filaments:
+                bambu_params = self._extract_bambu_params(filament.custom_fields, KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS)
+                if not bambu_params:
+                    continue
+
+                # Skip if printer_params already exist for this filament + any Bambu printer
+                existing = await db.execute(
+                    select(FilamentPrinterParam.id).where(
+                        FilamentPrinterParam.filament_id == filament.id,
+                        FilamentPrinterParam.printer_id.in_(bambu_printer_ids),
+                    ).limit(1)
+                )
+                if existing.scalar_one_or_none() is not None:
+                    # Already migrated — still clean up custom_fields if needed
+                    self._clean_bambu_keys_from_cf(filament, KEEP_IN_CUSTOM_FIELDS)
+                    continue
+
+                # Create printer_params for each Bambu printer
+                for pid in bambu_printer_ids:
+                    for param_key, param_value in bambu_params.items():
+                        db.add(FilamentPrinterParam(
+                            filament_id=filament.id,
+                            printer_id=pid,
+                            param_key=param_key,
+                            param_value=param_value,
+                        ))
+
+                self._clean_bambu_keys_from_cf(filament, KEEP_IN_CUSTOM_FIELDS)
+                migrated_filaments += 1
+
+            # --- Spools ---
+            result = await db.execute(select(Spool).where(Spool.custom_fields.isnot(None)))
+            spools = result.scalars().all()
+            migrated_spools = 0
+
+            for spool in spools:
+                bambu_params = self._extract_bambu_params(spool.custom_fields, KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS)
+                if not bambu_params:
+                    continue
+
+                existing = await db.execute(
+                    select(SpoolPrinterParam.id).where(
+                        SpoolPrinterParam.spool_id == spool.id,
+                        SpoolPrinterParam.printer_id.in_(bambu_printer_ids),
+                    ).limit(1)
+                )
+                if existing.scalar_one_or_none() is not None:
+                    self._clean_bambu_keys_from_cf(spool, KEEP_IN_CUSTOM_FIELDS)
+                    continue
+
+                for pid in bambu_printer_ids:
+                    for param_key, param_value in bambu_params.items():
+                        db.add(SpoolPrinterParam(
+                            spool_id=spool.id,
+                            printer_id=pid,
+                            param_key=param_key,
+                            param_value=param_value,
+                        ))
+
+                self._clean_bambu_keys_from_cf(spool, KEEP_IN_CUSTOM_FIELDS)
+                migrated_spools += 1
+
+            await db.commit()
+            if migrated_filaments or migrated_spools:
+                logger.info(
+                    f"Migrated Spoolman bambu_* fields to printer_params: "
+                    f"{migrated_filaments} filaments, {migrated_spools} spools "
+                    f"(for {len(bambu_printer_ids)} Bambu printers)"
+                )
+
+    @staticmethod
+    def _extract_bambu_params(
+        custom_fields: dict[str, Any] | None, keep_keys: set[str],
+        rename_keys: dict[str, str] | None = None,
+    ) -> dict[str, str]:
+        """Extract bambu_* calibration params from custom_fields.
+
+        Keys in rename_keys are mapped to new names (e.g. bambu_idx -> bambu_tray_idx)."""
+        cf = custom_fields or {}
+        spoolman_extra = cf.get("spoolman_extra", {})
+        if not isinstance(spoolman_extra, dict):
+            spoolman_extra = {}
+
+        rename_keys = rename_keys or {}
+        params: dict[str, str] = {}
+        # From spoolman_extra (lower priority)
+        for k, v in spoolman_extra.items():
+            if k.startswith("bambu_") and k not in keep_keys and v:
+                mapped_key = rename_keys.get(k, k)
+                params[mapped_key] = str(v)
+        # From top-level (higher priority, overwrites spoolman_extra)
+        for k, v in cf.items():
+            if k.startswith("bambu_") and k not in keep_keys and k != "spoolman_extra" and v:
+                mapped_key = rename_keys.get(k, k)
+                params[mapped_key] = str(v)
+        return params
+
+    @staticmethod
+    def _clean_bambu_keys_from_cf(
+        entity: Filament | Spool, keep_keys: set[str],
+    ) -> None:
+        """Remove migrated bambu_* keys from entity custom_fields."""
+        cf = entity.custom_fields or {}
+
+        # Remove top-level bambu_* keys (except keep_keys)
+        new_cf = {k: v for k, v in cf.items()
+                  if not (k.startswith("bambu_") and k not in keep_keys)}
+
+        # Clean bambu_* from spoolman_extra
+        spoolman_extra = new_cf.get("spoolman_extra")
+        if isinstance(spoolman_extra, dict):
+            cleaned = {k: v for k, v in spoolman_extra.items()
+                       if not k.startswith("bambu_")}
+            if cleaned:
+                new_cf["spoolman_extra"] = cleaned
+            else:
+                new_cf.pop("spoolman_extra", None)
+
+        entity.custom_fields = new_cf if new_cf else None
+        flag_modified(entity, "custom_fields")
+
+    async def _copy_bambu_params_to_new_printer(
+        self, driver_key: str, printer_id: int,
+    ) -> None:
+        """Copy printer_params from an existing Bambu printer to a new one.
+
+        Called on every Bambu printer start. If this printer has no printer_params
+        but another Bambu printer does, copies all params to this printer.
+        Idempotent — skips if printer already has params.
         """
         if driver_key != "bambulab":
             return
 
         async with async_session_maker() as db:
-            # Migrate filaments
-            result = await db.execute(select(Filament).where(Filament.custom_fields.isnot(None)))
-            filaments = result.scalars().all()
-            migrated_filaments = 0
-            for filament in filaments:
-                cf = filament.custom_fields or {}
-                spoolman_extra = cf.get("spoolman_extra", {})
-                if not isinstance(spoolman_extra, dict):
-                    continue
-                # Skip if already migrated
-                if "bambu_idx" in cf:
-                    continue
-                bambu_keys = {k: v for k, v in spoolman_extra.items() if k.startswith("bambu_")}
-                if not bambu_keys:
-                    continue
-                # Copy bambu_* keys to top-level (originals stay in spoolman_extra)
-                new_cf = {**cf, **bambu_keys}
-                filament.custom_fields = new_cf
-                flag_modified(filament, "custom_fields")
-                migrated_filaments += 1
+            # Check if this printer already has any filament params
+            existing = await db.execute(
+                select(FilamentPrinterParam.id).where(
+                    FilamentPrinterParam.printer_id == printer_id,
+                ).limit(1)
+            )
+            has_filament_params = existing.scalar_one_or_none() is not None
 
-            # Migrate spools
-            result = await db.execute(select(Spool).where(Spool.custom_fields.isnot(None)))
-            spools = result.scalars().all()
-            migrated_spools = 0
-            for spool in spools:
-                cf = spool.custom_fields or {}
-                spoolman_extra = cf.get("spoolman_extra", {})
-                if not isinstance(spoolman_extra, dict):
-                    continue
-                if "bambu_idx" in cf:
-                    continue
-                bambu_keys = {k: v for k, v in spoolman_extra.items() if k.startswith("bambu_")}
-                if not bambu_keys:
-                    continue
-                new_cf = {**cf, **bambu_keys}
-                spool.custom_fields = new_cf
-                flag_modified(spool, "custom_fields")
-                migrated_spools += 1
+            existing = await db.execute(
+                select(SpoolPrinterParam.id).where(
+                    SpoolPrinterParam.printer_id == printer_id,
+                ).limit(1)
+            )
+            has_spool_params = existing.scalar_one_or_none() is not None
 
-            if migrated_filaments or migrated_spools:
+            if has_filament_params and has_spool_params:
+                return  # Already has params
+
+            # Find another Bambu printer that has params
+            result = await db.execute(
+                select(Printer.id).where(
+                    Printer.driver_key == "bambulab",
+                    Printer.id != printer_id,
+                    Printer.deleted_at.is_(None),
+                )
+            )
+            other_printer_ids = [row[0] for row in result.all()]
+
+            source_id: int | None = None
+            for other_id in other_printer_ids:
+                check = await db.execute(
+                    select(FilamentPrinterParam.id).where(
+                        FilamentPrinterParam.printer_id == other_id,
+                    ).limit(1)
+                )
+                if check.scalar_one_or_none() is not None:
+                    source_id = other_id
+                    break
+
+            if source_id is None:
+                return  # No source printer with params found
+
+            copied_filament = 0
+            copied_spool = 0
+
+            # Copy filament params
+            if not has_filament_params:
+                result = await db.execute(
+                    select(FilamentPrinterParam).where(
+                        FilamentPrinterParam.printer_id == source_id,
+                    )
+                )
+                for param in result.scalars().all():
+                    db.add(FilamentPrinterParam(
+                        filament_id=param.filament_id,
+                        printer_id=printer_id,
+                        param_key=param.param_key,
+                        param_value=param.param_value,
+                    ))
+                    copied_filament += 1
+
+            # Copy spool params
+            if not has_spool_params:
+                result = await db.execute(
+                    select(SpoolPrinterParam).where(
+                        SpoolPrinterParam.printer_id == source_id,
+                    )
+                )
+                for param in result.scalars().all():
+                    db.add(SpoolPrinterParam(
+                        spool_id=param.spool_id,
+                        printer_id=printer_id,
+                        param_key=param.param_key,
+                        param_value=param.param_value,
+                    ))
+                    copied_spool += 1
+
+            if copied_filament or copied_spool:
                 await db.commit()
                 logger.info(
-                    f"Migrated Spoolman bambu_* fields: "
-                    f"{migrated_filaments} filaments, {migrated_spools} spools"
+                    f"Copied printer_params from printer {source_id} to {printer_id}: "
+                    f"{copied_filament} filament params, {copied_spool} spool params"
                 )
-
     # -- Filament Data Enrichment (Fallback Logic) ----------------------------
 
     async def enrich_filament_data(

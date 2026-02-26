@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
@@ -394,6 +394,7 @@ async def uninstall_plugin(
     plugin_key: str,
     db: DBSession,
     principal=RequirePermission("admin:plugins_manage"),
+    delete_data: bool = Query(False, description="Also delete SystemExtraFields and printer_params created by this plugin"),
 ):
     """Plugin deinstallieren."""
     from app.plugins.manager import plugin_manager
@@ -402,9 +403,10 @@ async def uninstall_plugin(
 
     # Plugin-Info holen fuer Treiber-Stopp
     plugin_info = await service.get_plugin(plugin_key)
+    driver_key = plugin_info.driver_key or plugin_key if plugin_info else plugin_key
+
     if plugin_info:
         # Laufende Treiber stoppen
-        driver_key = plugin_info.driver_key or plugin_key
         for pid, drv in list(plugin_manager.drivers.items()):
             if drv.driver_key == driver_key:
                 await plugin_manager.stop_printer(pid)
@@ -413,6 +415,38 @@ async def uninstall_plugin(
         for mod_name in list(sys.modules.keys()):
             if mod_name.startswith(prefix):
                 del sys.modules[mod_name]
+
+    # Optionally delete plugin-created data
+    if delete_data:
+        from app.models.printer import Printer
+        from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+        from app.models.system_extra_field import SystemExtraField
+
+        # Delete SystemExtraFields with source matching this plugin
+        await db.execute(
+            delete(SystemExtraField).where(SystemExtraField.source == driver_key)
+        )
+
+        # Find all printers belonging to this plugin (including soft-deleted)
+        printer_result = await db.execute(
+            select(Printer.id).where(Printer.driver_key == driver_key)
+        )
+        printer_ids = [row[0] for row in printer_result.all()]
+
+        if printer_ids:
+            await db.execute(
+                delete(FilamentPrinterParam).where(
+                    FilamentPrinterParam.printer_id.in_(printer_ids)
+                )
+            )
+            await db.execute(
+                delete(SpoolPrinterParam).where(
+                    SpoolPrinterParam.printer_id.in_(printer_ids)
+                )
+            )
+
+        await db.commit()
+        logger.info(f"Deleted plugin data (SystemExtraFields + printer_params) for driver '{driver_key}'")
 
     try:
         await service.uninstall(plugin_key)
@@ -424,7 +458,6 @@ async def uninstall_plugin(
                 "message": str(e),
             },
         )
-
 
 @router.patch("/plugins/{plugin_key}/active", response_model=PluginResponse)
 async def toggle_plugin_active(
