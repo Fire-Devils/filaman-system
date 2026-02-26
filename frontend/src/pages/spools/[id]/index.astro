@@ -1,11 +1,6 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
 
-export function getStaticPaths() {
-  return [
-    {params: {id: 'detail'}},
-  ];
-}
 
 const { id } = Astro.params
 ---
@@ -1275,7 +1270,7 @@ const { id } = Astro.params
           nozzle_temp_min: parseInt(valMap['bambu_nozzle_temp_min']) || 190,
           nozzle_temp_max: parseInt(valMap['bambu_nozzle_temp_max']) || 230,
           material_type: spool.filament?.material_type || 'PLA',
-          color: (spool.filament?.color_hex || 'FFFFFF').replace('#', '').slice(0, 6),
+          color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),
         }
       } catch (e) {
         console.error('Failed to fetch params for assign:', e)
@@ -1284,7 +1279,7 @@ const { id } = Astro.params
           nozzle_temp_min: 190,
           nozzle_temp_max: 230,
           material_type: spool.filament?.material_type || 'PLA',
-          color: (spool.filament?.color_hex || 'FFFFFF').replace('#', '').slice(0, 6),
+          color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),
         }
       }
 

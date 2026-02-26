@@ -1,11 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro'
 
-export function getStaticPaths() {
-  return [
-    {params: {id: 'detail'}},
-  ];
-}
 
 const { id } = Astro.params
 ---
@@ -367,7 +362,7 @@ const { id } = Astro.params
                   <span style="color: ${dirColor}; font-weight: 700; font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; background: var(--bg-soft);">${dirLabel}</span>
                   <span style="color: var(--text-muted); font-size: 0.7rem;">${escapeHtml(entry.ts)}</span>
                   <span style="color: var(--text-muted); font-size: 0.7rem; flex: 1;">${escapeHtml(entry.topic)}</span>
-                  <button onclick="navigator.clipboard.writeText(this.closest('div').nextElementSibling.textContent).then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='⧉',1000)})" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:1px 5px;line-height:1;" title="Copy">⧉</button>
+                  <button class="btn-copy-debug" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:2px 6px;line-height:1;flex-shrink:0;" title="Copy">&#x29C9;</button>
                 </div>
                 <pre style="margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--text); max-height: 200px; overflow-y: auto;">${escapeHtml(payloadStr)}</pre>
               </div>`
@@ -523,17 +518,33 @@ const { id } = Astro.params
       })
 
       // Debug console button
-      document.getElementById('btn-debug-console')?.addEventListener('click', () => {
+      document.getElementById('btn-debug-console')?.addEventListener('click', async () => {
         debugOpen = true
         lastDebugTs = null
         debugLog = []
+        try {
+          await fetch(`/api/v1/printers/${id}/driver/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify({ action: 'enable_debug_log', params: {} }),
+          })
+        } catch { /* ignore */ }
         renderPrinter()
         startDebugPolling()
       })
 
-      document.getElementById('btn-close-debug')?.addEventListener('click', () => {
+      document.getElementById('btn-close-debug')?.addEventListener('click', async () => {
         debugOpen = false
         stopDebugPolling()
+        try {
+          await fetch(`/api/v1/printers/${id}/driver/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify({ action: 'disable_debug_log', params: {} }),
+          })
+        } catch { /* ignore */ }
         renderPrinter()
       })
 
@@ -551,6 +562,17 @@ const { id } = Astro.params
         renderPrinter()
       })
 
+      // Copy button delegation for debug log entries
+      document.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('.btn-copy-debug') as HTMLButtonElement
+        if (!btn) return
+        const pre = btn.closest('div')?.nextElementSibling as HTMLElement
+        if (!pre) return
+        navigator.clipboard.writeText(pre.textContent || '').then(() => {
+          btn.textContent = '\u2713'
+          setTimeout(() => btn.innerHTML = '&#x29C9;', 1000)
+        })
+      })
 
       // Export params button
       document.getElementById('btn-export-params')?.addEventListener('click', async () => {
@@ -701,7 +723,8 @@ const { id } = Astro.params
                     <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
                       <span style="color: ${dirColor}; font-weight: 700; font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; background: var(--bg-soft);">${dirLabel}</span>
                       <span style="color: var(--text-muted); font-size: 0.7rem;">${escapeHtml(entry.ts)}</span>
-                      <span style="color: var(--text-muted); font-size: 0.7rem;">${escapeHtml(entry.topic)}</span>
+                      <span style="color: var(--text-muted); font-size: 0.7rem; flex: 1;">${escapeHtml(entry.topic)}</span>
+                      <button class="btn-copy-debug" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:2px 6px;line-height:1;flex-shrink:0;" title="Copy">&#x29C9;</button>
                     </div>
                     <pre style="margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--text); max-height: 200px; overflow-y: auto;">${escapeHtml(payloadStr)}</pre>
                   </div>`
