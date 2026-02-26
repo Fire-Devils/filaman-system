@@ -399,6 +399,7 @@
     "driverStarting": "Wird gestartet...",
     "driverStopping": "Wird gestoppt...",
     "checkAll": "Alle Drucker prüfen",
+    "reconnectDone": "Alle Drucker werden neu verbunden.",
     "externalSlot": "Externer Slot",
     "slotOccupied": "Belegt",
     "slotEmpty": "Leer",

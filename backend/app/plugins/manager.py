@@ -231,6 +231,32 @@ class PluginManager:
         for printer_id in list(self.drivers.keys()):
             await self.stop_printer(printer_id)
 
+    async def reconnect_all(self) -> dict[int, str]:
+        """Reconnect all active printers. Returns {printer_id: status} map."""
+        results: dict[int, str] = {}
+        async with async_session_maker() as db:
+            result = await db.execute(
+                select(Printer).where(
+                    Printer.is_active == True,
+                    Printer.deleted_at.is_(None),
+                )
+            )
+            printers = result.scalars().all()
+
+        for printer in printers:
+            driver = self.drivers.get(printer.id)
+            if driver:
+                try:
+                    await driver.reconnect()
+                    results[printer.id] = "reconnected"
+                except Exception as e:
+                    logger.error(f"Reconnect failed for printer {printer.id}: {e}")
+                    results[printer.id] = f"error: {e}"
+            else:
+                started = await self.start_printer(printer)
+                results[printer.id] = "started" if started else "start_failed"
+        return results
+
     def get_health(self) -> dict[int, dict[str, Any]]:
         for printer_id, driver in self.drivers.items():
             self.health_status[printer_id] = driver.health()

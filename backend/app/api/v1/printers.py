@@ -396,6 +396,16 @@ async def driver_health(
     return driver.health()
 
 
+@router.post("/reconnect-all")
+async def reconnect_all_printers(
+    db: DBSession,
+    principal=RequirePermission("printers:update"),
+):
+    """Force reconnect for all active printers."""
+    results = await plugin_manager.reconnect_all()
+    return {"results": {str(k): v for k, v in results.items()}}
+
+
 @router.get("/{printer_id}/driver/debug")
 async def driver_debug_log(
     printer_id: int,

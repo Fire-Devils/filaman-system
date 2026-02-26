@@ -441,14 +441,18 @@ import Layout from '../../layouts/Layout.astro'
       const btn = document.getElementById('btn-check-all') as HTMLButtonElement
       btn.disabled = true
       btn.textContent = '...'
-      // Reset all online badges to '—' before checking
+      // Reset all online badges to '—' before reconnecting
       printers.forEach((p: any) => {
         const badge = document.getElementById(`online-badge-${p.id}`)
         if (badge) {
-          badge.textContent = '\u2014'
+          badge.textContent = '—'
           badge.style.color = 'var(--text-muted)'
         }
       })
+      try {
+        await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include' })
+        await (window as any).__fmAlert(t('printers.reconnectDone'))
+      } catch {}
       await fetchHealthForAll()
       btn.disabled = false
       btn.textContent = t('printers.checkAll')

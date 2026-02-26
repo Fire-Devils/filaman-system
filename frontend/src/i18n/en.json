@@ -397,6 +397,7 @@
     "driverStarting": "Starting...",
     "driverStopping": "Stopping...",
     "checkAll": "Check All Printers",
+    "reconnectDone": "Reconnecting all printers.",
     "externalSlot": "External Spool",
     "slotOccupied": "Occupied",
     "slotEmpty": "Empty",

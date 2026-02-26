@@ -27,6 +27,11 @@ class BaseDriver(ABC):
     async def stop(self) -> None:
         pass
 
+    async def reconnect(self) -> None:
+        """Force reconnect. Default: stop + start cycle."""
+        await self.stop()
+        await self.start()
+
     def health(self) -> dict[str, Any]:
         return {
             "driver_key": self.driver_key,
