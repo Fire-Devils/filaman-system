@@ -1123,7 +1123,7 @@ const { id } = Astro.params
 
           // External tray
           if (externalSlots.length > 0) {
-            html += `<div style="display:flex;align-items:center;gap:4px;">` +
+            html += `<div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;">` +
               `<span style="font-size:0.6rem;color:var(--text-muted);">Ext</span>`
             for (const slot of externalSlots) html += renderSlotDot(slot)
             html += `</div>`
@@ -1133,7 +1133,7 @@ const { id } = Astro.params
           const sortedAmsIds = Object.keys(amsGroups).map(Number).sort((a, b) => a - b)
           for (const amsId of sortedAmsIds) {
             const amsLabel = sortedAmsIds.length > 1 ? `AMS ${amsId + 1}` : 'AMS'
-            html += `<div style="display:flex;align-items:center;gap:4px;padding:2px 6px;background:var(--bg-soft);border-radius:6px;">` +
+            html += `<div style="display:flex;align-items:center;gap:4px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;">` +
               `<span style="font-size:0.6rem;color:var(--text-muted);">${amsLabel}</span>`
             for (const slot of amsGroups[amsId]) html += renderSlotDot(slot)
             html += `</div>`
@@ -1154,10 +1154,11 @@ const { id } = Astro.params
       if (colorHex && !colorHex.startsWith('#')) colorHex = '#' + colorHex
       if (colorHex.length === 9) colorHex = colorHex.slice(0, 7)
       const hasColor = colorHex.length >= 7
-      const bg = hasColor ? colorHex : 'var(--bg-soft)'
-      const border = hasColor ? '1px solid var(--border)' : '1px dashed var(--border)'
-      const tooltip = slot.tray_type || ''
-      return `<span title="${tooltip}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${bg};border:${border};flex-shrink:0;cursor:default;"></span>`
+      if (hasColor) {
+        return `<span title="${slot.tray_type || ''}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex};border:1px solid var(--border);flex-shrink:0;cursor:default;"></span>`
+      }
+      // Empty slot: grey circle with red X
+      return `<span title="Empty" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#d1d5db;border:1px solid var(--border);flex-shrink:0;cursor:default;font-size:11px;line-height:1;color:#dc2626;font-weight:900;">✕</span>`
     }
 
     loadData()
