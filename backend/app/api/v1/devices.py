@@ -399,6 +399,25 @@ async def weigh_spool(
             detail={"code": "not_found", "message": "Spool not found"},
         )
 
+    # Cache filament data BEFORE record_measurement() commits the session
+    # (after commit, lazy-loaded relationships are expired in async SQLAlchemy)
+    filament = spool.filament
+    filament_material_type = filament.material_type if filament else "PLA"
+    filament_designation = filament.designation if filament else None
+    base_color = "FFFFFF"
+    if filament:
+        # Direct query to avoid async lazy-load issues with filament.colors relationship
+        from app.models.filament import FilamentColor, Color
+        fc_result = await db.execute(
+            select(Color.hex_code)
+            .join(FilamentColor, FilamentColor.color_id == Color.id)
+            .where(FilamentColor.filament_id == filament.id)
+            .order_by(FilamentColor.position)
+            .limit(1)
+        )
+        hex_code = fc_result.scalar_one_or_none()
+        if hex_code:
+            base_color = hex_code.replace("#", "")[:6]
     # Record Measurement
     principal = Principal(auth_type="device", device_id=device.id, scopes=device.scopes)
     
@@ -411,24 +430,17 @@ async def weigh_spool(
         note=f"Recorded by device {device.name}",
     )
     # Auto-assign: if device has auto_assign_enabled, notify all running drivers
+    logger.warning(f"Auto-assign check: device={device.name} (id={device.id}), auto_assign_enabled={device.auto_assign_enabled}")
     if device.auto_assign_enabled:
         try:
             from app.plugins.manager import plugin_manager
-
-            # Build base filament_data from spool/filament info
-            filament = spool.filament
-            base_color = "FFFFFF"
-            if filament and filament.colors:
-                first_color = filament.colors[0] if isinstance(filament.colors, list) else None
-                if first_color:
-                    hex_code = first_color.get("hex_code", "FFFFFF") if isinstance(first_color, dict) else getattr(first_color, "hex_code", "FFFFFF")
-                    base_color = hex_code.replace("#", "")[:6] if hex_code else "FFFFFF"
+            logger.warning(f"Auto-assign: plugin_manager has {len(plugin_manager.drivers)} active drivers: {list(plugin_manager.drivers.keys())}")
 
             base_filament_data = {
                 "tray_info_idx": "GFL99",
                 "nozzle_temp_min": 190,
                 "nozzle_temp_max": 230,
-                "material_type": filament.material_type if filament else "PLA",
+                "material_type": filament_material_type,
                 "color": base_color,
             }
 
@@ -454,11 +466,13 @@ async def weigh_spool(
                     logger.error(f"Auto-assign failed for printer {printer_id}: {e}")
         except Exception as e:
             logger.error(f"Auto-assign error: {e}")
+    else:
+        logger.warning(f"Auto-assign SKIPPED: device '{device.name}' (id={device.id}) has auto_assign_enabled=False")
 
     return WeighResponse(
         remaining_weight_g=remaining if remaining is not None else 0.0,
         spool_id=spool.id,
-        filament_name=spool.filament.designation if spool.filament else None
+        filament_name=filament_designation
     )
 
 
