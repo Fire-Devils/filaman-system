@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -243,52 +243,92 @@ class PluginManager:
             await self._ensure_bambu_extra_fields()
 
     async def _ensure_bambu_extra_fields(self) -> None:
-        """Create or update the bambu_idx dropdown field for filaments."""
-        # Load filament index from plugin JSON
+        """Create or update Bambu printer-param field definitions as SystemExtraFields.
+
+        Each field is created for both 'filament_printer_param' and 'spool_printer_param'
+        target_types so the frontend knows which fields to render in the printer-params
+        section.  The bambu_idx dropdown gets its options from bambu_filaments.json.
+        """
+        # Load filament index from plugin JSON for bambu_idx dropdown
         json_path = Path(__file__).parent / "bambulab" / "bambu_filaments.json"
+        idx_options: list[str] = []
         try:
             raw = json.loads(json_path.read_text(encoding="utf-8"))
+            for idx, info in raw.items():
+                if idx.startswith("_"):  # skip comments
+                    continue
+                name = info.get("name", idx)
+                idx_options.append(f"{idx} \u2014 {name}")
+            idx_options.sort()
         except (OSError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to load bambu_filaments.json: {e}")
-            return
+            logger.warning(f"bambu_filaments.json not found or invalid ({e}); bambu_idx dropdown will have no options")
 
-        # Build dropdown options: "GFA00 — Bambu PLA Basic"
-        options: list[str] = []
-        for idx, info in raw.items():
-            if idx.startswith("_"):  # skip comments
-                continue
-            name = info.get("name", idx)
-            options.append(f"{idx} \u2014 {name}")
-        options.sort()
+        # Complete list of Bambu printer-param field definitions
+        BAMBU_FIELDS: list[dict[str, Any]] = [
+            {"key": "bambu_idx", "label": "Bambu Material Index", "field_type": "dropdown", "options": idx_options},
+            {"key": "bambu_tray_idx", "label": "Tray Info Index", "field_type": "text", "options": None},
+            {"key": "bambu_setting_id", "label": "Setting ID", "field_type": "text", "options": None},
+            {"key": "bambu_cali_idx", "label": "Calibration Index", "field_type": "text", "options": None},
+            {"key": "bambu_k_value", "label": "K Value", "field_type": "number", "options": None},
+            {"key": "bambu_flow_ratio", "label": "Flow Ratio", "field_type": "number", "options": None},
+            {"key": "bambu_bed_temp", "label": "Bed Temperature", "field_type": "number", "options": None},
+            {"key": "bambu_nozzle_temp", "label": "Nozzle Temperature", "field_type": "number", "options": None},
+            {"key": "bambu_max_volumetric_speed", "label": "Max Volumetric Speed", "field_type": "number", "options": None},
+        ]
+
+        TARGET_TYPES = ["filament_printer_param", "spool_printer_param"]
 
         async with async_session_maker() as db:
-            result = await db.execute(
+            for target_type in TARGET_TYPES:
+                for fdef in BAMBU_FIELDS:
+                    result = await db.execute(
+                        select(SystemExtraField).where(
+                            SystemExtraField.target_type == target_type,
+                            SystemExtraField.key == fdef["key"],
+                        )
+                    )
+                    field = result.scalar_one_or_none()
+
+                    if field:
+                        # Update options/label if changed (plugin may have been updated)
+                        changed = False
+                        if field.options != fdef["options"]:
+                            field.options = fdef["options"]
+                            flag_modified(field, "options")
+                            changed = True
+                        if field.label != fdef["label"]:
+                            field.label = fdef["label"]
+                            changed = True
+                        if field.field_type != fdef["field_type"]:
+                            field.field_type = fdef["field_type"]
+                            changed = True
+                        if changed:
+                            logger.info(f"Updated {target_type}/{fdef['key']} field definition")
+                    else:
+                        db.add(SystemExtraField(
+                            target_type=target_type,
+                            key=fdef["key"],
+                            label=fdef["label"],
+                            field_type=fdef["field_type"],
+                            options=fdef["options"],
+                            source="bambulab",
+                        ))
+                        logger.info(f"Created {target_type}/{fdef['key']} SystemExtraField")
+
+            # Clean up legacy bambu_idx field with target_type='filament' if it exists
+            legacy = await db.execute(
                 select(SystemExtraField).where(
                     SystemExtraField.target_type == "filament",
                     SystemExtraField.key == "bambu_idx",
+                    SystemExtraField.source == "bambulab",
                 )
             )
-            field = result.scalar_one_or_none()
+            legacy_field = legacy.scalar_one_or_none()
+            if legacy_field:
+                await db.delete(legacy_field)
+                logger.info("Removed legacy bambu_idx SystemExtraField (target_type=filament)")
 
-            if field:
-                # Update options from JSON (plugin may have been updated)
-                if field.options != options:
-                    field.options = options
-                    flag_modified(field, "options")
-                    await db.commit()
-                    logger.info("Updated bambu_idx dropdown options")
-            else:
-                field = SystemExtraField(
-                    target_type="filament",
-                    key="bambu_idx",
-                    label="Bambu Lab Material Index",
-                    field_type="dropdown",
-                    options=options,
-                    source="bambulab",
-                )
-                db.add(field)
-                await db.commit()
-                logger.info("Created bambu_idx SystemExtraField (dropdown)")
+            await db.commit()
 
     async def _migrate_spoolman_bambu_fields(self, driver_key: str) -> None:
         """Migrate bambu_* calibration data from custom_fields into printer_params tables.
@@ -307,7 +347,7 @@ class PluginManager:
 
         KEEP_IN_CUSTOM_FIELDS: set[str] = set()  # Nothing kept — bambu_idx is actually tray_info_idx
         # Rename map: spoolman field name -> printer_param key
-        RENAME_KEYS = {"bambu_idx": "bambu_tray_idx"}
+        RENAME_KEYS = {"bambu_idx": "bambu_tray_idx", "bambu_cali_id": "bambu_cali_idx", "bambu_k": "bambu_k_value", "bambu_max_volspeed": "bambu_max_volumetric_speed"}
 
         async with async_session_maker() as db:
             # Find all active Bambu printers
@@ -320,6 +360,26 @@ class PluginManager:
             bambu_printers = result.scalars().all()
             if not bambu_printers:
                 return
+
+            # --- Fix legacy param_key names from earlier migration ---
+            LEGACY_KEY_RENAMES = {
+                "bambu_cali_id": "bambu_cali_idx",
+                "bambu_k": "bambu_k_value",
+                "bambu_max_volspeed": "bambu_max_volumetric_speed",
+            }
+            for old_key, new_key in LEGACY_KEY_RENAMES.items():
+                await db.execute(
+                    update(FilamentPrinterParam)
+                    .where(FilamentPrinterParam.param_key == old_key)
+                    .values(param_key=new_key)
+                )
+                await db.execute(
+                    update(SpoolPrinterParam)
+                    .where(SpoolPrinterParam.param_key == old_key)
+                    .values(param_key=new_key)
+                )
+            await db.commit()
+            logger.debug("Legacy param_key renames applied (if any)")
 
             bambu_printer_ids = [p.id for p in bambu_printers]
 

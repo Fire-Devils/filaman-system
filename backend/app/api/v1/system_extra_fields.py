@@ -14,11 +14,14 @@ router = APIRouter()
 async def get_system_extra_fields(
     principal: PrincipalDep,
     target_type: str | None = None,
+    source: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     query = select(SystemExtraField)
     if target_type:
         query = query.where(SystemExtraField.target_type == target_type)
+    if source:
+        query = query.where(SystemExtraField.source == source)
     result = await db.execute(query)
     return result.scalars().all()
 
