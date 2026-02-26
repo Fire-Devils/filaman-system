@@ -410,7 +410,51 @@ async def weigh_spool(
         source="device",
         note=f"Recorded by device {device.name}",
     )
-    
+    # Auto-assign: if device has auto_assign_enabled, notify all running drivers
+    if device.auto_assign_enabled:
+        try:
+            from app.plugins.manager import plugin_manager
+
+            # Build base filament_data from spool/filament info
+            filament = spool.filament
+            base_color = "FFFFFF"
+            if filament and filament.colors:
+                first_color = filament.colors[0] if isinstance(filament.colors, list) else None
+                if first_color:
+                    hex_code = first_color.get("hex_code", "FFFFFF") if isinstance(first_color, dict) else getattr(first_color, "hex_code", "FFFFFF")
+                    base_color = hex_code.replace("#", "")[:6] if hex_code else "FFFFFF"
+
+            base_filament_data = {
+                "tray_info_idx": "GFL99",
+                "nozzle_temp_min": 190,
+                "nozzle_temp_max": 230,
+                "material_type": filament.material_type if filament else "PLA",
+                "color": base_color,
+            }
+
+            timeout = device.auto_assign_timeout or 60
+
+            for printer_id, driver in plugin_manager.drivers.items():
+                if not hasattr(driver, "assign_pending_spool"):
+                    continue
+                try:
+                    # Enrich filament data with printer-specific params
+                    enriched_data = await plugin_manager.enrich_filament_data(
+                        spool_id=spool.id,
+                        printer_id=printer_id,
+                        filament_data={**base_filament_data},
+                    )
+                    await driver.assign_pending_spool(
+                        spool_id=spool.id,
+                        filament_data=enriched_data,
+                        timeout_seconds=timeout,
+                    )
+                    logger.info(f"Auto-assign: pending spool {spool.id} on printer {printer_id} (timeout: {timeout}s)")
+                except Exception as e:
+                    logger.error(f"Auto-assign failed for printer {printer_id}: {e}")
+        except Exception as e:
+            logger.error(f"Auto-assign error: {e}")
+
     return WeighResponse(
         remaining_weight_g=remaining if remaining is not None else 0.0,
         spool_id=spool.id,

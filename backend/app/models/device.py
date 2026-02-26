@@ -25,6 +25,9 @@ class Device(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(default=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    auto_assign_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    auto_assign_timeout: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
+
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
     
     @property

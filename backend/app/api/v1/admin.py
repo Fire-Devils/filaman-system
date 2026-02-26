@@ -93,6 +93,8 @@ class DeviceResponse(BaseModel):
     created_at: datetime | None
     token_hash: str | None  # Needed for frontend status logic
     is_online: bool = False
+    auto_assign_enabled: bool = False
+    auto_assign_timeout: int = 60
 
     class Config:
         from_attributes = True
@@ -102,6 +104,11 @@ class DeviceCreate(BaseModel):
     name: str
     device_type: str = "scale"
 
+
+class DeviceUpdate(BaseModel):
+    name: str | None = None
+    auto_assign_enabled: bool | None = None
+    auto_assign_timeout: int | None = None
 
 @router.get("/users", response_model=PaginatedResponse[UserResponse])
 
@@ -549,6 +556,32 @@ async def delete_device(
     device.deleted_at = datetime.utcnow()
     await db.commit()
 
+
+@router.put("/devices/{device_id}", response_model=DeviceResponse)
+async def update_device(
+    device_id: int,
+    data: DeviceUpdate,
+    db: DBSession,
+    principal = RequirePermission("admin:devices_manage"),
+):
+    result = await db.execute(
+        select(Device).where(Device.id == device_id, Device.deleted_at.is_(None))
+    )
+    device = result.scalar_one_or_none()
+
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Device not found"},
+        )
+
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(device, key, value)
+
+    await db.commit()
+    await db.refresh(device)
+    return device
 
 @router.post("/devices/{device_id}/rotate", response_model=dict)
 async def rotate_device_token(

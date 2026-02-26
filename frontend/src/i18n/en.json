@@ -62,7 +62,9 @@
     "customFields": "Custom Fields",
     "spoolDefaultSettings": "Spool Default Settings",
     "systemFields": "System Fields",
-    "extraFields": "Extra Fields"
+    "extraFields": "Extra Fields",
+    "on": "On",
+    "off": "Off"
   },
   "rfid": {
     "writeTag": "Write RFID Tag",
@@ -559,6 +561,11 @@
     "failedCreateDevice": "Failed to create device",
     "pending": "Pending",
     "inactive": "Inactive",
+    "autoAssign": "Auto-Assign",
+    "editDevice": "Edit Device",
+    "autoAssignEnabled": "Enable Auto-Assign",
+    "autoAssignTimeout": "Timeout (seconds)",
+    "failedUpdateDevice": "Failed to update device",
     "rolesTitle": "Roles",
     "permissions": "Permissions",
     "createRole": "Create Role",

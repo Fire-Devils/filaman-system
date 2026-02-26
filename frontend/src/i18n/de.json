@@ -62,7 +62,9 @@
     "customFields": "Eigene Felder",
     "systemFields": "Systemfelder",
     "extraFields": "Extrafelder",
-    "spoolDefaultSettings": "Spool-Standardwerte"
+    "spoolDefaultSettings": "Spool-Standardwerte",
+    "on": "An",
+    "off": "Aus"
   },
   "rfid": {
     "writeTag": "RFID-Tag schreiben",
@@ -561,6 +563,11 @@
     "failedCreateDevice": "Gerät konnte nicht erstellt werden",
     "pending": "Ausstehend",
     "inactive": "Inaktiv",
+    "autoAssign": "Auto-Zuordnung",
+    "editDevice": "Gerät bearbeiten",
+    "autoAssignEnabled": "Auto-Zuordnung aktivieren",
+    "autoAssignTimeout": "Timeout (Sekunden)",
+    "failedUpdateDevice": "Gerät konnte nicht aktualisiert werden",
     "rolesTitle": "Rollen",
     "permissions": "Berechtigungen",
     "createRole": "Rolle erstellen",
