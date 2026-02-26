@@ -413,7 +413,8 @@
     "importSuccess": "{count} Parameter erfolgreich importiert.",
     "importFailed": "Parameter konnten nicht importiert werden.",
     "noParamsToExport": "Keine Parameter zum Exportieren vorhanden.",
-    "paramsManagement": "Druckerspezifische Filament- und Spulen-Parameter hier verwalten."
+    "paramsManagement": "Druckerspezifische Filament- und Spulen-Parameter hier verwalten.",
+    "inheritedFromFilament": "Vom Filament geerbt"
   },
   "locations": {
     "title": "Standorte",

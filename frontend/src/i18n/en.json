@@ -411,7 +411,8 @@
     "importSuccess": "{count} parameters imported successfully.",
     "importFailed": "Failed to import parameters.",
     "noParamsToExport": "No parameters to export.",
-    "paramsManagement": "Manage printer-specific filament and spool parameters here."
+    "paramsManagement": "Manage printer-specific filament and spool parameters here.",
+    "inheritedFromFilament": "Inherited from filament"
   },
   "locations": {
     "title": "Locations",

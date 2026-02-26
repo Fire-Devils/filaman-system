@@ -156,6 +156,7 @@ const { id } = Astro.params
     let printersList = []
     let currentPrinterParams = []
     let fieldDefinitions = []
+    let filamentPrinterParams = []
     
     function flattenObject(obj, prefix = '', res = {}) {
       for (const key in obj) {
@@ -910,6 +911,7 @@ const { id } = Astro.params
           } else {
             fieldDefinitions = []
             currentPrinterParams = []
+            filamentPrinterParams = []
             renderPrinterParams()
           }
         })
@@ -935,9 +937,13 @@ const { id } = Astro.params
 
     async function loadSpoolPrinterParams(printerId) {
       try {
-        const res = await fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include' })
-        if (!res.ok) throw new Error('Failed')
-        currentPrinterParams = await res.json()
+        // Fetch spool params and filament params in parallel
+        const [spoolRes, filamentRes] = await Promise.all([
+          fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include' }),
+          fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${printerId}`, { credentials: 'include' }),
+        ])
+        currentPrinterParams = spoolRes.ok ? await spoolRes.json() : []
+        filamentPrinterParams = filamentRes.ok ? await filamentRes.json() : []
         renderPrinterParams()
       } catch (e) {
         console.error('Failed to load printer params:', e)
@@ -957,9 +963,11 @@ const { id } = Astro.params
 
       actions.classList.remove('hidden')
 
-      // Build a map of current values
-      const valuesMap = {}
-      currentPrinterParams.forEach(p => { valuesMap[p.param_key] = p.param_value || '' })
+      // Build value maps: spool-level (own) and filament-level (inherited)
+      const spoolValuesMap = {}
+      currentPrinterParams.forEach(p => { spoolValuesMap[p.param_key] = p.param_value || '' })
+      const filamentValuesMap = {}
+      filamentPrinterParams.forEach(p => { filamentValuesMap[p.param_key] = p.param_value || '' })
 
       if (fieldDefinitions.length === 0) {
         container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">' + t('printers.noFieldDefinitions') + '</p>'
@@ -968,26 +976,40 @@ const { id } = Astro.params
       }
 
       container.innerHTML = fieldDefinitions.map(fd => {
-        const value = valuesMap[fd.key] || ''
+        const spoolValue = spoolValuesMap[fd.key] || ''
+        const filamentValue = filamentValuesMap[fd.key] || ''
+        const value = spoolValue || filamentValue
+        const isInherited = !spoolValue && !!filamentValue
         let inputHtml = ''
+        const inheritedStyle = isInherited ? ' opacity: 0.6; font-style: italic;' : ''
 
         if (fd.field_type === 'dropdown' && fd.options) {
           const opts = fd.options.map(o => {
             const selected = value === o ? ' selected' : ''
             return `<option value="${o}"${selected}>${o}</option>`
           }).join('')
-          inputHtml = `<select class="fm-select param-value" data-key="${fd.key}" style="flex: 2;">
+          inputHtml = `<select class="fm-select param-value" data-key="${fd.key}" style="flex: 2;${inheritedStyle}">
             <option value="">\u2014</option>${opts}</select>`
         } else if (fd.field_type === 'number') {
-          inputHtml = `<input type="number" step="any" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
+          if (isInherited) {
+            inputHtml = `<input type="number" step="any" class="fm-input param-value" data-key="${fd.key}" value="" placeholder="${filamentValue}" style="flex: 2;${inheritedStyle}" />`
+          } else {
+            inputHtml = `<input type="number" step="any" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
+          }
         } else if (fd.field_type === 'checkbox') {
-          inputHtml = `<label style="flex: 2; display: flex; align-items: center;"><input type="checkbox" class="param-value" data-key="${fd.key}" ${value === 'true' || value === '1' ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--accent);" /></label>`
+          inputHtml = `<label style="flex: 2; display: flex; align-items: center;${inheritedStyle}"><input type="checkbox" class="param-value" data-key="${fd.key}" ${value === 'true' || value === '1' ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--accent);" /></label>`
         } else {
-          inputHtml = `<input type="text" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
+          if (isInherited) {
+            inputHtml = `<input type="text" class="fm-input param-value" data-key="${fd.key}" value="" placeholder="${filamentValue}" style="flex: 2;${inheritedStyle}" />`
+          } else {
+            inputHtml = `<input type="text" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
+          }
         }
 
+        const inheritedBadge = isInherited ? `<span style="font-size: 0.7rem; color: var(--text-muted); opacity: 0.7;" title="${t('printers.inheritedFromFilament') || 'Inherited from filament'}">&#8593; Filament</span>` : ''
+
         return `<div class="param-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-          <label style="flex: 1; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${fd.label}</label>
+          <label style="flex: 1; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${fd.label} ${inheritedBadge}</label>
           ${inputHtml}
         </div>`
       }).join('')
@@ -1020,6 +1042,7 @@ const { id } = Astro.params
             credentials: 'include',
           })
           currentPrinterParams = []
+          filamentPrinterParams = []
           renderPrinterParams()
         } catch (e) { console.error('Failed to delete params:', e) }
         return
