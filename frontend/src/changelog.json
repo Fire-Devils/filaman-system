@@ -5,16 +5,32 @@
       "date": "2026-02-27",
       "changes": {
         "de": [
-          { "type": "feature", "text": "BambuLab Plugin als separates Plugin ausgelagert" },
-          { "type": "feature", "text": "Neues Plugin-System fuer einfache Erweiterungen" },
-          { "type": "fix", "text": "Driver Shutdown Blockade behoben" },
-          { "type": "change", "text": "Verbesserte Plugin-Verwaltung im Admin-Bereich" }
+          { "type": "feature", "text": "Spulen und Filamente können jetzt dupliziert werden" },
+          { "type": "feature", "text": "Mehrere Spulen auf einmal anlegen" },
+          { "type": "feature", "text": "Alle leeren Spulen vom Dashboard aus auf einmal archivieren" },
+          { "type": "feature", "text": "Spoolman-Import: Bestehende Daten aus Spoolman übernehmen" },
+          { "type": "feature", "text": "Eigene Zusatzfelder für Spulen und Filamente definieren" },
+          { "type": "feature", "text": "Neues Plugin-System für einfache Erweiterungen" },
+          { "type": "feature", "text": "Mehrfarbige Filamente unterstützt" },
+          { "type": "feature", "text": "Spulen können archiviert statt gelöscht werden" },
+          { "type": "change", "text": "BambuLab-Anbindung ist jetzt ein separates Plugin" },
+          { "type": "change", "text": "Plugins können einzeln aktiviert und deaktiviert werden" },
+          { "type": "change", "text": "Verbesserte Plugin-Verwaltung im Admin-Bereich" },
+          { "type": "fix", "text": "Driver Shutdown Blockade behoben" }
         ],
         "en": [
-          { "type": "feature", "text": "BambuLab Plugin separated into standalone plugin" },
+          { "type": "feature", "text": "Spools and filaments can now be duplicated" },
+          { "type": "feature", "text": "Create multiple spools at once" },
+          { "type": "feature", "text": "Archive all empty spools from the dashboard at once" },
+          { "type": "feature", "text": "Spoolman Import: Migrate existing data from Spoolman" },
+          { "type": "feature", "text": "Define custom extra fields for spools and filaments" },
           { "type": "feature", "text": "New plugin system for easy extensions" },
-          { "type": "fix", "text": "Fixed driver shutdown hang" },
-          { "type": "change", "text": "Improved plugin management in admin area" }
+          { "type": "feature", "text": "Multi-color filaments supported" },
+          { "type": "feature", "text": "Spools can be archived instead of deleted" },
+          { "type": "change", "text": "BambuLab integration is now a separate plugin" },
+          { "type": "change", "text": "Plugins can be individually activated and deactivated" },
+          { "type": "change", "text": "Improved plugin management in admin area" },
+          { "type": "fix", "text": "Fixed driver shutdown hang" }
         ]
       }
     }

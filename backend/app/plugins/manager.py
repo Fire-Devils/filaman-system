@@ -25,9 +25,15 @@ logger = logging.getLogger(__name__)
 # Built-in plugins ship with the image and live alongside this file
 BUILTIN_PLUGINS_DIR = Path(__file__).parent
 
-# Ensure user-installed plugins are importable via importlib
-if USER_PLUGINS_DIR != BUILTIN_PLUGINS_DIR and str(USER_PLUGINS_DIR) not in sys.path:
-    sys.path.insert(0, str(USER_PLUGINS_DIR))
+# Ensure user-installed plugins are discoverable under the app.plugins namespace
+# so that imports like 'from app.plugins.bambulab.driver import Driver' resolve
+# to /app/data/plugins/bambulab/driver.py in Docker.
+if USER_PLUGINS_DIR != BUILTIN_PLUGINS_DIR:
+    if str(USER_PLUGINS_DIR) not in sys.path:
+        sys.path.insert(0, str(USER_PLUGINS_DIR))
+    import app.plugins as _plugins_pkg
+    if str(USER_PLUGINS_DIR) not in _plugins_pkg.__path__:
+        _plugins_pkg.__path__.insert(0, str(USER_PLUGINS_DIR))
 
 class EventEmitter:
     def __init__(self, printer_id: int, handler: Callable[[dict], None]):
@@ -167,19 +173,8 @@ class PluginManager:
             logger.error(f"Error in _handle_slots_update for printer {printer_id}: {e}", exc_info=True)
 
     def load_driver(self, driver_key: str) -> type[BaseDriver] | None:
-        # Try user-installed plugin first (separate dir in Docker)
-        if USER_PLUGINS_DIR != BUILTIN_PLUGINS_DIR:
-            driver_file = USER_PLUGINS_DIR / driver_key / "driver.py"
-            if driver_file.exists():
-                try:
-                    module = importlib.import_module(f"{driver_key}.driver")
-                    driver_class = getattr(module, "Driver", None)
-                    if driver_class and issubclass(driver_class, BaseDriver):
-                        return driver_class
-                except ImportError as e:
-                    logger.warning(f"Could not load user plugin {driver_key}: {e}")
-
-        # Fall back to built-in plugin
+        # app.plugins.__path__ includes both USER_PLUGINS_DIR and BUILTIN_PLUGINS_DIR,
+        # so a single import covers user-installed and built-in plugins.
         try:
             module = importlib.import_module(f"app.plugins.{driver_key}.driver")
             driver_class = getattr(module, "Driver", None)
