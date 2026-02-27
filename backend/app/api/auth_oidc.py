@@ -67,11 +67,15 @@ async def start_oidc(request: Request, db: DBSession):
     except Exception:
         return RedirectResponse("/login?error=oidc_failed", status_code=302)
 
+    # Build redirect_uri from forwarded headers (reverse proxy aware)
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+    redirect_uri = f"{proto}://{host}/auth/oidc/callback"
+
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(32)
     code_challenge = _build_code_challenge(code_verifier)
     nonce = secrets.token_urlsafe(32)
-    redirect_uri = f"{request.base_url}auth/oidc/callback"
 
     auth_state = OIDCAuthState(
         state=state,
