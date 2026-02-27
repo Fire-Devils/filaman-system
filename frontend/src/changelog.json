@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "OIDC (OAuth2) Login: Single Sign-On über OpenID Connect für bestehende Benutzer" },
+          { "type": "feature", "text": "OIDC-Konfigurationsseite im Admin-Bereich mit Aktivierung, Provider-Einstellungen und Callback-URL" },
+          { "type": "feature", "text": "Konfigurierbarer SSO-Button auf der Login-Seite" }
+        ],
+        "en": [
+          { "type": "feature", "text": "OIDC (OAuth2) Login: Single Sign-On via OpenID Connect for existing users" },
+          { "type": "feature", "text": "OIDC configuration page in admin area with activation, provider settings and callback URL" },
+          { "type": "feature", "text": "Configurable SSO button on the login page" }
+        ]
+      }
+    },
+    {
       "version": "0.3.11",
       "date": "2026-02-27",
       "changes": {
