@@ -1,0 +1,22 @@
+{
+  "versions": [
+    {
+      "version": "0.3.8",
+      "date": "2026-02-27",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "BambuLab Plugin als separates Plugin ausgelagert" },
+          { "type": "feature", "text": "Neues Plugin-System fuer einfache Erweiterungen" },
+          { "type": "fix", "text": "Driver Shutdown Blockade behoben" },
+          { "type": "change", "text": "Verbesserte Plugin-Verwaltung im Admin-Bereich" }
+        ],
+        "en": [
+          { "type": "feature", "text": "BambuLab Plugin separated into standalone plugin" },
+          { "type": "feature", "text": "New plugin system for easy extensions" },
+          { "type": "fix", "text": "Fixed driver shutdown hang" },
+          { "type": "change", "text": "Improved plugin management in admin area" }
+        ]
+      }
+    }
+  ]
+}

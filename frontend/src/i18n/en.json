@@ -614,7 +614,21 @@
     "killswitchConfirm2": "This will permanently delete ALL data. Are you really sure?",
     "killswitchExecuting": "Deleting...",
     "killswitchSuccess": "{count} rows deleted successfully.",
-    "killswitchFailed": "Failed to execute killswitch"
+    "killswitchFailed": "Failed to execute killswitch",
+    "versionInfoTitle": "System Version",
+    "installedVersion": "Installed:",
+    "latestVersion": "Latest:",
+    "updateAvailable": "Update available",
+    "pluginUpdates": "Plugin Updates:",
+    "viewChangelog": "View Changelog",
+    "versionUnknown": "Unknown"
+  },
+  "changelog": {
+    "title": "Changelog",
+    "subtitle": "All changes and updates to FilaMan.",
+    "popupTitle": "What's New",
+    "dismiss": "Got it",
+    "viewAll": "All Changes"
   },
   "spoolman": {
     "title": "Spoolman Import",

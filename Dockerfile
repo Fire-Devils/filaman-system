@@ -74,6 +74,9 @@ COPY .env /app/.env
 # The FastAPI app must be configured to serve static files from this directory.
 COPY --from=frontend-builder /app/frontend/dist /app/static
 
+# Copy version.txt so the backend can read the installed version
+COPY version.txt /app/version.txt
+
 # Copy backup script
 COPY backend/backup_db.sh /app/backup_db.sh
 RUN chmod +x /app/backup_db.sh

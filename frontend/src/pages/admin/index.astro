@@ -28,6 +28,29 @@ import Layout from '../../layouts/Layout.astro'
     </a>
   </div>
 
+  <!-- Version Info Card -->
+  <h2 style="font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; font-family: var(--font-serif);" data-i18n="admin.versionInfoTitle">System Version</h2>
+  <div class="fm-card" style="padding: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;">
+      <div style="display: grid; gap: 8px; flex: 1;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.installedVersion">Installed:</span>
+          <span id="installed-version" style="font-weight: 600;">...</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.latestVersion">Latest:</span>
+          <span id="latest-version" style="font-weight: 600;">...</span>
+          <span id="update-badge" class="invisible" style="font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--success-text); color: #fff;" data-i18n="admin.updateAvailable">Update available</span>
+        </div>
+        <div id="plugin-updates-row" class="invisible" style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.pluginUpdates">Plugin Updates:</span>
+          <span id="plugin-update-count" style="font-weight: 600;"></span>
+        </div>
+      </div>
+      <a href="/admin/system/changelog" class="fm-btn fm-btn-outline" style="white-space: nowrap; flex-shrink: 0;" data-i18n="admin.viewChangelog">View Changelog</a>
+    </div>
+  </div>
+
   <h2 style="font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; color: var(--error-text); font-family: var(--font-serif);" data-i18n="admin.dangerZone">Danger Zone</h2>
   <div class="fm-card" style="border: 1px solid var(--error-text); padding: 24px;">
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap;">
@@ -97,5 +120,35 @@ import Layout from '../../layouts/Layout.astro'
         btn.textContent = t('admin.killswitchButton')
       }
     })
+
+    /* ── Version check ───────────────────────────────────────── */
+    ;(async function loadVersionInfo() {
+      try {
+        const resp = await fetch('/api/v1/admin/system/version-check', { credentials: 'include' })
+        if (!resp.ok) return
+        const data = await resp.json()
+
+        const installedEl = document.getElementById('installed-version')!
+        const latestEl = document.getElementById('latest-version')!
+        const updateBadge = document.getElementById('update-badge')!
+        const pluginRow = document.getElementById('plugin-updates-row')!
+        const pluginCount = document.getElementById('plugin-update-count')!
+
+        installedEl.textContent = `v${data.installed_version}`
+        latestEl.textContent = data.latest_version ? `v${data.latest_version}` : t('admin.versionUnknown')
+
+        if (data.update_available) {
+          updateBadge.classList.remove('invisible')
+        }
+
+        const updatablePlugins = (data.latest_plugins || []).filter((p: any) => p.update_available)
+        if (updatablePlugins.length > 0) {
+          pluginRow.classList.remove('invisible')
+          pluginCount.textContent = String(updatablePlugins.length)
+        }
+      } catch {
+        // Silently fail — card just shows loading dots
+      }
+    })()
   </script>
 </Layout>

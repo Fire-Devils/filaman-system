@@ -616,7 +616,21 @@
     "killswitchConfirm2": "Hiermit werden ALLE Daten unwiderruflich gel\u00f6scht. Sind Sie wirklich sicher?",
     "killswitchExecuting": "L\u00f6sche...",
     "killswitchSuccess": "{count} Datens\u00e4tze erfolgreich gel\u00f6scht.",
-    "killswitchFailed": "Killswitch konnte nicht ausgef\u00fchrt werden"
+    "killswitchFailed": "Killswitch konnte nicht ausgef\u00fchrt werden",
+    "versionInfoTitle": "Systemversion",
+    "installedVersion": "Installiert:",
+    "latestVersion": "Aktuell:",
+    "updateAvailable": "Update verf\u00fcgbar",
+    "pluginUpdates": "Plugin-Updates:",
+    "viewChangelog": "Changelog anzeigen",
+    "versionUnknown": "Unbekannt"
+  },
+  "changelog": {
+    "title": "Changelog",
+    "subtitle": "Alle \u00c4nderungen und Updates von FilaMan.",
+    "popupTitle": "Was ist neu?",
+    "dismiss": "Verstanden",
+    "viewAll": "Alle \u00c4nderungen"
   },
   "spoolman": {
     "title": "Spoolman Import",

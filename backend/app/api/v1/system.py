@@ -1,10 +1,13 @@
 """Admin-Endpoints fuer System, Plugin-Management, Spoolman-Import und Killswitch."""
 
 import logging
+import os
 import sys
 import re
 from datetime import datetime
 from typing import Any
+from pathlib import Path
+import time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import JSONResponse
@@ -101,6 +104,7 @@ async def list_plugins(
 
 
 GITHUB_RELEASES_URL = "https://api.github.com/repos/Fire-Devils/filaman-plugins/releases"
+GITHUB_SYSTEM_RELEASES_URL = "https://api.github.com/repos/Fire-Devils/filaman-system/releases/latest"
 
 _SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
@@ -111,6 +115,143 @@ def _parse_semver(ver: str) -> tuple[int, ...] | None:
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+
+# ------------------------------------------------------------------ #
+#  Version-Check (System + Plugins) with 24h cache
+# ------------------------------------------------------------------ #
+
+_VERSION_CACHE: dict[str, Any] = {"data": None, "ts": 0.0}
+_VERSION_CACHE_TTL = 86400  # 24 hours in seconds
+
+
+def _read_installed_version() -> str:
+    """Installierte System-Version aus version.txt lesen."""
+    # In Docker: /app/version.txt; lokal: ../version.txt relativ zum Backend
+    candidates = [
+        Path("/app/version.txt"),
+        Path(__file__).resolve().parents[3] / "version.txt",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return p.read_text().strip()
+    return "unknown"
+
+
+class VersionCheckResponse(BaseModel):
+    installed_version: str
+    latest_version: str | None = None
+    update_available: bool = False
+    latest_plugins: list[AvailablePluginResponse] = []
+
+
+@router.get("/version-check", response_model=VersionCheckResponse)
+async def version_check(
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """System-Version und Plugin-Updates pruefen (24h Cache)."""
+    now = time.time()
+    installed = _read_installed_version()
+
+    # Return cached data if still fresh
+    if _VERSION_CACHE["data"] is not None and (now - _VERSION_CACHE["ts"]) < _VERSION_CACHE_TTL:
+        cached = _VERSION_CACHE["data"]
+        # Always use current installed version (may change after update)
+        cached["installed_version"] = installed
+        cached["update_available"] = (
+            (_parse_semver(cached["latest_version"]) or ())
+            > (_parse_semver(installed) or ())
+        ) if cached["latest_version"] else False
+        return VersionCheckResponse(**cached)
+
+    # Fetch latest system version from GitHub
+    latest_version: str | None = None
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.get(
+                GITHUB_SYSTEM_RELEASES_URL,
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            resp.raise_for_status()
+            release_data = resp.json()
+            tag = release_data.get("tag_name", "")
+            # Strip leading 'v' if present
+            latest_version = tag.lstrip("v") if tag else None
+        except httpx.HTTPError:
+            logger.warning("Failed to fetch latest system version from GitHub")
+
+    # Fetch available plugins (reuse existing logic)
+    plugin_updates: list[AvailablePluginResponse] = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                GITHUB_RELEASES_URL,
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            resp.raise_for_status()
+            releases = resp.json()
+
+        latest: dict[str, dict] = {}
+        for rel in releases:
+            tag = rel.get("tag_name", "")
+            if "-v" not in tag:
+                continue
+            key, _, ver = tag.rpartition("-v")
+            if not key or not ver:
+                continue
+            semver = _parse_semver(ver)
+            if semver is None:
+                continue
+            assets = rel.get("assets", [])
+            zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)
+            if not zip_asset:
+                continue
+            if key not in latest or (_parse_semver(latest[key]["version"]) or ()) < semver:
+                latest[key] = {
+                    "plugin_key": key,
+                    "name": rel.get("name", key),
+                    "version": ver,
+                    "description": rel.get("body", "")[:200] if rel.get("body") else None,
+                    "download_url": zip_asset["browser_download_url"],
+                }
+
+        service = PluginInstallService(db)
+        installed_plugins = await service.list_installed()
+        installed_map = {p.plugin_key: p for p in installed_plugins}
+
+        for info in latest.values():
+            existing = installed_map.get(info["plugin_key"])
+            plugin_updates.append(AvailablePluginResponse(
+                plugin_key=info["plugin_key"],
+                name=info["name"],
+                version=info["version"],
+                description=info["description"],
+                download_url=info["download_url"],
+                is_installed=existing is not None,
+                installed_version=existing.version if existing else None,
+                update_available=(
+                    existing is not None
+                    and (_parse_semver(info["version"]) or ()) > (_parse_semver(existing.version) or ())
+                ),
+            ))
+    except httpx.HTTPError:
+        logger.warning("Failed to fetch plugin updates from GitHub")
+
+    update_available = (
+        (_parse_semver(latest_version) or ()) > (_parse_semver(installed) or ())
+    ) if latest_version else False
+
+    result_data = {
+        "installed_version": installed,
+        "latest_version": latest_version,
+        "update_available": update_available,
+        "latest_plugins": plugin_updates,
+    }
+
+    _VERSION_CACHE["data"] = result_data
+    _VERSION_CACHE["ts"] = now
+
+    return VersionCheckResponse(**result_data)
 
 @router.get("/plugins/available", response_model=list[AvailablePluginResponse])
 async def list_available_plugins(

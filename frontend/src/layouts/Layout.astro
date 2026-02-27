@@ -167,8 +167,26 @@ const { title } = Astro.props
       </div>
     </div>
 
+    <!-- Changelog popup (shown once per version for all users) -->
+    <div id="fm-changelog-overlay" class="fm-modal-overlay">
+      <div class="fm-modal" style="max-width: 520px;">
+        <h3 class="fm-modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span id="fm-changelog-title" data-i18n="changelog.popupTitle">What's New</span>
+        </h3>
+        <p id="fm-changelog-version" style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 16px;"></p>
+        <div id="fm-changelog-list" style="display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 4px;"></div>
+        <div class="fm-modal-actions" style="margin-top: 16px;">
+          <a href="/admin/system/changelog" class="fm-btn fm-btn-outline" data-i18n="changelog.viewAll">All Changes</a>
+          <button id="fm-changelog-close" class="fm-btn fm-btn-primary" data-i18n="changelog.dismiss">Got it</button>
+        </div>
+      </div>
+    </div>
+
     <script>
-      import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
+      import { t, initI18n, syncLangFromUser, translatePage, getLang } from '../lib/i18n'
+      import { VERSION } from '../version.js'
+      import changelogData from '../changelog.json'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
@@ -261,6 +279,57 @@ const { title } = Astro.props
         ;(window as any).__fmSuccess = function(message: string): Promise<boolean> {
           return openModal(t('common.successTitle') || 'Success', message, t('common.close'), null, false)
         }
+      })()
+
+      /* ── Changelog popup (once per version, all users) ────────── */
+      ;(function setupChangelog() {
+        const seenVersion = localStorage.getItem('changelog-seen-version')
+        if (!VERSION || seenVersion === VERSION) return
+
+        const currentVersion = changelogData.versions.find((v: any) => v.version === VERSION)
+        if (!currentVersion) return
+
+        const lang = getLang() || 'en'
+        const changes = currentVersion.changes[lang] || currentVersion.changes['en'] || []
+        if (changes.length === 0) return
+
+        const overlay = document.getElementById('fm-changelog-overlay')!
+        const versionEl = document.getElementById('fm-changelog-version')!
+        const listEl = document.getElementById('fm-changelog-list')!
+        const closeBtn = document.getElementById('fm-changelog-close')!
+
+        versionEl.textContent = `v${VERSION} — ${currentVersion.date}`
+
+        const typeIcons: Record<string, { icon: string; color: string }> = {
+          feature: { icon: '✦', color: 'var(--success-text, #22c55e)' },
+          fix: { icon: '✓', color: 'var(--info-text, #3b82f6)' },
+          change: { icon: '↻', color: 'var(--warning-text, #f59e0b)' },
+          breaking: { icon: '!', color: 'var(--error-text, #ef4444)' },
+        }
+
+        listEl.innerHTML = changes.map((c: any) => {
+          const style = typeIcons[c.type] || typeIcons.change
+          return `<div style="display:flex;align-items:start;gap:10px;padding:8px 12px;background:var(--bg-soft);border-radius:8px;border:1px solid var(--border);">
+            <span style="color:${style.color};font-weight:700;font-size:1rem;line-height:1.4;flex-shrink:0;">${style.icon}</span>
+            <span style="font-size:0.85rem;line-height:1.4;">${c.text}</span>
+          </div>`
+        }).join('')
+
+        function closeChangelog() {
+          overlay.classList.remove('open')
+          localStorage.setItem('changelog-seen-version', VERSION)
+        }
+
+        closeBtn.addEventListener('click', closeChangelog)
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) closeChangelog()
+        })
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && overlay.classList.contains('open')) closeChangelog()
+        })
+
+        // Show popup after a short delay so page renders first
+        setTimeout(() => overlay.classList.add('open'), 500)
       })()
 
       /* ── Theme switcher ──────────────────────────────────────── */

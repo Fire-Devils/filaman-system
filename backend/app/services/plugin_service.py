@@ -535,7 +535,7 @@ class PluginInstallService:
         commands: list[list[str]] = []
         uv_path = shutil.which("uv")
         if uv_path:
-            commands.append([uv_path, "pip", "install", "--quiet", *dependencies])
+            commands.append([uv_path, "pip", "install", "--system", "--quiet", *dependencies])
         commands.append([sys.executable, "-m", "pip", "install", "--quiet", *dependencies])
 
         last_error = ""
