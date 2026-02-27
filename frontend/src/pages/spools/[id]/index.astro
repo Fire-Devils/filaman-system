@@ -1166,7 +1166,7 @@ const { id } = Astro.params
       const hasColor = colorHex.length >= 7
       const slotJson = JSON.stringify(slot).replace(/"/g, '&quot;')
       const dotAttrs = `class="slot-dot" data-slot="${slotJson}" data-printer-id="${printerId}"`
-      if (hasColor) {
+      if (hasColor && slot.present !== false) {
         return `<span ${dotAttrs} title="${slot.tray_type || ''}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex};border:1px solid var(--border);flex-shrink:0;cursor:pointer;"></span>`
       }
       // Empty slot: grey circle with red X
@@ -1205,9 +1205,9 @@ const { id } = Astro.params
       const iconFilter = document.documentElement.dataset.theme === 'light' ? 'none' : 'invert(1)'
       menu.innerHTML = `
         <div style="padding:6px 12px;font-weight:600;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">${slotLabel}</div>
-        <button class="ctx-item" data-action="assign" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:var(--text);cursor:pointer;font-size:0.82rem;"><img src="/to_printer.svg" width="18" height="18" style="flex-shrink:0;filter:${iconFilter};" />${t('spools.slotAssignSpool')}</button>
-        <button class="ctx-item" data-action="import-spool" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:var(--text);cursor:pointer;font-size:0.82rem;"><img src="/to_spool.svg" width="18" height="18" style="flex-shrink:0;filter:${iconFilter};" />${t('spools.slotImportToSpool')}</button>
-        <button class="ctx-item" data-action="import-both" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:var(--text);cursor:pointer;font-size:0.82rem;"><img src="/to_spool.svg" width="18" height="18" style="flex-shrink:0;filter:${iconFilter};" />${t('spools.slotImportToSpoolAndFilament')}</button>
+        <button class="ctx-item" data-action="assign" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#16a34a;cursor:pointer;font-size:0.82rem;"><img src="/to_printer.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(45%) sepia(96%) saturate(497%) hue-rotate(110deg) brightness(96%) contrast(91%);" />${t('spools.slotAssignSpool')}</button>
+        <button class="ctx-item" data-action="import-spool" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#2563eb;cursor:pointer;font-size:0.82rem;"><img src="/to_spool.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(33%) sepia(100%) saturate(1946%) hue-rotate(215deg) brightness(97%) contrast(96%);" />${t('spools.slotImportToSpool')}</button>
+        <button class="ctx-item" data-action="import-both" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#2563eb;cursor:pointer;font-size:0.82rem;"><img src="/to_spool.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(33%) sepia(100%) saturate(1946%) hue-rotate(215deg) brightness(97%) contrast(96%);" />${t('spools.slotImportToSpoolAndFilament')}</button>
       `
 
       // Hover effect
