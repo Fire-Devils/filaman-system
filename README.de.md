@@ -12,6 +12,9 @@ Leere Spulen gehören nicht in den Müll! Wir unterstützen die [Recycling Fabri
 ## Über das Projekt
 FilaMan ist ein umfassendes System zur Verwaltung von 3D-Druck-Filamenten. Es hilft dir dabei, den Überblick über deine Filamentspulen, Hersteller, Farben und den aktuellen Bestand zu behalten. Zudem bietet es Schnittstellen zu Druckern und AMS (Automatic Material System) Einheiten.
 
+### Dokumentation
+Das vollständige Handbuch ist verfügbar unter **[docu.filaman.app](https://docu.filaman.app)**.
+
 ### 💡 Hardware-Erweiterung: FilaMan ESP32-Waage
 Um das volle Potenzial dieses Systems auszuschöpfen, empfehlen wir unser zugehöriges Hardware-Projekt:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**

@@ -12,6 +12,9 @@ Empty spools don't belong in the trash! We support the [Recycling Fabrik](https:
 ## About the Project
 FilaMan is a comprehensive filament management system for 3D printing. It helps you keep track of your filament spools, manufacturers, colors, and current stock levels. It also features integrations with printers and AMS (Automatic Material System) units.
 
+### Documentation
+The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
+
 ### 💡 Hardware Extension: FilaMan ESP32 Scale
 To unlock the full potential of this system, we highly recommend our companion hardware project:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**
