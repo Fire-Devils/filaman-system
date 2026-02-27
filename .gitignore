@@ -67,6 +67,7 @@ bump-version.sh
 _*
 local_cache
 .sisyphus/
+.opencode
 
 # Installed plugins (only spoolman_import ships as default)
 backend/app/plugins/*/
