@@ -100,6 +100,16 @@ import Layout from '../../layouts/Layout.astro'
         <p style="font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0;" data-i18n="admin.oidcButtonTextHint">Shown on the login page</p>
       </div>
 
+      <!-- Callback URL (read-only) -->
+      <div>
+        <label class="fm-label" data-i18n="admin.oidcCallbackUrl">Callback URL</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="text" id="callback-url" class="fm-input" readonly style="background: var(--bg-secondary); cursor: default;" />
+          <button type="button" id="copy-callback" class="fm-btn" style="padding: 8px 14px; white-space: nowrap;" data-i18n="admin.oidcCopy">Copy</button>
+        </div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0;" data-i18n="admin.oidcCallbackUrlHint">Register this URL in your OIDC provider</p>
+      </div>
+
       <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
 
       <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.oidcSave">Save</button>
@@ -113,7 +123,7 @@ import Layout from '../../layouts/Layout.astro'
       await initI18n()
 
       function getCsrfToken(): string {
-        const match = document.cookie.match(/(?:^;\s*)csrf_token=([^;]*)/)
+        const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
         return match ? decodeURIComponent(match[1]) : ''
       }
 
@@ -127,6 +137,20 @@ import Layout from '../../layouts/Layout.astro'
       const secretStatus = document.getElementById('secret-status')!
       const formMessage = document.getElementById('form-message')!
       const saveBtn = document.getElementById('save-btn') as HTMLButtonElement
+
+      const callbackUrlInput = document.getElementById('callback-url') as HTMLInputElement
+      const copyBtn = document.getElementById('copy-callback') as HTMLButtonElement
+
+      // Set callback URL based on current origin
+      callbackUrlInput.value = `${window.location.origin}/auth/oidc/callback`
+
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(callbackUrlInput.value).then(() => {
+          const originalText = copyBtn.textContent
+          copyBtn.textContent = '✓'
+          setTimeout(() => { copyBtn.textContent = originalText }, 2000)
+        })
+      })
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text

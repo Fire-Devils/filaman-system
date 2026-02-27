@@ -648,7 +648,10 @@
     "oidcSaveFailed": "Failed to save OIDC settings.",
     "oidcLoadFailed": "Failed to load OIDC settings.",
     "oidcIssuerUrlInvalid": "Issuer URL must start with https://",
-    "oidcEncKeyMissing": "OIDC encryption key is not configured on the server. Set the OIDC_ENC_KEY environment variable."
+    "oidcEncKeyMissing": "OIDC encryption key is not configured on the server. Set the OIDC_ENC_KEY environment variable.",
+    "oidcCallbackUrl": "Callback URL",
+    "oidcCallbackUrlHint": "Register this URL as redirect URI in your OIDC provider.",
+    "oidcCopy": "Copy"
   },
   "changelog": {
     "title": "Changelog",

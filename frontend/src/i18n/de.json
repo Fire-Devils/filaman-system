@@ -650,7 +650,10 @@
     "oidcSaveFailed": "Fehler beim Speichern der OIDC-Einstellungen.",
     "oidcLoadFailed": "Fehler beim Laden der OIDC-Einstellungen.",
     "oidcIssuerUrlInvalid": "Die Issuer-URL muss mit https:// beginnen.",
-    "oidcEncKeyMissing": "OIDC-Verschlüsselungsschlüssel ist nicht konfiguriert. Setzen Sie die Umgebungsvariable OIDC_ENC_KEY."
+    "oidcEncKeyMissing": "OIDC-Verschlüsselungsschlüssel ist nicht konfiguriert. Setzen Sie die Umgebungsvariable OIDC_ENC_KEY.",
+    "oidcCallbackUrl": "Callback URL",
+    "oidcCallbackUrlHint": "Diese URL als Redirect-URI beim OIDC-Provider eintragen.",
+    "oidcCopy": "Kopieren"
   },
   "changelog": {
     "title": "Changelog",
