@@ -489,17 +489,32 @@ interface PaginatedResponse<T> {
     }
 
     function showChangelogIfNeeded() {
+      console.log('[Changelog] VERSION:', JSON.stringify(VERSION))
+      console.log('[Changelog] changelogData:', JSON.stringify(changelogData.versions.map((v: any) => v.version)))
       const seenVersion = localStorage.getItem('changelog-seen-version')
-      if (!VERSION || seenVersion === VERSION) return
+      console.log('[Changelog] seenVersion:', JSON.stringify(seenVersion))
+      if (!VERSION || seenVersion === VERSION) {
+        console.log('[Changelog] SKIP: !VERSION=', !VERSION, 'seenVersion===VERSION=', seenVersion === VERSION)
+        return
+      }
 
       const currentVersion = changelogData.versions.find((v: any) => v.version === VERSION)
-      if (!currentVersion) return
+      if (!currentVersion) {
+        console.log('[Changelog] SKIP: no entry in changelog.json for version', VERSION)
+        return
+      }
 
       const lang = getLang() || 'en'
       const changes = currentVersion.changes[lang] || currentVersion.changes['en'] || []
+      console.log('[Changelog] lang:', lang, 'changes:', changes.length)
       if (changes.length === 0) return
 
-      const overlay = document.getElementById('fm-changelog-overlay')!
+      const overlay = document.getElementById('fm-changelog-overlay')
+      console.log('[Changelog] overlay element:', overlay)
+      if (!overlay) {
+        console.log('[Changelog] SKIP: overlay element not found in DOM')
+        return
+      }
       const versionEl = document.getElementById('fm-changelog-version')!
       const listEl = document.getElementById('fm-changelog-list')!
       const closeBtn = document.getElementById('fm-changelog-close')!
@@ -534,6 +549,7 @@ interface PaginatedResponse<T> {
         if (e.key === 'Escape' && overlay.classList.contains('open')) overlay.classList.remove('open')
       })
 
+      console.log('[Changelog] SHOWING modal now')
       overlay.classList.add('open')
     }
     init()
