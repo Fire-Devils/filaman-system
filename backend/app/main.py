@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 
 from app.api.auth import router as auth_router
+from app.api.auth_oidc import router as auth_oidc_router
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import async_session_maker
@@ -111,6 +112,7 @@ async def add_cache_control_header(request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(auth_oidc_router)
 app.include_router(api_router)
 
 
@@ -219,5 +221,9 @@ if not settings.debug:
         @app.get("/filaments/{id}/edit")
         async def serve_filament_edit(id: int):
             return FileResponse(os.path.join(static_files_path, "filaments/detail/edit/index.html"))
+
+        @app.get("/admin/oidc")
+        async def serve_admin_oidc():
+            return FileResponse(os.path.join(static_files_path, "admin/oidc/index.html"))
 
         app.mount("/", StaticFiles(directory=static_files_path, html=True), name="static")

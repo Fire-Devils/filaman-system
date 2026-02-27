@@ -1,0 +1,224 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - OIDC">
+  <style>
+    .fm-toggle {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .fm-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .fm-toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      transition: background 0.2s;
+    }
+    .fm-toggle-slider::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      bottom: 3px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .fm-toggle input:checked + .fm-toggle-slider {
+      background: var(--accent);
+    }
+    .fm-toggle input:checked + .fm-toggle-slider::before {
+      transform: translateX(18px);
+    }
+    .fm-toggle input:disabled + .fm-toggle-slider {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
+
+  <div style="margin-bottom: 24px;">
+    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="admin.oidcTitle">OIDC Configuration</h1>
+  <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 24px;" data-i18n="admin.oidcSubtitle">Configure OpenID Connect for Single Sign-On</p>
+
+  <div class="fm-card" style="padding: 24px;">
+    <form id="oidc-form" style="display: grid; gap: 20px;">
+      <!-- Enabled toggle -->
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <label data-i18n="admin.oidcEnabled" style="font-weight: 500;">Enabled</label>
+        <label class="fm-toggle">
+          <input type="checkbox" id="oidc-enabled" />
+          <span class="fm-toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Issuer URL -->
+      <div>
+        <label for="issuer-url" class="fm-label" data-i18n="admin.oidcIssuerUrl">Issuer URL</label>
+        <input type="url" id="issuer-url" class="fm-input" placeholder="https://auth.example.com" />
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0;" data-i18n="admin.oidcIssuerUrlHint">Must start with https://</p>
+      </div>
+
+      <!-- Client ID -->
+      <div>
+        <label for="client-id" class="fm-label" data-i18n="admin.oidcClientId">Client ID</label>
+        <input type="text" id="client-id" class="fm-input" />
+      </div>
+
+      <!-- Client Secret -->
+      <div>
+        <label for="client-secret" class="fm-label" data-i18n="admin.oidcClientSecret">Client Secret</label>
+        <input type="password" id="client-secret" class="fm-input" placeholder="" />
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0;" data-i18n="admin.oidcClientSecretHint">Leave empty to keep current secret</p>
+        <p id="secret-status" style="font-size: 0.78rem; margin: 4px 0 0;"></p>
+      </div>
+
+      <!-- Scopes -->
+      <div>
+        <label for="scopes" class="fm-label" data-i18n="admin.oidcScopes">Scopes</label>
+        <input type="text" id="scopes" class="fm-input" value="openid email profile" />
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0;" data-i18n="admin.oidcScopesHint">Space-separated list of scopes</p>
+      </div>
+
+      <!-- Button Text -->
+      <div>
+        <label for="button-text" class="fm-label" data-i18n="admin.oidcButtonText">Button Text</label>
+        <input type="text" id="button-text" class="fm-input" value="Login with SSO" />
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 4px 0 0;" data-i18n="admin.oidcButtonTextHint">Shown on the login page</p>
+      </div>
+
+      <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
+
+      <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.oidcSave">Save</button>
+    </form>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+
+    async function init() {
+      await initI18n()
+
+      function getCsrfToken(): string {
+        const match = document.cookie.match(/(?:^;\s*)csrf_token=([^;]*)/)
+        return match ? decodeURIComponent(match[1]) : ''
+      }
+
+      const form = document.getElementById('oidc-form') as HTMLFormElement
+      const enabledInput = document.getElementById('oidc-enabled') as HTMLInputElement
+      const issuerInput = document.getElementById('issuer-url') as HTMLInputElement
+      const clientIdInput = document.getElementById('client-id') as HTMLInputElement
+      const clientSecretInput = document.getElementById('client-secret') as HTMLInputElement
+      const scopesInput = document.getElementById('scopes') as HTMLInputElement
+      const buttonTextInput = document.getElementById('button-text') as HTMLInputElement
+      const secretStatus = document.getElementById('secret-status')!
+      const formMessage = document.getElementById('form-message')!
+      const saveBtn = document.getElementById('save-btn') as HTMLButtonElement
+
+      function showMessage(text: string, isError: boolean) {
+        formMessage.textContent = text
+        formMessage.className = isError ? 'fm-alert-error' : 'fm-alert-success'
+        formMessage.classList.remove('hidden')
+        setTimeout(() => formMessage.classList.add('hidden'), 5000)
+      }
+
+      // Load settings
+      try {
+        const resp = await fetch('/api/v1/admin/oidc-settings', { credentials: 'include' })
+        if (resp.ok) {
+          const data = await resp.json()
+          enabledInput.checked = data.enabled
+          issuerInput.value = data.issuer_url || ''
+          clientIdInput.value = data.client_id || ''
+          scopesInput.value = data.scopes || 'openid email profile'
+          buttonTextInput.value = data.button_text || 'Login with SSO'
+          if (data.has_client_secret) {
+            secretStatus.textContent = t('admin.oidcClientSecretSet')
+            secretStatus.style.color = 'var(--success-text)'
+          } else {
+            secretStatus.textContent = t('admin.oidcClientSecretNotSet')
+            secretStatus.style.color = 'var(--error-text)'
+          }
+        } else {
+          showMessage(t('admin.oidcLoadFailed'), true)
+        }
+      } catch {
+        showMessage(t('admin.oidcLoadFailed'), true)
+      }
+
+      // Save settings
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+
+        const issuerUrl = issuerInput.value.trim()
+        if (issuerUrl && !issuerUrl.startsWith('https://')) {
+          showMessage(t('admin.oidcIssuerUrlInvalid'), true)
+          return
+        }
+
+        saveBtn.disabled = true
+        saveBtn.textContent = t('admin.oidcSaving')
+
+        const payload: Record<string, any> = {
+          enabled: enabledInput.checked,
+          issuer_url: issuerUrl || null,
+          client_id: clientIdInput.value.trim() || null,
+          scopes: scopesInput.value.trim() || 'openid email profile',
+          button_text: buttonTextInput.value.trim() || 'Login with SSO',
+        }
+        const secret = clientSecretInput.value
+        if (secret) {
+          payload.client_secret = secret
+        }
+
+        try {
+          const resp = await fetch('/api/v1/admin/oidc-settings', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': getCsrfToken(),
+            },
+            credentials: 'include',
+            body: JSON.stringify(payload),
+          })
+
+          if (resp.ok) {
+            const data = await resp.json()
+            clientSecretInput.value = ''
+            if (data.has_client_secret) {
+              secretStatus.textContent = t('admin.oidcClientSecretSet')
+              secretStatus.style.color = 'var(--success-text)'
+            } else {
+              secretStatus.textContent = t('admin.oidcClientSecretNotSet')
+              secretStatus.style.color = 'var(--error-text)'
+            }
+            showMessage(t('admin.oidcSaveSuccess'), false)
+          } else {
+            const err = await resp.json().catch(() => ({}))
+            showMessage(err.detail?.message || t('admin.oidcSaveFailed'), true)
+          }
+        } catch {
+          showMessage(t('admin.oidcSaveFailed'), true)
+        } finally {
+          saveBtn.disabled = false
+          saveBtn.textContent = t('admin.oidcSave')
+        }
+      })
+    }
+
+    init()
+  </script>
+</Layout>

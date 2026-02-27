@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     csrf_secret_key: str = "change-me-in-production"
 
+    # Encryption key for OIDC client_secret storage (Fernet, base64-encoded 32 bytes)
+    oidc_enc_key: str = ""
+
     cors_origins: str = ""
 
     # User-installed plugins directory (auto-detected if empty)

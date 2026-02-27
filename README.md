@@ -31,13 +31,13 @@ This allows you to install and run the FilaMan System directly within your Home 
 - **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
 - **Responsive UI:** Modern design with light, dark, and brand themes.
+- **OIDC (OAuth2) Login:** Single Sign-On (SSO) via OpenID Connect for existing users.
 
 ## 🗺️ Roadmap
 We have exciting plans for the future of FilaMan:
 - **Printer Plugins:** Develop plugins to connect with various 3D printers (community contributions are highly welcome!).
 - **Mobile Apps:** Dedicated apps for iOS and Android.
 - **Printable Labels:** Generate and print custom labels for your spools.
-- **OIDC (OAuth2) Login:** Support for Single Sign-On (SSO) via OpenID Connect.
 
 ## Installation
 
@@ -141,6 +141,15 @@ openssl rand -hex 32
 # Generate all secrets at once
 echo "SECRET_KEY=$(openssl rand -hex 32)"
 echo "CSRF_SECRET_KEY=$(openssl rand -hex 32)"
+echo "OIDC_ENC_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+```
+
+#### OIDC / SSO Configuration
+To enable OIDC (OpenID Connect) login, set the following environment variable:
+
+```bash
+# Required for encrypting the OIDC client secret in the database
+OIDC_ENC_KEY=your-fernet-key
 ```
 
 **Note:** When using MySQL or PostgreSQL, backups must be managed externally by the administrator. The automatic SQLite backup is disabled in this case.

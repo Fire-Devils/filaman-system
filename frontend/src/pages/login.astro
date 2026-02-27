@@ -79,6 +79,15 @@ const { error } = Astro.props
             Sign in
           </button>
         </form>
+
+        <div id="sso-section" style="display: none; margin-top: 16px;">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
+            <span style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="login.or">or</span>
+            <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
+          </div>
+          <a id="sso-btn" href="/auth/oidc/start" class="fm-btn" style="width: 100%; padding: 12px 20px; text-align: center; text-decoration: none; display: block;">Login with SSO</a>
+        </div>
       </div>
     </div>
 
@@ -134,6 +143,40 @@ const { error } = Astro.props
             submitBtn.textContent = t('login.signIn')
           }
         })
+
+        // Check URL for OIDC error params
+        const urlParams = new URLSearchParams(window.location.search)
+        const oidcError = urlParams.get('error')
+        if (oidcError) {
+          const errorMap: Record<string, string> = {
+            oidc_failed: t('login.oidcFailed'),
+            oidc_expired: t('login.oidcExpired'),
+            oidc_no_user: t('login.oidcNoUser'),
+          }
+          const msg = errorMap[oidcError]
+          if (msg) {
+            errorMessage.textContent = msg
+            errorMessage.classList.remove('hidden')
+          }
+        }
+
+        // Load SSO button if OIDC is enabled
+        try {
+          const resp = await fetch('/api/v1/oidc/public-info', { credentials: 'include' })
+          if (resp.ok) {
+            const data = await resp.json()
+            if (data.enabled) {
+              const ssoSection = document.getElementById('sso-section')
+              const ssoBtn = document.getElementById('sso-btn')
+              if (ssoSection && ssoBtn) {
+                ssoSection.style.display = 'block'
+                ssoBtn.textContent = data.button_text || 'Login with SSO'
+              }
+            }
+          }
+        } catch {
+          // Silently fail — SSO section stays hidden
+        }
       }
 
       init()

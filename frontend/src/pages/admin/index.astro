@@ -26,6 +26,11 @@ import Layout from '../../layouts/Layout.astro'
       <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.system">System</h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.systemDesc">Plugins and system management</p>
     </a>
+    <a href="/admin/oidc" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;" id="oidc-card">
+      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.oidc">OIDC / SSO</h2>
+      <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.oidcDesc">Configure OpenID Connect Single Sign-On</p>
+      <span id="oidc-https-warning" style="display: none; font-size: 0.8rem; color: var(--error-text); margin-top: 8px; display: none;" data-i18n="admin.oidcHttpsRequired">OIDC requires HTTPS</span>
+    </a>
   </div>
 
   <h2 style="font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; font-family: var(--font-serif);" data-i18n="admin.versionInfoTitle">System Version</h2>
@@ -147,6 +152,20 @@ import Layout from '../../layouts/Layout.astro'
         }
       } catch {
         // Silently fail — card just shows loading dots
+      }
+    })()
+
+    /* ── OIDC card HTTPS check ────────────────────────────── */
+    ;(function checkOidcHttps() {
+      const card = document.getElementById('oidc-card')
+      const warning = document.getElementById('oidc-https-warning')
+      if (!card || !warning) return
+      if (window.location.protocol !== 'https:') {
+        card.setAttribute('href', 'javascript:void(0)')
+        card.classList.remove('fm-card-hover')
+        card.style.opacity = '0.6'
+        card.style.cursor = 'not-allowed'
+        warning.style.display = 'block'
       }
     })()
   </script>
