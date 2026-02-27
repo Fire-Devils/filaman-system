@@ -161,7 +161,7 @@ import Layout from '../../layouts/Layout.astro'
 
       // Load settings
       try {
-        const resp = await fetch('/api/v1/admin/oidc-settings', { credentials: 'include' })
+        const resp = await fetch('/api/v1/admin/oidc-settings/', { credentials: 'include' })
         if (resp.ok) {
           const data = await resp.json()
           enabledInput.checked = data.enabled
@@ -209,7 +209,7 @@ import Layout from '../../layouts/Layout.astro'
         }
 
         try {
-          const resp = await fetch('/api/v1/admin/oidc-settings', {
+          const resp = await fetch('/api/v1/admin/oidc-settings/', {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -232,7 +232,17 @@ import Layout from '../../layouts/Layout.astro'
             showMessage(t('admin.oidcSaveSuccess'), false)
           } else {
             const err = await resp.json().catch(() => ({}))
-            showMessage(err.detail?.message || t('admin.oidcSaveFailed'), true)
+            // Handle all backend error formats:
+            // HTTPException: {detail: {message: '...'}} or {detail: '...'}
+            // CSRF middleware: {message: '...'}
+            // Pydantic: {detail: [{msg: '...'}]}
+            const msg =
+              err.detail?.message ||
+              err.message ||
+              (typeof err.detail === 'string' ? err.detail : null) ||
+              (Array.isArray(err.detail) ? err.detail[0]?.msg : null) ||
+              t('admin.oidcSaveFailed')
+            showMessage(msg, true)
           }
         } catch {
           showMessage(t('admin.oidcSaveFailed'), true)

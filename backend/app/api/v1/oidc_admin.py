@@ -79,7 +79,13 @@ async def update_oidc_settings(
         setattr(settings_row, key, value)
 
     if client_secret:
-        settings_row.client_secret_enc = encrypt_secret(client_secret)
+        try:
+            settings_row.client_secret_enc = encrypt_secret(client_secret)
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "encryption_error", "message": str(exc)},
+            )
 
     await db.commit()
     await db.refresh(settings_row)
