@@ -17,11 +17,35 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.plugin import InstalledPlugin
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Pfad zum plugins-Verzeichnis innerhalb des Backends
-PLUGINS_DIR = Path(__file__).parent.parent / "plugins"
+
+def _resolve_plugins_dir() -> Path:
+    """Resolve the directory for user-installed plugins.
+
+    Priority:
+    1. PLUGINS_DIR env var (explicit override)
+    2. /app/data/plugins (Docker volume — auto-detected)
+    3. Alongside built-in plugins (dev fallback, backward compatible)
+    """
+    if settings.plugins_dir:
+        p = Path(settings.plugins_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    # Docker: /app/data is the volume mount
+    data_dir = Path("/app/data")
+    if data_dir.is_dir():
+        p = data_dir / "plugins"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    # Dev fallback: alongside built-in plugins
+    return Path(__file__).parent.parent / "plugins"
+
+
+# Directory for user-installed plugins (persisted across Docker updates)
+PLUGINS_DIR = _resolve_plugins_dir()
 
 # Maximale ZIP-Groesse: 10 MB
 MAX_ZIP_SIZE = 10 * 1024 * 1024

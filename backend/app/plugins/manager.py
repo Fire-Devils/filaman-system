@@ -1,6 +1,7 @@
 import importlib
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,9 +18,16 @@ from app.models.system_extra_field import SystemExtraField
 from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
 from app.plugins.base import BaseDriver
 from app.core.event_bus import event_bus
+from app.services.plugin_service import PLUGINS_DIR as USER_PLUGINS_DIR
 
 logger = logging.getLogger(__name__)
 
+# Built-in plugins ship with the image and live alongside this file
+BUILTIN_PLUGINS_DIR = Path(__file__).parent
+
+# Ensure user-installed plugins are importable via importlib
+if USER_PLUGINS_DIR != BUILTIN_PLUGINS_DIR and str(USER_PLUGINS_DIR) not in sys.path:
+    sys.path.insert(0, str(USER_PLUGINS_DIR))
 
 class EventEmitter:
     def __init__(self, printer_id: int, handler: Callable[[dict], None]):
@@ -159,6 +167,19 @@ class PluginManager:
             logger.error(f"Error in _handle_slots_update for printer {printer_id}: {e}", exc_info=True)
 
     def load_driver(self, driver_key: str) -> type[BaseDriver] | None:
+        # Try user-installed plugin first (separate dir in Docker)
+        if USER_PLUGINS_DIR != BUILTIN_PLUGINS_DIR:
+            driver_file = USER_PLUGINS_DIR / driver_key / "driver.py"
+            if driver_file.exists():
+                try:
+                    module = importlib.import_module(f"{driver_key}.driver")
+                    driver_class = getattr(module, "Driver", None)
+                    if driver_class and issubclass(driver_class, BaseDriver):
+                        return driver_class
+                except ImportError as e:
+                    logger.warning(f"Could not load user plugin {driver_key}: {e}")
+
+        # Fall back to built-in plugin
         try:
             module = importlib.import_module(f"app.plugins.{driver_key}.driver")
             driver_class = getattr(module, "Driver", None)
@@ -268,37 +289,51 @@ class PluginManager:
 
     # -- Plugin Extra-Field Management ----------------------------------------
 
+    @staticmethod
+    def _plugin_search_dirs() -> list[Path]:
+        """Return plugin directories in search priority order (user-installed first)."""
+        dirs = [USER_PLUGINS_DIR]
+        if BUILTIN_PLUGINS_DIR != USER_PLUGINS_DIR:
+            dirs.append(BUILTIN_PLUGINS_DIR)
+        return dirs
+
+    # -- Plugin Extra-Field Management ----------------------------------------
+
     def _load_plugin_json(self, driver_key: str) -> dict[str, Any] | None:
         """Load and return the parsed plugin.json for a given driver."""
-        json_path = Path(__file__).parent / driver_key / "plugin.json"
-        try:
-            return json.loads(json_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as e:
-            logger.warning(f"Could not load plugin.json for {driver_key}: {e}")
-            return None
+        for base_dir in self._plugin_search_dirs():
+            json_path = base_dir / driver_key / "plugin.json"
+            try:
+                return json.loads(json_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+        logger.warning(f"Could not load plugin.json for {driver_key}")
+        return None
 
     def _resolve_options(self, driver_key: str, field_def: dict[str, Any]) -> list[str] | None:
         """Resolve dropdown options for a field definition.
 
         If field_def has 'options_file', loads the JSON file from the plugin directory
-        and builds 'key — name' strings.  If field_def has static 'options', returns those.
+        and builds 'key \u2014 name' strings.  If field_def has static 'options', returns those.
         """
         options_file = field_def.get("options_file")
         if options_file:
-            file_path = Path(__file__).parent / driver_key / options_file
-            try:
-                raw = json.loads(file_path.read_text(encoding="utf-8"))
-                options: list[str] = []
-                for idx, info in raw.items():
-                    if idx.startswith("_"):  # skip comments
-                        continue
-                    name = info.get("name", idx) if isinstance(info, dict) else str(info)
-                    options.append(f"{idx} \u2014 {name}")
-                options.sort()
-                return options
-            except (OSError, json.JSONDecodeError) as e:
-                logger.warning(f"{options_file} not found or invalid ({e}); dropdown will have no options")
-                return []
+            for base_dir in self._plugin_search_dirs():
+                file_path = base_dir / driver_key / options_file
+                try:
+                    raw = json.loads(file_path.read_text(encoding="utf-8"))
+                    options: list[str] = []
+                    for idx, info in raw.items():
+                        if idx.startswith("_"):  # skip comments
+                            continue
+                        name = info.get("name", idx) if isinstance(info, dict) else str(info)
+                        options.append(f"{idx} \u2014 {name}")
+                    options.sort()
+                    return options
+                except (OSError, json.JSONDecodeError):
+                    continue
+            logger.warning(f"{options_file} not found for {driver_key}; dropdown will have no options")
+            return []
         return field_def.get("options")
 
     async def _ensure_plugin_extra_fields(self, driver_key: str) -> None:

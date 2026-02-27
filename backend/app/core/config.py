@@ -47,5 +47,8 @@ class Settings(BaseSettings):
 
     cors_origins: str = ""
 
+    # User-installed plugins directory (auto-detected if empty)
+    plugins_dir: str = ""
+
 
 settings = Settings()
