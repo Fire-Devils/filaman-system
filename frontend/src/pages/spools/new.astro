@@ -12,7 +12,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.newSpool">New Spool</h1>
   
   <div class="fm-card" style="max-width: 640px; padding: 24px;">
-    <form id="spool-form" style="display: grid; gap: 16px;">
+    <form id="spool-form" novalidate style="display: grid; gap: 16px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
         <div>
           <label for="filament_id" class="fm-label" data-i18n="spools.filament">Filament *</label>
@@ -199,7 +199,20 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       <div id="error-message" class="fm-alert-error hidden"></div>
       
-      <div style="display: flex; gap: 12px; padding-top: 8px;">
+      <div style="display: flex; gap: 12px; padding-top: 8px; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <label for="spool_quantity" class="fm-label" style="margin: 0; white-space: nowrap; font-size: 0.85rem;" data-i18n="spools.quantity">Quantity</label>
+          <input
+            type="number"
+            id="spool_quantity"
+            name="spool_quantity"
+            value="1"
+            min="1"
+            step="1"
+            class="fm-input"
+            style="width: 70px; padding: 6px 8px;"
+          />
+        </div>
         <button
           type="submit"
           id="submit-btn"
@@ -649,12 +662,15 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         data.custom_fields = unflattenObject(fieldsObj)
       }
       
+      const quantity = Math.max(1, parseInt(document.getElementById('spool_quantity').value) || 1)
+      data.quantity = quantity
+      
       errorMessage.classList.add('hidden')
       submitBtn.disabled = true
       submitBtn.textContent = t('common.creating')
       
       try {
-        const response = await fetch('/api/v1/spools', {
+        const response = await fetch('/api/v1/spools/bulk', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -666,11 +682,25 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         
         if (!response.ok) {
           const errorData = await response.json()
-          throw new Error(errorData.message || t('spools.failedCreate'))
+          let msg = t('spools.failedCreate')
+          if (Array.isArray(errorData.detail)) {
+            msg = errorData.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ')
+          } else if (errorData.detail?.message) {
+            msg = errorData.detail.message
+          } else if (errorData.message) {
+            msg = errorData.message
+          }
+          console.error('Spool bulk create error:', JSON.stringify(errorData, null, 2))
+          throw new Error(msg)
         }
         
-        const spool = await response.json()
-        window.location.href = `/spools/${spool.id}`
+        const spools = await response.json()
+        
+        if (spools.length === 1) {
+          window.location.href = `/spools/${spools[0].id}`
+        } else {
+          window.location.href = '/spools'
+        }
       } catch (error) {
         errorMessage.textContent = error.message || t('spools.failedCreate')
         errorMessage.classList.remove('hidden')

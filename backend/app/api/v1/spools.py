@@ -16,6 +16,7 @@ from app.api.v1.schemas_spool import (
     LocationUpdate,
     MeasurementRequest,
     MoveLocationRequest,
+    SpoolBulkCreate,
     SpoolCreate,
     SpoolEventResponse,
     SpoolResponse,
@@ -283,6 +284,78 @@ async def create_spool(
     )
     return result.scalar_one()
 
+
+
+@router_spools.post("/bulk", response_model=list[SpoolResponse], status_code=status.HTTP_201_CREATED)
+async def create_spools_bulk(
+    data: SpoolBulkCreate,
+    db: DBSession,
+    principal = RequirePermission("spools:create"),
+):
+    result = await db.execute(select(Filament).where(Filament.id == data.filament_id))
+    filament = result.scalar_one_or_none()
+    if not filament:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "validation_error", "message": "Filament not found"},
+        )
+
+    if data.status_id:
+        result = await db.execute(select(SpoolStatus).where(SpoolStatus.id == data.status_id))
+    else:
+        result = await db.execute(select(SpoolStatus).where(SpoolStatus.key == "new"))
+    status_obj = result.scalar_one_or_none()
+    if not status_obj:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "validation_error", "message": "Status not found"},
+        )
+
+    spool_data = data.model_dump(exclude={"quantity"})
+
+    # Cascade fields from Filament if not provided
+    if spool_data.get("empty_spool_weight_g") is None:
+        spool_data["empty_spool_weight_g"] = filament.default_spool_weight_g if filament.default_spool_weight_g is not None else 250
+    if spool_data.get("spool_outer_diameter_mm") is None:
+        spool_data["spool_outer_diameter_mm"] = filament.spool_outer_diameter_mm if filament.spool_outer_diameter_mm is not None else 200
+    if spool_data.get("spool_width_mm") is None:
+        spool_data["spool_width_mm"] = filament.spool_width_mm if filament.spool_width_mm is not None else 65
+    if spool_data.get("spool_material") is None:
+        spool_data["spool_material"] = filament.spool_material
+    if "status_id" not in spool_data or spool_data["status_id"] is None:
+        spool_data["status_id"] = status_obj.id
+
+    # Unique fields cannot be duplicated across multiple spools
+    if data.quantity > 1:
+        spool_data["rfid_uid"] = None
+        spool_data["external_id"] = None
+
+    spool_ids = []
+    try:
+        for _ in range(data.quantity):
+            spool = Spool(**spool_data.copy())
+            db.add(spool)
+            await db.flush()
+            spool_ids.append(spool.id)
+
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "bulk_create_error", "message": str(e)},
+        )
+
+    # Reload all spools with relationships
+    result = await db.execute(
+        select(Spool)
+        .where(Spool.id.in_(spool_ids))
+        .options(
+            selectinload(Spool.filament).selectinload(Filament.manufacturer),
+            selectinload(Spool.filament).selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
+        )
+    )
+    return result.scalars().all()
 
 @router_spools.get("/{spool_id}", response_model=SpoolResponse)
 async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):

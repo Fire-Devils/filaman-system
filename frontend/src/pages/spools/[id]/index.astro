@@ -366,6 +366,7 @@ const { id } = Astro.params
       document.getElementById('btn-duplicate-spool')?.addEventListener('click', () => {
         const dupData = { ...spool }
         delete dupData.rfid_uid
+        delete dupData.external_id
         delete dupData.id
         sessionStorage.setItem('filaman_duplicate_spool', JSON.stringify(dupData))
         window.location.href = '/spools/new'

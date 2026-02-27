@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .schemas_filament import FilamentDetailResponse
 
 
@@ -58,6 +58,9 @@ class SpoolCreate(BaseModel):
     low_weight_threshold_g: int = 100
     custom_fields: dict[str, Any] | None = None
 
+
+class SpoolBulkCreate(SpoolCreate):
+    quantity: int = Field(1, ge=1, le=100)
 
 class SpoolUpdate(BaseModel):
     filament_id: int | None = None

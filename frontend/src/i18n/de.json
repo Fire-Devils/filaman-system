@@ -245,6 +245,8 @@
     "addSpool": "Spule hinzufügen",
     "newSpool": "Neue Spule",
     "createSpool": "Spule erstellen",
+    "quantity": "Anzahl",
+    "creatingMultiple": "Erstelle Spule {current} von {total}...",
     "backToSpools": "Zurück zu Spulen",
     "id": "ID",
     "filament": "Filament",

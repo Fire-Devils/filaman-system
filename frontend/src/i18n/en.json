@@ -243,6 +243,8 @@
     "addSpool": "Add Spool",
     "newSpool": "New Spool",
     "createSpool": "Create Spool",
+    "quantity": "Quantity",
+    "creatingMultiple": "Creating spool {current} of {total}...",
     "backToSpools": "Back to Spools",
     "id": "ID",
     "filament": "Filament",
