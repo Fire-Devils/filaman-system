@@ -94,15 +94,24 @@ import Layout from '../../layouts/Layout.astro'
       btn.textContent = t('admin.killswitchExecuting')
 
       try {
+        const csrfToken = getCsrfToken()
+        if (!csrfToken) {
+          throw new Error(t('admin.sessionExpired') || 'Session expired – please log in again.')
+        }
+
         const response = await fetch('/api/v1/admin/system/killswitch', {
           method: 'DELETE',
-          headers: { 'X-CSRF-Token': getCsrfToken() },
+          headers: { 'X-CSRF-Token': csrfToken },
           credentials: 'include',
         })
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}))
-          throw new Error(data.detail?.message || t('admin.killswitchFailed'))
+          if (response.status === 403 && data.code === 'csrf_failed') {
+            throw new Error(t('admin.sessionExpired') || 'Session expired – please log in again.')
+          }
+          const msg = data.detail?.message || data.message || data.detail || `HTTP ${response.status}`
+          throw new Error(msg)
         }
 
         const result = await response.json()

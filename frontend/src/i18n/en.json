@@ -619,6 +619,7 @@
     "killswitchExecuting": "Deleting...",
     "killswitchSuccess": "{count} rows deleted successfully.",
     "killswitchFailed": "Failed to execute killswitch",
+    "sessionExpired": "Session expired – please log in again.",
     "versionInfoTitle": "System Version",
     "installedVersion": "Installed:",
     "latestVersion": "Available:",

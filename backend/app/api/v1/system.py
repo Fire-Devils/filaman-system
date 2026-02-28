@@ -21,6 +21,7 @@ from app.models import (
     Filament,
     FilamentColor,
     FilamentPrinterProfile,
+    FilamentPrinterParam,
     FilamentRating,
     Location,
     Manufacturer,
@@ -30,6 +31,7 @@ from app.models import (
     PrinterSlotEvent,
     Spool,
     SpoolEvent,
+    SpoolPrinterParam,
 )
 from app.services.plugin_service import PluginInstallError, PluginInstallService
 from app.services.spoolman_import_service import SpoolmanImportError, SpoolmanImportService
@@ -822,6 +824,8 @@ async def killswitch(
         ("printer_slot_assignments", PrinterSlotAssignment),
         ("printer_slots", PrinterSlot),
         ("filament_printer_profiles", FilamentPrinterProfile),
+        ("filament_printer_params", FilamentPrinterParam),
+        ("spool_printer_params", SpoolPrinterParam),
         ("printers", Printer),
         ("spool_events", SpoolEvent),
         ("spools", Spool),
@@ -833,11 +837,19 @@ async def killswitch(
         ("locations", Location),
     ]
 
-    for table_name, model in tables_in_order:
-        result = await db.execute(delete(model))
-        deleted[table_name] = result.rowcount  # type: ignore[assignment]
+    try:
+        for table_name, model in tables_in_order:
+            result = await db.execute(delete(model))
+            deleted[table_name] = result.rowcount or 0
 
-    await db.commit()
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("KILLSWITCH failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "killswitch_failed", "message": str(exc)},
+        )
 
     total = sum(deleted.values())
     logger.warning(
