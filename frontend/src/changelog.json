@@ -7,12 +7,16 @@
         "de": [
           { "type": "fix", "text": "Killswitch (Alle Daten löschen) funktioniert jetzt korrekt" },
           { "type": "feature", "text": "Sortiereinstellungen bleiben jetzt erhalten" },
-          { "type": "feature", "text": "Massenbearbeitung in der Spulenübersicht: Löschen, Standort, Status, Schwellenwert, Leergewicht und Preis für mehrere Spulen gleichzeitig setzen" }
+          { "type": "feature", "text": "Massenbearbeitung in der Spulenübersicht: Löschen, Standort, Status, Schwellenwert, Leergewicht und Preis für mehrere Spulen gleichzeitig setzen" },
+          { "type": "feature", "text": "Filamente können jetzt nach Hersteller gruppiert werden" },
+          { "type": "change", "text": "Spaltenreihenfolge in der Filamentübersicht: Hersteller und Typ stehen jetzt vorn" }
         ],
         "en": [
           { "type": "fix", "text": "Killswitch (Delete all data) now works correctly" },
           { "type": "feature", "text": "Sort settings are now preserved" },
-          { "type": "feature", "text": "Bulk editing in spool overview: Delete, set location, status, threshold, empty weight and price for multiple spools at once" }
+          { "type": "feature", "text": "Bulk editing in spool overview: Delete, set location, status, threshold, empty weight and price for multiple spools at once" },
+          { "type": "feature", "text": "Filaments can now be grouped by manufacturer" },
+          { "type": "change", "text": "Column order in filament overview: Manufacturer and type are now shown first" }
         ]
       }
     },

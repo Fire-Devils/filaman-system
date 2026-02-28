@@ -51,17 +51,21 @@ import Layout from '../../layouts/Layout.astro'
     <select id="filter-color" class="fm-select" style="width: auto; min-width: 140px;">
       <option value="" data-i18n="filaments.allColors">All Colors</option>
     </select>
+    <label style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+      <input type="checkbox" id="filter-group" class="fm-checkbox" />
+      <span data-i18n="filaments.groupByManufacturer">Group by Manufacturer</span>
+    </label>
   </div>
   
   <div class="fm-card" style="padding: 0;">
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
+          <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable">Manufacturer</th>
+          <th data-i18n="filaments.type" data-sort="type" class="sortable">Type</th>
           <th data-i18n="filaments.designation" data-sort="designation" class="sortable">Designation</th>
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable">Colors</th>
-          <th data-i18n="filaments.type" data-sort="type" class="sortable">Type</th>
           <th data-i18n="filaments.diameter" data-sort="diameter_mm" class="sortable">Diameter</th>
-          <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable">Manufacturer</th>
           <th style="text-align: right;" data-i18n="filaments.spools" data-sort="spool_count" class="sortable">Spools</th>
         </tr>
       </thead>
@@ -165,7 +169,8 @@ import Layout from '../../layouts/Layout.astro'
       const manufacturerId = (document.getElementById('filter-manufacturer') as HTMLSelectElement).value
       const type = (document.getElementById('filter-type') as HTMLSelectElement).value
       const color = (document.getElementById('filter-color') as HTMLSelectElement).value
-      return { search, manufacturerId, type, color }
+      const groupBy = (document.getElementById('filter-group') as HTMLInputElement).checked
+      return { search, manufacturerId, type, color, groupBy }
     }
 
     function filterFilaments(filaments: any[]): any[] {
@@ -215,11 +220,19 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function renderPage() {
+      const { groupBy } = getFilterValues()
       const sorted = sortFilaments(filteredFilaments)
-      const startIdx = (currentPage - 1) * pageSize
-      const pageItems = sorted.slice(startIdx, startIdx + pageSize)
-      renderFilaments(pageItems)
-      renderPagination(filteredFilaments.length, currentPage)
+
+      if (groupBy) {
+        renderGroupedFilaments(sorted)
+        const container = document.getElementById('pagination')!
+        container.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: filteredFilaments.length })}</div>`
+      } else {
+        const startIdx = (currentPage - 1) * pageSize
+        const pageItems = sorted.slice(startIdx, startIdx + pageSize)
+        renderFilaments(pageItems)
+        renderPagination(filteredFilaments.length, currentPage)
+      }
     }
 
     function populateFilterDropdowns(filaments: any[]) {
@@ -337,17 +350,104 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = filaments.map(f => `
         <tr style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
+          <td style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${f.material_type}</td>
           <td style="padding: 12px;">
             <div style="font-weight: 500;">${f.designation}</div>
             ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${f.manufacturer_color_name}</div>` : ''}
           </td>
           <td style="padding: 12px;">${renderColorDots(f.colors)}</td>
-          <td style="padding: 12px; color: var(--text-muted);">${f.material_type}</td>
           <td style="padding: 12px; color: var(--text-muted);">${f.diameter_mm}mm</td>
-          <td style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
           <td style="padding: 12px; text-align: right; color: var(--text-muted);">${f.spool_count ?? 0}</td>
         </tr>
       `).join('')
+    }
+
+    function renderFilamentRow(f: any): string {
+      return `
+        <tr style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
+          <td style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${f.material_type}</td>
+          <td style="padding: 12px;">
+            <div style="font-weight: 500;">${f.designation}</div>
+            ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${f.manufacturer_color_name}</div>` : ''}
+          </td>
+          <td style="padding: 12px;">${renderColorDots(f.colors)}</td>
+          <td style="padding: 12px; color: var(--text-muted);">${f.diameter_mm}mm</td>
+          <td style="padding: 12px; text-align: right; color: var(--text-muted);">${f.spool_count ?? 0}</td>
+        </tr>
+      `
+    }
+
+    function renderGroupedFilaments(filaments: any[]) {
+      const tbody = document.getElementById('filaments-table')!
+
+      if (filaments.length === 0) {
+        const { search, manufacturerId, type, color } = getFilterValues()
+        const hasFilters = search || manufacturerId || type || color
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted);">
+              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+            </td>
+          </tr>
+        `
+        return
+      }
+
+      // Group by manufacturer_id
+      const groups = new Map<string, { label: string; filaments: any[] }>()
+
+      filaments.forEach(f => {
+        const groupKey = f.manufacturer_id ? String(f.manufacturer_id) : '_none'
+        if (!groups.has(groupKey)) {
+          groups.set(groupKey, {
+            label: f.manufacturer?.name || '-',
+            filaments: [],
+          })
+        }
+        groups.get(groupKey)!.filaments.push(f)
+      })
+
+      let html = ''
+      let groupIdx = 0
+      groups.forEach((group, key) => {
+        const gid = `group-${groupIdx}`
+        html += `
+          <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
+            <td colspan="6" style="padding: 10px 12px; color: var(--text);">
+              <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.label}</span>
+              <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${t('filaments.filamentsInGroup', { count: group.filaments.length })}</span>
+            </td>
+          </tr>
+        `
+        group.filaments.forEach(f => {
+          html += renderFilamentRow(f).replace('<tr ', `<tr data-group-row="${gid}" `)
+        })
+        groupIdx++
+      })
+
+      tbody.innerHTML = html
+
+      // Wire up group toggle
+      tbody.querySelectorAll('tr[data-group]').forEach(header => {
+        header.addEventListener('click', () => {
+          const gid = (header as HTMLElement).dataset.group!
+          const toggle = header.querySelector(`span[data-toggle]`) as HTMLElement
+          const rows = tbody.querySelectorAll(`tr[data-group-row="${gid}"]`)
+          const isCollapsed = toggle.dataset.collapsed === 'true'
+          
+          if (isCollapsed) {
+            toggle.dataset.collapsed = 'false'
+            toggle.innerHTML = toggle.innerHTML.replace('&#9654;', '&#9660;').replace('\u25B6', '\u25BC')
+            rows.forEach(r => (r as HTMLElement).style.display = '')
+          } else {
+            toggle.dataset.collapsed = 'true'
+            toggle.innerHTML = toggle.innerHTML.replace('&#9660;', '&#9654;').replace('\u25BC', '\u25B6')
+            rows.forEach(r => (r as HTMLElement).style.display = 'none')
+          }
+        })
+      })
     }
     
     function renderPagination(total: number, page: number) {
@@ -405,6 +505,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('filter-manufacturer')?.addEventListener('change', () => applyFiltersAndRender())
     document.getElementById('filter-type')?.addEventListener('change', () => applyFiltersAndRender())
     document.getElementById('filter-color')?.addEventListener('change', () => applyFiltersAndRender())
+    document.getElementById('filter-group')?.addEventListener('change', () => applyFiltersAndRender())
     
     setupSortableHeaders()
     if (sortKey && sortDirection) updateSortIndicators()
