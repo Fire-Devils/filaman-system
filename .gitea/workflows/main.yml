@@ -14,24 +14,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calculate new version
+      - name: Read version from version.txt
         id: version
         shell: bash
         run: |
           set -eu
-          VERSION="$(cat version.txt)"
-          MAJOR="$(echo "$VERSION" | cut -d. -f1)"
-          MINOR="$(echo "$VERSION" | cut -d. -f2)"
-          PATCH="$(echo "$VERSION" | cut -d. -f3)"
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          VERSION="$(cat version.txt | tr -d ' \n')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Stamp changelog with new version
         shell: bash
         run: |
           set -eu
-          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          NEW_VERSION="${{ steps.version.outputs.version }}"
           TODAY="$(date +%Y-%m-%d)"
           CHANGELOG="frontend/src/changelog.json"
           if grep -q '"UNRELEASED"' "$CHANGELOG"; then
@@ -42,20 +37,20 @@ jobs:
             echo "No UNRELEASED entry found in changelog.json — skipping"
           fi
 
-      - name: Bump version, create tag, push to Gitea + GitHub
+      - name: Create tag, stamp changelog, push to Gitea + GitHub
         shell: bash
         env:
           GIT_TERMINAL_PROMPT: 0
         run: |
           set -eu
-          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          NEW_VERSION="${{ steps.version.outputs.version }}"
 
-          echo "$NEW_VERSION" > version.txt
           git config user.name "gitea-actions"
           git config user.email "actions@local"
 
-          git add version.txt frontend/src/changelog.json
-          git commit -m "chore: bump version to $NEW_VERSION"
+          # Commit changelog stamp (if changed) — version.txt already correct from bump-version.sh
+          git add frontend/src/changelog.json
+          git diff --cached --quiet || git commit -m "chore: stamp changelog for $NEW_VERSION"
           git tag "v$NEW_VERSION"
 
           # Push to Gitea
@@ -73,7 +68,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          TAG="v${{ steps.version.outputs.new_version }}"
+          TAG="v${{ steps.version.outputs.version }}"
 
           # letzten Tag finden (falls keiner existiert: erstes Commit)
           PREV_TAG="$(git tag --sort=-creatordate \
@@ -149,7 +144,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          TAG: v${{ steps.version.outputs.new_version }}
+          TAG: v${{ steps.version.outputs.version }}
         run: |
           set -eu
 
@@ -219,7 +214,7 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: |
             ghcr.io/fire-devils/filaman-system:latest
-            ghcr.io/fire-devils/filaman-system:v${{ steps.version.outputs.new_version }}
+            ghcr.io/fire-devils/filaman-system:v${{ steps.version.outputs.version }}
             ghcr.io/fire-devils/filaman-system:${{ gitea.sha }}
           cache-from: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache
           cache-to: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache,mode=max
