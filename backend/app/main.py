@@ -106,8 +106,11 @@ async def add_cache_control_header(request, call_next):
         path.startswith("/img/") or
         path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))
     ):
-        # Cache static assets for 1 year
+        # Cache hashed static assets for 1 year
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif not is_api and response.headers.get("content-type", "").startswith("text/html"):
+        # HTML pages: always revalidate so new deployments are picked up immediately
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
