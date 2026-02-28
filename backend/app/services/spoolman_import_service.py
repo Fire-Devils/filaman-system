@@ -893,7 +893,7 @@ class SpoolmanImportService:
                         rfid_uid=rfid_uid,
                         external_id=external_id,
                         location_id=location_id,
-                        purchase_price=spool_data.get("price"),
+                        purchase_price=spool_data.get("price") or (fil.get("price") if fil and isinstance(fil, dict) else None),
                         initial_total_weight_g=initial_total,
                         empty_spool_weight_g=spool_weight,
                         remaining_weight_g=remaining_weight,
