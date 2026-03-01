@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Farbkreise in der Filament-Auswahl beim Anlegen neuer Spulen" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Color circles in the filament dropdown when creating new spools" }
+        ]
+      }
+    },
+    {
       "version": "1.0.6",
       "date": "",
       "changes": {
