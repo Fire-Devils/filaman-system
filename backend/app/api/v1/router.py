@@ -38,3 +38,55 @@ api_router.include_router(router_spool_params, prefix="/spools", tags=["Spool Pr
 api_router.include_router(events_router)
 api_router.include_router(oidc_admin_router)
 api_router.include_router(oidc_public_router)
+
+
+# ---------------------------------------------------------------------------
+# Auto-discovery: mount routers from user-installed import plugins
+# ---------------------------------------------------------------------------
+def _mount_plugin_routers() -> None:
+    import importlib
+    import json
+    import logging
+
+    from app.services.plugin_service import PLUGINS_DIR
+
+    _logger = logging.getLogger(__name__)
+
+    if not PLUGINS_DIR.is_dir():
+        return
+
+    for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
+        if not plugin_dir.is_dir():
+            continue
+        manifest_path = plugin_dir / "plugin.json"
+        router_path = plugin_dir / "router.py"
+        if not manifest_path.exists() or not router_path.exists():
+            continue
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("plugin_type") != "import":
+                continue
+
+            plugin_key = manifest.get("plugin_key", plugin_dir.name)
+            module = importlib.import_module(f"{plugin_key}.router")
+            plugin_router = getattr(module, "router", None)
+            if plugin_router is None:
+                _logger.warning(
+                    "Plugin '%s' hat router.py aber kein 'router' Attribut",
+                    plugin_key,
+                )
+                continue
+
+            api_router.include_router(plugin_router)
+            _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
+
+        except Exception as exc:
+            _logger.warning(
+                "Plugin-Router '%s' konnte nicht geladen werden: %s",
+                plugin_dir.name,
+                exc,
+            )
+
+
+_mount_plugin_routers()

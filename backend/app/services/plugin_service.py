@@ -52,7 +52,7 @@ MAX_ZIP_SIZE = 10 * 1024 * 1024
 
 # Erlaubte Dateiendungen
 ALLOWED_EXTENSIONS = {
-    ".py", ".json", ".md", ".txt", ".cfg", ".ini", ".yaml", ".yml", ".toml",
+    ".py", ".json", ".md", ".txt", ".cfg", ".ini", ".yaml", ".yml", ".toml", ".html",
 }
 
 # Pflichtfelder im Manifest (Basisfelder, gelten fuer alle Plugin-Typen)

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
-import os  # Added import
+import json as _json
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,7 @@ from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.seeds import run_all_seeds
 from app.plugins.manager import plugin_manager
+from app.services.plugin_service import PLUGINS_DIR
 
 setup_logging()
 logger = __import__('logging').getLogger(__name__)
@@ -117,6 +119,45 @@ async def add_cache_control_header(request, call_next):
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
 app.include_router(api_router)
+
+
+# --- Plugin Page Serving (works in both debug and production) ---
+# Dynamically register routes for plugin pages (page.html)
+# so clicking "Open" in the admin UI serves the plugin's standalone page.
+
+
+def _mount_plugin_pages() -> None:
+    if not PLUGINS_DIR.is_dir():
+        return
+    for entry in sorted(PLUGINS_DIR.iterdir()):
+        if not entry.is_dir():
+            continue
+        manifest = entry / "plugin.json"
+        page_file = entry / "page.html"
+        if not manifest.is_file() or not page_file.is_file():
+            continue
+        try:
+            meta = _json.loads(manifest.read_text(encoding="utf-8"))
+            page_url = meta.get("page_url", "").strip()
+            if not page_url:
+                continue
+            # Capture page_file in closure
+            _page = str(page_file)
+
+            # Create a unique endpoint name to avoid FastAPI collisions
+            endpoint_name = f"plugin_page_{entry.name}"
+
+            async def _serve(*, _path: str = _page) -> FileResponse:
+                return FileResponse(_path)
+
+            _serve.__name__ = endpoint_name
+            app.get(page_url, name=endpoint_name)(_serve)
+            logger.info(f"Mounted plugin page: {page_url} -> {page_file}")
+        except Exception as exc:
+            logger.warning(f"Failed to mount plugin page from {entry.name}: {exc}")
+
+
+_mount_plugin_pages()
 
 
 @app.get("/health")
