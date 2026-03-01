@@ -95,6 +95,15 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
             return False
 
         app.include_router(plugin_router, prefix="/api/v1")
+
+        # Catch-all StaticFiles-Mount (name="static") muss am Ende der
+        # Route-Liste bleiben, sonst schattiert er die neuen API-Routen.
+        routes = app.router.routes
+        for i, route in enumerate(routes):
+            if getattr(route, "name", None) == "static":
+                routes.append(routes.pop(i))
+                break
+
         _logger.info("Plugin-Router '%s' dynamisch auf App gemountet", plugin_key)
         return True
 
