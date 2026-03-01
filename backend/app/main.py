@@ -122,14 +122,18 @@ app.include_router(api_router)
 
 
 # --- Plugin Page Serving (works in both debug and production) ---
-# Dynamically register routes for plugin pages (page.html)
-# so clicking "Open" in the admin UI serves the plugin's standalone page.
+# Dynamic catch-all: resolves plugin pages at request time so that
+# plugins installed after server start are served without restart.
 
 
-def _mount_plugin_pages() -> None:
+@app.get("/plugin-page/{plugin_slug:path}")
+async def serve_plugin_page(plugin_slug: str):
+    from fastapi import HTTPException
+
     if not PLUGINS_DIR.is_dir():
-        return
-    for entry in sorted(PLUGINS_DIR.iterdir()):
+        raise HTTPException(status_code=404, detail="Plugin page not found")
+
+    for entry in PLUGINS_DIR.iterdir():
         if not entry.is_dir():
             continue
         manifest = entry / "plugin.json"
@@ -138,26 +142,12 @@ def _mount_plugin_pages() -> None:
             continue
         try:
             meta = _json.loads(manifest.read_text(encoding="utf-8"))
-            page_url = meta.get("page_url", "").strip()
-            if not page_url:
-                continue
-            # Capture page_file in closure
-            _page = str(page_file)
+            if meta.get("page_url", "").strip() == f"/plugin-page/{plugin_slug}":
+                return FileResponse(str(page_file))
+        except Exception:
+            continue
 
-            # Create a unique endpoint name to avoid FastAPI collisions
-            endpoint_name = f"plugin_page_{entry.name}"
-
-            async def _serve(*, _path: str = _page) -> FileResponse:
-                return FileResponse(_path)
-
-            _serve.__name__ = endpoint_name
-            app.get(page_url, name=endpoint_name)(_serve)
-            logger.info(f"Mounted plugin page: {page_url} -> {page_file}")
-        except Exception as exc:
-            logger.warning(f"Failed to mount plugin page from {entry.name}: {exc}")
-
-
-_mount_plugin_pages()
+    raise HTTPException(status_code=404, detail="Plugin page not found")
 
 
 @app.get("/health")
