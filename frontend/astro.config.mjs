@@ -28,6 +28,10 @@ export default defineConfig({
             '*': '',
           },
         },
+        '/plugin-page': {
+          target: backendUrl,
+          changeOrigin: true,
+        },
       },
     },
   },

@@ -47,6 +47,7 @@ def _mount_plugin_routers() -> None:
     import importlib
     import json
     import logging
+    import sys
 
     from app.services.plugin_service import PLUGINS_DIR
 
@@ -54,6 +55,12 @@ def _mount_plugin_routers() -> None:
 
     if not PLUGINS_DIR.is_dir():
         return
+
+    # Ensure PLUGINS_DIR is on sys.path so plugin packages are importable.
+    # This must happen HERE because this function runs at module-import time,
+    # before plugin_manager.py gets a chance to set up sys.path.
+    if str(PLUGINS_DIR) not in sys.path:
+        sys.path.insert(0, str(PLUGINS_DIR))
 
     for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
         if not plugin_dir.is_dir():
