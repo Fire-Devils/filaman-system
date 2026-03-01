@@ -22,6 +22,14 @@ import Layout from '../../layouts/Layout.astro'
       max-width: 400px;
     }
   </style>
+  <style is:global>
+    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
+    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
+    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
+    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
+    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
+  </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
     <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
@@ -42,6 +50,8 @@ import Layout from '../../layouts/Layout.astro'
     </select>
   </div>
 
+  <div class="pagination-container" id="pagination-top" style="margin-bottom: 12px;"></div>
+
   <div class="fm-card" style="padding: 0;">
     <table class="fm-table">
       <thead>
@@ -61,6 +71,8 @@ import Layout from '../../layouts/Layout.astro'
       </tbody>
     </table>
   </div>
+
+  <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
 
   <!-- Modal -->
   <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
@@ -184,6 +196,15 @@ import Layout from '../../layouts/Layout.astro'
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     let searchTimeout: ReturnType<typeof setTimeout> | null = null
+    const pageSize = 50
+    let currentPage = 1
+    let isInitialLoad = true
+
+    // Restore page from localStorage
+    try {
+      const savedPage = localStorage.getItem('filaman-page-manufacturers')
+      if (savedPage) currentPage = Math.max(1, parseInt(savedPage, 10) || 1)
+    } catch {}
 
     function setupSortableHeaders() {
       document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -282,6 +303,11 @@ import Layout from '../../layouts/Layout.astro'
         if (!mfRes.ok) throw new Error('Failed to fetch manufacturers')
         manufacturers = await mfRes.json().then(d => d.items)
         populateMaterialFilter(manufacturers)
+        if (isInitialLoad) {
+          isInitialLoad = false
+        } else {
+          currentPage = 1
+        }
         renderManufacturers()
       } catch (error) {
         console.error('Failed to load manufacturers:', error)
@@ -299,10 +325,81 @@ import Layout from '../../layouts/Layout.astro'
       return div.innerHTML
     }
 
+    function getPageNumbers(page: number, totalPages: number): (number | string)[] {
+      if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
+      const pages = new Set([1, totalPages])
+      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.add(i)
+      const sorted = [...pages].sort((a, b) => a - b)
+      const result: (number | string)[] = []
+      sorted.forEach((p, i) => {
+        if (i > 0 && p - sorted[i - 1] > 1) result.push('\u2026')
+        result.push(p)
+      })
+      return result
+    }
+
+    function buildPaginationHtml(total: number, page: number): string {
+      const totalPages = Math.ceil(total / pageSize)
+      if (totalPages <= 1) {
+        return `<div style="font-size: 0.8rem; color: var(--text-muted);">${t('manufacturers.manufacturerCount', { count: total })}</div>`
+      }
+      const pageNumbers = getPageNumbers(page, totalPages)
+      const pageItems = pageNumbers.map(p => {
+        if (p === '\u2026') return `<span class="page-ellipsis">\u2026</span>`
+        if (p === page) return `<span class="page-current">${p}</span>`
+        return `<a class="page-link" data-page="${p}">${p}</a>`
+      }).join('')
+      return `
+        <div style="font-size: 0.8rem; color: var(--text-muted);">
+          ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
+        </div>
+        <div class="pagination-pages">
+          <span style="color: var(--text-muted);">${t('common.page')}:</span>
+          ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
+          ${pageItems}
+          ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
+        </div>
+      `
+    }
+
+    function renderPagination(total: number, page: number) {
+      const totalPages = Math.ceil(total / pageSize)
+      const html = buildPaginationHtml(total, page)
+      document.getElementById('pagination-top')!.innerHTML = html
+      document.getElementById('pagination')!.innerHTML = html
+
+      document.querySelectorAll('.pagination-container').forEach(container => {
+        container.querySelectorAll('.page-link[data-page]').forEach(link => {
+          link.addEventListener('click', () => {
+            currentPage = parseInt((link as HTMLElement).dataset.page!, 10)
+            localStorage.setItem('filaman-page-manufacturers', String(currentPage))
+            renderManufacturers()
+          })
+        })
+        container.querySelector('.page-prev')?.addEventListener('click', () => {
+          if (page > 1) {
+            currentPage = page - 1
+            localStorage.setItem('filaman-page-manufacturers', String(currentPage))
+            renderManufacturers()
+          }
+        })
+        container.querySelector('.page-next')?.addEventListener('click', () => {
+          if (page < totalPages) {
+            currentPage = page + 1
+            localStorage.setItem('filaman-page-manufacturers', String(currentPage))
+            renderManufacturers()
+          }
+        })
+      })
+    }
     function renderManufacturers() {
       const tbody = document.getElementById('manufacturers-table')!
       const filtered = filterManufacturers(manufacturers)
       const sorted = sortManufacturers(filtered)
+
+      // Validate current page
+      const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
+      if (currentPage > totalPages) currentPage = totalPages
 
       if (sorted.length === 0) {
         const { search, material } = getFilterValues()
@@ -314,10 +411,15 @@ import Layout from '../../layouts/Layout.astro'
             </td>
           </tr>
         `
+        document.getElementById('pagination-top')!.innerHTML = ''
+        document.getElementById('pagination')!.innerHTML = ''
         return
       }
 
-      tbody.innerHTML = sorted.map(mf => `
+      // Paginate
+      const start = (currentPage - 1) * pageSize
+      const paged = sorted.slice(start, start + pageSize)
+      tbody.innerHTML = paged.map(mf => `
         <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
           <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
           <td>${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
@@ -398,6 +500,7 @@ import Layout from '../../layouts/Layout.astro'
           }
         })
       })
+      renderPagination(sorted.length, currentPage)
     }
 
     function openModal(mf: any = null) {
@@ -567,9 +670,17 @@ import Layout from '../../layouts/Layout.astro'
     // Wire up filter events
     document.getElementById('filter-search')?.addEventListener('input', () => {
       if (searchTimeout) clearTimeout(searchTimeout)
-      searchTimeout = setTimeout(() => renderManufacturers(), 250)
+      searchTimeout = setTimeout(() => {
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      }, 250)
     })
-    document.getElementById('filter-material')?.addEventListener('change', () => renderManufacturers())
+    document.getElementById('filter-material')?.addEventListener('change', () => {
+      currentPage = 1
+      localStorage.setItem('filaman-page-manufacturers', '1')
+      renderManufacturers()
+    })
 
     setupSortableHeaders()
     loadManufacturers()

@@ -5,11 +5,16 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Farbkreise in der Filament-Auswahl beim Anlegen neuer Spulen" }
+          { "type": "fix", "text": "PostgreSQL-Kompatibilität: Boolean-Standardwerte und JSON-Abfragen in Migrationen und Spoolman-Import korrigiert" },
+          { "type": "feature", "text": "Farbkreise in der Filament-Auswahl beim Anlegen neuer Spulen" },
+          { "type": "feature", "text": "Seitennavigation mit Seitenzahlen über und unter der Tabelle (Filamente, Spulen, Hersteller)" },
+          { "type": "feature", "text": "Aktuelle Seite wird gespeichert und beim Zurückkehren wiederhergestellt" }
         ],
         "en": [
-          { "type": "feature", "text": "Color circles in the filament dropdown when creating new spools" }
-        ]
+          { "type": "fix", "text": "PostgreSQL compatibility: Fixed boolean default values and JSON queries in migrations and Spoolman import" },
+          { "type": "feature", "text": "Color circles in the filament dropdown when creating new spools" },
+          { "type": "feature", "text": "Page navigation with page numbers above and below the table (Filaments, Spools, Manufacturers)" },
+          { "type": "feature", "text": "Current page is saved and restored when navigating back" }
       }
     },
     {

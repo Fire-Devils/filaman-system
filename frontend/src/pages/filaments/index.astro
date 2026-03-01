@@ -9,6 +9,16 @@ import Layout from '../../layouts/Layout.astro'
     .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
     .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
     .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
+  </style>
+  <style is:global>
+    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
+    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
+    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
+    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
+    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
+  </style>
+  <style>
     .filter-bar {
       display: flex;
       flex-wrap: wrap;
@@ -68,6 +78,8 @@ import Layout from '../../layouts/Layout.astro'
     </label>
   </div>
   
+  <div class="pagination-container" id="pagination-top" style="margin-bottom: 12px;"></div>
+
   <div class="fm-card" style="padding: 0;">
     <table class="fm-table">
       <thead>
@@ -89,7 +101,7 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="pagination" style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center;"></div>
+  <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
 
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
@@ -136,6 +148,15 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
     } catch { /* ignore invalid data */ }
+    // Restore page from localStorage
+    try {
+      const savedPage = localStorage.getItem('filaman-page-filaments')
+      if (savedPage) {
+        const p = parseInt(savedPage, 10)
+        if (p > 0) currentPage = p
+      }
+    } catch { /* ignore invalid data */ }
+    let isInitialLoad = true
     let filterManufacturerId: string | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
@@ -255,7 +276,14 @@ import Layout from '../../layouts/Layout.astro'
 
     function applyFiltersAndRender() {
       filteredFilaments = filterFilaments(allFilaments)
-      currentPage = 1
+      if (isInitialLoad) {
+        isInitialLoad = false
+        const totalPages = Math.ceil(filteredFilaments.length / pageSize) || 1
+        if (currentPage > totalPages) currentPage = 1
+      } else {
+        currentPage = 1
+      }
+      localStorage.setItem('filaman-page-filaments', String(currentPage))
       renderPage()
     }
 
@@ -265,8 +293,8 @@ import Layout from '../../layouts/Layout.astro'
 
       if (groupBy) {
         renderGroupedFilaments(sorted)
-        const container = document.getElementById('pagination')!
-        container.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: filteredFilaments.length })}</div>`
+        document.getElementById('pagination-top')!.innerHTML = ''
+        document.getElementById('pagination')!.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: filteredFilaments.length })}</div>`
       } else {
         const startIdx = (currentPage - 1) * pageSize
         const pageItems = sorted.slice(startIdx, startIdx + pageSize)
@@ -479,50 +507,71 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
-    function renderPagination(total: number, page: number) {
+    function getPageNumbers(page: number, totalPages: number): (number | string)[] {
+      if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
+      const pages = new Set([1, totalPages])
+      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.add(i)
+      const sorted = [...pages].sort((a, b) => a - b)
+      const result: (number | string)[] = []
+      sorted.forEach((p, i) => {
+        if (i > 0 && p - sorted[i - 1] > 1) result.push('\u2026')
+        result.push(p)
+      })
+      return result
+    }
+
+    function buildPaginationHtml(total: number, page: number): string {
       const totalPages = Math.ceil(total / pageSize)
-      const container = document.getElementById('pagination')!
-      
       if (totalPages <= 1) {
-        container.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: total })}</div>`
-        return
+        return `<div style="font-size: 0.8rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: total })}</div>`
       }
-      
-      container.innerHTML = `
-        <div style="font-size: 0.85rem; color: var(--text-muted);">
+      const pageNumbers = getPageNumbers(page, totalPages)
+      const pageItems = pageNumbers.map(p => {
+        if (p === '\u2026') return `<span class="page-ellipsis">\u2026</span>`
+        if (p === page) return `<span class="page-current">${p}</span>`
+        return `<a class="page-link" data-page="${p}">${p}</a>`
+      }).join('')
+      return `
+        <div style="font-size: 0.8rem; color: var(--text-muted);">
           ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
         </div>
-        <div style="display: flex; gap: 8px;">
-          <button 
-            id="prev-btn"
-            class="fm-btn fm-btn-outline"
-            style="padding: 6px 14px; font-size: 0.85rem;"
-            ${page <= 1 ? 'disabled' : ''}
-          >
-            ${t('common.previous')}
-          </button>
-          <button 
-            id="next-btn"
-            class="fm-btn fm-btn-outline"
-            style="padding: 6px 14px; font-size: 0.85rem;"
-            ${page >= totalPages ? 'disabled' : ''}
-          >
-            ${t('common.next')}
-          </button>
+        <div class="pagination-pages">
+          <span style="color: var(--text-muted);">${t('common.page')}:</span>
+          ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
+          ${pageItems}
+          ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
         </div>
       `
-      
-      document.getElementById('prev-btn')?.addEventListener('click', () => {
-        if (page > 1) {
-          currentPage = page - 1
-          renderPage()
-        }
-      })
-      document.getElementById('next-btn')?.addEventListener('click', () => {
-        if (page < totalPages) {
-          currentPage = page + 1
-          renderPage()
-        }
+    }
+
+    function renderPagination(total: number, page: number) {
+      const totalPages = Math.ceil(total / pageSize)
+      const html = buildPaginationHtml(total, page)
+      document.getElementById('pagination-top')!.innerHTML = html
+      document.getElementById('pagination')!.innerHTML = html
+
+      document.querySelectorAll('.pagination-container').forEach(container => {
+        container.querySelectorAll('.page-link[data-page]').forEach(link => {
+          link.addEventListener('click', () => {
+            currentPage = parseInt((link as HTMLElement).dataset.page!, 10)
+            localStorage.setItem('filaman-page-filaments', String(currentPage))
+            renderPage()
+          })
+        })
+        container.querySelector('.page-prev')?.addEventListener('click', () => {
+          if (page > 1) {
+            currentPage = page - 1
+            localStorage.setItem('filaman-page-filaments', String(currentPage))
+            renderPage()
+          }
+        })
+        container.querySelector('.page-next')?.addEventListener('click', () => {
+          if (page < totalPages) {
+            currentPage = page + 1
+            localStorage.setItem('filaman-page-filaments', String(currentPage))
+            renderPage()
+          }
+        })
       })
     }
 
