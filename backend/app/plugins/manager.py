@@ -441,11 +441,16 @@ class PluginManager:
                     if field:
                         # Update options/label/field_type if changed (plugin may have been updated)
                         changed = False
-                        if field.options != fdef["options"]:
-                            logger.info(f"Options changed for {target_type}/{fdef['key']}: DB has {len(field.options or [])} entries, new has {len(fdef['options'] or [])} entries")
-                            field.options = fdef["options"]
-                            flag_modified(field, "options")
-                            changed = True
+                        if fdef["options"] is not None:
+                            # JSON-safe comparison: always force-update options from options_file
+                            # to avoid subtle SQLAlchemy JSON deserialization mismatches
+                            db_options_json = json.dumps(field.options or [], ensure_ascii=False, sort_keys=True)
+                            new_options_json = json.dumps(fdef["options"], ensure_ascii=False, sort_keys=True)
+                            if db_options_json != new_options_json:
+                                logger.info(f"Updating options for {target_type}/{fdef['key']} ({len(fdef['options'])} entries)")
+                                field.options = fdef["options"]
+                                flag_modified(field, "options")
+                                changed = True
                         if field.label != fdef["label"]:
                             field.label = fdef["label"]
                             changed = True
