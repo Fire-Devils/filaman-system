@@ -382,7 +382,7 @@ class PluginManager:
                             continue
                         name = info.get("name", idx) if isinstance(info, dict) else str(info)
                         options.append(f"{idx} \u2014 {name}")
-                    options.sort()
+                    options.sort(key=lambda x: x.split(" \u2014 ", 1)[1] if " \u2014 " in x else x)
                     return options
                 except (OSError, json.JSONDecodeError):
                     continue
