@@ -9,7 +9,7 @@ from typing import Any
 from pathlib import Path
 import time
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select
@@ -348,6 +348,7 @@ async def list_available_plugins(
     status_code=status.HTTP_201_CREATED,
 )
 async def install_from_registry(
+    request: Request,
     body: RegistryInstallRequest,
     db: DBSession,
     principal=RequirePermission("admin:plugins_manage"),
@@ -432,6 +433,11 @@ async def install_from_registry(
         for p in result.scalars().all():
             await plugin_manager.start_printer(p)
 
+    # Import-Plugin Router dynamisch mounten (nur bei Neuinstallation)
+    if not is_upgrade and plugin.plugin_type == "import":
+        from app.api.v1.router import mount_plugin_router_on_app
+        mount_plugin_router_on_app(request.app, plugin.plugin_key)
+
     action = "aktualisiert" if is_upgrade else "installiert"
     return PluginInstallResponse(
         message=f"Plugin '{plugin.name}' v{plugin.version} erfolgreich {action}",
@@ -443,6 +449,7 @@ async def install_from_registry(
     status_code=status.HTTP_201_CREATED,
 )
 async def install_plugin(
+    request: Request,
     db: DBSession,
     file: UploadFile = File(...),
     principal=RequirePermission("admin:plugins_manage"),
@@ -524,6 +531,11 @@ async def install_plugin(
         )
         for p in result.scalars().all():
             await plugin_manager.start_printer(p)
+
+    # Import-Plugin Router dynamisch mounten (nur bei Neuinstallation)
+    if not is_upgrade and plugin.plugin_type == "import":
+        from app.api.v1.router import mount_plugin_router_on_app
+        mount_plugin_router_on_app(request.app, plugin.plugin_key)
 
     action = "aktualisiert" if is_upgrade else "installiert"
     return PluginInstallResponse(

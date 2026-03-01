@@ -40,6 +40,65 @@ api_router.include_router(oidc_admin_router)
 api_router.include_router(oidc_public_router)
 
 
+
+def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
+    """Dynamisch einen Plugin-Router auf die laufende App mounten.
+
+    Wird nach Plugin-Installation aufgerufen, damit Import-Plugins
+    sofort verfuegbar sind ohne Server-Neustart.
+    Returns True bei Erfolg.
+    """
+    import importlib
+    import json
+    import logging
+    import sys
+
+    from app.services.plugin_service import PLUGINS_DIR
+
+    _logger = logging.getLogger(__name__)
+
+    plugin_dir = PLUGINS_DIR / plugin_key
+    manifest_path = plugin_dir / "plugin.json"
+    router_path = plugin_dir / "router.py"
+
+    if not manifest_path.exists() or not router_path.exists():
+        return False
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("plugin_type") != "import":
+            return False
+
+        if str(PLUGINS_DIR) not in sys.path:
+            sys.path.insert(0, str(PLUGINS_DIR))
+
+        # Module-Cache invalidieren fuer frischen Import
+        mod_name = f"{plugin_key}.router"
+        if mod_name in sys.modules:
+            del sys.modules[mod_name]
+
+        module = importlib.import_module(mod_name)
+        plugin_router = getattr(module, "router", None)
+        if plugin_router is None:
+            _logger.warning(
+                "Plugin '%s' hat router.py aber kein 'router' Attribut",
+                plugin_key,
+            )
+            return False
+
+        app.include_router(plugin_router, prefix="/api/v1")
+        _logger.info("Plugin-Router '%s' dynamisch auf App gemountet", plugin_key)
+        return True
+
+    except Exception as exc:
+        _logger.warning(
+            "Plugin-Router '%s' konnte nicht dynamisch geladen werden: %s",
+            plugin_key,
+            exc,
+        )
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Auto-discovery: mount routers from user-installed import plugins
 # ---------------------------------------------------------------------------
