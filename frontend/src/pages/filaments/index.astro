@@ -212,6 +212,7 @@ import Layout from '../../layouts/Layout.astro'
 
     function getSortValue(item: any, key: string): any {
       if (key === 'manufacturer') return item.manufacturer?.name || ''
+      if (key === 'type') return item.material_type || ''
       if (key === 'colors') return item.colors?.length || 0
       return item[key]
     }
