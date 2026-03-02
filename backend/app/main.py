@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
-from app.api.v1.router import api_router
+from app.api.v1.router import api_router, mount_deferred_plugin_routers
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
@@ -119,6 +119,7 @@ async def add_cache_control_header(request, call_next):
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
 app.include_router(api_router)
+mount_deferred_plugin_routers(app)
 
 
 # --- Plugin Page Serving (works in both debug and production) ---

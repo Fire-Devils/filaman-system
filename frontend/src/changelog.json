@@ -5,10 +5,15 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "Filamentübersicht: Sortierung nach Typ funktioniert wieder" }
+          { "type": "fix", "text": "Filamentübersicht: Sortierung nach Typ funktioniert wieder" },
+          { "type": "feature", "text": "Neues SpoolmanAPI-Plugin: FilaMan kann jetzt als Spoolman-Ersatz genutzt werden – externe Tools wie Moonraker oder OctoPrint verbinden sich direkt" },
+          { "type": "feature", "text": "SpoolmanAPI-Plugin: IP-basierte Zugriffskontrolle für die Spoolman-Schnittstelle konfigurierbar" }
         ],
         "en": [
-          { "type": "fix", "text": "Filament overview: Sorting by type works again" }
+          { "type": "fix", "text": "Filament overview: Sorting by type works again" },
+          { "type": "feature", "text": "New SpoolmanAPI plugin: FilaMan can now be used as a drop-in Spoolman replacement – external tools like Moonraker or OctoPrint connect directly" },
+          { "type": "feature", "text": "SpoolmanAPI plugin: Configurable IP-based access control for the Spoolman interface" }
+        ]
       }
     },
     {
@@ -22,6 +27,7 @@
         "en": [
           { "type": "feature", "text": "Filaments & Spools: Filter selections (dropdowns and grouping) are saved in the browser and restored on next visit" },
           { "type": "fix", "text": "Filament overview: Sorting by type works again" }
+        ]
       }
     },
     {

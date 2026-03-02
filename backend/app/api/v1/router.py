@@ -39,12 +39,15 @@ api_router.include_router(events_router)
 api_router.include_router(oidc_admin_router)
 api_router.include_router(oidc_public_router)
 
+# Plugins mit eigenem mount_prefix werden hier gesammelt und spaeter
+# von mount_deferred_plugin_routers() direkt auf die FastAPI-App gemountet.
+_deferred_plugin_routers: list[tuple] = []
 
 
 def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
     """Dynamisch einen Plugin-Router auf die laufende App mounten.
 
-    Wird nach Plugin-Installation aufgerufen, damit Import-Plugins
+    Wird nach Plugin-Installation aufgerufen, damit Import-/Integration-Plugins
     sofort verfuegbar sind ohne Server-Neustart.
     Returns True bei Erfolg.
     """
@@ -71,8 +74,10 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("plugin_type") != "import":
+        if manifest.get("plugin_type") not in ("import", "integration"):
             return False
+
+        mount_prefix = manifest.get("mount_prefix")
 
         if str(PLUGINS_DIR) not in sys.path:
             sys.path.insert(0, str(PLUGINS_DIR))
@@ -94,15 +99,38 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
             )
             return False
 
+        # Mount-Prefix bestimmen: eigener mount_prefix oder Standard /api/v1
+        router_mount_prefix = mount_prefix if mount_prefix else "/api/v1"
+
         # Alte Routes dieses Plugins entfernen (bei Update/Reinstall),
         # damit die neuen nicht von verwaisten alten Routen ueberschattet werden.
-        full_prefix = f"/api/v1{plugin_router.prefix}"
-        app.router.routes = [
-            route for route in app.router.routes
-            if not (hasattr(route, 'path') and route.path.startswith(full_prefix))
-        ]
+        if plugin_router.prefix:
+            full_prefix = f"{router_mount_prefix}{plugin_router.prefix}"
+            app.router.routes = [
+                route for route in app.router.routes
+                if not (hasattr(route, 'path') and route.path.startswith(full_prefix))
+            ]
+        elif mount_prefix:
+            # Plugin hat eigenen mount_prefix — alte Routen unter diesem Prefix entfernen
+            app.router.routes = [
+                route for route in app.router.routes
+                if not (hasattr(route, 'path') and route.path.startswith(mount_prefix))
+            ]
 
-        app.include_router(plugin_router, prefix="/api/v1")
+        app.include_router(plugin_router, prefix=router_mount_prefix)
+
+        # Optional: admin_router fuer Plugin-spezifische Admin-Endpoints.
+        # Admin-Router wird immer unter /api/v1 gemountet (FilaMan Admin-Bereich).
+        plugin_admin_router = getattr(module, "admin_router", None)
+        if plugin_admin_router is not None:
+            if plugin_admin_router.prefix:
+                admin_full_prefix = f"/api/v1{plugin_admin_router.prefix}"
+                app.router.routes = [
+                    route for route in app.router.routes
+                    if not (hasattr(route, 'path') and route.path.startswith(admin_full_prefix))
+                ]
+            app.include_router(plugin_admin_router, prefix="/api/v1")
+            _logger.info("Plugin-Admin-Router '%s' dynamisch auf App gemountet", plugin_key)
 
         # Catch-all StaticFiles-Mount (name="static") muss am Ende der
         # Route-Liste bleiben, sonst schattiert er die neuen API-Routen.
@@ -112,15 +140,39 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
                 routes.append(routes.pop(i))
                 break
 
-        _logger.info("Plugin-Router '%s' dynamisch auf App gemountet", plugin_key)
+        _logger.info(
+            "Plugin-Router '%s' dynamisch auf App gemountet (prefix=%s)",
+            plugin_key, router_mount_prefix,
+        )
         return True
 
     except Exception:
         _logger.exception("Plugin-Router '%s' konnte nicht dynamisch geladen werden", plugin_key)
         return False
 
+
+def mount_deferred_plugin_routers(app) -> None:
+    """Plugin-Router mit eigenem mount_prefix auf die App mounten.
+
+    Muss aus main.py nach App-Erstellung aufgerufen werden, da diese Plugins
+    direkt auf der App gemountet werden (nicht auf api_router).
+    """
+    import logging
+
+    _logger = logging.getLogger(__name__)
+
+    for plugin_key, plugin_router, mount_prefix, plugin_admin_router in _deferred_plugin_routers:
+        app.include_router(plugin_router, prefix=mount_prefix)
+        _logger.info("Plugin-Router '%s' unter '%s' gemountet", plugin_key, mount_prefix)
+
+        if plugin_admin_router is not None:
+            # Admin-Router bleibt unter /api/v1 (FilaMan Admin-Bereich)
+            app.include_router(plugin_admin_router, prefix="/api/v1")
+            _logger.info("Plugin-Admin-Router '%s' unter '/api/v1' gemountet", plugin_key)
+
+
 # ---------------------------------------------------------------------------
-# Auto-discovery: mount routers from user-installed import plugins
+# Auto-discovery: mount routers from user-installed import/integration plugins
 # ---------------------------------------------------------------------------
 def _mount_plugin_routers() -> None:
     import importlib
@@ -151,10 +203,12 @@ def _mount_plugin_routers() -> None:
 
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("plugin_type") != "import":
+            if manifest.get("plugin_type") not in ("import", "integration"):
                 continue
 
             plugin_key = manifest.get("plugin_key", plugin_dir.name)
+            mount_prefix = manifest.get("mount_prefix")
+
             module = importlib.import_module(f"{plugin_key}.router")
             plugin_router = getattr(module, "router", None)
             if plugin_router is None:
@@ -164,8 +218,24 @@ def _mount_plugin_routers() -> None:
                 )
                 continue
 
-            api_router.include_router(plugin_router)
-            _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
+            plugin_admin_router = getattr(module, "admin_router", None)
+
+            if mount_prefix:
+                # Plugin definiert eigenen Mount-Punkt — deferred mount auf app
+                _deferred_plugin_routers.append(
+                    (plugin_key, plugin_router, mount_prefix, plugin_admin_router)
+                )
+                _logger.info(
+                    "Plugin-Router '%s' fuer deferred mount unter '%s' vorgemerkt",
+                    plugin_key, mount_prefix,
+                )
+            else:
+                api_router.include_router(plugin_router)
+                _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
+
+                if plugin_admin_router is not None:
+                    api_router.include_router(plugin_admin_router)
+                    _logger.info("Plugin-Admin-Router '%s' erfolgreich gemountet", plugin_key)
 
         except Exception as exc:
             _logger.warning(
