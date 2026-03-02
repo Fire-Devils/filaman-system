@@ -156,6 +156,12 @@ import Layout from '../../layouts/Layout.astro'
         if (p > 0) currentPage = p
       }
     } catch { /* ignore invalid data */ }
+    // Restore filter state from localStorage
+    let savedFilterState: { manufacturer?: string, type?: string, color?: string, group?: boolean } | null = null
+    try {
+      const sf = localStorage.getItem('filaman-filters-filaments')
+      if (sf) savedFilterState = JSON.parse(sf)
+    } catch { /* ignore invalid data */ }
     let isInitialLoad = true
     let filterManufacturerId: string | null = null
 
@@ -284,6 +290,11 @@ import Layout from '../../layouts/Layout.astro'
         currentPage = 1
       }
       localStorage.setItem('filaman-page-filaments', String(currentPage))
+      // Save filter state to localStorage
+      const fv = getFilterValues()
+      localStorage.setItem('filaman-filters-filaments', JSON.stringify({
+        manufacturer: fv.manufacturerId, type: fv.type, color: fv.color, group: fv.groupBy
+      }))
       renderPage()
     }
 
@@ -320,9 +331,11 @@ import Layout from '../../layouts/Layout.astro'
         mfSelect.appendChild(opt)
       })
 
-      // If URL has manufacturer_id, pre-select
+      // If URL has manufacturer_id, pre-select; otherwise restore from localStorage
       if (filterManufacturerId) {
         mfSelect.value = filterManufacturerId
+      } else if (savedFilterState?.manufacturer) {
+        mfSelect.value = savedFilterState.manufacturer
       }
 
       // Types
@@ -336,6 +349,8 @@ import Layout from '../../layouts/Layout.astro'
         opt.textContent = type
         typeSelect.appendChild(opt)
       })
+      // Restore type filter from localStorage
+      if (savedFilterState?.type) typeSelect.value = savedFilterState.type
 
       // Colors
       const colorSelect = document.getElementById('filter-color') as HTMLSelectElement
@@ -353,6 +368,8 @@ import Layout from '../../layouts/Layout.astro'
         opt.textContent = name
         colorSelect.appendChild(opt)
       })
+      // Restore color filter from localStorage
+      if (savedFilterState?.color) colorSelect.value = savedFilterState.color
     }
     
     async function loadFilaments() {
@@ -587,6 +604,10 @@ import Layout from '../../layouts/Layout.astro'
     
     setupSortableHeaders()
     if (sortKey && sortDirection) updateSortIndicators()
+    // Restore group checkbox from saved state
+    if (savedFilterState?.group) {
+      (document.getElementById('filter-group') as HTMLInputElement).checked = true
+    }
     loadFilaments()
 
     // ── Bulk Selection & Actions ──────────────────────────────

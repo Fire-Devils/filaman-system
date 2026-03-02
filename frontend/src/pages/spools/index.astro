@@ -199,6 +199,12 @@ import Layout from '../../layouts/Layout.astro'
         if (p > 0) currentPage = p
       }
     } catch { /* ignore invalid data */ }
+    // Restore filter state from localStorage
+    let savedFilterState: { status?: string, location?: string, manufacturer?: string, material?: string, group?: boolean } | null = null
+    try {
+      const sf = localStorage.getItem('filaman-filters-spools')
+      if (sf) savedFilterState = JSON.parse(sf)
+    } catch { /* ignore invalid data */ }
     let isInitialLoad = true
     let filterManufacturerId: string | null = null
     let filterLocationId: string | null = null
@@ -344,6 +350,11 @@ import Layout from '../../layouts/Layout.astro'
         currentPage = 1
       }
       localStorage.setItem('filaman-page-spools', String(currentPage))
+      // Save filter state to localStorage
+      const fv = getFilterValues()
+      localStorage.setItem('filaman-filters-spools', JSON.stringify({
+        status: fv.statusId, location: fv.locationId, manufacturer: fv.manufacturerId, material: fv.material, group: fv.groupBy
+      }))
       renderPage()
     }
 
@@ -379,6 +390,7 @@ import Layout from '../../layouts/Layout.astro'
         mfSelect.appendChild(opt)
       })
       if (filterManufacturerId) mfSelect.value = filterManufacturerId
+      else if (savedFilterState?.manufacturer) mfSelect.value = savedFilterState.manufacturer
 
       const matSelect = document.getElementById('filter-material') as HTMLSelectElement
       const materials = new Set<string>()
@@ -391,6 +403,7 @@ import Layout from '../../layouts/Layout.astro'
         matSelect.appendChild(opt)
       })
       if (filterMaterial) matSelect.value = filterMaterial
+      else if (savedFilterState?.material) matSelect.value = savedFilterState.material
     }
     
     async function loadFilters() {
@@ -411,6 +424,8 @@ import Layout from '../../layouts/Layout.astro'
             opt.textContent = t(i18nKey) || s.label
             select.appendChild(opt)
           })
+          // Restore status filter from localStorage
+          if (savedFilterState?.status) select.value = savedFilterState.status
         }
         
         if (locationsData) {
@@ -423,6 +438,7 @@ import Layout from '../../layouts/Layout.astro'
             select.appendChild(opt)
           })
           if (filterLocationId) select.value = filterLocationId
+          else if (savedFilterState?.location) select.value = savedFilterState.location
         }
         
         if (filamentsData) {
@@ -740,6 +756,10 @@ import Layout from '../../layouts/Layout.astro'
     
     setupSortableHeaders()
     if (sortKey && sortDirection) updateSortIndicators()
+    // Restore group checkbox from saved state
+    if (savedFilterState?.group) {
+      (document.getElementById('filter-group') as HTMLInputElement).checked = true
+    }
     Promise.all([loadFilters(), loadActiveDevices()])
       .then(() => loadSpools())
 
