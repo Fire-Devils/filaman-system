@@ -130,7 +130,13 @@ import Layout from '../../layouts/Layout.astro'
     await initI18n()
 
     let currentPage = 1
-    const pageSize = 50
+    const allowedPageSizes = [25, 50, 100, 150, 200]
+    let pageSize = (() => {
+      try {
+        const saved = parseInt(localStorage.getItem('filaman-pagesize-filaments') || '50', 10)
+        return allowedPageSizes.includes(saved) ? saved : 50
+      } catch { return 50 }
+    })()
     let allFilaments: any[] = []
     let filteredFilaments: any[] = []
     let sortKey: string | null = null
@@ -549,6 +555,7 @@ import Layout from '../../layouts/Layout.astro'
         if (p === page) return `<span class="page-current">${p}</span>`
         return `<a class="page-link" data-page="${p}">${p}</a>`
       }).join('')
+      const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
       return `
         <div style="font-size: 0.8rem; color: var(--text-muted);">
           ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
@@ -558,6 +565,10 @@ import Layout from '../../layouts/Layout.astro'
           ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
           ${pageItems}
           ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
+        </div>
+        <div class="pagination-pages">
+          <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
+          ${pageSizeItems}
         </div>
       `
     }
@@ -589,6 +600,18 @@ import Layout from '../../layouts/Layout.astro'
             localStorage.setItem('filaman-page-filaments', String(currentPage))
             renderPage()
           }
+        })
+        container.querySelectorAll('.page-size-link').forEach(link => {
+          link.addEventListener('click', () => {
+            const newSize = parseInt((link as HTMLElement).dataset.size!, 10)
+            if (allowedPageSizes.includes(newSize)) {
+              pageSize = newSize
+              localStorage.setItem('filaman-pagesize-filaments', String(newSize))
+              currentPage = 1
+              localStorage.setItem('filaman-page-filaments', '1')
+              renderPage()
+            }
+          })
         })
       })
     }

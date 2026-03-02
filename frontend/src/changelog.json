@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Hersteller-, Filament- und Spulen-Übersicht: Auswahl der Einträge pro Seite (25, 50, 100, 150, 200) mit Speicherung im Browser" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Manufacturers, filaments and spools list: Configurable page size (25, 50, 100, 150, 200) with browser persistence" }
+        ]
+      }
+    },
+    {
       "version": "1.0.14",
       "date": "",
       "changes": {

@@ -66,7 +66,8 @@
     "spoolDefaultSettings": "Spool-Standardwerte",
     "on": "An",
     "off": "Aus",
-    "duplicate": "Duplizieren"
+    "duplicate": "Duplizieren",
+    "perPage": "pro Seite"
   },
   "rfid": {
     "writeTag": "RFID-Tag schreiben",
