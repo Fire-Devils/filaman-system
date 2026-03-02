@@ -5,11 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Filamente & Spulen: Filter-Auswahl (Dropdowns und Gruppierung) wird im Browser gespeichert und beim nächsten Besuch wiederhergestellt" }
+          { "type": "feature", "text": "Filamente & Spulen: Filter-Auswahl (Dropdowns und Gruppierung) wird im Browser gespeichert und beim nächsten Besuch wiederhergestellt" },
+          { "type": "fix", "text": "Filamentübersicht: Sortierung nach Typ funktioniert wieder" }
         ],
         "en": [
-          { "type": "feature", "text": "Filaments & Spools: Filter selections (dropdowns and grouping) are saved in the browser and restored on next visit" }
-        ]
+          { "type": "feature", "text": "Filaments & Spools: Filter selections (dropdowns and grouping) are saved in the browser and restored on next visit" },
+          { "type": "fix", "text": "Filament overview: Sorting by type works again" }
       }
     },
     {
