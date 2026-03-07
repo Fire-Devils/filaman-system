@@ -491,15 +491,37 @@ const { id } = Astro.params
         height: qrPx,
         colorDark: "#000000",
         colorLight: "#ffffff",
-        correctLevel: (window as any).QRCode.CorrectLevel.M
+        correctLevel: (window as any).QRCode.CorrectLevel.H
       })
 
       qrContainer.style.width = qrSize + 'mm'
       qrContainer.style.height = qrSize + 'mm'
 
-      // Convert canvas to img for cross-browser print compatibility
+      // Draw "FilaMan" text in center of QR code, then convert to img for print
       const canvas = qrContainer.querySelector('canvas')
       if (canvas) {
+        const ctx = (canvas as HTMLCanvasElement).getContext('2d')
+        if (ctx) {
+          const fontSize = Math.round(qrPx * 0.13)
+          ctx.font = `700 ${fontSize}px "Space Grotesk", sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          const text = 'FilaMan'
+          const metrics = ctx.measureText(text)
+          const tw = metrics.width
+          const th = fontSize
+          const pad = Math.round(fontSize * 0.3)
+          const cx = qrPx / 2, cy = qrPx / 2
+
+          // White background behind text
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(cx - tw / 2 - pad, cy - th / 2 - pad, tw + pad * 2, th + pad * 2)
+
+          // Draw text
+          ctx.fillStyle = '#000000'
+          ctx.fillText(text, cx, cy)
+        }
+
         const dataUrl = (canvas as HTMLCanvasElement).toDataURL('image/png')
         qrContainer.innerHTML = ''
         const img = document.createElement('img')
