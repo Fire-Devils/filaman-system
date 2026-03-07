@@ -173,53 +173,6 @@ const { id } = Astro.params
     color: black;
   }
 
-  @media print {
-    .print-sidebar,
-    .fm-sidebar,
-    #fm-confirm-overlay {
-      display: none !important;
-    }
-
-    .print-page {
-      margin: 0 !important;
-      height: auto !important;
-      display: block !important;
-    }
-
-    .preview-container {
-      padding: 0 !important;
-      margin: 0 !important;
-      display: block !important;
-      overflow: visible !important;
-      background: white !important;
-    }
-
-    .label-preview {
-      box-shadow: none !important;
-      border: none !important;
-      position: absolute !important;
-      left: 0 !important;
-      top: 0 !important;
-      display: flex !important;
-      background: white !important;
-      color: black !important;
-      width: 60mm !important;
-      height: 25mm !important;
-      min-width: 60mm !important;
-      min-height: 25mm !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    .label-preview div,
-    .label-preview span {
-      color: black !important;
-    }
-
-    @page {
-      margin: 0;
-    }
-  }
 
   .fm-label {
     font-size: 0.8rem;
@@ -323,6 +276,97 @@ const { id } = Astro.params
   }
 </style>
 
+<style is:global>
+  @media print {
+    /* Reset page */
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    /* Hide Layout elements */
+    .fm-sidebar,
+    #fm-confirm-overlay {
+      display: none !important;
+    }
+
+    /* Reset Layout grid to block */
+    .fm-page {
+      display: block !important;
+      visibility: visible !important;
+      background: white !important;
+      min-height: 0 !important;
+      height: auto !important;
+    }
+
+    .fm-page > main {
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    /* Hide print settings sidebar */
+    .print-sidebar {
+      display: none !important;
+    }
+
+    /* Reset print page containers */
+    .print-page {
+      margin: 0 !important;
+      height: auto !important;
+      display: block !important;
+    }
+
+    .preview-container {
+      padding: 0 !important;
+      margin: 0 !important;
+      display: block !important;
+      overflow: visible !important;
+      background: white !important;
+    }
+
+    /* The label */
+    .label-preview {
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 3mm !important;
+      background: white !important;
+      color: black !important;
+      margin: 0 !important;
+      padding: 1.5mm !important;
+      overflow: hidden !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      /* Dimensions set dynamically via JS #page-style tag */
+    }
+
+    .label-preview div,
+    .label-preview span {
+      color: black !important;
+    }
+
+    #label-qr-container {
+      flex-shrink: 0 !important;
+    }
+
+    #label-qr-container img {
+      display: block !important;
+    }
+
+    @page {
+      /* margin set dynamically via JS #page-style tag */
+    }
+  }
+</style>
+
 <script>
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
 
@@ -416,10 +460,43 @@ const { id } = Astro.params
 
       qrContainer.style.width = qrSize + 'mm'
       qrContainer.style.height = qrSize + 'mm'
+
+      // Convert canvas to img for cross-browser print compatibility
+      const canvas = qrContainer.querySelector('canvas')
+      if (canvas) {
+        const dataUrl = (canvas as HTMLCanvasElement).toDataURL('image/png')
+        qrContainer.innerHTML = ''
+        const img = document.createElement('img')
+        img.src = dataUrl
+        img.style.width = '100%'
+        img.style.height = '100%'
+        img.style.display = 'block'
+        qrContainer.appendChild(img)
+      }
+
+      qrContainer.style.flexShrink = '0'
     }
 
+    const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
     const style = document.createElement('style')
-    style.innerHTML = `@page { size: ${w}mm ${h}mm; margin: 0; }`
+    // Safari doesn't support @page { size } — use default page margins so label stays in printable area
+    // Chrome/Edge support @page { size } — set exact label dimensions with no margin
+    const pageRule = isSafari
+      ? ''
+      : `@page { size: ${w}mm ${h}mm; margin: 0; }`
+    style.innerHTML = `
+      ${pageRule}
+      @media print {
+        .label-preview {
+          width: ${w}mm !important;
+          height: ${h}mm !important;
+          min-width: ${w}mm !important;
+          min-height: ${h}mm !important;
+          max-width: ${w}mm !important;
+          max-height: ${h}mm !important;
+        }
+      }
+    `
     const oldStyle = document.querySelector('style#page-style')
     if (oldStyle) oldStyle.remove()
     style.id = 'page-style'
