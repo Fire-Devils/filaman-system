@@ -7,13 +7,13 @@
         "de": [
           { "type": "feature", "text": "Hersteller-, Filament- und Spulen-Übersicht: Auswahl der Einträge pro Seite (25, 50, 100, 150, 200) mit Speicherung im Browser" },
           { "type": "fix", "text": "Label-Druck: Druckvorschau zeigt jetzt nur noch das Label in korrekter Größe (Chrome, Safari, Firefox)" },
-          { "type": "feature", "text": "Label-Druck: Einstellungen (Größe, Schriftgröße, QR-Größe, Anzeige-Optionen) werden im Browser gespeichert" }
+          { "type": "feature", "text": "Label-Druck: Einstellungen (Größe, Schriftgröße, QR-Größe, Anzeige-Optionen) werden im Browser gespeichert" },
           { "type": "fix", "text": "PostgreSQL: Datenbank-Migration schlug bei frischer Installation fehl (Tabelle printer_ams_units wurde vor der Timezone-Migration entfernt)" }
         ],
         "en": [
           { "type": "feature", "text": "Manufacturers, filaments and spools list: Configurable page size (25, 50, 100, 150, 200) with browser persistence" },
           { "type": "fix", "text": "Label printing: Print preview now shows only the label in correct size (Chrome, Safari, Firefox)" },
-          { "type": "feature", "text": "Label printing: Settings (size, font size, QR size, display options) are saved in the browser" }
+          { "type": "feature", "text": "Label printing: Settings (size, font size, QR size, display options) are saved in the browser" },
           { "type": "fix", "text": "PostgreSQL: Database migration failed on fresh install (printer_ams_units table was removed before timezone migration)" }
         ]
       }
