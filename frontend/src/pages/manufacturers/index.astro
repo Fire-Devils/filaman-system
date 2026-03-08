@@ -347,7 +347,15 @@ import Layout from '../../layouts/Layout.astro'
     function buildPaginationHtml(total: number, page: number): string {
       const totalPages = Math.ceil(total / pageSize)
       if (totalPages <= 1) {
-        return `<div style="font-size: 0.8rem; color: var(--text-muted);">${t('manufacturers.manufacturerCount', { count: total })}</div>`
+        const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
+        return `
+          <div style="font-size: 0.8rem; color: var(--text-muted);">${t('manufacturers.manufacturerCount', { count: total })}</div>
+          <div></div>
+          <div class="pagination-pages">
+            <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
+            ${pageSizeItems}
+          </div>
+        `
       }
       const pageNumbers = getPageNumbers(page, totalPages)
       const pageItems = pageNumbers.map(p => {
