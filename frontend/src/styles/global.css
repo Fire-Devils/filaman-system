@@ -822,39 +822,37 @@ html.sidebar-collapsed .fm-logo-text {
   display: none;
 }
 
+/* Sidebar mobile backdrop */
+.fm-sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  transition: opacity 180ms ease;
+}
+
 /* Media query for mobile */
 @media (max-width: 768px) {
-  .fm-sidebar-toggle {
-    display: none !important;
-  }
-  
-  /* On small screens, we always want the collapsed look unless we implement a mobile drawer */
+  /* Grid always uses collapsed column on mobile */
   .fm-page {
     grid-template-columns: var(--sidebar-collapsed-width) 1fr;
   }
-  
-  .fm-sidebar {
-    padding: 24px 12px;
-  }
-  
-  .fm-nav-item {
-    justify-content: center;
-    padding: 10px 0;
-  }
-  
-  .fm-nav-item span:not(.fm-nav-icon) {
-    display: none;
-  }
-  
-  .fm-logo-container {
-    justify-content: center;
-  }
-  
-  .fm-logo-text {
-    display: none;
+
+  /* Expanded sidebar becomes fixed overlay on mobile */
+  html:not(.sidebar-collapsed) .fm-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    z-index: 1000;
+    box-shadow: var(--shadow-lg);
+    background: var(--bg-elevated);
   }
 
-  .hide-collapsed {
-    display: none !important;
+  /* Show backdrop when sidebar is expanded on mobile */
+  html:not(.sidebar-collapsed) .fm-sidebar-backdrop {
+    display: block;
   }
 }

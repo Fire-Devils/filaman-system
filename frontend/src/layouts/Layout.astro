@@ -31,7 +31,7 @@ const { title } = Astro.props
         // Sidebar state
         var s = localStorage.getItem('sidebar-collapsed');
         var isMobile = window.innerWidth <= 768;
-        if (s === 'true' || (s === null && isMobile)) {
+        if (s === 'true' || isMobile) {
           document.documentElement.classList.add('sidebar-collapsed');
         }
       })();
@@ -146,6 +146,7 @@ const { title } = Astro.props
           </div>
         </div>
       </aside>
+      <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
       <main style="padding: 32px; overflow-y: auto;">
         <slot />
@@ -383,13 +384,22 @@ const { title } = Astro.props
           page.classList.remove('collapsed')
           html.classList.remove('sidebar-collapsed')
         }
-        localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
+        // Only persist sidebar state on desktop
+        if (window.innerWidth > 768) {
+          localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
+        }
       }
 
       // Update sidebar state
       sidebarToggle.addEventListener('click', () => {
         const isCollapsed = page.classList.contains('collapsed')
         setSidebarCollapsed(!isCollapsed)
+      })
+
+      // Close sidebar on mobile when clicking backdrop
+      const sidebarBackdrop = document.getElementById('sidebar-backdrop')!
+      sidebarBackdrop.addEventListener('click', () => {
+        setSidebarCollapsed(true)
       })
     </script>
   </body>
