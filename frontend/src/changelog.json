@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "Sortierung auf der Herstellerübersicht jetzt persistent" }
+          { "type": "fix", "text": "Sortierung auf der Herstellerübersicht jetzt persistent" },
+          { "type": "feature", "text": "CLI-Befehl zum Zurücksetzen des Admin-Passworts hinzugefügt (docker exec -it filaman python -m app.cli reset-password <email>)" }
         ],
         "en": [
-          { "type": "fix", "text": "Sorting on the manufacturers overview is now persistent" }
+          { "type": "fix", "text": "Sorting on the manufacturers overview is now persistent" },
+          { "type": "feature", "text": "Added CLI command for admin password reset (docker exec -it filaman python -m app.cli reset-password <email>)" }
         ]
       }
     },

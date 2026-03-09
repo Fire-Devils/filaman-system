@@ -1,3 +1,4 @@
+# Password reset: docker exec -it filaman-system-app python -m app.cli reset-password <email>
 services:
   filaman-system-app:
     image: ghcr.io/fire-devils/filaman-system:latest
