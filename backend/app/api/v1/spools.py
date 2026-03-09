@@ -274,6 +274,15 @@ async def create_spool(
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id
 
+    # Clear rfid_uid from other spools to prevent UNIQUE constraint violation
+    new_rfid = spool_data.get("rfid_uid")
+    if new_rfid:
+        dup_result = await db.execute(
+            select(Spool).where(Spool.rfid_uid == new_rfid)
+        )
+        for dup in dup_result.scalars().all():
+            dup.rfid_uid = None
+
     spool = Spool(**spool_data)
     db.add(spool)
     await db.commit()
@@ -331,6 +340,15 @@ async def create_spools_bulk(
     if data.quantity > 1:
         spool_data["rfid_uid"] = None
         spool_data["external_id"] = None
+
+    # Clear rfid_uid from other spools to prevent UNIQUE constraint violation
+    new_rfid = spool_data.get("rfid_uid")
+    if new_rfid:
+        dup_result = await db.execute(
+            select(Spool).where(Spool.rfid_uid == new_rfid)
+        )
+        for dup in dup_result.scalars().all():
+            dup.rfid_uid = None
 
     spool_ids = []
     try:
@@ -461,7 +479,17 @@ async def update_spool(
             detail={"code": "not_found", "message": "Spool not found"},
         )
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    # Clear rfid_uid from other spools to prevent UNIQUE constraint violation
+    update_data = data.model_dump(exclude_unset=True)
+    new_rfid = update_data.get("rfid_uid")
+    if new_rfid and new_rfid != spool.rfid_uid:
+        dup_result = await db.execute(
+            select(Spool).where(Spool.rfid_uid == new_rfid, Spool.id != spool_id)
+        )
+        for dup in dup_result.scalars().all():
+            dup.rfid_uid = None
+
+    for key, value in update_data.items():
         setattr(spool, key, value)
 
     await db.commit()
