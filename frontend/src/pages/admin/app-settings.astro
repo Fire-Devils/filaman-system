@@ -1,0 +1,170 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - App Settings">
+  <style>
+    .fm-toggle {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .fm-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .fm-toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      transition: background 0.2s;
+    }
+    .fm-toggle-slider::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      bottom: 3px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .fm-toggle input:checked + .fm-toggle-slider {
+      background: var(--accent);
+    }
+    .fm-toggle input:checked + .fm-toggle-slider::before {
+      transform: translateX(18px);
+    }
+    .fm-toggle input:disabled + .fm-toggle-slider {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
+
+  <div style="margin-bottom: 24px;">
+    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+  </div>
+
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="admin.appSettingsTitle">App Settings</h1>
+  <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 24px;" data-i18n="admin.appSettingsSubtitle">Configure application settings</p>
+
+  <div class="fm-card" style="padding: 24px;">
+    <form id="app-settings-form" style="display: grid; gap: 20px;">
+      <!-- Login Disabled toggle -->
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="flex: 1;">
+          <label data-i18n="admin.loginDisabled" style="font-weight: 500; display: block; margin-bottom: 4px;">Disable Login</label>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;" data-i18n="admin.loginDisabledHint">When enabled, all endpoints are accessible without authentication</p>
+        </div>
+        <label class="fm-toggle">
+          <input type="checkbox" id="login-disabled" />
+          <span class="fm-toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Warning -->
+      <div id="login-warning" class="hidden" style="padding: 12px 16px; border-radius: 8px; background: var(--error-bg); color: var(--error-text); font-size: 0.85rem; border: 1px solid var(--error-border);" data-i18n="admin.loginDisabledWarning">
+        Warning: Disabling login removes all authentication. Only use in trusted environments!
+      </div>
+
+      <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
+
+      <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.appSettingsSave">Save</button>
+    </form>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+
+    async function init() {
+      await initI18n()
+
+      function getCsrfToken(): string {
+        const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+        return match ? decodeURIComponent(match[1]) : ''
+      }
+
+      const form = document.getElementById('app-settings-form') as HTMLFormElement
+      const loginDisabledInput = document.getElementById('login-disabled') as HTMLInputElement
+      const warningDiv = document.getElementById('login-warning')!
+      const formMessage = document.getElementById('form-message')!
+      const saveBtn = document.getElementById('save-btn') as HTMLButtonElement
+
+      function showMessage(text: string, isError: boolean) {
+        formMessage.textContent = text
+        formMessage.className = isError ? 'fm-alert-error' : 'fm-alert-success'
+        formMessage.classList.remove('hidden')
+        setTimeout(() => formMessage.classList.add('hidden'), 5000)
+      }
+
+      // Toggle warning visibility
+      loginDisabledInput.addEventListener('change', () => {
+        warningDiv.classList.toggle('hidden', !loginDisabledInput.checked)
+      })
+
+      // Load settings
+      try {
+        const resp = await fetch('/api/v1/admin/app-settings/', { credentials: 'include' })
+        if (resp.ok) {
+          const data = await resp.json()
+          loginDisabledInput.checked = data.login_disabled
+          warningDiv.classList.toggle('hidden', !data.login_disabled)
+        } else {
+          showMessage(t('admin.appSettingsLoadFailed'), true)
+        }
+      } catch {
+        showMessage(t('admin.appSettingsLoadFailed'), true)
+      }
+
+      // Save settings
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+
+        saveBtn.disabled = true
+        saveBtn.textContent = t('admin.appSettingsSaving')
+
+        const payload = {
+          login_disabled: loginDisabledInput.checked,
+        }
+
+        try {
+          const resp = await fetch('/api/v1/admin/app-settings/', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': getCsrfToken(),
+            },
+            credentials: 'include',
+            body: JSON.stringify(payload),
+          })
+
+          if (resp.ok) {
+            showMessage(t('admin.appSettingsSaveSuccess'), false)
+          } else {
+            const err = await resp.json().catch(() => ({}))
+            const msg =
+              err.detail?.message ||
+              err.message ||
+              (typeof err.detail === 'string' ? err.detail : null) ||
+              (Array.isArray(err.detail) ? err.detail[0]?.msg : null) ||
+              t('admin.appSettingsSaveFailed')
+            showMessage(msg, true)
+          }
+        } catch {
+          showMessage(t('admin.appSettingsSaveFailed'), true)
+        } finally {
+          saveBtn.disabled = false
+          saveBtn.textContent = t('admin.appSettingsSave')
+        }
+      })
+    }
+
+    init()
+  </script>
+</Layout>

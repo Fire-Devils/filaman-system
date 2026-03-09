@@ -10,6 +10,7 @@ from app.models.plugin import InstalledPlugin
 from app.models.system_extra_field import SystemExtraField
 from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
 from app.models.oidc_settings import OIDCAuthState, OIDCSettings
+from app.models.app_settings import AppSettings
 
 __all__ = [
     "Base",
@@ -43,4 +44,5 @@ __all__ = [
     "SpoolPrinterParam",
     "OIDCSettings",
     "OIDCAuthState",
+    "AppSettings",
 ]

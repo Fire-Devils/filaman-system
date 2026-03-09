@@ -102,7 +102,8 @@
     "or": "oder",
     "oidcFailed": "Single Sign-On Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
     "oidcExpired": "Die Anmeldesitzung ist abgelaufen. Bitte erneut versuchen.",
-    "oidcNoUser": "Kein passender Benutzer gefunden. Kontaktieren Sie Ihren Administrator."
+    "oidcNoUser": "Kein passender Benutzer gefunden. Kontaktieren Sie Ihren Administrator.",
+    "autoLogin": "Automatische Anmeldung..."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -685,7 +686,19 @@
     "oidcEncKeyMissing": "OIDC-Verschlüsselungsschlüssel ist nicht konfiguriert. Setzen Sie die Umgebungsvariable OIDC_ENC_KEY.",
     "oidcCallbackUrl": "Callback URL",
     "oidcCallbackUrlHint": "Diese URL als Redirect-URI beim OIDC-Provider eintragen.",
-    "oidcCopy": "Kopieren"
+    "oidcCopy": "Kopieren",
+    "appSettings": "App-Einstellungen",
+    "appSettingsDesc": "Allgemeine Anwendungseinstellungen",
+    "appSettingsTitle": "Anwendungseinstellungen",
+    "appSettingsSubtitle": "Allgemeines Verhalten der Anwendung konfigurieren",
+    "loginDisabled": "Passwort-Login deaktivieren",
+    "loginDisabledHint": "Wenn aktiviert, wird die Login-Seite übersprungen. Alle Anfragen werden als Admin-Benutzer authentifiziert. Device-Tokens sind nicht betroffen.",
+    "loginDisabledWarning": "Warnung: Dies deaktiviert die Passwort-Authentifizierung für alle Benutzer. Nur der Admin-Benutzer wird verwendet.",
+    "appSettingsSave": "Speichern",
+    "appSettingsSaving": "Speichern...",
+    "appSettingsSaveSuccess": "Einstellungen erfolgreich gespeichert.",
+    "appSettingsSaveFailed": "Einstellungen konnten nicht gespeichert werden.",
+    "appSettingsLoadFailed": "Einstellungen konnten nicht geladen werden."
   },
   "changelog": {
     "title": "Changelog",

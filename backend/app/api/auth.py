@@ -1,15 +1,14 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, PrincipalDep, require_auth
+from app.api.deps import DBSession, PrincipalDep
 from app.core.config import settings
-from app.core.security import generate_token_secret, hash_password_async, hash_token, parse_token, pwd_context, Principal, verify_password_async
-from app.models import Role, User, UserSession
+from app.core.security import generate_token_secret, hash_token, verify_password_async
+from app.models import AppSettings, User, UserSession
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -43,30 +42,52 @@ async def login(
     data: LoginRequest,
     db: DBSession,
 ):
-    result = await db.execute(
-        select(User)
-        .where(User.email == data.email)
-        .options(selectinload(User.roles))
-    )
-    user = result.scalar_one_or_none()
+    settings_result = await db.execute(select(AppSettings).where(AppSettings.id == 1))
+    app_settings = settings_result.scalar_one_or_none()
 
-    if user is None or user.password_hash is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "invalid_credentials", "message": "Invalid email or password"},
+    if app_settings and app_settings.login_disabled:
+        admin_result = await db.execute(
+            select(User)
+            .where(
+                User.is_superadmin.is_(True),
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+            .options(selectinload(User.roles))
+            .limit(1)
         )
+        user = admin_result.scalar_one_or_none()
 
-    if not user.is_active or user.deleted_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "account_disabled", "message": "Account is disabled"},
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"code": "no_admin_user", "message": "No active admin user found"},
+            )
+    else:
+        result = await db.execute(
+            select(User)
+            .where(User.email == data.email)
+            .options(selectinload(User.roles))
         )
+        user = result.scalar_one_or_none()
 
-    if not await verify_password_async(data.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "invalid_credentials", "message": "Invalid email or password"},
-        )
+        if user is None or user.password_hash is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "invalid_credentials", "message": "Invalid email or password"},
+            )
+
+        if not user.is_active or user.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "account_disabled", "message": "Account is disabled"},
+            )
+
+        if not await verify_password_async(data.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "invalid_credentials", "message": "Invalid email or password"},
+            )
 
     secret = generate_token_secret()
     session = UserSession(

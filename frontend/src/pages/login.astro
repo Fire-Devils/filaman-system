@@ -105,6 +105,42 @@ const { error } = Astro.props
           el.textContent = t(el.getAttribute('data-i18n')!)
         })
 
+        // Check if login is disabled
+        try {
+          const infoResp = await fetch('/api/v1/app-settings/public-info', { credentials: 'include' })
+          if (infoResp.ok) {
+            const infoData = await infoResp.json()
+            if (infoData.login_disabled) {
+              // Hide login form
+              const form = document.getElementById('login-form') as HTMLFormElement
+              form.style.display = 'none'
+              const ssoSection = document.getElementById('sso-section')
+              if (ssoSection) ssoSection.style.display = 'none'
+              
+              // Show auto-login message
+              const errorMessage = document.getElementById('error-message') as HTMLDivElement
+              errorMessage.textContent = t('login.autoLogin')
+              errorMessage.classList.remove('hidden')
+              errorMessage.style.background = 'var(--bg-soft)'
+              errorMessage.style.color = 'var(--text)'
+              errorMessage.style.border = '1px solid var(--border)'
+              
+              // Auto-POST with dummy credentials
+              const autoResp = await fetch('/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ email: 'auto@login', password: 'disabled' }),
+              })
+              if (autoResp.ok) {
+                window.location.href = '/'
+                return
+              }
+            }
+          }
+        } catch {
+          // Silently fail — show normal login form
+        }
         const form = document.getElementById('login-form') as HTMLFormElement
         const errorMessage = document.getElementById('error-message') as HTMLDivElement
         const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement

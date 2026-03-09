@@ -6,11 +6,13 @@
       "changes": {
         "de": [
           { "type": "fix", "text": "Sortierung auf der Herstellerübersicht jetzt persistent" },
-          { "type": "feature", "text": "CLI-Befehl zum Zurücksetzen des Admin-Passworts hinzugefügt (docker exec -it filaman python -m app.cli reset-password <email>)" }
+          { "type": "feature", "text": "CLI-Befehl zum Zurücksetzen des Admin-Passworts hinzugefügt (docker exec -it filaman python -m app.cli reset-password <email>)" },
+          { "type": "feature", "text": "Option zum Deaktivieren des Passwort-Logins in den Admin-Einstellungen hinzugefügt" }
         ],
         "en": [
           { "type": "fix", "text": "Sorting on the manufacturers overview is now persistent" },
-          { "type": "feature", "text": "Added CLI command for admin password reset (docker exec -it filaman python -m app.cli reset-password <email>)" }
+          { "type": "feature", "text": "Added CLI command for admin password reset (docker exec -it filaman python -m app.cli reset-password <email>)" },
+          { "type": "feature", "text": "Added option to disable password login in admin settings" }
         ]
       }
     },

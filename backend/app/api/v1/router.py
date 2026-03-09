@@ -17,6 +17,8 @@ from app.api.v1.printer_params import router_filament_params, router_spool_param
 from app.api.v1.events import router as events_router
 from app.api.v1.oidc_admin import public_router as oidc_public_router
 from app.api.v1.oidc_admin import router as oidc_admin_router
+from app.api.v1.app_settings_admin import router as app_settings_admin_router
+from app.api.v1.app_settings_admin import public_router as app_settings_public_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -37,7 +39,9 @@ api_router.include_router(router_filament_params, prefix="/filaments", tags=["Fi
 api_router.include_router(router_spool_params, prefix="/spools", tags=["Spool Printer Params"])
 api_router.include_router(events_router)
 api_router.include_router(oidc_admin_router)
+api_router.include_router(app_settings_admin_router)
 api_router.include_router(oidc_public_router)
+api_router.include_router(app_settings_public_router)
 
 # Plugins mit eigenem mount_prefix werden hier gesammelt und spaeter
 # von mount_deferred_plugin_routers() direkt auf die FastAPI-App gemountet.

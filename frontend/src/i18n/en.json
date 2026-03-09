@@ -101,7 +101,8 @@
     "or": "or",
     "oidcFailed": "Single Sign-On login failed. Please try again.",
     "oidcExpired": "The login session expired. Please try again.",
-    "oidcNoUser": "No matching user account found. Contact your administrator."
+    "oidcNoUser": "No matching user account found. Contact your administrator.",
+    "autoLogin": "Logging in automatically..."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -683,7 +684,19 @@
     "oidcEncKeyMissing": "OIDC encryption key is not configured on the server. Set the OIDC_ENC_KEY environment variable.",
     "oidcCallbackUrl": "Callback URL",
     "oidcCallbackUrlHint": "Register this URL as redirect URI in your OIDC provider.",
-    "oidcCopy": "Copy"
+    "oidcCopy": "Copy",
+    "appSettings": "App Settings",
+    "appSettingsDesc": "General application settings",
+    "appSettingsTitle": "Application Settings",
+    "appSettingsSubtitle": "Configure general application behavior",
+    "loginDisabled": "Disable Password Login",
+    "loginDisabledHint": "When enabled, the login page is skipped. All requests are authenticated as the admin user. Device tokens are not affected.",
+    "loginDisabledWarning": "Warning: This disables password authentication for all users. Only the admin user will be used.",
+    "appSettingsSave": "Save",
+    "appSettingsSaving": "Saving...",
+    "appSettingsSaveSuccess": "Settings saved successfully.",
+    "appSettingsSaveFailed": "Failed to save settings.",
+    "appSettingsLoadFailed": "Failed to load settings."
   },
   "changelog": {
     "title": "Changelog",
