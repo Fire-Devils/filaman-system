@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "RFID-Tag-UIDs mit fehlenden führenden Nullen (aus alter Waagen-Firmware) werden per Datenbank-Migration automatisch korrigiert" }
+        ],
+        "en": [
+          { "type": "fix", "text": "RFID tag UIDs with missing leading zeros (from old scale firmware) are automatically corrected via database migration" }
+        ]
+      }
+    },
+    {
       "version": "1.0.19",
       "date": "",
       "changes": {

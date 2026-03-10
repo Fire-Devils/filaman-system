@@ -840,6 +840,10 @@ class SpoolmanImportService:
                     "tag_uid", "tag_id", "uid",
                 ])
 
+                # Normalize: pad each hex segment to 2 chars (legacy leading-zero bug)
+                if rfid_uid:
+                    rfid_uid = ":".join(s.zfill(2) for s in rfid_uid.split(":"))
+
             # external_id: Spoolman-ID als Referenz
             external_id = f"spoolman:{spoolman_id}" if spoolman_id else None
 
