@@ -159,6 +159,7 @@ const { id } = Astro.params
     let currentPrinterParams = []
     let fieldDefinitions = []
     let filamentPrinterParams = []
+    let spoolSystemFieldMap: Record<string, any> = {}
     
     function flattenObject(obj, prefix = '', res = {}) {
       for (const key in obj) {
@@ -204,11 +205,20 @@ const { id } = Astro.params
     
     async function loadData() {
       try {
-        const [spoolRes, statusesRes, locationsRes] = await Promise.all([
+        const [spoolRes, statusesRes, locationsRes, sysFieldsRes] = await Promise.all([
           fetch(`/api/v1/spools/${id}`, { credentials: 'include' }),
           fetch('/api/v1/spools/statuses', { credentials: 'include' }),
           fetchAllPages('/api/v1/locations').then(d => d.items).catch(() => []),
+          fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }),
         ])
+
+        if (sysFieldsRes.ok) {
+          const defs = await sysFieldsRes.json()
+          spoolSystemFieldMap = {}
+          for (const def of defs) {
+            spoolSystemFieldMap[def.key] = def
+          }
+        }
         
         if (!spoolRes.ok) {
           if (spoolRes.status === 404) {
@@ -341,14 +351,28 @@ const { id } = Astro.params
 
         ${spool.custom_fields && Object.keys(spool.custom_fields).length > 0 ? `
           <div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;" data-i18n="common.extraFields">Extra Fields</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.extraFields')}</div>
             <div>
-              ${Object.entries(flattenObject(spool.custom_fields)).map(([key, value]) => `
-                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
-                  <span style="color: var(--text-muted); font-weight: 500;">${key}</span>
-                  <span style="font-family: monospace; word-break: break-all;">${value}</span>
-                </div>
-              `).join('')}
+              ${Object.entries(flattenObject(spool.custom_fields)).map(([key, value]) => {
+                const sysDef = spoolSystemFieldMap[key]
+                if (sysDef) {
+                  return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-left: 8px; padding-right: 8px;">
+                      <span style="display: flex; align-items: center; gap: 6px;">
+                        <span style="color: var(--text-muted); font-weight: 500;">${sysDef.label}</span>
+                        <span style="background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; white-space: nowrap;">${t('common.systemField')}</span>
+                      </span>
+                      <span style="font-family: monospace; word-break: break-all;">${value}</span>
+                    </div>
+                  `
+                }
+                return `
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                    <span style="color: var(--text-muted); font-weight: 500;">${key}</span>
+                    <span style="font-family: monospace; word-break: break-all;">${value}</span>
+                  </div>
+                `
+              }).join('')}
             </div>
           </div>
         ` : ''}
