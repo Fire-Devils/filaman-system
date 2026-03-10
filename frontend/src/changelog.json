@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "RFID-Tag-UIDs an Standorten mit fehlenden führenden Nullen werden per Datenbank-Migration automatisch korrigiert" }
+        ],
+        "en": [
+          { "type": "fix", "text": "RFID tag UIDs on locations with missing leading zeros are automatically corrected via database migration" }
+        ]
+      }
+    },
+    {
       "version": "1.0.20",
       "date": "",
       "changes": {
