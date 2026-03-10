@@ -1279,17 +1279,25 @@ import Layout from '../../layouts/Layout.astro'
     fromEmptyModal.classList.add('open')
 
     try {
-      const statusesRes = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
-      const allStatuses = statusesRes.ok ? await statusesRes.json() : []
-      const emptyStatus = allStatuses.find((s: any) => s.key === 'empty')
+      // Reuse already-loaded statuses or fetch if not yet available
+      let allStatuses = statuses.length > 0 ? statuses : null
+      if (!allStatuses) {
+        const statusesRes = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
+        allStatuses = statusesRes.ok ? await statusesRes.json() : []
+      }
+      const emptyStatus = (allStatuses as any[]).find((s: any) => s.key === 'empty')
       if (!emptyStatus) {
         fromEmptyNone.style.display = ''
         fromEmptyDropdownEl.style.display = 'none'
         return
       }
 
-      const res = await fetch(`/api/v1/spools?page=1&page_size=500&status_id=${emptyStatus.id}`, { credentials: 'include' })
-      if (!res.ok) throw new Error()
+      // page_size max is 200 per API constraint
+      const res = await fetch(`/api/v1/spools?page=1&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include' })
+      if (!res.ok) {
+        console.error('Failed to load empty spools:', res.status, res.statusText)
+        throw new Error(`HTTP ${res.status}`)
+      }
       const data = await res.json()
       const emptySpools: any[] = data.items || []
 
@@ -1331,7 +1339,8 @@ import Layout from '../../layouts/Layout.astro'
         opt.addEventListener('click', () => selectEmptySpool(s.id, String(s.id), label || '\u2014'))
         fromEmptyOptions.appendChild(opt)
       })
-    } catch {
+    } catch (err) {
+      console.error('Error loading empty spools:', err)
       fromEmptyNone.style.display = ''
       fromEmptyDropdownEl.style.display = 'none'
     }
