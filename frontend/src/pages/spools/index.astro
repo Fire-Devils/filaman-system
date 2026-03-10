@@ -162,7 +162,7 @@ import Layout from '../../layouts/Layout.astro'
           <div style="padding: 8px; background: var(--input-bg); border-bottom: 1px solid var(--border);">
             <input type="text" id="from-empty-search" class="fm-input" style="height: 32px; font-size: 0.85rem; padding: 4px 10px;" data-i18n-placeholder="spools.searchPlaceholder" placeholder="Search..." />
           </div>
-          <div id="from-empty-options" style="max-height: 260px; overflow-y: auto; padding: 4px 0;"></div>
+          <div id="from-empty-options" style="max-height: 400px; overflow-y: auto; padding: 4px 0;"></div>
         </div>
       </div>
       <div id="from-empty-none" class="fm-alert" style="display: none; margin-bottom: 16px; font-size: 0.875rem;" data-i18n="spools.noEmptySpools">No empty spools available</div>
@@ -1292,14 +1292,27 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
 
-      // page_size max is 200 per API constraint
-      const res = await fetch(`/api/v1/spools?page=1&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include' })
-      if (!res.ok) {
-        console.error('Failed to load empty spools:', res.status, res.statusText)
-        throw new Error(`HTTP ${res.status}`)
+      // Load all empty spools with pagination (API limit: 200 per page)
+      const firstRes = await fetch(`/api/v1/spools?page=1&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include' })
+      if (!firstRes.ok) {
+        console.error('Failed to load empty spools:', firstRes.status, firstRes.statusText)
+        throw new Error(`HTTP ${firstRes.status}`)
       }
-      const data = await res.json()
-      const emptySpools: any[] = data.items || []
+      const firstData = await firstRes.json()
+      let emptySpools: any[] = firstData.items || []
+      if (firstData.total > 200) {
+        const totalPages = Math.ceil(firstData.total / 200)
+        const pagePromises = []
+        for (let p = 2; p <= totalPages; p++) {
+          pagePromises.push(
+            fetch(`/api/v1/spools?page=${p}&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include' })
+              .then(r => r.ok ? r.json() : null)
+              .then(d => d ? d.items : [])
+          )
+        }
+        const additionalPages = await Promise.all(pagePromises)
+        additionalPages.forEach(items => { emptySpools = emptySpools.concat(items) })
+      }
 
       if (emptySpools.length === 0) {
         fromEmptyNone.style.display = ''
@@ -1386,6 +1399,12 @@ import Layout from '../../layouts/Layout.astro'
       if (spool.spool_material) payload.spool_material = spool.spool_material
       if (spool.low_weight_threshold_g != null) payload.low_weight_threshold_g = spool.low_weight_threshold_g
       sessionStorage.setItem('filaman_duplicate_spool', JSON.stringify(payload))
+      // Alte leere Spule löschen – sie existiert physisch nicht mehr
+      await fetch(`/api/v1/spools/${selectedEmptySpoolId}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': getCsrfToken() },
+        credentials: 'include',
+      })
       window.location.href = '/spools/new'
     } catch {
       // ignore
