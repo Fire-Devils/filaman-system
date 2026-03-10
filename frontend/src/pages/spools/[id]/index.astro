@@ -1412,30 +1412,14 @@ const { id } = Astro.params
       }
     }
 
-    // --- SSE Auto-Update ---
-    let eventSource: EventSource | null = null
-
-    function startSSE() {
-      if (eventSource) eventSource.close()
-      eventSource = new EventSource('/api/v1/events/stream')
-      eventSource.onmessage = async (e) => {
-        try {
-          const data = JSON.parse(e.data)
-          if (data.event === 'slots_update') {
-            await loadPrinterSlotOverview()
-          }
-        } catch { /* ignore parse errors */ }
+    // --- SSE Auto-Update (via shared Layout.astro connection) ---
+    window.addEventListener('filaman:data-changed', async (e: Event) => {
+      const data = (e as CustomEvent).detail
+      if (data.event === 'slots_update') {
+        await loadPrinterSlotOverview()
       }
-      eventSource.onerror = () => {
-        // EventSource auto-reconnects
-      }
-    }
-
-    window.addEventListener('beforeunload', () => {
-      if (eventSource) eventSource.close()
     })
 
-    startSSE()
     loadData()
   </script>
 </Layout>

@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Verbindungsprobleme behoben: Live-Updates belegen nun nur noch eine Browser-Verbindung pro Tab statt mehrerer, was Ladeprobleme bei gleichzeitig geöffneten Seiten verhindert" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Fixed connection issues: Live updates now use only one browser connection per tab instead of multiple, preventing loading issues when multiple pages are open simultaneously" }
+        ]
+      }
+    },
+    {
       "version": "1.1.1",
       "date": "",
       "changes": {
