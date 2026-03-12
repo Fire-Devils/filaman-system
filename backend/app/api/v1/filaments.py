@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.core.db_utils import get_next_available_id
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_filament import (
     BulkFilamentDeleteRequest,
@@ -126,7 +127,8 @@ async def create_manufacturer(
             detail={"code": "conflict", "message": "Manufacturer with this name already exists"},
         )
 
-    manufacturer = Manufacturer(**data.model_dump())
+    next_id = await get_next_available_id(db, Manufacturer)
+    manufacturer = Manufacturer(id=next_id, **data.model_dump())
     db.add(manufacturer)
     await db.commit()
     await db.refresh(manufacturer)
@@ -435,7 +437,8 @@ async def create_filament(
     # Separate colors from the filament data
     color_entries = data.colors or []
     filament_data = data.model_dump(exclude={"colors"})
-    filament = Filament(**filament_data)
+    next_id = await get_next_available_id(db, Filament)
+    filament = Filament(id=next_id, **filament_data)
     db.add(filament)
     await db.flush()  # get filament.id
 

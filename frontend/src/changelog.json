@@ -10,7 +10,8 @@
           { "type": "feature", "text": "Neue Sync-Buttons auf der Drucker-Detailseite: 'Jetzt synchronisieren' und 'Vollständiger Resync' (löscht alle Bambuddy-Spulen und erstellt alles neu)" },
           { "type": "feature", "text": "Auf der Filament-Detailseite kann jetzt direkt eine neue Spule mit dem jeweiligen Filament erstellt werden" },
           { "type": "fix", "text": "RFID-Tag schreiben: Das Popup schließt sich nach erfolgreichem Schreiben automatisch, und der Bestätigen-Button wird während des Vorgangs deaktiviert" },
-          { "type": "fix", "text": "Filament-Suche beim Erstellen einer Spule unterstützt jetzt mehrere Suchbegriffe gleichzeitig – z. B. 'Sunlu PLA Blau' filtert nach Hersteller, Material und Farbe kombiniert" }
+          { "type": "fix", "text": "Filament-Suche beim Erstellen einer Spule unterstützt jetzt mehrere Suchbegriffe gleichzeitig – z. B. 'Sunlu PLA Blau' filtert nach Hersteller, Material und Farbe kombiniert" },
+          { "type": "feature", "text": "IDs von Herstellern, Filamenten und Spulen werden nach Löschungen wiederverwendet – neue Einträge erhalten immer die kleinste freie ID" }
         ],
         "en": [
           { "type": "fix", "text": "Spool assignment to Bambuddy tray now correctly links the inventory spool – not just material and color, but also the Bambuddy spool is assigned to the tray" },
@@ -18,7 +19,8 @@
           { "type": "feature", "text": "New sync buttons on the printer detail page: \"Sync Now\" and \"Full Resync\" (deletes all Bambuddy spools and recreates everything)" },
           { "type": "feature", "text": "A new spool with the respective filament can now be created directly from the filament detail page" },
           { "type": "fix", "text": "RFID tag writing: The popup now closes automatically after successful writing, and the confirm button is disabled during the process" },
-          { "type": "fix", "text": "Filament search when creating a spool now supports multiple search terms at once – e.g. 'Sunlu PLA Blue' filters by manufacturer, material, and color combined" }
+          { "type": "fix", "text": "Filament search when creating a spool now supports multiple search terms at once – e.g. 'Sunlu PLA Blue' filters by manufacturer, material, and color combined" },
+          { "type": "feature", "text": "IDs for manufacturers, filaments, and spools are reused after deletions – new entries always receive the smallest available ID" }
         ]
       }
     },

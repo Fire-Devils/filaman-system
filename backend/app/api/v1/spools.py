@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.core.db_utils import get_next_available_id, get_next_available_ids
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_spool import (
     AdjustmentRequest,
@@ -287,7 +288,8 @@ async def create_spool(
         for dup in dup_result.scalars().all():
             dup.rfid_uid = None
 
-    spool = Spool(**spool_data)
+    next_id = await get_next_available_id(db, Spool)
+    spool = Spool(id=next_id, **spool_data)
     db.add(spool)
     await db.commit()
     await event_bus.publish({"event": "spools_changed"})
@@ -355,10 +357,11 @@ async def create_spools_bulk(
         for dup in dup_result.scalars().all():
             dup.rfid_uid = None
 
+    next_ids = await get_next_available_ids(db, Spool, data.quantity)
     spool_ids = []
     try:
-        for _ in range(data.quantity):
-            spool = Spool(**spool_data.copy())
+        for i in range(data.quantity):
+            spool = Spool(id=next_ids[i], **spool_data.copy())
             db.add(spool)
             await db.flush()
             spool_ids.append(spool.id)
