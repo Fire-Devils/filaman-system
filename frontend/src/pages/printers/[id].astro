@@ -20,7 +20,7 @@ const { id } = Astro.params
   </div>
   
   <script>
-    import { t, initI18n } from '../../lib/i18n'
+    import { t, initI18n, getLang } from '../../lib/i18n'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -306,9 +306,14 @@ const { id } = Astro.params
                 <span id="health-dot" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; ${statusDot}"></span>
                 <span id="health-text" style="font-weight: 600;">${statusText}</span>
               </div>
-              <div style="display: flex; gap: 8px;">
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 ${startStopBtn}
                 <button id="btn-debug-console" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.debugConsole')}</button>
+                ${isRunning ? (driverHealth?.sync_actions || []).map((a: any) => {
+                  const label = getLang() === 'de' ? (a.label_de || a.label) : a.label
+                  const variant = a.variant === 'danger' ? 'fm-btn-danger' : 'fm-btn-outline'
+                  return `<button class="fm-btn ${variant} btn-sync-action" data-action="${escapeHtml(a.action)}" style="font-size: 0.85rem;">${escapeHtml(label)}</button>`
+                }).join('') : ''}
               </div>
             </div>
             ${driverHealth?.running && driverHealth?.connected ? `
@@ -577,6 +582,33 @@ const { id } = Astro.params
           btn.textContent = '\u2713'
           setTimeout(() => btn.innerHTML = '&#x29C9;', 1000)
         })
+      })
+
+      // Sync-Action button delegation (generisch aus health.sync_actions)
+      document.addEventListener('click', async (e) => {
+        const btn = (e.target as HTMLElement).closest('.btn-sync-action') as HTMLButtonElement
+        if (!btn) return
+        const action = btn.dataset.action
+        if (!action) return
+        btn.disabled = true
+        try {
+          const res = await fetch(`/api/v1/printers/${id}/driver/action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            body: JSON.stringify({ action, params: {} }),
+          })
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}))
+            throw new Error(d.detail?.message || 'Failed')
+          }
+          await loadDriverHealth()
+          renderPrinter()
+        } catch (err: any) {
+          await (window as any).__fmAlert(err.message || t('printers.failedUpdate'))
+        } finally {
+          btn.disabled = false
+        }
       })
 
       // Export params button
