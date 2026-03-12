@@ -1338,7 +1338,7 @@ const { id } = Astro.params
           credentials: 'include',
           body: JSON.stringify({
             action: 'send_filament_to_tray',
-            params: { ams_id: amsId, tray_id: trayId, filament_data: filamentData }
+            params: { ams_id: amsId, tray_id: trayId, filament_data: filamentData, spool_id: id }
           })
         })
         if (res.ok) {

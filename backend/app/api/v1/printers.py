@@ -364,13 +364,25 @@ async def driver_action(
             detail={"code": "invalid_action", "message": f"Action '{data.action}' not available"},
         )
 
+    # If the caller supplies a spool_id alongside filament_data, enrich filament_data
+    # with printer-specific params (e.g. bambuddy_spool_id) before dispatching to the
+    # driver. spool_id is consumed here and NOT forwarded to the driver method.
+    params = dict(data.params)
+    spool_id = params.pop("spool_id", None)
+    if spool_id is not None and "filament_data" in params:
+        params["filament_data"] = await plugin_manager.enrich_filament_data(
+            spool_id=int(spool_id),
+            printer_id=printer_id,
+            filament_data=params["filament_data"],
+        )
+
     try:
         if callable(method):
             import asyncio
             if asyncio.iscoroutinefunction(method):
-                await method(**data.params)
+                await method(**params)
             else:
-                method(**data.params)
+                method(**params)
         return DriverActionResponse(success=True, message=f"Action '{data.action}' executed")
     except TypeError as e:
         raise HTTPException(
