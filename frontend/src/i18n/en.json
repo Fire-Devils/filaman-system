@@ -199,6 +199,7 @@
     "failedLoadSingle": "Failed to load filament",
     "notFound": "Filament not found",
     "unknownManufacturer": "Unknown manufacturer",
+    "newSpool": "New Spool",
     "noSpools": "No spools for this filament.",
     "filamentCount": "{count} filament(s)",
     "selectType": "Select type...",

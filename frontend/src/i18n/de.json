@@ -201,6 +201,7 @@
     "failedLoadSingle": "Filament konnte nicht geladen werden",
     "notFound": "Filament nicht gefunden",
     "unknownManufacturer": "Unbekannter Hersteller",
+    "newSpool": "Neue Spule",
     "noSpools": "Keine Spulen für dieses Filament.",
     "filamentCount": "{count} Filament(e)",
     "selectType": "Typ wählen...",
