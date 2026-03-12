@@ -7,7 +7,7 @@
         "de": [
           { "type": "fix", "text": "Spulenzuweisung an Bambuddy-Tray verknüpft jetzt die korrekte Inventarspule – nicht nur Material und Farbe, sondern auch die Bambuddy-Spule wird dem Tray zugewiesen" },
           { "type": "feature", "text": "Bambuddy-Inventar wird jetzt automatisch aktualisiert, sobald Spulen oder Filamente in FilaMan geändert werden" },
-          { "type": "feature", "text": "Neue Sync-Buttons auf der Drucker-Detailseite: „Jetzt synchronisieren" und „Vollständiger Resync" (löscht alle Bambuddy-Spulen und erstellt alles neu)" }
+          { "type": "feature", "text": "Neue Sync-Buttons auf der Drucker-Detailseite: 'Jetzt synchronisieren' und 'Vollständiger Resync' (löscht alle Bambuddy-Spulen und erstellt alles neu)" }
         ],
         "en": [
           { "type": "fix", "text": "Spool assignment to Bambuddy tray now correctly links the inventory spool – not just material and color, but also the Bambuddy spool is assigned to the tray" },
