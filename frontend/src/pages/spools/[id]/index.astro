@@ -591,7 +591,12 @@ const { id } = Astro.params
       const warning = document.getElementById('rfid-warning')!
       
       status.classList.add('hidden')
-      
+      const rfidConfirmBtn = document.getElementById('rfid-confirm') as HTMLButtonElement
+      const rfidCancelBtn = document.getElementById('rfid-cancel') as HTMLButtonElement
+      rfidConfirmBtn.disabled = false
+      rfidCancelBtn.disabled = false
+      rfidCancelBtn.textContent = t('common.cancel')
+
       // Check if spool already has a tag
       if (spool.rfid_uid) {
         warning.classList.remove('hidden')
@@ -712,13 +717,15 @@ const { id } = Astro.params
                   <strong>${t('rfid.writeSuccess')}</strong>
                   ${statusData.removed_from ? `<br><small>${t('rfid.removedFrom', { item: statusData.removed_from })}</small>` : ''}
                 `
-                confirmBtn.disabled = false
+                confirmBtn.disabled = true
                 cancelBtn.textContent = t('common.close')
                 cancelBtn.removeEventListener('click', onCancel)
-                cancelBtn.addEventListener('click', () => {
+                const autoClose = () => {
                   document.getElementById('rfid-modal')!.classList.remove('open')
                   loadData()
-                }, { once: true })
+                }
+                cancelBtn.addEventListener('click', autoClose, { once: true })
+                setTimeout(autoClose, 2000)
                 return
               } else if (statusData.status === 'error') {
                 isPolling = false

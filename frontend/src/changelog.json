@@ -8,13 +8,15 @@
           { "type": "fix", "text": "Spulenzuweisung an Bambuddy-Tray verknüpft jetzt die korrekte Inventarspule – nicht nur Material und Farbe, sondern auch die Bambuddy-Spule wird dem Tray zugewiesen" },
           { "type": "feature", "text": "Bambuddy-Inventar wird jetzt automatisch aktualisiert, sobald Spulen oder Filamente in FilaMan geändert werden" },
           { "type": "feature", "text": "Neue Sync-Buttons auf der Drucker-Detailseite: 'Jetzt synchronisieren' und 'Vollständiger Resync' (löscht alle Bambuddy-Spulen und erstellt alles neu)" },
-          { "type": "feature", "text": "Auf der Filament-Detailseite kann jetzt direkt eine neue Spule mit dem jeweiligen Filament erstellt werden" }
+          { "type": "feature", "text": "Auf der Filament-Detailseite kann jetzt direkt eine neue Spule mit dem jeweiligen Filament erstellt werden" },
+          { "type": "fix", "text": "RFID-Tag schreiben: Das Popup schließt sich nach erfolgreichem Schreiben automatisch, und der Bestätigen-Button wird während des Vorgangs deaktiviert" }
         ],
         "en": [
           { "type": "fix", "text": "Spool assignment to Bambuddy tray now correctly links the inventory spool – not just material and color, but also the Bambuddy spool is assigned to the tray" },
           { "type": "feature", "text": "Bambuddy inventory is now automatically updated whenever spools or filaments are changed in FilaMan" },
           { "type": "feature", "text": "New sync buttons on the printer detail page: \"Sync Now\" and \"Full Resync\" (deletes all Bambuddy spools and recreates everything)" },
-          { "type": "feature", "text": "A new spool with the respective filament can now be created directly from the filament detail page" }
+          { "type": "feature", "text": "A new spool with the respective filament can now be created directly from the filament detail page" },
+          { "type": "fix", "text": "RFID tag writing: The popup now closes automatically after successful writing, and the confirm button is disabled during the process" }
         ]
       }
     },
