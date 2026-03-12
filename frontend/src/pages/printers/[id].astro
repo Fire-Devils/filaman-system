@@ -591,6 +591,8 @@ const { id } = Astro.params
         const action = btn.dataset.action
         if (!action) return
         btn.disabled = true
+        const originalText = btn.textContent || ''
+        btn.textContent = getLang() === 'de' ? 'Läuft…' : 'Running…'
         try {
           const res = await fetch(`/api/v1/printers/${id}/driver/action`, {
             method: 'POST',
@@ -608,6 +610,7 @@ const { id } = Astro.params
           await (window as any).__fmAlert(err.message || t('printers.failedUpdate'))
         } finally {
           btn.disabled = false
+          btn.textContent = originalText
         }
       })
 

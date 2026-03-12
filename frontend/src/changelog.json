@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Vollständiger Resync im Bambuddy-Plugin erstellt Spulen nicht mehr doppelt" },
+          { "type": "fix", "text": "Sync-Aktionen (z. B. 'Vollständiger Resync') zeigen während des Vorgangs jetzt eine Rückmeldung im Button an" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Full Resync in the Bambuddy plugin no longer creates duplicate spools" },
+          { "type": "fix", "text": "Sync actions (e.g. 'Full Resync') now show feedback in the button while the operation is running" }
+        ]
+      }
+    },
+    {
       "version": "1.1.3",
       "date": "",
       "changes": {
