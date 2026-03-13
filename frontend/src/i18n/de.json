@@ -15,7 +15,8 @@
     "adminPanel": "Admin-Bereich",
     "settings": "Einstellungen",
     "logout": "Abmelden",
-    "supportProject": "Unterstütze das Projekt"
+    "supportProject": "Unterstütze das Projekt",
+    "plugins": "Plugins"
   },
   "theme": {
     "default": "Standard",

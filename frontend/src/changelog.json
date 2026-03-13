@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Plugins mit eigenen Seiten werden jetzt automatisch als Links in der Sidebar-Navigation angezeigt" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Plugins with their own pages now automatically appear as links in the sidebar navigation" }
+        ]
+      }
+    },
+    {
       "version": "1.1.5",
       "date": "",
       "changes": {

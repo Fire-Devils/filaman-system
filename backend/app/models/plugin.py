@@ -25,6 +25,7 @@ class InstalledPlugin(TimestampMixin, Base):
     page_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     config_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     capabilities: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    show_in_nav: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     installed_at: Mapped[datetime] = mapped_column(
         TZDateTime(), default=func.now(), nullable=False

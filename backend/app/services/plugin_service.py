@@ -171,6 +171,7 @@ class PluginInstallService:
                 existing.page_url = manifest.get("page_url")
                 existing.config_schema = manifest.get("config_schema")
                 existing.capabilities = manifest.get("capabilities")
+                existing.show_in_nav = manifest.get("show_in_nav", False)
                 await self.db.commit()
                 await self.db.refresh(existing)
                 logger.info(f"Plugin '{plugin_key}' auf v{manifest['version']} aktualisiert")
@@ -189,6 +190,7 @@ class PluginInstallService:
                     page_url=manifest.get("page_url"),
                     config_schema=manifest.get("config_schema"),
                     capabilities=manifest.get("capabilities"),
+                    show_in_nav=manifest.get("show_in_nav", False),
                     is_active=True,
                     installed_by=installed_by,
                 )

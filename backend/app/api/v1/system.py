@@ -17,7 +17,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.inspection import inspect as sa_inspect
 
 import httpx
-from app.api.deps import DBSession, RequirePermission
+from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.core.config import settings
 from app.models import (
     AppSettings,
@@ -59,10 +59,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/system", tags=["admin-system"])
 
+# Oeffentlicher Router fuer Plugin-Navigation (kein Admin-Prefix)
+public_router = APIRouter(tags=["plugins"])
+
 
 # ------------------------------------------------------------------ #
 #  Response-Schemas
 # ------------------------------------------------------------------ #
+
+class PluginNavItem(BaseModel):
+    """Navigations-Eintrag fuer ein Plugin mit eigener Seite."""
+    plugin_key: str
+    name: str
+    page_url: str
+
+    class Config:
+        from_attributes = True
+
 
 class PluginResponse(BaseModel):
     id: int
@@ -110,7 +123,27 @@ class PluginToggleRequest(BaseModel):
 
 
 # ------------------------------------------------------------------ #
-#  Endpoints
+#  Public Endpoints (kein Admin-Prefix)
+# ------------------------------------------------------------------ #
+
+@public_router.get("/plugin-nav", response_model=list[PluginNavItem])
+async def plugin_nav(
+    db: DBSession,
+    _principal: PrincipalDep,
+):
+    result = await db.execute(
+        select(InstalledPlugin)
+        .where(InstalledPlugin.is_active.is_(True))
+        .where(InstalledPlugin.show_in_nav.is_(True))
+        .where(InstalledPlugin.page_url.isnot(None))
+        .where(InstalledPlugin.page_url != "")
+        .order_by(InstalledPlugin.name)
+    )
+    return result.scalars().all()
+
+
+# ------------------------------------------------------------------ #
+#  Admin Endpoints
 # ------------------------------------------------------------------ #
 
 @router.get("/plugins", response_model=list[PluginResponse])
