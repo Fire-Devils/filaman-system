@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from pathlib import Path
 import time
@@ -12,26 +12,42 @@ import time
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
 import httpx
 from app.api.deps import DBSession, RequirePermission
 from app.models import (
+    AppSettings,
     Color,
+    Device,
     Filament,
     FilamentColor,
     FilamentPrinterProfile,
     FilamentPrinterParam,
     FilamentRating,
+    InstalledPlugin,
     Location,
     Manufacturer,
+    OAuthIdentity,
+    OIDCAuthState,
+    OIDCSettings,
+    Permission,
     Printer,
     PrinterSlot,
     PrinterSlotAssignment,
     PrinterSlotEvent,
+    Role,
+    RolePermission,
     Spool,
     SpoolEvent,
     SpoolPrinterParam,
+    SpoolStatus,
+    SystemExtraField,
+    User,
+    UserApiKey,
+    UserPermission,
+    UserRole,
+    UserSession,
 )
 from app.services.plugin_service import PluginInstallError, PluginInstallService
 from app.services.spoolman_import_service import SpoolmanImportError, SpoolmanImportService
@@ -868,3 +884,400 @@ async def killswitch(
         message=f"Killswitch executed. {total} rows deleted.",
         deleted=deleted,
     )
+
+
+# ------------------------------------------------------------------ #
+#  Backup / Restore Endpoints
+# ------------------------------------------------------------------ #
+
+class BackupMetadata(BaseModel):
+    export_date: str
+    app_version: str
+    schema_version: str | None
+
+
+class BackupExportResponse(BaseModel):
+    metadata: BackupMetadata
+    data: dict[str, list[dict[str, Any]]]
+
+
+class BackupImportResponse(BaseModel):
+    message: str
+    imported: dict[str, int]
+
+
+def _serialize_row(row: Any) -> dict[str, Any]:
+    """Serialize SQLAlchemy model instance to dict with JSON-compatible values."""
+    result = {}
+    for col in row.__table__.columns:
+        value = getattr(row, col.name)
+        if isinstance(value, datetime):
+            result[col.name] = value.isoformat()
+        else:
+            result[col.name] = value
+    return result
+
+
+async def _export_all_data(db: DBSession) -> dict[str, list[dict[str, Any]]]:
+    """Export all tables in dependency order."""
+    data = {}
+    
+    # Order: independent tables first, then dependent tables
+    tables_order = [
+        # Seed/Config data
+        ("spool_statuses", SpoolStatus),
+        ("permissions", Permission),
+        ("roles", Role),
+        ("app_settings", AppSettings),
+        
+        # Users and auth
+        ("users", User),
+        ("user_roles", UserRole),
+        ("user_permissions", UserPermission),
+        ("role_permissions", RolePermission),
+        ("oauth_identities", OAuthIdentity),
+        ("user_api_keys", UserApiKey),
+        ("user_sessions", UserSession),
+        ("oidc_settings", OIDCSettings),
+        ("oidc_auth_states", OIDCAuthState),
+        
+        # Devices
+        ("devices", Device),
+        
+        # Plugins
+        ("installed_plugins", InstalledPlugin),
+        
+        # Domain data - independent
+        ("manufacturers", Manufacturer),
+        ("colors", Color),
+        ("locations", Location),
+        
+        # Domain data - dependent
+        ("filaments", Filament),
+        ("filament_colors", FilamentColor),
+        ("filament_ratings", FilamentRating),
+        ("system_extra_fields", SystemExtraField),
+        ("printers", Printer),
+        ("filament_printer_profiles", FilamentPrinterProfile),
+        ("filament_printer_params", FilamentPrinterParam),
+        ("spools", Spool),
+        ("spool_printer_params", SpoolPrinterParam),
+        ("spool_events", SpoolEvent),
+        ("printer_slots", PrinterSlot),
+        ("printer_slot_assignments", PrinterSlotAssignment),
+        ("printer_slot_events", PrinterSlotEvent),
+    ]
+    
+    for table_name, model in tables_order:
+        result = await db.execute(select(model))
+        rows = result.scalars().all()
+        data[table_name] = [_serialize_row(row) for row in rows]
+        logger.info(f"Exported {len(rows)} rows from {table_name}")
+    
+    return data
+
+
+async def _get_schema_version(db: DBSession) -> str | None:
+    """Get current Alembic schema version from alembic_version table."""
+    try:
+        result = await db.execute(text("SELECT version_num FROM alembic_version"))
+        version = result.scalar_one_or_none()
+        return version
+    except Exception:
+        return None
+
+
+@router.get("/backup/export")
+async def export_backup(
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Export complete database backup as JSON.
+    
+    Exports all tables including users, passwords, sessions, API keys,
+    roles, devices, plugins, and all domain data.
+    
+    WARNING: Contains sensitive data (password hashes, API keys, secrets).
+    Store securely!
+    """
+    if not principal.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "forbidden",
+                "message": "Only superadmins can export backups",
+            },
+        )
+    
+    logger.info(f"Starting backup export by user {principal.user_id}")
+    
+    # Get schema version
+    schema_version = await _get_schema_version(db)
+    
+    # Get app version
+    app_version = _read_installed_version()
+    
+    # Export all data
+    data = await _export_all_data(db)
+    
+    metadata = BackupMetadata(
+        export_date=datetime.now(timezone.utc).isoformat(),
+        app_version=app_version,
+        schema_version=schema_version,
+    )
+    
+    logger.info(f"Backup export completed by user {principal.user_id}")
+    
+    return JSONResponse(
+        content={
+            "metadata": metadata.model_dump(),
+            "data": data,
+        },
+        headers={
+            "Content-Disposition": f'attachment; filename="filaman_backup_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.json"'
+        },
+    )
+
+
+async def _create_auto_backup(db: DBSession) -> Path:
+    """Create automatic backup before import/restore operations."""
+    backup_dir = Path("/app/data/backups")
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    backup_path = backup_dir / f"auto_backup_before_import_{timestamp}.json"
+    
+    # Export data
+    data = await _export_all_data(db)
+    schema_version = await _get_schema_version(db)
+    app_version = _read_installed_version()
+    
+    metadata = {
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "app_version": app_version,
+        "schema_version": schema_version,
+        "auto_backup": True,
+    }
+    
+    backup_content = {
+        "metadata": metadata,
+        "data": data,
+    }
+    
+    # Write to file
+    import json
+    backup_path.write_text(json.dumps(backup_content, indent=2))
+    
+    logger.info(f"Auto-backup created: {backup_path}")
+    return backup_path
+
+
+async def _delete_all_data(db: DBSession) -> dict[str, int]:
+    """Delete all data from all tables in reverse dependency order."""
+    deleted = {}
+    
+    # Reverse order: dependent tables first, then independent tables
+    tables_order = [
+        ("printer_slot_events", PrinterSlotEvent),
+        ("printer_slot_assignments", PrinterSlotAssignment),
+        ("printer_slots", PrinterSlot),
+        ("spool_events", SpoolEvent),
+        ("spool_printer_params", SpoolPrinterParam),
+        ("spools", Spool),
+        ("filament_printer_params", FilamentPrinterParam),
+        ("filament_printer_profiles", FilamentPrinterProfile),
+        ("printers", Printer),
+        ("system_extra_fields", SystemExtraField),
+        ("filament_ratings", FilamentRating),
+        ("filament_colors", FilamentColor),
+        ("filaments", Filament),
+        ("locations", Location),
+        ("colors", Color),
+        ("manufacturers", Manufacturer),
+        
+        # Plugins
+        ("installed_plugins", InstalledPlugin),
+        
+        # Devices
+        ("devices", Device),
+        
+        # Users and auth
+        ("oidc_auth_states", OIDCAuthState),
+        ("oidc_settings", OIDCSettings),
+        ("user_sessions", UserSession),
+        ("user_api_keys", UserApiKey),
+        ("oauth_identities", OAuthIdentity),
+        ("role_permissions", RolePermission),
+        ("user_permissions", UserPermission),
+        ("user_roles", UserRole),
+        ("users", User),
+        ("roles", Role),
+        ("permissions", Permission),
+        
+        # Config (keep spool_statuses and app_settings as they might be seed data)
+        ("app_settings", AppSettings),
+        # Note: NOT deleting spool_statuses as they are seed data
+    ]
+    
+    for table_name, model in tables_order:
+        result = await db.execute(delete(model))
+        deleted[table_name] = result.rowcount or 0
+        logger.info(f"Deleted {deleted[table_name]} rows from {table_name}")
+    
+    return deleted
+
+
+async def _import_all_data(db: DBSession, data: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
+    """Import all data in dependency order."""
+    imported = {}
+    
+    # Same order as export
+    tables_order = [
+        ("spool_statuses", SpoolStatus),
+        ("permissions", Permission),
+        ("roles", Role),
+        ("app_settings", AppSettings),
+        ("users", User),
+        ("user_roles", UserRole),
+        ("user_permissions", UserPermission),
+        ("role_permissions", RolePermission),
+        ("oauth_identities", OAuthIdentity),
+        ("user_api_keys", UserApiKey),
+        ("user_sessions", UserSession),
+        ("oidc_settings", OIDCSettings),
+        ("oidc_auth_states", OIDCAuthState),
+        ("devices", Device),
+        ("installed_plugins", InstalledPlugin),
+        ("manufacturers", Manufacturer),
+        ("colors", Color),
+        ("locations", Location),
+        ("filaments", Filament),
+        ("filament_colors", FilamentColor),
+        ("filament_ratings", FilamentRating),
+        ("system_extra_fields", SystemExtraField),
+        ("printers", Printer),
+        ("filament_printer_profiles", FilamentPrinterProfile),
+        ("filament_printer_params", FilamentPrinterParam),
+        ("spools", Spool),
+        ("spool_printer_params", SpoolPrinterParam),
+        ("spool_events", SpoolEvent),
+        ("printer_slots", PrinterSlot),
+        ("printer_slot_assignments", PrinterSlotAssignment),
+        ("printer_slot_events", PrinterSlotEvent),
+    ]
+    
+    for table_name, model in tables_order:
+        rows = data.get(table_name, [])
+        if rows:
+            # Bulk insert
+            for row_data in rows:
+                # Convert ISO datetime strings back to datetime objects
+                for key, value in row_data.items():
+                    if isinstance(value, str) and "T" in value:
+                        try:
+                            row_data[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        except (ValueError, AttributeError):
+                            pass
+                
+                db.add(model(**row_data))
+            
+            imported[table_name] = len(rows)
+            logger.info(f"Imported {len(rows)} rows into {table_name}")
+        else:
+            imported[table_name] = 0
+    
+    return imported
+
+
+@router.post("/backup/import", response_model=BackupImportResponse)
+async def import_backup(
+    db: DBSession,
+    file: UploadFile = File(...),
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Import complete database backup from JSON.
+    
+    WARNING: This will DELETE ALL EXISTING DATA and replace it with the backup.
+    An automatic backup of current data will be created before import.
+    
+    Only superadmins can perform this operation.
+    """
+    if not principal.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "forbidden",
+                "message": "Only superadmins can import backups",
+            },
+        )
+    
+    # Validate content type
+    if file.content_type not in ("application/json", "text/plain", "application/octet-stream"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_content_type",
+                "message": f"Expected JSON file, received: {file.content_type}",
+            },
+        )
+    
+    # Read and parse JSON
+    import json
+    try:
+        content = await file.read()
+        backup_data = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_json",
+                "message": f"Invalid JSON file: {str(e)}",
+            },
+        )
+    
+    # Validate structure
+    if "metadata" not in backup_data or "data" not in backup_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_backup_structure",
+                "message": "Backup file must contain 'metadata' and 'data' fields",
+            },
+        )
+    
+    logger.info(f"Starting backup import by user {principal.user_id}")
+    logger.info(f"Backup metadata: {backup_data['metadata']}")
+    
+    try:
+        # Step 1: Create automatic backup of current data
+        auto_backup_path = await _create_auto_backup(db)
+        logger.info(f"Auto-backup created at: {auto_backup_path}")
+        
+        # Step 2: Delete all existing data
+        deleted = await _delete_all_data(db)
+        logger.info(f"Deleted data: {deleted}")
+        
+        # Step 3: Import new data
+        imported = await _import_all_data(db, backup_data["data"])
+        logger.info(f"Imported data: {imported}")
+        
+        # Commit transaction
+        await db.commit()
+        
+        logger.info(f"Backup import completed successfully by user {principal.user_id}")
+        
+        return BackupImportResponse(
+            message=f"Backup imported successfully. Auto-backup created at: {auto_backup_path.name}",
+            imported=imported,
+        )
+    
+    except Exception as exc:
+        await db.rollback()
+        logger.exception(f"Backup import failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "import_failed",
+                "message": f"Import failed: {str(exc)}",
+            },
+        )

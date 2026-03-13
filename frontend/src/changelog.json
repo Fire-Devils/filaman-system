@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Komplettes Datenbank Backup & Wiederherstellung: Exportiere und importiere alle Daten (Benutzer, Spulen, Filamente, Einstellungen) als JSON-Datei" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Complete database backup & restore: Export and import all data (users, spools, filaments, settings) as JSON file" }
+        ]
+      }
+    },
+    {
       "version": "1.1.4",
       "date": "",
       "changes": {
