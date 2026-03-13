@@ -575,6 +575,7 @@
     "confirmUninstall": "Möchten Sie das Plugin \"{name}\" wirklich deinstallieren? Drucker, die diesen Treiber verwenden, müssen manuell umkonfiguriert werden.",
     "confirmUninstallDeleteData": "Plugin-Daten (Extra-Felder und Drucker-Parameter) ebenfalls löschen?",
     "databaseBackup": "Datenbank Backup & Wiederherstellung",
+    "backupDesc": "Datenbank vollständig exportieren und wiederherstellen",
     "backupExport": "Backup exportieren",
     "backupExportDesc": "Erstellt ein vollständiges Backup aller Daten (Benutzer, Spulen, Filamente, Einstellungen, etc.) als JSON-Datei.",
     "backupExportBtn": "Backup exportieren",

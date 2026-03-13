@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
+from sqlalchemy.inspection import inspect as sa_inspect
 
 import httpx
 from app.api.deps import DBSession, RequirePermission
@@ -909,12 +910,17 @@ class BackupImportResponse(BaseModel):
 def _serialize_row(row: Any) -> dict[str, Any]:
     """Serialize SQLAlchemy model instance to dict with JSON-compatible values."""
     result = {}
-    for col in row.__table__.columns:
-        value = getattr(row, col.name)
+    mapper = sa_inspect(row.__class__)
+    
+    for column in mapper.columns:
+        attr_name = column.key
+        value = getattr(row, attr_name)
+        
         if isinstance(value, datetime):
-            result[col.name] = value.isoformat()
+            result[column.name] = value.isoformat()
         else:
-            result[col.name] = value
+            result[column.name] = value
+    
     return result
 
 

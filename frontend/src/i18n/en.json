@@ -573,6 +573,7 @@
     "confirmUninstall": "Are you sure you want to uninstall the plugin \"{name}\"? Printers using this driver must be reconfigured manually.",
     "confirmUninstallDeleteData": "Also delete all plugin data (extra fields and printer parameters)?",
     "databaseBackup": "Database Backup & Restore",
+    "backupDesc": "Export and restore complete database backups",
     "backupExport": "Export Backup",
     "backupExportDesc": "Create a complete backup of all data (users, spools, filaments, settings, etc.) as JSON file.",
     "backupExportBtn": "Export Backup",
