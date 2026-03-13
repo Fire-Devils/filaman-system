@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import sys
 import re
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from sqlalchemy.inspection import inspect as sa_inspect
 
 import httpx
 from app.api.deps import DBSession, RequirePermission
+from app.core.config import settings
 from app.models import (
     AppSettings,
     Color,
@@ -1293,3 +1295,197 @@ async def import_backup(
                 "message": f"Import failed: {str(exc)}",
             },
         )
+
+
+# ------------------------------------------------------------------ #
+#  SQLite Backup List & Restore
+# ------------------------------------------------------------------ #
+
+def _get_backup_dir() -> Path:
+    """Backup-Verzeichnis ermitteln (env BACKUP_DIR oder Standard)."""
+    return Path(os.environ.get("BACKUP_DIR", "/app/data/backups"))
+
+
+def _get_db_path() -> Path | None:
+    """SQLite-Datenbankpfad aus DATABASE_URL extrahieren. None bei Nicht-SQLite."""
+    url = settings.database_url
+    if "sqlite" not in url:
+        return None
+    # sqlite+aiosqlite:///path/to/db oder sqlite:///path/to/db
+    parts = url.split("///", 1)
+    if len(parts) != 2:
+        return None
+    return Path(parts[1])
+
+
+class SqliteBackupEntry(BaseModel):
+    filename: str
+    size_bytes: int
+    created_at: str
+
+
+class SqliteBackupListResponse(BaseModel):
+    is_sqlite: bool
+    backup_dir: str
+    backups: list[SqliteBackupEntry]
+
+
+class SqliteRestoreRequest(BaseModel):
+    filename: str
+
+
+class SqliteRestoreResponse(BaseModel):
+    message: str
+    restored_file: str
+    auto_backup: str
+
+
+@router.get("/backup/sqlite-list", response_model=SqliteBackupListResponse)
+async def list_sqlite_backups(
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Vorhandene SQLite-Backup-Dateien auflisten."""
+    if not principal.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "Only superadmins can list backups"},
+        )
+
+    db_path = _get_db_path()
+    if db_path is None:
+        return SqliteBackupListResponse(is_sqlite=False, backup_dir="", backups=[])
+
+    backup_dir = _get_backup_dir()
+    if not backup_dir.is_dir():
+        return SqliteBackupListResponse(
+            is_sqlite=True, backup_dir=str(backup_dir), backups=[]
+        )
+
+    entries: list[SqliteBackupEntry] = []
+    for f in sorted(backup_dir.glob("*.db"), reverse=True):
+        stat = f.stat()
+        entries.append(
+            SqliteBackupEntry(
+                filename=f.name,
+                size_bytes=stat.st_size,
+                created_at=datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
+            )
+        )
+
+    return SqliteBackupListResponse(
+        is_sqlite=True, backup_dir=str(backup_dir), backups=entries
+    )
+
+
+@router.post("/backup/sqlite-restore", response_model=SqliteRestoreResponse)
+async def restore_sqlite_backup(
+    body: SqliteRestoreRequest,
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """SQLite-Backup wiederherstellen.
+
+    Erstellt zuerst ein Auto-Backup, schliesst dann alle DB-Verbindungen
+    und kopiert die Backup-Datei ueber die aktuelle Datenbank.
+    """
+    if not principal.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "Only superadmins can restore backups"},
+        )
+
+    db_path = _get_db_path()
+    if db_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "not_sqlite",
+                "message": "SQLite restore is only available for SQLite databases",
+            },
+        )
+
+    safe_name = re.match(r"^[\w.\-]+$", body.filename)
+    if not safe_name or ".." in body.filename:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_filename", "message": "Invalid backup filename"},
+        )
+
+    backup_dir = _get_backup_dir()
+    backup_file = backup_dir / body.filename
+
+    if not backup_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "backup_not_found",
+                "message": f"Backup file '{body.filename}' not found",
+            },
+        )
+
+    logger.info(
+        "SQLite restore requested by user %s: %s", principal.user_id, body.filename
+    )
+
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        auto_backup_name = f"auto_before_restore_{timestamp}.db"
+        auto_backup_path = backup_dir / auto_backup_name
+        shutil.copy2(str(db_path), str(auto_backup_path))
+        logger.info("Auto-backup created before restore: %s", auto_backup_path)
+
+        from app.core.database import engine
+        await engine.dispose()
+
+        shutil.copy2(str(backup_file), str(db_path))
+        logger.info("SQLite database restored from: %s", backup_file)
+
+    except Exception as exc:
+        logger.exception("SQLite restore failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "restore_failed", "message": f"Restore failed: {exc}"},
+        )
+
+    return SqliteRestoreResponse(
+        message=f"Database restored from '{body.filename}'. Please reload the application.",
+        restored_file=body.filename,
+        auto_backup=auto_backup_name,
+    )
+
+
+@router.delete("/backup/sqlite/{filename}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_sqlite_backup(
+    filename: str,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Einzelne SQLite-Backup-Datei loeschen."""
+    if not principal.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "Only superadmins can delete backups"},
+        )
+
+    safe_name = re.match(r"^[\w.\-]+$", filename)
+    if not safe_name or ".." in filename:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_filename", "message": "Invalid backup filename"},
+        )
+
+    backup_file = _get_backup_dir() / filename
+
+    if not backup_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "backup_not_found",
+                "message": f"Backup file '{filename}' not found",
+            },
+        )
+
+    backup_file.unlink()
+    logger.info("SQLite backup deleted by user %s: %s", principal.user_id, filename)

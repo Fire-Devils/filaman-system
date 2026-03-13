@@ -64,6 +64,29 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
 
+  <!-- SQLite Backup Files Section -->
+  <div id="sqlite-backups-section" class="fm-card" style="padding: 24px; margin-top: 24px; display: none;">
+    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.sqliteBackups">SQLite Backups</h2>
+    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.sqliteBackupsDesc">
+      Automatic SQLite database backups. These are created daily and before updates.
+    </p>
+    <div id="sqlite-backups-loading" style="text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="common.loading">Loading...</div>
+    <div id="sqlite-backups-empty" style="display: none; text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="admin.sqliteBackupsEmpty">No backup files found.</div>
+    <div id="sqlite-backups-table-wrap" style="display: none; overflow-x: auto;">
+      <table class="fm-table">
+        <thead style="background: var(--bg-soft);">
+          <tr>
+            <th data-i18n="admin.sqliteBackupFile">File</th>
+            <th data-i18n="admin.sqliteBackupDate">Date</th>
+            <th data-i18n="admin.sqliteBackupSize">Size</th>
+            <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="sqlite-backups-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <script>
     import { initI18n, t } from '../../lib/i18n'
     initI18n()
@@ -200,5 +223,148 @@ import Layout from '../../layouts/Layout.astro'
         }, 3000)
       }
     })
+
+    // --- SQLite Backups ---
+    const sqliteSection = document.getElementById('sqlite-backups-section')!
+    const sqliteLoading = document.getElementById('sqlite-backups-loading')!
+    const sqliteEmpty = document.getElementById('sqlite-backups-empty')!
+    const sqliteTableWrap = document.getElementById('sqlite-backups-table-wrap')!
+    const sqliteTbody = document.getElementById('sqlite-backups-tbody')!
+
+    function formatBytes(bytes: number): string {
+      if (bytes < 1024) return `${bytes} B`
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    }
+
+    function formatDate(iso: string): string {
+      const d = new Date(iso)
+      return d.toLocaleString(undefined, {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      })
+    }
+
+    async function loadSqliteBackups() {
+      try {
+        const resp = await fetch('/api/v1/admin/system/backup/sqlite-list', {
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': getCsrfToken() }
+        })
+        if (!resp.ok) return
+
+        const data = await resp.json()
+        if (!data.is_sqlite) return
+
+        sqliteSection.style.display = 'block'
+        sqliteLoading.style.display = 'none'
+
+        if (!data.backups || data.backups.length === 0) {
+          sqliteEmpty.style.display = 'block'
+          return
+        }
+
+        sqliteTableWrap.style.display = 'block'
+        sqliteTbody.innerHTML = ''
+
+        for (const backup of data.backups) {
+          const tr = document.createElement('tr')
+          tr.innerHTML = `
+            <td style="font-family: monospace; font-size: 0.85rem;">${backup.filename}</td>
+            <td>${formatDate(backup.created_at)}</td>
+            <td>${formatBytes(backup.size_bytes)}</td>
+            <td style="text-align: right; white-space: nowrap;">
+              <button class="fm-btn fm-btn-sm fm-btn-outline btn-sqlite-restore" data-filename="${backup.filename}"
+                data-i18n="admin.sqliteRestore">Restore</button>
+              <button class="fm-btn fm-btn-sm fm-btn-danger btn-sqlite-delete" data-filename="${backup.filename}"
+                style="margin-left: 6px;" data-i18n="common.delete">Delete</button>
+            </td>
+          `
+          sqliteTbody.appendChild(tr)
+        }
+
+        sqliteTbody.querySelectorAll('.btn-sqlite-restore').forEach(btn => {
+          btn.addEventListener('click', (e) => restoreSqliteBackup((e.currentTarget as HTMLElement).dataset.filename!))
+        })
+        sqliteTbody.querySelectorAll('.btn-sqlite-delete').forEach(btn => {
+          btn.addEventListener('click', (e) => deleteSqliteBackup((e.currentTarget as HTMLElement).dataset.filename!))
+        })
+
+      } catch (err) {
+        console.error('Failed to load SQLite backups:', err)
+      }
+    }
+
+    async function restoreSqliteBackup(filename: string) {
+      const confirmMsg = (t('admin.sqliteRestoreConfirm') || 
+        'Are you sure you want to restore the backup "{filename}"?\n\nThe current database will be replaced. An automatic backup will be created first.')
+        .replace('{filename}', filename)
+
+      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      if (!confirmed) return
+
+      try {
+        const resp = await fetch('/api/v1/admin/system/backup/sqlite-restore', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken()
+          },
+          body: JSON.stringify({ filename })
+        })
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: { message: 'Restore failed' } }))
+          throw new Error(err.detail?.message || 'Restore failed')
+        }
+
+        const result = await resp.json()
+        await (window as any).__fmAlert(
+          (t('admin.sqliteRestoreSuccess') || 'Database restored successfully!') +
+          '\n\n' + result.message
+        )
+
+        setTimeout(() => window.location.reload(), 2000)
+
+      } catch (err: any) {
+        console.error('Restore failed:', err)
+        await (window as any).__fmAlert(
+          (t('admin.sqliteRestoreFailed') || 'Restore failed:') + '\n\n' + err.message
+        )
+      }
+    }
+
+    async function deleteSqliteBackup(filename: string) {
+      const confirmMsg = (t('admin.sqliteDeleteConfirm') || 
+        'Are you sure you want to delete the backup "{filename}"?')
+        .replace('{filename}', filename)
+
+      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      if (!confirmed) return
+
+      try {
+        const resp = await fetch(`/api/v1/admin/system/backup/sqlite/${encodeURIComponent(filename)}`, {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': getCsrfToken() }
+        })
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: { message: 'Delete failed' } }))
+          throw new Error(err.detail?.message || 'Delete failed')
+        }
+
+        await loadSqliteBackups()
+
+      } catch (err: any) {
+        console.error('Delete failed:', err)
+        await (window as any).__fmAlert(
+          (t('admin.sqliteDeleteFailed') || 'Delete failed:') + '\n\n' + err.message
+        )
+      }
+    }
+
+    loadSqliteBackups()
   </script>
 </Layout>

@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Komplettes Datenbank Backup & Wiederherstellung: Exportiere und importiere alle Daten (Benutzer, Spulen, Filamente, Einstellungen) als JSON-Datei" }
+          { "type": "feature", "text": "Komplettes Datenbank Backup & Wiederherstellung: Exportiere und importiere alle Daten (Benutzer, Spulen, Filamente, Einstellungen) als JSON-Datei" },
+          { "type": "feature", "text": "SQLite-Backup-Übersicht: Vorhandene automatische Datenbank-Backups einsehen, wiederherstellen oder löschen" }
         ],
         "en": [
-          { "type": "feature", "text": "Complete database backup & restore: Export and import all data (users, spools, filaments, settings) as JSON file" }
+          { "type": "feature", "text": "Complete database backup & restore: Export and import all data (users, spools, filaments, settings) as JSON file" },
+          { "type": "feature", "text": "SQLite backup overview: View, restore or delete existing automatic database backups" }
         ]
       }
     },
