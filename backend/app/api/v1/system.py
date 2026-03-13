@@ -910,16 +910,16 @@ class BackupImportResponse(BaseModel):
 def _serialize_row(row: Any) -> dict[str, Any]:
     """Serialize SQLAlchemy model instance to dict with JSON-compatible values."""
     result = {}
-    mapper = sa_inspect(row.__class__)
+    mapper = sa_inspect(type(row))
     
-    for column in mapper.columns:
-        attr_name = column.key
-        value = getattr(row, attr_name)
+    for attr in mapper.column_attrs:
+        col = attr.columns[0]
+        value = getattr(row, attr.key)
         
         if isinstance(value, datetime):
-            result[column.name] = value.isoformat()
+            result[col.name] = value.isoformat()
         else:
-            result[column.name] = value
+            result[col.name] = value
     
     return result
 
