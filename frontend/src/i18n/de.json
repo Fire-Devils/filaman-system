@@ -323,6 +323,7 @@
     "showManufacturer": "Hersteller",
     "fontSize": "Schriftgröße",
     "qrSize": "QR-Größe",
+    "extraFieldsLabel": "Extra-Felder",
     "resetDefaults": "Standardwerte",
     "quickActions": "Schnellaktionen",
     "printerSlots": "Drucker Slots",

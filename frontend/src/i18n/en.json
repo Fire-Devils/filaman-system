@@ -321,6 +321,7 @@
     "showManufacturer": "Manufacturer",
     "fontSize": "Font Size",
     "qrSize": "QR Size",
+    "extraFieldsLabel": "Extra Fields",
     "resetDefaults": "Defaults",
     "quickActions": "Quick Actions",
     "printerSlots": "Printer Slots",

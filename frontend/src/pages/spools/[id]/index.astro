@@ -379,6 +379,18 @@ const { id } = Astro.params
       `
       
       const printUrl = `/spools/${spool.id}/print?designation=${encodeURIComponent(spool.filament?.designation || '')}&mfr=${encodeURIComponent(spool.filament?.manufacturer?.name || '')}&type=${encodeURIComponent(spool.filament?.material_type || '')}&color=${encodeURIComponent(spool.filament?.manufacturer_color_name || '')}`
+
+      // Store extra fields for label printing
+      const efForPrint: {key: string, label: string, value: string}[] = []
+      if (spool.custom_fields) {
+        const flat = flattenObject(spool.custom_fields)
+        for (const [key, value] of Object.entries(flat)) {
+          const sysDef = spoolSystemFieldMap[key]
+          efForPrint.push({ key, label: sysDef ? sysDef.label : key, value: String(value) })
+        }
+      }
+      sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
+
       const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
       if (printBtn) printBtn.href = printUrl
       

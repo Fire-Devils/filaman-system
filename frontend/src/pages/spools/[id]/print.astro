@@ -64,6 +64,11 @@ const { id } = Astro.params
             <span id="label-show-color">Farbe</span>
           </label>
         </div>
+
+        <div id="extra-fields-section" style="display: none;">
+          <h3 id="title-extra-fields">Extra-Felder</h3>
+          <div id="extra-fields-checkboxes" class="checkbox-grid"></div>
+        </div>
       </div>
 
       <div class="action-buttons">
@@ -81,6 +86,7 @@ const { id } = Astro.params
           <div id="prev-filament" style="font-size: 0.9em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
           <div id="prev-mfr" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
           <div id="prev-color" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+          <div id="prev-extra-fields"></div>
         </div>
       </div>
     </main>
@@ -379,6 +385,12 @@ const { id } = Astro.params
     color: params.get('color') || ''
   }
 
+  let extraFields: {key: string, label: string, value: string}[] = []
+  try {
+    const stored = sessionStorage.getItem('filaman-label-extra-fields')
+    if (stored) extraFields = JSON.parse(stored)
+  } catch(e) { /* ignore */ }
+
   const widthInput = document.getElementById('input-width')
   const heightInput = document.getElementById('input-height')
   const fontSizeInput = document.getElementById('input-font-size')
@@ -393,8 +405,41 @@ const { id } = Astro.params
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
 
+  // Build extra field checkboxes dynamically
+  const extraFieldsSection = document.getElementById('extra-fields-section')
+  const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')
+  const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
+
+  let savedExtraFieldSettings: Record<string, boolean> = {}
+  try {
+    const saved = localStorage.getItem(LABEL_SETTINGS_KEY)
+    if (saved) {
+      const s = JSON.parse(saved)
+      if (s.extraFields) savedExtraFieldSettings = s.extraFields
+    }
+  } catch(e) { /* ignore */ }
+
+  if (extraFields.length > 0) {
+    extraFieldsSection.style.display = ''
+    for (const ef of extraFields) {
+      const lbl = document.createElement('label')
+      lbl.className = 'fm-checkbox-group'
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.id = `check-ef-${ef.key}`
+      cb.checked = savedExtraFieldSettings[ef.key] || false
+      const span = document.createElement('span')
+      span.textContent = ef.label
+      lbl.appendChild(cb)
+      lbl.appendChild(span)
+      extraFieldsCheckboxes.appendChild(lbl)
+      extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+      cb.addEventListener('change', updatePreview)
+    }
+  }
+
   function saveSettings() {
-    const settings = {
+    const settings: Record<string, any> = {
       width: (widthInput as HTMLInputElement).value,
       height: (heightInput as HTMLInputElement).value,
       fontSize: (fontSizeInput as HTMLInputElement).value,
@@ -403,7 +448,11 @@ const { id } = Astro.params
       showID: (checkID as HTMLInputElement).checked,
       showMfr: (checkMfr as HTMLInputElement).checked,
       showMat: (checkMat as HTMLInputElement).checked,
-      showColor: (checkColor as HTMLInputElement).checked
+      showColor: (checkColor as HTMLInputElement).checked,
+      extraFields: extraFieldChecks.reduce((acc, ef) => {
+        acc[ef.key] = ef.checkbox.checked
+        return acc
+      }, {} as Record<string, boolean>)
     }
     localStorage.setItem(LABEL_SETTINGS_KEY, JSON.stringify(settings))
   }
@@ -437,6 +486,9 @@ const { id } = Astro.params
   document.getElementById('label-show-mfr').textContent = (window as any).__t('spools.showManufacturer')
   document.getElementById('label-show-mat').textContent = (window as any).__t('spools.showMaterial')
   document.getElementById('label-show-color').textContent = (window as any).__t('spools.showColor')
+  if (extraFields.length > 0) {
+    document.getElementById('title-extra-fields').textContent = (window as any).__t('spools.extraFieldsLabel')
+  }
   document.getElementById('btn-print').textContent = (window as any).__t('common.print')
   document.getElementById('btn-reset').textContent = (window as any).__t('spools.resetDefaults')
   document.getElementById('btn-close').textContent = (window as any).__t('common.close')
@@ -475,6 +527,22 @@ const { id } = Astro.params
 
     document.getElementById('prev-color').textContent = (checkColor as HTMLInputElement).checked ? labelData.color : ''
     document.getElementById('prev-color').style.display = (checkColor as HTMLInputElement).checked ? 'block' : 'none'
+
+    // Extra fields
+    const extraContainer = document.getElementById('prev-extra-fields')
+    extraContainer.innerHTML = ''
+    for (const ef of extraFieldChecks) {
+      if (ef.checkbox.checked) {
+        const div = document.createElement('div')
+        div.style.fontSize = (fontSizeBase * 7.5) + 'pt'
+        div.style.color = '#333'
+        div.style.whiteSpace = 'nowrap'
+        div.style.overflow = 'hidden'
+        div.style.textOverflow = 'ellipsis'
+        div.textContent = `${ef.label}: ${ef.value}`
+        extraContainer.appendChild(div)
+      }
+    }
 
     document.getElementById('prev-id').textContent = `#${labelData.id}`
     document.getElementById('prev-filament').textContent = labelData.designation
@@ -588,6 +656,9 @@ const { id } = Astro.params
     (checkMfr as HTMLInputElement).checked = true;
     (checkMat as HTMLInputElement).checked = true;
     (checkColor as HTMLInputElement).checked = true;
+    for (const ef of extraFieldChecks) {
+      ef.checkbox.checked = false
+    }
     updatePreview()
   })
 
