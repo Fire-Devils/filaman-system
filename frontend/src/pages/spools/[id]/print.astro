@@ -426,6 +426,13 @@ const { id } = Astro.params
     extraFieldsCheckboxes.style.display = ''
     const hasBothSources = extraFields.some(ef => ef.source === 'spool') && extraFields.some(ef => ef.source === 'filament')
 
+    // Copy Astro scoped-style attribute from existing checkboxes so dynamic elements get the same styles
+    const scopeAttr = (() => {
+      const existing = document.querySelector('.fm-checkbox-group')
+      if (!existing) return null
+      return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
+    })()
+
     for (const ef of extraFields) {
       const lbl = document.createElement('label')
       lbl.className = 'fm-checkbox-group'
@@ -435,6 +442,11 @@ const { id } = Astro.params
       cb.checked = savedExtraFieldSettings[ef.key] || false
       const span = document.createElement('span')
       span.textContent = hasBothSources ? `${ef.label} (${ef.source === 'spool' ? ((window as any).__t('dashboard.spool') || 'Spool') : ((window as any).__t('spools.filament') || 'Filament')})` : ef.label
+      if (scopeAttr) {
+        lbl.setAttribute(scopeAttr.name, '')
+        cb.setAttribute(scopeAttr.name, '')
+        span.setAttribute(scopeAttr.name, '')
+      }
       lbl.appendChild(cb)
       lbl.appendChild(span)
       extraFieldsCheckboxes.appendChild(lbl)
