@@ -95,5 +95,5 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Set the entrypoint
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-# The command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# The command to run the application with Gunicorn and multiple Uvicorn workers
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "120", "--keep-alive", "30", "--access-logfile", "-", "app.main:app"]
