@@ -1,6 +1,18 @@
 {
   "versions": [
-        {
+    {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Wechsel des Servers zu gunicorn mit 4 Workern für bessere Leistung" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Switched the server to gunicorn with 4 workers for better performance" }
+        ]
+      }
+    },
+    {
       "version": "1.1.8",
       "date": "",
       "changes": {
