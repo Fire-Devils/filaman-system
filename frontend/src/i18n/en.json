@@ -164,7 +164,29 @@
     "passwordFailed": "Failed to change password",
     "passwordsNoMatch": "Passwords do not match",
     "passwordTooShort": "Password must be at least 8 characters",
-    "changingPassword": "Changing..."
+    "changingPassword": "Changing...",
+    "apiKeys": "API Keys",
+    "apiKeysDesc": "Manage API keys for external integrations like Bambuddy"
+  },
+  "apiKeys": {
+    "title": "API Keys",
+    "description": "Create API keys for external integrations like Bambuddy",
+    "createNew": "Create New API Key",
+    "keyName": "Key Name",
+    "createBtn": "Create",
+    "tokenWarning": "Copy this token now — it will not be shown again!",
+    "copyBtn": "Copy",
+    "existingKeys": "Existing API Keys",
+    "tableName": "Name",
+    "tableCreated": "Created at",
+    "tableLastUsed": "Last used",
+    "tableActions": "Actions",
+    "noKeys": "No API keys yet. Create one above.",
+    "loadError": "Failed to load API keys",
+    "createFailed": "Failed to create API key",
+    "deleteConfirm": "Are you sure you want to delete the API key \"{name}\"?",
+    "deleteError": "Failed to delete API key",
+    "backToSettings": "Back to Settings"
   },
   "filaments": {
     "title": "Filaments",
