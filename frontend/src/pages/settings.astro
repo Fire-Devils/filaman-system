@@ -56,6 +56,18 @@ import Layout from '../layouts/Layout.astro'
       </form>
     </div>
     
+    <a href="/settings/api-keys" style="text-decoration: none; color: inherit;">
+      <div class="fm-card" style="padding: 24px; cursor: pointer; transition: box-shadow 0.15s;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h2 style="font-weight: 600; margin: 0 0 6px 0;" data-i18n="settings.apiKeys">API Keys</h2>
+            <p style="color: var(--color-text-muted); margin: 0; font-size: 0.9rem;" data-i18n="settings.apiKeysDesc">Manage API keys for external integrations like Bambuddy</p>
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-muted); flex-shrink: 0;"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </div>
+    </a>
+
     <div class="fm-card" style="padding: 24px;">
       <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="settings.changePassword">Change Password</h2>
       <form id="password-form" style="display: grid; gap: 16px;">
