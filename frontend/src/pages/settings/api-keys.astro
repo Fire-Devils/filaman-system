@@ -1,0 +1,281 @@
+---
+import Layout from '../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - API Keys">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+      <h1 style="font-size: 1.8rem; font-weight: 700; font-family: var(--font-serif);" data-i18n="apiKeys.title">API Keys</h1>
+      <p style="color: var(--color-text-muted); margin-top: 8px;" data-i18n="apiKeys.description">Erstelle API Keys für externe Integrationen wie Bambuddy</p>
+    </div>
+  </div>
+  
+  <div style="display: grid; gap: 24px; max-width: 800px;">
+    <div class="fm-card" style="padding: 24px;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="apiKeys.createNew">Create New API Key</h2>
+      <form id="create-key-form" style="display: grid; gap: 16px;">
+        <div>
+          <label for="key_name" class="fm-label" data-i18n="apiKeys.keyName">Key Name</label>
+          <input
+            type="text"
+            id="key_name"
+            name="key_name"
+            required
+            class="fm-input"
+            placeholder="e.g. Bambuddy Integration"
+          />
+        </div>
+        
+        <div id="create-error" class="fm-alert-error hidden"></div>
+        
+        <button
+          type="submit"
+          id="create-btn"
+          class="fm-btn fm-btn-primary"
+          style="justify-self: start;"
+          data-i18n="apiKeys.createBtn"
+        >
+          Erstellen
+        </button>
+      </form>
+
+      <div id="new-token-container" class="hidden" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--color-border);">
+        <div class="fm-alert-warning" style="margin-bottom: 16px;" data-i18n="apiKeys.tokenWarning">
+          Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt!
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <input
+            type="text"
+            id="new-token-input"
+            readonly
+            class="fm-input"
+            style="font-family: monospace;"
+          />
+          <button
+            type="button"
+            id="copy-token-btn"
+            class="fm-btn fm-btn-secondary"
+            data-i18n="apiKeys.copyBtn"
+          >
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <div class="fm-card" style="padding: 24px;">
+      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="apiKeys.existingKeys">Existing API Keys</h2>
+      
+      <div id="keys-loading" style="color: var(--color-text-muted);" data-i18n="common.loading">Loading...</div>
+      <div id="keys-error" class="fm-alert-error hidden"></div>
+      
+      <div id="keys-table-container" class="hidden" style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--color-border);">
+              <th style="padding: 12px 8px; font-weight: 600;" data-i18n="apiKeys.tableName">Name</th>
+              <th style="padding: 12px 8px; font-weight: 600;" data-i18n="apiKeys.tableCreated">Created at</th>
+              <th style="padding: 12px 8px; font-weight: 600;" data-i18n="apiKeys.tableLastUsed">Last used</th>
+              <th style="padding: 12px 8px; font-weight: 600; width: 100px;" data-i18n="apiKeys.tableActions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="keys-tbody">
+            <!-- Rows will be inserted here -->
+          </tbody>
+        </table>
+        <div id="no-keys-msg" class="hidden" style="padding: 24px 8px; color: var(--color-text-muted); text-align: center;" data-i18n="apiKeys.noKeys">
+          No API keys found.
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    await initI18n()
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+    
+    function formatDate(isoString: string | null): string {
+      if (!isoString) return '-'
+      return new Date(isoString).toLocaleString()
+    }
+
+    const createForm = document.getElementById('create-key-form') as HTMLFormElement
+    const createError = document.getElementById('create-error') as HTMLDivElement
+    const createBtn = document.getElementById('create-btn') as HTMLButtonElement
+    const newTokenContainer = document.getElementById('new-token-container') as HTMLDivElement
+    const newTokenInput = document.getElementById('new-token-input') as HTMLInputElement
+    const copyTokenBtn = document.getElementById('copy-token-btn') as HTMLButtonElement
+    
+    const keysLoading = document.getElementById('keys-loading') as HTMLDivElement
+    const keysError = document.getElementById('keys-error') as HTMLDivElement
+    const keysTableContainer = document.getElementById('keys-table-container') as HTMLDivElement
+    const keysTbody = document.getElementById('keys-tbody') as HTMLTableSectionElement
+    const noKeysMsg = document.getElementById('no-keys-msg') as HTMLDivElement
+
+    async function loadApiKeys() {
+      keysLoading.classList.remove('hidden')
+      keysError.classList.add('hidden')
+      keysTableContainer.classList.add('hidden')
+      
+      try {
+        const response = await fetch('/api/v1/me/api-keys', { credentials: 'include' })
+        if (!response.ok) throw new Error('Failed to load API keys')
+        
+        const keys = await response.json()
+        renderKeys(keys)
+        
+        keysLoading.classList.add('hidden')
+        keysTableContainer.classList.remove('hidden')
+      } catch (error: any) {
+        console.error('Failed to load API keys:', error)
+        keysLoading.classList.add('hidden')
+        keysError.textContent = error.message || t('apiKeys.loadError')
+        keysError.classList.remove('hidden')
+      }
+    }
+
+    function renderKeys(keys: any[]) {
+      keysTbody.innerHTML = ''
+      
+      if (keys.length === 0) {
+        noKeysMsg.classList.remove('hidden')
+        return
+      }
+      
+      noKeysMsg.classList.add('hidden')
+      
+      keys.forEach(key => {
+        const tr = document.createElement('tr')
+        tr.style.borderBottom = '1px solid var(--color-border)'
+        
+        const tdName = document.createElement('td')
+        tdName.style.padding = '12px 8px'
+        tdName.textContent = key.name
+        
+        const tdCreated = document.createElement('td')
+        tdCreated.style.padding = '12px 8px'
+        tdCreated.style.color = 'var(--color-text-muted)'
+        tdCreated.textContent = formatDate(key.created_at)
+        
+        const tdLastUsed = document.createElement('td')
+        tdLastUsed.style.padding = '12px 8px'
+        tdLastUsed.style.color = 'var(--color-text-muted)'
+        tdLastUsed.textContent = formatDate(key.last_used_at)
+        
+        const tdActions = document.createElement('td')
+        tdActions.style.padding = '12px 8px'
+        
+        const deleteBtn = document.createElement('button')
+        deleteBtn.className = 'fm-btn fm-btn-danger'
+        deleteBtn.style.padding = '4px 8px'
+        deleteBtn.style.fontSize = '0.875rem'
+        deleteBtn.textContent = t('common.delete') || 'Delete'
+        deleteBtn.onclick = () => deleteApiKey(key.id, key.name)
+        
+        tdActions.appendChild(deleteBtn)
+        
+        tr.appendChild(tdName)
+        tr.appendChild(tdCreated)
+        tr.appendChild(tdLastUsed)
+        tr.appendChild(tdActions)
+        
+        keysTbody.appendChild(tr)
+      })
+    }
+
+    async function deleteApiKey(id: number, name: string) {
+      if (!confirm(t('apiKeys.deleteConfirm')?.replace('{name}', name) || `Are you sure you want to delete API key "${name}"?`)) {
+        return
+      }
+      
+      try {
+        const response = await fetch(`/api/v1/me/api-keys/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to delete API key')
+        }
+        
+        // Reload the list
+        loadApiKeys()
+      } catch (error) {
+        console.error('Failed to delete API key:', error)
+        alert(t('apiKeys.deleteError') || 'Failed to delete API key')
+      }
+    }
+
+    createForm.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      
+      const formData = new FormData(createForm)
+      const name = formData.get('key_name') as string
+      
+      createError.classList.add('hidden')
+      newTokenContainer.classList.add('hidden')
+      createBtn.disabled = true
+      createBtn.textContent = t('common.saving') || 'Saving...'
+      
+      try {
+        const response = await fetch('/api/v1/me/api-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ name }),
+        })
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          const msg = errorData?.message || errorData?.detail || t('apiKeys.createFailed') || 'Failed to create API key'
+          throw new Error(typeof msg === 'string' ? msg : 'Failed to create API key')
+        }
+        
+        const data = await response.json()
+        
+        // Show the new token
+        newTokenInput.value = data.token
+        newTokenContainer.classList.remove('hidden')
+        
+        // Reset form
+        createForm.reset()
+        
+        // Reload the list
+        loadApiKeys()
+      } catch (error: any) {
+        createError.textContent = error.message
+        createError.classList.remove('hidden')
+      } finally {
+        createBtn.disabled = false
+        createBtn.textContent = t('apiKeys.createBtn') || 'Erstellen'
+      }
+    })
+
+    copyTokenBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(newTokenInput.value)
+        const originalText = copyTokenBtn.textContent
+        copyTokenBtn.textContent = t('common.copied') || 'Copied!'
+        setTimeout(() => {
+          copyTokenBtn.textContent = originalText
+        }, 2000)
+      } catch (err) {
+        console.error('Failed to copy text: ', err)
+      }
+    })
+
+    // Initial load
+    loadApiKeys()
+  </script>
+</Layout>
