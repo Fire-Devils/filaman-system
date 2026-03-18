@@ -11,6 +11,7 @@
     "spools": "Spulen",
     "locations": "Standorte",
     "printers": "Drucker",
+    "spoolLog": "Protokoll",
     "admin": "Admin",
     "adminPanel": "Admin-Bereich",
     "settings": "Einstellungen",
@@ -799,6 +800,16 @@
     "popupTitle": "Was ist neu?",
     "dismiss": "Verstanden",
     "viewAll": "Alle \u00c4nderungen"
+  },
+  "spoolLog": {
+    "title": "Protokoll",
+    "spool": "Spule",
+    "eventType": "Typ",
+    "eventDate": "Datum",
+    "eventWeight": "Gewicht",
+    "eventNote": "Notiz",
+    "noEvents": "Keine Ereignisse vorhanden",
+    "failedLoad": "Spulen-Ereignisse konnten nicht geladen werden"
   },
   "spoolman": {
     "title": "Spoolman Import",

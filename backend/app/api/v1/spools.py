@@ -50,7 +50,9 @@ async def list_locations(
             (Spool.location_id == Location.id)
             & (
                 Spool.status_id
-                != select(SpoolStatus.id).where(SpoolStatus.key == "archived").scalar_subquery()
+                != select(SpoolStatus.id)
+                .where(SpoolStatus.key == "archived")
+                .scalar_subquery()
             ),
         )
         .group_by(Location.id)
@@ -81,11 +83,13 @@ async def list_locations(
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
 
 
-@router_locations.post("", response_model=LocationResponse, status_code=status.HTTP_201_CREATED)
+@router_locations.post(
+    "", response_model=LocationResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_location(
     data: LocationCreate,
     db: DBSession,
-    principal = RequirePermission("locations:create"),
+    principal=RequirePermission("locations:create"),
 ):
     location = Location(**data.model_dump())
     db.add(location)
@@ -112,7 +116,7 @@ async def update_location(
     location_id: int,
     data: LocationUpdate,
     db: DBSession,
-    principal = RequirePermission("locations:update"),
+    principal=RequirePermission("locations:update"),
 ):
     result = await db.execute(select(Location).where(Location.id == location_id))
     location = result.scalar_one_or_none()
@@ -135,7 +139,7 @@ async def update_location(
 async def delete_location(
     location_id: int,
     db: DBSession,
-    principal = RequirePermission("locations:delete"),
+    principal=RequirePermission("locations:delete"),
 ):
     result = await db.execute(select(Location).where(Location.id == location_id))
     location = result.scalar_one_or_none()
@@ -145,11 +149,16 @@ async def delete_location(
             detail={"code": "not_found", "message": "Location not found"},
         )
 
-    result = await db.execute(select(Spool).where(Spool.location_id == location_id).limit(1))
+    result = await db.execute(
+        select(Spool).where(Spool.location_id == location_id).limit(1)
+    )
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "conflict", "message": "Location has spools, cannot delete"},
+            detail={
+                "code": "conflict",
+                "message": "Location has spools, cannot delete",
+            },
         )
 
     await db.delete(location)
@@ -165,9 +174,7 @@ async def list_spool_statuses(
     db: DBSession,
     principal: PrincipalDep,
 ):
-    result = await db.execute(
-        select(SpoolStatus).order_by(SpoolStatus.sort_order)
-    )
+    result = await db.execute(select(SpoolStatus).order_by(SpoolStatus.sort_order))
     return result.scalars().all()
 
 
@@ -203,17 +210,26 @@ async def list_spools(
     if location_id:
         query = query.where(Spool.location_id == location_id)
 
-    query = query.options(
-        selectinload(Spool.filament).selectinload(Filament.manufacturer),
-        selectinload(Spool.filament).selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
-    ).order_by(Spool.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    query = (
+        query.options(
+            selectinload(Spool.filament).selectinload(Filament.manufacturer),
+            selectinload(Spool.filament)
+            .selectinload(Filament.filament_colors)
+            .selectinload(FilamentColor.color),
+        )
+        .order_by(Spool.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
 
     result = await db.execute(query)
     items = list(result.scalars().all())
 
     count_query = select(func.count()).select_from(Spool)
     if manufacturer_id:
-        count_query = count_query.join(Filament).where(Filament.manufacturer_id == manufacturer_id)
+        count_query = count_query.join(Filament).where(
+            Filament.manufacturer_id == manufacturer_id
+        )
     if filament_id:
         count_query = count_query.where(Spool.filament_id == filament_id)
 
@@ -236,11 +252,13 @@ async def list_spools(
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
 
 
-@router_spools.post("", response_model=SpoolResponse, status_code=status.HTTP_201_CREATED)
+@router_spools.post(
+    "", response_model=SpoolResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_spool(
     data: SpoolCreate,
     db: DBSession,
-    principal = RequirePermission("spools:create"),
+    principal=RequirePermission("spools:create"),
 ):
     result = await db.execute(select(Filament).where(Filament.id == data.filament_id))
     filament = result.scalar_one_or_none()
@@ -251,7 +269,9 @@ async def create_spool(
         )
 
     if data.status_id:
-        result = await db.execute(select(SpoolStatus).where(SpoolStatus.id == data.status_id))
+        result = await db.execute(
+            select(SpoolStatus).where(SpoolStatus.id == data.status_id)
+        )
     else:
         result = await db.execute(select(SpoolStatus).where(SpoolStatus.key == "new"))
     status_obj = result.scalar_one_or_none()
@@ -262,29 +282,37 @@ async def create_spool(
         )
 
     spool_data = data.model_dump()
-    
+
     # Cascade fields from Filament if not provided
     if spool_data.get("empty_spool_weight_g") is None:
-        spool_data["empty_spool_weight_g"] = filament.default_spool_weight_g if filament.default_spool_weight_g is not None else 250
-        
+        spool_data["empty_spool_weight_g"] = (
+            filament.default_spool_weight_g
+            if filament.default_spool_weight_g is not None
+            else 250
+        )
+
     if spool_data.get("spool_outer_diameter_mm") is None:
-        spool_data["spool_outer_diameter_mm"] = filament.spool_outer_diameter_mm if filament.spool_outer_diameter_mm is not None else 200
-        
+        spool_data["spool_outer_diameter_mm"] = (
+            filament.spool_outer_diameter_mm
+            if filament.spool_outer_diameter_mm is not None
+            else 200
+        )
+
     if spool_data.get("spool_width_mm") is None:
-        spool_data["spool_width_mm"] = filament.spool_width_mm if filament.spool_width_mm is not None else 65
-        
+        spool_data["spool_width_mm"] = (
+            filament.spool_width_mm if filament.spool_width_mm is not None else 65
+        )
+
     if spool_data.get("spool_material") is None:
         spool_data["spool_material"] = filament.spool_material
-    
+
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id
 
     # Clear rfid_uid from other spools to prevent UNIQUE constraint violation
     new_rfid = spool_data.get("rfid_uid")
     if new_rfid:
-        dup_result = await db.execute(
-            select(Spool).where(Spool.rfid_uid == new_rfid)
-        )
+        dup_result = await db.execute(select(Spool).where(Spool.rfid_uid == new_rfid))
         for dup in dup_result.scalars().all():
             dup.rfid_uid = None
 
@@ -298,17 +326,23 @@ async def create_spool(
     result = await db.execute(
         select(Spool)
         .where(Spool.id == spool.id)
-        .options(selectinload(Spool.filament).selectinload(Filament.manufacturer), selectinload(Spool.filament).selectinload(Filament.filament_colors).selectinload(FilamentColor.color))
+        .options(
+            selectinload(Spool.filament).selectinload(Filament.manufacturer),
+            selectinload(Spool.filament)
+            .selectinload(Filament.filament_colors)
+            .selectinload(FilamentColor.color),
+        )
     )
     return result.scalar_one()
 
 
-
-@router_spools.post("/bulk", response_model=list[SpoolResponse], status_code=status.HTTP_201_CREATED)
+@router_spools.post(
+    "/bulk", response_model=list[SpoolResponse], status_code=status.HTTP_201_CREATED
+)
 async def create_spools_bulk(
     data: SpoolBulkCreate,
     db: DBSession,
-    principal = RequirePermission("spools:create"),
+    principal=RequirePermission("spools:create"),
 ):
     result = await db.execute(select(Filament).where(Filament.id == data.filament_id))
     filament = result.scalar_one_or_none()
@@ -319,7 +353,9 @@ async def create_spools_bulk(
         )
 
     if data.status_id:
-        result = await db.execute(select(SpoolStatus).where(SpoolStatus.id == data.status_id))
+        result = await db.execute(
+            select(SpoolStatus).where(SpoolStatus.id == data.status_id)
+        )
     else:
         result = await db.execute(select(SpoolStatus).where(SpoolStatus.key == "new"))
     status_obj = result.scalar_one_or_none()
@@ -333,11 +369,21 @@ async def create_spools_bulk(
 
     # Cascade fields from Filament if not provided
     if spool_data.get("empty_spool_weight_g") is None:
-        spool_data["empty_spool_weight_g"] = filament.default_spool_weight_g if filament.default_spool_weight_g is not None else 250
+        spool_data["empty_spool_weight_g"] = (
+            filament.default_spool_weight_g
+            if filament.default_spool_weight_g is not None
+            else 250
+        )
     if spool_data.get("spool_outer_diameter_mm") is None:
-        spool_data["spool_outer_diameter_mm"] = filament.spool_outer_diameter_mm if filament.spool_outer_diameter_mm is not None else 200
+        spool_data["spool_outer_diameter_mm"] = (
+            filament.spool_outer_diameter_mm
+            if filament.spool_outer_diameter_mm is not None
+            else 200
+        )
     if spool_data.get("spool_width_mm") is None:
-        spool_data["spool_width_mm"] = filament.spool_width_mm if filament.spool_width_mm is not None else 65
+        spool_data["spool_width_mm"] = (
+            filament.spool_width_mm if filament.spool_width_mm is not None else 65
+        )
     if spool_data.get("spool_material") is None:
         spool_data["spool_material"] = filament.spool_material
     if "status_id" not in spool_data or spool_data["status_id"] is None:
@@ -351,9 +397,7 @@ async def create_spools_bulk(
     # Clear rfid_uid from other spools to prevent UNIQUE constraint violation
     new_rfid = spool_data.get("rfid_uid")
     if new_rfid:
-        dup_result = await db.execute(
-            select(Spool).where(Spool.rfid_uid == new_rfid)
-        )
+        dup_result = await db.execute(select(Spool).where(Spool.rfid_uid == new_rfid))
         for dup in dup_result.scalars().all():
             dup.rfid_uid = None
 
@@ -381,21 +425,22 @@ async def create_spools_bulk(
         .where(Spool.id.in_(spool_ids))
         .options(
             selectinload(Spool.filament).selectinload(Filament.manufacturer),
-            selectinload(Spool.filament).selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
+            selectinload(Spool.filament)
+            .selectinload(Filament.filament_colors)
+            .selectinload(FilamentColor.color),
         )
     )
     return result.scalars().all()
+
 
 @router_spools.patch("/bulk", status_code=status.HTTP_200_OK)
 async def update_spools_bulk(
     data: BulkSpoolUpdateRequest,
     db: DBSession,
-    principal = RequirePermission("spools:update"),
+    principal=RequirePermission("spools:update"),
 ):
     """Bulk update fields on multiple spools (location, threshold, empty weight, price)."""
-    result = await db.execute(
-        select(Spool).where(Spool.id.in_(data.spool_ids))
-    )
+    result = await db.execute(select(Spool).where(Spool.id.in_(data.spool_ids)))
     spools = result.scalars().all()
 
     count = 0
@@ -423,12 +468,10 @@ async def update_spools_bulk(
 async def delete_spools_bulk(
     data: BulkSpoolDeleteRequest,
     db: DBSession,
-    principal = RequirePermission("spools:delete"),
+    principal=RequirePermission("spools:delete"),
 ):
     """Bulk archive or permanently delete multiple spools."""
-    result = await db.execute(
-        select(Spool).where(Spool.id.in_(data.spool_ids))
-    )
+    result = await db.execute(select(Spool).where(Spool.id.in_(data.spool_ids)))
     spools = result.scalars().all()
 
     count = 0
@@ -454,6 +497,28 @@ async def delete_spools_bulk(
     await event_bus.publish({"event": "spools_changed"})
     return {"success": True, "count": count}
 
+
+@router_spools.get("/all-events", response_model=PaginatedResponse[SpoolEventResponse])
+async def list_all_spool_events(
+    db: DBSession,
+    principal=RequirePermission("spool_events:read"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    result = await db.execute(
+        select(SpoolEvent)
+        .order_by(SpoolEvent.event_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = list(result.scalars().all())
+
+    count_result = await db.execute(select(func.count()).select_from(SpoolEvent))
+    total = count_result.scalar() or 0
+
+    return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+
+
 @router_spools.get("/{spool_id}", response_model=SpoolResponse)
 async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):
     result = await db.execute(
@@ -461,7 +526,9 @@ async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):
         .where(Spool.id == spool_id)
         .options(
             selectinload(Spool.filament).selectinload(Filament.manufacturer),
-            selectinload(Spool.filament).selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
+            selectinload(Spool.filament)
+            .selectinload(Filament.filament_colors)
+            .selectinload(FilamentColor.color),
         )
     )
     spool = result.scalar_one_or_none()
@@ -478,11 +545,9 @@ async def update_spool(
     spool_id: int,
     data: SpoolUpdate,
     db: DBSession,
-    principal = RequirePermission("spools:update"),
+    principal=RequirePermission("spools:update"),
 ):
-    result = await db.execute(
-        select(Spool).where(Spool.id == spool_id)
-    )
+    result = await db.execute(select(Spool).where(Spool.id == spool_id))
     spool = result.scalar_one_or_none()
     if not spool:
         raise HTTPException(
@@ -510,7 +575,12 @@ async def update_spool(
     result = await db.execute(
         select(Spool)
         .where(Spool.id == spool.id)
-        .options(selectinload(Spool.filament).selectinload(Filament.manufacturer), selectinload(Spool.filament).selectinload(Filament.filament_colors).selectinload(FilamentColor.color))
+        .options(
+            selectinload(Spool.filament).selectinload(Filament.manufacturer),
+            selectinload(Spool.filament)
+            .selectinload(Filament.filament_colors)
+            .selectinload(FilamentColor.color),
+        )
     )
     return result.scalar_one()
 
@@ -519,11 +589,9 @@ async def update_spool(
 async def delete_spool(
     spool_id: int,
     db: DBSession,
-    principal = RequirePermission("spools:delete"),
+    principal=RequirePermission("spools:delete"),
 ):
-    result = await db.execute(
-        select(Spool).where(Spool.id == spool_id)
-    )
+    result = await db.execute(select(Spool).where(Spool.id == spool_id))
     spool = result.scalar_one_or_none()
     if not spool:
         raise HTTPException(
@@ -532,9 +600,7 @@ async def delete_spool(
         )
 
     # Archive the spool by setting status to "archived"
-    result = await db.execute(
-        select(SpoolStatus).where(SpoolStatus.key == "archived")
-    )
+    result = await db.execute(select(SpoolStatus).where(SpoolStatus.key == "archived"))
     archived_status = result.scalar_one_or_none()
     if archived_status:
         spool.status_id = archived_status.id
@@ -546,12 +612,10 @@ async def delete_spool(
 async def permanently_delete_spool(
     spool_id: int,
     db: DBSession,
-    principal = RequirePermission("spools:delete"),
+    principal=RequirePermission("spools:delete"),
 ):
     """Permanently delete a spool and all its data (including events) from the database."""
-    result = await db.execute(
-        select(Spool).where(Spool.id == spool_id)
-    )
+    result = await db.execute(select(Spool).where(Spool.id == spool_id))
     spool = result.scalar_one_or_none()
     if not spool:
         raise HTTPException(
@@ -574,7 +638,7 @@ async def change_statuses_bulk(
     service = SpoolService(db)
     # Check permission (using a general update permission for now, or create a specific one if needed)
     RequirePermission("spools:update")
-    
+
     count = await service.change_statuses_bulk(
         spool_ids=data.spool_ids,
         status_key=data.status,
@@ -590,7 +654,7 @@ async def record_measurement(
     spool_id: int,
     data: MeasurementRequest,
     db: DBSession,
-    principal = RequirePermission("spool_events:create_measurement"),
+    principal=RequirePermission("spool_events:create_measurement"),
 ):
     service = SpoolService(db)
     spool = await service.get_spool(spool_id)
@@ -617,7 +681,7 @@ async def record_adjustment(
     spool_id: int,
     data: AdjustmentRequest,
     db: DBSession,
-    principal = RequirePermission("spool_events:create_adjustment"),
+    principal=RequirePermission("spool_events:create_adjustment"),
 ):
     service = SpoolService(db)
     spool = await service.get_spool(spool_id)
@@ -646,7 +710,7 @@ async def record_consumption(
     spool_id: int,
     data: ConsumptionRequest,
     db: DBSession,
-    principal = RequirePermission("spool_events:create_consumption"),
+    principal=RequirePermission("spool_events:create_consumption"),
 ):
     service = SpoolService(db)
     spool = await service.get_spool(spool_id)
@@ -673,7 +737,7 @@ async def change_status(
     spool_id: int,
     data: StatusChangeRequest,
     db: DBSession,
-    principal = RequirePermission("spool_events:create_status"),
+    principal=RequirePermission("spool_events:create_status"),
 ):
     service = SpoolService(db)
     spool = await service.get_spool(spool_id)
@@ -701,7 +765,7 @@ async def move_location(
     spool_id: int,
     data: MoveLocationRequest,
     db: DBSession,
-    principal = RequirePermission("spool_events:create_move_location"),
+    principal=RequirePermission("spool_events:create_move_location"),
 ):
     service = SpoolService(db)
     spool = await service.get_spool(spool_id)
@@ -723,11 +787,13 @@ async def move_location(
     return event
 
 
-@router_spools.get("/{spool_id}/events", response_model=PaginatedResponse[SpoolEventResponse])
+@router_spools.get(
+    "/{spool_id}/events", response_model=PaginatedResponse[SpoolEventResponse]
+)
 async def list_spool_events(
     spool_id: int,
     db: DBSession,
-    principal = RequirePermission("spool_events:read"),
+    principal=RequirePermission("spool_events:read"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
@@ -741,7 +807,9 @@ async def list_spool_events(
     items = list(result.scalars().all())
 
     count_result = await db.execute(
-        select(func.count()).select_from(SpoolEvent).where(SpoolEvent.spool_id == spool_id)
+        select(func.count())
+        .select_from(SpoolEvent)
+        .where(SpoolEvent.spool_id == spool_id)
     )
     total = count_result.scalar() or 0
 
@@ -751,16 +819,21 @@ async def list_spool_events(
 router_spool_measurements = APIRouter(tags=["spool-measurements"])
 
 
-@router_spool_measurements.post("/spool-measurements", response_model=SpoolEventResponse)
+@router_spool_measurements.post(
+    "/spool-measurements", response_model=SpoolEventResponse
+)
 async def device_measurement(
     data: DeviceMeasurementRequest,
     db: DBSession,
-    principal = RequirePermission("spool_events:create_measurement"),
+    principal=RequirePermission("spool_events:create_measurement"),
 ):
     if not data.rfid_uid and not data.external_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "validation_error", "message": "rfid_uid or external_id required"},
+            detail={
+                "code": "validation_error",
+                "message": "rfid_uid or external_id required",
+            },
         )
 
     service = SpoolService(db)

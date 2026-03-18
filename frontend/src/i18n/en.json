@@ -11,6 +11,7 @@
     "spools": "Spools",
     "locations": "Locations",
     "printers": "Printers",
+    "spoolLog": "Spool Log",
     "admin": "Admin",
     "adminPanel": "Admin Panel",
     "settings": "Settings",
@@ -797,6 +798,16 @@
     "popupTitle": "What's New",
     "dismiss": "Got it",
     "viewAll": "All Changes"
+  },
+  "spoolLog": {
+    "title": "Spool Log",
+    "spool": "Spool",
+    "eventType": "Type",
+    "eventDate": "Date",
+    "eventWeight": "Weight",
+    "eventNote": "Note",
+    "noEvents": "No events recorded",
+    "failedLoad": "Failed to load spool events"
   },
   "spoolman": {
     "title": "Spoolman Import",

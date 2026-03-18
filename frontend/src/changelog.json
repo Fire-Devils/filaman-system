@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "improvement", "text": "Drucker-Parameter und Konfiguration: Beim Speichern wird jetzt eine Erfolgs- oder Fehlermeldung direkt am Button angezeigt" }
+          { "type": "improvement", "text": "Drucker-Parameter und Konfiguration: Beim Speichern wird jetzt eine Erfolgs- oder Fehlermeldung direkt am Button angezeigt" },
+          { "type": "feature", "text": "Neues Spulen-Protokoll: Alle Änderungen an Spulen auf einer zentralen Seite chronologisch einsehen" }
         ],
         "en": [
-          { "type": "improvement", "text": "Printer parameters and configuration: Saving now shows a success or error message directly next to the button" }
+          { "type": "improvement", "text": "Printer parameters and configuration: Saving now shows a success or error message directly next to the button" },
+          { "type": "feature", "text": "New Spool Log: View all spool changes chronologically on a central page" }
         ]
       }
     },
