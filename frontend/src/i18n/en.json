@@ -496,6 +496,9 @@
     "importSuccess": "{count} parameters imported successfully.",
     "importFailed": "Failed to import parameters.",
     "noParamsToExport": "No parameters to export.",
+    "paramsSaved": "Parameters saved successfully.",
+    "paramsSaveFailed": "Failed to save parameters.",
+    "paramsCleared": "Parameters cleared.",
     "paramsManagement": "Manage printer-specific filament and spool parameters here.",
     "inheritedFromFilament": "Inherited from filament"
   },

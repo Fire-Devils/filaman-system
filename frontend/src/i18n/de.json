@@ -498,6 +498,9 @@
     "importSuccess": "{count} Parameter erfolgreich importiert.",
     "importFailed": "Parameter konnten nicht importiert werden.",
     "noParamsToExport": "Keine Parameter zum Exportieren vorhanden.",
+    "paramsSaved": "Parameter erfolgreich gespeichert.",
+    "paramsSaveFailed": "Parameter konnten nicht gespeichert werden.",
+    "paramsCleared": "Parameter gelöscht.",
     "paramsManagement": "Druckerspezifische Filament- und Spulen-Parameter hier verwalten.",
     "inheritedFromFilament": "Vom Filament geerbt"
   },

@@ -153,12 +153,22 @@ const { id } = Astro.params
       }
 
       html += `
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
           <button type="submit" class="fm-btn fm-btn-primary">${t('common.save')}</button>
           <button type="button" id="btn-cancel-config" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>
+          <span id="config-save-msg" class="hidden" style="font-size: 0.85rem;"></span>
         </div>
       </form>`
       return html
+    }
+
+    function showConfigMessage(text: string, isError: boolean) {
+      const msg = document.getElementById('config-save-msg')
+      if (!msg) return
+      msg.textContent = text
+      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
+      msg.classList.remove('hidden')
+      setTimeout(() => msg.classList.add('hidden'), 3000)
     }
     
     function renderPrinter() {
@@ -705,11 +715,20 @@ const { id } = Astro.params
           if (response.ok) {
             editingConfig = false
             await loadPrinter()
+            // Show inline success message after re-render
+            const configContent = document.getElementById('config-content')
+            if (configContent) {
+              const msg = document.createElement('span')
+              msg.textContent = t('printers.configSaved')
+              msg.style.cssText = 'font-size: 0.85rem; color: var(--success-text);'
+              configContent.prepend(msg)
+              setTimeout(() => msg.remove(), 3000)
+            }
           } else {
-            await (window as any).__fmAlert(t('printers.failedUpdate'))
+            showConfigMessage(t('printers.failedUpdate'), true)
           }
         } catch {
-          await (window as any).__fmAlert(t('printers.failedUpdate'))
+          showConfigMessage(t('printers.failedUpdate'), true)
         }
       })
     }

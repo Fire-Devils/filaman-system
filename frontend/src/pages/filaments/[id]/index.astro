@@ -31,8 +31,9 @@ const { id } = Astro.params
       <div id="printer-params-list">
         <p style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="printers.selectPrinterHint">Select a printer to view parameters</p>
       </div>
-      <div id="printer-params-actions" class="hidden" style="margin-top: 12px;">
+      <div id="printer-params-actions" class="hidden" style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
         <button id="btn-save-params" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;" data-i18n="common.save">Save</button>
+        <span id="params-save-msg" class="hidden" style="font-size: 0.85rem;"></span>
       </div>
     </div>
   </div>
@@ -543,6 +544,14 @@ const { id } = Astro.params
       return match ? decodeURIComponent(match[1]) : ''
     }
 
+    function showParamsMessage(text: string, isError: boolean) {
+      const msg = document.getElementById('params-save-msg')!
+      msg.textContent = text
+      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
+      msg.classList.remove('hidden')
+      setTimeout(() => msg.classList.add('hidden'), 3000)
+    }
+
     async function loadPrinters() {
       try {
         const res = await fetch('/api/v1/printers', { credentials: 'include' })
@@ -677,7 +686,11 @@ const { id } = Astro.params
           })
           currentPrinterParams = []
           renderPrinterParams()
-        } catch (e) { console.error('Failed to delete params:', e) }
+          showParamsMessage(t('printers.paramsCleared'), false)
+        } catch (e) {
+          console.error('Failed to delete params:', e)
+          showParamsMessage(t('printers.paramsSaveFailed'), true)
+        }
         return
       }
 
@@ -691,9 +704,13 @@ const { id } = Astro.params
         if (res.ok) {
           currentPrinterParams = await res.json()
           renderPrinterParams()
+          showParamsMessage(t('printers.paramsSaved'), false)
+        } else {
+          showParamsMessage(t('printers.paramsSaveFailed'), true)
         }
       } catch (e) {
         console.error('Failed to save printer params:', e)
+        showParamsMessage(t('printers.paramsSaveFailed'), true)
       }
     })
 

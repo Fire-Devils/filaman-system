@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improvement", "text": "Drucker-Parameter und Konfiguration: Beim Speichern wird jetzt eine Erfolgs- oder Fehlermeldung direkt am Button angezeigt" }
+        ],
+        "en": [
+          { "type": "improvement", "text": "Printer parameters and configuration: Saving now shows a success or error message directly next to the button" }
+        ]
+      }
+    },
+    {
       "version": "1.1.9",
       "date": "",
       "changes": {
