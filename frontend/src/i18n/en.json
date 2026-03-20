@@ -792,7 +792,10 @@
     "appSettingsSaving": "Saving...",
     "appSettingsSaveSuccess": "Settings saved successfully.",
     "appSettingsSaveFailed": "Failed to save settings.",
-    "appSettingsLoadFailed": "Failed to load settings."
+    "appSettingsLoadFailed": "Failed to load settings.",
+    "currency": "Currency",
+    "currencyLabel": "Display Currency",
+    "currencyDescription": "The currency used to display prices throughout the application"
   },
   "changelog": {
     "title": "Changelog",
