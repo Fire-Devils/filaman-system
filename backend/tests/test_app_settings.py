@@ -87,6 +87,86 @@ class TestAppSettingsAdmin:
 
         assert response.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_get_app_settings_returns_currency_default(self, auth_client):
+        """GET /admin/app-settings should return default currency EUR."""
+        client, _ = auth_client
+
+        response = await client.get("/api/v1/admin/app-settings/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["currency"] == "EUR"
+
+    @pytest.mark.asyncio
+    async def test_put_app_settings_updates_currency(self, auth_client):
+        """PUT /admin/app-settings should update currency field."""
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": "USD"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["currency"] == "USD"
+
+    @pytest.mark.asyncio
+    async def test_put_app_settings_currency_invalid_code(self, auth_client):
+        """PUT /admin/app-settings with invalid currency code should return 422."""
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": "XXX"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_put_app_settings_currency_null_partial_update(self, auth_client):
+        """PUT /admin/app-settings with currency=null should preserve existing value."""
+        client, csrf_token = auth_client
+
+        # First set currency to USD
+        await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": "USD"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        # Then PUT with null (partial update)
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["currency"] == "USD"
+
+    @pytest.mark.asyncio
+    async def test_public_info_includes_currency(self, client, auth_client):
+        """GET /app-settings/public-info should include currency field."""
+        auth_client_inst, csrf_token = auth_client
+
+        # Set currency to GBP via admin endpoint
+        await auth_client_inst.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": "GBP"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        # Check public endpoint
+        response = await client.get("/api/v1/app-settings/public-info")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["currency"] == "GBP"
 
 
 class TestAppSettingsPublic:
