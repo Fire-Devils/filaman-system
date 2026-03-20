@@ -1,14 +1,16 @@
 {
   "versions": [
     {
-      "version": "1.1.10",
+      "version": "UNRELEASED",
       "date": "",
       "changes": {
         "de": [
+          { "type": "improvement", "text": "Interner nginx-Webserver für deutlich schnellere Ladezeiten bei direktem Container-Zugriff ohne Reverse Proxy" },
           { "type": "improvement", "text": "Drucker-Parameter und Konfiguration: Beim Speichern wird jetzt eine Erfolgs- oder Fehlermeldung direkt am Button angezeigt" },
           { "type": "feature", "text": "Neues Spulen-Protokoll: Alle Änderungen an Spulen auf einer zentralen Seite chronologisch einsehen" }
         ],
         "en": [
+          { "type": "improvement", "text": "Internal nginx web server for significantly faster load times when accessing the container directly without a reverse proxy" },
           { "type": "improvement", "text": "Printer parameters and configuration: Saving now shows a success or error message directly next to the button" },
           { "type": "feature", "text": "New Spool Log: View all spool changes chronologically on a central page" }
         ]
