@@ -57,8 +57,8 @@ ENV PYTHONUNBUFFERED=1
 # Disable in-app migrations because the entrypoint handles them
 ENV RUN_MIGRATIONS_IN_APP=false
 
-# Install uv and cron in the final image
-RUN pip install uv && apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+# Install uv, cron, and nginx in the final image
+RUN pip install uv && apt-get update && apt-get install -y cron nginx && rm -rf /var/lib/apt/lists/*
 
 # Copy installed dependencies from backend-builder
 COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -81,6 +81,9 @@ COPY version.txt /app/version.txt
 COPY backend/backup_db.sh /app/backup_db.sh
 RUN chmod +x /app/backup_db.sh
 
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
 # Expose the port the app runs on
 EXPOSE 8000
 
@@ -96,4 +99,5 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 # The command to run the application with Gunicorn and multiple Uvicorn workers
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--timeout", "120", "--keep-alive", "30", "--access-logfile", "-", "app.main:app"]
+# nginx (port 8000) -> Gunicorn (port 8001) for static file performance
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--access-logfile", "-", "app.main:app"]

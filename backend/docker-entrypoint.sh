@@ -41,4 +41,8 @@ chmod 0644 /etc/cron.d/filaman-backup
 # Start cron
 cron
 
+# Start nginx (serves static files, proxies API to Gunicorn)
+echo "Starting nginx..."
+nginx
+
 exec "$@"
