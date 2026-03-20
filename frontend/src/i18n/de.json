@@ -794,11 +794,11 @@
     "appSettingsSaving": "Speichern...",
     "appSettingsSaveSuccess": "Einstellungen erfolgreich gespeichert.",
     "appSettingsSaveFailed": "Einstellungen konnten nicht gespeichert werden.",
-    "appSettingsLoadFailed": "Einstellungen konnten nicht geladen werden.",
-    "currency": "Währung",
-    "currencyLabel": "Anzeigewährung",
-    "currencyDescription": "Die Währung, die für die Preisanzeige in der gesamten Anwendung verwendet wird"
-  },
+     "appSettingsLoadFailed": "Einstellungen konnten nicht geladen werden.",
+     "appSettingsCurrency": "Währung",
+     "appSettingsCurrencyLabel": "Anzeigewährung",
+     "appSettingsCurrencyDescription": "Die Währung, die für die Preisanzeige in der gesamten Anwendung verwendet wird"
+   },
   "changelog": {
     "title": "Changelog",
     "subtitle": "Alle \u00c4nderungen und Updates von FilaMan.",
