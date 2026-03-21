@@ -78,3 +78,12 @@ Claude.md
 # Installed plugins (only spoolman_import ships as default)
 backend/app/plugins/*/
 !backend/app/plugins/spoolman_import/
+
+# Video
+video-project
+scripts
+screenshots
+output
+content
+package-lock.json
+package.json
