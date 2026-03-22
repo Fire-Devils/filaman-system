@@ -80,10 +80,6 @@ backend/app/plugins/*/
 !backend/app/plugins/spoolman_import/
 
 # Video
-video-project
-scripts
-screenshots
-output
-content
-package-lock.json
+_video
 package.json
+package-lock.json
