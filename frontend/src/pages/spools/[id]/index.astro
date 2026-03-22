@@ -1183,6 +1183,20 @@ const { id } = Astro.params
           .filter(r => r.status === 'fulfilled' && r.value && r.value.health.connected)
           .map(r => r.value)
 
+        // Fetch DB slot assignments for all online printers
+        const dbSlotsByPrinter = {}
+        await Promise.allSettled(
+          onlinePrinters.map(async ({ printer }) => {
+            try {
+              const slotsRes = await fetch(`/api/v1/printers/${printer.id}/slots`, { credentials: 'include' })
+              if (slotsRes.ok) {
+                const dbSlots = await slotsRes.json()
+                dbSlotsByPrinter[printer.id] = dbSlots
+              }
+            } catch {}
+          })
+        )
+
         const container = document.getElementById('printer-slots-inline')
         if (onlinePrinters.length === 0 || !container) return
 
@@ -1192,6 +1206,19 @@ const { id } = Astro.params
           const { printer, health } = onlinePrinters[i]
           const slots = health.slots || []
           if (slots.length === 0) continue
+
+          // Merge DB slot assignments into health slots
+          const dbSlots = dbSlotsByPrinter[printer.id] || []
+          const dbSlotAssignments = {}
+          for (const s of dbSlots) {
+            if (s.assignment) {
+              const si = `${Math.floor(s.slot_no / 4)}-${s.slot_no % 4}`
+              dbSlotAssignments[si] = s.assignment
+            }
+          }
+          for (const slot of slots) {
+            slot._assignment = dbSlotAssignments[slot.slot_index] || null
+          }
 
           // Group slots by AMS ID
           const amsGroups = {}
@@ -1255,6 +1282,20 @@ const { id } = Astro.params
       }
     }
 
+    // -- Slot rendering helpers -----------------------------------------------
+
+    function renderSlotTooltip(slot) {
+      if (slot._assignment) {
+        const a = slot._assignment
+        const parts = []
+        if (a.manufacturer_name) parts.push(a.manufacturer_name)
+        if (a.filament_name) parts.push(a.filament_name)
+        if (a.spool_id) parts.push(`(#${a.spool_id})`)
+        if (parts.length > 0) return parts.join(' - ')
+      }
+      return slot.tray_type || 'Empty'
+    }
+
     function renderSlotDot(slot, printerId) {
       let colorHex = slot.tray_color || ''
       if (colorHex && !colorHex.startsWith('#')) colorHex = '#' + colorHex
@@ -1262,11 +1303,12 @@ const { id } = Astro.params
       const hasColor = colorHex.length >= 7
       const slotJson = JSON.stringify(slot).replace(/"/g, '&quot;')
       const dotAttrs = `class="slot-dot" data-slot="${slotJson}" data-printer-id="${printerId}"`
+      const tooltipTitle = renderSlotTooltip(slot)
       if (hasColor && slot.present !== false) {
-        return `<span ${dotAttrs} title="${slot.tray_type || ''}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex};border:1px solid var(--border);flex-shrink:0;cursor:pointer;"></span>`
+        return `<span ${dotAttrs} title="${tooltipTitle}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex};border:1px solid var(--border);flex-shrink:0;cursor:pointer;"></span>`
       }
       // Empty slot: grey circle with red X
-      return `<span ${dotAttrs} title="Empty" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#d1d5db;border:1px solid var(--border);flex-shrink:0;cursor:pointer;font-size:11px;line-height:1;color:#dc2626;font-weight:900;">✕</span>`
+      return `<span ${dotAttrs} title="${tooltipTitle}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#d1d5db;border:1px solid var(--border);flex-shrink:0;cursor:pointer;font-size:11px;line-height:1;color:#dc2626;font-weight:900;">✕</span>`
     }
 
     // -- Slot context menu ---------------------------------------------------
@@ -1396,6 +1438,22 @@ const { id } = Astro.params
         })
         if (res.ok) {
           window.__fmSuccess?.(t('spools.slotAssignSuccess'))
+          // Optimistic UI-Update: Slot-Dot sofort aktualisieren
+          const slotIndex = `${amsId}-${trayId}`
+          const container = document.getElementById('printer-slots-inline')
+          const dotEl = container?.querySelector(`.slot-dot[data-slot*='"slot_index":"${slotIndex}"']`)
+          if (dotEl) {
+            const newColor = '#' + (filamentData.color || 'FFFFFF')
+            dotEl.style.background = newColor
+            dotEl.style.border = '2px solid var(--accent)'
+            // Tooltip optimistisch setzen
+            const mfr = spool?.filament?.manufacturer?.name || ''
+            const filName = spool?.filament?.designation || ''
+            const spoolId = spool?.id
+            dotEl.title = [mfr, filName, spoolId ? `(#${spoolId})` : ''].filter(Boolean).join(' - ')
+            // Border nach 3s zurücksetzen (wenn Server-Update kommt)
+            setTimeout(() => { dotEl.style.border = '1px solid var(--border)' }, 3000)
+          }
         } else {
           const err = await res.json().catch(() => null)
           window.__fmAlert?.(err?.detail?.message || t('spools.slotAssignError'))
