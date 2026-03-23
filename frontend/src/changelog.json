@@ -5,18 +5,14 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "Spulen werden nun korrekt mit Bambuddy-Trays verknüpft" },
           { "type": "fix", "text": "Spoolman-Verknüpfung funktioniert jetzt zuverlässig beim Setzen von Spulen in AMS-Trays" },
           { "type": "fix", "text": "Korrekte Farbdarstellung in Bambuddy nach Spulen-Zuweisung" },
-          { "type": "feature", "text": "Sofortige Aktualisierung der AMS-Tray-Anzeige nach Spulen-Zuweisung" },
-          { "type": "feature", "text": "Erweiterte Tray-Informationen beim Überfahren mit der Maus: Hersteller, Filamentname und Spulen-ID" }
+          { "type": "feature", "text": "Sofortige Aktualisierung der AMS-Tray-Anzeige nach Spulen-Zuweisung" }
         ],
         "en": [
-          { "type": "fix", "text": "Spools are now correctly linked with Bambuddy trays" },
           { "type": "fix", "text": "Spoolman linking now works reliably when placing spools in AMS trays" },
           { "type": "fix", "text": "Correct color display in Bambuddy after spool assignment" },
-          { "type": "feature", "text": "Immediate AMS tray display update after spool assignment" },
-          { "type": "feature", "text": "Enhanced tray information on hover: manufacturer, filament name and spool ID" }
+          { "type": "feature", "text": "Immediate AMS tray display update after spool assignment" }
         ]
       }
     },
