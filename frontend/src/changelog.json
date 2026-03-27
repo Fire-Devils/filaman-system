@@ -11,7 +11,9 @@
           { "type": "fix", "text": "Korrekte Farbdarstellung in Bambuddy nach Spulen-Zuweisung" },
           { "type": "feature", "text": "Sofortige Aktualisierung der AMS-Tray-Anzeige nach Spulen-Zuweisung" },
           { "type": "fix", "text": "SpoolmanAPI-Plugin: Backlinks von Bambuddy zu Spulendetails funktionieren jetzt korrekt" },
-          { "type": "feature", "text": "Interaktive API-Dokumentation (Swagger UI) im Admin-Bereich verfügbar" }
+          { "type": "feature", "text": "Interaktive API-Dokumentation (Swagger UI) im Admin-Bereich verfügbar" },
+          { "type": "fix", "text": "MQTT Debug-Konsole zeigt jetzt alle eingehenden WebSocket-Nachrichten und REST-Abrufe an" },
+          { "type": "feature", "text": "Typische Dichte wird beim Erstellen und Bearbeiten von Filamenten automatisch basierend auf dem Filamenttyp vorgeschlagen" }
         ],
         "en": [
           { "type": "fix", "text": "Printer slot status is now displayed correctly (fixes SQLAlchemy error when loading)" },
@@ -20,7 +22,9 @@
           { "type": "fix", "text": "Correct color display in Bambuddy after spool assignment" },
           { "type": "feature", "text": "Immediate AMS tray display update after spool assignment" },
           { "type": "fix", "text": "SpoolmanAPI plugin: Backlinks from Bambuddy to spool details now work correctly" },
-          { "type": "feature", "text": "Interactive API documentation (Swagger UI) available in admin area" }
+          { "type": "feature", "text": "Interactive API documentation (Swagger UI) available in admin area" },
+          { "type": "fix", "text": "MQTT debug console now shows all incoming WebSocket messages and REST requests" },
+          { "type": "feature", "text": "Default density is now auto-filled based on filament type when creating or editing filaments" }
         ]
       }
     },

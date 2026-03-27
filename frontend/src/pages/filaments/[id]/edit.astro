@@ -384,6 +384,21 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       }
     }
 
+    // ── Default densities per filament type (g/cm³) ──
+    const DEFAULT_DENSITIES: Record<string, number> = {
+      'PLA':   1.24,
+      'ABS':   1.07,
+      'ASA':   1.06,
+      'PETG':  1.27,
+      'NYLON': 1.08,
+      'PA':    1.08,
+      'PC':    1.22,
+      'TPU':   1.22,
+      'PP':    0.90,
+      'HIPS':  1.04,
+      'PVA':   1.22,
+    }
+
     // ── State ──
     let allColors: Array<{ id: number; name: string; hex_code: string }> = []
     let selectedColorIds: number[] = []  // ordered by position
@@ -540,6 +555,15 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         customTypeWrapper.classList.add('hidden')
         customTypeInput.required = false
         customTypeInput.value = ''
+
+        // Auto-fill density based on filament type (only if field is empty)
+        const densityInput = document.getElementById('density_g_cm3') as HTMLInputElement
+        if (!densityInput.value) {
+          const defaultDensity = DEFAULT_DENSITIES[typeSelect.value.toUpperCase()]
+          if (defaultDensity != null) {
+            densityInput.value = String(defaultDensity)
+          }
+        }
       }
     })
 
