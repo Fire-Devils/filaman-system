@@ -4,7 +4,7 @@ import Layout from '../../layouts/Layout.astro'
 
 <Layout title="FilaMan - API Documentation">
   <style>
-    /* ── Swagger UI – FilaMan theme & Tailwind reset fix ───────────── */
+    /* ── Swagger UI – FilaMan theme overrides ──────────────────────── */
 
     /* Container */
     #swagger-container {
@@ -15,136 +15,70 @@ import Layout from '../../layouts/Layout.astro'
       background: var(--bg-elevated);
     }
 
-    /* ── Undo Tailwind preflight inside Swagger UI ─────────────────── */
-    /* Tailwind resets border-width to 0 on all elements — restore it */
-    #swagger-container .swagger-ui *,
-    #swagger-container .swagger-ui *::before,
-    #swagger-container .swagger-ui *::after {
-      border-style: solid;
-      border-width: 0;
-    }
-
-    /* Wrapper: padding + max-width (Swagger defaults killed by Tailwind) */
-    #swagger-container .swagger-ui .wrapper {
-      max-width: 1460px;
-      margin: 0 auto;
-      padding: 0 20px;
-      box-sizing: border-box;
-      width: 100%;
-    }
-
-    /* Restore block-level element margins stripped by Tailwind */
-    #swagger-container .swagger-ui h1 { font-size: 2rem; font-weight: 700; margin: 0 0 12px; }
-    #swagger-container .swagger-ui h2 { font-size: 1.5rem; font-weight: 600; margin: 0 0 10px; }
-    #swagger-container .swagger-ui h3 { font-size: 1.17rem; font-weight: 600; margin: 0 0 8px; }
-    #swagger-container .swagger-ui h4 { font-size: 1rem; font-weight: 600; margin: 0 0 6px; }
-    #swagger-container .swagger-ui p { margin: 0 0 10px; line-height: 1.5; }
-    #swagger-container .swagger-ui ul,
-    #swagger-container .swagger-ui ol { margin: 0 0 10px; padding-left: 24px; }
-    #swagger-container .swagger-ui li { margin-bottom: 4px; }
-    #swagger-container .swagger-ui pre { margin: 0 0 10px; }
-    #swagger-container .swagger-ui hr {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin: 16px 0;
-    }
-    #swagger-container .swagger-ui a { color: var(--accent); text-decoration: none; }
-    #swagger-container .swagger-ui a:hover { text-decoration: underline; }
-    #swagger-container .swagger-ui img { max-width: 100%; }
-
-    /* Restore table defaults */
-    #swagger-container .swagger-ui table {
-      border-collapse: collapse;
-      width: 100%;
-    }
-    #swagger-container .swagger-ui table th,
-    #swagger-container .swagger-ui table td {
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      text-align: left;
-      vertical-align: top;
-    }
-
     /* ── Hide default Swagger topbar ──────────────────────────────── */
     #swagger-container .swagger-ui .topbar { display: none; }
 
-    /* ── Info section ─────────────────────────────────────────────── */
-    #swagger-container .swagger-ui .info {
-      margin: 20px 0 24px;
+    /* ── Adapt colors to FilaMan theme ────────────────────────────── */
+    #swagger-container .swagger-ui {
+      color: var(--text);
     }
-    #swagger-container .swagger-ui .info .title {
+    #swagger-container .swagger-ui .info .title,
+    #swagger-container .swagger-ui .opblock-tag {
       color: var(--text);
     }
     #swagger-container .swagger-ui .info p,
     #swagger-container .swagger-ui .info li,
-    #swagger-container .swagger-ui .info table {
+    #swagger-container .swagger-ui .info table,
+    #swagger-container .swagger-ui .opblock-description-wrapper p,
+    #swagger-container .swagger-ui .opblock-external-docs-wrapper p,
+    #swagger-container .swagger-ui .response-col_description__inner p,
+    #swagger-container .swagger-ui table thead tr th,
+    #swagger-container .swagger-ui table thead tr td,
+    #swagger-container .swagger-ui .parameter__name,
+    #swagger-container .swagger-ui .parameter__type,
+    #swagger-container .swagger-ui .response-col_status,
+    #swagger-container .swagger-ui .tab li {
       color: var(--text-muted);
     }
 
-    /* ── Scheme container (Authorize bar) ─────────────────────────── */
-    #swagger-container .swagger-ui .scheme-container {
-      background: var(--bg);
-      box-shadow: none;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    /* ── Tag groups (endpoint sections) ──────────────────────────── */
-    #swagger-container .swagger-ui .opblock-tag-section {
-      margin-bottom: 16px;
-    }
-    #swagger-container .swagger-ui .opblock-tag {
-      color: var(--text);
-      padding: 12px 20px;
-      margin: 0;
-      border-bottom: 1px solid var(--border);
-      font-size: 1.1rem;
-    }
-
-    /* ── Individual endpoints (opblocks) ─────────────────────────── */
-    #swagger-container .swagger-ui .opblock {
-      margin: 0 0 8px;
-      border-radius: 6px;
-      border-width: 1px;
-      box-shadow: none;
-    }
-    #swagger-container .swagger-ui .opblock .opblock-summary {
-      padding: 8px 12px;
-      border-bottom: 1px solid rgba(128,128,128,.15);
-      cursor: pointer;
-    }
-    #swagger-container .swagger-ui .opblock .opblock-summary-method {
-      border-radius: 4px;
-      padding: 4px 12px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      min-width: 70px;
-      text-align: center;
-    }
-    #swagger-container .swagger-ui .opblock .opblock-summary-path {
-      font-size: 0.95rem;
-      padding: 0 10px;
-    }
-    #swagger-container .swagger-ui .opblock .opblock-summary-description {
-      color: var(--text-muted);
-      font-size: 0.85rem;
-    }
+    /* ── Backgrounds ──────────────────────────────────────────────── */
+    #swagger-container .swagger-ui .scheme-container,
     #swagger-container .swagger-ui .opblock .opblock-section-header {
       background: var(--bg);
       box-shadow: none;
-      padding: 8px 16px;
-      border-bottom: 1px solid var(--border);
     }
-    #swagger-container .swagger-ui .opblock .opblock-body {
-      padding: 16px;
+    #swagger-container .swagger-ui section.models {
+      border: 1px solid var(--border);
+      border-radius: 8px;
     }
-    #swagger-container .swagger-ui .opblock-description-wrapper p,
-    #swagger-container .swagger-ui .opblock-external-docs-wrapper p,
-    #swagger-container .swagger-ui .response-col_description__inner p {
+    #swagger-container .swagger-ui section.models .model-container {
+      background: var(--bg);
+    }
+    #swagger-container .swagger-ui .model-box {
+      background: var(--bg);
+    }
+    #swagger-container .swagger-ui .model {
       color: var(--text-muted);
     }
 
-    /* Opblock method colors */
+    /* ── Form elements ────────────────────────────────────────────── */
+    #swagger-container .swagger-ui select {
+      background: var(--bg-elevated);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    #swagger-container .swagger-ui input[type="text"],
+    #swagger-container .swagger-ui textarea {
+      background: var(--bg);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    #swagger-container .swagger-ui .btn {
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* ── Opblock method colors (semi-transparent for dark mode) ──── */
     #swagger-container .swagger-ui .opblock.opblock-get {
       background: rgba(97,175,254,.05);
       border-color: rgba(97,175,254,.3);
@@ -165,78 +99,11 @@ import Layout from '../../layouts/Layout.astro'
       background: rgba(80,227,194,.05);
       border-color: rgba(80,227,194,.3);
     }
-
-    /* ── Parameters & responses ───────────────────────────────────── */
-    #swagger-container .swagger-ui .parameter__name {
-      color: var(--text);
-      font-weight: 600;
-      font-size: 0.9rem;
+    #swagger-container .swagger-ui .opblock .opblock-summary-method {
+      border-radius: 4px;
     }
-    #swagger-container .swagger-ui .parameter__name.required::after {
-      color: var(--error-text);
-    }
-    #swagger-container .swagger-ui .parameter__type {
-      color: var(--text-muted);
-      font-size: 0.85rem;
-    }
-    #swagger-container .swagger-ui .response-col_status {
-      color: var(--text);
-      font-weight: 600;
-    }
-    #swagger-container .swagger-ui .tab li {
-      color: var(--text-muted);
-    }
-    #swagger-container .swagger-ui table thead tr th,
-    #swagger-container .swagger-ui table thead tr td {
-      color: var(--text-muted);
-      font-weight: 600;
-      font-size: 0.85rem;
-    }
-
-    /* ── Models section ───────────────────────────────────────────── */
-    #swagger-container .swagger-ui section.models {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      margin: 24px 0;
-    }
-    #swagger-container .swagger-ui section.models .model-container {
-      background: var(--bg);
-      margin: 4px 0;
-      padding: 8px 16px;
-    }
-    #swagger-container .swagger-ui .model-box {
-      background: var(--bg);
-    }
-    #swagger-container .swagger-ui .model {
-      color: var(--text-muted);
-      font-size: 0.9rem;
-    }
-
-    /* ── Form elements ────────────────────────────────────────────── */
-    #swagger-container .swagger-ui select {
-      background: var(--bg-elevated);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 10px;
-    }
-    #swagger-container .swagger-ui input[type="text"],
-    #swagger-container .swagger-ui textarea {
-      background: var(--bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 12px;
-    }
-    #swagger-container .swagger-ui .btn {
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 14px;
-      cursor: pointer;
-    }
-    #swagger-container .swagger-ui .btn:hover {
-      background: var(--bg-soft);
+    #swagger-container .swagger-ui .opblock .opblock-summary {
+      border-bottom: 1px solid rgba(128,128,128,.15);
     }
 
     /* ── Code blocks ──────────────────────────────────────────────── */
@@ -245,37 +112,20 @@ import Layout from '../../layouts/Layout.astro'
       background: var(--bg) !important;
       color: var(--text) !important;
       border-radius: 6px;
-      padding: 12px !important;
-      font-size: 0.85rem;
     }
 
-    /* ── Expand/collapse arrows ───────────────────────────────────── */
+    /* ── Expand/collapse arrow ────────────────────────────────────── */
     #swagger-container .swagger-ui .expand-operation svg {
       fill: var(--text-muted);
-      width: 20px;
-      height: 20px;
-    }
-
-    /* ── Filter input ─────────────────────────────────────────────── */
-    #swagger-container .swagger-ui .filter-container {
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-    }
-    #swagger-container .swagger-ui .filter-container input[type="text"] {
-      width: 100%;
     }
 
     /* ── Authorization dialog ─────────────────────────────────────── */
     #swagger-container .swagger-ui .dialog-ux .modal-ux {
       background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border-color: var(--border);
     }
     #swagger-container .swagger-ui .dialog-ux .modal-ux-header h3 {
       color: var(--text);
-    }
-    #swagger-container .swagger-ui .dialog-ux .modal-ux-content {
-      padding: 20px;
     }
 
     /* ── Loading state ────────────────────────────────────────────── */
@@ -299,7 +149,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import SwaggerUI from 'swagger-ui-dist/swagger-ui-es-bundle.js'
-    import 'swagger-ui-dist/index.css'
+    import 'swagger-ui-dist/swagger-ui.css'
     import { t, initI18n } from '../../lib/i18n'
     await initI18n()
 
