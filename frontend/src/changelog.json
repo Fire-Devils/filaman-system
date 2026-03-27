@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "API-Dokumentation wird jetzt korrekt dargestellt — Endpunkte sind übersichtlich getrennt und nutzen die volle Breite" }
+        ],
+        "en": [
+          { "type": "fix", "text": "API documentation now displays correctly — endpoints are clearly separated and use the full available width" }
+        ]
+      }
+    },
+    {
       "version": "1.1.16",
       "date": "",
       "changes": {
