@@ -1488,15 +1488,6 @@ const { id } = Astro.params
           })
         })
         if (res.ok) {
-          // Set optimistic tooltip
-          if (dotEl) {
-            const newColor = '#' + (filamentData.color || 'FFFFFF')
-            dotEl.style.background = newColor
-            const mfr = spool?.filament?.manufacturer?.name || ''
-            const filName = spool?.filament?.designation || ''
-            const spoolId = spool?.id
-            dotEl.title = [mfr, filName, spoolId ? `(#${spoolId})` : ''].filter(Boolean).join(' - ')
-          }
           // Wait for SSE slots_update to confirm (timeout after 15s)
           pendingSlotAssign = { slotIndex, printerId }
           pendingSlotTimeout = setTimeout(() => {
