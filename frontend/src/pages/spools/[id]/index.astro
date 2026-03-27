@@ -140,6 +140,29 @@ const { id } = Astro.params
     </div>
   </div>
 
+  <style>
+    @keyframes slot-pulse-white {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(255,255,255,0.3); }
+      50% { box-shadow: 0 0 0 3px rgba(255,255,255,0.9); }
+    }
+    @keyframes slot-pulse-green {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(34,197,94,0.3); }
+      50% { box-shadow: 0 0 0 3px rgba(34,197,94,0.9); }
+    }
+    .slot-dot.slot-sending {
+      animation: slot-pulse-white 0.8s ease-in-out infinite;
+      border: 2px solid rgba(255,255,255,0.8) !important;
+    }
+    .slot-dot.slot-success {
+      animation: slot-pulse-green 0.6s ease-in-out infinite;
+      border: 2px solid #22c55e !important;
+    }
+    .slot-dot.slot-error {
+      box-shadow: 0 0 0 2px #ef4444;
+      border: 2px solid #ef4444 !important;
+    }
+  </style>
+
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
@@ -162,6 +185,9 @@ const { id } = Astro.params
     let filamentPrinterParams = []
     let spoolSystemFieldMap: Record<string, any> = {}
     let filamentSystemFieldMap: Record<string, any> = {}
+    // Pending slot assignment state (for animated ring feedback)
+    let pendingSlotAssign: { slotIndex: string; printerId: number } | null = null
+    let pendingSlotTimeout: ReturnType<typeof setTimeout> | null = null
     
     function flattenObject(obj, prefix = '', res = {}) {
       for (const key in obj) {
@@ -1386,12 +1412,37 @@ const { id } = Astro.params
 
     // -- Slot actions --------------------------------------------------------
 
+    function getSlotDot(slotIndex: string): HTMLElement | null {
+      const container = document.getElementById('printer-slots-inline')
+      return container?.querySelector(`.slot-dot[data-slot*='"slot_index":"${slotIndex}"']`) || null
+    }
+
+    function clearSlotRingState(dotEl: HTMLElement) {
+      dotEl.classList.remove('slot-sending', 'slot-success', 'slot-error')
+    }
+
+    function clearPendingSlotAssign() {
+      if (pendingSlotTimeout) { clearTimeout(pendingSlotTimeout); pendingSlotTimeout = null }
+      pendingSlotAssign = null
+    }
+
     async function handleAssignSpoolToTray(slot, printerId) {
       if (!spool) return
       const idx = slot.slot_index || ''
       const parts = idx.split('-')
       const amsId = parseInt(parts[0])
       const trayId = parseInt(parts[1])
+      const slotIndex = `${amsId}-${trayId}`
+
+      // Clear any previous pending state
+      clearPendingSlotAssign()
+
+      // Immediately show white pulsing ring
+      const dotEl = getSlotDot(slotIndex)
+      if (dotEl) {
+        clearSlotRingState(dotEl)
+        dotEl.classList.add('slot-sending')
+      }
 
       // Gather filament data from spool's printer params or spool/filament defaults
       let filamentData = {}
@@ -1437,29 +1488,34 @@ const { id } = Astro.params
           })
         })
         if (res.ok) {
-          window.__fmSuccess?.(t('spools.slotAssignSuccess'))
-          // Optimistic UI-Update: Slot-Dot sofort aktualisieren
-          const slotIndex = `${amsId}-${trayId}`
-          const container = document.getElementById('printer-slots-inline')
-          const dotEl = container?.querySelector(`.slot-dot[data-slot*='"slot_index":"${slotIndex}"']`)
+          // Set optimistic tooltip
           if (dotEl) {
             const newColor = '#' + (filamentData.color || 'FFFFFF')
             dotEl.style.background = newColor
-            dotEl.style.border = '2px solid var(--accent)'
-            // Tooltip optimistisch setzen
             const mfr = spool?.filament?.manufacturer?.name || ''
             const filName = spool?.filament?.designation || ''
             const spoolId = spool?.id
             dotEl.title = [mfr, filName, spoolId ? `(#${spoolId})` : ''].filter(Boolean).join(' - ')
-            // Border nach 3s zurücksetzen (wenn Server-Update kommt)
-            setTimeout(() => { dotEl.style.border = '1px solid var(--border)' }, 3000)
           }
+          // Wait for SSE slots_update to confirm (timeout after 15s)
+          pendingSlotAssign = { slotIndex, printerId }
+          pendingSlotTimeout = setTimeout(() => {
+            // Timeout: no SSE confirmation received
+            const dot = getSlotDot(slotIndex)
+            if (dot) { clearSlotRingState(dot); dot.classList.add('slot-error') }
+            pendingSlotAssign = null
+            pendingSlotTimeout = null
+          }, 15000)
         } else {
           const err = await res.json().catch(() => null)
+          if (dotEl) { clearSlotRingState(dotEl); dotEl.classList.add('slot-error') }
+          clearPendingSlotAssign()
           window.__fmAlert?.(err?.detail?.message || t('spools.slotAssignError'))
         }
       } catch (e) {
         console.error('Failed to assign spool to tray:', e)
+        if (dotEl) { clearSlotRingState(dotEl); dotEl.classList.add('slot-error') }
+        clearPendingSlotAssign()
         window.__fmAlert?.(t('spools.slotAssignError'))
       }
     }
@@ -1527,7 +1583,25 @@ const { id } = Astro.params
     window.addEventListener('filaman:data-changed', async (e: Event) => {
       const data = (e as CustomEvent).detail
       if (data.event === 'slots_update') {
-        await loadPrinterSlotOverview()
+        if (pendingSlotAssign) {
+          // Assignment confirmed by printer/plugin via SSE
+          const { slotIndex } = pendingSlotAssign
+          clearPendingSlotAssign()
+          const dot = getSlotDot(slotIndex)
+          if (dot) {
+            clearSlotRingState(dot)
+            dot.classList.add('slot-success')
+            // Show green ring for 2s, then reload slot overview
+            setTimeout(async () => {
+              if (dot) clearSlotRingState(dot)
+              await loadPrinterSlotOverview()
+            }, 2000)
+          } else {
+            await loadPrinterSlotOverview()
+          }
+        } else {
+          await loadPrinterSlotOverview()
+        }
       }
     })
 

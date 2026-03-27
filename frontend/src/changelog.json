@@ -5,10 +5,14 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "API-Dokumentation wird jetzt korrekt dargestellt — Endpunkte sind übersichtlich getrennt und nutzen die volle Breite" }
+          { "type": "fix", "text": "API-Dokumentation wird jetzt korrekt dargestellt — Endpunkte sind übersichtlich getrennt und nutzen die volle Breite" },
+          { "type": "feature", "text": "Spulen-Zuweisung zeigt jetzt animiertes Feedback am Slot: weißes Blinken während der Übertragung, grün bei Bestätigung vom Drucker, rot bei Fehler oder Timeout" },
+          { "type": "fix", "text": "Nerviges Erfolgs-Popup nach Spulen-Zuweisung entfernt — visuelles Slot-Feedback reicht aus" }
         ],
         "en": [
-          { "type": "fix", "text": "API documentation now displays correctly — endpoints are clearly separated and use the full available width" }
+          { "type": "fix", "text": "API documentation now displays correctly — endpoints are clearly separated and use the full available width" },
+          { "type": "feature", "text": "Spool assignment now shows animated feedback on the slot dot: white pulsing while sending, green on printer confirmation, red on error or timeout" },
+          { "type": "fix", "text": "Removed annoying success popup after spool assignment — visual slot feedback is sufficient" }
         ]
       }
     },
