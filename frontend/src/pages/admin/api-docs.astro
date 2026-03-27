@@ -37,8 +37,16 @@ import Layout from '../../layouts/Layout.astro'
     #swagger-container .swagger-ui .parameter__name,
     #swagger-container .swagger-ui .parameter__type,
     #swagger-container .swagger-ui .response-col_status,
-    #swagger-container .swagger-ui .tab li {
-      color: var(--text-muted);
+    #swagger-container .swagger-ui .tab li,
+    #swagger-container .swagger-ui .opblock .opblock-summary-description,
+    #swagger-container .swagger-ui .opblock .opblock-summary-path,
+    #swagger-container .swagger-ui label,
+    #swagger-container .swagger-ui .model,
+    #swagger-container .swagger-ui .markdown p,
+    #swagger-container .swagger-ui .markdown pre,
+    #swagger-container .swagger-ui span,
+    #swagger-container .swagger-ui .renderedMarkdown p {
+      color: var(--text);
     }
 
     /* ── Backgrounds ──────────────────────────────────────────────── */
@@ -58,7 +66,7 @@ import Layout from '../../layouts/Layout.astro'
       background: var(--bg);
     }
     #swagger-container .swagger-ui .model {
-      color: var(--text-muted);
+      color: var(--text);
     }
 
     /* ── Form elements ────────────────────────────────────────────── */
