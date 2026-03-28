@@ -119,13 +119,13 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="spools.status" data-sort="status_id" class="sortable col-status">Status</th>
           <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable col-remaining">Remaining</th>
           <th data-i18n="spools.location" data-sort="location_id" class="sortable col-location">Location</th>
-          <th data-i18n="spools.colPrice" class="col-price">Price</th>
-          <th data-i18n="spools.colMfrColor" class="col-mfr_color">Mfr. Color</th>
-          <th data-i18n="spools.colLot" class="col-lot">Lot</th>
-          <th data-i18n="spools.colPurchaseDate" class="col-purchase_date">Purchase Date</th>
-          <th data-i18n="spools.colLastUsed" class="col-last_used">Last Used</th>
-          <th data-i18n="spools.colTotalWeight" class="col-total_weight">Total Weight</th>
-          <th data-i18n="spools.colEmptyWeight" class="col-empty_weight">Empty Weight</th>
+          <th data-i18n="spools.colPrice" data-sort="purchase_price" class="sortable col-price">Price</th>
+          <th data-i18n="spools.colMfrColor" data-sort="mfr_color" class="sortable col-mfr_color">Mfr. Color</th>
+          <th data-i18n="spools.colLot" data-sort="lot_number" class="sortable col-lot">Lot</th>
+          <th data-i18n="spools.colPurchaseDate" data-sort="purchase_date" class="sortable col-purchase_date">Purchase Date</th>
+          <th data-i18n="spools.colLastUsed" data-sort="last_used_at" class="sortable col-last_used">Last Used</th>
+          <th data-i18n="spools.colTotalWeight" data-sort="initial_total_weight_g" class="sortable col-total_weight">Total Weight</th>
+          <th data-i18n="spools.colEmptyWeight" data-sort="empty_spool_weight_g" class="sortable col-empty_weight">Empty Weight</th>
           <th style="width: 40px;"></th>
         </tr>
       </thead>
@@ -277,26 +277,28 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function setupSortableHeaders() {
-      document.querySelectorAll('th[data-sort]').forEach(th => {
-        th.addEventListener('click', () => {
-          const key = (th as HTMLElement).dataset.sort!
-          if (sortKey === key) {
-            if (sortDirection === 'asc') sortDirection = 'desc'
-            else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
-            else sortDirection = 'asc'
-          } else {
-            sortKey = key
-            sortDirection = 'asc'
-          }
-          updateSortIndicators()
-          applyFiltersAndRender()
-          // Save sort state to localStorage
-          if (sortKey && sortDirection) {
-            localStorage.setItem('filaman-sort-spools', JSON.stringify({ key: sortKey, direction: sortDirection }))
-          } else {
-            localStorage.removeItem('filaman-sort-spools')
-          }
-        })
+      const thead = document.querySelector('.fm-table thead')
+      if (!thead) return
+      thead.addEventListener('click', (e) => {
+        const th = (e.target as HTMLElement).closest('th[data-sort]') as HTMLElement | null
+        if (!th) return
+        const key = th.dataset.sort!
+        if (sortKey === key) {
+          if (sortDirection === 'asc') sortDirection = 'desc'
+          else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
+          else sortDirection = 'asc'
+        } else {
+          sortKey = key
+          sortDirection = 'asc'
+        }
+        updateSortIndicators()
+        applyFiltersAndRender()
+        // Save sort state to localStorage
+        if (sortKey && sortDirection) {
+          localStorage.setItem('filaman-sort-spools', JSON.stringify({ key: sortKey, direction: sortDirection }))
+        } else {
+          localStorage.removeItem('filaman-sort-spools')
+        }
       })
     }
 
@@ -331,6 +333,11 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'location_id') return getLocationName(item.location_id)
       if (key === 'manufacturer') return getManufacturerName(item)
       if (key === 'material') return getMaterialType(item)
+      if (key === 'mfr_color') return getFilamentForSpool(item)?.manufacturer_color_name ?? ''
+      if (key.startsWith('cf_')) {
+        const cfKey = key.slice(3)
+        return item.custom_fields?.[cfKey] ?? ''
+      }
       return item[key]
     }
 
@@ -900,7 +907,8 @@ import Layout from '../../layouts/Layout.astro'
           const lastTh = headerRow.querySelector('th:last-child')
           fields.forEach(f => {
             const th = document.createElement('th')
-            th.className = `col-cf_${f.key}`
+            th.className = `sortable col-cf_${f.key}`
+            th.dataset.sort = `cf_${f.key}`
             th.textContent = f.label
             headerRow.insertBefore(th, lastTh)
           })

@@ -100,12 +100,12 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
           <th data-i18n="filaments.diameter" data-sort="diameter_mm" class="sortable col-diameter">Diameter</th>
           <th style="text-align: right;" data-i18n="filaments.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
-          <th data-i18n="filaments.colPrice" class="col-price">Price</th>
-          <th data-i18n="filaments.colMfrColor" class="col-mfr_color">Mfr. Color</th>
-          <th data-i18n="filaments.colFinish" class="col-finish">Finish</th>
-          <th data-i18n="filaments.colSubgroup" class="col-subgroup">Subgroup</th>
-          <th data-i18n="filaments.colWeight" class="col-weight">Material Weight</th>
-          <th data-i18n="filaments.colDensity" class="col-density">Density</th>
+          <th data-i18n="filaments.colPrice" data-sort="price" class="sortable col-price">Price</th>
+          <th data-i18n="filaments.colMfrColor" data-sort="manufacturer_color_name" class="sortable col-mfr_color">Mfr. Color</th>
+          <th data-i18n="filaments.colFinish" data-sort="finish_type" class="sortable col-finish">Finish</th>
+          <th data-i18n="filaments.colSubgroup" data-sort="material_subgroup" class="sortable col-subgroup">Subgroup</th>
+          <th data-i18n="filaments.colWeight" data-sort="raw_material_weight_g" class="sortable col-weight">Material Weight</th>
+          <th data-i18n="filaments.colDensity" data-sort="density_g_cm3" class="sortable col-density">Density</th>
         </tr>
       </thead>
       <tbody id="filaments-table">
@@ -200,26 +200,28 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function setupSortableHeaders() {
-      document.querySelectorAll('th[data-sort]').forEach(th => {
-        th.addEventListener('click', () => {
-          const key = (th as HTMLElement).dataset.sort!
-          if (sortKey === key) {
-            if (sortDirection === 'asc') sortDirection = 'desc'
-            else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
-            else sortDirection = 'asc'
-          } else {
-            sortKey = key
-            sortDirection = 'asc'
-          }
-          updateSortIndicators()
-          applyFiltersAndRender()
-          // Save sort state to localStorage
-          if (sortKey && sortDirection) {
-            localStorage.setItem('filaman-sort-filaments', JSON.stringify({ key: sortKey, direction: sortDirection }))
-          } else {
-            localStorage.removeItem('filaman-sort-filaments')
-          }
-        })
+      const thead = document.querySelector('.fm-table thead')
+      if (!thead) return
+      thead.addEventListener('click', (e) => {
+        const th = (e.target as HTMLElement).closest('th[data-sort]') as HTMLElement | null
+        if (!th) return
+        const key = th.dataset.sort!
+        if (sortKey === key) {
+          if (sortDirection === 'asc') sortDirection = 'desc'
+          else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
+          else sortDirection = 'asc'
+        } else {
+          sortKey = key
+          sortDirection = 'asc'
+        }
+        updateSortIndicators()
+        applyFiltersAndRender()
+        // Save sort state to localStorage
+        if (sortKey && sortDirection) {
+          localStorage.setItem('filaman-sort-filaments', JSON.stringify({ key: sortKey, direction: sortDirection }))
+        } else {
+          localStorage.removeItem('filaman-sort-filaments')
+        }
       })
     }
 
@@ -237,6 +239,10 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'manufacturer') return item.manufacturer?.name || ''
       if (key === 'type') return item.material_type || ''
       if (key === 'colors') return item.colors?.length || 0
+      if (key.startsWith('cf_')) {
+        const cfKey = key.slice(3)
+        return item.custom_fields?.[cfKey] ?? ''
+      }
       return item[key]
     }
 
@@ -712,7 +718,8 @@ import Layout from '../../layouts/Layout.astro'
         if (headerRow) {
           fields.forEach(f => {
             const th = document.createElement('th')
-            th.className = `col-cf_${f.key}`
+            th.className = `sortable col-cf_${f.key}`
+            th.dataset.sort = `cf_${f.key}`
             th.textContent = f.label
             headerRow.appendChild(th)
           })

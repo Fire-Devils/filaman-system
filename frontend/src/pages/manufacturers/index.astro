@@ -69,10 +69,10 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="manufacturers.url" data-sort="url" class="sortable col-url">URL</th>
           <th data-i18n="manufacturers.filaments" data-sort="filament_count" class="sortable col-filaments">Filaments</th>
           <th data-i18n="manufacturers.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
-          <th data-i18n="manufacturers.materials" class="col-materials">Materials</th>
-          <th data-i18n="manufacturers.colTotalPrice" class="col-total_price">Total Value</th>
-          <th data-i18n="manufacturers.colArchived" class="col-archived">Archived</th>
-          <th data-i18n="manufacturers.colSpoolWeight" class="col-spool_weight">Spool Weight</th>
+          <th data-i18n="manufacturers.materials" data-sort="materials" class="sortable col-materials">Materials</th>
+          <th data-i18n="manufacturers.colTotalPrice" data-sort="total_price_available" class="sortable col-total_price">Total Value</th>
+          <th data-i18n="manufacturers.colArchived" data-sort="archived_spool_count" class="sortable col-archived">Archived</th>
+          <th data-i18n="manufacturers.colSpoolWeight" data-sort="empty_spool_weight_g" class="sortable col-spool_weight">Spool Weight</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
@@ -241,26 +241,28 @@ import Layout from '../../layouts/Layout.astro'
     } catch {}
 
     function setupSortableHeaders() {
-      document.querySelectorAll('th[data-sort]').forEach(th => {
-        th.addEventListener('click', () => {
-          const key = (th as HTMLElement).dataset.sort!
-          if (sortKey === key) {
-            if (sortDirection === 'asc') sortDirection = 'desc'
-            else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
-            else sortDirection = 'asc'
-          } else {
-            sortKey = key
-            sortDirection = 'asc'
-          }
-          updateSortIndicators()
-          renderManufacturers()
-          // Save sort state to localStorage
-          if (sortKey && sortDirection) {
-            localStorage.setItem('filaman-sort-manufacturers', JSON.stringify({ key: sortKey, direction: sortDirection }))
-          } else {
-            localStorage.removeItem('filaman-sort-manufacturers')
-          }
-        })
+      const thead = document.querySelector('.fm-table thead')
+      if (!thead) return
+      thead.addEventListener('click', (e) => {
+        const th = (e.target as HTMLElement).closest('th[data-sort]') as HTMLElement | null
+        if (!th) return
+        const key = th.dataset.sort!
+        if (sortKey === key) {
+          if (sortDirection === 'asc') sortDirection = 'desc'
+          else if (sortDirection === 'desc') { sortKey = null; sortDirection = null }
+          else sortDirection = 'asc'
+        } else {
+          sortKey = key
+          sortDirection = 'asc'
+        }
+        updateSortIndicators()
+        renderManufacturers()
+        // Save sort state to localStorage
+        if (sortKey && sortDirection) {
+          localStorage.setItem('filaman-sort-manufacturers', JSON.stringify({ key: sortKey, direction: sortDirection }))
+        } else {
+          localStorage.removeItem('filaman-sort-manufacturers')
+        }
       })
     }
 
@@ -274,11 +276,16 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
+    function getSortValue(item: any, key: string): any {
+      if (key === 'materials') return item.material_types?.length ?? 0
+      return item[key]
+    }
+
     function sortManufacturers(items: any[]): any[] {
       if (!sortKey || !sortDirection) return items
       return [...items].sort((a, b) => {
-        const aVal = a[sortKey] ?? ''
-        const bVal = b[sortKey] ?? ''
+        const aVal = getSortValue(a, sortKey) ?? ''
+        const bVal = getSortValue(b, sortKey) ?? ''
         let cmp = 0
         if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
         else cmp = aVal - bVal
