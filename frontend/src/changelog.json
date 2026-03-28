@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Erweiterte Spaltenauswahl: Spulen, Filamente und Hersteller bieten jetzt viele zusätzliche Spalten (Preis, Gewicht, Kaufdatum, Dichte u.v.m.) — gruppiert in Standard, Erweitert und Extrafelder" }
+          { "type": "feature", "text": "Erweiterte Spaltenauswahl: Spulen, Filamente und Hersteller bieten jetzt viele zusätzliche Spalten (Preis, Gewicht, Kaufdatum, Dichte u.v.m.) — gruppiert in Standard, Erweitert und Extrafelder" },
+          { "type": "fix", "text": "Fehlende Übersetzungen auf der Seite System-Extrafelder ergänzt" }
         ],
         "en": [
-          { "type": "feature", "text": "Extended column picker: Spools, Filaments and Manufacturers now offer many additional columns (price, weight, purchase date, density and more) — grouped into Standard, Extended and Extra Fields" }
+          { "type": "feature", "text": "Extended column picker: Spools, Filaments and Manufacturers now offer many additional columns (price, weight, purchase date, density and more) — grouped into Standard, Extended and Extra Fields" },
+          { "type": "fix", "text": "Added missing translations on the System Extra Fields page" }
         ]
       }
     },
