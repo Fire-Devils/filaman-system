@@ -748,6 +748,7 @@
     "extraFieldsDesc": "System-wide extra fields for spools and filaments",
     "extraFieldsHint": "These fields will be automatically added to all filaments or spools.",
     "addField": "Add Field",
+    "editField": "Edit Field",
     "targetType": "Target Type",
     "keyJson": "Key (JSON)",
     "keyJsonHint": "Used as key in the custom_fields JSON.",

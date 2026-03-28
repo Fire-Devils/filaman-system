@@ -750,6 +750,7 @@
     "extraFieldsDesc": "Systemweite Extrafelder für Spulen und Filamente",
     "extraFieldsHint": "Diese Felder werden automatisch zu allen Filamenten oder Spulen hinzugefügt.",
     "addField": "Feld hinzufügen",
+    "editField": "Feld bearbeiten",
     "targetType": "Ziel-Typ",
     "keyJson": "Schlüssel (JSON)",
     "keyJsonHint": "Wird als Schlüssel im custom_fields JSON verwendet.",

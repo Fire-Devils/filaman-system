@@ -148,26 +148,36 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = fields.map(f => {
         const isPluginManaged = !!f.source
-        const deleteCell = isPluginManaged
-          ? `<span title="${t('admin.pluginManagedField') || 'Managed by plugin'}: ${escapeHtml(f.source)}" style="color: var(--text-muted); cursor: help;">🔒 ${escapeHtml(f.source)}</span>`
-          : `<button data-id="${f.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>`
+        const actionsCell = isPluginManaged
+          ? `<span title="${t('admin.pluginManagedField') || 'Managed by plugin'}: ${escapeHtml(f.source)}" style="color: var(--text-muted); cursor: help;">🔒</span>`
+          : `<button data-id="${f.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button><button data-id="${f.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>`
         
         const optionsInfo = f.field_type === 'dropdown' && f.options
           ? ` <span title="${f.options.join('\n')}" style="color: var(--text-muted); cursor: help; font-size: 0.8rem;">(${f.options.length})</span>`
           : ''
 
+        const rowStyle = isPluginManaged ? 'background: var(--bg-soft); opacity: 0.85;' : ''
+        
         return `
-        <tr>
+        <tr style="${rowStyle}">
           <td><span class="fm-pill" style="text-transform: capitalize;">${escapeHtml(f.target_type)}</span></td>
           <td style="font-family: monospace; color: var(--accent-2);">${escapeHtml(f.key)}</td>
           <td>${escapeHtml(f.label)}</td>
           <td><span class="fm-pill">${fieldTypeLabel(f.field_type)}</span>${optionsInfo}</td>
           <td style="color: var(--text-muted);">${escapeHtml(f.default_value || '-')}</td>
           <td style="color: var(--text-muted);">${f.source ? escapeHtml(f.source) : '-'}</td>
-          <td style="text-align: right;">${deleteCell}</td>
+          <td style="text-align: right;">${actionsCell}</td>
         </tr>`
       }).join('')
       
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          const field = fields.find(f => f.id === id)
+          if (field) openEditModal(field)
+        })
+      })
+
       document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
@@ -204,6 +214,13 @@ import Layout from '../../layouts/Layout.astro'
       fieldOptionsTextarea.required = isDropdown
     })
     
+    const fieldIdInput = document.getElementById('field-id') as HTMLInputElement
+    const fieldTargetSelect = document.getElementById('field-target') as HTMLSelectElement
+    const fieldKeyInput = document.getElementById('field-key') as HTMLInputElement
+    const fieldLabelInput = document.getElementById('field-label') as HTMLInputElement
+    const fieldDefaultInput = document.getElementById('field-default') as HTMLInputElement
+    const modalTitle = document.getElementById('modal-title') as HTMLElement
+
     function openModal() {
       const container = document.getElementById('modal-container')!
       const error = document.getElementById('modal-error')!
@@ -212,6 +229,40 @@ import Layout from '../../layouts/Layout.astro'
       ;(document.getElementById('modal-form') as HTMLFormElement).reset()
       optionsContainer.style.display = 'none'
       fieldOptionsTextarea.required = false
+      
+      // Reset for "Add" mode
+      fieldIdInput.value = ''
+      modalTitle.textContent = t('admin.addField')
+      fieldTargetSelect.disabled = false
+      fieldKeyInput.disabled = false
+      
+      container.classList.add('open')
+    }
+
+    function openEditModal(field: any) {
+      const container = document.getElementById('modal-container')!
+      const error = document.getElementById('modal-error')!
+      
+      error.classList.add('hidden')
+      
+      // Populate form with existing values
+      fieldIdInput.value = field.id.toString()
+      fieldTargetSelect.value = field.target_type
+      fieldKeyInput.value = field.key
+      fieldLabelInput.value = field.label
+      fieldDefaultInput.value = field.default_value || ''
+      fieldTypeSelect.value = field.field_type || 'text'
+      
+      // Handle dropdown options
+      const isDropdown = field.field_type === 'dropdown'
+      optionsContainer.style.display = isDropdown ? 'block' : 'none'
+      fieldOptionsTextarea.required = isDropdown
+      fieldOptionsTextarea.value = field.options ? field.options.join('\n') : ''
+      
+      // Set Edit mode: target_type and key are read-only
+      modalTitle.textContent = t('admin.editField')
+      fieldTargetSelect.disabled = true
+      fieldKeyInput.disabled = true
       
       container.classList.add('open')
     }
@@ -229,10 +280,13 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      const targetType = (document.getElementById('field-target') as HTMLSelectElement).value
-      const key = (document.getElementById('field-key') as HTMLInputElement).value
-      const label = (document.getElementById('field-label') as HTMLInputElement).value
-      const defaultValue = (document.getElementById('field-default') as HTMLInputElement).value || null
+      const editId = fieldIdInput.value
+      const isEdit = !!editId
+      
+      const targetType = fieldTargetSelect.value
+      const key = fieldKeyInput.value
+      const label = fieldLabelInput.value
+      const defaultValue = fieldDefaultInput.value || null
       const fieldType = fieldTypeSelect.value
       
       let options: string[] | null = null
@@ -257,23 +311,24 @@ import Layout from '../../layouts/Layout.astro'
       submitBtn.textContent = t('common.saving')
       
       try {
-        const response = await fetch('/api/v1/system-extra-fields', {
-          method: 'POST',
+        const url = isEdit 
+          ? `/api/v1/system-extra-fields/${editId}`
+          : '/api/v1/system-extra-fields'
+        
+        const body = isEdit
+          ? { label, default_value: defaultValue, field_type: fieldType, options }
+          : { target_type: targetType, key, label, default_value: defaultValue, field_type: fieldType, options }
+        
+        const response = await fetch(url, {
+          method: isEdit ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
-          body: JSON.stringify({ 
-            target_type: targetType, 
-            key, 
-            label, 
-            default_value: defaultValue,
-            field_type: fieldType,
-            options,
-          }),
+          body: JSON.stringify(body),
         })
         
         if (!response.ok) {
           const data = await response.json()
-          throw new Error(data.detail?.message || data.detail || data.message || "Failed to create field")
+          throw new Error(data.detail?.message || data.detail || data.message || (isEdit ? "Failed to update field" : "Failed to create field"))
         }
         
         closeModal()

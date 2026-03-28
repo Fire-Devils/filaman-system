@@ -5,7 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.api.deps import RequirePermission, PrincipalDep
 from app.models.system_extra_field import SystemExtraField
-from app.api.v1.schemas_system_extra_field import SystemExtraFieldCreate, SystemExtraFieldResponse
+from app.api.v1.schemas_system_extra_field import (
+    SystemExtraFieldCreate,
+    SystemExtraFieldResponse,
+    SystemExtraFieldUpdate,
+)
 
 router = APIRouter()
 
@@ -26,7 +30,11 @@ async def get_system_extra_fields(
     return result.scalars().all()
 
 
-@router.post("", response_model=SystemExtraFieldResponse, dependencies=[RequirePermission("admin:system")])
+@router.post(
+    "",
+    response_model=SystemExtraFieldResponse,
+    dependencies=[RequirePermission("admin:system")],
+)
 async def create_system_extra_field(
     field: SystemExtraFieldCreate,
     db: AsyncSession = Depends(get_db),
@@ -49,7 +57,44 @@ async def create_system_extra_field(
     return new_field
 
 
-@router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[RequirePermission("admin:system")])
+@router.put(
+    "/{field_id}",
+    response_model=SystemExtraFieldResponse,
+    dependencies=[RequirePermission("admin:system")],
+)
+async def update_system_extra_field(
+    field_id: int,
+    update_data: SystemExtraFieldUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a user-created extra field. Plugin-managed fields cannot be edited."""
+    query = select(SystemExtraField).where(SystemExtraField.id == field_id)
+    result = await db.execute(query)
+    field = result.scalar_one_or_none()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+
+    if field.source:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot edit plugin-managed field (source: {field.source}). Plugin fields are read-only.",
+        )
+
+    # Apply updates (only non-None values)
+    update_dict = update_data.model_dump(exclude_unset=True)
+    for key, value in update_dict.items():
+        setattr(field, key, value)
+
+    await db.commit()
+    await db.refresh(field)
+    return field
+
+
+@router.delete(
+    "/{field_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[RequirePermission("admin:system")],
+)
 async def delete_system_extra_field(
     field_id: int,
     db: AsyncSession = Depends(get_db),
