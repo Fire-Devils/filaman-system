@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "Container-Start bei Nutzung von SQLite (z.\u00a0B. unter Home Assistant) konnte h\u00e4ngen bleiben — Datenbankverbindung und paralleler Worker-Start wurden korrigiert" }
+          { "type": "fix", "text": "Container-Start bei Nutzung von SQLite (z.\u00a0B. unter Home Assistant) konnte hängen bleiben — Datenbankverbindung und paralleler Worker-Start wurden korrigiert" },
+          { "type": "feature", "text": "Drucker-Verbindungen werden jetzt automatisch überwacht und bei Ausfall innerhalb von 60 Sekunden wiederhergestellt — ohne Container-Neustart" }
         ],
         "en": [
-          { "type": "fix", "text": "Container startup could hang when using SQLite (e.g. on Home Assistant) — database connection and parallel worker startup have been fixed" }
+          { "type": "fix", "text": "Container startup could hang when using SQLite (e.g. on Home Assistant) — database connection and parallel worker startup have been fixed" },
+          { "type": "feature", "text": "Printer connections are now automatically monitored and restored within 60 seconds after a failure — no container restart required" }
         ]
       }
     },

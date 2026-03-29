@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import fcntl
 import json as _json
@@ -31,6 +32,9 @@ logger = __import__("logging").getLogger(__name__)
 # executes these tasks; the others skip them.
 # ---------------------------------------------------------------------------
 _STARTUP_LOCK_PATH = Path(tempfile.gettempdir()) / "filaman-startup.lock"
+_is_primary = False
+_lock_fd = None
+_WATCHDOG_INTERVAL = 60  # seconds
 
 
 def run_migrations() -> None:
@@ -53,8 +57,117 @@ def run_migrations() -> None:
     command.upgrade(alembic_cfg, "head")
 
 
+# ---------------------------------------------------------------------------
+# Driver watchdog – runs in every Gunicorn worker as a background task.
+#
+# Primary worker:  periodically checks driver health and restarts dead
+#                  drivers or starts missing ones.
+# Secondary workers: periodically try to acquire the startup lock.  If they
+#                    succeed the previous primary is gone and they take over
+#                    driver management.
+# ---------------------------------------------------------------------------
+async def _driver_watchdog() -> None:
+    """Background task: monitors driver health and handles primary failover."""
+    global _is_primary, _lock_fd
+
+    # Give the primary worker time to finish initial startup.
+    await asyncio.sleep(30)
+
+    while True:
+        try:
+            if _is_primary:
+                await _watchdog_health_check()
+            else:
+                await _watchdog_try_takeover()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Driver watchdog error (will retry next cycle)")
+
+        await asyncio.sleep(_WATCHDOG_INTERVAL)
+
+
+async def _watchdog_health_check() -> None:
+    """Primary worker: restart dead drivers and start missing ones."""
+    from app.models.printer import Printer
+    from sqlalchemy import select
+
+    health = plugin_manager.get_health()
+
+    # 1. Restart drivers that report running=False
+    for printer_id, status in list(health.items()):
+        if not status.get("running", True):
+            logger.warning(
+                f"Watchdog: driver for printer {printer_id} not running, restarting"
+            )
+            await plugin_manager.stop_printer(printer_id)
+            # Reload printer from DB to get current config
+            async with async_session_maker() as db:
+                result = await db.execute(
+                    select(Printer).where(
+                        Printer.id == printer_id,
+                        Printer.is_active == True,
+                        Printer.deleted_at.is_(None),
+                    )
+                )
+                printer = result.scalar_one_or_none()
+            if printer:
+                started = await plugin_manager.start_printer(printer)
+                if started:
+                    logger.info(f"Watchdog: restarted driver for printer {printer_id}")
+                else:
+                    logger.error(
+                        f"Watchdog: failed to restart driver for printer {printer_id}"
+                    )
+
+    # 2. Start drivers for active printers that have no driver in memory
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(Printer).where(
+                Printer.is_active == True,
+                Printer.deleted_at.is_(None),
+            )
+        )
+        active_printers = result.scalars().all()
+
+    for printer in active_printers:
+        if printer.id not in plugin_manager.drivers:
+            logger.info(
+                f"Watchdog: no driver for active printer {printer.id}, starting"
+            )
+            started = await plugin_manager.start_printer(printer)
+            if started:
+                logger.info(f"Watchdog: started driver for printer {printer.id}")
+            else:
+                logger.error(
+                    f"Watchdog: failed to start driver for printer {printer.id}"
+                )
+
+
+async def _watchdog_try_takeover() -> None:
+    """Secondary worker: try to become primary if the lock is available."""
+    global _is_primary, _lock_fd
+
+    try:
+        fd = open(_STARTUP_LOCK_PATH, "w")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Lock acquired – previous primary is gone.
+        _lock_fd = fd
+        _is_primary = True
+        logger.info("Watchdog: acquired lock – promoted to primary worker")
+        await plugin_manager.start_all()
+        logger.info("Watchdog: drivers started after takeover")
+    except OSError:
+        # Primary still holds the lock – nothing to do.
+        pass
+    except Exception:
+        logger.exception("Watchdog: takeover attempt failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _is_primary, _lock_fd
+
     logger.info("Starting FilaMan backend...")
     logger.info(f"Using database URL: {settings.database_url}")
 
@@ -75,39 +188,52 @@ async def lifespan(app: FastAPI):
     # With Gunicorn prefork (multiple workers) every worker executes this
     # lifespan independently.  Seeds and plugin drivers must only run once.
     # We use an exclusive file-lock: the first worker wins and runs the
-    # one-time tasks; all other workers skip them.
-    is_primary = False
-    lock_fd = None
+    # one-time tasks; the others skip them.
     try:
-        lock_fd = open(_STARTUP_LOCK_PATH, "w")
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        is_primary = True
+        _lock_fd = open(_STARTUP_LOCK_PATH, "w")
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _is_primary = True
         logger.info("Primary worker – running seeds and starting plugins")
     except OSError:
         # Another worker already holds the lock
         logger.info("Secondary worker – skipping seeds and plugin start")
     except Exception as exc:
         logger.warning(f"Startup lock failed ({exc}), running seeds as fallback")
-        is_primary = True
+        _is_primary = True
 
-    if is_primary:
+    if _is_primary:
         async with async_session_maker() as db:
             await run_all_seeds(db)
         await plugin_manager.start_all()
 
+    # Start the driver watchdog in every worker (handles health checks
+    # for the primary and automatic takeover for secondary workers).
+    watchdog_task = asyncio.create_task(_driver_watchdog())
+
     logger.info("FilaMan backend started")
     yield
     logger.info("Shutting down FilaMan backend...")
-    if is_primary:
+
+    # Cancel the watchdog first
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
+
+    if _is_primary:
         await plugin_manager.stop_all()
-        # Release and clean up the lock file
-        if lock_fd:
+        # Release the file lock (OS also releases automatically on exit).
+        # We intentionally do NOT delete the lock file so that secondary
+        # workers can still attempt flock() on it during takeover.
+        if _lock_fd:
             try:
-                fcntl.flock(lock_fd, fcntl.LOCK_UN)
-                lock_fd.close()
-                _STARTUP_LOCK_PATH.unlink(missing_ok=True)
+                fcntl.flock(_lock_fd, fcntl.LOCK_UN)
+                _lock_fd.close()
             except OSError:
                 pass
+            _lock_fd = None
+        _is_primary = False
     logger.info("FilaMan backend stopped")
 
 
