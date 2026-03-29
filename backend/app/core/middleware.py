@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 import logging
@@ -7,7 +8,6 @@ import uuid
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
 from app.core.security import (
@@ -58,6 +58,33 @@ def _should_write_last_used(cache_key: str) -> bool:
         _last_used_writes[cache_key] = now
         return True
     return False
+
+
+async def _bg_write_last_used(
+    model_class: type,
+    pk_column: str,
+    pk_value: int,
+    extra_values: dict[str, Any] | None = None,
+) -> None:
+    """Fire-and-forget background task to update last_used_at.
+
+    Runs in its own DB session so it never interferes with the
+    request-handler's session (avoids SQLAlchemy concurrent-state errors
+    with BaseHTTPMiddleware).
+    """
+    try:
+        async with async_session_maker() as db:
+            values: dict[str, Any] = {"last_used_at": datetime.now(timezone.utc)}
+            if extra_values:
+                values.update(extra_values)
+            await db.execute(
+                update(model_class)
+                .where(getattr(model_class, pk_column) == pk_value)
+                .values(**values)
+            )
+            await db.commit()
+    except Exception:
+        logger.debug("Background last_used_at write failed", exc_info=True)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -162,32 +189,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
                 cache_key = f"sess:{session_id}"
                 if _should_write_last_used(cache_key) or needs_extension:
-                    try:
-                        async with async_session_maker() as db:
-                            from app.models import UserSession
+                    from app.models import UserSession
 
-                            update_values: dict[str, Any] = {"last_used_at": now}
-                            if needs_extension:
-                                new_expires = now + timedelta(days=30)
-                                update_values["expires_at"] = new_expires
-                                # Update cached expires_at
-                                _session_cache[session_id] = (
-                                    principal,
-                                    cached_hash,
-                                    user_active,
-                                    new_expires,
-                                    cached_at,
-                                )
-                            await db.execute(
-                                update(UserSession)
-                                .where(UserSession.id == session_id)
-                                .values(**update_values)
-                            )
-                            await db.commit()
-                    except Exception:
-                        logger.debug(
-                            "Failed to update session last_used_at", exc_info=True
+                    extra: dict[str, Any] | None = None
+                    if needs_extension:
+                        new_expires = now + timedelta(days=30)
+                        extra = {"expires_at": new_expires}
+                        # Update cached expires_at
+                        _session_cache[session_id] = (
+                            principal,
+                            cached_hash,
+                            user_active,
+                            new_expires,
+                            cached_at,
                         )
+                    asyncio.create_task(
+                        _bg_write_last_used(UserSession, "id", session_id, extra)
+                    )
 
                 if needs_extension:
                     principal.needs_cookie_extension = True
@@ -300,20 +318,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # Throttled last_used_at write
                 cache_key = f"uak:{key_id}"
                 if _should_write_last_used(cache_key):
-                    try:
-                        async with async_session_maker() as db:
-                            from app.models import UserApiKey
+                    from app.models import UserApiKey
 
-                            await db.execute(
-                                update(UserApiKey)
-                                .where(UserApiKey.id == key_id)
-                                .values(last_used_at=datetime.now(timezone.utc))
-                            )
-                            await db.commit()
-                    except Exception:
-                        logger.debug(
-                            "Failed to update api_key last_used_at", exc_info=True
-                        )
+                    asyncio.create_task(_bg_write_last_used(UserApiKey, "id", key_id))
                 return principal
             else:
                 _api_key_cache.pop(key_id, None)
@@ -397,20 +404,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # Throttled last_used_at write
                 cache_key = f"dev:{device_id}"
                 if _should_write_last_used(cache_key):
-                    try:
-                        async with async_session_maker() as db:
-                            from app.models import Device
+                    from app.models import Device
 
-                            await db.execute(
-                                update(Device)
-                                .where(Device.id == device_id)
-                                .values(last_used_at=datetime.now(timezone.utc))
-                            )
-                            await db.commit()
-                    except Exception:
-                        logger.debug(
-                            "Failed to update device last_used_at", exc_info=True
-                        )
+                    asyncio.create_task(_bg_write_last_used(Device, "id", device_id))
                 return principal
             else:
                 _device_cache.pop(device_id, None)

@@ -1,7 +1,9 @@
 from typing import Annotated
+import logging
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IllegalStateChangeError, InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,9 +11,22 @@ from app.core.database import async_session_maker
 from app.core.security import Principal
 from app.models import Device, Role, User
 
+logger = logging.getLogger(__name__)
+
+
 async def get_db():
-    async with async_session_maker() as session:
+    session = async_session_maker()
+    try:
         yield session
+    finally:
+        try:
+            await session.close()
+        except (IllegalStateChangeError, InvalidRequestError):
+            # BaseHTTPMiddleware can cancel the handler task during response
+            # streaming, leaving the session in a transient state.  The
+            # underlying connection is returned to the pool by GC, so it is
+            # safe to swallow these errors instead of surfacing a 500.
+            logger.debug("Session close race (BaseHTTPMiddleware), ignored")
 
 
 DBSession = Annotated[AsyncSession, Depends(get_db)]
@@ -57,7 +72,10 @@ def RequirePermission(permission_key: str):
         if principal is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": "unauthenticated", "message": "Authentication required"},
+                detail={
+                    "code": "unauthenticated",
+                    "message": "Authentication required",
+                },
             )
 
         if principal.is_superadmin:
@@ -67,12 +85,18 @@ def RequirePermission(permission_key: str):
             if principal.scopes is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail={"code": "forbidden", "message": "Device has no scopes assigned"},
+                    detail={
+                        "code": "forbidden",
+                        "message": "Device has no scopes assigned",
+                    },
                 )
             if permission_key not in principal.scopes:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail={"code": "forbidden", "message": f"Permission '{permission_key}' required"},
+                    detail={
+                        "code": "forbidden",
+                        "message": f"Permission '{permission_key}' required",
+                    },
                 )
             return principal
 
@@ -86,7 +110,10 @@ def RequirePermission(permission_key: str):
         if permission_key not in effective:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "forbidden", "message": f"Permission '{permission_key}' required"},
+                detail={
+                    "code": "forbidden",
+                    "message": f"Permission '{permission_key}' required",
+                },
             )
 
         return principal
