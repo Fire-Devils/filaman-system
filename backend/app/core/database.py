@@ -1,5 +1,4 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import QueuePool
 
 from app.core.config import settings
 
@@ -24,7 +23,6 @@ if _is_sqlite:
 else:
     # MySQL / PostgreSQL: proper connection pooling
     _engine_kwargs.update(
-        poolclass=QueuePool,
         pool_size=10,
         max_overflow=20,
         pool_recycle=3600,

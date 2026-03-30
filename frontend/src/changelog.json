@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "PostgreSQL/MySQL: Container-Start schlug fehl wegen inkompatiblem Connection-Pool — Datenbankverbindung funktioniert jetzt zuverlässig mit allen unterstützten Datenbanken" }
+        ],
+        "en": [
+          { "type": "fix", "text": "PostgreSQL/MySQL: Container startup failed due to incompatible connection pool — database connection now works reliably with all supported databases" }
+        ]
+      }
+    },
+    {
       "version": "1.1.20",
       "date": "",
       "changes": {
