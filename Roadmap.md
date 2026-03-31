@@ -3,6 +3,7 @@
 3) Add filament print PR (PR846 spoolman basis)
 4) Add label export workflow (PNG/AML) (PR860 spoolman basis)
 5) Add Manufacturer Logo inclusion and improvement to Label design & filament/spool show pages (PR857)
+   a) template text field instead of clicks (select "simple" vs "detail")
 7) Add Plugin for manufacturer logo sync (PR872)
 8) Add Formula field extra field capability JSON (PR885)
 9) Move spool & filament list filtering to columns
