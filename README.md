@@ -1,16 +1,10 @@
 # FilaMan - Filament Management System
 
-### Support the FilaMan Project
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X51V6SLP)
+## Fork Project Status / Roadmap
 
-### ♻️ Support Recycling Fabrik
-Empty spools don't belong in the trash! We support the [Recycling Fabrik](https://recyclingfabrik.com/). Send your empty filament spools and 3D printing waste there to have it recycled into new filament.
+See [ROADMAP.md](./ROADMAP.md) for planned features and ongoing ideas for eventual PR push upstream.
 
-**Exciting News:** Recycling Fabrik is the first manufacturer that will soon start shipping their filament spools with pre-programmed, FilaMan-compatible RFID tags!
-
-*Looking for the German version? Read the [README.de.md](README.de.md).*
-
-## About the Project
+## About the Upstream Project
 FilaMan is a comprehensive filament management system for 3D printing. It helps you keep track of your filament spools, manufacturers, colors, and current stock levels. It also features integrations with printers and AMS (Automatic Material System) units.
 
 ### Documentation
@@ -188,3 +182,13 @@ OIDC_ENC_KEY=your-fernet-key
 
 ## License
 MIT
+
+### Support the FilaMan Project
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X51V6SLP)
+
+### ♻️ Support Recycling Fabrik
+Empty spools don't belong in the trash! We support the [Recycling Fabrik](https://recyclingfabrik.com/). Send your empty filament spools and 3D printing waste there to have it recycled into new filament.
+
+**Exciting News:** Recycling Fabrik is the first manufacturer that will soon start shipping their filament spools with pre-programmed, FilaMan-compatible RFID tags!
+
+*Looking for the German version? Read the [README.de.md](README.de.md).*
