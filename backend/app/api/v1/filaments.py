@@ -1,6 +1,10 @@
+import mimetypes
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,13 +27,32 @@ from app.api.v1.schemas_filament import (
     FilamentResponse,
     FilamentUpdate,
     ManufacturerCreate,
+    ManufacturerLogoImportRequest,
     ManufacturerResponse,
     ManufacturerUpdate,
 )
 from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+from app.services.manufacturer_logo_service import (
+    delete_manufacturer_logo,
+    resolve_logo_file_path,
+    save_manufacturer_logo,
+)
 
 router = APIRouter(prefix="/manufacturers", tags=["manufacturers"])
+
+
+@router.get("/logo-files/{filename}")
+async def get_manufacturer_logo_file(filename: str, principal: PrincipalDep):
+    stored_path = f"manufacturer-logos/{Path(filename).name}"
+    file_path = resolve_logo_file_path(stored_path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer logo not found"},
+        )
+    media_type, _ = mimetypes.guess_type(file_path.name)
+    return FileResponse(file_path, media_type=media_type or "application/octet-stream")
 
 
 @router.get("", response_model=PaginatedResponse[ManufacturerResponse])
@@ -112,6 +135,7 @@ async def list_manufacturers(
         ManufacturerResponse.model_validate(
             {
                 **m.__dict__,
+                "resolved_logo_url": m.resolved_logo_url,
                 "filament_count": fil_counts.get(m.id, 0),
                 "spool_count": active_spool_counts.get(m.id, 0),
                 "archived_spool_count": archived_spool_counts.get(m.id, 0),
@@ -160,6 +184,121 @@ async def create_manufacturer(
     return manufacturer
 
 
+@router.post("/{manufacturer_id}/logo-from-url", response_model=ManufacturerResponse)
+async def import_manufacturer_logo_from_url(
+    manufacturer_id: int,
+    data: ManufacturerLogoImportRequest,
+    db: DBSession,
+    principal=RequirePermission("manufacturers:update"),
+):
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    logo_url = (data.url or data.logo_url or "").strip()
+    if not logo_url:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_logo_url", "message": "Logo URL is required"},
+        )
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+            response = await client.get(logo_url)
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "logo_fetch_failed", "message": f"Failed to fetch logo from URL: {exc}"},
+        )
+
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_content_type", "message": "URL did not return an image"},
+        )
+
+    file_bytes = response.content
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "empty_file", "message": "Fetched logo was empty"},
+        )
+
+    previous_logo_path = manufacturer.logo_file_path
+    manufacturer.logo_file_path = save_manufacturer_logo(
+        manufacturer_name=manufacturer.name,
+        file_bytes=file_bytes,
+        filename=Path(httpx.URL(logo_url).path).name or None,
+        content_type=content_type,
+    )
+    manufacturer.logo_url = None
+
+    await db.commit()
+    await db.refresh(manufacturer)
+
+    if previous_logo_path and previous_logo_path != manufacturer.logo_file_path:
+        delete_manufacturer_logo(previous_logo_path)
+
+    await event_bus.publish({"event": "manufacturers_changed"})
+    return manufacturer
+
+
+@router.post("/{manufacturer_id}/logo", response_model=ManufacturerResponse)
+async def upload_manufacturer_logo(
+    manufacturer_id: int,
+    db: DBSession,
+    file: UploadFile = File(...),
+    principal=RequirePermission("manufacturers:update"),
+):
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_content_type", "message": "Expected an image file"},
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "empty_file", "message": "Empty file"},
+        )
+
+    previous_logo_path = manufacturer.logo_file_path
+    manufacturer.logo_file_path = save_manufacturer_logo(
+        manufacturer_name=manufacturer.name,
+        file_bytes=file_bytes,
+        filename=file.filename,
+        content_type=file.content_type,
+    )
+
+    await db.commit()
+    await db.refresh(manufacturer)
+
+    if previous_logo_path and previous_logo_path != manufacturer.logo_file_path:
+        delete_manufacturer_logo(previous_logo_path)
+
+    await event_bus.publish({"event": "manufacturers_changed"})
+    return manufacturer
+
+
 @router.get("/{manufacturer_id}", response_model=ManufacturerResponse)
 async def get_manufacturer(
     manufacturer_id: int, db: DBSession, principal: PrincipalDep
@@ -173,6 +312,32 @@ async def get_manufacturer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Manufacturer not found"},
         )
+    return manufacturer
+
+
+@router.delete("/{manufacturer_id}/logo", response_model=ManufacturerResponse)
+async def delete_manufacturer_logo_file(
+    manufacturer_id: int,
+    db: DBSession,
+    principal=RequirePermission("manufacturers:update"),
+):
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    previous_logo_path = manufacturer.logo_file_path
+    manufacturer.logo_file_path = None
+    await db.commit()
+    await db.refresh(manufacturer)
+
+    delete_manufacturer_logo(previous_logo_path)
+    await event_bus.publish({"event": "manufacturers_changed"})
     return manufacturer
 
 
@@ -266,6 +431,7 @@ async def delete_manufacturer(
                     await db.delete(s)
                 await db.delete(f)
 
+    delete_manufacturer_logo(manufacturer.logo_file_path)
     await db.delete(manufacturer)
     await db.commit()
     await event_bus.publish({"event": "manufacturers_changed"})

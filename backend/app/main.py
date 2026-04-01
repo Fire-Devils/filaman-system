@@ -48,10 +48,11 @@ def run_migrations() -> None:
     from alembic import command
     from alembic.config import Config
 
-    alembic_cfg = Config("alembic.ini")
+    backend_dir = Path(__file__).resolve().parent.parent
+    alembic_cfg = Config(str(backend_dir / "alembic.ini"))
     alembic_cfg.set_main_option(
         "script_location",
-        str(__import__("pathlib").Path(__file__).resolve().parent.parent / "alembic"),
+        str(backend_dir / "alembic"),
     )
     # Wir muessen hier nichts mehr an der URL drehen, das macht env.py jetzt selbst.
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class ManufacturerCreate(BaseModel):
     name: str
     url: str | None = None
+    logo_url: str | None = None
     empty_spool_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
@@ -16,6 +17,7 @@ class ManufacturerCreate(BaseModel):
 class ManufacturerUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
+    logo_url: str | None = None
     empty_spool_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
@@ -23,10 +25,18 @@ class ManufacturerUpdate(BaseModel):
     custom_fields: dict[str, Any] | None = None
 
 
+class ManufacturerLogoImportRequest(BaseModel):
+    url: str | None = None
+    logo_url: str | None = None
+
+
 class ManufacturerResponse(BaseModel):
     id: int
     name: str
     url: str | None
+    logo_url: str | None = None
+    logo_file_path: str | None = None
+    resolved_logo_url: str | None = None
     empty_spool_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
