@@ -42,6 +42,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           <option value="" data-i18n="spools.selectFilament">Select filament...</option>
         </select>
       </div>
+      <div id="filament-manufacturer-preview" class="fm-card hidden" style="padding: 12px;"></div>
 
       <!-- Status -->
       <div>
@@ -257,6 +258,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
+    import { renderManufacturerLogo } from '../../../lib/manufacturer-logo'
     await initI18n()
 
     const pathParts = window.location.pathname.split('/').filter(Boolean)
@@ -286,6 +288,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
     const customFieldsContainer = document.getElementById('custom-fields-container')
     const btnAddField = document.getElementById('btn-add-field')
     let customFields = []
+    const filamentManufacturerPreview = document.getElementById('filament-manufacturer-preview') as HTMLDivElement
 
     function flattenObject(obj, prefix = '', res = {}) {
       for (const key in obj) {
@@ -404,6 +407,28 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       } else {
         priceInput.value = ''
       }
+
+      renderSelectedFilamentManufacturerPreview(filament)
+    }
+
+    function renderSelectedFilamentManufacturerPreview(filament?: any) {
+      if (!filament?.manufacturer) {
+        filamentManufacturerPreview.classList.add('hidden')
+        filamentManufacturerPreview.innerHTML = ''
+        return
+      }
+
+      filamentManufacturerPreview.classList.remove('hidden')
+      filamentManufacturerPreview.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          ${renderManufacturerLogo(filament.manufacturer, { width: 132, height: 42, borderRadius: '8px' })}
+          <div style="min-width: 0;">
+            <div style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(t('manufacturers.logo'))}</div>
+            <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(filament.manufacturer.name || t('common.unknown'))}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(filament.manufacturer.logo_file_path || filament.manufacturer.logo_url || t('manufacturers.noLogoConfigured'))}</div>
+          </div>
+        </div>
+      `
     }
 
     document.getElementById('filament_id').addEventListener('change', (e) => {
@@ -417,6 +442,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = '';
         (document.getElementById('spool_width_mm') as HTMLInputElement).value = '';
         (document.getElementById('purchase_price') as HTMLInputElement).value = '';
+        renderSelectedFilamentManufacturerPreview()
       }
     })
 
@@ -582,6 +608,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         renderSystemFields({})
       }
       renderCustomFields()
+      renderSelectedFilamentManufacturerPreview(s.filament)
     }
 
     const form = document.getElementById('spool-form')

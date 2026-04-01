@@ -42,6 +42,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
             <option value="" data-i18n="filaments.selectManufacturer">Select manufacturer...</option>
           </select>
         </div>
+        <div id="manufacturer-preview" class="fm-card hidden" style="padding: 12px;"></div>
         
         <!-- Designation -->
         <div>
@@ -355,6 +356,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
+    import { renderManufacturerLogo } from '../../../lib/manufacturer-logo'
     await initI18n()
 
     const CUSTOM_TYPE_VALUE = '__custom__'
@@ -416,6 +418,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
     const typeSelect = document.getElementById('type') as HTMLSelectElement
     const manufacturerSelect = document.getElementById('manufacturer_id') as HTMLSelectElement
+    const manufacturerPreview = document.getElementById('manufacturer-preview') as HTMLDivElement
     const customTypeWrapper = document.getElementById('custom-type-wrapper') as HTMLDivElement
     const customTypeInput = document.getElementById('custom_type') as HTMLInputElement
     const colorGrid = document.getElementById('color-grid') as HTMLDivElement
@@ -583,9 +586,32 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
           option.textContent = m.name || t('common.unknown')
           select.appendChild(option)
         })
+        renderSelectedManufacturerPreview()
       } catch (error) {
         console.error('Failed to load manufacturers:', error)
       }
+    }
+
+    function renderSelectedManufacturerPreview() {
+      const selectedId = parseInt(manufacturerSelect.value)
+      const manufacturer = allManufacturers.find((item: any) => item.id === selectedId)
+      if (!manufacturer) {
+        manufacturerPreview.classList.add('hidden')
+        manufacturerPreview.innerHTML = ''
+        return
+      }
+
+      manufacturerPreview.classList.remove('hidden')
+      manufacturerPreview.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          ${renderManufacturerLogo(manufacturer, { width: 132, height: 42, borderRadius: '8px' })}
+          <div style="min-width: 0;">
+            <div style="font-size: 0.78rem; color: var(--text-muted);">${escapeHtml(t('manufacturers.logo'))}</div>
+            <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(manufacturer.name || t('common.unknown'))}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(manufacturer.logo_file_path || manufacturer.logo_url || t('manufacturers.noLogoConfigured'))}</div>
+          </div>
+        </div>
+      `
     }
 
     manufacturerSelect.addEventListener('change', () => {
@@ -601,6 +627,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         matInput.value = ''
         odInput.value = ''
         wInput.value = ''
+        renderSelectedManufacturerPreview()
         return
       }
 
@@ -612,6 +639,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         odInput.value = mfr.spool_outer_diameter_mm != null ? String(mfr.spool_outer_diameter_mm) : ''
         wInput.value = mfr.spool_width_mm != null ? String(mfr.spool_width_mm) : ''
       }
+      renderSelectedManufacturerPreview()
     })
 
     async function loadTypes(): Promise<void> {
@@ -842,6 +870,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       // Manufacturer
       const mfgSelect = document.getElementById('manufacturer_id') as HTMLSelectElement
       mfgSelect.value = String(f.manufacturer_id)
+      renderSelectedManufacturerPreview()
 
       // Designation
       ;(document.getElementById('designation') as HTMLInputElement).value = f.designation || ''

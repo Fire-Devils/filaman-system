@@ -166,6 +166,7 @@ const { id } = Astro.params
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
+    import { escapeHtml, renderManufacturerLogo } from '../../../lib/manufacturer-logo'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -371,9 +372,10 @@ const { id } = Astro.params
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.filament')}</div>
             <div style="display: flex; align-items: center; gap: 10px;">
               ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map(fc => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${fc.color?.hex_code || 'var(--border)'}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
+              ${renderManufacturerLogo(spool.filament?.manufacturer, { width: 104, height: 32, borderRadius: '8px' })}
               <div style="min-width: 0;">
                 <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.designation || '-'}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.manufacturer?.name || '-'} · ${spool.filament?.material_type || '-'}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(spool.filament?.manufacturer?.name || '-')} · ${escapeHtml(spool.filament?.material_type || '-')}</div>
               </div>
             </div>
           </div>

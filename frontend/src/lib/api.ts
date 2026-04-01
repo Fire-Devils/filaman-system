@@ -36,9 +36,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     url = API_BASE + path
   }
 
+  const isFormDataBody = options.body instanceof FormData
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...options.headers as Record<string, string>,
+  }
+
+  if (!isFormDataBody && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
   }
 
   const csrfToken = getCsrfToken()
@@ -83,6 +87,11 @@ export const api = {
     request<T>(path, {
       method: 'PATCH',
       body: body ? JSON.stringify(body) : undefined,
+    }),
+  postFormData: <T>(path: string, body: FormData) =>
+    request<T>(path, {
+      method: 'POST',
+      body,
     }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }

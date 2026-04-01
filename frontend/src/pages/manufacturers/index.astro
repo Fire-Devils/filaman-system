@@ -21,6 +21,21 @@ import Layout from '../../layouts/Layout.astro'
       min-width: 200px;
       max-width: 400px;
     }
+    .manufacturer-modal-card {
+      max-height: min(90vh, 920px);
+      overflow-y: auto;
+    }
+    .manufacturer-logo-upload-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
   </style>
   <style is:global>
     .pagination-container { display: flex; justify-content: space-between; align-items: center; }
@@ -66,6 +81,7 @@ import Layout from '../../layouts/Layout.astro'
       <thead>
         <tr>
           <th data-i18n="manufacturers.name" data-sort="name" class="sortable">Name</th>
+          <th data-i18n="manufacturers.logo" class="col-logo">Logo</th>
           <th data-i18n="manufacturers.url" data-sort="url" class="sortable col-url">URL</th>
           <th data-i18n="manufacturers.filaments" data-sort="filament_count" class="sortable col-filaments">Filaments</th>
           <th data-i18n="manufacturers.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
@@ -78,7 +94,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="manufacturers-table">
         <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+          <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -87,8 +103,8 @@ import Layout from '../../layouts/Layout.astro'
   <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
 
   <!-- Modal -->
-  <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
-    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
+  <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50; overflow-y: auto; padding: 24px 16px; overscroll-behavior: contain;">
+    <div class="fm-card manufacturer-modal-card" style="width: 100%; max-width: 640px; margin: auto;">
       <h3 id="modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;" data-i18n="manufacturers.addManufacturer">Add Manufacturer</h3>
       <form id="modal-form" style="display: grid; gap: 16px;">
         <input type="hidden" id="manufacturer-id" />
@@ -117,7 +133,7 @@ import Layout from '../../layouts/Layout.astro'
             placeholder="e.g. https://bambulab.com"
           />
         </div>
-        
+
         <!-- Spool Defaults -->
         <div class="fm-card" style="padding: 16px; margin-top: 8px;">
           <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Defaults</h3>
@@ -171,6 +187,43 @@ import Layout from '../../layouts/Layout.astro'
             </div>
           </div>
         </div>
+
+        <div class="fm-card" style="padding: 16px; margin-top: 8px;">
+          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);" data-i18n="manufacturers.logoSection">Logo</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;">
+            <div>
+              <label for="manufacturer-logo-url" class="fm-label" data-i18n="manufacturers.uploadLogoFromUrl">Upload logo from URL</label>
+              <input
+                type="url"
+                id="manufacturer-logo-url"
+                class="fm-input"
+                data-i18n-placeholder="manufacturers.logoUrlPlaceholder"
+                placeholder="e.g. https://example.com/logo.png"
+              />
+            </div>
+            <div>
+              <label class="fm-label" data-i18n="manufacturers.uploadLogo">Click to upload logo file</label>
+              <input type="file" id="manufacturer-logo-file" accept="image/*" class="manufacturer-logo-upload-input" />
+              <label for="manufacturer-logo-file" id="manufacturer-logo-file-trigger" class="fm-btn fm-btn-outline" style="display: inline-flex; width: 100%; justify-content: center;">Click to upload logo file</label>
+              <div id="manufacturer-logo-upload-state" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;" data-i18n="manufacturers.uploadLogoHelp">
+                Import a logo from a web URL or upload a local file.
+              </div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-top: 16px;">
+            <div>
+              <label for="manufacturer-logo-file-path" class="fm-label" data-i18n="manufacturers.logoFilePath">Stored file path</label>
+              <input type="text" id="manufacturer-logo-file-path" class="fm-input" readonly />
+            </div>
+            <button type="button" id="manufacturer-clear-logo" class="fm-btn fm-btn-outline" data-i18n="manufacturers.clearLogo">
+              Clear Logo
+            </button>
+          </div>
+          <div style="margin-top: 16px;">
+            <label class="fm-label" data-i18n="manufacturers.logoPreview">Logo Preview</label>
+            <div id="manufacturer-logo-preview" style="padding: 6px 0;"></div>
+          </div>
+        </div>
         
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
@@ -187,7 +240,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <!-- Info Modal -->
   <div id="info-modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
-    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
+    <div class="fm-card" style="width: 100%; max-width: 720px; margin: 16px;">
       <h3 id="info-modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Manufacturer Details</h3>
       <div id="info-modal-content" style="display: grid; gap: 12px;">
         <!-- Filled via JS -->
@@ -202,9 +255,10 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { fetchAllPages } from '../../lib/api'
+    import { api, fetchAllPages } from '../../lib/api'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
+    import { normalizeOptionalString, renderManufacturerLogo } from '../../lib/manufacturer-logo'
     await initI18n()
     await initCurrency()
 
@@ -233,6 +287,9 @@ import Layout from '../../layouts/Layout.astro'
     })()
     let currentPage = 1
     let isInitialLoad = true
+    let pendingLogoFile: File | null = null
+    let pendingLogoPreviewUrl: string | null = null
+    let shouldClearLogo = false
 
     // Restore page from localStorage
     try {
@@ -359,7 +416,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+            <td colspan="10" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
           </tr>
         `
       }
@@ -477,7 +534,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
               ${hasFilters ? t('manufacturers.noResults') : t('manufacturers.noManufacturers')}
             </td>
           </tr>
@@ -494,6 +551,7 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = paged.map(mf => `
         <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
           <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td class="col-logo">${renderManufacturerLogo(mf, { width: 96, height: 32, tooltipText: mf.logo_file_path || mf.resolved_logo_url || t('manufacturers.noLogoConfigured') })}</td>
           <td class="col-url">${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
           <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
@@ -578,6 +636,69 @@ import Layout from '../../layouts/Layout.astro'
       renderPagination(sorted.length, currentPage)
     }
 
+    function resetPendingLogoPreviewUrl() {
+      if (pendingLogoPreviewUrl) {
+        URL.revokeObjectURL(pendingLogoPreviewUrl)
+      }
+      pendingLogoPreviewUrl = null
+    }
+
+    function getModalLogoState() {
+      const name = (document.getElementById('manufacturer-name') as HTMLInputElement).value.trim()
+      const logoUrl = normalizeOptionalString((document.getElementById('manufacturer-logo-url') as HTMLInputElement).value)
+      const filePathInput = document.getElementById('manufacturer-logo-file-path') as HTMLInputElement
+      const preview = document.getElementById('manufacturer-logo-preview') as HTMLDivElement
+      const currentPath = shouldClearLogo ? null : normalizeOptionalString(filePathInput.dataset.currentPath || filePathInput.value)
+      const currentResolvedUrl = shouldClearLogo ? null : normalizeOptionalString(preview.dataset.resolvedUrl)
+      return {
+        name,
+        logo_url: logoUrl,
+        logo_file_path: currentPath,
+        resolved_logo_url: currentResolvedUrl,
+      }
+    }
+
+    function renderModalLogoPreview() {
+      const preview = document.getElementById('manufacturer-logo-preview') as HTMLDivElement
+      const uploadState = document.getElementById('manufacturer-logo-upload-state') as HTMLDivElement
+      const logoState = getModalLogoState()
+      const sourceText = pendingLogoFile
+        ? t('manufacturers.pendingUpload', { filename: pendingLogoFile.name })
+        : logoState.logo_file_path || logoState.logo_url || t('manufacturers.noLogoConfigured')
+
+      uploadState.textContent = pendingLogoFile
+        ? t('manufacturers.selectedLogoFile', { filename: pendingLogoFile.name })
+        : t('manufacturers.uploadLogoHelp')
+
+      preview.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+          ${renderManufacturerLogo(logoState, { width: 160, height: 52, previewUrl: pendingLogoPreviewUrl, tooltipText: logoState.logo_file_path || logoState.resolved_logo_url || logoState.logo_url || null })}
+          <div style="min-width: 0;">
+            <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(logoState.name || t('manufacturers.logoPreview'))}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(sourceText)}</div>
+          </div>
+        </div>
+      `
+    }
+
+    function applyModalManufacturerState(mf: any = null) {
+      const logoUrlInput = document.getElementById('manufacturer-logo-url') as HTMLInputElement
+      const logoFileInput = document.getElementById('manufacturer-logo-file') as HTMLInputElement
+      const logoFilePathInput = document.getElementById('manufacturer-logo-file-path') as HTMLInputElement
+      const logoPreview = document.getElementById('manufacturer-logo-preview') as HTMLDivElement
+
+      resetPendingLogoPreviewUrl()
+      pendingLogoFile = null
+      shouldClearLogo = false
+
+      logoUrlInput.value = ''
+      logoFileInput.value = ''
+      logoFilePathInput.value = mf?.logo_file_path || ''
+      logoFilePathInput.dataset.currentPath = mf?.logo_file_path || ''
+      logoPreview.dataset.resolvedUrl = mf?.resolved_logo_url || ''
+      renderModalLogoPreview()
+    }
+
     function openModal(mf: any = null) {
       const container = document.getElementById('modal-container')!
       const title = document.getElementById('modal-title')!
@@ -608,14 +729,18 @@ import Layout from '../../layouts/Layout.astro'
         widthInput.value = '65'
       }
       
+      applyModalManufacturerState(mf)
       error.classList.add('hidden')
 
       container.style.display = 'flex'
+      document.body.style.overflow = 'hidden'
       nameInput.focus()
     }
 
     function closeModal() {
+      resetPendingLogoPreviewUrl()
       document.getElementById('modal-container')!.style.display = 'none'
+      document.body.style.overflow = ''
     }
 
     function openInfoModal(mf: any) {
@@ -626,6 +751,9 @@ import Layout from '../../layouts/Layout.astro'
       title.textContent = mf.name
 
       content.innerHTML = `
+        <div style="display: flex; align-items: center; margin-bottom: 12px; min-height: 52px;">
+          ${renderManufacturerLogo(mf, { width: 188, height: 52, tooltipText: mf.logo_file_path || mf.resolved_logo_url || t('manufacturers.noLogoConfigured') })}
+        </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
             <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.filaments')}</div>
@@ -669,6 +797,36 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     document.getElementById('info-modal-close')?.addEventListener('click', closeInfoModal)
+    document.getElementById('manufacturer-name')?.addEventListener('input', renderModalLogoPreview)
+    document.getElementById('manufacturer-logo-url')?.addEventListener('input', renderModalLogoPreview)
+    document.getElementById('manufacturer-clear-logo')?.addEventListener('click', async () => {
+      const hasStoredLogo = !!normalizeOptionalString((document.getElementById('manufacturer-logo-file-path') as HTMLInputElement).dataset.currentPath)
+      if (hasStoredLogo) {
+        const shouldProceed = await (window as any).__fmConfirm(t('manufacturers.clearLogoConfirm'))
+        if (!shouldProceed) return
+      }
+      shouldClearLogo = true
+      pendingLogoFile = null
+      resetPendingLogoPreviewUrl()
+      ;(document.getElementById('manufacturer-logo-file') as HTMLInputElement).value = ''
+      ;(document.getElementById('manufacturer-logo-url') as HTMLInputElement).value = ''
+      const logoFilePathInput = document.getElementById('manufacturer-logo-file-path') as HTMLInputElement
+      const logoPreview = document.getElementById('manufacturer-logo-preview') as HTMLDivElement
+      logoFilePathInput.value = ''
+      logoFilePathInput.dataset.currentPath = ''
+      logoPreview.dataset.resolvedUrl = ''
+      renderModalLogoPreview()
+    })
+    document.getElementById('manufacturer-logo-file')?.addEventListener('change', (e) => {
+      const input = e.currentTarget as HTMLInputElement
+      pendingLogoFile = input.files?.[0] || null
+      resetPendingLogoPreviewUrl()
+      if (pendingLogoFile) {
+        shouldClearLogo = false
+        pendingLogoPreviewUrl = URL.createObjectURL(pendingLogoFile)
+      }
+      renderModalLogoPreview()
+    })
 
     // Close modals on backdrop click
     document.getElementById('modal-container')?.addEventListener('click', (e) => {
@@ -692,6 +850,7 @@ import Layout from '../../layouts/Layout.astro'
       const id = (document.getElementById('manufacturer-id') as HTMLInputElement).value
       const name = (document.getElementById('manufacturer-name') as HTMLInputElement).value
       const url = (document.getElementById('manufacturer-url') as HTMLInputElement).value || null
+      const logoUrl = normalizeOptionalString((document.getElementById('manufacturer-logo-url') as HTMLInputElement).value)
       const emptyWeight = (document.getElementById('manufacturer-empty-weight') as HTMLInputElement).value
       const material = (document.getElementById('manufacturer-material') as HTMLSelectElement).value || null
       const outerDiameter = (document.getElementById('manufacturer-outer-diameter') as HTMLInputElement).value
@@ -702,6 +861,7 @@ import Layout from '../../layouts/Layout.astro'
       const data: Record<string, any> = { 
         name,
         url,
+        logo_url: null,
         empty_spool_weight_g: emptyWeight ? parseFloat(emptyWeight) : null,
         spool_material: material,
         spool_outer_diameter_mm: outerDiameter ? parseFloat(outerDiameter) : null,
@@ -716,7 +876,7 @@ import Layout from '../../layouts/Layout.astro'
         const apiUrl = id ? `/api/v1/manufacturers/${id}` : '/api/v1/manufacturers'
         const method = id ? 'PATCH' : 'POST'
 
-        const response = await fetch(apiUrl, {
+        let response = await fetch(apiUrl, {
           method,
           headers: {
             'Content-Type': 'application/json',
@@ -731,8 +891,40 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
         }
 
+        let savedManufacturer = await response.json()
+        ;(document.getElementById('manufacturer-id') as HTMLInputElement).value = String(savedManufacturer.id)
+        ;(document.getElementById('manufacturer-logo-file-path') as HTMLInputElement).value = savedManufacturer.logo_file_path || ''
+        ;(document.getElementById('manufacturer-logo-file-path') as HTMLInputElement).dataset.currentPath = savedManufacturer.logo_file_path || ''
+        ;(document.getElementById('manufacturer-logo-preview') as HTMLDivElement).dataset.resolvedUrl = savedManufacturer.resolved_logo_url || ''
+
+        if (shouldClearLogo && !pendingLogoFile && !logoUrl && savedManufacturer.logo_file_path) {
+          try {
+            savedManufacturer = await api.delete(`/manufacturers/${savedManufacturer.id}/logo`)
+          } catch (clearError: any) {
+            throw new Error(clearError.message || t('manufacturers.failedClearLogo'))
+          }
+        }
+
+        if (pendingLogoFile) {
+          try {
+            const formData = new FormData()
+            formData.append('file', pendingLogoFile)
+            savedManufacturer = await api.postFormData(`/manufacturers/${savedManufacturer.id}/logo`, formData)
+          } catch (uploadError: any) {
+            throw new Error(uploadError.message || t('manufacturers.failedUpload'))
+          }
+        } else if (logoUrl) {
+          try {
+            savedManufacturer = await api.post(`/manufacturers/${savedManufacturer.id}/logo-from-url`, { logo_url: logoUrl })
+          } catch (importError: any) {
+            throw new Error(importError.message || t('manufacturers.failedImportFromUrl'))
+          }
+        }
+
+        applyModalManufacturerState(savedManufacturer)
+
         closeModal()
-        loadManufacturers()
+        await loadManufacturers()
       } catch (err: any) {
         error.textContent = err.message
         error.classList.remove('hidden')
@@ -762,6 +954,7 @@ import Layout from '../../layouts/Layout.astro'
       {
         heading: t('common.columnsStandard'),
         columns: [
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'url', label: t('manufacturers.url') },
           { key: 'filaments', label: t('manufacturers.filaments') },
           { key: 'spools', label: t('manufacturers.spools') },
@@ -779,7 +972,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     initColumnPicker({
       storageKey: 'filaman-columns-manufacturers',
-      defaultVisible: ['url', 'filaments', 'spools', 'materials'],
+      defaultVisible: ['logo', 'url', 'filaments', 'spools', 'materials'],
       groups: mfrColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',

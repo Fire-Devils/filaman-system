@@ -84,6 +84,7 @@ const { id } = Astro.params
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
+    import { escapeHtml, renderManufacturerLogo } from '../../../lib/manufacturer-logo'
     await initI18n()
     await initCurrency()
 
@@ -180,6 +181,15 @@ const { id } = Astro.params
     }
     
     function renderFilament(f: any) {
+      const manufacturerLine = `
+        <div style="display: flex; align-items: center; gap: 10px; margin: 4px 0 0;">
+          ${renderManufacturerLogo(f.manufacturer, { width: 112, height: 34, borderRadius: '8px' })}
+          <div style="min-width: 0;">
+            <div style="color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(f.manufacturer?.name || t('filaments.unknownManufacturer'))}</div>
+          </div>
+        </div>
+      `
+
       // Build the secondary info cards grid
       const cards: string[] = []
       cards.push(renderDetailCard(t('filaments.type'), f.material_type))
@@ -291,7 +301,7 @@ const { id } = Astro.params
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
-            <p style="color: var(--text-muted); margin: 4px 0 0;">${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
+            ${manufacturerLine}
           </div>
           <div style="display: flex; gap: 8px;">
             <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
