@@ -297,6 +297,9 @@ const { id } = Astro.params
             <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
               ${t('filaments.newSpool')}
             </a>
+            <a href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981; text-decoration: none;">
+              ${t('spools.printLabel')}
+            </a>
             <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
               ${t('common.edit')}
             </a>
