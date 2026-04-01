@@ -1,22 +1,23 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
+import '../../../styles/print-label.css'
 
 export function getStaticPaths() {
   return [
     {params: {id: 'detail'}},
   ];
 }
-
-const { id } = Astro.params
 ---
 
 <Layout title="FilaMan - Print Filament Label">
   <div class="print-page">
     <aside class="print-sidebar">
-      <a id="btn-back" class="sidebar-header back-link">
+      <a id="btn-back" href="#" class="sidebar-header back-link">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
         <span id="label-back">Back to Filament</span>
       </a>
+
+      <div id="load-error" style="display:none; padding: 10px 14px; background: var(--error-bg, #fee2e2); color: var(--error-text, #991b1b); border-radius: var(--radius-sm); font-size: 0.875rem;" role="alert"></div>
 
       <div class="settings-section">
         <h3 id="title-settings">Print Settings</h3>
@@ -86,283 +87,9 @@ const { id } = Astro.params
   </div>
 </Layout>
 
-<style>
-  .print-page {
-    display: flex;
-    height: calc(100vh - 64px);
-    margin: -32px;
-    overflow: hidden;
-  }
-
-  .print-sidebar {
-    width: 320px;
-    background: var(--bg-elevated);
-    border-right: 1px solid var(--border);
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    overflow-y: auto;
-  }
-
-  .sidebar-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .back-link {
-    color: var(--accent);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: opacity var(--transition);
-  }
-
-  .back-link:hover {
-    opacity: 0.8;
-  }
-
-  .settings-section {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .settings-section h3 {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
-  .preview-container {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 40px;
-    overflow: auto;
-    background: var(--bg-soft);
-  }
-
-  .label-preview {
-    background: white;
-    box-shadow: var(--shadow-lg);
-    display: flex;
-    align-items: center;
-    padding: 1.5mm;
-    box-sizing: border-box;
-    gap: 3mm;
-    overflow: hidden;
-    position: relative;
-    border: 1px dashed #ccc;
-    border-radius: 4px;
-  }
-
-  #label-text-container {
-    flex: 1;
-    min-width: 0;
-    color: black;
-  }
-
-  .fm-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    margin-bottom: 6px;
-    display: block;
-    color: var(--text);
-  }
-
-  .fm-input {
-    background: var(--input-bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    color: var(--text);
-    font-family: var(--font-sans);
-    font-size: 0.9rem;
-    transition: border-color var(--transition), box-shadow var(--transition);
-    width: 100%;
-    height: 42px;
-    box-sizing: border-box;
-  }
-
-  .fm-input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--focus-ring);
-  }
-
-  .fm-checkbox-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    transition: background var(--transition);
-  }
-
-  .fm-checkbox-group:hover {
-    background: var(--bg-soft);
-  }
-
-  .fm-checkbox-group input {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent);
-    cursor: pointer;
-  }
-
-  .fm-checkbox-group span {
-    font-size: 0.9rem;
-    color: var(--text);
-  }
-
-  .fm-btn {
-    padding: 12px 20px;
-    border-radius: 999px;
-    border: 1px solid transparent;
-    font-weight: 600;
-    font-size: 0.875rem;
-    letter-spacing: 0.2px;
-    cursor: pointer;
-    transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
-    font-family: var(--font-sans);
-  }
-
-  .fm-btn-primary {
-    background: var(--accent);
-    color: var(--btn-primary-text);
-    box-shadow: var(--glow);
-  }
-
-  .fm-btn-primary:hover {
-    transform: translateY(-2px);
-  }
-
-  .fm-btn-outline {
-    background: transparent;
-    border-color: var(--border);
-    color: var(--text);
-  }
-
-  .fm-btn-outline:hover {
-    background: var(--bg-soft);
-  }
-
-  .action-buttons {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding-top: 20px;
-    border-top: 1px solid var(--border);
-  }
-
-  .checkbox-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-  }
-</style>
-
-<style is:global>
-  @media print {
-    html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      overflow: visible !important;
-      background: white !important;
-    }
-
-    .fm-sidebar,
-    #fm-confirm-overlay,
-    .fm-sidebar-backdrop {
-      display: none !important;
-    }
-
-    .fm-page {
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      background: white !important;
-      min-height: 0 !important;
-      height: auto !important;
-      position: static !important;
-    }
-
-    .fm-page > main {
-      padding: 0 !important;
-      margin: 0 !important;
-      overflow: visible !important;
-      background: white !important;
-    }
-
-    .print-sidebar {
-      display: none !important;
-    }
-
-    .print-page {
-      margin: 0 !important;
-      height: auto !important;
-      display: block !important;
-    }
-
-    .preview-container {
-      padding: 0 !important;
-      margin: 0 !important;
-      display: block !important;
-      overflow: visible !important;
-      background: white !important;
-    }
-
-    .label-preview {
-      box-shadow: none !important;
-      border: none !important;
-      border-radius: 0 !important;
-      display: flex !important;
-      align-items: center !important;
-      gap: 3mm !important;
-      background: white !important;
-      color: black !important;
-      margin: 0 !important;
-      padding: 1.5mm !important;
-      overflow: hidden !important;
-      break-inside: avoid !important;
-      page-break-inside: avoid !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    .label-preview div,
-    .label-preview span {
-      color: black !important;
-    }
-
-    #label-qr-container {
-      flex-shrink: 0 !important;
-    }
-
-    #label-qr-container img {
-      display: block !important;
-    }
-  }
-</style>
-
 <script>
   ;(window as any).filamanPrint = function() {
-    try {
-      document.execCommand('print', false, null)
-    } catch {
-      window.print()
-    }
+    window.print()
   }
 
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
@@ -407,10 +134,10 @@ const { id } = Astro.params
       const saved = localStorage.getItem(LABEL_SETTINGS_KEY)
       if (!saved) return
       const settings = JSON.parse(saved)
-      if (settings.width) widthInput.value = settings.width
-      if (settings.height) heightInput.value = settings.height
-      if (settings.fontSize) fontSizeInput.value = settings.fontSize
-      if (settings.qrSize) qrSizeInput.value = settings.qrSize
+      if (settings.width != null) widthInput.value = settings.width
+      if (settings.height != null) heightInput.value = settings.height
+      if (settings.fontSize != null) fontSizeInput.value = settings.fontSize
+      if (settings.qrSize != null) qrSizeInput.value = settings.qrSize
       if (settings.showQR !== undefined) checkQR.checked = settings.showQR
       if (settings.showID !== undefined) checkID.checked = settings.showID
       if (settings.showMfr !== undefined) checkMfr.checked = settings.showMfr
@@ -423,23 +150,23 @@ const { id } = Astro.params
 
   loadSettings()
 
-  document.getElementById('title-settings')!.textContent = (window as any).__t('spools.printSettings')
-  document.getElementById('label-width-text')!.textContent = (window as any).__t('spools.labelWidth')
-  document.getElementById('label-height-text')!.textContent = (window as any).__t('spools.labelHeight')
-  document.getElementById('label-font-size-text')!.textContent = (window as any).__t('spools.fontSize')
-  document.getElementById('label-qr-size-text')!.textContent = (window as any).__t('spools.qrSize')
-  document.getElementById('label-show-qr')!.textContent = (window as any).__t('spools.showQRCode')
-  document.getElementById('label-show-mfr')!.textContent = (window as any).__t('spools.showManufacturer')
-  document.getElementById('label-show-mat')!.textContent = (window as any).__t('spools.showMaterial')
-  document.getElementById('label-show-color')!.textContent = (window as any).__t('spools.showColor')
+  document.getElementById('title-settings')!.textContent = (window as any).__t('filaments.printSettings')
+  document.getElementById('label-width-text')!.textContent = (window as any).__t('filaments.labelWidth')
+  document.getElementById('label-height-text')!.textContent = (window as any).__t('filaments.labelHeight')
+  document.getElementById('label-font-size-text')!.textContent = (window as any).__t('filaments.fontSize')
+  document.getElementById('label-qr-size-text')!.textContent = (window as any).__t('filaments.qrSize')
+  document.getElementById('label-show-qr')!.textContent = (window as any).__t('filaments.showQRCode')
+  document.getElementById('label-show-mfr')!.textContent = (window as any).__t('filaments.showManufacturer')
+  document.getElementById('label-show-mat')!.textContent = (window as any).__t('filaments.showMaterial')
+  document.getElementById('label-show-color')!.textContent = (window as any).__t('filaments.showColor')
   document.getElementById('btn-print')!.textContent = (window as any).__t('common.print')
-  document.getElementById('btn-reset')!.textContent = (window as any).__t('spools.resetDefaults')
-  document.getElementById('title-display')!.textContent = 'Display'
-  document.getElementById('label-show-id')!.textContent = 'Filament ID'
+  document.getElementById('btn-reset')!.textContent = (window as any).__t('filaments.resetDefaults')
+  document.getElementById('title-display')!.textContent = (window as any).__t('filaments.printDisplay')
+  document.getElementById('label-show-id')!.textContent = (window as any).__t('filaments.showFilamentId')
 
   const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
   backBtn.href = `/filaments/${id}`
-  document.getElementById('label-back')!.textContent = 'Back to Filament'
+  document.getElementById('label-back')!.textContent = (window as any).__t('filaments.backToFilament')
 
   function getColorDisplay(filament: any): string {
     if (filament.manufacturer_color_name) {
@@ -473,19 +200,31 @@ const { id } = Astro.params
       }
     } catch (error) {
       console.error('Failed to load filament print data:', error)
+      const errorEl = document.getElementById('load-error') as HTMLDivElement | null
+      if (errorEl) {
+        errorEl.textContent = (window as any).__t?.('filaments.loadError') || 'Failed to load filament data.'
+        errorEl.style.display = 'block'
+      }
     }
   }
 
-  async function updatePreview() {
-    if (typeof (window as any).QRCode === 'undefined') {
-      await new Promise((resolve, reject) => {
+  let qrCodeReady: Promise<void> | null = null
+  function ensureQRCode(): Promise<void> {
+    if (typeof (window as any).QRCode !== 'undefined') return Promise.resolve()
+    if (!qrCodeReady) {
+      qrCodeReady = new Promise((resolve, reject) => {
         const script = document.createElement('script')
         script.src = '/vendor/qrcode.min.js'
-        script.onload = resolve
+        script.onload = () => resolve()
         script.onerror = reject
         document.head.appendChild(script)
       })
     }
+    return qrCodeReady
+  }
+
+  async function updatePreview() {
+    await ensureQRCode()
 
     const width = widthInput.value
     const height = heightInput.value
@@ -569,7 +308,7 @@ const { id } = Astro.params
     const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
     const style = document.createElement('style')
     const pageRule = isSafari ? '' : `@page { size: ${width}mm ${height}mm; margin: 0; }`
-    style.innerHTML = `
+    style.textContent = `
       ${pageRule}
       @media print {
         .label-preview {

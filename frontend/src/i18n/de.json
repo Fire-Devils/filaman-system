@@ -297,7 +297,22 @@
     "colFinish": "Oberfläche",
     "colSubgroup": "Untergruppe",
     "colWeight": "Materialgewicht",
-    "colDensity": "Dichte"
+    "colDensity": "Dichte",
+    "printLabel": "Label drucken",
+    "backToFilament": "Zurück zum Filament",
+    "showFilamentId": "Filament-ID",
+    "printDisplay": "Anzeige",
+    "printSettings": "Druckeinstellungen",
+    "labelWidth": "Breite (mm)",
+    "labelHeight": "Höhe (mm)",
+    "fontSize": "Schriftgröße (%)",
+    "qrSize": "QR-Größe (mm)",
+    "showQRCode": "QR-Code",
+    "showManufacturer": "Hersteller",
+    "showMaterial": "Material",
+    "showColor": "Farbe",
+    "resetDefaults": "Standardwerte",
+    "loadError": "Filament-Daten konnten nicht geladen werden. Einige Label-Felder sind möglicherweise leer."
   },
   "spools": {
     "title": "Spulen",

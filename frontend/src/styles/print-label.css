@@ -1,0 +1,219 @@
+/* ─── Shared print-label page layout (used by spools and filaments print pages) ─── */
+
+.print-page {
+  display: flex;
+  height: calc(100vh - 64px);
+  margin: -32px;
+  overflow: hidden;
+}
+
+.print-sidebar {
+  width: 320px;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.back-link:hover {
+  opacity: 0.8;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-section h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.preview-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  overflow: auto;
+  background: var(--bg-soft);
+}
+
+.label-preview {
+  background: white;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  padding: 1.5mm;
+  box-sizing: border-box;
+  gap: 3mm;
+  overflow: hidden;
+  position: relative;
+  border: 1px dashed #ccc;
+  border-radius: 4px;
+}
+
+#label-text-container {
+  flex: 1;
+  min-width: 0;
+  color: black;
+}
+
+/* .fm-checkbox-group is print-label-specific (not in global.css) */
+.fm-checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+
+.fm-checkbox-group:hover {
+  background: var(--bg-soft);
+}
+
+.fm-checkbox-group input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.fm-checkbox-group span {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.action-buttons {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+/* ─── Print media overrides ─── */
+@media print {
+  /* Reset page */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  /* Hide Layout elements */
+  .fm-sidebar,
+  #fm-confirm-overlay,
+  .fm-sidebar-backdrop {
+    display: none !important;
+  }
+
+  /* Reset Layout grid to block — ensure visibility */
+  .fm-page {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: white !important;
+    min-height: 0 !important;
+    height: auto !important;
+    position: static !important;
+  }
+
+  .fm-page > main {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  /* Hide print settings sidebar */
+  .print-sidebar {
+    display: none !important;
+  }
+
+  /* Reset print page containers */
+  .print-page {
+    margin: 0 !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  .preview-container {
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  /* The label — dimensions set dynamically via JS #page-style tag */
+  .label-preview {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 3mm !important;
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 1.5mm !important;
+    overflow: hidden !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .label-preview div,
+  .label-preview span {
+    color: black !important;
+  }
+
+  #label-qr-container {
+    flex-shrink: 0 !important;
+  }
+
+  #label-qr-container img {
+    display: block !important;
+  }
+
+  @page {
+    /* margin set dynamically via JS #page-style tag */
+  }
+}

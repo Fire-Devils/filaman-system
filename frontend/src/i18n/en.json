@@ -295,7 +295,22 @@
     "colFinish": "Finish",
     "colSubgroup": "Subgroup",
     "colWeight": "Material Weight",
-    "colDensity": "Density"
+    "colDensity": "Density",
+    "printLabel": "Print Label",
+    "backToFilament": "Back to Filament",
+    "showFilamentId": "Filament ID",
+    "printDisplay": "Display",
+    "printSettings": "Print Settings",
+    "labelWidth": "Width (mm)",
+    "labelHeight": "Height (mm)",
+    "fontSize": "Font Size (%)",
+    "qrSize": "QR Size (mm)",
+    "showQRCode": "QR Code",
+    "showManufacturer": "Manufacturer",
+    "showMaterial": "Material",
+    "showColor": "Color",
+    "resetDefaults": "Reset",
+    "loadError": "Failed to load filament data. Some label fields may be empty."
   },
   "spools": {
     "title": "Spools",
