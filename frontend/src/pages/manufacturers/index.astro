@@ -329,6 +329,10 @@ import Layout from '../../layouts/Layout.astro'
 
     function populateMaterialFilter(items: any[]) {
       const materialSelect = document.getElementById('filter-material') as HTMLSelectElement
+      const selectedValue = materialSelect.value
+      const defaultOption = materialSelect.querySelector('option[value=""]')?.cloneNode(true) as HTMLOptionElement | null
+      materialSelect.replaceChildren(defaultOption ?? new Option(t('manufacturers.allMaterials'), ''))
+
       const materials = new Set<string>()
       items.forEach(mf => {
         if (mf.materials) {
@@ -342,6 +346,8 @@ import Layout from '../../layouts/Layout.astro'
         opt.textContent = mat
         materialSelect.appendChild(opt)
       })
+
+      materialSelect.value = selectedValue && materials.has(selectedValue) ? selectedValue : ''
     }
 
     async function loadManufacturers() {
