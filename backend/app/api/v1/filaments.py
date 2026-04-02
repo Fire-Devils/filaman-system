@@ -1,6 +1,14 @@
+import asyncio
+import ipaddress
+import logging
+import mimetypes
+from pathlib import Path
+import socket
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,13 +31,301 @@ from app.api.v1.schemas_filament import (
     FilamentResponse,
     FilamentUpdate,
     ManufacturerCreate,
+    ManufacturerLogoImportRequest,
     ManufacturerResponse,
     ManufacturerUpdate,
 )
 from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+from app.services.manufacturer_logo_service import (
+    CONTENT_TYPE_SUFFIXES,
+    MAX_LOGO_SIZE_BYTES,
+    delete_manufacturer_logo,
+    resolve_logo_file_path,
+    save_manufacturer_logo,
+    sniff_logo_suffix,
+)
 
 router = APIRouter(prefix="/manufacturers", tags=["manufacturers"])
+logger = logging.getLogger(__name__)
+
+_SAFE_LOGO_IMPORT_SCHEMES = {"http", "https"}
+_MAX_LOGO_REDIRECTS = 5
+_SUPPORTED_LOGO_TYPES = "PNG, JPEG, GIF, or WebP"
+
+
+async def _resolve_hostname_ips(host: str) -> set[str]:
+    def _lookup() -> set[str]:
+        resolved_ips: set[str] = set()
+        for family, _, _, _, sockaddr in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM):
+            if family == socket.AF_INET:
+                resolved_ips.add(sockaddr[0])
+            elif family == socket.AF_INET6:
+                resolved_ips.add(sockaddr[0])
+        return resolved_ips
+
+    try:
+        return await asyncio.to_thread(_lookup)
+    except socket.gaierror as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_logo_url", "message": f"Unable to resolve logo host: {exc}"},
+        ) from exc
+
+
+def _build_host_header(url: httpx.URL) -> str:
+    if url.port and url.port not in {80, 443}:
+        return f"{url.host}:{url.port}"
+    return url.host
+
+
+def _validate_logo_bytes(file_bytes: bytes, content_type: str | None) -> str:
+    normalized_content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if normalized_content_type not in CONTENT_TYPE_SUFFIXES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_content_type",
+                "message": f"Expected a {_SUPPORTED_LOGO_TYPES} image",
+            },
+        )
+
+    if not file_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "empty_file", "message": "Empty file"},
+        )
+
+    if len(file_bytes) > MAX_LOGO_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "code": "file_too_large",
+                "message": "Logo must be 5 MB or smaller",
+            },
+        )
+
+    detected_suffix = sniff_logo_suffix(file_bytes)
+    if detected_suffix is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_image",
+                "message": f"File is not a valid {_SUPPORTED_LOGO_TYPES} image",
+            },
+        )
+
+    expected_suffix = CONTENT_TYPE_SUFFIXES[normalized_content_type]
+    if expected_suffix != detected_suffix:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_image",
+                "message": "File contents do not match the reported image type",
+            },
+        )
+
+    return detected_suffix
+
+
+async def _validate_logo_source_url(url: httpx.URL) -> None:
+    if url.scheme not in _SAFE_LOGO_IMPORT_SCHEMES or not url.host:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_logo_url", "message": "Logo URL must use http or https"},
+        )
+
+    if url.userinfo:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_logo_url", "message": "Logo URL must not include credentials"},
+        )
+
+    host = url.host.lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "unsafe_logo_url", "message": "Logo URL must not target local or private hosts"},
+        )
+
+    resolved_ips = await _resolve_hostname_ips(host)
+    if not resolved_ips:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_logo_url", "message": "Unable to resolve logo host"},
+        )
+
+    for resolved_ip in resolved_ips:
+        ip = ipaddress.ip_address(resolved_ip)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "unsafe_logo_url", "message": "Logo URL must not target local or private hosts"},
+            )
+
+
+async def _read_logo_response_bytes(response: httpx.Response) -> bytes:
+    content_length = response.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_LOGO_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail={
+                        "code": "file_too_large",
+                        "message": "Logo must be 5 MB or smaller",
+                    },
+                )
+        except ValueError:
+            pass
+
+    file_bytes = bytearray()
+    async for chunk in response.aiter_bytes(chunk_size=8192):
+        file_bytes.extend(chunk)
+        if len(file_bytes) > MAX_LOGO_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "code": "file_too_large",
+                    "message": "Logo must be 5 MB or smaller",
+                },
+            )
+
+    return bytes(file_bytes)
+
+
+async def _fetch_logo_from_url(logo_url: str) -> tuple[bytes, str, str | None, str]:
+    current_url = httpx.URL(logo_url)
+
+    async with httpx.AsyncClient(
+        follow_redirects=False,
+        timeout=httpx.Timeout(20.0, connect=5.0, read=10.0, write=10.0, pool=5.0),
+        trust_env=False,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+            ),
+            "Accept": "image/png,image/jpeg,image/gif,image/webp,image/*;q=0.8,*/*;q=0.5",
+        },
+    ) as client:
+        for _ in range(_MAX_LOGO_REDIRECTS + 1):
+            await _validate_logo_source_url(current_url)
+            resolved_ips = sorted(await _resolve_hostname_ips(current_url.host))
+            request_url = current_url.copy_with(host=resolved_ips[0])
+            host_header = _build_host_header(current_url)
+            request = client.build_request(
+                "GET",
+                request_url,
+                headers={
+                    "Host": host_header,
+                    "Referer": f"{current_url.scheme}://{host_header}/",
+                },
+                extensions=(
+                    {"sni_hostname": current_url.host}
+                    if current_url.scheme == "https"
+                    else None
+                ),
+            )
+            response = await client.send(request, stream=True)
+
+            try:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail={
+                                "code": "logo_fetch_failed",
+                                "message": "Logo URL redirect was missing a location header",
+                            },
+                        )
+                    current_url = current_url.join(location)
+                    continue
+
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                file_bytes = await _read_logo_response_bytes(response)
+                detected_suffix = _validate_logo_bytes(file_bytes, content_type)
+                fallback_name = f"logo{detected_suffix}"
+                return file_bytes, content_type, Path(current_url.path).name or fallback_name, detected_suffix
+            except httpx.HTTPStatusError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "logo_fetch_failed",
+                        "message": f"Failed to fetch logo from URL: {exc}",
+                    },
+                ) from exc
+            finally:
+                await response.aclose()
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={"code": "logo_fetch_failed", "message": "Logo URL redirected too many times"},
+    )
+
+
+async def _commit_manufacturer_logo_change(
+    *,
+    db: AsyncSession,
+    manufacturer: Manufacturer,
+    new_logo_path: str | None,
+) -> Manufacturer:
+    previous_logo_path = manufacturer.logo_file_path
+    manufacturer.logo_file_path = new_logo_path
+
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        if new_logo_path and new_logo_path != previous_logo_path:
+            try:
+                delete_manufacturer_logo(new_logo_path)
+            except (OSError, ValueError) as cleanup_exc:
+                logger.warning("Failed to clean up new manufacturer logo %s: %s", new_logo_path, cleanup_exc)
+        raise
+
+    await db.refresh(manufacturer)
+
+    if previous_logo_path and previous_logo_path != new_logo_path:
+        try:
+            delete_manufacturer_logo(previous_logo_path)
+        except (OSError, ValueError) as cleanup_exc:
+            logger.warning("Failed to delete previous manufacturer logo %s: %s", previous_logo_path, cleanup_exc)
+
+    return manufacturer
+
+
+@router.get("/logo-files/{filename}")
+async def get_manufacturer_logo_file(filename: str, principal: PrincipalDep):
+    stored_path = f"manufacturer-logos/{Path(filename).name}"
+    try:
+        file_path = resolve_logo_file_path(stored_path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer logo not found"},
+        ) from exc
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer logo not found"},
+        )
+    media_type, _ = mimetypes.guess_type(file_path.name)
+    return FileResponse(
+        file_path,
+        media_type=media_type or "application/octet-stream",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get("", response_model=PaginatedResponse[ManufacturerResponse])
@@ -112,6 +408,7 @@ async def list_manufacturers(
         ManufacturerResponse.model_validate(
             {
                 **m.__dict__,
+                "resolved_logo_url": m.resolved_logo_url,
                 "filament_count": fil_counts.get(m.id, 0),
                 "spool_count": active_spool_counts.get(m.id, 0),
                 "archived_spool_count": archived_spool_counts.get(m.id, 0),
@@ -160,6 +457,99 @@ async def create_manufacturer(
     return manufacturer
 
 
+@router.post("/{manufacturer_id}/logo-from-url", response_model=ManufacturerResponse)
+async def import_manufacturer_logo_from_url(
+    manufacturer_id: int,
+    data: ManufacturerLogoImportRequest,
+    db: DBSession,
+    principal=RequirePermission("manufacturers:update"),
+):
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    source_url = (data.url or "").strip()
+    if not source_url:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_logo_url", "message": "Logo URL is required"},
+        )
+
+    try:
+        file_bytes, content_type, fetched_filename, detected_suffix = await _fetch_logo_from_url(source_url)
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "logo_fetch_failed", "message": f"Failed to fetch logo from URL: {exc}"},
+        ) from exc
+
+    new_logo_path = save_manufacturer_logo(
+        manufacturer_name=manufacturer.name,
+        file_bytes=file_bytes,
+        filename=fetched_filename,
+        content_type=content_type,
+        detected_suffix=detected_suffix,
+    )
+
+    manufacturer = await _commit_manufacturer_logo_change(
+        db=db,
+        manufacturer=manufacturer,
+        new_logo_path=new_logo_path,
+    )
+
+    await event_bus.publish({"event": "manufacturers_changed"})
+    return manufacturer
+
+
+@router.post("/{manufacturer_id}/logo", response_model=ManufacturerResponse)
+async def upload_manufacturer_logo(
+    manufacturer_id: int,
+    db: DBSession,
+    file: UploadFile = File(...),
+    principal=RequirePermission("manufacturers:update"),
+):
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    try:
+        file_bytes = await file.read(MAX_LOGO_SIZE_BYTES + 1)
+    finally:
+        await file.close()
+
+    detected_suffix = _validate_logo_bytes(file_bytes, file.content_type)
+    new_logo_path = save_manufacturer_logo(
+        manufacturer_name=manufacturer.name,
+        file_bytes=file_bytes,
+        filename=file.filename,
+        content_type=file.content_type,
+        detected_suffix=detected_suffix,
+    )
+
+    manufacturer = await _commit_manufacturer_logo_change(
+        db=db,
+        manufacturer=manufacturer,
+        new_logo_path=new_logo_path,
+    )
+
+    await event_bus.publish({"event": "manufacturers_changed"})
+    return manufacturer
+
+
 @router.get("/{manufacturer_id}", response_model=ManufacturerResponse)
 async def get_manufacturer(
     manufacturer_id: int, db: DBSession, principal: PrincipalDep
@@ -173,6 +563,31 @@ async def get_manufacturer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Manufacturer not found"},
         )
+    return manufacturer
+
+
+@router.delete("/{manufacturer_id}/logo", response_model=ManufacturerResponse)
+async def delete_manufacturer_logo_file(
+    manufacturer_id: int,
+    db: DBSession,
+    principal=RequirePermission("manufacturers:update"),
+):
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    manufacturer = await _commit_manufacturer_logo_change(
+        db=db,
+        manufacturer=manufacturer,
+        new_logo_path=None,
+    )
+    await event_bus.publish({"event": "manufacturers_changed"})
     return manufacturer
 
 
@@ -266,8 +681,16 @@ async def delete_manufacturer(
                     await db.delete(s)
                 await db.delete(f)
 
+    logo_to_delete = manufacturer.logo_file_path
     await db.delete(manufacturer)
     await db.commit()
+
+    if logo_to_delete:
+        try:
+            delete_manufacturer_logo(logo_to_delete)
+        except (OSError, ValueError) as cleanup_exc:
+            logger.warning("Failed to delete manufacturer logo %s: %s", logo_to_delete, cleanup_exc)
+
     await event_bus.publish({"event": "manufacturers_changed"})
 
 

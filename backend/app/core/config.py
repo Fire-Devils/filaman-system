@@ -53,5 +53,7 @@ class Settings(BaseSettings):
     # User-installed plugins directory (auto-detected if empty)
     plugins_dir: str = ""
 
+    manufacturer_logos_dir: str = str(PROJECT_ROOT / "data" / "manufacturer-logos")
+
 
 settings = Settings()

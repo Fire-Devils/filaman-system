@@ -1,7 +1,19 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+
+
+_MINIMAL_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR"
+    b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\x0cIDATx\x9cc``\x00\x00\x00\x02\x00\x01\xe2!\xbc3"
+    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 async def _create_manufacturer(db_session, name: str = "Test Manufacturer", **kwargs) -> Manufacturer:
@@ -222,6 +234,90 @@ class TestManufacturerCRUD:
         assert fil_result.scalar_one_or_none() is None
         spool_result = await db_session.execute(select(Spool).where(Spool.id == spool.id))
         assert spool_result.scalar_one_or_none() is None
+
+    @pytest.mark.asyncio
+    async def test_upload_manufacturer_logo_persists_and_serves_file(self, auth_client, db_session, monkeypatch, tmp_path):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="LogoMaker")
+        monkeypatch.setattr(settings, "manufacturer_logos_dir", str(tmp_path))
+
+        response = await client.post(
+            f"/api/v1/manufacturers/{manufacturer.id}/logo",
+            files={"file": ("logo.png", _MINIMAL_PNG_BYTES, "image/png")},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["logo_file_path"].startswith("manufacturer-logos/")
+        assert data["resolved_logo_url"].endswith(Path(data["logo_file_path"]).name)
+
+        stored_file = Path(settings.manufacturer_logos_dir) / Path(data["logo_file_path"]).name
+        assert stored_file.exists()
+        assert stored_file.read_bytes() == _MINIMAL_PNG_BYTES
+
+        logo_response = await client.get(data["resolved_logo_url"])
+        assert logo_response.status_code == 200
+        assert logo_response.content == _MINIMAL_PNG_BYTES
+
+    @pytest.mark.asyncio
+    async def test_upload_manufacturer_logo_rejects_invalid_image_bytes(self, auth_client, db_session, monkeypatch, tmp_path):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="BadLogoMaker")
+        monkeypatch.setattr(settings, "manufacturer_logos_dir", str(tmp_path))
+
+        response = await client.post(
+            f"/api/v1/manufacturers/{manufacturer.id}/logo",
+            files={"file": ("fake.png", b"not-a-real-image", "image/png")},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "invalid_image"
+
+    @pytest.mark.asyncio
+    async def test_upload_manufacturer_logo_rejects_oversized_files(self, auth_client, db_session, monkeypatch, tmp_path):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="HugeLogoMaker")
+        monkeypatch.setattr(settings, "manufacturer_logos_dir", str(tmp_path))
+        oversized_png = _MINIMAL_PNG_BYTES + (b"0" * (5 * 1024 * 1024))
+
+        response = await client.post(
+            f"/api/v1/manufacturers/{manufacturer.id}/logo",
+            files={"file": ("huge.png", oversized_png, "image/png")},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 413
+        assert response.json()["detail"]["code"] == "file_too_large"
+
+    @pytest.mark.asyncio
+    async def test_import_manufacturer_logo_rejects_local_urls(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="UnsafeImportMaker")
+
+        response = await client.post(
+            f"/api/v1/manufacturers/{manufacturer.id}/logo-from-url",
+            json={"url": "http://localhost/logo.png"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "unsafe_logo_url"
+
+    @pytest.mark.asyncio
+    async def test_import_manufacturer_logo_rejects_urls_with_credentials(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="CredentialImportMaker")
+
+        response = await client.post(
+            f"/api/v1/manufacturers/{manufacturer.id}/logo-from-url",
+            json={"url": "https://user:secret@example.com/logo.png"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "invalid_logo_url"
 
 
 class TestColorCRUD:

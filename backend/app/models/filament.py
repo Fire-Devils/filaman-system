@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
@@ -13,6 +14,7 @@ class Manufacturer(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    logo_file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -22,6 +24,21 @@ class Manufacturer(Base, TimestampMixin):
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     filaments: Mapped[list["Filament"]] = relationship(back_populates="manufacturer")
+
+    @property
+    def resolved_logo_url(self) -> str | None:
+        if not isinstance(self.logo_file_path, str):
+            return None
+
+        normalized = self.logo_file_path.strip().lstrip("/")
+        if not normalized.startswith("manufacturer-logos/"):
+            return None
+
+        filename = Path(normalized).name
+        if not filename or normalized != f"manufacturer-logos/{filename}":
+            return None
+
+        return f"/api/v1/manufacturers/logo-files/{filename}"
 
 
 class Color(Base, TimestampMixin):
