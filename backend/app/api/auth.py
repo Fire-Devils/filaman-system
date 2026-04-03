@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep
 from app.core.config import settings
+from app.core.rate_limit import check_rate_limit, record_failure, record_success
 from app.core.security import generate_token_secret, hash_token, verify_password_async
 from app.models import AppSettings, User, UserSession
 
@@ -42,6 +43,9 @@ async def login(
     data: LoginRequest,
     db: DBSession,
 ):
+    # --- Rate limit check (runs before any DB query or password verification) ---
+    check_rate_limit(request)
+
     settings_result = await db.execute(select(AppSettings).where(AppSettings.id == 1))
     app_settings = settings_result.scalar_one_or_none()
 
@@ -75,6 +79,9 @@ async def login(
         user = result.scalar_one_or_none()
 
         if user is None or user.password_hash is None:
+            # Record failure even for non-existent users to prevent user enumeration
+            # via timing differences.
+            record_failure(request)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={
@@ -84,12 +91,14 @@ async def login(
             )
 
         if not user.is_active or user.deleted_at is not None:
+            record_failure(request)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={"code": "account_disabled", "message": "Account is disabled"},
             )
 
         if not await verify_password_async(data.password, user.password_hash):
+            record_failure(request)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={
@@ -97,6 +106,9 @@ async def login(
                     "message": "Invalid email or password",
                 },
             )
+
+    # --- Successful authentication: reset the failure counter for this IP ---
+    record_success(request)
 
     secret = generate_token_secret()
     session = UserSession(

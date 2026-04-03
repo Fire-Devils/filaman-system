@@ -53,5 +53,23 @@ class Settings(BaseSettings):
     # User-installed plugins directory (auto-detected if empty)
     plugins_dir: str = ""
 
+    # ---------------------------------------------------------------------------
+    # Login rate limiting
+    # ---------------------------------------------------------------------------
+    # Set login_rate_limit_enabled=false to disable (e.g. behind a WAF that
+    # already enforces rate limits, or during automated testing).
+    login_rate_limit_enabled: bool = True
+
+    # Maximum number of *failed* login attempts within the sliding window
+    # before a lockout is triggered for that IP address.
+    login_rate_limit_max_attempts: int = 10
+
+    # Length of the sliding window in seconds (default: 300 = 5 minutes).
+    login_rate_limit_window_seconds: int = 300
+
+    # Duration of the IP lockout in seconds after the limit is exceeded
+    # (default: 300 = 5 minutes).
+    login_rate_limit_lockout_seconds: int = 300
+
 
 settings = Settings()
