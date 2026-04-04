@@ -297,9 +297,6 @@ const { id } = Astro.params
             <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
               ${t('filaments.newSpool')}
             </a>
-            <a href="/filaments/${f.id}/print?id=${encodeURIComponent(f.id)}&designation=${encodeURIComponent(f.designation || '')}&mfr=${encodeURIComponent(f.manufacturer?.name || '')}&type=${encodeURIComponent(f.material_type || '')}&color=${encodeURIComponent((f.manufacturer_color_name || ((Array.isArray(f.colors) ? f.colors.map((entry: any) => entry.display_name_override || entry.color?.name || '').filter(Boolean).join(', ') : ''))) || '')}" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981; text-decoration: none;">
-              ${t('filaments.printLabel')}
-            </a>
             <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
               ${t('common.edit')}
             </a>
