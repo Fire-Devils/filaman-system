@@ -84,6 +84,7 @@ const { id } = Astro.params
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
+    import { escapeHtml, renderManufacturerLogo } from '../../../lib/manufacturer-logo'
     await initI18n()
     await initCurrency()
 
@@ -164,10 +165,10 @@ const { id } = Astro.params
       return colors.map(fc => {
         const c = fc.color
         if (!c) return ''
-        const label = fc.display_name_override || c.name
+        const hexCode = escapeHtml((c.hex_code || '-').toUpperCase())
         return `<span style="display: inline-flex; align-items: center; gap: 6px; margin-right: 10px;">
-          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle;"></span>
-          <span>${label}</span>
+          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${hexCode}; border: 2px solid var(--border); vertical-align: middle;"></span>
+          <span>${hexCode}</span>
         </span>`
       }).join('')
     }
@@ -180,8 +181,21 @@ const { id } = Astro.params
     }
     
     function renderFilament(f: any) {
+      const manufacturerName = escapeHtml(f.manufacturer?.name || t('filaments.unknownManufacturer'))
+      const manufacturerCard = `
+          <div class="fm-card" style="grid-column: 1 / -1; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; min-width: 0; flex-wrap: wrap;">
+            <div style="min-width: 0; flex: 1 1 220px; display: flex; flex-direction: column; gap: 6px;">
+              <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.manufacturer')}</div>
+              <div style="font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${manufacturerName}</div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; align-items: center; flex: 1 1 184px; min-width: 160px;">
+              ${renderManufacturerLogo(f.manufacturer, { width: 184, height: 52, borderRadius: '10px', flexibleWidth: true, multilineFallback: true, withPill: true, pillPadding: '4px 10px', pillBorderRadius: '8px' })}
+            </div>
+        </div>
+      `
+
       // Build the secondary info cards grid
-      const cards: string[] = []
+      const cards: string[] = [manufacturerCard]
       cards.push(renderDetailCard(t('filaments.type'), f.material_type))
       if (f.material_subgroup) {
         cards.push(renderDetailCard(t('filaments.materialSubgroup'), f.material_subgroup))
@@ -208,7 +222,6 @@ const { id } = Astro.params
         colorModeDisplay += ` (${styleKey ? t(styleKey) : f.multi_color_style})`
       }
 
-      // Colors section
       const colorsHtml = f.colors && f.colors.length > 0
         ? `<div class="fm-card" style="margin-top: 16px;">
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
@@ -291,7 +304,6 @@ const { id } = Astro.params
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
-            <p style="color: var(--text-muted); margin: 4px 0 0;">${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
           </div>
           <div style="display: flex; gap: 8px;">
             <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
@@ -308,7 +320,7 @@ const { id } = Astro.params
             </button>
           </div>
         </div>
-        
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
           ${cards.join('\n')}
         </div>

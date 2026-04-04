@@ -166,6 +166,7 @@ const { id } = Astro.params
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
+    import { escapeHtml, renderManufacturerLogo } from '../../../lib/manufacturer-logo'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -302,6 +303,43 @@ const { id } = Astro.params
       const l = locations.find(l => l.id === locationId)
       return l ? l.name : `#${locationId}`
     }
+
+    function isHexColor(value) {
+      return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value.trim())
+    }
+
+    function hexToRgba(hex, alpha) {
+      const normalized = hex.trim()
+      const r = parseInt(normalized.slice(1, 3), 16)
+      const g = parseInt(normalized.slice(3, 5), 16)
+      const b = parseInt(normalized.slice(5, 7), 16)
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`
+    }
+
+    function buildFilamentCardStyle(filament, fallbackStyle) {
+      const hexes = (filament?.colors || [])
+        .map(fc => fc.color?.hex_code)
+        .filter(isHexColor)
+
+      if (hexes.length === 0) return fallbackStyle
+      if (hexes.length === 1) {
+        const hex = hexes[0]
+        const r = parseInt(hex.slice(1, 3), 16)
+        const g = parseInt(hex.slice(3, 5), 16)
+        const b = parseInt(hex.slice(5, 7), 16)
+        return `background: rgba(${r}, ${g}, ${b}, 0.15); border: 1px solid rgba(${r}, ${g}, ${b}, 0.4);`
+      }
+
+      const direction = filament?.multi_color_style === 'gradient' ? 'to bottom' : 'to right'
+      const segmentSize = 100 / hexes.length
+      const stops = hexes.map((hex, index) => {
+        const start = (index * segmentSize).toFixed(2)
+        const end = ((index + 1) * segmentSize).toFixed(2)
+        return `${hexToRgba(hex, 0.18)} ${start}% ${end}%`
+      }).join(', ')
+
+      return `background-color: color-mix(in srgb, var(--bg-soft) 88%, transparent); background-image: linear-gradient(${direction}, ${stops}); border: 1px solid color-mix(in srgb, ${hexes[0]} 45%, var(--border));`
+    }
     
     function renderSpool() {
       const isLow = spool.remaining_weight_g !== null && 
@@ -312,12 +350,12 @@ const { id } = Astro.params
       let statusStyle = 'background: var(--success-bg); border-color: var(--success-border);'
       if (isEmpty) statusStyle = 'background: var(--error-bg); border-color: var(--error-border);'
       else if (isLow) statusStyle = 'background: rgba(247, 200, 106, 0.15); border: 1px solid rgba(247, 200, 106, 0.4);'
+      const filamentCardStyle = buildFilamentCardStyle(spool.filament, statusStyle)
       
       document.getElementById('spool-content').innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 16px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${t('spools.spoolId', { id: spool.id })}</h1>
-            <p style="color: var(--text-muted); margin: 4px 0 0;">${t('spools.filament')}: <a href="/filaments/${spool.filament_id}" style="color: var(--accent); text-decoration: none;">${t('spools.filament')} #${spool.filament_id}</a></p>
           </div>
           <div id="printer-slots-inline"></div>
           <div style="display: flex; gap: 8px;">
@@ -329,8 +367,25 @@ const { id } = Astro.params
             <button id="btn-delete" class="fm-btn fm-btn-danger">${t('common.delete')}</button>
           </div>
         </div>
-        
+
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
+          <div class="fm-card" style="grid-column: 1 / -1; padding: 16px 18px; ${filamentCardStyle}; display: flex; align-items: center; gap: 18px; min-width: 0; flex-wrap: wrap;">
+            <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1 1 0;">
+              <div style="font-size: 0.85rem; color: var(--text-muted);">
+                ${t('spools.filament')}: <a href="/filaments/${spool.filament_id}" style="color: var(--accent); text-decoration: none;">${t('spools.filament')} #${spool.filament_id}</a>
+              </div>
+              <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+                ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map(fc => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${fc.color?.hex_code || 'var(--border)'}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
+                <div style="min-width: 0; flex: 1 1 auto;">
+                  <div style="font-size: 0.95rem; font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.15;">${spool.filament?.designation || '-'}</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted); white-space: normal; overflow-wrap: anywhere; line-height: 1.25; margin-top: 4px;">${escapeHtml(spool.filament?.manufacturer?.name || '-')} · ${escapeHtml(spool.filament?.material_type || '-')}</div>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; align-items: center; flex: 0 0 auto; margin-left: auto; min-width: 0;">
+              ${renderManufacturerLogo(spool.filament?.manufacturer, { width: 184, height: 52, borderRadius: '10px', flexibleWidth: true, multilineFallback: true, withPill: true, pillPadding: '4px 10px', pillBorderRadius: '8px' })}
+            </div>
+          </div>
           <div class="fm-card">
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.status')}</div>
             <div style="font-size: 1.1rem; font-weight: 600;">${getStatusLabel(spool.status_id)}</div>
@@ -361,21 +416,6 @@ const { id } = Astro.params
           <div class="fm-card">
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.rfidUid')}</div>
             <div style="font-size: 0.9rem; font-weight: 600; font-family: monospace;">${spool.rfid_uid || '-'}</div>
-          </div>
-          <div class="fm-card" style="${(() => {
-            const hex = spool.filament?.colors?.[0]?.color?.hex_code;
-            if (!hex) return statusStyle;
-            const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
-            return `background: rgba(${r}, ${g}, ${b}, 0.15); border: 1px solid rgba(${r}, ${g}, ${b}, 0.4);`;
-          })()}">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.filament')}</div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-              ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map(fc => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${fc.color?.hex_code || 'var(--border)'}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
-              <div style="min-width: 0;">
-                <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.designation || '-'}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.manufacturer?.name || '-'} · ${spool.filament?.material_type || '-'}</div>
-              </div>
-            </div>
           </div>
         </div>
         

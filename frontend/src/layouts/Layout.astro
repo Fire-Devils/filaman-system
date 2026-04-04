@@ -31,7 +31,8 @@ const { title } = Astro.props
         // Sidebar state
         var s = localStorage.getItem('sidebar-collapsed');
         var isMobile = window.innerWidth <= 768;
-        if (s === 'true' || isMobile) {
+        var isCompactDesktop = window.innerWidth <= 1280;
+        if (s === 'true' || isMobile || isCompactDesktop) {
           document.documentElement.classList.add('sidebar-collapsed');
         }
       })();
@@ -423,7 +424,14 @@ const { title } = Astro.props
         page.classList.add('collapsed')
       }
 
-      function setSidebarCollapsed(collapsed: boolean) {
+      const mobileMediaQuery = window.matchMedia('(max-width: 768px)')
+      const compactSidebarMediaQuery = window.matchMedia('(max-width: 1280px)')
+
+      function getStoredDesktopSidebarState() {
+        return localStorage.getItem('sidebar-collapsed') === 'true'
+      }
+
+      function setSidebarCollapsed(collapsed: boolean, persist = true) {
         if (collapsed) {
           page.classList.add('collapsed')
           html.classList.add('sidebar-collapsed')
@@ -431,17 +439,29 @@ const { title } = Astro.props
           page.classList.remove('collapsed')
           html.classList.remove('sidebar-collapsed')
         }
-        // Only persist sidebar state on desktop
-        if (window.innerWidth > 768) {
+        // Only persist user sidebar state on wide desktop layouts
+        if (persist && window.innerWidth > 1280) {
           localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
         }
+      }
+
+      function syncSidebarToViewport() {
+        if (mobileMediaQuery.matches || compactSidebarMediaQuery.matches) {
+          setSidebarCollapsed(true, false)
+          return
+        }
+
+        setSidebarCollapsed(getStoredDesktopSidebarState(), false)
       }
 
       // Update sidebar state
       sidebarToggle.addEventListener('click', () => {
         const isCollapsed = page.classList.contains('collapsed')
-        setSidebarCollapsed(!isCollapsed)
+        setSidebarCollapsed(!isCollapsed, !compactSidebarMediaQuery.matches)
       })
+
+      mobileMediaQuery.addEventListener('change', syncSidebarToViewport)
+      compactSidebarMediaQuery.addEventListener('change', syncSidebarToViewport)
 
       // Close sidebar on mobile when clicking backdrop
       const sidebarBackdrop = document.getElementById('sidebar-backdrop')!
