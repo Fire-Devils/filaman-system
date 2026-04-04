@@ -333,7 +333,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { fetchAllPages } from '../../lib/api'
+    import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     await initI18n()
 
     const CUSTOM_TYPE_VALUE = '__custom__'
@@ -506,7 +506,7 @@ import Layout from '../../layouts/Layout.astro'
     // ── Load data ──
     async function loadManufacturers() {
       try {
-        const data = await fetchAllPages('/api/v1/manufacturers')
+        const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         allManufacturers = data.items
         const select = document.getElementById('manufacturer_id') as HTMLSelectElement
         allManufacturers.forEach((m: any) => {
@@ -575,7 +575,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadColors() {
       try {
-        const data = await fetchAllPages('/api/v1/colors')
+        const data = await cachedFetchAllPages(CACHE_KEYS.COLORS, '/api/v1/colors')
         allColors = data.items
         renderColorGrid()
       } catch (error) {
@@ -889,6 +889,8 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.detail?.message || errorData.message || t('filaments.failedCreate'))
         }
 
+        // Invalidate filaments cache after successful creation
+        invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
         const filament = await response.json()
         window.location.href = `/filaments/${filament.id}`
       } catch (error: any) {
@@ -900,8 +902,8 @@ import Layout from '../../layouts/Layout.astro'
       }
     })
 
-    // ── Init ──
-    Promise.all([loadManufacturers(), loadTypes(), loadColors(), loadSystemFields()]).then(() => {
+    // ── Init ── (Sequential loading für bessere SQLite-Performance)
+    loadManufacturers().then(() => loadTypes()).then(() => loadColors()).then(() => loadSystemFields()).then(() => {
       // ── Apply duplicate data from sessionStorage ──
       const dupRaw = sessionStorage.getItem('filaman_duplicate_filament')
       if (dupRaw) {

@@ -202,7 +202,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { fetchAllPages } from '../../lib/api'
+    import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     await initI18n()
@@ -352,7 +352,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadManufacturers() {
       try {
-        const data = await fetchAllPages('/api/v1/manufacturers')
+        const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         manufacturers = data.items
         populateMaterialFilter(manufacturers)
         if (isInitialLoad) {
@@ -575,6 +575,8 @@ import Layout from '../../layouts/Layout.astro'
               return
             }
 
+            // Invalidate cache after successful delete
+            invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
             loadManufacturers()
           } catch {
             await (window as any).__fmAlert(t('manufacturers.failedDelete'))
@@ -737,6 +739,8 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
         }
 
+        // Invalidate cache after successful save
+        invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
         closeModal()
         loadManufacturers()
       } catch (err: any) {

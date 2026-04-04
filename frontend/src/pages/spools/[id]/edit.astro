@@ -257,6 +257,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
+    import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     await initI18n()
 
     const pathParts = window.location.pathname.split('/').filter(Boolean)
@@ -427,7 +428,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
     async function loadFilaments() {
       try {
-        const data = await fetchAllPages('/api/v1/filaments')
+        const data = await cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments')
         const select = document.getElementById('filament_id')
         allFilaments = data.items
         allFilaments.forEach(f => {
@@ -444,9 +445,11 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
     async function loadStatuses() {
       try {
-        const response = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
-        if (!response.ok) throw new Error('Failed to fetch statuses')
-        allStatuses = await response.json()
+        allStatuses = await cachedFetch(CACHE_KEYS.STATUSES, async () => {
+          const response = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
+          if (!response.ok) throw new Error('Failed to fetch statuses')
+          return response.json()
+        })
         const select = document.getElementById('status_id')
         allStatuses.forEach(s => {
           const option = document.createElement('option')
@@ -462,7 +465,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
     async function loadLocations() {
       try {
-        const data = await fetchAllPages('/api/v1/locations')
+        const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         const select = document.getElementById('location_id')
         allLocations = data.items
         allLocations.forEach(l => {
@@ -683,6 +686,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           throw new Error(errorData.detail?.message || errorData.message || t('spools.failedUpdate'))
         }
 
+        invalidateCachePrefix('spools')
         window.location.href = '/spools/' + spoolId
       } catch (error) {
         errorMessage.textContent = error.message || t('spools.failedUpdate')
@@ -699,7 +703,13 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         return
       }
       try {
-        await Promise.all([loadFilaments(), loadStatuses(), loadLocations(), loadSystemFields()])
+        // Load reference data sequentially to avoid SQLite lock conflicts
+        await fetchSequential([
+          () => loadFilaments(),
+          () => loadStatuses(),
+          () => loadLocations(),
+          () => loadSystemFields()
+        ] as const)
 
         const response = await fetch('/api/v1/spools/' + spoolId, {
           credentials: 'include',

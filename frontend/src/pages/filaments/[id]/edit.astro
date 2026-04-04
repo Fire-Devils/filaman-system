@@ -355,6 +355,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { fetchAllPages } from '../../../lib/api'
+    import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     await initI18n()
 
     const CUSTOM_TYPE_VALUE = '__custom__'
@@ -574,7 +575,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     // ── Load data ──
     async function loadManufacturers(): Promise<void> {
       try {
-        const data = await fetchAllPages('/api/v1/manufacturers')
+        const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         allManufacturers = data.items
         const select = document.getElementById('manufacturer_id') as HTMLSelectElement
         allManufacturers.forEach((m: any) => {
@@ -616,9 +617,11 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
     async function loadTypes(): Promise<void> {
       try {
-        const response = await fetch('/api/v1/filaments/types', { credentials: 'include' })
-        if (!response.ok) throw new Error('Failed to fetch filament types')
-        loadedTypes = await response.json()
+        loadedTypes = await cachedFetch(CACHE_KEYS.FILAMENT_TYPES, async () => {
+          const response = await fetch('/api/v1/filaments/types', { credentials: 'include' })
+          if (!response.ok) throw new Error('Failed to fetch filament types')
+          return response.json()
+        })
         loadedTypes.forEach((typeName: string) => {
           const option = document.createElement('option')
           option.value = typeName
@@ -643,7 +646,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
     async function loadColors(): Promise<void> {
       try {
-        const data = await fetchAllPages('/api/v1/colors')
+        const data = await cachedFetchAllPages(CACHE_KEYS.COLORS, '/api/v1/colors')
         allColors = data.items
         renderColorGrid()
       } catch (error) {
@@ -756,6 +759,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         }
         const newColor = await response.json()
         allColors.push(newColor)
+        invalidateCachePrefix(CACHE_KEYS.COLORS)
         // Auto-select the new color
         toggleColor(newColor.id)
         // Reset form
@@ -1067,6 +1071,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         }
 
         // Success — redirect to detail page
+        invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
         window.location.href = `/filaments/${filamentId}`
       } catch (error: any) {
         errorMessage.textContent = error.message || t('filaments.failedUpdate')
@@ -1084,8 +1089,13 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         return
       }
       try {
-        // Load reference data in parallel
-        await Promise.all([loadManufacturers(), loadTypes(), loadColors(), loadSystemFields()])
+        // Load reference data sequentially to avoid SQLite lock conflicts
+        await fetchSequential([
+          () => loadManufacturers(),
+          () => loadTypes(),
+          () => loadColors(),
+          () => loadSystemFields()
+        ] as const)
 
         // Now load the filament
         const response = await fetch(`/api/v1/filaments/${filamentId}`, {

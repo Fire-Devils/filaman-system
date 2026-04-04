@@ -1,12 +1,15 @@
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.security import Principal
 from app.models import Filament, Location, Manufacturer, Spool, SpoolEvent, SpoolStatus
-from app.services.spool_service import SpoolService
+from app.services.spool_service import (
+    SpoolService,
+    CONSUMPTION_AGGREGATION_WINDOW_MINUTES,
+)
 
 
 async def _get_status(db_session, key: str) -> SpoolStatus:
@@ -23,7 +26,9 @@ async def _create_test_spool(
     rfid_uid: str | None = None,
     external_id: str | None = None,
 ) -> Spool:
-    mfr = Manufacturer(name=f"TestMfr-{id(db_session)}-{datetime.now(timezone.utc).timestamp()}")
+    mfr = Manufacturer(
+        name=f"TestMfr-{id(db_session)}-{datetime.now(timezone.utc).timestamp()}"
+    )
     db_session.add(mfr)
     await db_session.flush()
 
@@ -91,7 +96,9 @@ class TestSpoolServiceGetByIdentifier:
         service = SpoolService(db_session)
         spool = await _create_test_spool(db_session, rfid_uid="ABC123")
 
-        result = await service.get_spool_by_identifier(rfid_uid="ABC123", external_id=None)
+        result = await service.get_spool_by_identifier(
+            rfid_uid="ABC123", external_id=None
+        )
 
         assert result is not None
         assert result.id == spool.id
@@ -101,7 +108,9 @@ class TestSpoolServiceGetByIdentifier:
         service = SpoolService(db_session)
         spool = await _create_test_spool(db_session, rfid_uid="ABC123")
 
-        result = await service.get_spool_by_identifier(rfid_uid="abc123", external_id=None)
+        result = await service.get_spool_by_identifier(
+            rfid_uid="abc123", external_id=None
+        )
 
         assert result is not None
         assert result.id == spool.id
@@ -111,7 +120,9 @@ class TestSpoolServiceGetByIdentifier:
         service = SpoolService(db_session)
         spool = await _create_test_spool(db_session, external_id="EXT-42")
 
-        result = await service.get_spool_by_identifier(rfid_uid=None, external_id="EXT-42")
+        result = await service.get_spool_by_identifier(
+            rfid_uid=None, external_id="EXT-42"
+        )
 
         assert result is not None
         assert result.id == spool.id
@@ -138,7 +149,9 @@ class TestSpoolServiceGetTara:
     @pytest.mark.asyncio
     async def test_tara_from_filament(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=None, filament_default_spool_weight_g=250.0)
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=None, filament_default_spool_weight_g=250.0
+        )
 
         tara = service._get_tara(spool)
 
@@ -147,7 +160,9 @@ class TestSpoolServiceGetTara:
     @pytest.mark.asyncio
     async def test_tara_missing(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=None, filament_default_spool_weight_g=None)
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=None, filament_default_spool_weight_g=None
+        )
 
         tara = service._get_tara(spool)
 
@@ -162,32 +177,42 @@ class TestSpoolServiceRecordMeasurement:
         principal = Principal(auth_type="user", user_id=1, scopes=None)
         event_at = datetime.now(timezone.utc)
 
-        event, remaining = await service.record_measurement(spool, 500.0, event_at, principal=principal)
+        event, remaining = await service.record_measurement(
+            spool, 500.0, event_at, principal=principal
+        )
 
         assert remaining == 250.0
         assert event.event_type == "measurement"
-        result = await db_session.execute(select(SpoolEvent).where(SpoolEvent.spool_id == spool.id))
+        result = await db_session.execute(
+            select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+        )
         events = result.scalars().all()
         assert any(e.event_type == "measurement" for e in events)
 
     @pytest.mark.asyncio
     async def test_measurement_clamped_to_zero(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=250.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=250.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_measurement(spool, 100.0, event_at)
 
         assert remaining == 0
         assert (event.meta or {})["clamped_to_zero"] is True
-        result = await db_session.execute(select(SpoolEvent).where(SpoolEvent.spool_id == spool.id))
+        result = await db_session.execute(
+            select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+        )
         events = result.scalars().all()
         assert any(e.event_type == "measurement" for e in events)
 
     @pytest.mark.asyncio
     async def test_measurement_exact_zero(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=250.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=250.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_measurement(spool, 250.0, event_at)
@@ -201,7 +226,9 @@ class TestSpoolServiceRecordMeasurement:
     @pytest.mark.asyncio
     async def test_measurement_tara_missing(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=None, filament_default_spool_weight_g=None)
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=None, filament_default_spool_weight_g=None
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_measurement(spool, 500.0, event_at)
@@ -212,7 +239,9 @@ class TestSpoolServiceRecordMeasurement:
     @pytest.mark.asyncio
     async def test_measurement_auto_opens_new_spool(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=250.0, status_key="new")
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=250.0, status_key="new"
+        )
         event_at = datetime.now(timezone.utc)
 
         await service.record_measurement(spool, 600.0, event_at)
@@ -220,7 +249,9 @@ class TestSpoolServiceRecordMeasurement:
         opened_status = await _get_status(db_session, "opened")
         await db_session.refresh(spool)
         assert spool.status_id == opened_status.id
-        result = await db_session.execute(select(SpoolEvent).where(SpoolEvent.spool_id == spool.id))
+        result = await db_session.execute(
+            select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+        )
         events = result.scalars().all()
         assert any(e.event_type == "opened" for e in events)
 
@@ -229,7 +260,9 @@ class TestSpoolServiceRecordAdjustment:
     @pytest.mark.asyncio
     async def test_adjustment_relative(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, remaining_weight_g=750.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_adjustment(
@@ -245,7 +278,9 @@ class TestSpoolServiceRecordAdjustment:
     @pytest.mark.asyncio
     async def test_adjustment_relative_clamp_zero(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, remaining_weight_g=50.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=50.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_adjustment(
@@ -261,7 +296,9 @@ class TestSpoolServiceRecordAdjustment:
     @pytest.mark.asyncio
     async def test_adjustment_absolute(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=250.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=250.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_adjustment(
@@ -288,7 +325,9 @@ class TestSpoolServiceRecordConsumption:
     @pytest.mark.asyncio
     async def test_consumption_basic(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, remaining_weight_g=750.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_consumption(spool, 50.0, event_at)
@@ -299,7 +338,9 @@ class TestSpoolServiceRecordConsumption:
     @pytest.mark.asyncio
     async def test_consumption_clamp_zero(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, remaining_weight_g=30.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=30.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         event, remaining = await service.record_consumption(spool, -100.0, event_at)
@@ -310,7 +351,9 @@ class TestSpoolServiceRecordConsumption:
     @pytest.mark.asyncio
     async def test_consumption_updates_last_used(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, remaining_weight_g=750.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
         event_at = datetime.now(timezone.utc)
 
         await service.record_consumption(spool, -50.0, event_at)
@@ -318,6 +361,166 @@ class TestSpoolServiceRecordConsumption:
         refreshed = await service.get_spool(spool.id)
         assert refreshed is not None
         assert refreshed.last_used_at == event_at
+
+
+class TestSpoolServiceConsumptionAggregation:
+    """Tests for consumption event aggregation within time window."""
+
+    @pytest.mark.asyncio
+    async def test_aggregation_within_window(self, db_session):
+        """Events within 5 minutes from same source should be aggregated."""
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        # First consumption
+        event1, remaining1 = await service.record_consumption(
+            spool, -10.0, base_time, source="moonraker"
+        )
+        assert remaining1 == 740.0
+        assert event1.delta_weight_g == -10.0
+
+        # Second consumption 2 minutes later - should aggregate
+        event2, remaining2 = await service.record_consumption(
+            spool, -5.0, base_time + timedelta(minutes=2), source="moonraker"
+        )
+        assert remaining2 == 735.0
+        assert event2.id == event1.id  # Same event!
+        assert event2.delta_weight_g == -15.0  # Accumulated
+        assert event2.meta["aggregation_count"] == 2
+        assert "first_event_at" in event2.meta
+
+        # Third consumption 4 minutes after first - still within window
+        event3, remaining3 = await service.record_consumption(
+            spool, -3.0, base_time + timedelta(minutes=4), source="moonraker"
+        )
+        assert remaining3 == 732.0
+        assert event3.id == event1.id
+        assert event3.delta_weight_g == -18.0
+        assert event3.meta["aggregation_count"] == 3
+
+        # Verify only one event exists
+        result = await db_session.execute(
+            select(SpoolEvent)
+            .where(SpoolEvent.spool_id == spool.id)
+            .where(SpoolEvent.event_type == "print_consumption")
+        )
+        events = result.scalars().all()
+        assert len(events) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_aggregation_outside_window(self, db_session):
+        """Events outside 5 minute window should create new events."""
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        # First consumption
+        event1, _ = await service.record_consumption(
+            spool, -10.0, base_time, source="moonraker"
+        )
+
+        # Second consumption 6 minutes later - outside window
+        event2, remaining2 = await service.record_consumption(
+            spool, -5.0, base_time + timedelta(minutes=6), source="moonraker"
+        )
+        assert remaining2 == 735.0
+        assert event2.id != event1.id  # New event!
+        assert event2.delta_weight_g == -5.0
+        assert event2.meta is None or "aggregation_count" not in (event2.meta or {})
+
+        # Verify two events exist
+        result = await db_session.execute(
+            select(SpoolEvent)
+            .where(SpoolEvent.spool_id == spool.id)
+            .where(SpoolEvent.event_type == "print_consumption")
+        )
+        events = result.scalars().all()
+        assert len(events) == 2
+
+    @pytest.mark.asyncio
+    async def test_no_aggregation_different_source(self, db_session):
+        """Events from different sources should not be aggregated."""
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        # First consumption from moonraker
+        event1, _ = await service.record_consumption(
+            spool, -10.0, base_time, source="moonraker"
+        )
+
+        # Second consumption from different source - should not aggregate
+        event2, remaining2 = await service.record_consumption(
+            spool, -5.0, base_time + timedelta(minutes=2), source="bambulab"
+        )
+        assert remaining2 == 735.0
+        assert event2.id != event1.id  # New event!
+
+        # Verify two events exist
+        result = await db_session.execute(
+            select(SpoolEvent)
+            .where(SpoolEvent.spool_id == spool.id)
+            .where(SpoolEvent.event_type == "print_consumption")
+        )
+        events = result.scalars().all()
+        assert len(events) == 2
+
+    @pytest.mark.asyncio
+    async def test_aggregation_preserves_first_event_at(self, db_session):
+        """Aggregated events should track the original event time."""
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        # First consumption
+        event1, _ = await service.record_consumption(
+            spool, -10.0, base_time, source="moonraker"
+        )
+        first_event_at_str = base_time.isoformat()
+
+        # Second consumption
+        event2, _ = await service.record_consumption(
+            spool, -5.0, base_time + timedelta(minutes=2), source="moonraker"
+        )
+
+        # Third consumption
+        event3, _ = await service.record_consumption(
+            spool, -3.0, base_time + timedelta(minutes=4), source="moonraker"
+        )
+
+        # first_event_at should still point to original time
+        assert event3.meta["first_event_at"] == first_event_at_str
+        # But event_at should be updated to latest
+        assert event3.event_at == base_time + timedelta(minutes=4)
+
+    @pytest.mark.asyncio
+    async def test_aggregation_clamp_to_zero(self, db_session):
+        """Aggregation should still clamp remaining weight to zero."""
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=15.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        # First consumption
+        await service.record_consumption(spool, -10.0, base_time, source="moonraker")
+
+        # Second consumption that would go negative
+        event2, remaining = await service.record_consumption(
+            spool, -10.0, base_time + timedelta(minutes=2), source="moonraker"
+        )
+
+        assert remaining == 0
+        assert event2.meta.get("clamped_to_zero") is True
 
 
 class TestSpoolServiceChangeStatus:
@@ -333,7 +536,9 @@ class TestSpoolServiceChangeStatus:
         opened_status = await _get_status(db_session, "opened")
         await db_session.refresh(spool)
         assert spool.status_id == opened_status.id
-        result = await db_session.execute(select(SpoolEvent).where(SpoolEvent.spool_id == spool.id))
+        result = await db_session.execute(
+            select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+        )
         events = result.scalars().all()
         assert any(e.event_type == "opened" for e in events)
 
@@ -364,7 +569,9 @@ class TestSpoolServiceMoveLocation:
         refreshed = await service.get_spool(spool.id)
         assert refreshed is not None
         assert refreshed.location_id == location.id
-        result = await db_session.execute(select(SpoolEvent).where(SpoolEvent.spool_id == spool.id))
+        result = await db_session.execute(
+            select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+        )
         events = result.scalars().all()
         assert any(e.event_type == "move_location" for e in events)
 
@@ -414,7 +621,9 @@ class TestSpoolServiceRebuildRemainingWeight:
     @pytest.mark.asyncio
     async def test_rebuild_remaining_weight(self, db_session):
         service = SpoolService(db_session)
-        spool = await _create_test_spool(db_session, empty_spool_weight_g=250.0, status_key="opened")
+        spool = await _create_test_spool(
+            db_session, empty_spool_weight_g=250.0, status_key="opened"
+        )
         principal = Principal(auth_type="user", user_id=1, scopes=None)
         event_at_1 = datetime.now(timezone.utc)
         event_at_2 = event_at_1.replace(microsecond=event_at_1.microsecond + 1)

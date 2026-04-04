@@ -212,6 +212,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { fetchAllPages } from '../../lib/api'
+    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     await initI18n()
@@ -470,11 +471,12 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadFilters() {
       try {
-        const [statusesRes, locationsData, filamentsData] = await Promise.all([
-          fetch('/api/v1/spools/statuses', { credentials: 'include' }).catch(() => null),
-          fetchAllPages('/api/v1/locations').catch(() => null),
-          fetchAllPages('/api/v1/filaments').catch(() => null),
-        ])
+        // Sequential fetching mit Caching für bessere SQLite-Performance
+        const [statusesRes, locationsData, filamentsData] = await fetchSequential([
+          () => fetch('/api/v1/spools/statuses', { credentials: 'include' }).catch(() => null),
+          () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').catch(() => null),
+          () => cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments').catch(() => null),
+        ] as const)
 
         if (statusesRes?.ok) {
           statuses = await statusesRes.json()

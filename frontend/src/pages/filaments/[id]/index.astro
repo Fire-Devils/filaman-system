@@ -82,7 +82,7 @@ const { id } = Astro.params
   <script is:inline src="/vendor/chart.min.js"></script>
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { fetchAllPages } from '../../../lib/api'
+    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     await initI18n()
     await initCurrency()
@@ -377,11 +377,15 @@ const { id } = Astro.params
     
     async function loadSpools(filamentId: number) {
       try {
-        const [spoolsData, statusesRes, locationsData] = await Promise.all([
-          fetchAllPages(`/api/v1/spools?filament_id=${filamentId}&include_archived=true`),
-          fetch('/api/v1/spools/statuses', { credentials: 'include' }),
-          fetchAllPages('/api/v1/locations').catch(() => ({ items: [], total: 0 })),
-        ])
+        // Sequential fetching mit Caching für bessere SQLite-Performance
+        // Note: Spools für ein spezifisches Filament werden nicht gecacht (dynamisch)
+        const [spoolsRes, statusesRes, locationsData] = await fetchSequential([
+          () => fetch(`/api/v1/spools?filament_id=${filamentId}&include_archived=true&page=1&page_size=200`, { credentials: 'include' }),
+          () => fetch('/api/v1/spools/statuses', { credentials: 'include' }),
+          () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').catch(() => ({ items: [], total: 0 })),
+        ] as const)
+        
+        const spoolsData = spoolsRes.ok ? await spoolsRes.json() : { items: [], total: 0 }
         
         if (statusesRes.ok) {
           const statusData = await statusesRes.json()

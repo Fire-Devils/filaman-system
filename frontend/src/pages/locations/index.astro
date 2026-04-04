@@ -110,7 +110,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
-    import { fetchAllPages } from '../../lib/api'
+    import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     await initI18n()
 
     let locations: any[] = []
@@ -134,7 +134,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadLocations() {
       try {
-        const data = await fetchAllPages('/api/v1/locations')
+        const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         locations = data.items
         renderLocations()
       } catch (error) {
@@ -225,6 +225,8 @@ import Layout from '../../layouts/Layout.astro'
               return
             }
             
+            // Invalidate cache after successful delete
+            invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
             loadLocations()
           } catch {
             await (window as any).__fmAlert(t('locations.failedDelete'))
@@ -292,6 +294,8 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.message || t('locations.failedSave'))
         }
         
+        // Invalidate cache after successful save
+        invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
         closeModal()
         loadLocations()
       } catch (err: any) {

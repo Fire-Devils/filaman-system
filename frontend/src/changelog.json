@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "security", "text": "Login-Schutz verbessert: Rate-Limiting funktioniert jetzt zuverlässig bei mehreren Server-Prozessen" }
+          { "type": "security", "text": "Login-Schutz verbessert: Rate-Limiting funktioniert jetzt zuverlässig bei mehreren Server-Prozessen" },
+          { "type": "improved", "text": "Verbrauchsmeldungen während eines Drucks werden jetzt zusammengefasst — statt hunderten Einzeleinträgen entsteht nur noch ein Event pro 5 Minuten, was die Datenbank deutlich entlastet" }
         ],
         "en": [
-          { "type": "security", "text": "Improved login protection: Rate limiting now works reliably with multiple server processes" }
+          { "type": "security", "text": "Improved login protection: Rate limiting now works reliably with multiple server processes" },
+          { "type": "improved", "text": "Consumption reports during a print are now aggregated — instead of hundreds of individual entries, only one event per 5 minutes is created, significantly reducing database load" }
         ]
       }
     },

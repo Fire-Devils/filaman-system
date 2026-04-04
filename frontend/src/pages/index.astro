@@ -178,7 +178,7 @@ interface PaginatedResponse<T> {
     import { formatPrice, getCurrency, initCurrency } from '../lib/format'
     import { VERSION } from '../version.js'
     import changelogData from '../changelog.json'
-    import { fetchAllPages } from '../lib/api'
+    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../lib/cache'
 
     let allSpools: any[] = []
     let allFilaments: any[] = []
@@ -350,11 +350,12 @@ interface PaginatedResponse<T> {
 
     async function loadDashboardData() {
       try {
-        const [spoolsData, filamentsData, dashboardRes] = await Promise.all([
-          fetchAllPages('/api/v1/spools'),
-          fetchAllPages('/api/v1/filaments'),
-          fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include' }),
-        ])
+        // Sequential fetching mit Caching für bessere SQLite-Performance
+        const [spoolsData, filamentsData, dashboardRes] = await fetchSequential([
+          () => cachedFetchAllPages('spools-dashboard', '/api/v1/spools'),
+          () => cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
+          () => fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include' }),
+        ] as const)
         
         const dashboardData = dashboardRes.ok ? await dashboardRes.json() : null
         

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select, update, func
@@ -7,6 +7,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import Principal
 from app.models import Filament, Location, Spool, SpoolEvent, SpoolStatus
+
+# Aggregation window for consumption events (in minutes)
+# Events within this window from the same source will be aggregated
+CONSUMPTION_AGGREGATION_WINDOW_MINUTES = 5
 
 
 class SpoolService:
@@ -24,7 +28,9 @@ class SpoolService:
         )
         return result.scalar_one_or_none()
 
-    async def get_spool_by_identifier(self, rfid_uid: str | None, external_id: str | None) -> Spool | None:
+    async def get_spool_by_identifier(
+        self, rfid_uid: str | None, external_id: str | None
+    ) -> Spool | None:
         if rfid_uid:
             result = await self.db.execute(
                 select(Spool)
@@ -57,7 +63,41 @@ class SpoolService:
         return None
 
     async def _get_status_by_key(self, key: str) -> SpoolStatus | None:
-        result = await self.db.execute(select(SpoolStatus).where(SpoolStatus.key == key))
+        result = await self.db.execute(
+            select(SpoolStatus).where(SpoolStatus.key == key)
+        )
+        return result.scalar_one_or_none()
+
+    async def _get_aggregatable_consumption_event(
+        self,
+        spool_id: int,
+        source: str,
+        current_time: datetime,
+    ) -> SpoolEvent | None:
+        """
+        Find a recent consumption event that can be aggregated with a new one.
+
+        Returns the most recent print_consumption event for this spool if:
+        - It's from the same source
+        - It's within the aggregation window (5 minutes)
+
+        Otherwise returns None (a new event should be created).
+        """
+        window_start = current_time - timedelta(
+            minutes=CONSUMPTION_AGGREGATION_WINDOW_MINUTES
+        )
+
+        result = await self.db.execute(
+            select(SpoolEvent)
+            .where(
+                SpoolEvent.spool_id == spool_id,
+                SpoolEvent.event_type == "print_consumption",
+                SpoolEvent.source == source,
+                SpoolEvent.event_at >= window_start,
+            )
+            .order_by(SpoolEvent.event_at.desc())
+            .limit(1)
+        )
         return result.scalar_one_or_none()
 
     async def _create_event(
@@ -304,6 +344,52 @@ class SpoolService:
         if delta_weight_g > 0:
             delta_weight_g = -delta_weight_g
 
+        # Check if we can aggregate with a recent event
+        existing_event = await self._get_aggregatable_consumption_event(
+            spool_id=spool.id,
+            source=source,
+            current_time=event_at,
+        )
+
+        if existing_event is not None:
+            # Aggregate: update existing event instead of creating new one
+            existing_meta = existing_event.meta or {}
+            aggregation_count = existing_meta.get("aggregation_count", 1) + 1
+
+            # Keep track of first event time
+            if "first_event_at" not in existing_meta:
+                existing_meta["first_event_at"] = existing_event.event_at.isoformat()
+
+            existing_meta["aggregation_count"] = aggregation_count
+
+            # Accumulate delta
+            new_delta = (existing_event.delta_weight_g or 0) + delta_weight_g
+            existing_event.delta_weight_g = new_delta
+            existing_event.event_at = event_at
+            existing_event.meta = existing_meta
+
+            # Update spool remaining weight
+            if spool.remaining_weight_g is not None:
+                remaining = spool.remaining_weight_g + delta_weight_g
+                if remaining < 0:
+                    remaining = 0
+                    existing_meta["clamped_to_zero"] = True
+                    existing_event.meta = existing_meta
+
+                spool.remaining_weight_g = remaining
+                spool.last_used_at = event_at
+
+                await self._handle_auto_opened(spool, event_at)
+
+                if remaining == 0:
+                    await self._handle_auto_empty(
+                        spool, remaining, existing_event.id, event_at
+                    )
+
+            await self.db.commit()
+            return existing_event, spool.remaining_weight_g
+
+        # No aggregation possible - create new event
         meta: dict[str, Any] = {}
 
         if spool.remaining_weight_g is None:
@@ -415,7 +501,7 @@ class SpoolService:
             spool = spools.get(sid)
             if not spool:
                 continue
-            
+
             old_status_id = spool.status_id
             await self._create_event(
                 spool_id=spool.id,
@@ -429,7 +515,7 @@ class SpoolService:
             )
             spool.status_id = new_status.id
             count += 1
-            
+
         await self.db.commit()
         return count
 
