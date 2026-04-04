@@ -10,50 +10,50 @@ export function getStaticPaths() {
 const { id } = Astro.params
 ---
 
-<Layout title="FilaMan - Print Label">
+<Layout title="FilaMan - Print Filament Label">
   <div class="print-page">
     <aside class="print-sidebar">
       <a id="btn-back" class="sidebar-header back-link">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        <span id="label-back">Zurück zur Spule</span>
+        <span id="label-back">Back to Filament</span>
       </a>
 
       <div class="settings-section">
         <h3 id="title-settings">Print Settings</h3>
 
         <div>
-          <label class="fm-label" id="label-width-text">Breite (mm)</label>
+          <label class="fm-label" id="label-width-text">Width (mm)</label>
           <input type="number" id="input-width" value="60" class="fm-input">
         </div>
 
         <div>
-          <label class="fm-label" id="label-height-text">Höhe (mm)</label>
+          <label class="fm-label" id="label-height-text">Height (mm)</label>
           <input type="number" id="input-height" value="25" class="fm-input">
         </div>
 
         <div>
-          <label class="fm-label" id="label-font-size-text">Schriftgröße (%)</label>
+          <label class="fm-label" id="label-font-size-text">Font Size (%)</label>
           <input type="range" id="input-font-size" min="50" max="200" value="100" class="fm-input" style="padding: 8px;">
         </div>
 
         <div>
-          <label class="fm-label" id="label-qr-size-text">QR-Größe (mm)</label>
+          <label class="fm-label" id="label-qr-size-text">QR Size (mm)</label>
           <input type="number" id="input-qr-size" value="22" class="fm-input">
         </div>
 
-        <h3>Anzeige</h3>
+        <h3 id="title-display">Display</h3>
         <div class="checkbox-grid">
           <label class="fm-checkbox-group">
             <input type="checkbox" id="check-qr" checked>
-            <span id="label-show-qr">QR-Code</span>
+            <span id="label-show-qr">QR Code</span>
           </label>
           <label class="fm-checkbox-group">
             <input type="checkbox" id="check-id" checked>
-            <span id="label-show-id">Spool-ID</span>
+            <span id="label-show-id">Filament ID</span>
           </label>
           <label class="fm-checkbox-group">
             <input type="checkbox" id="check-mfr" checked>
-            <span id="label-show-mfr">Hersteller</span>
+            <span id="label-show-mfr">Manufacturer</span>
           </label>
           <label class="fm-checkbox-group">
             <input type="checkbox" id="check-mat" checked>
@@ -61,12 +61,9 @@ const { id } = Astro.params
           </label>
           <label class="fm-checkbox-group">
             <input type="checkbox" id="check-color" checked>
-            <span id="label-show-color">Farbe</span>
+            <span id="label-show-color">Color</span>
           </label>
         </div>
-
-        <h3 id="title-extra-fields" style="display: none;">Extra-Felder</h3>
-        <div id="extra-fields-checkboxes" class="checkbox-grid checkbox-grid-single" style="display: none;"></div>
       </div>
 
       <details class="export-panel">
@@ -93,7 +90,7 @@ const { id } = Astro.params
 
           <div class="export-meta">
             <div class="export-meta-label" id="label-planned-filename">Planned file name</div>
-            <div class="export-meta-value" id="preview-filename">spool-label.png</div>
+            <div class="export-meta-value" id="preview-filename">filament-label.png</div>
           </div>
 
           <button id="btn-export" class="fm-btn fm-btn-primary export-action-button" type="button">
@@ -104,8 +101,8 @@ const { id } = Astro.params
       </details>
 
       <div class="action-buttons">
-        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Drucken</button>
-        <button id="btn-reset" class="fm-btn fm-btn-outline">Zurücksetzen</button>
+        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Print</button>
+        <button id="btn-reset" class="fm-btn fm-btn-outline">Reset</button>
       </div>
     </aside>
 
@@ -117,7 +114,6 @@ const { id } = Astro.params
           <div id="prev-filament" style="font-size: 0.9em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
           <div id="prev-mfr" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
           <div id="prev-color" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          <div id="prev-extra-fields"></div>
         </div>
       </div>
     </main>
@@ -299,7 +295,6 @@ const { id } = Astro.params
     color: black;
   }
 
-
   .fm-label {
     font-size: 0.8rem;
     font-weight: 600;
@@ -400,15 +395,10 @@ const { id } = Astro.params
     grid-template-columns: 1fr 1fr;
     gap: 4px;
   }
-
-  .checkbox-grid-single {
-    grid-template-columns: 1fr;
-  }
 </style>
 
 <style is:global>
   @media print {
-    /* Reset page */
     html, body {
       margin: 0 !important;
       padding: 0 !important;
@@ -416,14 +406,12 @@ const { id } = Astro.params
       background: white !important;
     }
 
-    /* Hide Layout elements */
     .fm-sidebar,
     #fm-confirm-overlay,
     .fm-sidebar-backdrop {
       display: none !important;
     }
 
-    /* Reset Layout grid to block - ensure visibility */
     .fm-page {
       display: block !important;
       visibility: visible !important;
@@ -441,12 +429,10 @@ const { id } = Astro.params
       background: white !important;
     }
 
-    /* Hide print settings sidebar */
     .print-sidebar {
       display: none !important;
     }
 
-    /* Reset print page containers */
     .print-page {
       margin: 0 !important;
       height: auto !important;
@@ -461,7 +447,6 @@ const { id } = Astro.params
       background: white !important;
     }
 
-    /* The label */
     .label-preview {
       box-shadow: none !important;
       border: none !important;
@@ -478,7 +463,6 @@ const { id } = Astro.params
       page-break-inside: avoid !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
-      /* Dimensions set dynamically via JS #page-style tag */
     }
 
     .label-preview div,
@@ -493,53 +477,41 @@ const { id } = Astro.params
     #label-qr-container img {
       display: block !important;
     }
-
-    @page {
-      /* margin set dynamically via JS #page-style tag */
-    }
   }
 </style>
 
 <script>
   import { buildPlannedFileName, exportLabelAsAml, exportLabelAsPng } from '../../../lib/label-export'
 
-  // Global print function for Safari compatibility
   ;(window as any).filamanPrint = function() {
     try {
-      // Try execCommand first (better Safari support)
       document.execCommand('print', false, null)
-    } catch (e) {
-      // Fallback to window.print
+    } catch {
       window.print()
     }
   }
 
-  const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
-
+  // The Astro route is scaffolded with a placeholder id, so query params carry the real label data.
+  const pathId = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
   const params = new URLSearchParams(window.location.search)
-  const labelData = {
-    id: id,
+  const id = params.get('id') || pathId
+  let labelData = {
+    id,
     designation: params.get('designation') || '',
     manufacturer: params.get('mfr') || '',
     type: params.get('type') || '',
-    color: params.get('color') || ''
+    color: params.get('color') || '',
   }
 
-  let extraFields: {key: string, label: string, value: string, source?: string}[] = []
-  try {
-    const stored = sessionStorage.getItem('filaman-label-extra-fields')
-    if (stored) extraFields = JSON.parse(stored)
-  } catch(e) { /* ignore */ }
-
-  const widthInput = document.getElementById('input-width')
-  const heightInput = document.getElementById('input-height')
-  const fontSizeInput = document.getElementById('input-font-size')
-  const qrSizeInput = document.getElementById('input-qr-size')
-  const checkQR = document.getElementById('check-qr')
-  const checkID = document.getElementById('check-id')
-  const checkMfr = document.getElementById('check-mfr')
-  const checkMat = document.getElementById('check-mat')
-  const checkColor = document.getElementById('check-color')
+  const widthInput = document.getElementById('input-width') as HTMLInputElement
+  const heightInput = document.getElementById('input-height') as HTMLInputElement
+  const fontSizeInput = document.getElementById('input-font-size') as HTMLInputElement
+  const qrSizeInput = document.getElementById('input-qr-size') as HTMLInputElement
+  const checkQR = document.getElementById('check-qr') as HTMLInputElement
+  const checkID = document.getElementById('check-id') as HTMLInputElement
+  const checkMfr = document.getElementById('check-mfr') as HTMLInputElement
+  const checkMat = document.getElementById('check-mat') as HTMLInputElement
+  const checkColor = document.getElementById('check-color') as HTMLInputElement
   const exportFormatSelect = document.getElementById('select-export-format') as HTMLSelectElement
   const exportDpiInput = document.getElementById('input-export-dpi') as HTMLInputElement
   const exportDpiGroup = document.getElementById('export-dpi-group') as HTMLDivElement
@@ -547,131 +519,73 @@ const { id } = Astro.params
   const previewFilename = document.getElementById('preview-filename') as HTMLDivElement
   const exportButton = document.getElementById('btn-export') as HTMLButtonElement
   const exportButtonLabel = document.getElementById('btn-export-label') as HTMLSpanElement
-  const labelPreview = document.getElementById('label-preview')
-  const qrContainer = document.getElementById('label-qr-container')
+  const labelPreview = document.getElementById('label-preview') as HTMLDivElement
+  const qrContainer = document.getElementById('label-qr-container') as HTMLDivElement
 
-  const LABEL_SETTINGS_KEY = 'filaman-spool-label-settings'
-  const LEGACY_LABEL_SETTINGS_KEY = 'filaman-label-settings'
-
-  // Build extra field checkboxes dynamically
-  const extraFieldsTitle = document.getElementById('title-extra-fields')
-  const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')
-  const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
-
-  let savedExtraFieldSettings: Record<string, boolean> = {}
-  try {
-    // Fall back to the legacy generic key so existing spool print settings survive the rename.
-    const saved = localStorage.getItem(LABEL_SETTINGS_KEY) || localStorage.getItem(LEGACY_LABEL_SETTINGS_KEY)
-    if (saved) {
-      const s = JSON.parse(saved)
-      if (s.extraFields) savedExtraFieldSettings = s.extraFields
-    }
-  } catch(e) { /* ignore */ }
-
-  if (extraFields.length > 0) {
-    extraFieldsTitle.style.display = ''
-    extraFieldsCheckboxes.style.display = ''
-    const hasBothSources = extraFields.some(ef => ef.source === 'spool') && extraFields.some(ef => ef.source === 'filament')
-
-    // Copy Astro scoped-style attribute from existing checkboxes so dynamic elements get the same styles
-    const scopeAttr = (() => {
-      const existing = document.querySelector('.fm-checkbox-group')
-      if (!existing) return null
-      return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
-    })()
-
-    for (const ef of extraFields) {
-      const lbl = document.createElement('label')
-      lbl.className = 'fm-checkbox-group'
-      const cb = document.createElement('input')
-      cb.type = 'checkbox'
-      cb.id = `check-ef-${ef.key}`
-      cb.checked = savedExtraFieldSettings[ef.key] || false
-      const span = document.createElement('span')
-      span.textContent = hasBothSources ? `${ef.label} (${ef.source === 'spool' ? ((window as any).__t('dashboard.spool') || 'Spool') : ((window as any).__t('spools.filament') || 'Filament')})` : ef.label
-      if (scopeAttr) {
-        lbl.setAttribute(scopeAttr.name, '')
-        cb.setAttribute(scopeAttr.name, '')
-        span.setAttribute(scopeAttr.name, '')
-      }
-      lbl.appendChild(cb)
-      lbl.appendChild(span)
-      extraFieldsCheckboxes.appendChild(lbl)
-      extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
-      cb.addEventListener('change', updatePreview)
-    }
-  }
+  const LABEL_SETTINGS_KEY = 'filaman-filament-label-settings'
 
   function saveSettings() {
-    const settings: Record<string, any> = {
-      width: (widthInput as HTMLInputElement).value,
-      height: (heightInput as HTMLInputElement).value,
-      fontSize: (fontSizeInput as HTMLInputElement).value,
-      qrSize: (qrSizeInput as HTMLInputElement).value,
-      showQR: (checkQR as HTMLInputElement).checked,
-      showID: (checkID as HTMLInputElement).checked,
-      showMfr: (checkMfr as HTMLInputElement).checked,
-      showMat: (checkMat as HTMLInputElement).checked,
-      showColor: (checkColor as HTMLInputElement).checked,
+    localStorage.setItem(LABEL_SETTINGS_KEY, JSON.stringify({
+      width: widthInput.value,
+      height: heightInput.value,
+      fontSize: fontSizeInput.value,
+      qrSize: qrSizeInput.value,
+      showQR: checkQR.checked,
+      showID: checkID.checked,
+      showMfr: checkMfr.checked,
+      showMat: checkMat.checked,
+      showColor: checkColor.checked,
       exportFormat: exportFormatSelect.value,
       exportDpi: exportDpiInput.value,
-      extraFields: extraFieldChecks.reduce((acc, ef) => {
-        acc[ef.key] = ef.checkbox.checked
-        return acc
-      }, {} as Record<string, boolean>)
-    }
-    localStorage.setItem(LABEL_SETTINGS_KEY, JSON.stringify(settings))
+    }))
   }
 
   function loadSettings() {
     try {
-      // Migrate existing spool settings from the old generic key to the new spool-specific key.
-      const saved = localStorage.getItem(LABEL_SETTINGS_KEY) || localStorage.getItem(LEGACY_LABEL_SETTINGS_KEY)
+      const saved = localStorage.getItem(LABEL_SETTINGS_KEY)
       if (!saved) return
-      const s = JSON.parse(saved)
-      if (!localStorage.getItem(LABEL_SETTINGS_KEY)) {
-        localStorage.setItem(LABEL_SETTINGS_KEY, saved)
-      }
-      if (s.width) (widthInput as HTMLInputElement).value = s.width
-      if (s.height) (heightInput as HTMLInputElement).value = s.height
-      if (s.fontSize) (fontSizeInput as HTMLInputElement).value = s.fontSize
-      if (s.qrSize) (qrSizeInput as HTMLInputElement).value = s.qrSize
-      if (s.showQR !== undefined) (checkQR as HTMLInputElement).checked = s.showQR
-      if (s.showID !== undefined) (checkID as HTMLInputElement).checked = s.showID
-      if (s.showMfr !== undefined) (checkMfr as HTMLInputElement).checked = s.showMfr
-      if (s.showMat !== undefined) (checkMat as HTMLInputElement).checked = s.showMat
-      if (s.showColor !== undefined) (checkColor as HTMLInputElement).checked = s.showColor
-      if (s.exportFormat) exportFormatSelect.value = s.exportFormat
-      if (s.exportDpi) exportDpiInput.value = s.exportDpi
-    } catch (e) { /* ignore corrupt data */ }
+      const settings = JSON.parse(saved)
+      if (settings.width) widthInput.value = settings.width
+      if (settings.height) heightInput.value = settings.height
+      if (settings.fontSize) fontSizeInput.value = settings.fontSize
+      if (settings.qrSize) qrSizeInput.value = settings.qrSize
+      if (settings.showQR !== undefined) checkQR.checked = settings.showQR
+      if (settings.showID !== undefined) checkID.checked = settings.showID
+      if (settings.showMfr !== undefined) checkMfr.checked = settings.showMfr
+      if (settings.showMat !== undefined) checkMat.checked = settings.showMat
+      if (settings.showColor !== undefined) checkColor.checked = settings.showColor
+      if (settings.exportFormat) exportFormatSelect.value = settings.exportFormat
+      if (settings.exportDpi) exportDpiInput.value = settings.exportDpi
+    } catch {
+      // ignore corrupt local settings
+    }
   }
 
   loadSettings()
 
-  document.getElementById('title-settings').textContent = (window as any).__t('spools.printSettings')
-  document.getElementById('label-width-text').textContent = (window as any).__t('spools.labelWidth')
-  document.getElementById('label-height-text').textContent = (window as any).__t('spools.labelHeight')
-  document.getElementById('label-font-size-text').textContent = (window as any).__t('spools.fontSize')
-  document.getElementById('label-qr-size-text').textContent = (window as any).__t('spools.qrSize')
-  document.getElementById('label-show-qr').textContent = (window as any).__t('spools.showQRCode')
-  document.getElementById('label-show-id').textContent = (window as any).__t('spools.showSpoolId')
-  document.getElementById('label-show-mfr').textContent = (window as any).__t('spools.showManufacturer')
-  document.getElementById('label-show-mat').textContent = (window as any).__t('spools.showMaterial')
-  document.getElementById('label-show-color').textContent = (window as any).__t('spools.showColor')
-  if (extraFields.length > 0) {
-    document.getElementById('title-extra-fields').textContent = (window as any).__t('spools.extraFieldsLabel')
-  }
+  document.getElementById('title-settings')!.textContent = (window as any).__t('spools.printSettings')
+  document.getElementById('label-width-text')!.textContent = (window as any).__t('spools.labelWidth')
+  document.getElementById('label-height-text')!.textContent = (window as any).__t('spools.labelHeight')
+  document.getElementById('label-font-size-text')!.textContent = (window as any).__t('spools.fontSize')
+  document.getElementById('label-qr-size-text')!.textContent = (window as any).__t('spools.qrSize')
+  document.getElementById('label-show-qr')!.textContent = (window as any).__t('spools.showQRCode')
+  document.getElementById('label-show-mfr')!.textContent = (window as any).__t('spools.showManufacturer')
+  document.getElementById('label-show-mat')!.textContent = (window as any).__t('spools.showMaterial')
+  document.getElementById('label-show-color')!.textContent = (window as any).__t('spools.showColor')
+  document.getElementById('btn-print')!.textContent = (window as any).__t('common.print')
+  document.getElementById('btn-reset')!.textContent = (window as any).__t('spools.resetDefaults')
+  document.getElementById('title-display')!.textContent = (window as any).__t('filaments.printDisplay')
+  document.getElementById('label-show-id')!.textContent = (window as any).__t('filaments.showFilamentId')
+  document.getElementById('title-export')!.textContent = (window as any).__t('common.export')
+  document.getElementById('label-export-format')!.textContent = (window as any).__t('common.format')
+  document.getElementById('label-export-dpi')!.textContent = (window as any).__t('common.dpi')
+  document.getElementById('label-planned-filename')!.textContent = (window as any).__t('common.plannedFileName')
+  document.getElementById('option-export-png')!.textContent = (window as any).__t('common.png')
+  document.getElementById('option-export-aml')!.textContent = (window as any).__t('common.aml')
+
   const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
-  backBtn.href = `/spools/${id}`
-  document.getElementById('label-back').textContent = (window as any).__t('spools.backToSpool')
-  document.getElementById('btn-print').textContent = (window as any).__t('common.print')
-  document.getElementById('btn-reset').textContent = (window as any).__t('spools.resetDefaults')
-  document.getElementById('title-export').textContent = (window as any).__t('common.export')
-  document.getElementById('label-export-format').textContent = (window as any).__t('common.format')
-  document.getElementById('label-export-dpi').textContent = (window as any).__t('common.dpi')
-  document.getElementById('label-planned-filename').textContent = (window as any).__t('common.plannedFileName')
-  document.getElementById('option-export-png').textContent = (window as any).__t('common.png')
-  document.getElementById('option-export-aml').textContent = (window as any).__t('common.aml')
+  backBtn.href = `/filaments/${id}`
+  document.getElementById('label-back')!.textContent = (window as any).__t('filaments.backToFilament')
 
   function getSelectedExportFormat() {
     return exportFormatSelect.value === 'aml' ? 'aml' : 'png'
@@ -680,21 +594,20 @@ const { id } = Astro.params
   function getPlannedBaseFileName() {
     return buildPlannedFileName(
       [
-        (checkMfr as HTMLInputElement).checked ? labelData.manufacturer : '',
-        (checkMat as HTMLInputElement).checked ? labelData.type : '',
+        checkMfr.checked ? labelData.manufacturer : '',
+        checkMat.checked ? labelData.type : '',
         labelData.designation,
-        (checkColor as HTMLInputElement).checked ? labelData.color : '',
-        ...extraFieldChecks.filter((ef) => ef.checkbox.checked).map((ef) => ef.value),
-        (checkID as HTMLInputElement).checked ? `spool-${labelData.id}` : '',
+        checkColor.checked ? labelData.color : '',
+        checkID.checked ? `filament-${labelData.id}` : '',
       ],
-      `spool-label-${labelData.id}`,
+      `filament-label-${labelData.id}`,
     )
   }
 
   async function renderQrCode(scale = 1) {
     qrContainer.innerHTML = ''
-    const url = window.location.origin + '/spools/' + labelData.id
-    const qrPx = Math.max(1, Math.round(parseInt((qrSizeInput as HTMLInputElement).value, 10) * 3.78 * scale))
+    const url = window.location.origin + '/filaments/' + labelData.id
+    const qrPx = Math.max(1, Math.round(parseInt(qrSizeInput.value, 10) * 3.78 * scale))
 
     // @ts-ignore
     new QRCode(qrContainer, {
@@ -703,11 +616,11 @@ const { id } = Astro.params
       height: qrPx,
       colorDark: '#000000',
       colorLight: '#ffffff',
-      correctLevel: (window as any).QRCode.CorrectLevel.H
+      correctLevel: (window as any).QRCode.CorrectLevel.H,
     })
 
-    qrContainer.style.width = (qrSizeInput as HTMLInputElement).value + 'mm'
-    qrContainer.style.height = (qrSizeInput as HTMLInputElement).value + 'mm'
+    qrContainer.style.width = qrSizeInput.value + 'mm'
+    qrContainer.style.height = qrSizeInput.value + 'mm'
 
     const canvas = qrContainer.querySelector('canvas')
     if (canvas) {
@@ -722,11 +635,10 @@ const { id } = Astro.params
         const tw = metrics.width
         const th = fontSize
         const pad = Math.round(fontSize * 0.3)
-        const cx = qrPx / 2, cy = qrPx / 2
-
+        const cx = qrPx / 2
+        const cy = qrPx / 2
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(cx - tw / 2 - pad, cy - th / 2 - pad, tw + pad * 2, th + pad * 2)
-
         ctx.fillStyle = '#000000'
         ctx.fillText(text, cx, cy)
       }
@@ -754,9 +666,42 @@ const { id } = Astro.params
     exportButtonLabel.textContent = `${exportLabel} ${formatLabel}`
   }
 
-  ;[checkID, checkMfr, checkMat, checkColor].forEach((element) => {
-    element.addEventListener('change', updateExportUi)
-  })
+  function getColorDisplay(filament: any): string {
+    if (filament.manufacturer_color_name) {
+      return filament.manufacturer_color_name
+    }
+
+    if (Array.isArray(filament.colors) && filament.colors.length > 0) {
+      return filament.colors
+        .map((entry: any) => entry.display_name_override || entry.color?.name || '')
+        .filter(Boolean)
+        .join(', ')
+    }
+
+    return ''
+  }
+
+  async function loadFilamentData() {
+    try {
+      const response = await fetch(`/api/v1/filaments/${id}`, { credentials: 'include' })
+      if (!response.ok) {
+        throw new Error('Failed to fetch filament for print')
+      }
+
+      const filament = await response.json()
+      labelData = {
+        id: String(filament.id ?? id),
+        designation: filament.designation || '',
+        manufacturer: filament.manufacturer?.name || '',
+        type: filament.material_type || '',
+        color: getColorDisplay(filament),
+      }
+    } catch (error) {
+      console.error('Failed to load filament print data:', error)
+    }
+
+    updateExportUi()
+  }
 
   async function updatePreview() {
     if (typeof (window as any).QRCode === 'undefined') {
@@ -769,70 +714,50 @@ const { id } = Astro.params
       })
     }
 
-    const w = (widthInput as HTMLInputElement).value
-    const h = (heightInput as HTMLInputElement).value
-    const qrSize = (qrSizeInput as HTMLInputElement).value
-    const fontSizeBase = parseInt((fontSizeInput as HTMLInputElement).value) / 100
+    const width = widthInput.value
+    const height = heightInput.value
+    const qrSize = qrSizeInput.value
+    const fontSizeBase = parseInt(fontSizeInput.value, 10) / 100
 
-    labelPreview.style.width = w + 'mm'
-    labelPreview.style.height = h + 'mm'
+    labelPreview.style.width = width + 'mm'
+    labelPreview.style.height = height + 'mm'
 
-    document.getElementById('prev-id').style.fontSize = (fontSizeBase * 14) + 'pt'
-    document.getElementById('prev-filament').style.fontSize = (fontSizeBase * 9) + 'pt'
-    document.getElementById('prev-mfr').style.fontSize = (fontSizeBase * 7.5) + 'pt'
-    document.getElementById('prev-color').style.fontSize = (fontSizeBase * 7.5) + 'pt'
+    ;(document.getElementById('prev-id') as HTMLDivElement).style.fontSize = (fontSizeBase * 14) + 'pt'
+    ;(document.getElementById('prev-filament') as HTMLDivElement).style.fontSize = (fontSizeBase * 9) + 'pt'
+    ;(document.getElementById('prev-mfr') as HTMLDivElement).style.fontSize = (fontSizeBase * 7.5) + 'pt'
+    ;(document.getElementById('prev-color') as HTMLDivElement).style.fontSize = (fontSizeBase * 7.5) + 'pt'
 
-    qrContainer.style.display = (checkQR as HTMLInputElement).checked ? 'block' : 'none'
-    document.getElementById('prev-id').style.display = (checkID as HTMLInputElement).checked ? 'block' : 'none'
+    qrContainer.style.display = checkQR.checked ? 'block' : 'none'
+    document.getElementById('prev-id')!.style.display = checkID.checked ? 'block' : 'none'
 
-    const mfrText = (checkMfr as HTMLInputElement).checked ? labelData.manufacturer : ''
-    const matText = (checkMat as HTMLInputElement).checked ? labelData.type : ''
-    document.getElementById('prev-mfr').textContent = [mfrText, matText].filter(Boolean).join(' - ')
-    document.getElementById('prev-mfr').style.display = ((checkMfr as HTMLInputElement).checked || (checkMat as HTMLInputElement).checked) ? 'block' : 'none'
+    const mfrText = checkMfr.checked ? labelData.manufacturer : ''
+    const matText = checkMat.checked ? labelData.type : ''
+    document.getElementById('prev-mfr')!.textContent = [mfrText, matText].filter(Boolean).join(' - ')
+    document.getElementById('prev-mfr')!.style.display = (checkMfr.checked || checkMat.checked) ? 'block' : 'none'
 
-    document.getElementById('prev-color').textContent = (checkColor as HTMLInputElement).checked ? labelData.color : ''
-    document.getElementById('prev-color').style.display = (checkColor as HTMLInputElement).checked ? 'block' : 'none'
+    document.getElementById('prev-color')!.textContent = checkColor.checked ? labelData.color : ''
+    document.getElementById('prev-color')!.style.display = checkColor.checked ? 'block' : 'none'
 
-    // Extra fields
-    const extraContainer = document.getElementById('prev-extra-fields')
-    extraContainer.innerHTML = ''
-    for (const ef of extraFieldChecks) {
-      if (ef.checkbox.checked) {
-        const div = document.createElement('div')
-        div.style.fontSize = (fontSizeBase * 7.5) + 'pt'
-        div.style.color = '#333'
-        div.style.whiteSpace = 'nowrap'
-        div.style.overflow = 'hidden'
-        div.style.textOverflow = 'ellipsis'
-        div.textContent = `${ef.label}: ${ef.value}`
-        extraContainer.appendChild(div)
-      }
-    }
+    document.getElementById('prev-id')!.textContent = `#${labelData.id}`
+    document.getElementById('prev-filament')!.textContent = labelData.designation
 
-    document.getElementById('prev-id').textContent = `#${labelData.id}`
-    document.getElementById('prev-filament').textContent = labelData.designation
-
-    if ((checkQR as HTMLInputElement).checked) {
+    if (checkQR.checked) {
       await renderQrCode()
     }
 
     const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
     const style = document.createElement('style')
-    // Safari doesn't support @page { size } — use default page margins so label stays in printable area
-    // Chrome/Edge support @page { size } — set exact label dimensions with no margin
-    const pageRule = isSafari
-      ? ''
-      : `@page { size: ${w}mm ${h}mm; margin: 0; }`
+    const pageRule = isSafari ? '' : `@page { size: ${width}mm ${height}mm; margin: 0; }`
     style.innerHTML = `
       ${pageRule}
       @media print {
         .label-preview {
-          width: ${w}mm !important;
-          height: ${h}mm !important;
-          min-width: ${w}mm !important;
-          min-height: ${h}mm !important;
-          max-width: ${w}mm !important;
-          max-height: ${h}mm !important;
+          width: ${width}mm !important;
+          height: ${height}mm !important;
+          min-width: ${width}mm !important;
+          min-height: ${height}mm !important;
+          max-width: ${width}mm !important;
+          max-height: ${height}mm !important;
         }
       }
     `
@@ -844,10 +769,14 @@ const { id } = Astro.params
     saveSettings()
   }
 
-  ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach(el => {
-    el.addEventListener('change', updatePreview)
-    if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number') {
-      el.addEventListener('input', updatePreview)
+  ;[checkID, checkMfr, checkMat, checkColor].forEach((element) => {
+    element.addEventListener('change', updateExportUi)
+  })
+
+  ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach((element) => {
+    element.addEventListener('change', updatePreview)
+    if (element.type === 'range' || element.type === 'number') {
+      element.addEventListener('input', updatePreview)
     }
   })
 
@@ -871,24 +800,24 @@ const { id } = Astro.params
   async function runExport(saveMode: 'download' | 'save-as' = 'download') {
     const fileName = getPlannedBaseFileName()
     const dpi = parseInt(exportDpiInput.value, 10) || 300
-    const widthMm = parseFloat((widthInput as HTMLInputElement).value) || 60
-    const heightMm = parseFloat((heightInput as HTMLInputElement).value) || 25
+    const widthMm = parseFloat(widthInput.value) || 60
+    const heightMm = parseFloat(heightInput.value) || 25
     const exportScale = Math.max(1, Math.min(dpi / 96, 10))
 
     try {
-      if ((checkQR as HTMLInputElement).checked) {
+      if (checkQR.checked) {
         await renderQrCode(exportScale)
       }
 
       if (getSelectedExportFormat() === 'aml') {
-        await exportLabelAsAml(labelPreview as HTMLDivElement, fileName, dpi, widthMm, heightMm, saveMode)
+        await exportLabelAsAml(labelPreview, fileName, dpi, widthMm, heightMm, saveMode)
       } else {
-        await exportLabelAsPng(labelPreview as HTMLDivElement, fileName, dpi, saveMode)
+        await exportLabelAsPng(labelPreview, fileName, dpi, saveMode)
       }
     } catch (error) {
-      console.error('Failed to export spool label:', error)
+      console.error('Failed to export filament label:', error)
     } finally {
-      if ((checkQR as HTMLInputElement).checked) {
+      if (checkQR.checked) {
         await renderQrCode()
       }
     }
@@ -904,24 +833,24 @@ const { id } = Astro.params
   })
 
   document.getElementById('btn-reset')?.addEventListener('click', () => {
-    localStorage.removeItem(LABEL_SETTINGS_KEY);
-    (widthInput as HTMLInputElement).value = '60';
-    (heightInput as HTMLInputElement).value = '25';
-    (fontSizeInput as HTMLInputElement).value = '100';
-    (qrSizeInput as HTMLInputElement).value = '22';
-    (checkQR as HTMLInputElement).checked = true;
-    (checkID as HTMLInputElement).checked = true;
-    (checkMfr as HTMLInputElement).checked = true;
-    (checkMat as HTMLInputElement).checked = true;
-    (checkColor as HTMLInputElement).checked = true;
+    localStorage.removeItem(LABEL_SETTINGS_KEY)
+    widthInput.value = '60'
+    heightInput.value = '25'
+    fontSizeInput.value = '100'
+    qrSizeInput.value = '22'
+    checkQR.checked = true
+    checkID.checked = true
+    checkMfr.checked = true
+    checkMat.checked = true
+    checkColor.checked = true
     exportFormatSelect.value = 'png'
     exportDpiInput.value = '300'
-    for (const ef of extraFieldChecks) {
-      ef.checkbox.checked = false
-    }
     updatePreview()
   })
 
   updateExportUi()
-  updatePreview()
+
+  loadFilamentData().finally(() => {
+    updatePreview()
+  })
 </script>

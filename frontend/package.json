@@ -12,6 +12,7 @@
     "@astrojs/node": "^9.5.3",
     "@tailwindcss/vite": "^4.1.18",
     "astro": "^5.17.1",
+    "html-to-image": "^1.11.13",
     "swagger-ui-dist": "^5.32.1",
     "tailwindcss": "^4.1.18"
   }
