@@ -127,6 +127,7 @@ import Layout from '../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../lib/abort'
     await initI18n()
 
     function getCsrfToken(): string {
@@ -136,7 +137,7 @@ import Layout from '../layouts/Layout.astro'
     
     async function loadProfile() {
       try {
-        const response = await fetch('/api/v1/me', { credentials: 'include' })
+        const response = await fetch('/api/v1/me', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to load profile')
         
         const user = await response.json()
@@ -144,6 +145,7 @@ import Layout from '../layouts/Layout.astro'
         ;(document.getElementById('display_name') as HTMLInputElement).value = user.display_name || ''
         ;(document.getElementById('language') as HTMLSelectElement).value = user.language
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load profile:', error)
       }
     }
@@ -175,6 +177,7 @@ import Layout from '../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
         
@@ -195,6 +198,7 @@ import Layout from '../layouts/Layout.astro'
         profileSuccess.textContent = t('settings.profileSaved')
         profileSuccess.classList.remove('hidden')
       } catch (error: any) {
+        if (isAbortError(error)) return
         profileError.textContent = error.message
         profileError.classList.remove('hidden')
       } finally {
@@ -246,6 +250,7 @@ import Layout from '../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
         
@@ -259,6 +264,7 @@ import Layout from '../layouts/Layout.astro'
         passwordSuccess.classList.remove('hidden')
         passwordForm.reset()
       } catch (error: any) {
+        if (isAbortError(error)) return
         passwordError.textContent = error.message
         passwordError.classList.remove('hidden')
       } finally {

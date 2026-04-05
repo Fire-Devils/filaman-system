@@ -164,6 +164,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let plugins: any[] = []
@@ -189,11 +190,12 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadPlugins() {
       try {
-        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include' })
+        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch plugins')
         plugins = await response.json()
         renderPlugins()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load plugins:', error)
         const tbody = document.getElementById('plugins-table')!
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--error-text);">${escapeHtml(t('admin.pluginFailedLoad'))}</td></tr>`
@@ -270,6 +272,7 @@ import Layout from '../../layouts/Layout.astro'
               headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
               body: JSON.stringify({ download_url: info.download_url }),
+              signal: getAbortSignal(),
             })
 
             if (!response.ok) {
@@ -280,6 +283,7 @@ import Layout from '../../layouts/Layout.astro'
             delete updateMap[key]
             loadPlugins()
           } catch (err: any) {
+            if (isAbortError(err)) return
             console.error('Plugin update failed:', err)
             await (window as any).__fmAlert(err.message || t('admin.pluginInstallFailed'))
             btnEl.disabled = false
@@ -306,6 +310,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -315,6 +320,7 @@ import Layout from '../../layouts/Layout.astro'
             
             loadPlugins()
           } catch (err: any) {
+            if (isAbortError(err)) return
             await (window as any).__fmAlert(err.message || t('admin.pluginUninstallFailed'))
           }
         })
@@ -339,6 +345,7 @@ import Layout from '../../layouts/Layout.astro'
               },
               credentials: 'include',
               body: JSON.stringify({ is_active: newState }),
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -355,6 +362,7 @@ import Layout from '../../layouts/Layout.astro'
             if (label) label.title = newState ? t('admin.pluginDeactivate') : t('admin.pluginActivate')
             
           } catch (err: any) {
+            if (isAbortError(err)) return
             // Bei Fehler: Checkbox zuruecksetzen
             checkbox.checked = !newState
             await (window as any).__fmAlert(err.message || t('admin.pluginToggleFailed'))
@@ -558,6 +566,7 @@ import Layout from '../../layouts/Layout.astro'
             },
             credentials: 'include',
             body: JSON.stringify({ download_url: selectedRegistryUrl }),
+            signal: getAbortSignal(),
           })
         } else if (selectedFile) {
           const formData = new FormData()
@@ -568,6 +577,7 @@ import Layout from '../../layouts/Layout.astro'
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
             body: formData,
+            signal: getAbortSignal(),
           })
         } else {
           return
@@ -602,6 +612,7 @@ import Layout from '../../layouts/Layout.astro'
         }, 1500)
         
       } catch (err: any) {
+        if (isAbortError(err)) return
         showValidationError(err.message)
         progressDiv.style.display = 'none'
       } finally {
@@ -617,7 +628,7 @@ import Layout from '../../layouts/Layout.astro'
     async function loadAvailablePlugins() {
       registryStatus.textContent = t('common.loading')
       try {
-        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include' })
+        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch available plugins')
         availablePlugins = await response.json()
 
@@ -639,6 +650,7 @@ import Layout from '../../layouts/Layout.astro'
           ? t('admin.pluginNoAvailable')
           : ''
       } catch (err) {
+        if (isAbortError(err)) return
         console.error('Failed to load available plugins:', err)
         registryStatus.textContent = t('admin.pluginRegistryFailed')
       }
@@ -671,7 +683,7 @@ import Layout from '../../layouts/Layout.astro'
       btn.textContent = t('admin.pluginCheckingUpdates')
 
       try {
-        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include' })
+        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch')
         const available: any[] = await response.json()
 
@@ -693,6 +705,7 @@ import Layout from '../../layouts/Layout.astro'
         // Re-render plugins to show update buttons
         renderPlugins()
       } catch (err) {
+        if (isAbortError(err)) return
         console.error('Update check failed:', err)
         await (window as any).__fmAlert(t('admin.pluginRegistryFailed'))
       } finally {

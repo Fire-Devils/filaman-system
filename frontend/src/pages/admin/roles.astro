@@ -84,6 +84,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let roles: any[] = []
@@ -105,8 +106,8 @@ import Layout from '../../layouts/Layout.astro'
     async function loadData() {
       try {
         const [rolesRes, permsRes] = await Promise.all([
-          fetch('/api/v1/admin/roles', { credentials: 'include' }),
-          fetch('/api/v1/admin/permissions', { credentials: 'include' }),
+          fetch('/api/v1/admin/roles', { credentials: 'include', signal: getAbortSignal() }),
+          fetch('/api/v1/admin/permissions', { credentials: 'include', signal: getAbortSignal() }),
         ])
         
         roles = await rolesRes.json()
@@ -114,6 +115,7 @@ import Layout from '../../layouts/Layout.astro'
         renderRoles()
         renderPermissions()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load data:', error)
       }
     }
@@ -179,6 +181,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -188,6 +191,7 @@ import Layout from '../../layouts/Layout.astro'
             
             loadData()
           } catch (err: any) {
+            if (isAbortError(err)) return
             await (window as any).__fmAlert(err.message || t('admin.failedDeleteRole'))
           }
         })
@@ -208,7 +212,7 @@ import Layout from '../../layouts/Layout.astro'
           renderRoles()
           renderPermissions(true)
           try {
-            const res = await fetch(`/api/v1/admin/roles/${roleId}`, { credentials: 'include' })
+            const res = await fetch(`/api/v1/admin/roles/${roleId}`, { credentials: 'include', signal: getAbortSignal() })
             if (!res.ok) throw new Error()
             const data = await res.json()
             selectedRolePermissions = data.permissions || []
@@ -352,6 +356,7 @@ import Layout from '../../layouts/Layout.astro'
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
             body: JSON.stringify({ name, description }),
+            signal: getAbortSignal(),
           })
         } else {
           response = await fetch('/api/v1/admin/roles', {
@@ -359,6 +364,7 @@ import Layout from '../../layouts/Layout.astro'
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
             body: JSON.stringify({ key, name, description }),
+            signal: getAbortSignal(),
           })
         }
         
@@ -370,6 +376,7 @@ import Layout from '../../layouts/Layout.astro'
         closeRoleModal()
         loadData()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
@@ -389,7 +396,7 @@ import Layout from '../../layouts/Layout.astro'
       roleName.textContent = t('admin.roleLabel', { name, key })
       error.classList.add('hidden')
       
-      const response = await fetch(`/api/v1/admin/roles/${id}`, { credentials: 'include' })
+      const response = await fetch(`/api/v1/admin/roles/${id}`, { credentials: 'include', signal: getAbortSignal() })
       const role = await response.json()
       
       const checkboxesContainer = document.getElementById('permissions-checkboxes')!
@@ -443,6 +450,7 @@ import Layout from '../../layouts/Layout.astro'
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
           body: JSON.stringify(selectedPerms),
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) {
@@ -453,6 +461,7 @@ import Layout from '../../layouts/Layout.astro'
         closePermModal()
         loadData()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {

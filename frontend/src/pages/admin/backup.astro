@@ -147,6 +147,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { initI18n, t } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     initI18n()
 
     function getCsrfToken(): string {
@@ -173,7 +174,8 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const response = await fetch('/api/v1/admin/system/backup/export', {
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCsrfToken() }
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -200,6 +202,7 @@ import Layout from '../../layouts/Layout.astro'
 
         await (window as any).__fmSuccess(t('admin.backupExportSuccess') || 'Backup exported successfully')
       } catch (err: any) {
+        if (isAbortError(err)) return
         console.error('Export failed:', err)
         await (window as any).__fmAlert(t('admin.backupExportFailed') || `Export failed: ${err.message}`)
       } finally {
@@ -237,7 +240,8 @@ import Layout from '../../layouts/Layout.astro'
           method: 'POST',
           credentials: 'include',
           headers: { 'X-CSRF-Token': getCsrfToken() },
-          body: formData
+          body: formData,
+          signal: getAbortSignal(),
         })
 
         importProgressBar.style.width = '90%'
@@ -265,8 +269,8 @@ import Layout from '../../layouts/Layout.astro'
         }, 2000)
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         console.error('Import failed:', err)
-        importProgressBar.style.width = '0%'
         importStatus.textContent = ''
         await (window as any).__fmAlert(
           (t('admin.backupImportFailed') || 'Import failed:') + '\n\n' + err.message
@@ -302,7 +306,8 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const response = await fetch('/api/v1/admin/system/backup/export-inventory', {
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCsrfToken() }
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -329,6 +334,7 @@ import Layout from '../../layouts/Layout.astro'
 
         await (window as any).__fmSuccess(t('admin.inventoryExportSuccess') || 'Inventory exported successfully')
       } catch (err: any) {
+        if (isAbortError(err)) return
         console.error('Inventory export failed:', err)
         await (window as any).__fmAlert(t('admin.inventoryExportFailed') || `Export failed: ${err.message}`)
       } finally {
@@ -366,7 +372,8 @@ import Layout from '../../layouts/Layout.astro'
           method: 'POST',
           credentials: 'include',
           headers: { 'X-CSRF-Token': getCsrfToken() },
-          body: formData
+          body: formData,
+          signal: getAbortSignal(),
         })
 
         inventoryImportProgressBar.style.width = '90%'
@@ -394,8 +401,8 @@ import Layout from '../../layouts/Layout.astro'
         }, 2000)
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         console.error('Inventory import failed:', err)
-        inventoryImportProgressBar.style.width = '0%'
         inventoryImportStatus.textContent = ''
         await (window as any).__fmAlert(
           (t('admin.inventoryImportFailed') || 'Import failed:') + '\n\n' + err.message
@@ -436,7 +443,8 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const resp = await fetch('/api/v1/admin/system/backup/sqlite-list', {
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCsrfToken() }
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          signal: getAbortSignal(),
         })
         if (!resp.ok) return
 
@@ -478,6 +486,7 @@ import Layout from '../../layouts/Layout.astro'
         })
 
       } catch (err) {
+        if (isAbortError(err)) return
         console.error('Failed to load SQLite backups:', err)
       }
     }
@@ -498,7 +507,8 @@ import Layout from '../../layouts/Layout.astro'
             'Content-Type': 'application/json',
             'X-CSRF-Token': getCsrfToken()
           },
-          body: JSON.stringify({ filename })
+          body: JSON.stringify({ filename }),
+          signal: getAbortSignal(),
         })
 
         if (!resp.ok) {
@@ -515,6 +525,7 @@ import Layout from '../../layouts/Layout.astro'
         setTimeout(() => window.location.reload(), 2000)
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         console.error('Restore failed:', err)
         await (window as any).__fmAlert(
           (t('admin.sqliteRestoreFailed') || 'Restore failed:') + '\n\n' + err.message
@@ -534,7 +545,8 @@ import Layout from '../../layouts/Layout.astro'
         const resp = await fetch(`/api/v1/admin/system/backup/sqlite/${encodeURIComponent(filename)}`, {
           method: 'DELETE',
           credentials: 'include',
-          headers: { 'X-CSRF-Token': getCsrfToken() }
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          signal: getAbortSignal(),
         })
 
         if (!resp.ok) {
@@ -545,6 +557,7 @@ import Layout from '../../layouts/Layout.astro'
         await loadSqliteBackups()
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         console.error('Delete failed:', err)
         await (window as any).__fmAlert(
           (t('admin.sqliteDeleteFailed') || 'Delete failed:') + '\n\n' + err.message

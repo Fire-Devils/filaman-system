@@ -84,6 +84,7 @@ const { id } = Astro.params
     import { t, initI18n } from '../../../lib/i18n'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
+    import { getAbortSignal, isAbortError } from '../../../lib/abort'
     await initI18n()
     await initCurrency()
 
@@ -118,9 +119,10 @@ const { id } = Astro.params
 
     async function loadFilament() {
       try {
+        const signal = getAbortSignal()
         const [response, sysFieldsRes] = await Promise.all([
-          fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
-          fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }),
+          fetch(`/api/v1/filaments/${id}`, { credentials: 'include', signal }),
+          fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal }),
         ])
 
         if (sysFieldsRes.ok) {
@@ -149,6 +151,7 @@ const { id } = Astro.params
         loadSpools(filament.id)
         loadPrinters()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filament:', error)
         const el = document.getElementById('filament-content')!
         el.textContent = ''
@@ -339,6 +342,7 @@ const { id } = Astro.params
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
           })
 
           // If conflict (409), prompt for cascade delete
@@ -359,6 +363,7 @@ const { id } = Astro.params
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
           }
 
@@ -379,9 +384,10 @@ const { id } = Astro.params
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         // Note: Spools für ein spezifisches Filament werden nicht gecacht (dynamisch)
+        const signal = getAbortSignal()
         const [spoolsRes, statusesRes, locationsData] = await fetchSequential([
-          () => fetch(`/api/v1/spools?filament_id=${filamentId}&include_archived=true&page=1&page_size=200`, { credentials: 'include' }),
-          () => fetch('/api/v1/spools/statuses', { credentials: 'include' }),
+          () => fetch(`/api/v1/spools?filament_id=${filamentId}&include_archived=true&page=1&page_size=200`, { credentials: 'include', signal }),
+          () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal }),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').catch(() => ({ items: [], total: 0 })),
         ] as const)
         
@@ -411,6 +417,7 @@ const { id } = Astro.params
         renderPriceSummary(allSpools, archivedStatusId)
 
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load spools:', error)
       }
     }
@@ -560,7 +567,7 @@ const { id } = Astro.params
 
     async function loadPrinters() {
       try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include' })
+        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
         const data = await res.json()
         printers = data.items || data || []
@@ -585,6 +592,7 @@ const { id } = Astro.params
           }
         })
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load printers:', e)
       }
     }
@@ -595,10 +603,11 @@ const { id } = Astro.params
         return
       }
       try {
-        const res = await fetch(`/api/v1/system-extra-fields?target_type=filament_printer_param&source=${driverKey}`, { credentials: 'include' })
+        const res = await fetch(`/api/v1/system-extra-fields?target_type=filament_printer_param&source=${driverKey}`, { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) throw new Error('Failed')
         fieldDefinitions = await res.json()
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load field definitions:', e)
         fieldDefinitions = []
       }
@@ -606,11 +615,12 @@ const { id } = Astro.params
 
     async function loadFilamentPrinterParams(printerId: number) {
       try {
-        const res = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include' })
+        const res = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) throw new Error('Failed')
         currentPrinterParams = await res.json()
         renderPrinterParams()
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load printer params:', e)
       }
     }
@@ -689,11 +699,13 @@ const { id } = Astro.params
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfTokenGlobal() },
             credentials: 'include',
+            signal: getAbortSignal(),
           })
           currentPrinterParams = []
           renderPrinterParams()
           showParamsMessage(t('printers.paramsCleared'), false)
         } catch (e) {
+          if (isAbortError(e)) return
           console.error('Failed to delete params:', e)
           showParamsMessage(t('printers.paramsSaveFailed'), true)
         }
@@ -705,6 +717,7 @@ const { id } = Astro.params
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ params: nonEmptyParams }),
         })
         if (res.ok) {
@@ -715,6 +728,7 @@ const { id } = Astro.params
           showParamsMessage(t('printers.paramsSaveFailed'), true)
         }
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to save printer params:', e)
         showParamsMessage(t('printers.paramsSaveFailed'), true)
       }

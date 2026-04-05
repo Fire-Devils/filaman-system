@@ -178,6 +178,7 @@ const { title } = Astro.props
 
     <script>
       import { t, initI18n, syncLangFromUser, translatePage, getLang } from '../lib/i18n'
+      import { getAbortSignal } from '../lib/abort'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
@@ -305,6 +306,7 @@ const { title } = Astro.props
         try {
           const response = await fetch('/api/v1/me', {
             credentials: 'include',
+            signal: getAbortSignal(),
           })
 
           if (!response.ok) {
@@ -352,7 +354,7 @@ const { title } = Astro.props
 
       async function loadPluginNav() {
         try {
-          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include' })
+          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal: getAbortSignal() })
           if (!resp.ok) return
           const plugins: { plugin_key: string; name: string; page_url: string }[] = await resp.json()
           if (!plugins.length) return
@@ -475,6 +477,12 @@ const { title } = Astro.props
             reconnectDelay = Math.min(reconnectDelay * 2, 30000)
           }
         }
+
+        // Bei Navigation SSE-Connection schließen um HTTP/2-Blockierung zu vermeiden
+        window.addEventListener('pagehide', () => {
+          es?.close()
+          es = null
+        })
 
         connect()
       })()

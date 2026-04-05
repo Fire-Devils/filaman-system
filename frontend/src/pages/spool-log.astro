@@ -42,6 +42,7 @@ import Layout from '../layouts/Layout.astro'
 
   <script>
     import { t, initI18n, translatePage } from '../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../lib/abort'
 
     await initI18n()
 
@@ -54,6 +55,7 @@ import Layout from '../layouts/Layout.astro'
       try {
         const response = await fetch(`/api/v1/spools/all-events?page=${currentPage}&page_size=${pageSize}`, {
           credentials: 'include',
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) throw new Error('Failed to fetch events')
@@ -62,6 +64,7 @@ import Layout from '../layouts/Layout.astro'
         renderEvents(data.items)
         renderPagination(data.total, data.page)
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load events:', error)
         const tbody = document.getElementById('events-table')!
         tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error-text);">${t('spoolLog.failedLoad')}</td></tr>`

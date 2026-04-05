@@ -86,6 +86,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let printers: any[] = []
@@ -98,7 +99,7 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadPrinters() {
       try {
-        const response = await fetch('/api/v1/printers', { credentials: 'include' })
+        const response = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
         
         if (!response.ok) throw new Error('Failed to fetch printers')
         
@@ -106,6 +107,7 @@ import Layout from '../../layouts/Layout.astro'
         renderPrinters()
         fetchHealthForAll()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load printers:', error)
         document.getElementById('printers-table')!.innerHTML = `
           <tr>
@@ -137,7 +139,7 @@ import Layout from '../../layouts/Layout.astro'
         const slotsEl = document.getElementById(`slots-info-${p.id}`)
         if (!badge) return
         try {
-          const resp = await fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include' })
+          const resp = await fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
           if (!resp.ok) {
             badge.textContent = t('common.offline')
             badge.style.color = 'var(--text-muted)'
@@ -215,7 +217,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           try {
-            const resp = await fetch(`/api/v1/printers/${id}`, { credentials: 'include' })
+            const resp = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
             if (resp.ok) {
               const printer = await resp.json()
               openModal(id, printer.name, printer.driver_key, printer.driver_config)
@@ -240,6 +242,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -324,6 +327,7 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
         
@@ -335,6 +339,7 @@ import Layout from '../../layouts/Layout.astro'
         closeModal()
         loadPrinters()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
@@ -346,7 +351,7 @@ import Layout from '../../layouts/Layout.astro'
     async function loadDrivers() {
       const select = document.getElementById('printer-driver') as HTMLSelectElement
       try {
-        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include' })
+        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) return
         allPlugins = await response.json()
         const drivers = allPlugins.filter((p: any) => p.driver_key && p.is_active)
@@ -450,7 +455,7 @@ import Layout from '../../layouts/Layout.astro'
         }
       })
       try {
-        await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include' })
+        await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include', signal: getAbortSignal() })
         await (window as any).__fmSuccess(t('printers.reconnectDone'))
       } catch {}
       await fetchHealthForAll()

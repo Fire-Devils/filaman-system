@@ -112,6 +112,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initCurrency } from '../../lib/format'
 
     async function init() {
@@ -144,7 +145,7 @@ import Layout from '../../layouts/Layout.astro'
 
       // Load settings
       try {
-        const resp = await fetch('/api/v1/admin/app-settings/', { credentials: 'include' })
+        const resp = await fetch('/api/v1/admin/app-settings/', { credentials: 'include', signal: getAbortSignal() })
         if (resp.ok) {
           const data = await resp.json()
           loginDisabledInput.checked = data.login_disabled
@@ -178,6 +179,7 @@ import Layout from '../../layouts/Layout.astro'
             },
             credentials: 'include',
             body: JSON.stringify(payload),
+            signal: getAbortSignal(),
           })
 
           if (resp.ok) {

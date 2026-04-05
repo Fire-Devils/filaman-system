@@ -89,6 +89,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { fetchAllPages } from '../../lib/api'
     await initI18n()
 
@@ -105,6 +106,7 @@ import Layout from '../../layouts/Layout.astro'
         colors = data.items
         renderColors()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load colors:', error)
         document.getElementById('colors-table')!.innerHTML = `
           <tr>
@@ -191,6 +193,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -274,6 +277,7 @@ import Layout from '../../layouts/Layout.astro'
           },
           credentials: 'include',
           body: JSON.stringify({ name, hex_code }),
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) {
@@ -284,6 +288,7 @@ import Layout from '../../layouts/Layout.astro'
         closeModal()
         loadColors()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {

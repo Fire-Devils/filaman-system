@@ -91,6 +91,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     function getCsrfToken(): string {
@@ -119,6 +120,7 @@ import Layout from '../../layouts/Layout.astro'
           method: 'DELETE',
           headers: { 'X-CSRF-Token': csrfToken },
           credentials: 'include',
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -143,6 +145,7 @@ import Layout from '../../layouts/Layout.astro'
         )
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         await (window as any).__fmAlert(err.message || t('admin.killswitchFailed'))
       } finally {
         btn.disabled = false
@@ -153,7 +156,7 @@ import Layout from '../../layouts/Layout.astro'
     /* ── Version check ───────────────────────────────────────── */
     ;(async function loadVersionInfo() {
       try {
-        const resp = await fetch('/api/v1/admin/system/version-check', { credentials: 'include' })
+        const resp = await fetch('/api/v1/admin/system/version-check', { credentials: 'include', signal: getAbortSignal() })
         if (!resp.ok) return
         const data = await resp.json()
 

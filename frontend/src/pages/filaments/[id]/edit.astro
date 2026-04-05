@@ -354,8 +354,8 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { fetchAllPages } from '../../../lib/api'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
+    import { getAbortSignal, isAbortError } from '../../../lib/abort'
     await initI18n()
 
     const CUSTOM_TYPE_VALUE = '__custom__'
@@ -585,6 +585,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
           select.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load manufacturers:', error)
       }
     }
@@ -618,7 +619,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     async function loadTypes(): Promise<void> {
       try {
         loadedTypes = await cachedFetch(CACHE_KEYS.FILAMENT_TYPES, async () => {
-          const response = await fetch('/api/v1/filaments/types', { credentials: 'include' })
+          const response = await fetch('/api/v1/filaments/types', { credentials: 'include', signal: getAbortSignal() })
           if (!response.ok) throw new Error('Failed to fetch filament types')
           return response.json()
         })
@@ -629,6 +630,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
           typeSelect.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filament types:', error)
         loadedTypes = ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'NYLON', 'PC']
         for (const typeName of loadedTypes) {
@@ -650,6 +652,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         allColors = data.items
         renderColorGrid()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load colors:', error)
         colorGrid.innerHTML = `<p style="color: var(--error-text); font-size: 0.85rem;">${t('filaments.failedLoadColors')}</p>`
       }
@@ -751,6 +754,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ name, hex_code: hex }),
         })
         if (!response.ok) {
@@ -767,6 +771,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         newColorForm.classList.add('hidden')
         btnAddNewColor.parentElement!.classList.remove('hidden')
       } catch (error: any) {
+        if (isAbortError(error)) return
         await (window as any).__fmAlert?.(error.message) || alert(error.message)
       } finally {
         btnSaveNewColor.disabled = false
@@ -781,10 +786,11 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
     async function loadSystemFields() {
       try {
-        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' })
+        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch system fields')
         systemFields = await response.json()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load system fields:', error)
       }
     }
@@ -1039,6 +1045,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
 
       try {
         // 1. PATCH scalar fields
+        const signal = getAbortSignal()
         const patchResponse = await fetch(`/api/v1/filaments/${filamentId}`, {
           method: 'PATCH',
           headers: {
@@ -1046,6 +1053,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal,
           body: JSON.stringify(patchData),
         })
 
@@ -1062,6 +1070,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal,
           body: JSON.stringify(colorsData),
         })
 
@@ -1074,6 +1083,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
         window.location.href = `/filaments/${filamentId}`
       } catch (error: any) {
+        if (isAbortError(error)) return
         errorMessage.textContent = error.message || t('filaments.failedUpdate')
         errorMessage.classList.remove('hidden')
       } finally {
@@ -1100,6 +1110,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         // Now load the filament
         const response = await fetch(`/api/v1/filaments/${filamentId}`, {
           credentials: 'include',
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -1113,6 +1124,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         editLoading.classList.add('hidden')
         editFormWrapper.classList.remove('hidden')
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filament for editing:', error)
         editLoading.classList.add('hidden')
         editError.classList.remove('hidden')

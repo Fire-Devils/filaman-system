@@ -1,3 +1,5 @@
+import { getAbortSignal } from './abort'
+
 const API_BASE = '/api/v1'
 const AUTH_BASE = '/auth'
 
@@ -50,6 +52,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...options,
     headers,
     credentials: 'include',
+    signal: options.signal ?? getAbortSignal(),
   })
 
   if (!response.ok) {
@@ -90,11 +93,13 @@ export const api = {
 /**
  * Fetches all pages of a paginated API endpoint.
  * Handles endpoints returning { items: T[], total: number }.
+ * Uses AbortSignal for navigation cleanup.
  */
 export async function fetchAllPages<T = any>(baseUrl: string): Promise<{ items: T[], total: number }> {
+  const signal = getAbortSignal()
   const separator = baseUrl.includes('?') ? '&' : '?'
   const firstUrl = `${baseUrl}${separator}page=1&page_size=200`
-  const response = await fetch(firstUrl, { credentials: 'include' })
+  const response = await fetch(firstUrl, { credentials: 'include', signal })
   if (!response.ok) throw new Error(`Failed to fetch ${baseUrl}`)
   const data = await response.json()
   let items: T[] = data.items
@@ -106,7 +111,7 @@ export async function fetchAllPages<T = any>(baseUrl: string): Promise<{ items: 
     for (let p = 2; p <= totalPages; p++) {
       const pageUrl = `${baseUrl}${separator}page=${p}&page_size=200`
       pagePromises.push(
-        fetch(pageUrl, { credentials: 'include' })
+        fetch(pageUrl, { credentials: 'include', signal })
           .then(res => res.ok ? res.json() : null)
           .then(d => d ? d.items : [])
       )

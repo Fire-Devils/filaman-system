@@ -240,6 +240,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../lib/cache'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     // Set default purchase_date to today
@@ -516,7 +517,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         const [filamentsData, locationsData, systemFieldsRes] = await fetchSequential([
           () => cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations'),
-          () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }),
+          () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() }),
         ] as const)
         
         if (systemFieldsRes.ok) {
@@ -627,6 +628,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
           }
         }
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load options:', error)
       }
     }
@@ -774,6 +776,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
         
@@ -799,6 +802,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
           window.location.href = '/spools'
         }
       } catch (error) {
+        if (isAbortError(error)) return
         errorMessage.textContent = error.message || t('spools.failedCreate')
         errorMessage.classList.remove('hidden')
       } finally {

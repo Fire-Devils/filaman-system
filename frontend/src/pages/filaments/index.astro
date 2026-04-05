@@ -142,6 +142,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     await initI18n()
@@ -407,6 +408,7 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const response = await fetch(`/api/v1/filaments?page=1&page_size=200`, {
           credentials: 'include',
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) throw new Error('Failed to fetch filaments')
@@ -418,7 +420,7 @@ import Layout from '../../layouts/Layout.astro'
         if (data.total > 200) {
           const totalPages = Math.ceil(data.total / 200)
           for (let p = 2; p <= totalPages; p++) {
-            const res = await fetch(`/api/v1/filaments?page=${p}&page_size=200`, { credentials: 'include' })
+            const res = await fetch(`/api/v1/filaments?page=${p}&page_size=200`, { credentials: 'include', signal: getAbortSignal() })
             if (res.ok) {
               const d = await res.json()
               allFilaments = allFilaments.concat(d.items)
@@ -429,6 +431,7 @@ import Layout from '../../layouts/Layout.astro'
         populateFilterDropdowns(allFilaments)
         applyFiltersAndRender()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filaments:', error)
         document.getElementById('filaments-table')!.innerHTML = `
           <tr>
@@ -704,7 +707,7 @@ import Layout from '../../layouts/Layout.astro'
     // Load SystemExtraFields for filaments and add as dynamic column group
     async function loadFilamentExtraFieldColumns() {
       try {
-        const res = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' })
+        const res = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
         const fields: any[] = await res.json()
         if (fields.length === 0) return
@@ -727,6 +730,7 @@ import Layout from '../../layouts/Layout.astro'
         // Store fields for renderFilamentRow access
         ;(window as any).__filamentExtraFields = fields
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load filament extra field columns:', e)
       }
     }
@@ -845,7 +849,8 @@ import Layout from '../../layouts/Layout.astro'
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
-          body: JSON.stringify({ filament_ids: [...selectedFilamentIds], ...body })
+          body: JSON.stringify({ filament_ids: [...selectedFilamentIds], ...body }),
+          signal: getAbortSignal(),
         })
         if (!res.ok) throw new Error('API error')
         await (window as any).__fmSuccess(t('filaments.bulkSuccess', { count }))
@@ -876,7 +881,8 @@ import Layout from '../../layouts/Layout.astro'
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
-          body: JSON.stringify({ filament_ids: [...selectedFilamentIds], force: result.checked })
+          body: JSON.stringify({ filament_ids: [...selectedFilamentIds], force: result.checked }),
+          signal: getAbortSignal(),
         })
         if (!res.ok) throw new Error('API error')
         await (window as any).__fmSuccess(t('filaments.bulkDeleteSuccess', { count }))

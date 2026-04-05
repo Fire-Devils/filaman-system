@@ -256,8 +256,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { fetchAllPages } from '../../../lib/api'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
+    import { getAbortSignal, isAbortError } from '../../../lib/abort'
     await initI18n()
 
     const pathParts = window.location.pathname.split('/').filter(Boolean)
@@ -439,6 +439,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           select.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filaments:', error)
       }
     }
@@ -446,7 +447,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
     async function loadStatuses() {
       try {
         allStatuses = await cachedFetch(CACHE_KEYS.STATUSES, async () => {
-          const response = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
+          const response = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() })
           if (!response.ok) throw new Error('Failed to fetch statuses')
           return response.json()
         })
@@ -459,6 +460,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           select.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load statuses:', error)
       }
     }
@@ -475,16 +477,18 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           select.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load locations:', error)
       }
     }
 
     async function loadSystemFields() {
       try {
-        const response = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' })
+        const response = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch system fields')
         systemFields = await response.json()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load system fields:', error)
       }
     }
@@ -679,6 +683,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
           },
           credentials: 'include',
           body: JSON.stringify(patchData),
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -689,6 +694,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         invalidateCachePrefix('spools')
         window.location.href = '/spools/' + spoolId
       } catch (error) {
+        if (isAbortError(error)) return
         errorMessage.textContent = error.message || t('spools.failedUpdate')
         errorMessage.classList.remove('hidden')
       } finally {
@@ -713,6 +719,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
         const response = await fetch('/api/v1/spools/' + spoolId, {
           credentials: 'include',
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -725,6 +732,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         document.getElementById('edit-loading').classList.add('hidden')
         document.getElementById('edit-form-wrapper').classList.remove('hidden')
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load spool for editing:', error)
         document.getElementById('edit-loading').classList.add('hidden')
         document.getElementById('edit-error').classList.remove('hidden')

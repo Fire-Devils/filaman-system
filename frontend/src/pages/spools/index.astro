@@ -215,6 +215,7 @@ import Layout from '../../layouts/Layout.astro'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let currentPage = 1
@@ -473,7 +474,7 @@ import Layout from '../../layouts/Layout.astro'
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [statusesRes, locationsData, filamentsData] = await fetchSequential([
-          () => fetch('/api/v1/spools/statuses', { credentials: 'include' }).catch(() => null),
+          () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() }).catch(() => null),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').catch(() => null),
           () => cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments').catch(() => null),
         ] as const)
@@ -511,6 +512,7 @@ import Layout from '../../layouts/Layout.astro'
 
         populateFilterDropdowns()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filters:', error)
       }
     }
@@ -527,7 +529,8 @@ import Layout from '../../layouts/Layout.astro'
       if (isArchivedSelected) url += `&include_archived=true`
       
       try {
-        const response = await fetch(url, { credentials: 'include' })
+        const signal = getAbortSignal()
+        const response = await fetch(url, { credentials: 'include', signal })
         if (!response.ok) throw new Error('Failed to fetch spools')
         const data = await response.json()
         allSpools = data.items
@@ -539,7 +542,7 @@ import Layout from '../../layouts/Layout.astro'
             if (statusId) pUrl += `&status_id=${statusId}`
             if (isArchivedSelected) pUrl += `&include_archived=true`
             pagePromises.push(
-              fetch(pUrl, { credentials: 'include' })
+              fetch(pUrl, { credentials: 'include', signal })
                 .then(res => res.ok ? res.json() : null)
                 .then(d => d ? d.items : [])
             )
@@ -549,6 +552,7 @@ import Layout from '../../layouts/Layout.astro'
         }
         applyFiltersAndRender()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
@@ -588,11 +592,12 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadActiveDevices() {
       try {
-        const res = await fetch('/api/v1/devices/active', { credentials: 'include' })
+        const res = await fetch('/api/v1/devices/active', { credentials: 'include', signal: getAbortSignal() })
         if (res.ok) {
           activeDevices = await res.json()
         }
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load active devices:', e)
       }
     }
@@ -894,7 +899,7 @@ import Layout from '../../layouts/Layout.astro'
     // Load SystemExtraFields for spools and add as dynamic column group
     async function loadSpoolExtraFieldColumns() {
       try {
-        const res = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' })
+        const res = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
         const fields: any[] = await res.json()
         if (fields.length === 0) return
@@ -918,6 +923,7 @@ import Layout from '../../layouts/Layout.astro'
         // Store fields for renderSpoolRow access
         ;(window as any).__spoolExtraFields = fields
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load spool extra field columns:', e)
       }
     }
@@ -1037,6 +1043,7 @@ import Layout from '../../layouts/Layout.astro'
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ spool_ids: [...selectedSpoolIds], ...body })
         })
         if (!res.ok) throw new Error('API error')
@@ -1045,6 +1052,7 @@ import Layout from '../../layouts/Layout.astro'
         updateBulkBar()
         loadSpools()
       } catch {
+        // user-initiated action — show error even on abort
         (window as any).__fmAlert(t('spools.bulkError'))
       }
     }
@@ -1068,6 +1076,7 @@ import Layout from '../../layouts/Layout.astro'
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ spool_ids: [...selectedSpoolIds], permanent: result.checked })
         })
         if (!res.ok) throw new Error('API error')
@@ -1076,6 +1085,7 @@ import Layout from '../../layouts/Layout.astro'
         updateBulkBar()
         loadSpools()
       } catch {
+        // user-initiated action — show error even on abort
         (window as any).__fmAlert(t('spools.bulkError'))
       }
     })
@@ -1237,6 +1247,7 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken()
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ spool_id: currentRfidSpoolId }),
         })
         
@@ -1274,7 +1285,7 @@ import Layout from '../../layouts/Layout.astro'
             }
             
             try {
-              const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include' })
+              const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include', signal: getAbortSignal() })
               if (statusRes.ok) {
                 const statusData = await statusRes.json()
                 
@@ -1306,6 +1317,7 @@ import Layout from '../../layouts/Layout.astro'
                 }
               }
             } catch (e) {
+              if (isAbortError(e)) return
               console.error('Polling error:', e)
             }
             
@@ -1327,6 +1339,7 @@ import Layout from '../../layouts/Layout.astro'
           confirmBtn.disabled = false
         }
       } catch (err) {
+        if (isAbortError(err)) return
         status.textContent = t('rfid.writeError')
         status.className = 'fm-alert fm-alert-error'
         confirmBtn.disabled = false
@@ -1395,10 +1408,11 @@ import Layout from '../../layouts/Layout.astro'
     fromEmptyModal.classList.add('open')
 
     try {
+      const signal = getAbortSignal()
       // Reuse already-loaded statuses or fetch if not yet available
       let allStatuses = statuses.length > 0 ? statuses : null
       if (!allStatuses) {
-        const statusesRes = await fetch('/api/v1/spools/statuses', { credentials: 'include' })
+        const statusesRes = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal })
         allStatuses = statusesRes.ok ? await statusesRes.json() : []
       }
       const emptyStatus = (allStatuses as any[]).find((s: any) => s.key === 'empty')
@@ -1409,7 +1423,7 @@ import Layout from '../../layouts/Layout.astro'
       }
 
       // Load all empty spools with pagination (API limit: 200 per page)
-      const firstRes = await fetch(`/api/v1/spools?page=1&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include' })
+      const firstRes = await fetch(`/api/v1/spools?page=1&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include', signal })
       if (!firstRes.ok) {
         console.error('Failed to load empty spools:', firstRes.status, firstRes.statusText)
         throw new Error(`HTTP ${firstRes.status}`)
@@ -1421,7 +1435,7 @@ import Layout from '../../layouts/Layout.astro'
         const pagePromises = []
         for (let p = 2; p <= totalPages; p++) {
           pagePromises.push(
-            fetch(`/api/v1/spools?page=${p}&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include' })
+            fetch(`/api/v1/spools?page=${p}&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include', signal })
               .then(r => r.ok ? r.json() : null)
               .then(d => d ? d.items : [])
           )
@@ -1469,6 +1483,7 @@ import Layout from '../../layouts/Layout.astro'
         fromEmptyOptions.appendChild(opt)
       })
     } catch (err) {
+      if (isAbortError(err)) return
       console.error('Error loading empty spools:', err)
       fromEmptyNone.style.display = ''
       fromEmptyDropdownEl.style.display = 'none'
@@ -1504,7 +1519,7 @@ import Layout from '../../layouts/Layout.astro'
   fromEmptyConfirmBtn.addEventListener('click', async () => {
     if (!selectedEmptySpoolId) return
     try {
-      const res = await fetch(`/api/v1/spools/${selectedEmptySpoolId}`, { credentials: 'include' })
+      const res = await fetch(`/api/v1/spools/${selectedEmptySpoolId}`, { credentials: 'include', signal: getAbortSignal() })
       if (!res.ok) return
       const spool = await res.json()
       const payload: Record<string, any> = {}
@@ -1520,10 +1535,12 @@ import Layout from '../../layouts/Layout.astro'
         method: 'DELETE',
         headers: { 'X-CSRF-Token': getCsrfToken() },
         credentials: 'include',
+        signal: getAbortSignal(),
       })
       window.location.href = '/spools/new'
-    } catch {
-      // ignore
+    } catch (e) {
+      if (isAbortError(e)) return
+      // ignore — navigation in progress
     }
   })
 

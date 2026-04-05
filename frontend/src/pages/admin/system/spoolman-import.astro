@@ -56,6 +56,7 @@ import Layout from '../../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../../lib/abort'
     await initI18n()
 
     let connectedUrl = ''
@@ -113,6 +114,7 @@ import Layout from '../../../layouts/Layout.astro'
           },
           credentials: 'include',
           body: JSON.stringify({ url }),
+          signal: getAbortSignal(),
         })
 
         resultDiv.style.display = 'block'
@@ -136,6 +138,7 @@ import Layout from '../../../layouts/Layout.astro'
         enableStep('step-preview')
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         resultDiv.innerHTML = `
           <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
             ${escapeHtml(err.message)}
@@ -170,6 +173,7 @@ import Layout from '../../../layouts/Layout.astro'
           },
           credentials: 'include',
           body: JSON.stringify({ url: connectedUrl }),
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -223,6 +227,7 @@ import Layout from '../../../layouts/Layout.astro'
         enableStep('step-import')
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         resultDiv.style.display = 'block'
         resultDiv.innerHTML = `
           <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
@@ -342,6 +347,7 @@ import Layout from '../../../layouts/Layout.astro'
           },
           credentials: 'include',
           body: JSON.stringify({ url: connectedUrl }),
+          signal: getAbortSignal(),
         })
 
         progressBar.style.width = '90%'
@@ -359,6 +365,7 @@ import Layout from '../../../layouts/Layout.astro'
         resultDiv.innerHTML = renderImportResult(result)
 
       } catch (err: any) {
+        if (isAbortError(err)) return
         progressDiv.style.display = 'none'
         resultDiv.style.display = 'block'
         resultDiv.innerHTML = `

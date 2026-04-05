@@ -75,6 +75,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let users: any[] = []
@@ -89,9 +90,9 @@ import Layout from '../../layouts/Layout.astro'
     async function loadData() {
       try {
         const [usersRes, rolesRes, meRes] = await Promise.all([
-          fetch('/api/v1/admin/users', { credentials: 'include' }),
-          fetch('/api/v1/admin/roles', { credentials: 'include' }),
-          fetch('/api/v1/me', { credentials: 'include' }),
+          fetch('/api/v1/admin/users', { credentials: 'include', signal: getAbortSignal() }),
+          fetch('/api/v1/admin/roles', { credentials: 'include', signal: getAbortSignal() }),
+          fetch('/api/v1/me', { credentials: 'include', signal: getAbortSignal() }),
         ])
         
         if (!usersRes.ok) throw new Error('Failed to fetch users')
@@ -103,6 +104,7 @@ import Layout from '../../layouts/Layout.astro'
         renderUsers()
         renderRoleCheckboxes()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load data:', error)
       }
     }
@@ -161,6 +163,7 @@ import Layout from '../../layouts/Layout.astro'
               headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
               body: JSON.stringify({ new_password: newPassword }),
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) throw new Error('Failed to reset password')
@@ -182,6 +185,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -227,7 +231,7 @@ import Layout from '../../layouts/Layout.astro'
         passwordField.classList.add('hidden')
         passwordInput.required = false
         
-        const response = await fetch(`/api/v1/admin/users/${id}`, { credentials: 'include' })
+        const response = await fetch(`/api/v1/admin/users/${id}`, { credentials: 'include', signal: getAbortSignal() })
         const user = await response.json()
         
         idInput.value = String(id)
@@ -285,6 +289,7 @@ import Layout from '../../layouts/Layout.astro'
               headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
               body: JSON.stringify({ email, display_name: displayName, is_superadmin: isSuperadmin }),
+              signal: getAbortSignal(),
             })
           
           if (!updateRes.ok) {
@@ -297,6 +302,7 @@ import Layout from '../../layouts/Layout.astro'
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
             body: JSON.stringify(selectedRoles),
+            signal: getAbortSignal(),
           })
         } else {
           const response = await fetch('/api/v1/admin/users', {
@@ -304,6 +310,7 @@ import Layout from '../../layouts/Layout.astro'
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
             body: JSON.stringify({ email, password, display_name: displayName, is_superadmin: isSuperadmin }),
+            signal: getAbortSignal(),
           })
           
           if (!response.ok) {
@@ -317,12 +324,14 @@ import Layout from '../../layouts/Layout.astro'
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
             body: JSON.stringify(selectedRoles),
+            signal: getAbortSignal(),
           })
         }
         
         closeModal()
         loadData()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {

@@ -118,6 +118,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
 
     async function init() {
       await initI18n()
@@ -161,7 +162,7 @@ import Layout from '../../layouts/Layout.astro'
 
       // Load settings
       try {
-        const resp = await fetch('/api/v1/admin/oidc-settings/', { credentials: 'include' })
+        const resp = await fetch('/api/v1/admin/oidc-settings/', { credentials: 'include', signal: getAbortSignal() })
         if (resp.ok) {
           const data = await resp.json()
           enabledInput.checked = data.enabled
@@ -217,6 +218,7 @@ import Layout from '../../layouts/Layout.astro'
             },
             credentials: 'include',
             body: JSON.stringify(payload),
+            signal: getAbortSignal(),
           })
 
           if (resp.ok) {

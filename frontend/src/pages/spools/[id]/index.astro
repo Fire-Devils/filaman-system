@@ -166,6 +166,7 @@ const { id } = Astro.params
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
+    import { getAbortSignal, isAbortError } from '../../../lib/abort'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -236,11 +237,11 @@ const { id } = Astro.params
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [spoolRes, statusesRes, locationsData, sysFieldsRes, filamentSysFieldsRes] = await fetchSequential([
-          () => fetch(`/api/v1/spools/${id}`, { credentials: 'include' }),
-          () => fetch('/api/v1/spools/statuses', { credentials: 'include' }),
+          () => fetch(`/api/v1/spools/${id}`, { credentials: 'include', signal: getAbortSignal() }),
+          () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() }),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').then(d => d.items).catch(() => []),
-          () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }),
-          () => fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }),
+          () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() }),
+          () => fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() }),
         ] as const)
         const locationsRes = locationsData
 
@@ -276,7 +277,7 @@ const { id } = Astro.params
         locations = locationsRes
         
         // Load active devices for RFID functionality
-        const devicesRes = await fetch('/api/v1/devices/active', { credentials: 'include' })
+        const devicesRes = await fetch('/api/v1/devices/active', { credentials: 'include', signal: getAbortSignal() })
         if (devicesRes.ok) {
           activeDevices = await devicesRes.json()
         }
@@ -287,6 +288,7 @@ const { id } = Astro.params
         loadEvents()
         setupActions()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load spool:', error)
         document.getElementById('spool-content').innerHTML = `<div style="color: var(--error-text);">${t('spools.failedLoadSingle')}</div>`
       }
@@ -492,6 +494,7 @@ const { id } = Astro.params
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
           })
           
           if (response.ok) {
@@ -500,6 +503,7 @@ const { id } = Astro.params
             await (window as any).__fmAlert(t('spools.failedDelete'))
           }
         } catch {
+          // user-initiated action — show error even on abort
           await (window as any).__fmAlert(t('spools.failedDelete'))
         }
       })
@@ -509,6 +513,7 @@ const { id } = Astro.params
       try {
         const response = await fetch(`/api/v1/spools/${id}/events?page_size=50`, {
           credentials: 'include',
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) throw new Error('Failed to fetch events')
@@ -517,6 +522,7 @@ const { id } = Astro.params
         document.getElementById('events-section').classList.remove('hidden')
         renderEvents(data.items)
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load events:', error)
       }
     }
@@ -726,6 +732,7 @@ const { id } = Astro.params
             'X-CSRF-Token': getCsrfToken()
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ spool_id: currentRfidSpoolId }),
         })
 
@@ -765,6 +772,7 @@ const { id } = Astro.params
             try {
               const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, {
                 credentials: 'include',
+                signal: getAbortSignal(),
               })
               const statusData = await statusRes.json()
               
@@ -793,6 +801,7 @@ const { id } = Astro.params
                 return
               }
             } catch (e) {
+              if (isAbortError(e)) return
               console.error('Status check failed:', e)
             }
             
@@ -813,6 +822,7 @@ const { id } = Astro.params
           confirmBtn.disabled = false
         }
       } catch (error) {
+        if (isAbortError(error)) return
         status.className = 'fm-alert fm-alert-error'
         status.innerHTML = `<strong>${t('rfid.writeError')}</strong><br>${error}`
         confirmBtn.disabled = false
@@ -980,6 +990,7 @@ const { id } = Astro.params
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify(body),
         })
         
@@ -991,6 +1002,7 @@ const { id } = Astro.params
         container.classList.add('hidden')
         loadData()
       } catch (err) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
@@ -1001,7 +1013,7 @@ const { id } = Astro.params
     
     async function loadPrintersForParams() {
       try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include' })
+        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
         const data = await res.json()
         printersList = data.items || data || []
@@ -1027,6 +1039,7 @@ const { id } = Astro.params
           }
         })
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load printers:', e)
       }
     }
@@ -1037,10 +1050,11 @@ const { id } = Astro.params
         return
       }
       try {
-        const res = await fetch(`/api/v1/system-extra-fields?target_type=spool_printer_param&source=${driverKey}`, { credentials: 'include' })
+        const res = await fetch(`/api/v1/system-extra-fields?target_type=spool_printer_param&source=${driverKey}`, { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) throw new Error('Failed')
         fieldDefinitions = await res.json()
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load field definitions:', e)
         fieldDefinitions = []
       }
@@ -1050,13 +1064,14 @@ const { id } = Astro.params
       try {
         // Fetch spool params and filament params in parallel
         const [spoolRes, filamentRes] = await Promise.all([
-          fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include' }),
-          fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${printerId}`, { credentials: 'include' }),
+          fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
+          fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
         ])
         currentPrinterParams = spoolRes.ok ? await spoolRes.json() : []
         filamentPrinterParams = filamentRes.ok ? await filamentRes.json() : []
         renderPrinterParams()
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load printer params:', e)
       }
     }
@@ -1160,12 +1175,14 @@ const { id } = Astro.params
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
           })
           currentPrinterParams = []
           filamentPrinterParams = []
           renderPrinterParams()
           showParamsFeedback(true)
         } catch (e) {
+          if (isAbortError(e)) return
           console.error('Failed to delete params:', e)
           showParamsFeedback(false)
         }
@@ -1177,6 +1194,7 @@ const { id } = Astro.params
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ params: nonEmptyParams }),
         })
         if (res.ok) {
@@ -1187,6 +1205,7 @@ const { id } = Astro.params
           showParamsFeedback(false)
         }
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to save printer params:', e)
         showParamsFeedback(false)
       }
@@ -1194,7 +1213,7 @@ const { id } = Astro.params
 
     async function loadPrinterSlotOverview() {
       try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include' })
+        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
         const data = await res.json()
         const printers = data.items || data || []
@@ -1202,7 +1221,7 @@ const { id } = Astro.params
 
         const healthResults = await Promise.allSettled(
           printers.map(p =>
-            fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include' })
+            fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
               .then(r => r.ok ? r.json() : null)
               .then(h => h ? { printer: p, health: h } : null)
           )
@@ -1217,7 +1236,7 @@ const { id } = Astro.params
         await Promise.allSettled(
           onlinePrinters.map(async ({ printer }) => {
             try {
-              const slotsRes = await fetch(`/api/v1/printers/${printer.id}/slots`, { credentials: 'include' })
+              const slotsRes = await fetch(`/api/v1/printers/${printer.id}/slots`, { credentials: 'include', signal: getAbortSignal() })
               if (slotsRes.ok) {
                 const dbSlots = await slotsRes.json()
                 dbSlotsByPrinter[printer.id] = dbSlots
@@ -1307,6 +1326,7 @@ const { id } = Astro.params
           })
         })
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load printer slot overview:', e)
       }
     }
@@ -1458,7 +1478,7 @@ const { id } = Astro.params
         if (!pendingSlotAssign || pendingSlotAssign.slotIndex !== slotIndex) return
         attempts++
         try {
-          const res = await fetch(`/api/v1/printers/${printerId}/driver/health`, { credentials: 'include' })
+          const res = await fetch(`/api/v1/printers/${printerId}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
           if (res.ok) {
             const health = await res.json()
             const slots = health.slots || []
@@ -1474,6 +1494,7 @@ const { id } = Astro.params
             }
           }
         } catch (e) {
+          if (isAbortError(e)) return
           console.error('Slot poll error:', e)
         }
         if (attempts < maxAttempts && pendingSlotAssign) {
@@ -1508,8 +1529,8 @@ const { id } = Astro.params
       let filamentData = {}
       try {
         const [spoolParamsRes, filamentParamsRes] = await Promise.all([
-          fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include' }),
-          fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${printerId}`, { credentials: 'include' }),
+          fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
+          fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
         ])
         const spoolParams = spoolParamsRes.ok ? await spoolParamsRes.json() : []
         const filamentParams = filamentParamsRes.ok ? await filamentParamsRes.json() : []
@@ -1527,6 +1548,7 @@ const { id } = Astro.params
           color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),
         }
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to fetch params for assign:', e)
         filamentData = {
           tray_info_idx: 'GFL99',
@@ -1542,6 +1564,7 @@ const { id } = Astro.params
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({
             action: 'send_filament_to_tray',
             params: { ams_id: amsId, tray_id: trayId, filament_data: filamentData, spool_id: id }
@@ -1564,6 +1587,7 @@ const { id } = Astro.params
           window.__fmAlert?.(err?.detail?.message || t('spools.slotAssignError'))
         }
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to assign spool to tray:', e)
         if (dotEl) { clearSlotRingState(dotEl); dotEl.classList.add('slot-error') }
         clearPendingSlotAssign()
@@ -1591,6 +1615,7 @@ const { id } = Astro.params
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ params }),
         })
         if (!res.ok) {
@@ -1599,6 +1624,7 @@ const { id } = Astro.params
         }
         return true
       } catch (e) {
+        if (isAbortError(e)) return
         console.error(`Failed to save tray params to ${entityType}:`, e)
         return false
       }

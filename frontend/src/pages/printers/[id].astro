@@ -21,6 +21,7 @@ const { id } = Astro.params
   
   <script>
     import { t, initI18n, getLang } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -51,7 +52,7 @@ const { id } = Astro.params
     
     async function loadPrinter() {
       try {
-        const response = await fetch(`/api/v1/printers/${id}`, { credentials: 'include' })
+        const response = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
         
         if (!response.ok) {
           if (response.status === 404) {
@@ -67,6 +68,7 @@ const { id } = Astro.params
         renderPrinter()
         startHealthPolling()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load printer:', error)
         document.getElementById('printer-content')!.innerHTML = `<div style="color: var(--error-text);">${t('printers.failedLoadSingle')}</div>`
       }
@@ -74,7 +76,7 @@ const { id } = Astro.params
 
     async function loadPluginSchema() {
       try {
-        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include' })
+        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) return
         const plugins = await response.json()
         const plugin = plugins.find((p: any) => p.driver_key === printer.driver_key)
@@ -457,6 +459,7 @@ const { id } = Astro.params
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
           })
           
           if (response.ok) {
@@ -478,6 +481,7 @@ const { id } = Astro.params
               'X-CSRF-Token': getCsrfToken(),
             },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify({ is_active: !printer.is_active }),
           })
           
@@ -520,6 +524,7 @@ const { id } = Astro.params
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
           })
 
           if (!response.ok) {
@@ -532,6 +537,7 @@ const { id } = Astro.params
           await loadDriverHealth()
           renderPrinter()
         } catch (err: any) {
+          if (isAbortError(err)) return
           await (window as any).__fmAlert(err.message || t('printers.failedUpdate'))
           btn.disabled = false
         }
@@ -547,6 +553,7 @@ const { id } = Astro.params
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify({ action: 'enable_debug_log', params: {} }),
           })
         } catch { /* ignore */ }
@@ -562,6 +569,7 @@ const { id } = Astro.params
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify({ action: 'disable_debug_log', params: {} }),
           })
         } catch { /* ignore */ }
@@ -574,6 +582,7 @@ const { id } = Astro.params
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify({ action: 'clear_debug_log', params: {} }),
           })
         } catch { /* ignore */ }
@@ -608,6 +617,7 @@ const { id } = Astro.params
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify({ action, params: {} }),
           })
           if (!res.ok) {
@@ -617,6 +627,7 @@ const { id } = Astro.params
           await loadDriverHealth()
           renderPrinter()
         } catch (err: any) {
+          if (isAbortError(err)) return
           await (window as any).__fmAlert(err.message || t('printers.failedUpdate'))
         } finally {
           btn.disabled = false
@@ -627,7 +638,7 @@ const { id } = Astro.params
       // Export params button
       document.getElementById('btn-export-params')?.addEventListener('click', async () => {
         try {
-          const response = await fetch(`/api/v1/printers/${id}/params/export`, { credentials: 'include' })
+          const response = await fetch(`/api/v1/printers/${id}/params/export`, { credentials: 'include', signal: getAbortSignal() })
           if (!response.ok) throw new Error('Failed')
           const data = await response.json()
           const hasData = (data.filament_params && Object.keys(data.filament_params).length > 0) || (data.spool_params && Object.keys(data.spool_params).length > 0)
@@ -661,6 +672,7 @@ const { id } = Astro.params
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify(data),
           })
           if (!response.ok) throw new Error('Failed')
@@ -709,6 +721,7 @@ const { id } = Astro.params
               'X-CSRF-Token': getCsrfToken(),
             },
             credentials: 'include',
+            signal: getAbortSignal(),
             body: JSON.stringify({ driver_config }),
           })
 
@@ -735,7 +748,7 @@ const { id } = Astro.params
 
     async function loadDriverHealth() {
       try {
-        const response = await fetch(`/api/v1/printers/${id}/driver/health`, { credentials: 'include' })
+        const response = await fetch(`/api/v1/printers/${id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
         if (response.ok) {
           driverHealth = await response.json()
         }
@@ -763,7 +776,7 @@ const { id } = Astro.params
           const url = lastDebugTs
             ? `/api/v1/printers/${id}/driver/debug?since=${encodeURIComponent(lastDebugTs)}`
             : `/api/v1/printers/${id}/driver/debug`
-          const response = await fetch(url, { credentials: 'include' })
+          const response = await fetch(url, { credentials: 'include', signal: getAbortSignal() })
           if (response.ok) {
             const entries: any[] = await response.json()
             if (entries.length > 0) {
@@ -805,6 +818,12 @@ const { id } = Astro.params
         debugPollTimer = null
       }
     }
+
+    // Stop polling timers on navigation to prevent Chrome connection blocking
+    window.addEventListener('pagehide', () => {
+      if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null }
+      if (debugPollTimer) { clearInterval(debugPollTimer); debugPollTimer = null }
+    })
 
     // --- SSE Auto-Update (via shared Layout.astro connection) ---
     window.addEventListener('filaman:data-changed', async (e: Event) => {

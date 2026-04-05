@@ -93,6 +93,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let devices: any[] = []
@@ -104,10 +105,11 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadDevices() {
       try {
-        const response = await fetch('/api/v1/admin/devices', { credentials: 'include' })
+        const response = await fetch('/api/v1/admin/devices', { credentials: 'include', signal: getAbortSignal() })
         devices = await response.json().then(d => d.items)
         renderDevices()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load devices:', error)
       }
     }
@@ -178,6 +180,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -187,6 +190,7 @@ import Layout from '../../layouts/Layout.astro'
             
             loadDevices()
           } catch (err: any) {
+            if (isAbortError(err)) return
             console.error('Delete device error:', err)
             await (window as any).__fmAlert(err.message || t('admin.failedDeleteDevice'))
           }
@@ -261,6 +265,7 @@ import Layout from '../../layouts/Layout.astro'
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
           body: JSON.stringify({ name, auto_assign_enabled: autoAssign, auto_assign_timeout: timeout }),
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) {
@@ -271,6 +276,7 @@ import Layout from '../../layouts/Layout.astro'
         document.getElementById('edit-modal')!.classList.remove('open')
         loadDevices()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
@@ -306,6 +312,7 @@ import Layout from '../../layouts/Layout.astro'
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
           body: JSON.stringify({ name }),
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) {
@@ -318,6 +325,7 @@ import Layout from '../../layouts/Layout.astro'
         showToken(data.device_code)
         loadDevices()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {

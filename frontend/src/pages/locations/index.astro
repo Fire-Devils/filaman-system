@@ -111,6 +111,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     let locations: any[] = []
@@ -123,11 +124,12 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadActiveDevices() {
       try {
-        const res = await fetch('/api/v1/devices/active', { credentials: 'include' })
+        const res = await fetch('/api/v1/devices/active', { credentials: 'include', signal: getAbortSignal() })
         if (res.ok) {
           activeDevices = await res.json()
         }
       } catch (e) {
+        if (isAbortError(e)) return
         console.error('Failed to load active devices:', e)
       }
     }
@@ -138,6 +140,7 @@ import Layout from '../../layouts/Layout.astro'
         locations = data.items
         renderLocations()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load locations:', error)
         document.getElementById('locations-table')!.innerHTML = `
           <tr>
@@ -217,6 +220,7 @@ import Layout from '../../layouts/Layout.astro'
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
+              signal: getAbortSignal(),
             })
             
             if (!response.ok) {
@@ -286,6 +290,7 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
         
@@ -299,6 +304,7 @@ import Layout from '../../layouts/Layout.astro'
         closeModal()
         loadLocations()
       } catch (err: any) {
+        if (isAbortError(err)) return
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
@@ -393,6 +399,7 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken()
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ location_id: currentRfidLocationId }),
         })
         
@@ -430,7 +437,7 @@ import Layout from '../../layouts/Layout.astro'
             }
             
             try {
-              const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include' })
+              const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include', signal: getAbortSignal() })
               if (statusRes.ok) {
                 const statusData = await statusRes.json()
                 
@@ -462,6 +469,7 @@ import Layout from '../../layouts/Layout.astro'
                 }
               }
             } catch (e) {
+              if (isAbortError(e)) return
               console.error('Polling error:', e)
             }
             
@@ -483,6 +491,7 @@ import Layout from '../../layouts/Layout.astro'
           confirmBtn.disabled = false
         }
       } catch (err) {
+        if (isAbortError(err)) return
         status.textContent = t('rfid.writeError')
         status.className = 'fm-alert fm-alert-error'
         confirmBtn.disabled = false

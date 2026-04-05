@@ -179,6 +179,7 @@ interface PaginatedResponse<T> {
     import { VERSION } from '../version.js'
     import changelogData from '../changelog.json'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../lib/cache'
+    import { getAbortSignal, isAbortError } from '../lib/abort'
 
     let allSpools: any[] = []
     let allFilaments: any[] = []
@@ -278,6 +279,7 @@ interface PaginatedResponse<T> {
           },
           credentials: 'include',
           body: JSON.stringify({ status: 'archived' }),
+          signal: getAbortSignal(),
         })
 
         if (response.ok) {
@@ -291,6 +293,7 @@ interface PaginatedResponse<T> {
           loadDashboardData()
         }
       } catch (err) {
+        if (isAbortError(err)) return
         console.error('Failed to archive spool:', err)
         if (btn) {
           btn.disabled = false
@@ -319,6 +322,7 @@ interface PaginatedResponse<T> {
           },
           credentials: 'include',
           body: JSON.stringify({ spool_ids: ids, status: 'archived' }),
+          signal: getAbortSignal(),
         })
 
         if (response.ok) {
@@ -326,6 +330,7 @@ interface PaginatedResponse<T> {
           loadDashboardData()
         }
       } catch (err) {
+        if (isAbortError(err)) return
         console.error('Failed bulk archive:', err)
       } finally {
         bulkBtn.disabled = false
@@ -354,7 +359,7 @@ interface PaginatedResponse<T> {
         const [spoolsData, filamentsData, dashboardRes] = await fetchSequential([
           () => cachedFetchAllPages('spools-dashboard', '/api/v1/spools'),
           () => cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
-          () => fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include' }),
+          () => fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include', signal: getAbortSignal() }),
         ] as const)
         
         const dashboardData = dashboardRes.ok ? await dashboardRes.json() : null
@@ -475,6 +480,7 @@ interface PaginatedResponse<T> {
           }
         }
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load dashboard:', error)
       }
     }

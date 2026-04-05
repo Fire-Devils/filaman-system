@@ -92,6 +92,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
 
     function getCsrfToken(): string {
@@ -123,7 +124,7 @@ import Layout from '../../layouts/Layout.astro'
       keysTableContainer.classList.add('hidden')
       
       try {
-        const response = await fetch('/api/v1/me/api-keys', { credentials: 'include' })
+        const response = await fetch('/api/v1/me/api-keys', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to load API keys')
         
         const keys = await response.json()
@@ -132,6 +133,7 @@ import Layout from '../../layouts/Layout.astro'
         keysLoading.classList.add('hidden')
         keysTableContainer.classList.remove('hidden')
       } catch (error: any) {
+        if (isAbortError(error)) return
         console.error('Failed to load API keys:', error)
         keysLoading.classList.add('hidden')
         keysError.textContent = error.message || t('apiKeys.loadError')
@@ -200,6 +202,7 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
         })
         
         if (!response.ok) {
@@ -209,6 +212,7 @@ import Layout from '../../layouts/Layout.astro'
         // Reload the list
         loadApiKeys()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to delete API key:', error)
         alert(t('apiKeys.deleteError') || 'Failed to delete API key')
       }
@@ -233,6 +237,7 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
+          signal: getAbortSignal(),
           body: JSON.stringify({ name }),
         })
         
@@ -254,6 +259,7 @@ import Layout from '../../layouts/Layout.astro'
         // Reload the list
         loadApiKeys()
       } catch (error: any) {
+        if (isAbortError(error)) return
         createError.textContent = error.message
         createError.classList.remove('hidden')
       } finally {

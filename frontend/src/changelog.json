@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Chrome-Hänger beim schnellen Navigieren behoben — Seiten laden jetzt sofort, auch wenn vorherige Requests noch liefen" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Fixed Chrome freezes when navigating quickly — pages now load instantly even when previous requests were still running" }
+        ]
+      }
+    },
+    {
       "version": "1.1.24",
       "date": "",
       "changes": {

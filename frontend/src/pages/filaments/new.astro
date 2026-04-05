@@ -333,6 +333,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     await initI18n()
 
@@ -516,6 +517,7 @@ import Layout from '../../layouts/Layout.astro'
           select.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load manufacturers:', error)
       }
     }
@@ -549,7 +551,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadTypes() {
       try {
-        const response = await fetch('/api/v1/filaments/types', { credentials: 'include' })
+        const response = await fetch('/api/v1/filaments/types', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch filament types')
         const types: string[] = await response.json()
         types.forEach((typeName: string) => {
@@ -559,6 +561,7 @@ import Layout from '../../layouts/Layout.astro'
           typeSelect.appendChild(option)
         })
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load filament types:', error)
         for (const typeName of ['PLA', 'PETG', 'ABS', 'ASA', 'TPU', 'NYLON', 'PC']) {
           const option = document.createElement('option')
@@ -579,6 +582,7 @@ import Layout from '../../layouts/Layout.astro'
         allColors = data.items
         renderColorGrid()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load colors:', error)
         colorGrid.innerHTML = `<p style="color: var(--error-text); font-size: 0.85rem;">${t('filaments.failedLoadColors')}</p>`
       }
@@ -586,11 +590,12 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadSystemFields() {
       try {
-        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' })
+        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch system fields')
         systemFields = await response.json()
         renderSystemFields()
       } catch (error) {
+        if (isAbortError(error)) return
         console.error('Failed to load system fields:', error)
       }
     }
@@ -737,6 +742,7 @@ import Layout from '../../layouts/Layout.astro'
           },
           credentials: 'include',
           body: JSON.stringify({ name, hex_code: hex }),
+          signal: getAbortSignal(),
         })
         if (!response.ok) {
           const err = await response.json()
@@ -751,6 +757,7 @@ import Layout from '../../layouts/Layout.astro'
         newColorForm.classList.add('hidden')
         btnAddNewColor.parentElement!.classList.remove('hidden')
       } catch (error: any) {
+        if (isAbortError(error)) return
         await (window as any).__fmAlert?.(error.message) || alert(error.message)
       } finally {
         btnSaveNewColor.disabled = false
@@ -882,6 +889,7 @@ import Layout from '../../layouts/Layout.astro'
           },
           credentials: 'include',
           body: JSON.stringify(data),
+          signal: getAbortSignal(),
         })
 
         if (!response.ok) {
@@ -894,6 +902,7 @@ import Layout from '../../layouts/Layout.astro'
         const filament = await response.json()
         window.location.href = `/filaments/${filament.id}`
       } catch (error: any) {
+        if (isAbortError(error)) return
         errorMessage.textContent = error.message || t('filaments.failedCreate')
         errorMessage.classList.remove('hidden')
       } finally {
