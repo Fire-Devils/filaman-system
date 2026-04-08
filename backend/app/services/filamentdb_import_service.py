@@ -30,6 +30,17 @@ if not _UPLOADS_BASE.is_dir():
 LOGO_DIR = _UPLOADS_BASE / "manufacturer-logos"
 
 
+def _resolve_mfr_id(fil: dict[str, Any]) -> int | None:
+    """FilamentDB-Manufacturer-ID aus einem Filament-Dict auflösen."""
+    mfr_id = fil.get("manufacturer_id")
+    if mfr_id:
+        return mfr_id
+    mfr_nested = fil.get("manufacturer")
+    if isinstance(mfr_nested, dict):
+        return mfr_nested.get("id")
+    return None
+
+
 class FilamentDBImportError(Exception):
     """Fehler beim FilamentDB-Import."""
 
@@ -187,7 +198,13 @@ class FilamentDBImportService:
     # ------------------------------------------------------------------ #
 
     async def preview(self) -> ImportPreview:
-        """Vorschau: welche Daten wuerden importiert?"""
+        """Vorschau: welche Daten wuerden importiert?
+
+        Fuegt jedem Manufacturer und Filament ein ``_exists``-Flag hinzu,
+        das anzeigt, ob der Eintrag bereits in der lokalen DB vorhanden ist.
+        Manufacturers bekommen zusaetzlich ``_filament_count`` und
+        ``_material_types`` fuer die UI.
+        """
         data = await self._fetch_sync_data()
 
         manufacturers = data.get("manufacturers", [])
@@ -195,6 +212,92 @@ class FilamentDBImportService:
         filaments = data.get("filaments", [])
         spool_profiles = data.get("spool_profiles", [])
         colors = self._extract_colors(filaments)
+
+        # -- Duplikat-Abgleich: Manufacturers --
+        existing_mfr_result = await self.db.execute(select(Manufacturer))
+        existing_mfr_names: set[str] = {
+            (m.name or "").lower() for m in existing_mfr_result.scalars().all()
+        }
+
+        for mfr in manufacturers:
+            name = (mfr.get("name") or "").strip().lower()
+            mfr["_exists"] = name in existing_mfr_names
+
+        # -- Material-Map fuer Filament-Anreicherung --
+        mat_map: dict[int, str] = {}
+        for mat in materials:
+            mid = mat.get("id")
+            mkey = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            if mid:
+                mat_map[mid] = mkey
+
+        # -- FDB-Manufacturer-ID -> Name (fuer Filament-Duplikat-Check) --
+        fdb_mfr_id_to_name: dict[int, str] = {}
+        for mfr in manufacturers:
+            fdb_id = mfr.get("id")
+            if fdb_id:
+                fdb_mfr_id_to_name[fdb_id] = (mfr.get("name") or "").strip()
+
+        # -- Duplikat-Abgleich: Filaments --
+        # Lade alle lokalen (manufacturer_name, designation, material_type)
+        existing_fil_result = await self.db.execute(
+            select(
+                Filament.designation,
+                Filament.material_type,
+                Manufacturer.name,
+            ).join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        )
+        existing_fil_keys: set[tuple[str, str, str]] = {
+            (
+                (row[2] or "").lower(),
+                (row[0] or "").lower(),
+                (row[1] or "").lower(),
+            )
+            for row in existing_fil_result.all()
+        }
+
+        # Filament-Zaehler und Materialtypen pro Manufacturer
+        mfr_filament_counts: dict[int, int] = {}
+        mfr_material_types: dict[int, set[str]] = {}
+
+        for fil in filaments:
+            # Manufacturer-ID auflösen
+            mfr_id_fdb = fil.get("manufacturer_id")
+            mfr_nested = fil.get("manufacturer")
+            if not mfr_id_fdb and isinstance(mfr_nested, dict):
+                mfr_id_fdb = mfr_nested.get("id")
+
+            # Material auflösen
+            mat_id_fdb = fil.get("material_id")
+            mat_nested = fil.get("material")
+            if not mat_id_fdb and isinstance(mat_nested, dict):
+                mat_id_fdb = mat_nested.get("id")
+            material_key = mat_map.get(mat_id_fdb, "PLA")
+            if material_key == "PLA" and isinstance(mat_nested, dict):
+                material_key = (
+                    mat_nested.get("key") or mat_nested.get("name") or "PLA"
+                ).upper()
+
+            fil["_material_key"] = material_key
+
+            # Zaehler / Material-Sets pro Manufacturer
+            if mfr_id_fdb:
+                mfr_filament_counts[mfr_id_fdb] = (
+                    mfr_filament_counts.get(mfr_id_fdb, 0) + 1
+                )
+                mfr_material_types.setdefault(mfr_id_fdb, set()).add(material_key)
+
+            # Duplikat-Check
+            designation = (fil.get("designation") or "").strip()
+            mfr_name = fdb_mfr_id_to_name.get(mfr_id_fdb, "") if mfr_id_fdb else ""
+            key = (mfr_name.lower(), designation.lower(), material_key.lower())
+            fil["_exists"] = key in existing_fil_keys
+
+        # Manufacturers anreichern
+        for mfr in manufacturers:
+            fdb_id = mfr.get("id")
+            mfr["_filament_count"] = mfr_filament_counts.get(fdb_id, 0)
+            mfr["_material_types"] = sorted(mfr_material_types.get(fdb_id, set()))
 
         return ImportPreview(
             manufacturers=manufacturers,
@@ -211,10 +314,44 @@ class FilamentDBImportService:
     async def execute(
         self,
         spool_detail_target: Literal["filament", "manufacturer", "both"] = "filament",
+        manufacturer_ids: list[int] | None = None,
+        filament_ids: list[int] | None = None,
     ) -> ImportResult:
-        """Vollstaendigen Import aus der FilamentDB ausfuehren."""
+        """Import aus der FilamentDB ausfuehren.
+
+        Args:
+            spool_detail_target: Wohin SpoolProfile-Daten geschrieben werden.
+            manufacturer_ids: FilamentDB-IDs der gewaehlten Hersteller.
+                              ``None`` importiert alle.
+            filament_ids: FilamentDB-IDs der gewaehlten Filamente.
+                          ``None`` importiert alle Filamente der gewaehlten Hersteller.
+        """
         result = ImportResult()
         preview = await self.preview()
+
+        # -- Filtern nach Auswahl --
+        selected_manufacturers = preview.manufacturers
+        if manufacturer_ids is not None:
+            mfr_id_set = set(manufacturer_ids)
+            selected_manufacturers = [
+                m for m in preview.manufacturers if m.get("id") in mfr_id_set
+            ]
+
+        selected_filaments = preview.filaments
+        if filament_ids is not None:
+            fil_id_set = set(filament_ids)
+            selected_filaments = [
+                f for f in preview.filaments if f.get("id") in fil_id_set
+            ]
+        elif manufacturer_ids is not None:
+            # Alle Filamente der gewaehlten Hersteller
+            mfr_id_set = set(manufacturer_ids)
+            selected_filaments = [
+                f for f in preview.filaments if _resolve_mfr_id(f) in mfr_id_set
+            ]
+
+        # Colors nur fuer ausgewaehlte Filamente
+        selected_colors = self._extract_colors(selected_filaments)
 
         # Material-Map: filamentdb_material_id -> material_key
         material_map: dict[int, str] = {}
@@ -233,15 +370,15 @@ class FilamentDBImportService:
 
         # 1. Manufacturers importieren
         manufacturer_map = await self._import_manufacturers(
-            preview.manufacturers, result
+            selected_manufacturers, result
         )
 
         # 2. Colors importieren
-        color_map = await self._import_colors(preview.colors, result)
+        color_map = await self._import_colors(selected_colors, result)
 
         # 3. Filaments importieren
         await self._import_filaments(
-            preview.filaments,
+            selected_filaments,
             material_map,
             manufacturer_map,
             color_map,
@@ -253,12 +390,12 @@ class FilamentDBImportService:
         # 4. SpoolProfile auf Manufacturer-Ebene (wenn gewuenscht)
         if spool_detail_target in ("manufacturer", "both"):
             await self._apply_spool_profiles_to_manufacturers(
-                preview.filaments, manufacturer_map, spool_profile_map, result
+                selected_filaments, manufacturer_map, spool_profile_map, result
             )
 
         # 5. Logos herunterladen
         await self._download_manufacturer_logos(
-            preview.manufacturers, manufacturer_map, result
+            selected_manufacturers, manufacturer_map, result
         )
 
         await self.db.commit()

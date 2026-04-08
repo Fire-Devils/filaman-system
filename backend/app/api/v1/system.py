@@ -980,6 +980,10 @@ async def spoolman_execute(
 
 class FilamentDBImportRequest(BaseModel):
     spool_detail_target: str = "filament"  # "filament" | "manufacturer" | "both"
+    manufacturer_ids: list[int] | None = None  # FDB-IDs, None = alle
+    filament_ids: list[int] | None = (
+        None  # FDB-IDs, None = alle der gewaehlten Hersteller
+    )
 
 
 class FilamentDBPreviewResponse(BaseModel):
@@ -1086,7 +1090,11 @@ async def filamentdb_execute(
 
     service = FilamentDBImportService(db)
     try:
-        result = await service.execute(body.spool_detail_target)
+        result = await service.execute(
+            body.spool_detail_target,
+            manufacturer_ids=body.manufacturer_ids,
+            filament_ids=body.filament_ids,
+        )
         return result
     except FilamentDBImportError as e:
         logger.warning("FilamentDB Import Execution Error: %s", e, exc_info=True)
