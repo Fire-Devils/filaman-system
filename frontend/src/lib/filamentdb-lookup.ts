@@ -94,7 +94,9 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
     hint.style.display = 'none'
 
     const params = new URLSearchParams()
-    params.set('search', query)
+    if (query) {
+      params.set('search', query)
+    }
     params.set('page_size', '20')
     for (const [k, v] of Object.entries(extraParams)) {
       params.set(k, String(v))
@@ -143,6 +145,13 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
     debounceTimer = setTimeout(() => doSearch(query), debounceMs)
   }
 
+  function onFocus() {
+    // When minChars is 0 and dropdown is not visible, auto-load results on focus
+    if (minChars === 0 && dropdown.style.display === 'none' && currentItems.length === 0) {
+      doSearch(input.value.trim())
+    }
+  }
+
   function onResultClick(e: Event) {
     const target = (e.target as HTMLElement).closest<HTMLElement>('.fdb-lookup-item')
     if (!target) return
@@ -170,6 +179,7 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
   // ── Bind events ────────────────────────────────────────────────
 
   input.addEventListener('input', onInput)
+  input.addEventListener('focus', onFocus)
   results.addEventListener('click', onResultClick)
   document.addEventListener('click', onClickOutside)
   input.addEventListener('keydown', onKeydown)
@@ -180,6 +190,7 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
     if (debounceTimer) clearTimeout(debounceTimer)
     if (abortController) abortController.abort()
     input.removeEventListener('input', onInput)
+    input.removeEventListener('focus', onFocus)
     results.removeEventListener('click', onResultClick)
     document.removeEventListener('click', onClickOutside)
     input.removeEventListener('keydown', onKeydown)

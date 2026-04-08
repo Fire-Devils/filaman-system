@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -22,11 +23,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/filamentdb", tags=["FilamentDB Proxy"])
 
 _TIMEOUT = 15.0  # seconds
+_BASE_URL = property(lambda _: settings.filamentdb_url.rstrip("/"))
+
+
+def _api_url(path: str) -> str:
+    return f"{settings.filamentdb_url.rstrip('/')}/api/v1{path}"
 
 
 async def _proxy_get(path: str, params: dict[str, Any] | None = None) -> Any:
     """Forward a GET request to the FilamentDB API."""
-    url = f"{settings.filamentdb_url.rstrip('/')}/api/v1{path}"
+    url = _api_url(path)
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.get(url, params=params)
@@ -58,7 +64,7 @@ async def _proxy_get(path: str, params: dict[str, Any] | None = None) -> Any:
         )
 
 
-# ── Search endpoints (pure proxy) ──────────────────────────────────
+# ── Search endpoints ───────────────────────────────────────────────
 
 
 @router.get("/manufacturers")
@@ -80,11 +86,41 @@ async def search_filaments(
     _principal: PrincipalDep,
     search: str | None = Query(None, min_length=2),
     manufacturer_id: int | None = Query(None),
+    manufacturer_name: str | None = Query(
+        None,
+        min_length=2,
+        description="Resolve manufacturer name to FilamentDB ID, then filter filaments.",
+    ),
     material_key: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    """Search filaments in the FilamentDB community database."""
+    """Search filaments in the FilamentDB community database.
+
+    When *manufacturer_name* is provided (and manufacturer_id is not),
+    we first search the FilamentDB manufacturers by name, pick the best
+    match, and use its ID to filter filaments.
+    """
+    # Resolve manufacturer_name → manufacturer_id in FilamentDB
+    if manufacturer_name and manufacturer_id is None:
+        mfr_data = await _proxy_get(
+            "/manufacturers",
+            {"search": manufacturer_name, "page_size": 5},
+        )
+        mfr_items = mfr_data.get("items", [])
+        # Prefer exact match (case-insensitive), fall back to first result
+        resolved_id = None
+        for m in mfr_items:
+            if m.get("name", "").lower() == manufacturer_name.lower():
+                resolved_id = m["id"]
+                break
+        if resolved_id is None and mfr_items:
+            resolved_id = mfr_items[0]["id"]
+        if resolved_id is None:
+            # No manufacturer found → return empty result
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        manufacturer_id = resolved_id
+
     params: dict[str, Any] = {"page": page, "page_size": page_size}
     if search:
         params["search"] = search
@@ -107,6 +143,37 @@ async def search_spool_profiles(
     if search:
         params["search"] = search
     return await _proxy_get("/spool-profiles", params)
+
+
+@router.get("/spool-profile-image")
+async def proxy_spool_profile_image(
+    _principal: PrincipalDep,
+    image_file: str = Query(..., min_length=1, max_length=500),
+):
+    """Proxy a spool profile image from the FilamentDB server.
+
+    Returns the image bytes with appropriate content-type and cache headers.
+    """
+    # Sanitise: only allow simple filenames (no path traversal)
+    if "/" in image_file or "\\" in image_file or ".." in image_file:
+        raise HTTPException(status_code=400, detail="Invalid image_file")
+
+    image_url = (
+        f"{settings.filamentdb_url.rstrip('/')}/uploads/spool-profiles/{image_file}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(image_url)
+            resp.raise_for_status()
+    except (httpx.HTTPStatusError, httpx.HTTPError):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    content_type = resp.headers.get("content-type", "image/png")
+    return Response(
+        content=resp.content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 # ── Prepare endpoint (creates missing entities locally) ─────────────

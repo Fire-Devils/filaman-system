@@ -941,6 +941,39 @@ html.sidebar-collapsed .fm-logo-text {
   display: inline-block;
 }
 
+.fdb-lookup-item-with-image {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fdb-lookup-item-image {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  background: var(--bg-soft);
+  flex-shrink: 0;
+}
+
+.fdb-lookup-item-image-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+.fdb-lookup-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .fdb-lookup-empty {
   padding: 12px;
   text-align: center;

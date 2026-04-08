@@ -359,8 +359,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
               const material = item.spool_material || ''
               const diameter = item.outer_diameter_mm ? `${item.outer_diameter_mm}mm` : ''
               const details = [weight, material, diameter].filter(Boolean).join(' · ')
-              return `<div class="fdb-lookup-item-name">${item.name || '?'}</div>
-                      <div class="fdb-lookup-item-sub">${details}</div>`
+              const imageHtml = item.image_file
+                ? `<img class="fdb-lookup-item-image" src="/api/v1/filamentdb/spool-profile-image?image_file=${encodeURIComponent(item.image_file)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display=''" /><span class="fdb-lookup-item-image-placeholder" style="display:none">&#x1F4E6;</span>`
+                : `<span class="fdb-lookup-item-image-placeholder">&#x1F4E6;</span>`
+              return `<div class="fdb-lookup-item-with-image">${imageHtml}<div class="fdb-lookup-item-text"><div class="fdb-lookup-item-name">${item.name || '?'}</div><div class="fdb-lookup-item-sub">${details}</div></div></div>`
             },
             onSelect: (item: any) => {
               // Fill spool property fields

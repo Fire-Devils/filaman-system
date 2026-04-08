@@ -11,25 +11,6 @@ import Layout from '../../layouts/Layout.astro'
   
   <div class="fm-card" style="max-width: 720px; padding: 24px;">
 
-    <!-- Mode toggle: DB lookup vs manual -->
-    <div id="fil-mode-toggle" class="fdb-mode-toggle" style="margin-bottom: 16px;">
-      <label>
-        <input type="radio" name="fil-mode" value="db" />
-        <span data-i18n="filamentdbLookup.fromDatabase">Create from FilaMan Database</span>
-      </label>
-      <label>
-        <input type="radio" name="fil-mode" value="manual" checked />
-        <span data-i18n="filamentdbLookup.manualEntry">Create manually</span>
-      </label>
-    </div>
-
-    <!-- FilamentDB lookup section (hidden by default) -->
-    <div id="fil-db-lookup" class="fdb-lookup-section" style="display: none; margin-bottom: 16px;">
-      <div class="fdb-lookup-section-title" data-i18n="filamentdbLookup.loadFromDb">Load from FilaManDB</div>
-      <div id="fil-lookup-container"></div>
-      <div id="fil-lookup-toast" class="fdb-toast" style="display: none;"></div>
-    </div>
-
     <form id="filament-form" style="display: grid; gap: 16px;">
       
       <!-- Manufacturer -->
@@ -43,6 +24,16 @@ import Layout from '../../layouts/Layout.astro'
         >
           <option value="" data-i18n="filaments.selectManufacturer">Select manufacturer...</option>
         </select>
+        <!-- FilamentDB lookup: appears after manufacturer is selected -->
+        <div id="fil-fdb-section" style="display: none; margin-top: 8px;">
+          <button type="button" id="btn-fil-fdb-load" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 6px 14px;">
+            <span data-i18n="filamentdbLookup.loadFromDb">Load from FilaManDB</span>
+          </button>
+          <div id="fil-fdb-lookup-area" style="display: none; margin-top: 8px;">
+            <div id="fil-lookup-container"></div>
+            <div id="fil-lookup-toast" class="fdb-toast" style="display: none;"></div>
+          </div>
+        </div>
       </div>
       
       <!-- Designation -->
@@ -472,12 +463,14 @@ import Layout from '../../layouts/Layout.astro'
       renderCustomFields()
     })
 
-    // ── FilamentDB Lookup ──
+    // ── FilamentDB Lookup (manufacturer-based) ──
     let filLookup: LookupInstance | null = null
-    const filModeToggle = document.getElementById('fil-mode-toggle')!
-    const filDbLookup = document.getElementById('fil-db-lookup')!
+    const filFdbSection = document.getElementById('fil-fdb-section')!
+    const btnFilFdbLoad = document.getElementById('btn-fil-fdb-load')!
+    const filFdbLookupArea = document.getElementById('fil-fdb-lookup-area')!
     const filLookupContainer = document.getElementById('fil-lookup-container')!
     const filLookupToast = document.getElementById('fil-lookup-toast')!
+    let filFdbOpen = false
 
     function showFdbToast(message: string, type: 'success' | 'error' = 'success') {
       filLookupToast.className = `fdb-toast fdb-toast-${type}`
@@ -485,197 +478,223 @@ import Layout from '../../layouts/Layout.astro'
       filLookupToast.style.display = ''
     }
 
-    // Init lookup
-    filLookup = createFilamentDbLookup({
-      container: filLookupContainer,
-      endpoint: '/filamentdb/filaments',
-      placeholder: t('filamentdbLookup.searchFilament'),
-      renderItem: (item: any) => {
-        const mfr = item.manufacturer?.name || ''
-        const mat = item.material?.key || ''
-        const colors = (item.colors || [])
-          .map((c: any) => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${c.hex_code};border:1px solid var(--border);vertical-align:middle;"></span>`)
-          .join(' ')
-        const weight = item.nominal_weight_g ? ` · ${item.nominal_weight_g}g` : ''
-        return `<div class="fdb-lookup-item-name">${item.name || item.designation || '?'}</div>
-                <div class="fdb-lookup-item-sub">${mfr} · ${mat}${weight} ${colors}</div>`
-      },
-      onSelect: async (item: any) => {
-        // Call prepare-filament to auto-create manufacturer + colors
-        try {
-          const prepareData = {
-            manufacturer_name: item.manufacturer?.name || '',
-            manufacturer_website: item.manufacturer?.website || null,
-            designation: item.name || item.designation || '',
-            material_key: item.material?.key || null,
-            material_name: item.material?.name || null,
-            material_subtype: item.material_subtype || null,
-            diameter_mm: item.diameter_mm || 1.75,
-            density_g_cm3: item.density_g_cm3 || null,
-            nominal_weight_g: item.nominal_weight_g || null,
-            price: item.price || null,
-            currency: item.currency || null,
-            shop_url: item.shop_url || null,
-            color_mode: (item.colors || []).length > 1 ? 'multi' : 'single',
-            multi_color_style: item.multi_color_style || null,
-            colors: (item.colors || []).map((c: any, idx: number) => ({
-              hex_code: c.hex_code || '',
-              color_name: c.color_name || c.name || '',
-              position: c.position || idx + 1,
-            })),
-            spool_profile_empty_weight_g: item.spool_profile?.empty_weight_g || null,
-            spool_profile_outer_diameter_mm: item.spool_profile?.outer_diameter_mm || null,
-            spool_profile_width_mm: item.spool_profile?.width_mm || null,
-            spool_profile_material: item.spool_profile?.spool_material || null,
-          }
-
-          const response = await fetch('/api/v1/filamentdb/prepare-filament', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': getCsrfToken(),
-            },
-            credentials: 'include',
-            body: JSON.stringify(prepareData),
-          })
-
-          if (!response.ok) {
-            const err = await response.json()
-            throw new Error(err.detail?.message || t('filamentdbLookup.prefillError'))
-          }
-
-          const result = await response.json()
-          const pf = result.prefilled
-
-          // Refresh manufacturers if a new one was created
-          if (result.manufacturer_created) {
-            invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
-            // Reload manufacturers dropdown
-            manufacturerSelect.innerHTML = '<option value="">' + t('filaments.selectManufacturer') + '</option>'
-            allManufacturers = []
-            await loadManufacturers()
-          }
-
-          // Refresh colors if new ones were created
-          if (result.colors_created > 0) {
-            invalidateCachePrefix(CACHE_KEYS.COLORS)
-            await loadColors()
-          }
-
-          // Fill form fields from prefilled data
-          if (pf.manufacturer_id) {
-            manufacturerSelect.value = String(pf.manufacturer_id)
-          }
-
-          const desigInput = document.getElementById('designation') as HTMLInputElement
-          if (pf.designation) desigInput.value = pf.designation
-
-          // Type
-          if (pf.material_type) {
-            const typeExists = Array.from(typeSelect.options).some(o => o.value === pf.material_type)
-            if (typeExists) {
-              typeSelect.value = pf.material_type
-              // Trigger density auto-fill
-              const defaultDensity = DEFAULT_DENSITIES[pf.material_type.toUpperCase()]
-              if (defaultDensity != null) {
-                (document.getElementById('density_g_cm3') as HTMLInputElement).value = String(defaultDensity)
-              }
-            } else {
-              typeSelect.value = CUSTOM_TYPE_VALUE
-              customTypeWrapper.classList.remove('hidden')
-              customTypeInput.required = true
-              customTypeInput.value = pf.material_type
-            }
-          }
-
-          // Material subgroup
-          if (pf.material_subgroup) {
-            (document.getElementById('material_subgroup') as HTMLInputElement).value = pf.material_subgroup
-          }
-
-          // Diameter
-          if (pf.diameter_mm != null) {
-            (document.getElementById('diameter_mm') as HTMLInputElement).value = String(pf.diameter_mm)
-          }
-
-          // Density (prefer actual value from DB over default)
-          if (pf.density_g_cm3 != null) {
-            (document.getElementById('density_g_cm3') as HTMLInputElement).value = String(pf.density_g_cm3)
-          }
-
-          // Weight
-          if (pf.raw_material_weight_g != null) {
-            (document.getElementById('raw_material_weight_g') as HTMLInputElement).value = String(pf.raw_material_weight_g)
-          }
-
-          // Price
-          if (pf.price != null) {
-            (document.getElementById('price') as HTMLInputElement).value = String(pf.price)
-          }
-
-          // Shop URL
-          if (pf.shop_url) {
-            (document.getElementById('shop_url') as HTMLInputElement).value = pf.shop_url
-          }
-
-          // Spool defaults
-          if (pf.default_spool_weight_g != null) {
-            (document.getElementById('default_spool_weight_g') as HTMLInputElement).value = String(pf.default_spool_weight_g)
-          }
-          if (pf.spool_outer_diameter_mm != null) {
-            (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = String(pf.spool_outer_diameter_mm)
-          }
-          if (pf.spool_width_mm != null) {
-            (document.getElementById('spool_width_mm') as HTMLInputElement).value = String(pf.spool_width_mm)
-          }
-          if (pf.spool_material) {
-            (document.getElementById('spool_material') as HTMLSelectElement).value = pf.spool_material
-          }
-
-          // Color mode + selection
-          if (pf.color_mode === 'multi' && (pf.color_ids || []).length > 1) {
-            const multiRadio = document.querySelector('input[name="color_mode"][value="multi"]') as HTMLInputElement
-            multiRadio.checked = true
-            onColorModeChange()
-            if (pf.multi_color_style) {
-              (document.getElementById('multi_color_style') as HTMLSelectElement).value = pf.multi_color_style
-            }
-          }
-
-          // Select colors by IDs
-          if (pf.color_ids && pf.color_ids.length > 0) {
-            selectedColorIds = pf.color_ids.filter((id: number) => allColors.some(c => c.id === id))
-            renderSelectedColors()
-            renderColorGrid()
-          }
-
-          // Toast messages
-          const toastParts: string[] = []
-          if (result.manufacturer_created) {
-            toastParts.push(t('filamentdbLookup.manufacturerCreated').replace('{name}', pf.designation ? prepareData.manufacturer_name : ''))
-          }
-          if (result.colors_created > 0) {
-            toastParts.push(t('filamentdbLookup.colorsCreated').replace('{count}', String(result.colors_created)))
-          }
-          toastParts.push(t('filamentdbLookup.prefillSuccess'))
-          showFdbToast(toastParts.join(' · '))
-
-        } catch (err: any) {
-          showFdbToast(err.message || t('filamentdbLookup.prefillError'), 'error')
-        }
-      },
+    // Show/hide the FilamentDB button when manufacturer changes
+    manufacturerSelect.addEventListener('change', () => {
+      const hasManufacturer = !!manufacturerSelect.value
+      filFdbSection.style.display = hasManufacturer ? '' : 'none'
+      // Close lookup area if manufacturer is deselected
+      if (!hasManufacturer) {
+        filFdbLookupArea.style.display = 'none'
+        filFdbOpen = false
+        filLookupToast.style.display = 'none'
+        if (filLookup) { filLookup.destroy(); filLookup = null }
+      }
     })
 
-    // Mode toggle event
-    filModeToggle.querySelectorAll('input[name="fil-mode"]').forEach(radio => {
-      radio.addEventListener('change', () => {
-        const mode = (filModeToggle.querySelector('input[name="fil-mode"]:checked') as HTMLInputElement).value
-        filDbLookup.style.display = mode === 'db' ? '' : 'none'
+    function getSelectedManufacturerName(): string {
+      const selectedId = parseInt(manufacturerSelect.value)
+      const mfr = allManufacturers.find((m: any) => m.id === selectedId)
+      return mfr?.name || ''
+    }
+
+    btnFilFdbLoad.addEventListener('click', () => {
+      filFdbOpen = !filFdbOpen
+      if (filFdbOpen) {
+        filFdbLookupArea.style.display = ''
         filLookupToast.style.display = 'none'
-        if (mode === 'db' && filLookup) {
-          filLookup.reset()
-        }
-      })
+
+        // Destroy previous and create new lookup with current manufacturer
+        if (filLookup) { filLookup.destroy(); filLookup = null }
+
+        const mfrName = getSelectedManufacturerName()
+        filLookup = createFilamentDbLookup({
+          container: filLookupContainer,
+          endpoint: '/filamentdb/filaments',
+          placeholder: t('filamentdbLookup.searchFilament'),
+          extraParams: { manufacturer_name: mfrName },
+          minChars: 0,
+          renderItem: (item: any) => {
+            const mat = item.material?.key || ''
+            const colors = (item.colors || [])
+              .map((c: any) => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${c.hex_code};border:1px solid var(--border);vertical-align:middle;"></span>`)
+              .join(' ')
+            const weight = item.nominal_weight_g ? ` · ${item.nominal_weight_g}g` : ''
+            const hasSpool = !!item.spool_profile
+            const spoolStyle = hasSpool ? '' : 'opacity:0.2;filter:grayscale(1);'
+            let spoolTip = ''
+            if (hasSpool) {
+              const sp = item.spool_profile
+              const parts: string[] = []
+              if (sp.empty_weight_g != null) parts.push(`${sp.empty_weight_g}g`)
+              if (sp.spool_material) parts.push(sp.spool_material)
+              if (sp.outer_diameter_mm != null) parts.push(`\u2300${sp.outer_diameter_mm}mm`)
+              if (sp.width_mm != null) parts.push(`W${sp.width_mm}mm`)
+              spoolTip = ` title="Spool: ${parts.join(' \u00b7 ')}"`
+            }
+            return `<div style="display:flex;align-items:center;gap:8px;">
+                      <div style="flex:1;min-width:0;">
+                        <div class="fdb-lookup-item-name">${item.name || item.designation || '?'}</div>
+                        <div class="fdb-lookup-item-sub">${mat}${weight} ${colors}</div>
+                      </div>
+                      <span style="font-size:1.2rem;flex-shrink:0;${spoolStyle}"${spoolTip}>&#x1F9F5;</span>
+                    </div>`
+          },
+          onSelect: async (item: any) => {
+            // Call prepare-filament to auto-create colors (manufacturer already exists locally)
+            try {
+              const prepareData = {
+                manufacturer_name: item.manufacturer?.name || getSelectedManufacturerName(),
+                manufacturer_website: item.manufacturer?.website || null,
+                designation: item.name || item.designation || '',
+                material_key: item.material?.key || null,
+                material_name: item.material?.name || null,
+                material_subtype: item.material_subtype || null,
+                diameter_mm: item.diameter_mm || 1.75,
+                density_g_cm3: item.density_g_cm3 || null,
+                nominal_weight_g: item.nominal_weight_g || null,
+                price: item.price || null,
+                currency: item.currency || null,
+                shop_url: item.shop_url || null,
+                color_mode: (item.colors || []).length > 1 ? 'multi' : 'single',
+                multi_color_style: item.multi_color_style || null,
+                colors: (item.colors || []).map((c: any, idx: number) => ({
+                  hex_code: c.hex_code || '',
+                  color_name: c.color_name || c.name || '',
+                  position: c.position || idx + 1,
+                })),
+                spool_profile_empty_weight_g: item.spool_profile?.empty_weight_g || null,
+                spool_profile_outer_diameter_mm: item.spool_profile?.outer_diameter_mm || null,
+                spool_profile_width_mm: item.spool_profile?.width_mm || null,
+                spool_profile_material: item.spool_profile?.spool_material || null,
+              }
+
+              const response = await fetch('/api/v1/filamentdb/prepare-filament', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRF-Token': getCsrfToken(),
+                },
+                credentials: 'include',
+                body: JSON.stringify(prepareData),
+              })
+
+              if (!response.ok) {
+                const err = await response.json()
+                throw new Error(err.detail?.message || t('filamentdbLookup.prefillError'))
+              }
+
+              const result = await response.json()
+              const pf = result.prefilled
+
+              // Refresh colors if new ones were created
+              if (result.colors_created > 0) {
+                invalidateCachePrefix(CACHE_KEYS.COLORS)
+                await loadColors()
+              }
+
+              // Fill form fields from prefilled data
+              const desigInput = document.getElementById('designation') as HTMLInputElement
+              if (pf.designation) desigInput.value = pf.designation
+
+              // Type
+              if (pf.material_type) {
+                const typeExists = Array.from(typeSelect.options).some(o => o.value === pf.material_type)
+                if (typeExists) {
+                  typeSelect.value = pf.material_type
+                  const defaultDensity = DEFAULT_DENSITIES[pf.material_type.toUpperCase()]
+                  if (defaultDensity != null) {
+                    (document.getElementById('density_g_cm3') as HTMLInputElement).value = String(defaultDensity)
+                  }
+                } else {
+                  typeSelect.value = CUSTOM_TYPE_VALUE
+                  customTypeWrapper.classList.remove('hidden')
+                  customTypeInput.required = true
+                  customTypeInput.value = pf.material_type
+                }
+              }
+
+              // Material subgroup
+              if (pf.material_subgroup) {
+                (document.getElementById('material_subgroup') as HTMLInputElement).value = pf.material_subgroup
+              }
+
+              // Diameter
+              if (pf.diameter_mm != null) {
+                (document.getElementById('diameter_mm') as HTMLInputElement).value = String(pf.diameter_mm)
+              }
+
+              // Density (prefer actual value from DB over default)
+              if (pf.density_g_cm3 != null) {
+                (document.getElementById('density_g_cm3') as HTMLInputElement).value = String(pf.density_g_cm3)
+              }
+
+              // Weight
+              if (pf.raw_material_weight_g != null) {
+                (document.getElementById('raw_material_weight_g') as HTMLInputElement).value = String(pf.raw_material_weight_g)
+              }
+
+              // Price
+              if (pf.price != null) {
+                (document.getElementById('price') as HTMLInputElement).value = String(pf.price)
+              }
+
+              // Shop URL
+              if (pf.shop_url) {
+                (document.getElementById('shop_url') as HTMLInputElement).value = pf.shop_url
+              }
+
+              // Spool defaults
+              if (pf.default_spool_weight_g != null) {
+                (document.getElementById('default_spool_weight_g') as HTMLInputElement).value = String(pf.default_spool_weight_g)
+              }
+              if (pf.spool_outer_diameter_mm != null) {
+                (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = String(pf.spool_outer_diameter_mm)
+              }
+              if (pf.spool_width_mm != null) {
+                (document.getElementById('spool_width_mm') as HTMLInputElement).value = String(pf.spool_width_mm)
+              }
+              if (pf.spool_material) {
+                (document.getElementById('spool_material') as HTMLSelectElement).value = pf.spool_material
+              }
+
+              // Color mode + selection
+              if (pf.color_mode === 'multi' && (pf.color_ids || []).length > 1) {
+                const multiRadio = document.querySelector('input[name="color_mode"][value="multi"]') as HTMLInputElement
+                multiRadio.checked = true
+                onColorModeChange()
+                if (pf.multi_color_style) {
+                  (document.getElementById('multi_color_style') as HTMLSelectElement).value = pf.multi_color_style
+                }
+              }
+
+              // Select colors by IDs
+              if (pf.color_ids && pf.color_ids.length > 0) {
+                selectedColorIds = pf.color_ids.filter((id: number) => allColors.some(c => c.id === id))
+                renderSelectedColors()
+                renderColorGrid()
+              }
+
+              // Toast messages
+              const toastParts: string[] = []
+              if (result.colors_created > 0) {
+                toastParts.push(t('filamentdbLookup.colorsCreated').replace('{count}', String(result.colors_created)))
+              }
+              toastParts.push(t('filamentdbLookup.prefillSuccess'))
+              showFdbToast(toastParts.join(' · '))
+
+              // Close the lookup area
+              filFdbLookupArea.style.display = 'none'
+              filFdbOpen = false
+
+            } catch (err: any) {
+              showFdbToast(err.message || t('filamentdbLookup.prefillError'), 'error')
+            }
+          },
+        })
+      } else {
+        filFdbLookupArea.style.display = 'none'
+        filLookupToast.style.display = 'none'
+      }
     })
 
     // ── Color mode radio handling ──
