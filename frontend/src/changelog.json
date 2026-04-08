@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "removed", "text": "Das SpoolmanDB-Plugin wird beim Update automatisch entfernt, da es nicht mehr benötigt wird" }
+        ],
+        "en": [
+          { "type": "removed", "text": "The SpoolmanDB plugin is now automatically removed during update as it is no longer needed" }
+        ]
+      }
+    },
+    {
       "version": "1.2.1",
       "date": "",
       "changes": {

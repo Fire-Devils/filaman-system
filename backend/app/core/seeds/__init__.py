@@ -1,10 +1,17 @@
+import logging
+import shutil
+import sys
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Permission, Role, SpoolStatus, User, UserRole
+from app.models.plugin import InstalledPlugin
 from app.core.config import settings
 from app.core.security import hash_password_async
-from app.services.plugin_service import PluginInstallService
+from app.services.plugin_service import PLUGINS_DIR, PluginInstallService
+
+logger = logging.getLogger(__name__)
 
 
 SPOOL_STATUSES = [
@@ -380,6 +387,42 @@ async def seed_admin_user_from_env(db: AsyncSession) -> None:
     await db.commit()
 
 
+# User-installed plugins to auto-remove on next startup.
+# Add a plugin_key here when a plugin is deprecated and should be cleaned up
+# automatically during a version update.
+DEPRECATED_PLUGINS: list[str] = [
+    "spoolmandb",
+]
+
+
+async def remove_deprecated_plugins(db: AsyncSession) -> None:
+    """Remove deprecated user-installed plugins on startup."""
+    for plugin_key in DEPRECATED_PLUGINS:
+        result = await db.execute(
+            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
+        )
+        plugin = result.scalar_one_or_none()
+        if not plugin:
+            continue
+
+        # Plugin-Verzeichnis entfernen
+        target_dir = PLUGINS_DIR / plugin_key
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+
+        # Module-Cache bereinigen
+        prefix = f"app.plugins.{plugin_key}"
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith(prefix):
+                del sys.modules[mod_name]
+
+        # DB-Eintrag loeschen
+        await db.delete(plugin)
+        await db.commit()
+
+        logger.info("Deprecated plugin '%s' automatisch entfernt", plugin_key)
+
+
 BUILTIN_PLUGINS = [
     {
         "plugin_key": "spoolman_import",
@@ -411,6 +454,7 @@ async def seed_builtin_plugins(db: AsyncSession) -> None:
 
 
 async def run_all_seeds(db: AsyncSession) -> None:
+    await remove_deprecated_plugins(db)
     await seed_spool_statuses(db)
     await seed_permissions(db)
     await seed_roles(db)
