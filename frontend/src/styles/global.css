@@ -856,3 +856,167 @@ html.sidebar-collapsed .fm-logo-text {
     display: block;
   }
 }
+
+/* ── FilamentDB Lookup Dropdown ─────────────────────────────────── */
+
+.fdb-lookup {
+  position: relative;
+  width: 100%;
+}
+
+.fdb-lookup-input-wrap {
+  position: relative;
+}
+
+.fdb-lookup-input-wrap .fdb-lookup-spinner {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fdb-spin 0.6s linear infinite;
+}
+
+@keyframes fdb-spin {
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+.fdb-lookup-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.fdb-lookup-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+
+.fdb-lookup-item:last-child {
+  border-bottom: none;
+}
+
+.fdb-lookup-item:hover {
+  background: var(--hover-bg);
+}
+
+.fdb-lookup-item-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.fdb-lookup-item-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.fdb-lookup-item-colors {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.fdb-lookup-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+
+.fdb-lookup-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.fdb-lookup-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Mode toggle (radio buttons for DB vs manual) */
+
+.fdb-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.fdb-mode-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all var(--transition);
+  background: var(--bg);
+}
+
+.fdb-mode-toggle label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-bg, rgba(59, 130, 246, 0.08));
+  color: var(--accent);
+}
+
+.fdb-mode-toggle label input[type="radio"] {
+  margin: 0;
+}
+
+.fdb-lookup-section {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.fdb-lookup-section-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.fdb-toast {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.fdb-toast-success {
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.fdb-toast-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}

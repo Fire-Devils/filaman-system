@@ -90,6 +90,26 @@ import Layout from '../../layouts/Layout.astro'
   <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
     <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
       <h3 id="modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;" data-i18n="manufacturers.addManufacturer">Add Manufacturer</h3>
+
+      <!-- Mode toggle: DB lookup vs manual -->
+      <div id="mfr-mode-toggle" class="fdb-mode-toggle" style="display: none;">
+        <label>
+          <input type="radio" name="mfr-mode" value="db" />
+          <span data-i18n="filamentdbLookup.fromDatabase">Create from FilaMan Database</span>
+        </label>
+        <label>
+          <input type="radio" name="mfr-mode" value="manual" checked />
+          <span data-i18n="filamentdbLookup.manualEntry">Create manually</span>
+        </label>
+      </div>
+
+      <!-- FilamentDB lookup section (hidden by default) -->
+      <div id="mfr-db-lookup" class="fdb-lookup-section" style="display: none;">
+        <div class="fdb-lookup-section-title" data-i18n="filamentdbLookup.loadFromDb">Load from FilaManDB</div>
+        <div id="mfr-lookup-container"></div>
+        <div id="mfr-lookup-toast" style="display: none;"></div>
+      </div>
+
       <form id="modal-form" style="display: grid; gap: 16px;">
         <input type="hidden" id="manufacturer-id" />
         <div>
@@ -206,8 +226,11 @@ import Layout from '../../layouts/Layout.astro'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { createFilamentDbLookup, type LookupInstance } from '../../lib/filamentdb-lookup'
     await initI18n()
     await initCurrency()
+
+    let mfrLookup: LookupInstance | null = null
 
     let manufacturers: any[] = []
     let sortKey: string | null = 'name'
@@ -602,6 +625,62 @@ import Layout from '../../layouts/Layout.astro'
       const widthInput = document.getElementById('manufacturer-width') as HTMLInputElement
       const error = document.getElementById('modal-error')!
 
+      // Mode toggle: show only for create (not edit)
+      const modeToggle = document.getElementById('mfr-mode-toggle')!
+      const dbLookup = document.getElementById('mfr-db-lookup')!
+      const lookupContainer = document.getElementById('mfr-lookup-container')!
+      const lookupToast = document.getElementById('mfr-lookup-toast')!
+
+      if (mf) {
+        // Edit mode: hide toggle and lookup
+        modeToggle.style.display = 'none'
+        dbLookup.style.display = 'none'
+      } else {
+        // Create mode: show toggle
+        modeToggle.style.display = 'flex'
+        const manualRadio = modeToggle.querySelector('input[value="manual"]') as HTMLInputElement
+        manualRadio.checked = true
+        dbLookup.style.display = 'none'
+        lookupToast.style.display = 'none'
+
+        // Destroy previous lookup instance
+        if (mfrLookup) { mfrLookup.destroy(); mfrLookup = null }
+
+        // Create lookup instance
+        mfrLookup = createFilamentDbLookup({
+          container: lookupContainer,
+          endpoint: '/filamentdb/manufacturers',
+          placeholder: t('filamentdbLookup.searchManufacturer'),
+          renderItem: (item: any) => {
+            const website = item.website ? `<div class="fdb-lookup-item-sub">${item.website}</div>` : ''
+            const count = item.filament_count ? `<span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 8px;">${item.filament_count} filaments</span>` : ''
+            return `<div class="fdb-lookup-item-name">${item.name}${count}</div>${website}`
+          },
+          onSelect: (item: any) => {
+            // Fill form fields
+            nameInput.value = item.name || ''
+            urlInput.value = item.website || ''
+            // No spool defaults from FilamentDB manufacturers (they don't have those fields in the public API)
+            // Keep defaults
+            lookupToast.className = 'fdb-toast fdb-toast-success'
+            lookupToast.textContent = t('filamentdbLookup.prefillSuccess')
+            lookupToast.style.display = ''
+          },
+        })
+
+        // Mode toggle event
+        modeToggle.querySelectorAll('input[name="mfr-mode"]').forEach(radio => {
+          radio.addEventListener('change', () => {
+            const mode = (modeToggle.querySelector('input[name="mfr-mode"]:checked') as HTMLInputElement).value
+            dbLookup.style.display = mode === 'db' ? '' : 'none'
+            lookupToast.style.display = 'none'
+            if (mode === 'db' && mfrLookup) {
+              mfrLookup.reset()
+            }
+          })
+        })
+      }
+
       title.textContent = mf ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
       idInput.value = mf ? String(mf.id) : ''
       nameInput.value = mf ? mf.name : ''
@@ -628,6 +707,7 @@ import Layout from '../../layouts/Layout.astro'
 
     function closeModal() {
       document.getElementById('modal-container')!.style.display = 'none'
+      if (mfrLookup) { mfrLookup.destroy(); mfrLookup = null }
     }
 
     function openInfoModal(mf: any) {

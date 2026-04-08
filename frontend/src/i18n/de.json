@@ -960,5 +960,22 @@
     "fuzzyMatchHint": "Dieses Filament könnte Ihrem vorhandenen Filament \"{name}\" entsprechen. Klicken Sie ✕, um es als neu zu importieren.",
     "fuzzyReject": "Kein Treffer — als neu importieren",
     "fuzzyHintBox": "Einige Filamente wurden als ähnlich zu bereits vorhandenen erkannt. Sie sind mit \"ähnlich\" und dem zugeordneten Namen markiert. Falls die Zuordnung falsch ist, klicken Sie ✕, um das Filament stattdessen als neu zu importieren."
+  },
+  "filamentdbLookup": {
+    "fromDatabase": "Aus FilaMan Datenbank erstellen",
+    "manualEntry": "Manuell anlegen",
+    "searchManufacturer": "Hersteller suchen...",
+    "searchFilament": "Filament suchen...",
+    "searchSpoolProfile": "Spulenprofil suchen...",
+    "noResults": "Keine Ergebnisse gefunden",
+    "loading": "Suche...",
+    "loadFromDb": "Aus FilaManDB laden",
+    "manufacturerCreated": "Hersteller \"{name}\" wurde automatisch erstellt",
+    "colorsCreated": "{count} Farbe(n) wurden automatisch erstellt",
+    "prefillSuccess": "Formular wurde mit Daten aus der FilaManDB befüllt",
+    "prefillError": "Daten konnten nicht aus der FilaManDB geladen werden",
+    "connectionError": "FilaManDB ist nicht erreichbar",
+    "minChars": "Mindestens 2 Zeichen eingeben",
+    "spoolProfileLoaded": "Spulenprofil-Daten geladen"
   }
 }

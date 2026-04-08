@@ -10,7 +10,8 @@
           { "type": "feature", "text": "Hersteller-Logos können nun angezeigt werden" },
           { "type": "feature", "text": "FilamentDB Import: Vorhandene Filamente können nun mit aktuellen Daten aus der FilamentDB aktualisiert werden — Änderungen werden vorher als Diff angezeigt" },
           { "type": "fix", "text": "Farbvorschau im FilamentDB Import zeigt Farben jetzt korrekt an" },
-          { "type": "feature", "text": "FilamentDB Import: Bereits vorhandene Filamente werden nun auch bei leicht abweichenden Namen erkannt (z.B. \"PLA Rot\" vs. \"PLA Rot (Feuerrot)\")" }
+          { "type": "feature", "text": "FilamentDB Import: Bereits vorhandene Filamente werden nun auch bei leicht abweichenden Namen erkannt (z.B. \"PLA Rot\" vs. \"PLA Rot (Feuerrot)\")" },
+          { "type": "feature", "text": "Hersteller, Filamente und Spulen können nun direkt aus der FilaManDB Community-Datenbank erstellt werden — Daten werden automatisch vorausgefüllt, fehlende Hersteller und Farben werden automatisch angelegt" }
         ],
         "en": [
           { "type": "feature", "text": "Plugins can now be fully activated/deactivated — associated printers are automatically stopped or started" },
@@ -18,7 +19,8 @@
           { "type": "feature", "text": "Manufacturer logos can now be displayed" },
           { "type": "feature", "text": "FilamentDB Import: Existing filaments can now be updated with current data from FilamentDB — changes are shown as a diff before applying" },
           { "type": "fix", "text": "Color preview in FilamentDB Import now displays colors correctly" },
-          { "type": "feature", "text": "FilamentDB Import: Existing filaments are now also detected when names differ slightly (e.g. \"PLA Red\" vs. \"PLA Red (Fire Red)\")" }
+          { "type": "feature", "text": "FilamentDB Import: Existing filaments are now also detected when names differ slightly (e.g. \"PLA Red\" vs. \"PLA Red (Fire Red)\")" },
+          { "type": "feature", "text": "Manufacturers, filaments and spools can now be created directly from the FilaManDB community database — data is auto-filled, missing manufacturers and colors are created automatically" }
         ]
       }
     },

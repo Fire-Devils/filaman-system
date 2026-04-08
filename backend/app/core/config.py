@@ -11,7 +11,6 @@ ENV_PATH = PROJECT_ROOT / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
-
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
@@ -52,6 +51,9 @@ class Settings(BaseSettings):
 
     # User-installed plugins directory (auto-detected if empty)
     plugins_dir: str = ""
+
+    # FilamentDB community database URL for lookup/autocomplete
+    filamentdb_url: str = "https://db.filaman.app"
 
 
 settings = Settings()

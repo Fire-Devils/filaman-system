@@ -30,7 +30,7 @@ interface ApiErrorResponse {
   detail?: Record<string, string[]>
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let url: string
   if (path.startsWith('/auth')) {
     url = AUTH_BASE + path.slice(5)

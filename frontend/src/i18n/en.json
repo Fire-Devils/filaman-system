@@ -958,5 +958,22 @@
     "fuzzyMatchHint": "This filament might match your existing filament \"{name}\". Click ✕ to import as new.",
     "fuzzyReject": "Not a match — import as new",
     "fuzzyHintBox": "Some filaments were detected as similar to filaments you already have. They are marked with \"similar\" and the matched name. If the match is wrong, click ✕ to import the filament as new instead."
+  },
+  "filamentdbLookup": {
+    "fromDatabase": "Create from FilaMan Database",
+    "manualEntry": "Create manually",
+    "searchManufacturer": "Search manufacturer...",
+    "searchFilament": "Search filament...",
+    "searchSpoolProfile": "Search spool profile...",
+    "noResults": "No results found",
+    "loading": "Searching...",
+    "loadFromDb": "Load from FilaManDB",
+    "manufacturerCreated": "Manufacturer \"{name}\" was automatically created",
+    "colorsCreated": "{count} color(s) were automatically created",
+    "prefillSuccess": "Form was filled with data from FilaManDB",
+    "prefillError": "Could not load data from FilaManDB",
+    "connectionError": "FilaManDB is not reachable",
+    "minChars": "Enter at least 2 characters",
+    "spoolProfileLoaded": "Spool profile data loaded"
   }
 }
