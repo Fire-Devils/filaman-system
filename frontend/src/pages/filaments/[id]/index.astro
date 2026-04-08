@@ -294,7 +294,7 @@ const { id } = Astro.params
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
             <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
-            <p style="color: var(--text-muted); margin: 4px 0 0;">${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
+            <p style="color: var(--text-muted); margin: 4px 0 0; display: flex; align-items: center; gap: 8px;">${f.manufacturer?.logo_url ? `<img src="${f.manufacturer.logo_url}" alt="" style="height: 1.4em; width: auto; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px; flex-shrink: 0;" onerror="this.style.display='none'" />` : ''}${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
           </div>
           <div style="display: flex; gap: 8px;">
             <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
