@@ -85,7 +85,7 @@ import Layout from '../../../layouts/Layout.astro'
       <div id="diff-content"></div>
     </div>
 
-    <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.startImport">Start Import</button>
+    <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.checkImport">Check</button>
     <div id="import-progress" style="margin-top: 16px; display: none;">
       <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
         <div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
@@ -458,6 +458,7 @@ import Layout from '../../../layouts/Layout.astro'
 
         renderFilamentList()
         updateSummary()
+        resetImportButton()
         enableStep('step-import')
 
       } catch (err: any) {
@@ -579,6 +580,7 @@ import Layout from '../../../layouts/Layout.astro'
           if (input.checked) selectedFilIds.add(id)
           else selectedFilIds.delete(id)
           updateSummary()
+          resetImportButton()
         })
       })
 
@@ -591,6 +593,7 @@ import Layout from '../../../layouts/Layout.astro'
           rejectedFuzzyIds.add(id)
           renderFilamentList()
           updateSummary()
+          resetImportButton()
         })
       })
 
@@ -603,6 +606,7 @@ import Layout from '../../../layouts/Layout.astro'
           }
           renderFilamentList()
           updateSummary()
+          resetImportButton()
         })
       })
 
@@ -615,6 +619,7 @@ import Layout from '../../../layouts/Layout.astro'
           }
           renderFilamentList()
           updateSummary()
+          resetImportButton()
         })
       })
     }
@@ -652,6 +657,22 @@ import Layout from '../../../layouts/Layout.astro'
     // ================================================================
 
     const updateFilIds = new Set<number>()
+    /** Tracks whether the pre-import check has been done */
+    let importChecked = false
+
+    /** Reset the import button back to "Check" phase */
+    function resetImportButton() {
+      importChecked = false
+      const btn = document.getElementById('btn-import') as HTMLButtonElement | null
+      if (btn) {
+        btn.textContent = t('filamentdb.checkImport')
+        btn.disabled = false
+      }
+      // Diff-Bereich verstecken
+      const diffSection = document.getElementById('diff-section')
+      if (diffSection) diffSection.style.display = 'none'
+      updateFilIds.clear()
+    }
 
     async function checkForExistingFilaments(): Promise<boolean> {
       if (!filamentData) return false
@@ -854,33 +875,25 @@ import Layout from '../../../layouts/Layout.astro'
 
       if (selectedMfrIds.size === 0 || selectedFilIds.size === 0) return
 
-      // Erst Diff pruefen wenn existierende Filamente ausgewaehlt
-      const diffOk = await checkForExistingFilaments()
-      if (!diffOk) return
+      // Phase 1: Pruefen
+      if (!importChecked) {
+        btn.disabled = true
+        btn.textContent = t('filamentdb.loadingDiff')
 
-      // Wenn Diff-Bereich sichtbar und noch kein Confirmation
-      const diffSection = document.getElementById('diff-section')!
-      if (diffSection.style.display !== 'none') {
-        // Confirmation erst nach Diff-Anzeige
-        if (!(await (window as any).__fmConfirm(
-          t('filamentdb.confirmImport'),
-          {
-            title: t('filamentdb.startImport'),
-            okLabel: t('filamentdb.startImport'),
-            isDanger: false,
-          }
-        ))) return
-      } else {
-        // Keine existierenden — normaler Confirm
-        if (!(await (window as any).__fmConfirm(
-          t('filamentdb.confirmImport'),
-          {
-            title: t('filamentdb.startImport'),
-            okLabel: t('filamentdb.startImport'),
-            isDanger: false,
-          }
-        ))) return
+        const diffOk = await checkForExistingFilaments()
+        if (!diffOk) {
+          btn.disabled = false
+          btn.textContent = t('filamentdb.checkImport')
+          return
+        }
+
+        importChecked = true
+        btn.disabled = false
+        btn.textContent = t('filamentdb.startImport')
+        return
       }
+
+      // Phase 2: Import ausfuehren
 
       btn.disabled = true
       btn.textContent = t('filamentdb.importing')

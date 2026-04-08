@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1319,12 +1319,10 @@ class FilamentDBImportService:
         existing.custom_fields = custom
 
         # FilamentColors neu aufbauen
-        # Bestehende loeschen
+        # Bestehende loeschen (direkt per DELETE, kein Lazy-Load noetig)
         await self.db.execute(
-            select(FilamentColor).where(FilamentColor.filament_id == existing.id)
+            delete(FilamentColor).where(FilamentColor.filament_id == existing.id)
         )
-        for fc in list(existing.filament_colors):
-            await self.db.delete(fc)
         await self.db.flush()
 
         # Neue erstellen
