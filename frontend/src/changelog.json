@@ -5,10 +5,14 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Plugins können jetzt vollständig aktiviert/deaktiviert werden — zugehörige Drucker werden automatisch gestoppt bzw. gestartet" }
+          { "type": "feature", "text": "Plugins können jetzt vollständig aktiviert/deaktiviert werden — zugehörige Drucker werden automatisch gestoppt bzw. gestartet" },
+          { "type": "feature", "text": "Neues Builtin-Plugin: FilamentDB Import — Hersteller, Filamente, Farben und Logos aus der FilamentDB Community-Datenbank importieren" },
+          { "type": "feature", "text": "Hersteller-Logos können nun angezeigt werden" }
         ],
         "en": [
-          { "type": "feature", "text": "Plugins can now be fully activated/deactivated — associated printers are automatically stopped or started" }
+          { "type": "feature", "text": "Plugins can now be fully activated/deactivated — associated printers are automatically stopped or started" },
+          { "type": "feature", "text": "New builtin plugin: FilamentDB Import — import manufacturers, filaments, colors and logos from the FilamentDB community database" },
+          { "type": "feature", "text": "Manufacturer logos can now be displayed" }
         ]
       }
     },

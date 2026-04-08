@@ -1,0 +1,375 @@
+---
+import Layout from '../../../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - FilamentDB Import">
+  <div style="margin-bottom: 24px;">
+    <a href="/admin/system" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
+  </div>
+  
+  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="filamentdb.title">FilamentDB Import</h1>
+  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="filamentdb.subtitle">Import manufacturers, filaments and spool details from the FilamentDB community database.</p>
+
+  <!-- Step 1: Preview & Settings -->
+  <div class="fm-card" style="margin-bottom: 24px; padding: 24px;" id="step-preview">
+    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">1</span>
+      <span data-i18n="filamentdb.stepPreview">Preview &amp; Settings</span>
+    </h2>
+    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="filamentdb.previewDesc">Review the data that will be imported from FilamentDB.</p>
+    <button id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="filamentdb.loadPreview">Load Preview</button>
+    <div id="preview-result" style="margin-top: 16px; display: none;"></div>
+
+    <!-- Spool Detail Target (shown after preview loads) -->
+    <div id="spool-detail-config" style="margin-top: 20px; display: none;">
+      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0 0 6px;" data-i18n="filamentdb.spoolDetailTarget">Spool Detail Target</h3>
+      <p style="color: var(--text-muted); margin-bottom: 12px; font-size: 0.85rem;" data-i18n="filamentdb.spoolDetailDesc">Choose where to apply spool profile data (empty weight, diameter, width, material).</p>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-soft);" id="label-filament">
+          <input type="radio" name="spool-detail-target" value="filament" checked style="margin-top: 3px;" />
+          <div>
+            <div style="font-weight: 600; font-size: 0.9rem;" data-i18n="filamentdb.targetFilament">Filament only</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="filamentdb.targetFilamentDesc">Apply spool profile data to each filament individually</div>
+          </div>
+        </label>
+        <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-soft);" id="label-manufacturer">
+          <input type="radio" name="spool-detail-target" value="manufacturer" style="margin-top: 3px;" />
+          <div>
+            <div style="font-weight: 600; font-size: 0.9rem;" data-i18n="filamentdb.targetManufacturer">Manufacturer only</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="filamentdb.targetManufacturerDesc">Apply the most common spool profile per manufacturer</div>
+          </div>
+        </label>
+        <label style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: var(--bg-soft);" id="label-both">
+          <input type="radio" name="spool-detail-target" value="both" style="margin-top: 3px;" />
+          <div>
+            <div style="font-weight: 600; font-size: 0.9rem;" data-i18n="filamentdb.targetBoth">Both</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="filamentdb.targetBothDesc">Apply to both filament and manufacturer level</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Import -->
+  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-import">
+    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">2</span>
+      <span data-i18n="filamentdb.stepImport">Import</span>
+    </h2>
+    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="filamentdb.importDesc">Start the import. Existing data will not be overwritten.</p>
+    <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.startImport">Start Import</button>
+    <div id="import-progress" style="margin-top: 16px; display: none;">
+      <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
+        <div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
+      </div>
+      <p id="import-status" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; text-align: center;" data-i18n="filamentdb.importing">Importing...</p>
+    </div>
+    <div id="import-result" style="margin-top: 16px; display: none;"></div>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../../../lib/abort'
+    await initI18n()
+
+    let previewData: any = null
+
+    function getCsrfToken(): string {
+      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
+      return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    function escapeHtml(str: string): string {
+      const div = document.createElement('div')
+      div.textContent = str
+      return div.innerHTML
+    }
+
+    function enableStep(id: string) {
+      const el = document.getElementById(id)!
+      el.style.opacity = '1'
+      el.style.pointerEvents = 'auto'
+    }
+
+    function disableStep(id: string) {
+      const el = document.getElementById(id)!
+      el.style.opacity = '0.5'
+      el.style.pointerEvents = 'none'
+    }
+
+    function getSelectedTarget(): string {
+      const checked = document.querySelector('input[name="spool-detail-target"]:checked') as HTMLInputElement | null
+      return checked?.value ?? 'filament'
+    }
+
+    // ----------------------------------------------------------------
+    //  Step 1: Preview & Settings
+    // ----------------------------------------------------------------
+
+    document.getElementById('btn-preview')?.addEventListener('click', async () => {
+      const resultDiv = document.getElementById('preview-result')!
+      const configDiv = document.getElementById('spool-detail-config')!
+      const btn = document.getElementById('btn-preview') as HTMLButtonElement
+
+      btn.disabled = true
+      btn.textContent = t('filamentdb.loadingPreview')
+      resultDiv.style.display = 'none'
+      configDiv.style.display = 'none'
+
+      try {
+        const response = await fetch('/api/v1/admin/system/filamentdb-import/preview', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          signal: getAbortSignal(),
+        })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('filamentdb.previewFailed'))
+        }
+
+        previewData = await response.json()
+        resultDiv.style.display = 'block'
+        configDiv.style.display = 'block'
+
+        const s = previewData.summary
+        resultDiv.innerHTML = `
+          <div class="fm-card" style="padding: 0;">
+            <table class="fm-table">
+              <thead style="background: var(--bg-soft);">
+                <tr>
+                  <th data-i18n="filamentdb.dataType">${escapeHtml(t('filamentdb.dataType'))}</th>
+                  <th style="text-align: right;" data-i18n="filamentdb.count">${escapeHtml(t('filamentdb.count'))}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>${escapeHtml(t('filamentdb.previewManufacturers'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.manufacturers}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('filamentdb.previewMaterials'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.materials}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('filamentdb.previewColors'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.colors}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('filamentdb.previewFilaments'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.filaments}</td>
+                </tr>
+                <tr>
+                  <td>${escapeHtml(t('filamentdb.previewSpoolProfiles'))}</td>
+                  <td style="text-align: right; font-weight: 600;">${s.spool_profiles}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          ${renderManufacturerPreview(previewData.manufacturers)}
+          ${renderFilamentPreview(previewData.filaments)}
+        `
+
+        // Enable step 2
+        enableStep('step-import')
+
+      } catch (err: any) {
+        if (isAbortError(err)) return
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = `
+          <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
+            ${escapeHtml(err.message)}
+          </div>
+        `
+        disableStep('step-import')
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('filamentdb.loadPreview')
+      }
+    })
+
+    function renderManufacturerPreview(manufacturers: any[]): string {
+      if (!manufacturers.length) return ''
+      const rows = manufacturers.slice(0, 20).map(m => `
+        <tr>
+          <td>${escapeHtml(m.name || '-')}</td>
+          <td style="color: var(--text-muted); font-size: 0.85rem;">${escapeHtml(m.website || '-')}</td>
+        </tr>
+      `).join('')
+      const more = manufacturers.length > 20 ? `<tr><td colspan="2" style="text-align: center; color: var(--text-muted); font-style: italic;">... ${t('filamentdb.andMore').replace('{count}', String(manufacturers.length - 20))}</td></tr>` : ''
+      return `
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent);">${escapeHtml(t('filamentdb.previewManufacturers'))} (${manufacturers.length})</summary>
+          <table class="fm-table" style="margin-top: 8px;">
+            <thead style="background: var(--bg-soft);"><tr><th>${escapeHtml(t('common.name'))}</th><th>Website</th></tr></thead>
+            <tbody>${rows}${more}</tbody>
+          </table>
+        </details>
+      `
+    }
+
+    function renderFilamentPreview(filaments: any[]): string {
+      if (!filaments.length) return ''
+      const rows = filaments.slice(0, 20).map(f => {
+        const manufacturer = f.manufacturer?.name || '-'
+        const material = f.material?.name || f.material_type || '-'
+        const colorCount = f.filament_colors?.length ?? 0
+        return `
+          <tr>
+            <td>${escapeHtml(f.designation || f.name || '-')}</td>
+            <td>${escapeHtml(material)}</td>
+            <td>${escapeHtml(manufacturer)}</td>
+            <td style="text-align: right;">${colorCount}</td>
+          </tr>
+        `
+      }).join('')
+      const more = filaments.length > 20 ? `<tr><td colspan="4" style="text-align: center; color: var(--text-muted); font-style: italic;">... ${t('filamentdb.andMore').replace('{count}', String(filaments.length - 20))}</td></tr>` : ''
+      return `
+        <details style="margin-top: 12px;">
+          <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--accent);">${escapeHtml(t('filamentdb.previewFilaments'))} (${filaments.length})</summary>
+          <table class="fm-table" style="margin-top: 8px;">
+            <thead style="background: var(--bg-soft);"><tr>
+              <th>${escapeHtml(t('common.name'))}</th>
+              <th>${escapeHtml(t('filaments.type'))}</th>
+              <th>${escapeHtml(t('filaments.manufacturer'))}</th>
+              <th style="text-align: right;">${escapeHtml(t('filamentdb.previewColors'))}</th>
+            </tr></thead>
+            <tbody>${rows}${more}</tbody>
+          </table>
+        </details>
+      `
+    }
+
+    // ----------------------------------------------------------------
+    //  Step 2: Import
+    // ----------------------------------------------------------------
+
+    document.getElementById('btn-import')?.addEventListener('click', async () => {
+      const resultDiv = document.getElementById('import-result')!
+      const progressDiv = document.getElementById('import-progress')!
+      const progressBar = document.getElementById('import-bar') as HTMLElement
+      const statusText = document.getElementById('import-status')!
+      const btn = document.getElementById('btn-import') as HTMLButtonElement
+
+      // Confirmation
+      if (!(await (window as any).__fmConfirm(t('filamentdb.confirmImport'), { title: t('filamentdb.startImport'), okLabel: t('filamentdb.startImport'), isDanger: false }))) return
+
+      btn.disabled = true
+      btn.textContent = t('filamentdb.importing')
+      progressDiv.style.display = 'block'
+      progressBar.style.width = '20%'
+      resultDiv.style.display = 'none'
+
+      try {
+        progressBar.style.width = '50%'
+        statusText.textContent = t('filamentdb.importing')
+
+        const response = await fetch('/api/v1/admin/system/filamentdb-import/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
+          credentials: 'include',
+          body: JSON.stringify({ spool_detail_target: getSelectedTarget() }),
+          signal: getAbortSignal(),
+        })
+
+        progressBar.style.width = '90%'
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || t('filamentdb.importFailed'))
+        }
+
+        const result = await response.json()
+        progressBar.style.width = '100%'
+        statusText.textContent = t('filamentdb.importComplete')
+
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = renderImportResult(result)
+
+      } catch (err: any) {
+        if (isAbortError(err)) return
+        progressDiv.style.display = 'none'
+        resultDiv.style.display = 'block'
+        resultDiv.innerHTML = `
+          <div style="padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
+            <strong>${escapeHtml(t('filamentdb.importFailed'))}</strong><br>
+            ${escapeHtml(err.message)}
+          </div>
+        `
+      } finally {
+        btn.disabled = false
+        btn.textContent = t('filamentdb.startImport')
+      }
+    })
+
+    function renderImportResult(r: any): string {
+      const hasErrors = r.errors && r.errors.length > 0
+      const hasWarnings = r.warnings && r.warnings.length > 0
+
+      let html = `
+        <div style="padding: 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid ${hasErrors ? 'var(--error-text)' : 'var(--accent-2)'};">
+          <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 12px;">${escapeHtml(t('filamentdb.importResults'))}</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
+            ${resultCard(t('filamentdb.manufacturers'), r.manufacturers_created, r.manufacturers_skipped)}
+            ${resultCard(t('filamentdb.colors'), r.colors_created, r.colors_skipped)}
+            ${resultCard(t('filamentdb.filaments'), r.filaments_created, r.filaments_skipped)}
+            ${logoCard(r.logos_downloaded, r.logos_failed)}
+          </div>
+      `
+
+      if (hasWarnings) {
+        html += `
+          <details style="margin-top: 16px;">
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.warnings'))} (${r.warnings.length})</summary>
+            <ul style="margin-top: 8px; padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">
+              ${r.warnings.map((w: string) => `<li>${escapeHtml(w)}</li>`).join('')}
+            </ul>
+          </details>
+        `
+      }
+
+      if (hasErrors) {
+        html += `
+          <details style="margin-top: 12px;" open>
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--error-text);">${escapeHtml(t('filamentdb.errors'))} (${r.errors.length})</summary>
+            <ul style="margin-top: 8px; padding-left: 20px; font-size: 0.85rem; color: var(--error-text);">
+              ${r.errors.map((e: string) => `<li>${escapeHtml(e)}</li>`).join('')}
+            </ul>
+          </details>
+        `
+      }
+
+      html += '</div>'
+      return html
+    }
+
+    function resultCard(label: string, created: number, skipped: number): string {
+      return `
+        <div style="background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(label)}</div>
+          <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent);">${created}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.created'))}</div>
+          ${skipped > 0 ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${skipped} ${escapeHtml(t('filamentdb.skipped'))}</div>` : ''}
+        </div>
+      `
+    }
+
+    function logoCard(downloaded: number, failed: number): string {
+      return `
+        <div style="background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+          <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(t('filamentdb.logos'))}</div>
+          <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent);">${downloaded}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.downloaded'))}</div>
+          ${failed > 0 ? `<div style="font-size: 0.75rem; color: var(--error-text); margin-top: 4px;">${failed} ${escapeHtml(t('filamentdb.failed'))}</div>` : ''}
+        </div>
+      `
+    }
+  </script>
+</Layout>

@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class ManufacturerCreate(BaseModel):
@@ -27,6 +27,7 @@ class ManufacturerResponse(BaseModel):
     id: int
     name: str
     url: str | None
+    logo_file: str | None = None
     empty_spool_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
@@ -38,6 +39,13 @@ class ManufacturerResponse(BaseModel):
     total_price_available: float = 0.0
     total_price_all: float = 0.0
     materials: list[str] = []
+
+    @computed_field
+    @property
+    def logo_url(self) -> str | None:
+        if self.logo_file:
+            return f"/uploads/manufacturer-logos/{self.logo_file}"
+        return None
 
     class Config:
         from_attributes = True
@@ -63,12 +71,12 @@ class ColorResponse(BaseModel):
     usage_count: int = 0
 
     class Config:
-
         from_attributes = True
 
 
 class FilamentColorEntry(BaseModel):
     """A single color assignment for a filament (used in create/replace)."""
+
     color_id: int
     position: int = 1
     display_name_override: str | None = None
@@ -76,6 +84,7 @@ class FilamentColorEntry(BaseModel):
 
 class FilamentColorResponse(BaseModel):
     """Color entry as returned by the API."""
+
     id: int
     color_id: int
     position: int
@@ -88,6 +97,7 @@ class FilamentColorResponse(BaseModel):
 
 class FilamentColorsReplace(BaseModel):
     """Body for PUT /filaments/{id}/colors."""
+
     color_mode: str = Field(..., pattern="^(single|multi)$")
     multi_color_style: str | None = Field(None, pattern="^(striped|gradient)$")
     colors: list[FilamentColorEntry] = []

@@ -442,9 +442,25 @@ async def health_ready():
     }
 
 
-if not settings.debug:
-    from fastapi.staticfiles import StaticFiles
+# ---------------------------------------------------------------------------
+# Uploads directory – serves manufacturer logos and other user-uploaded assets.
+# In Docker the canonical location is /app/data/uploads; during local
+# development we fall back to <PROJECT_ROOT>/data/uploads.
+# ---------------------------------------------------------------------------
+from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
 
+_uploads_dir = Path("/app/data/uploads")
+if not _uploads_dir.is_dir():
+    from app.core.config import PROJECT_ROOT
+
+    _uploads_dir = PROJECT_ROOT / "data" / "uploads"
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+(_uploads_dir / "manufacturer-logos").mkdir(exist_ok=True)
+
+app.mount("/uploads", _StaticFiles(directory=str(_uploads_dir)), name="uploads")
+logger.info("Serving uploads from '%s'", _uploads_dir)
+
+if not settings.debug:
     static_files_path = "/app/static"
     if not os.path.exists(static_files_path) or not os.path.isdir(static_files_path):
         logger.warning(
@@ -553,5 +569,5 @@ if not settings.debug:
             )
 
         app.mount(
-            "/", StaticFiles(directory=static_files_path, html=True), name="static"
+            "/", _StaticFiles(directory=static_files_path, html=True), name="static"
         )

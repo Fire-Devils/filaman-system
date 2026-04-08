@@ -59,6 +59,10 @@ from app.services.spoolman_import_service import (
     SpoolmanImportError,
     SpoolmanImportService,
 )
+from app.services.filamentdb_import_service import (
+    FilamentDBImportError,
+    FilamentDBImportService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -957,6 +961,144 @@ async def spoolman_execute(
         tb = traceback.format_exc()
         logger.exception(f"Unexpected error in Spoolman import execution: {tb}")
         # Return JSONResponse for 500 errors to give more details
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler beim Import: {str(e)}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
+# ------------------------------------------------------------------ #
+#  FilamentDB Import Endpoints
+# ------------------------------------------------------------------ #
+
+
+class FilamentDBImportRequest(BaseModel):
+    spool_detail_target: str = "filament"  # "filament" | "manufacturer" | "both"
+
+
+class FilamentDBPreviewResponse(BaseModel):
+    summary: dict[str, int]
+    manufacturers: list[dict[str, Any]]
+    materials: list[dict[str, Any]]
+    filaments: list[dict[str, Any]]
+    spool_profiles: list[dict[str, Any]]
+    colors: list[dict[str, str]]
+
+
+class FilamentDBImportResultResponse(BaseModel):
+    manufacturers_created: int
+    manufacturers_skipped: int
+    colors_created: int
+    colors_skipped: int
+    filaments_created: int
+    filaments_skipped: int
+    logos_downloaded: int
+    logos_failed: int
+    errors: list[str]
+    warnings: list[str]
+
+
+@router.post("/filamentdb-import/test-connection")
+async def filamentdb_test_connection(
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Verbindung zur FilamentDB testen."""
+    service = FilamentDBImportService(db)
+    try:
+        result = await service.test_connection()
+        return result
+    except FilamentDBImportError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": e.code, "message": str(e)},
+        )
+
+
+@router.post("/filamentdb-import/preview")
+async def filamentdb_preview(
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Vorschau der zu importierenden FilamentDB-Daten."""
+    service = FilamentDBImportService(db)
+    try:
+        preview = await service.preview()
+        return JSONResponse(
+            {
+                "summary": preview.summary,
+                "manufacturers": preview.manufacturers,
+                "materials": preview.materials,
+                "filaments": preview.filaments,
+                "spool_profiles": preview.spool_profiles,
+                "colors": preview.colors,
+            }
+        )
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB Import Error: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": {"code": e.code, "message": str(e)}},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB preview: %s", tb)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
+@router.post(
+    "/filamentdb-import/execute",
+    response_model=FilamentDBImportResultResponse,
+)
+async def filamentdb_execute(
+    body: FilamentDBImportRequest,
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """FilamentDB-Import ausfuehren."""
+    # Validate spool_detail_target
+    valid_targets = ("filament", "manufacturer", "both")
+    if body.spool_detail_target not in valid_targets:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "invalid_target",
+                "message": f"spool_detail_target muss einer von {valid_targets} sein",
+            },
+        )
+
+    service = FilamentDBImportService(db)
+    try:
+        result = await service.execute(body.spool_detail_target)
+        return result
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB Import Execution Error: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": e.code, "message": str(e)},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB import execution: %s", tb)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
