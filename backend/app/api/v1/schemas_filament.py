@@ -44,7 +44,7 @@ class ManufacturerResponse(BaseModel):
     @property
     def logo_url(self) -> str | None:
         if self.logo_file:
-            return f"/uploads/manufacturer-logos/{self.logo_file}"
+            return f"/api/v1/manufacturers/{self.id}/logo"
         return None
 
     class Config:

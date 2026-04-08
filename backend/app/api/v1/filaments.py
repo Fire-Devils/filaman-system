@@ -1,6 +1,10 @@
+import logging
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,8 +30,11 @@ from app.api.v1.schemas_filament import (
     ManufacturerResponse,
     ManufacturerUpdate,
 )
+from app.core.config import settings, MANUFACTURER_LOGO_DIR
 from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/manufacturers", tags=["manufacturers"])
 
@@ -176,6 +183,90 @@ async def get_manufacturer(
     return manufacturer
 
 
+# ── Logo endpoints ─────────────────────────────────────────────────
+
+
+@router.get("/{manufacturer_id}/logo")
+async def get_manufacturer_logo(manufacturer_id: int, _principal: PrincipalDep):
+    """Serve the manufacturer's brand logo from persistent storage."""
+    logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
+    if not logo_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Logo not found"},
+        )
+    return FileResponse(
+        logo_path,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+class DownloadLogoRequest(BaseModel):
+    slug: str
+
+
+@router.post("/{manufacturer_id}/download-logo")
+async def download_manufacturer_logo(
+    manufacturer_id: int,
+    data: DownloadLogoRequest,
+    db: DBSession,
+    principal=RequirePermission("manufacturers:update"),
+):
+    """Download a manufacturer's brand logo from the FilamentDB and store it locally."""
+    result = await db.execute(
+        select(Manufacturer).where(Manufacturer.id == manufacturer_id)
+    )
+    manufacturer = result.scalar_one_or_none()
+    if not manufacturer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Manufacturer not found"},
+        )
+
+    # Download logo from FilamentDB
+    logo_url = (
+        f"{settings.filamentdb_url.rstrip('/')}/uploads/logos/web/{data.slug}.png"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(logo_url)
+            resp.raise_for_status()
+    except (httpx.HTTPStatusError, httpx.HTTPError) as exc:
+        logger.warning(
+            "Failed to download logo for manufacturer %s (slug=%s): %s",
+            manufacturer_id,
+            data.slug,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "logo_download_failed",
+                "message": "Could not download logo from FilamentDB",
+            },
+        )
+
+    # Save logo to persistent storage
+    logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
+    logo_path.write_bytes(resp.content)
+
+    # Update the logo_file field in the database
+    manufacturer.logo_file = f"{manufacturer_id}.png"
+    await db.commit()
+    await db.refresh(manufacturer)
+    await event_bus.publish({"event": "manufacturers_changed"})
+
+    logger.info(
+        "Downloaded logo for manufacturer '%s' (id=%s) from FilamentDB slug '%s'",
+        manufacturer.name,
+        manufacturer_id,
+        data.slug,
+    )
+
+    return {"ok": True, "logo_url": f"/api/v1/manufacturers/{manufacturer_id}/logo"}
+
+
 @router.patch("/{manufacturer_id}", response_model=ManufacturerResponse)
 async def update_manufacturer(
     manufacturer_id: int,
@@ -269,6 +360,19 @@ async def delete_manufacturer(
     await db.delete(manufacturer)
     await db.commit()
     await event_bus.publish({"event": "manufacturers_changed"})
+
+    # Clean up logo file from persistent storage
+    logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
+    if logo_path.is_file():
+        try:
+            logo_path.unlink()
+            logger.info("Deleted logo file for manufacturer %s", manufacturer_id)
+        except OSError as exc:
+            logger.warning(
+                "Could not delete logo file for manufacturer %s: %s",
+                manufacturer_id,
+                exc,
+            )
 
 
 router_colors = APIRouter(prefix="/colors", tags=["colors"])

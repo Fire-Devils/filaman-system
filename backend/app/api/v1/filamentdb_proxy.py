@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.api.deps import DBSession, PrincipalDep
-from app.core.config import settings
+from app.core.config import settings, MANUFACTURER_LOGO_DIR
 from app.models import Color, FilamentColor, Manufacturer
 from app.models.plugin import InstalledPlugin
 
@@ -198,6 +198,8 @@ class PrepareFilamentRequest(BaseModel):
     # Manufacturer info
     manufacturer_name: str
     manufacturer_website: str | None = None
+    manufacturer_slug: str | None = None
+    manufacturer_has_web_logo: bool = False
 
     # Filament info (for form pre-fill only, not persisted here)
     designation: str
@@ -269,6 +271,33 @@ async def prepare_filament(
         logger.info(
             "Auto-created manufacturer '%s' (id=%s)", manufacturer.name, manufacturer.id
         )
+
+        # Download brand logo from FilamentDB (non-blocking: log errors, don't fail)
+        if data.manufacturer_has_web_logo and data.manufacturer_slug:
+            logo_url = (
+                f"{settings.filamentdb_url.rstrip('/')}"
+                f"/uploads/logos/web/{data.manufacturer_slug}.png"
+            )
+            try:
+                async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                    resp = await client.get(logo_url)
+                    resp.raise_for_status()
+                logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer.id}.png"
+                logo_path.write_bytes(resp.content)
+                manufacturer.logo_file = f"{manufacturer.id}.png"
+                logger.info(
+                    "Downloaded logo for auto-created manufacturer '%s' (id=%s, slug=%s)",
+                    manufacturer.name,
+                    manufacturer.id,
+                    data.manufacturer_slug,
+                )
+            except (httpx.HTTPError, OSError) as exc:
+                logger.warning(
+                    "Could not download logo for manufacturer '%s' (slug=%s): %s",
+                    manufacturer.name,
+                    data.manufacturer_slug,
+                    exc,
+                )
 
     # ── 2. Colors ────────────────────────────────────────────────────
     color_ids: list[int] = []

@@ -57,3 +57,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def _resolve_data_dir() -> Path:
+    """Resolve the persistent data directory.
+
+    Priority:
+    1. /app/data (Docker volume — auto-detected)
+    2. PROJECT_ROOT/data (local dev fallback)
+    """
+    docker_data = Path("/app/data")
+    if docker_data.is_dir():
+        return docker_data
+    local_data = PROJECT_ROOT / "data"
+    local_data.mkdir(parents=True, exist_ok=True)
+    return local_data
+
+
+DATA_DIR = _resolve_data_dir()
+MANUFACTURER_LOGO_DIR = DATA_DIR / "logos" / "manufacturers"

@@ -4,7 +4,6 @@ import logging
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
 import httpx
@@ -22,14 +21,8 @@ FILAMENTDB_URL = "https://db.filaman.app"
 # Standard-Timeout fuer HTTP-Requests
 HTTP_TIMEOUT = 30.0
 
-# Uploads-Verzeichnis fuer Hersteller-Logos
-_UPLOADS_BASE = Path("/app/data/uploads")
-if not _UPLOADS_BASE.is_dir():
-    from app.core.config import PROJECT_ROOT
-
-    _UPLOADS_BASE = PROJECT_ROOT / "data" / "uploads"
-
-LOGO_DIR = _UPLOADS_BASE / "manufacturer-logos"
+# Uploads-Verzeichnis fuer Hersteller-Logos (persistenter Pfad)
+from app.core.config import MANUFACTURER_LOGO_DIR as LOGO_DIR
 
 # Schwellwert fuer Fuzzy-Matching (75%)
 FUZZY_THRESHOLD = 0.75

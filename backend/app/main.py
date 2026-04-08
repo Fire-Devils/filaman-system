@@ -16,7 +16,7 @@ from sqlalchemy import text
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
-from app.core.config import settings
+from app.core.config import settings, MANUFACTURER_LOGO_DIR
 from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
@@ -195,6 +195,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting FilaMan backend...")
     logger.info(f"Using database URL: {settings.database_url}")
+
+    # Ensure persistent directories exist
+    MANUFACTURER_LOGO_DIR.mkdir(parents=True, exist_ok=True)
 
     # Skip migrations in app context if configured (e.g. in Docker where entrypoint handles it)
     if os.getenv("RUN_MIGRATIONS_IN_APP", "true").lower() == "true":

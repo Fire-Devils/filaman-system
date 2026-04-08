@@ -708,6 +708,8 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
               const prepareData = {
                 manufacturer_name: item.manufacturer?.name || getSelectedManufacturerName(),
                 manufacturer_website: item.manufacturer?.website || null,
+                manufacturer_slug: item.manufacturer?.slug || null,
+                manufacturer_has_web_logo: item.manufacturer?.has_web_logo || false,
                 designation: item.name || item.designation || '',
                 material_key: item.material?.key || null,
                 material_name: item.material?.name || null,

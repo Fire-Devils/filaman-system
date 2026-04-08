@@ -233,6 +233,9 @@ import Layout from '../../layouts/Layout.astro'
     let mfrLookup: LookupInstance | null = null
     const filamentDbActive = await checkFilamentDbActive()
 
+    // Track FilamentDB logo info for download after create
+    let pendingLogoSlug: string | null = null
+
     let manufacturers: any[] = []
     let sortKey: string | null = 'name'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
@@ -525,7 +528,7 @@ import Layout from '../../layouts/Layout.astro'
       // Note: escapeHtml() is used for all user-supplied data; URLs use escapeHtml for both href and text
       tbody.innerHTML = paged.map(mf => `
         <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
-          <td style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td style="font-weight: 500;">${mf.logo_url ? `<span style="display: inline-flex; align-items: center; gap: 8px;"><img src="${escapeHtml(mf.logo_url)}" alt="" style="width: 24px; height: 24px; object-fit: contain; border-radius: 3px; flex-shrink: 0;" onerror="this.style.display='none'" />${escapeHtml(mf.name)}</span>` : escapeHtml(mf.name)}</td>
           <td class="col-url">${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
           <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
@@ -636,6 +639,7 @@ import Layout from '../../layouts/Layout.astro'
         // Edit mode: hide toggle and lookup
         modeToggle.style.display = 'none'
         dbLookup.style.display = 'none'
+        pendingLogoSlug = null
       } else {
         // Create mode: show toggle only if FilamentDB plugin is active
         modeToggle.style.display = filamentDbActive ? 'flex' : 'none'
@@ -661,6 +665,8 @@ import Layout from '../../layouts/Layout.astro'
             // Fill form fields
             nameInput.value = item.name || ''
             urlInput.value = item.website || ''
+            // Track logo info for download after create
+            pendingLogoSlug = item.has_web_logo ? (item.slug || null) : null
             // No spool defaults from FilamentDB manufacturers (they don't have those fields in the public API)
             // Keep defaults
             lookupToast.className = 'fdb-toast fdb-toast-success'
@@ -675,6 +681,9 @@ import Layout from '../../layouts/Layout.astro'
             const mode = (modeToggle.querySelector('input[name="mfr-mode"]:checked') as HTMLInputElement).value
             dbLookup.style.display = mode === 'db' ? '' : 'none'
             lookupToast.style.display = 'none'
+            if (mode === 'manual') {
+              pendingLogoSlug = null
+            }
             if (mode === 'db' && mfrLookup) {
               mfrLookup.reset()
             }
@@ -716,7 +725,16 @@ import Layout from '../../layouts/Layout.astro'
       const content = document.getElementById('info-modal-content')!
       const title = document.getElementById('info-modal-title')!
 
-      title.textContent = mf.name
+      title.textContent = ''
+      if (mf.logo_url) {
+        const img = document.createElement('img')
+        img.src = mf.logo_url
+        img.alt = ''
+        img.style.cssText = 'width: 32px; height: 32px; object-fit: contain; border-radius: 4px; vertical-align: middle; margin-right: 10px;'
+        img.onerror = () => { img.style.display = 'none' }
+        title.appendChild(img)
+      }
+      title.appendChild(document.createTextNode(mf.name))
 
       content.innerHTML = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
@@ -823,6 +841,26 @@ import Layout from '../../layouts/Layout.astro'
         if (!response.ok) {
           const errorData = await response.json()
           throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
+        }
+
+        // Download logo from FilamentDB if this was a new manufacturer with a logo
+        if (!id && pendingLogoSlug) {
+          try {
+            const created = await response.json()
+            await fetch(`/api/v1/manufacturers/${created.id}/download-logo`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': getCsrfToken(),
+              },
+              credentials: 'include',
+              body: JSON.stringify({ slug: pendingLogoSlug }),
+            })
+          } catch {
+            // Logo download failure is non-critical — don't block the create
+            console.warn('Logo download failed (non-critical)')
+          }
+          pendingLogoSlug = null
         }
 
         // Invalidate cache after successful save
