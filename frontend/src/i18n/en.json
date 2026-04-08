@@ -942,6 +942,17 @@
     "warnings": "Warnings",
     "errors": "Errors",
     "searchManufacturers": "Search manufacturers...",
-    "loadingFilaments": "Loading filaments..."
+    "loadingFilaments": "Loading filaments...",
+    "noSpoolData": "no spool data",
+    "updateExisting": "Update existing filaments",
+    "updated": "updated",
+    "identical": "identical",
+    "differences": "changes",
+    "loadingDiff": "Checking for changes...",
+    "noChanges": "No changes found for existing filaments.",
+    "showChanges": "Show changes",
+    "fieldName": "Field",
+    "currentValue": "Current",
+    "newValue": "New"
   }
 }

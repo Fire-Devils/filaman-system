@@ -75,6 +75,16 @@ import Layout from '../../../layouts/Layout.astro'
     </div>
 
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="filamentdb.importDesc">Start the import. Existing data will not be overwritten.</p>
+
+    <!-- Diff-Bereich fuer existierende Filamente -->
+    <div id="diff-section" style="display: none; margin-bottom: 16px;">
+      <div id="diff-loading" style="padding: 16px; text-align: center; color: var(--text-muted); display: none;">
+        <div style="margin-bottom: 8px;" data-i18n="filamentdb.loadingDiff">Checking for changes...</div>
+        <div style="width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto;"></div>
+      </div>
+      <div id="diff-content"></div>
+    </div>
+
     <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.startImport">Start Import</button>
     <div id="import-progress" style="margin-top: 16px; display: none;">
       <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
@@ -440,13 +450,7 @@ import Layout from '../../../layouts/Layout.astro'
         filamentData = await response.json()
         filamentLoading = false
 
-        // Pre-select all filaments of selected manufacturers (except existing)
         selectedFilIds.clear()
-        for (const f of filamentData.filaments) {
-          if (!f._exists && f.id) {
-            if (filPassesMaterialFilter(f)) selectedFilIds.add(f.id)
-          }
-        }
 
         renderFilamentList()
         updateSummary()
@@ -461,15 +465,7 @@ import Layout from '../../../layouts/Layout.astro'
     }
 
     function rebuildStep2() {
-      // Legacy: wird nur noch intern von renderFilamentList fuer Reselect genutzt
       if (!filamentData) return
-      selectedFilIds.clear()
-      for (const f of filamentData.filaments) {
-        const mId = filMfrId(f)
-        if (mId && selectedMfrIds.has(mId) && filPassesMaterialFilter(f)) {
-          if (!f._exists && f.id) selectedFilIds.add(f.id)
-        }
-      }
       renderFilamentList()
     }
 
@@ -527,6 +523,9 @@ import Layout from '../../../layouts/Layout.astro'
           const existsBadge = f._exists
             ? `<span style="display: inline-block; font-size: 0.7rem; padding: 1px 7px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted); margin-left: 8px;">${escapeHtml(t('filamentdb.alreadyExists'))}</span>`
             : ''
+          const noSpoolBadge = !f.spool_profile
+            ? `<span style="display: inline-block; font-size: 0.7rem; padding: 1px 7px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted); margin-left: 4px;">${escapeHtml(t('filamentdb.noSpoolData'))}</span>`
+            : ''
           const matKey = f._material_key || ''
           const designation = f.designation || f.name || '-'
           const colorCount = f.colors?.length ?? (f.hex_color ? 1 : 0)
@@ -537,7 +536,7 @@ import Layout from '../../../layouts/Layout.astro'
               <input type="checkbox" class="fil-cb" data-id="${f.id}" data-mfr="${mfrId}" ${checked} style="flex-shrink: 0;" />
               <div style="flex: 1; min-width: 0;">
                 <div style="font-size: 0.85rem;">
-                  ${escapeHtml(designation)}${existsBadge}
+                   ${escapeHtml(designation)}${existsBadge}${noSpoolBadge}
                 </div>
                 <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 8px; align-items: center; margin-top: 1px;">
                   <span style="font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; background: var(--accent-bg, rgba(var(--accent-rgb, 100,100,255), 0.1)); color: var(--accent);">${escapeHtml(matKey)}</span>
@@ -601,7 +600,7 @@ import Layout from '../../../layouts/Layout.astro'
       }
       if (cols.length === 0) return ''
       return cols.map(c =>
-        `<span style="display: inline-block; width: 14px; height: 14px; border-radius: 3px; background: #${escapeHtml(c.hex)}; border: 1px solid var(--border);"></span>`
+        `<span style="display: inline-block; width: 14px; height: 14px; border-radius: 3px; background: ${escapeHtml(c.hex)}; border: 1px solid var(--border);"></span>`
       ).join('')
     }
 
@@ -618,8 +617,202 @@ import Layout from '../../../layouts/Layout.astro'
     }
 
     // ================================================================
-    //  Step 3: Import
+    //  Step 3: Import (with Diff support for existing filaments)
     // ================================================================
+
+    const updateFilIds = new Set<number>()
+
+    async function checkForExistingFilaments(): Promise<boolean> {
+      if (!filamentData) return false
+
+      // Existierende Filamente in der Auswahl finden
+      const existingFdbIds: number[] = []
+      for (const f of filamentData.filaments) {
+        if (f._exists && f.id && selectedFilIds.has(f.id)) {
+          existingFdbIds.push(f.id)
+        }
+      }
+
+      if (existingFdbIds.length === 0) {
+        // Kein Diff noetig, Diff-Bereich verstecken
+        const section = document.getElementById('diff-section')!
+        section.style.display = 'none'
+        updateFilIds.clear()
+        return true
+      }
+
+      // Diff laden
+      const section = document.getElementById('diff-section')!
+      const loading = document.getElementById('diff-loading')!
+      const content = document.getElementById('diff-content')!
+      section.style.display = 'block'
+      loading.style.display = 'block'
+      content.innerHTML = ''
+
+      try {
+        const response = await fetch('/api/v1/admin/system/filamentdb-import/diff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ filament_ids: existingFdbIds }),
+          signal: getAbortSignal(),
+        })
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.detail?.message || 'Diff failed')
+        }
+
+        const diffData = await response.json()
+        loading.style.display = 'none'
+
+        if (!diffData.results || diffData.results.length === 0) {
+          content.innerHTML = `<div style="padding: 12px; color: var(--text-muted); font-size: 0.9rem;">${escapeHtml(t('filamentdb.noChanges'))}</div>`
+          return true
+        }
+
+        renderDiffSection(diffData.results, content)
+        return true
+
+      } catch (err: any) {
+        if (isAbortError(err)) return false
+        loading.style.display = 'none'
+        content.innerHTML = `<div style="padding: 12px; color: var(--error-text); font-size: 0.9rem;">${escapeHtml(err.message)}</div>`
+        return true
+      }
+    }
+
+    function renderDiffSection(results: any[], container: HTMLElement) {
+      updateFilIds.clear()
+
+      const withChanges = results.filter((r: any) => !r.identical && !r.not_found)
+      const identical = results.filter((r: any) => r.identical && !r.not_found)
+
+      let html = `
+        <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-soft); border-bottom: 1px solid var(--border);">
+            <strong style="font-size: 0.95rem;">${escapeHtml(t('filamentdb.updateExisting'))}
+              <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted); margin-left: 6px;">(${withChanges.length} ${escapeHtml(t('filamentdb.differences'))}, ${identical.length} ${escapeHtml(t('filamentdb.identical'))})</span>
+            </strong>
+            <div style="display: flex; gap: 6px;">
+              <button class="fm-btn fm-btn-outline" id="diff-sel-all" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.selectAll'))}</button>
+              <button class="fm-btn fm-btn-outline" id="diff-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
+            </div>
+          </div>
+          <div style="max-height: 400px; overflow-y: auto;">
+      `
+
+      // Filamente mit Aenderungen
+      for (const r of withChanges) {
+        html += renderDiffItem(r, true)
+      }
+
+      // Identische Filamente
+      if (identical.length > 0) {
+        html += `
+          <details style="border-top: 1px solid var(--border);">
+            <summary style="padding: 8px 14px; cursor: pointer; font-size: 0.85rem; color: var(--text-muted); background: var(--bg-soft);">
+              ${identical.length} ${escapeHtml(t('filamentdb.identical'))}
+            </summary>
+        `
+        for (const r of identical) {
+          html += renderDiffItem(r, false)
+        }
+        html += '</details>'
+      }
+
+      html += '</div></div>'
+
+      if (withChanges.length === 0) {
+        html = `<div style="padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); font-size: 0.9rem;">
+          ${escapeHtml(t('filamentdb.noChanges'))} (${identical.length} ${escapeHtml(t('filamentdb.identical'))})
+        </div>`
+      }
+
+      container.innerHTML = html
+
+      // Events
+      container.querySelectorAll('.diff-cb').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const input = e.target as HTMLInputElement
+          const id = Number(input.dataset.fdbId)
+          if (input.checked) updateFilIds.add(id)
+          else updateFilIds.delete(id)
+        })
+      })
+
+      document.getElementById('diff-sel-all')?.addEventListener('click', () => {
+        container.querySelectorAll('.diff-cb').forEach(cb => {
+          const input = cb as HTMLInputElement
+          input.checked = true
+          updateFilIds.add(Number(input.dataset.fdbId))
+        })
+      })
+
+      document.getElementById('diff-sel-none')?.addEventListener('click', () => {
+        container.querySelectorAll('.diff-cb').forEach(cb => {
+          (cb as HTMLInputElement).checked = false
+        })
+        updateFilIds.clear()
+      })
+    }
+
+    function renderDiffItem(r: any, hasChanges: boolean): string {
+      let html = `
+        <div style="padding: 8px 14px; border-bottom: 1px solid var(--border);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+      `
+
+      if (hasChanges) {
+        html += `<input type="checkbox" class="diff-cb" data-fdb-id="${r.fdb_id}" style="flex-shrink: 0;" />`
+      }
+
+      html += `
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 0.85rem; font-weight: 500;">
+                ${escapeHtml(r.designation)}
+                <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 6px;">${escapeHtml(r.manufacturer_name)}</span>
+              </div>
+            </div>
+      `
+
+      if (!hasChanges) {
+        html += `<span style="font-size: 0.7rem; padding: 1px 7px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted);">${escapeHtml(t('filamentdb.identical'))}</span>`
+      } else {
+        html += `<span style="font-size: 0.7rem; padding: 1px 7px; border-radius: 999px; background: rgba(var(--accent-rgb, 100,100,255), 0.1); border: 1px solid var(--accent); color: var(--accent);">${r.changes.length} ${escapeHtml(t('filamentdb.differences'))}</span>`
+      }
+
+      html += '</div>'
+
+      if (hasChanges && r.changes.length > 0) {
+        html += `
+          <details style="margin-top: 6px; margin-left: 28px;">
+            <summary style="cursor: pointer; font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.showChanges'))}</summary>
+            <table style="width: 100%; font-size: 0.8rem; margin-top: 6px; border-collapse: collapse;">
+              <thead>
+                <tr style="color: var(--text-muted);">
+                  <th style="text-align: left; padding: 3px 8px; font-weight: 500;">${escapeHtml(t('filamentdb.fieldName'))}</th>
+                  <th style="text-align: left; padding: 3px 8px; font-weight: 500;">${escapeHtml(t('filamentdb.currentValue'))}</th>
+                  <th style="text-align: left; padding: 3px 8px; font-weight: 500;">${escapeHtml(t('filamentdb.newValue'))}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${r.changes.map((c: any) => `
+                  <tr style="border-top: 1px solid var(--border);">
+                    <td style="padding: 3px 8px; color: var(--text-muted);">${escapeHtml(c.field)}</td>
+                    <td style="padding: 3px 8px; color: var(--error-text);">${c.old != null ? escapeHtml(String(c.old)) : '<em style="opacity: 0.5;">-</em>'}</td>
+                    <td style="padding: 3px 8px; color: var(--accent-2, green);">${c.new != null ? escapeHtml(String(c.new)) : '<em style="opacity: 0.5;">-</em>'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </details>
+        `
+      }
+
+      html += '</div>'
+      return html
+    }
 
     document.getElementById('btn-import')?.addEventListener('click', async () => {
       const resultDiv = document.getElementById('import-result')!
@@ -630,8 +823,33 @@ import Layout from '../../../layouts/Layout.astro'
 
       if (selectedMfrIds.size === 0 || selectedFilIds.size === 0) return
 
-      // Confirmation
-      if (!(await (window as any).__fmConfirm(t('filamentdb.confirmImport'), { title: t('filamentdb.startImport'), okLabel: t('filamentdb.startImport'), isDanger: false }))) return
+      // Erst Diff pruefen wenn existierende Filamente ausgewaehlt
+      const diffOk = await checkForExistingFilaments()
+      if (!diffOk) return
+
+      // Wenn Diff-Bereich sichtbar und noch kein Confirmation
+      const diffSection = document.getElementById('diff-section')!
+      if (diffSection.style.display !== 'none') {
+        // Confirmation erst nach Diff-Anzeige
+        if (!(await (window as any).__fmConfirm(
+          t('filamentdb.confirmImport'),
+          {
+            title: t('filamentdb.startImport'),
+            okLabel: t('filamentdb.startImport'),
+            isDanger: false,
+          }
+        ))) return
+      } else {
+        // Keine existierenden — normaler Confirm
+        if (!(await (window as any).__fmConfirm(
+          t('filamentdb.confirmImport'),
+          {
+            title: t('filamentdb.startImport'),
+            okLabel: t('filamentdb.startImport'),
+            isDanger: false,
+          }
+        ))) return
+      }
 
       btn.disabled = true
       btn.textContent = t('filamentdb.importing')
@@ -643,15 +861,22 @@ import Layout from '../../../layouts/Layout.astro'
         progressBar.style.width = '50%'
         statusText.textContent = t('filamentdb.importing')
 
+        const requestBody: any = {
+          spool_detail_target: getSelectedTarget(),
+          manufacturer_ids: [...selectedMfrIds],
+          filament_ids: [...selectedFilIds],
+        }
+
+        // Update-IDs mitsenden wenn vorhanden
+        if (updateFilIds.size > 0) {
+          requestBody.update_filament_ids = [...updateFilIds]
+        }
+
         const response = await fetch('/api/v1/admin/system/filamentdb-import/execute', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
           credentials: 'include',
-          body: JSON.stringify({
-            spool_detail_target: getSelectedTarget(),
-            manufacturer_ids: [...selectedMfrIds],
-            filament_ids: [...selectedFilIds],
-          }),
+          body: JSON.stringify(requestBody),
           signal: getAbortSignal(),
         })
 
@@ -695,7 +920,7 @@ import Layout from '../../../layouts/Layout.astro'
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
             ${resultCard(t('filamentdb.manufacturers'), r.manufacturers_created, r.manufacturers_skipped)}
             ${resultCard(t('filamentdb.colors'), r.colors_created, r.colors_skipped)}
-            ${resultCard(t('filamentdb.filaments'), r.filaments_created, r.filaments_skipped)}
+            ${resultCard(t('filamentdb.filaments'), r.filaments_created, r.filaments_skipped, r.filaments_updated)}
             ${logoCard(r.logos_downloaded, r.logos_failed)}
           </div>
       `
@@ -726,12 +951,13 @@ import Layout from '../../../layouts/Layout.astro'
       return html
     }
 
-    function resultCard(label: string, created: number, skipped: number): string {
+    function resultCard(label: string, created: number, skipped: number, updated?: number): string {
       return `
         <div style="background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
           <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(label)}</div>
           <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent);">${created}</div>
           <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.created'))}</div>
+          ${updated && updated > 0 ? `<div style="font-size: 0.75rem; color: var(--accent-2, green); margin-top: 4px;">${updated} ${escapeHtml(t('filamentdb.updated'))}</div>` : ''}
           ${skipped > 0 ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">${skipped} ${escapeHtml(t('filamentdb.skipped'))}</div>` : ''}
         </div>
       `

@@ -944,6 +944,17 @@
     "warnings": "Warnungen",
     "errors": "Fehler",
     "searchManufacturers": "Hersteller suchen...",
-    "loadingFilaments": "Lade Filamente..."
+    "loadingFilaments": "Lade Filamente...",
+    "noSpoolData": "keine Spulendaten",
+    "updateExisting": "Vorhandene Filamente aktualisieren",
+    "updated": "aktualisiert",
+    "identical": "identisch",
+    "differences": "Änderungen",
+    "loadingDiff": "Prüfe auf Änderungen...",
+    "noChanges": "Keine Änderungen bei vorhandenen Filamenten gefunden.",
+    "showChanges": "Änderungen anzeigen",
+    "fieldName": "Feld",
+    "currentValue": "Aktuell",
+    "newValue": "Neu"
   }
 }

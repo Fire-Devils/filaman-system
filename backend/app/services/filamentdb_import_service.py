@@ -9,6 +9,7 @@ from typing import Any, Literal
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 
@@ -105,6 +106,7 @@ class ImportResult:
     colors_skipped: int = 0
     filaments_created: int = 0
     filaments_skipped: int = 0
+    filaments_updated: int = 0
     logos_downloaded: int = 0
     logos_failed: int = 0
     errors: list[str] = field(default_factory=list)
@@ -379,6 +381,245 @@ class FilamentDBImportService:
         )
 
     # ------------------------------------------------------------------ #
+    #  Diff: existierende Filamente mit FDB-Daten vergleichen
+    # ------------------------------------------------------------------ #
+
+    # Felder, die verglichen werden (FDB-Feld -> FilaMan-Feld)
+    _DIFF_FIELDS: list[tuple[str, str, str]] = [
+        # (fdb_key, filaman_attr, label)
+        ("designation", "designation", "designation"),
+        ("material_subtype", "material_subgroup", "material_subgroup"),
+        ("diameter_mm", "diameter_mm", "diameter_mm"),
+        ("color_name", "manufacturer_color_name", "manufacturer_color_name"),
+        ("nominal_weight_g", "raw_material_weight_g", "raw_material_weight_g"),
+        ("price", "price", "price"),
+        ("density_g_cm3", "density_g_cm3", "density_g_cm3"),
+        ("color_mode", "color_mode", "color_mode"),
+    ]
+
+    async def diff_filaments(self, filament_ids: list[int]) -> list[dict[str, Any]]:
+        """Vergleiche existierende FilaMan-Filamente mit FDB-Daten.
+
+        Args:
+            filament_ids: FDB-IDs der zu vergleichenden Filamente.
+
+        Returns:
+            Liste von Dicts mit fdb_id, designation, manufacturer_name,
+            changes (Liste von {field, label, old, new}), identical (bool).
+        """
+        if not filament_ids:
+            return []
+
+        data = await self._fetch_sync_data()
+        all_filaments = data.get("filaments", [])
+        manufacturers = data.get("manufacturers", [])
+        materials = data.get("materials", [])
+        spool_profiles = data.get("spool_profiles", [])
+
+        # Maps aufbauen
+        fdb_mfr_map: dict[int, str] = {
+            m["id"]: (m.get("name") or "").strip() for m in manufacturers if m.get("id")
+        }
+        mat_map: dict[int, str] = {}
+        for mat in materials:
+            mid = mat.get("id")
+            mkey = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            if mid:
+                mat_map[mid] = mkey
+
+        sp_map: dict[int, dict[str, Any]] = {}
+        for sp in spool_profiles:
+            sp_id = sp.get("id")
+            if sp_id:
+                sp_map[sp_id] = sp
+
+        # FDB-Filamente indexieren
+        id_set = set(filament_ids)
+        fdb_fils: dict[int, dict[str, Any]] = {}
+        for f in all_filaments:
+            fdb_id = f.get("id")
+            if fdb_id and fdb_id in id_set:
+                fdb_fils[fdb_id] = f
+
+        # Lokale Filamente laden (ueber custom_fields.filamentdb_id)
+        local_by_fdb_id: dict[int, Filament] = {}
+
+        # Strategie: Alle Filamente mit filamentdb_id laden
+        local_result = await self.db.execute(
+            select(Filament)
+            .options(
+                selectinload(Filament.manufacturer),
+                selectinload(Filament.filament_colors),
+            )
+            .where(Filament.custom_fields.isnot(None))
+        )
+        for fil in local_result.scalars().all():
+            cf = fil.custom_fields
+            if isinstance(cf, dict) and cf.get("filamentdb_id"):
+                fid = cf["filamentdb_id"]
+                if fid in id_set:
+                    local_by_fdb_id[fid] = fil
+
+        # Fallback: Filamente ueber Name+Hersteller+Material matchen
+        if len(local_by_fdb_id) < len(fdb_fils):
+            missing_ids = id_set - set(local_by_fdb_id.keys())
+            all_local_result = await self.db.execute(
+                select(Filament).options(
+                    selectinload(Filament.manufacturer),
+                    selectinload(Filament.filament_colors),
+                )
+            )
+            all_local = all_local_result.scalars().all()
+            local_index: dict[tuple[str, str, str], Filament] = {}
+            for lf in all_local:
+                mfr_name = (lf.manufacturer.name if lf.manufacturer else "").lower()
+                key = (
+                    mfr_name,
+                    (lf.designation or "").lower(),
+                    (lf.material_type or "").lower(),
+                )
+                local_index[key] = lf
+
+            for fdb_id in missing_ids:
+                fdb_f = fdb_fils.get(fdb_id)
+                if not fdb_f:
+                    continue
+                mfr_id_fdb = _resolve_mfr_id(fdb_f)
+                mfr_name = fdb_mfr_map.get(mfr_id_fdb, "").lower() if mfr_id_fdb else ""
+                designation = (fdb_f.get("designation") or "").lower()
+                mat_id = fdb_f.get("material_id")
+                mat_nested = fdb_f.get("material")
+                if not mat_id and isinstance(mat_nested, dict):
+                    mat_id = mat_nested.get("id")
+                material = mat_map.get(mat_id, "PLA").lower()
+                if material == "pla" and isinstance(mat_nested, dict):
+                    material = (
+                        mat_nested.get("key") or mat_nested.get("name") or "PLA"
+                    ).lower()
+
+                matched = local_index.get((mfr_name, designation, material))
+                if matched:
+                    local_by_fdb_id[fdb_id] = matched
+
+        # Diff erstellen
+        results: list[dict[str, Any]] = []
+        for fdb_id in filament_ids:
+            fdb_f = fdb_fils.get(fdb_id)
+            if not fdb_f:
+                continue
+
+            mfr_id_fdb = _resolve_mfr_id(fdb_f)
+            mfr_name = fdb_mfr_map.get(mfr_id_fdb, "?") if mfr_id_fdb else "?"
+            designation = fdb_f.get("designation") or "?"
+
+            local = local_by_fdb_id.get(fdb_id)
+            if not local:
+                results.append(
+                    {
+                        "fdb_id": fdb_id,
+                        "designation": designation,
+                        "manufacturer_name": mfr_name,
+                        "changes": [],
+                        "identical": True,
+                        "not_found": True,
+                    }
+                )
+                continue
+
+            changes: list[dict[str, Any]] = []
+
+            # Vergleich der Standard-Felder
+            for fdb_key, local_attr, label in self._DIFF_FIELDS:
+                fdb_val = fdb_f.get(fdb_key)
+                local_val = getattr(local, local_attr, None)
+
+                # Normalisierung
+                if isinstance(fdb_val, str):
+                    fdb_val = fdb_val.strip() or None
+                if isinstance(local_val, str):
+                    local_val = local_val.strip() or None
+
+                # Float-Vergleich mit Toleranz
+                if isinstance(fdb_val, (int, float)) and isinstance(
+                    local_val, (int, float)
+                ):
+                    if abs(float(fdb_val) - float(local_val)) < 0.001:
+                        continue
+                elif fdb_val == local_val:
+                    continue
+
+                # None vs None = identisch
+                if fdb_val is None and local_val is None:
+                    continue
+
+                changes.append(
+                    {
+                        "field": label,
+                        "old": local_val,
+                        "new": fdb_val,
+                    }
+                )
+
+            # SpoolProfile-Felder vergleichen
+            sp_nested = fdb_f.get("spool_profile")
+            sp_id = None
+            if isinstance(sp_nested, dict):
+                sp_id = sp_nested.get("id")
+            elif fdb_f.get("spool_profile_id"):
+                sp_id = fdb_f["spool_profile_id"]
+
+            sp_data = sp_map.get(sp_id) if sp_id else None
+            if sp_data:
+                spool_fields = [
+                    (
+                        "empty_weight_g",
+                        "default_spool_weight_g",
+                        "default_spool_weight_g",
+                    ),
+                    (
+                        "outer_diameter_mm",
+                        "spool_outer_diameter_mm",
+                        "spool_outer_diameter_mm",
+                    ),
+                    ("width_mm", "spool_width_mm", "spool_width_mm"),
+                    ("spool_material", "spool_material", "spool_material"),
+                ]
+                for sp_key, local_attr, label in spool_fields:
+                    fdb_val = sp_data.get(sp_key)
+                    local_val = getattr(local, local_attr, None)
+
+                    if isinstance(fdb_val, (int, float)) and isinstance(
+                        local_val, (int, float)
+                    ):
+                        if abs(float(fdb_val) - float(local_val)) < 0.001:
+                            continue
+                    elif fdb_val == local_val:
+                        continue
+
+                    if fdb_val is None and local_val is None:
+                        continue
+
+                    changes.append(
+                        {
+                            "field": label,
+                            "old": local_val,
+                            "new": fdb_val,
+                        }
+                    )
+
+            results.append(
+                {
+                    "fdb_id": fdb_id,
+                    "designation": designation,
+                    "manufacturer_name": mfr_name,
+                    "changes": changes,
+                    "identical": len(changes) == 0,
+                }
+            )
+
+        return results
+
+    # ------------------------------------------------------------------ #
     #  Vorschau (komplett — wird intern von execute() genutzt)
     # ------------------------------------------------------------------ #
 
@@ -501,6 +742,7 @@ class FilamentDBImportService:
         spool_detail_target: Literal["filament", "manufacturer", "both"] = "filament",
         manufacturer_ids: list[int] | None = None,
         filament_ids: list[int] | None = None,
+        update_filament_ids: list[int] | None = None,
     ) -> ImportResult:
         """Import aus der FilamentDB ausfuehren.
 
@@ -510,6 +752,8 @@ class FilamentDBImportService:
                               ``None`` importiert alle.
             filament_ids: FilamentDB-IDs der gewaehlten Filamente.
                           ``None`` importiert alle Filamente der gewaehlten Hersteller.
+            update_filament_ids: FilamentDB-IDs existierender Filamente,
+                                 die aktualisiert werden sollen.
         """
         result = ImportResult()
         preview = await self.preview()
@@ -570,6 +814,7 @@ class FilamentDBImportService:
             spool_profile_map,
             spool_detail_target,
             result,
+            update_filament_ids=update_filament_ids,
         )
 
         # 4. SpoolProfile auf Manufacturer-Ebene (wenn gewuenscht)
@@ -696,9 +941,11 @@ class FilamentDBImportService:
         spool_profile_map: dict[int, dict[str, Any]],
         spool_detail_target: Literal["filament", "manufacturer", "both"],
         result: ImportResult,
+        update_filament_ids: list[int] | None = None,
     ) -> dict[int, int]:
         """Filamente importieren. Gibt FilamentDB-ID -> FilaMan-ID."""
         fil_map: dict[int, int] = {}
+        update_id_set = set(update_filament_ids) if update_filament_ids else set()
 
         for fil_data in filaments:
             if not isinstance(fil_data, dict):
@@ -752,7 +999,25 @@ class FilamentDBImportService:
             if existing_fil:
                 if fdb_id:
                     fil_map[fdb_id] = existing_fil.id
-                result.filaments_skipped += 1
+
+                # Update wenn gewuenscht
+                if fdb_id and fdb_id in update_id_set:
+                    await self._update_existing_filament(
+                        existing_fil,
+                        fil_data,
+                        material_key,
+                        spool_profile_map,
+                        spool_detail_target,
+                        color_map,
+                    )
+                    # custom_fields aktualisieren (filamentdb_id sicherstellen)
+                    cf = existing_fil.custom_fields or {}
+                    cf["filamentdb_id"] = fdb_id
+                    existing_fil.custom_fields = cf
+                    await self.db.flush()
+                    result.filaments_updated += 1
+                else:
+                    result.filaments_skipped += 1
                 continue
 
             # SpoolProfile-Daten fuer Filament-Ebene
@@ -837,6 +1102,118 @@ class FilamentDBImportService:
             result.filaments_created += 1
 
         return fil_map
+
+    # ------------------------------------------------------------------ #
+    #  Existierendes Filament aktualisieren
+    # ------------------------------------------------------------------ #
+
+    async def _update_existing_filament(
+        self,
+        existing: Filament,
+        fil_data: dict[str, Any],
+        material_key: str,
+        spool_profile_map: dict[int, dict[str, Any]],
+        spool_detail_target: Literal["filament", "manufacturer", "both"],
+        color_map: dict[str, int],
+    ) -> None:
+        """Felder eines existierenden Filaments mit FDB-Daten aktualisieren."""
+        # Standard-Felder aktualisieren
+        existing.designation = (
+            fil_data.get("designation") or existing.designation
+        ).strip()
+        existing.material_type = material_key
+        existing.material_subgroup = (
+            fil_data.get("material_subtype") or existing.material_subgroup
+        )
+        existing.diameter_mm = fil_data.get("diameter_mm") or existing.diameter_mm
+        existing.manufacturer_color_name = (
+            fil_data.get("color_name") or existing.manufacturer_color_name
+        )
+        existing.raw_material_weight_g = (
+            fil_data.get("nominal_weight_g")
+            if fil_data.get("nominal_weight_g") is not None
+            else existing.raw_material_weight_g
+        )
+        existing.price = (
+            fil_data.get("price")
+            if fil_data.get("price") is not None
+            else existing.price
+        )
+        existing.density_g_cm3 = (
+            fil_data.get("density_g_cm3")
+            if fil_data.get("density_g_cm3") is not None
+            else existing.density_g_cm3
+        )
+        existing.color_mode = fil_data.get("color_mode", existing.color_mode)
+        existing.multi_color_style = (
+            fil_data.get("multi_color_style") or existing.multi_color_style
+        )
+
+        # SpoolProfile-Daten
+        if spool_detail_target in ("filament", "both"):
+            sp_nested = fil_data.get("spool_profile")
+            sp_id = None
+            if isinstance(sp_nested, dict):
+                sp_id = sp_nested.get("id")
+            elif fil_data.get("spool_profile_id"):
+                sp_id = fil_data["spool_profile_id"]
+
+            sp_data = spool_profile_map.get(sp_id) if sp_id else None
+            if sp_data:
+                existing.default_spool_weight_g = (
+                    sp_data.get("empty_weight_g")
+                    if sp_data.get("empty_weight_g") is not None
+                    else existing.default_spool_weight_g
+                )
+                existing.spool_outer_diameter_mm = (
+                    sp_data.get("outer_diameter_mm")
+                    if sp_data.get("outer_diameter_mm") is not None
+                    else existing.spool_outer_diameter_mm
+                )
+                existing.spool_width_mm = (
+                    sp_data.get("width_mm")
+                    if sp_data.get("width_mm") is not None
+                    else existing.spool_width_mm
+                )
+                existing.spool_material = (
+                    sp_data.get("spool_material") or existing.spool_material
+                )
+
+        # Custom-Fields aktualisieren (temp/print-settings)
+        custom = existing.custom_fields or {}
+        sku = fil_data.get("sku")
+        if sku:
+            custom["sku"] = sku
+        for temp_key in (
+            "temp_nozzle_min",
+            "temp_nozzle_max",
+            "temp_bed",
+            "fan_speed_min",
+            "fan_speed_max",
+            "chamber_temp",
+            "max_volumetric_speed",
+            "flow_ratio",
+            "k_value",
+            "dry_temp",
+            "dry_time_hours",
+            "softening_temp",
+        ):
+            val = fil_data.get(temp_key)
+            if val is not None:
+                custom[temp_key] = val
+        existing.custom_fields = custom
+
+        # FilamentColors neu aufbauen
+        # Bestehende loeschen
+        await self.db.execute(
+            select(FilamentColor).where(FilamentColor.filament_id == existing.id)
+        )
+        for fc in list(existing.filament_colors):
+            await self.db.delete(fc)
+        await self.db.flush()
+
+        # Neue erstellen
+        await self._create_filament_colors(existing.id, fil_data, color_map)
 
     # ------------------------------------------------------------------ #
     #  FilamentColor-Zuordnungen erstellen

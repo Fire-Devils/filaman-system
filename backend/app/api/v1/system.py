@@ -984,6 +984,7 @@ class FilamentDBImportRequest(BaseModel):
     filament_ids: list[int] | None = (
         None  # FDB-IDs, None = alle der gewaehlten Hersteller
     )
+    update_filament_ids: list[int] | None = None  # FDB-IDs zum Aktualisieren
 
 
 class FilamentDBPreviewResponse(BaseModel):
@@ -1001,6 +1002,10 @@ class FilamentDBFilamentsResponse(BaseModel):
     colors: list[dict[str, str]]
 
 
+class FilamentDBDiffRequest(BaseModel):
+    filament_ids: list[int]
+
+
 class FilamentDBImportResultResponse(BaseModel):
     manufacturers_created: int
     manufacturers_skipped: int
@@ -1008,6 +1013,7 @@ class FilamentDBImportResultResponse(BaseModel):
     colors_skipped: int
     filaments_created: int
     filaments_skipped: int
+    filaments_updated: int
     logos_downloaded: int
     logos_failed: int
     errors: list[str]
@@ -1109,6 +1115,40 @@ async def filamentdb_filaments(
         )
 
 
+@router.post("/filamentdb-import/diff")
+async def filamentdb_diff(
+    body: FilamentDBDiffRequest,
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Existierende Filamente mit FilamentDB-Daten vergleichen."""
+    service = FilamentDBImportService(db)
+    try:
+        diff = await service.diff_filaments(body.filament_ids)
+        return JSONResponse({"results": diff})
+    except FilamentDBImportError as e:
+        logger.warning("FilamentDB Diff Error: %s", e, exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": {"code": e.code, "message": str(e)}},
+        )
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.exception("Unexpected error in FilamentDB diff: %s", tb)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "detail": {
+                    "code": "internal_error",
+                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
+                    "type": type(e).__name__,
+                }
+            },
+        )
+
+
 @router.post(
     "/filamentdb-import/execute",
     response_model=FilamentDBImportResultResponse,
@@ -1136,6 +1176,7 @@ async def filamentdb_execute(
             body.spool_detail_target,
             manufacturer_ids=body.manufacturer_ids,
             filament_ids=body.filament_ids,
+            update_filament_ids=body.update_filament_ids,
         )
         return result
     except FilamentDBImportError as e:

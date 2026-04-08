@@ -84,3 +84,4 @@ _video
 package.json
 package-lock.json
 filaman.db*
+uploads/
