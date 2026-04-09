@@ -599,6 +599,14 @@ async def list_filaments(
         )
         needs_manufacturer_join = True
 
+    # Sorting — resolve virtual sort keys to joined columns
+    if sort_by == "manufacturer":
+        sort_column = Manufacturer.name
+        needs_manufacturer_join = True
+    else:
+        sort_column = getattr(Filament, sort_by, Filament.designation)
+    order = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+
     # -- Data query --
     query = select(Filament).options(
         selectinload(Filament.manufacturer),
@@ -611,14 +619,6 @@ async def list_filaments(
 
     for cond in conditions:
         query = query.where(cond)
-
-    # Sorting — resolve virtual sort keys to joined columns
-    if sort_by == "manufacturer":
-        sort_column = Manufacturer.name
-        needs_manufacturer_join = True
-    else:
-        sort_column = getattr(Filament, sort_by, Filament.designation)
-    order = sort_column.asc() if sort_order == "asc" else sort_column.desc()
 
     query = query.order_by(order).offset((page - 1) * page_size).limit(page_size)
 

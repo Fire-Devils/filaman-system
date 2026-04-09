@@ -11,7 +11,8 @@
           { "type": "improvement", "text": "Spulen- und Filamente-Listen laden jetzt deutlich schneller — Filterung, Sortierung und Suche werden serverseitig verarbeitet" },
           { "type": "feature", "text": "Neues Label-Design: Hersteller-Logo, Farbbalken mit Hex-Code, optimiertes Layout mit QR-Code und Extra-Feldern" },
           { "type": "feature", "text": "Label-Logos werden beim Import aus der FilaManDB automatisch heruntergeladen" },
-          { "type": "fix", "text": "FilaManDB-Import schlägt nicht mehr fehl, wenn Filamente mehrere Farben ohne eindeutige Position haben" }
+          { "type": "fix", "text": "FilaManDB-Import schlägt nicht mehr fehl, wenn Filamente mehrere Farben ohne eindeutige Position haben" },
+          { "type": "fix", "text": "Filamente-Liste kann jetzt nach Hersteller sortiert werden, ohne dass ein Fehler auftritt" }
         ],
         "en": [
           { "type": "removed", "text": "The SpoolmanDB plugin is now automatically removed during update as it is no longer needed" },
@@ -20,7 +21,8 @@
           { "type": "improvement", "text": "Spool and filament lists now load significantly faster — filtering, sorting and search are processed server-side" },
           { "type": "feature", "text": "New label design: manufacturer logo, color swatch with hex code, optimized layout with QR code and extra fields" },
           { "type": "feature", "text": "Label logos are now automatically downloaded when importing from FilaManDB" },
-          { "type": "fix", "text": "FilaManDB import no longer fails when filaments have multiple colors without unique positions" }
+          { "type": "fix", "text": "FilaManDB import no longer fails when filaments have multiple colors without unique positions" },
+          { "type": "fix", "text": "Filament list can now be sorted by manufacturer without errors" }
         ]
       }
     },
