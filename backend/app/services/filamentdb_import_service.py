@@ -1346,8 +1346,10 @@ class FilamentDBImportService:
                         position=1,
                     )
                     self.db.add(fc)
+            await self.db.flush()
             return
 
+        used_positions: set[int] = set()
         for c in fil_colors:
             hex_code = c.get("hex_code")
             if not hex_code:
@@ -1355,7 +1357,11 @@ class FilamentDBImportService:
             color_id = color_map.get(hex_code.lower())
             if not color_id:
                 continue
-            position = c.get("position", 1)
+            position = c.get("position", 0)
+            # Bei doppelter oder fehlender Position: naechste freie vergeben
+            if position < 1 or position in used_positions:
+                position = max(used_positions, default=0) + 1
+            used_positions.add(position)
             display_name = c.get("color_name")
 
             fc = FilamentColor(
@@ -1365,6 +1371,8 @@ class FilamentDBImportService:
                 display_name_override=display_name,
             )
             self.db.add(fc)
+
+        await self.db.flush()
 
     # ------------------------------------------------------------------ #
     #  SpoolProfile auf Manufacturer-Ebene anwenden
