@@ -242,6 +242,7 @@ import Layout from '../../layouts/Layout.astro'
 
     // Track FilamentDB logo info for download after create
     let pendingLogoSlug: string | null = null
+    let pendingHasLabelLogo = false
 
     let manufacturers: any[] = []
     let sortKey: string | null = 'name'
@@ -651,6 +652,7 @@ import Layout from '../../layouts/Layout.astro'
       dbLookup.style.display = 'none'
       lookupToast.style.display = 'none'
       pendingLogoSlug = null
+      pendingHasLabelLogo = false
 
       // Shared renderItem & onSelect for both create & edit
       const renderMfrItem = (item: any) => {
@@ -661,7 +663,8 @@ import Layout from '../../layouts/Layout.astro'
       const onMfrSelect = (item: any) => {
         nameInput.value = item.name || ''
         urlInput.value = item.website || ''
-        pendingLogoSlug = item.has_web_logo ? (item.slug || null) : null
+        pendingLogoSlug = (item.has_web_logo || item.has_label_logo) ? (item.slug || null) : null
+        pendingHasLabelLogo = item.has_label_logo || false
         lookupToast.className = 'fdb-toast fdb-toast-success'
         lookupToast.textContent = t('filamentdbLookup.prefillSuccess')
         lookupToast.style.display = ''
@@ -715,6 +718,7 @@ import Layout from '../../layouts/Layout.astro'
             } else {
               dbLookup.style.display = 'none'
               pendingLogoSlug = null
+              pendingHasLabelLogo = false
             }
             lookupToast.style.display = 'none'
           })
@@ -888,13 +892,14 @@ import Layout from '../../layouts/Layout.astro'
                 'X-CSRF-Token': getCsrfToken(),
               },
               credentials: 'include',
-              body: JSON.stringify({ slug: pendingLogoSlug }),
+              body: JSON.stringify({ slug: pendingLogoSlug, has_label_logo: pendingHasLabelLogo }),
             })
           } catch {
             // Logo download failure is non-critical — don't block the save
             console.warn('Logo download failed (non-critical)')
           }
           pendingLogoSlug = null
+          pendingHasLabelLogo = false
         }
 
         // Invalidate cache after successful save

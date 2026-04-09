@@ -356,6 +356,8 @@
     "showMaterial": "Material",
     "showColor": "Farbe",
     "showManufacturer": "Hersteller",
+    "showLogo": "Logo",
+    "showColorSwatch": "Farbbalken",
     "fontSize": "Schriftgröße",
     "qrSize": "QR-Größe",
     "extraFieldsLabel": "Extra-Felder",

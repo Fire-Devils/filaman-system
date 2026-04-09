@@ -31,6 +31,7 @@ class ManufacturerSummaryResponse(BaseModel):
     name: str
     url: str | None
     logo_file: str | None = None
+    label_logo_file: str | None = None
     empty_spool_weight_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
@@ -42,6 +43,13 @@ class ManufacturerSummaryResponse(BaseModel):
     def logo_url(self) -> str | None:
         if self.logo_file:
             return f"/api/v1/manufacturers/{self.id}/logo"
+        return None
+
+    @computed_field
+    @property
+    def label_logo_url(self) -> str | None:
+        if self.label_logo_file:
+            return f"/api/v1/manufacturers/{self.id}/label-logo"
         return None
 
     class Config:

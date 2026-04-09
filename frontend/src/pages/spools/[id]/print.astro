@@ -28,7 +28,7 @@ const { id } = Astro.params
 
         <div>
           <label class="fm-label" id="label-height-text">Höhe (mm)</label>
-          <input type="number" id="input-height" value="25" class="fm-input">
+          <input type="number" id="input-height" value="40" class="fm-input">
         </div>
 
         <div>
@@ -38,11 +38,15 @@ const { id } = Astro.params
 
         <div>
           <label class="fm-label" id="label-qr-size-text">QR-Größe (mm)</label>
-          <input type="number" id="input-qr-size" value="22" class="fm-input">
+          <input type="number" id="input-qr-size" value="18" class="fm-input">
         </div>
 
         <h3>Anzeige</h3>
         <div class="checkbox-grid">
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-logo" checked>
+            <span id="label-show-logo">Logo</span>
+          </label>
           <label class="fm-checkbox-group">
             <input type="checkbox" id="check-qr" checked>
             <span id="label-show-qr">QR-Code</span>
@@ -63,6 +67,10 @@ const { id } = Astro.params
             <input type="checkbox" id="check-color" checked>
             <span id="label-show-color">Farbe</span>
           </label>
+          <label class="fm-checkbox-group">
+            <input type="checkbox" id="check-color-swatch" checked>
+            <span id="label-show-color-swatch">Farbbalken</span>
+          </label>
         </div>
 
         <h3 id="title-extra-fields" style="display: none;">Extra-Felder</h3>
@@ -77,13 +85,32 @@ const { id } = Astro.params
 
     <main class="preview-container">
       <div id="label-preview" class="label-preview">
-        <div id="label-qr-container"></div>
-        <div id="label-text-container" style="display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.1;">
-          <div id="prev-id" style="font-size: 1.4em; font-weight: 700; margin-bottom: 2px;"></div>
-          <div id="prev-filament" style="font-size: 0.9em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          <div id="prev-mfr" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          <div id="prev-color" style="font-size: 0.8em; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
-          <div id="prev-extra-fields"></div>
+        <!-- Top: Logo area -->
+        <div id="label-top" class="label-top">
+          <img id="prev-logo" class="label-logo" alt="" />
+          <div id="prev-mfr-text" class="label-mfr-text"></div>
+        </div>
+        <div id="label-top-divider" class="label-divider"></div>
+
+        <!-- Middle: Designation + Color swatch -->
+        <div id="label-middle" class="label-middle">
+          <div class="label-middle-left">
+            <div id="prev-filament" class="label-designation"></div>
+            <div id="prev-color-row" class="label-color-row">
+              <div id="prev-color-swatch" class="label-color-swatch"></div>
+              <span id="prev-color-name" class="label-color-name"></span>
+            </div>
+          </div>
+          <div id="prev-hex-code" class="label-hex-code"></div>
+        </div>
+
+        <!-- Bottom: ID + Extra fields left, QR right -->
+        <div id="label-bottom" class="label-bottom">
+          <div class="label-bottom-left">
+            <div id="prev-id" class="label-spool-id"></div>
+            <div id="prev-extra-fields" class="label-extra-fields"></div>
+          </div>
+          <div id="label-qr-container" class="label-qr"></div>
         </div>
       </div>
     </main>
@@ -159,22 +186,133 @@ const { id } = Astro.params
     background: white;
     box-shadow: var(--shadow-lg);
     display: flex;
-    align-items: center;
-    padding: 1.5mm;
+    flex-direction: column;
+    padding: 2mm;
     box-sizing: border-box;
-    gap: 3mm;
     overflow: hidden;
     position: relative;
     border: 1px dashed #ccc;
     border-radius: 4px;
+    color: black;
+    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
   }
 
-  #label-text-container {
-    flex: 1;
-    min-width: 0;
+  /* Top: Logo area */
+  .label-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2mm;
+    padding-bottom: 1mm;
+    min-height: 0;
+  }
+
+  .label-logo {
+    max-height: 8mm;
+    max-width: 60%;
+    object-fit: contain;
+    display: block;
+  }
+
+  .label-mfr-text {
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: black;
   }
 
+  .label-divider {
+    border-top: 0.3mm solid black;
+    margin: 0 0 1mm 0;
+  }
+
+  /* Middle: Designation + Color */
+  .label-middle {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 2mm;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .label-middle-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5mm;
+  }
+
+  .label-designation {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: black;
+  }
+
+  .label-color-row {
+    display: flex;
+    align-items: center;
+    gap: 1.5mm;
+  }
+
+  .label-color-swatch {
+    width: 100%;
+    height: 3mm;
+    border-radius: 0.5mm;
+    flex-shrink: 0;
+  }
+
+  .label-color-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: black;
+  }
+
+  .label-hex-code {
+    font-family: 'Space Mono', 'Courier New', monospace;
+    white-space: nowrap;
+    color: black;
+    flex-shrink: 0;
+    align-self: flex-end;
+  }
+
+  /* Bottom: ID + Extra fields left, QR right */
+  .label-bottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 2mm;
+    margin-top: auto;
+  }
+
+  .label-bottom-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3mm;
+  }
+
+  .label-spool-id {
+    font-weight: 600;
+    color: black;
+  }
+
+  .label-extra-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .label-qr {
+    flex-shrink: 0;
+  }
 
   .fm-label {
     font-size: 0.8rem;
@@ -343,12 +481,11 @@ const { id } = Astro.params
       border: none !important;
       border-radius: 0 !important;
       display: flex !important;
-      align-items: center !important;
-      gap: 3mm !important;
+      flex-direction: column !important;
       background: white !important;
       color: black !important;
       margin: 0 !important;
-      padding: 1.5mm !important;
+      padding: 2mm !important;
       overflow: hidden !important;
       break-inside: avoid !important;
       page-break-inside: avoid !important;
@@ -362,11 +499,20 @@ const { id } = Astro.params
       color: black !important;
     }
 
-    #label-qr-container {
+    .label-color-swatch {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .label-qr {
       flex-shrink: 0 !important;
     }
 
-    #label-qr-container img {
+    .label-qr img {
+      display: block !important;
+    }
+
+    .label-logo {
       display: block !important;
     }
 
@@ -396,7 +542,9 @@ const { id } = Astro.params
     designation: params.get('designation') || '',
     manufacturer: params.get('mfr') || '',
     type: params.get('type') || '',
-    color: params.get('color') || ''
+    color: params.get('color') || '',
+    mfr_id: params.get('mfr_id') || '',
+    hex_code: params.get('hex_code') || '',
   }
 
   let extraFields: {key: string, label: string, value: string, source?: string}[] = []
@@ -405,19 +553,43 @@ const { id } = Astro.params
     if (stored) extraFields = JSON.parse(stored)
   } catch(e) { /* ignore */ }
 
+  // DOM references
   const widthInput = document.getElementById('input-width')
   const heightInput = document.getElementById('input-height')
   const fontSizeInput = document.getElementById('input-font-size')
   const qrSizeInput = document.getElementById('input-qr-size')
-  const checkQR = document.getElementById('check-qr')
-  const checkID = document.getElementById('check-id')
-  const checkMfr = document.getElementById('check-mfr')
-  const checkMat = document.getElementById('check-mat')
-  const checkColor = document.getElementById('check-color')
+  const checkLogo = document.getElementById('check-logo') as HTMLInputElement
+  const checkQR = document.getElementById('check-qr') as HTMLInputElement
+  const checkID = document.getElementById('check-id') as HTMLInputElement
+  const checkMfr = document.getElementById('check-mfr') as HTMLInputElement
+  const checkMat = document.getElementById('check-mat') as HTMLInputElement
+  const checkColor = document.getElementById('check-color') as HTMLInputElement
+  const checkColorSwatch = document.getElementById('check-color-swatch') as HTMLInputElement
   const labelPreview = document.getElementById('label-preview')
   const qrContainer = document.getElementById('label-qr-container')
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
+
+  // Label logo state
+  let labelLogoUrl: string | null = null
+  let labelLogoLoaded = false
+
+  // Try to load the manufacturer's label-logo
+  async function loadLabelLogo() {
+    if (!labelData.mfr_id) return
+    try {
+      const resp = await fetch(`/api/v1/manufacturers/${labelData.mfr_id}/label-logo`, {
+        credentials: 'include',
+      })
+      if (resp.ok) {
+        const blob = await resp.blob()
+        labelLogoUrl = URL.createObjectURL(blob)
+        labelLogoLoaded = true
+      }
+    } catch {
+      // Label logo not available — fall back to manufacturer name text
+    }
+  }
 
   // Build extra field checkboxes dynamically
   const extraFieldsTitle = document.getElementById('title-extra-fields')
@@ -473,11 +645,13 @@ const { id } = Astro.params
       height: (heightInput as HTMLInputElement).value,
       fontSize: (fontSizeInput as HTMLInputElement).value,
       qrSize: (qrSizeInput as HTMLInputElement).value,
-      showQR: (checkQR as HTMLInputElement).checked,
-      showID: (checkID as HTMLInputElement).checked,
-      showMfr: (checkMfr as HTMLInputElement).checked,
-      showMat: (checkMat as HTMLInputElement).checked,
-      showColor: (checkColor as HTMLInputElement).checked,
+      showLogo: checkLogo.checked,
+      showQR: checkQR.checked,
+      showID: checkID.checked,
+      showMfr: checkMfr.checked,
+      showMat: checkMat.checked,
+      showColor: checkColor.checked,
+      showColorSwatch: checkColorSwatch.checked,
       extraFields: extraFieldChecks.reduce((acc, ef) => {
         acc[ef.key] = ef.checkbox.checked
         return acc
@@ -495,11 +669,13 @@ const { id } = Astro.params
       if (s.height) (heightInput as HTMLInputElement).value = s.height
       if (s.fontSize) (fontSizeInput as HTMLInputElement).value = s.fontSize
       if (s.qrSize) (qrSizeInput as HTMLInputElement).value = s.qrSize
-      if (s.showQR !== undefined) (checkQR as HTMLInputElement).checked = s.showQR
-      if (s.showID !== undefined) (checkID as HTMLInputElement).checked = s.showID
-      if (s.showMfr !== undefined) (checkMfr as HTMLInputElement).checked = s.showMfr
-      if (s.showMat !== undefined) (checkMat as HTMLInputElement).checked = s.showMat
-      if (s.showColor !== undefined) (checkColor as HTMLInputElement).checked = s.showColor
+      if (s.showLogo !== undefined) checkLogo.checked = s.showLogo
+      if (s.showQR !== undefined) checkQR.checked = s.showQR
+      if (s.showID !== undefined) checkID.checked = s.showID
+      if (s.showMfr !== undefined) checkMfr.checked = s.showMfr
+      if (s.showMat !== undefined) checkMat.checked = s.showMat
+      if (s.showColor !== undefined) checkColor.checked = s.showColor
+      if (s.showColorSwatch !== undefined) checkColorSwatch.checked = s.showColorSwatch
     } catch (e) { /* ignore corrupt data */ }
   }
 
@@ -510,11 +686,13 @@ const { id } = Astro.params
   document.getElementById('label-height-text').textContent = (window as any).__t('spools.labelHeight')
   document.getElementById('label-font-size-text').textContent = (window as any).__t('spools.fontSize')
   document.getElementById('label-qr-size-text').textContent = (window as any).__t('spools.qrSize')
+  document.getElementById('label-show-logo').textContent = (window as any).__t('spools.showLogo') || 'Logo'
   document.getElementById('label-show-qr').textContent = (window as any).__t('spools.showQRCode')
   document.getElementById('label-show-id').textContent = (window as any).__t('spools.showSpoolId')
   document.getElementById('label-show-mfr').textContent = (window as any).__t('spools.showManufacturer')
   document.getElementById('label-show-mat').textContent = (window as any).__t('spools.showMaterial')
   document.getElementById('label-show-color').textContent = (window as any).__t('spools.showColor')
+  document.getElementById('label-show-color-swatch').textContent = (window as any).__t('spools.showColorSwatch') || 'Farbbalken'
   if (extraFields.length > 0) {
     document.getElementById('title-extra-fields').textContent = (window as any).__t('spools.extraFieldsLabel')
   }
@@ -543,21 +721,96 @@ const { id } = Astro.params
     labelPreview.style.width = w + 'mm'
     labelPreview.style.height = h + 'mm'
 
-    document.getElementById('prev-id').style.fontSize = (fontSizeBase * 14) + 'pt'
-    document.getElementById('prev-filament').style.fontSize = (fontSizeBase * 9) + 'pt'
-    document.getElementById('prev-mfr').style.fontSize = (fontSizeBase * 7.5) + 'pt'
-    document.getElementById('prev-color').style.fontSize = (fontSizeBase * 7.5) + 'pt'
+    // === TOP: Logo / Manufacturer ===
+    const topArea = document.getElementById('label-top')
+    const topDivider = document.getElementById('label-top-divider')
+    const logoImg = document.getElementById('prev-logo') as HTMLImageElement
+    const mfrTextEl = document.getElementById('prev-mfr-text')
 
-    qrContainer.style.display = (checkQR as HTMLInputElement).checked ? 'block' : 'none'
-    document.getElementById('prev-id').style.display = (checkID as HTMLInputElement).checked ? 'block' : 'none'
+    const showLogo = checkLogo.checked
+    const showMfr = checkMfr.checked
 
-    const mfrText = (checkMfr as HTMLInputElement).checked ? labelData.manufacturer : ''
-    const matText = (checkMat as HTMLInputElement).checked ? labelData.type : ''
-    document.getElementById('prev-mfr').textContent = [mfrText, matText].filter(Boolean).join(' - ')
-    document.getElementById('prev-mfr').style.display = ((checkMfr as HTMLInputElement).checked || (checkMat as HTMLInputElement).checked) ? 'block' : 'none'
+    if (showLogo && labelLogoLoaded && labelLogoUrl) {
+      logoImg.src = labelLogoUrl
+      logoImg.style.display = 'block'
+      logoImg.style.maxHeight = (fontSizeBase * 8) + 'mm'
+      mfrTextEl.style.display = 'none'
+      topArea.style.display = 'flex'
+      topDivider.style.display = 'block'
+    } else if (showLogo && showMfr && labelData.manufacturer) {
+      // No logo available — show manufacturer name as text in top area
+      logoImg.style.display = 'none'
+      mfrTextEl.textContent = labelData.manufacturer
+      mfrTextEl.style.display = 'block'
+      mfrTextEl.style.fontSize = (fontSizeBase * 11) + 'pt'
+      topArea.style.display = 'flex'
+      topDivider.style.display = 'block'
+    } else if (showMfr && labelData.manufacturer) {
+      logoImg.style.display = 'none'
+      mfrTextEl.textContent = labelData.manufacturer
+      mfrTextEl.style.display = 'block'
+      mfrTextEl.style.fontSize = (fontSizeBase * 11) + 'pt'
+      topArea.style.display = 'flex'
+      topDivider.style.display = 'block'
+    } else {
+      topArea.style.display = 'none'
+      topDivider.style.display = 'none'
+    }
 
-    document.getElementById('prev-color').textContent = (checkColor as HTMLInputElement).checked ? labelData.color : ''
-    document.getElementById('prev-color').style.display = (checkColor as HTMLInputElement).checked ? 'block' : 'none'
+    // === MIDDLE: Designation + Color ===
+    const filamentEl = document.getElementById('prev-filament')
+    const matText = checkMat.checked ? labelData.type : ''
+    const desigText = labelData.designation || ''
+    const fullDesig = [desigText, matText].filter(Boolean).join(' ')
+    filamentEl.textContent = fullDesig
+    filamentEl.style.fontSize = (fontSizeBase * 12) + 'pt'
+    filamentEl.style.display = fullDesig ? 'block' : 'none'
+
+    // Color row: swatch + name
+    const colorRow = document.getElementById('prev-color-row')
+    const colorSwatch = document.getElementById('prev-color-swatch')
+    const colorName = document.getElementById('prev-color-name')
+    const hexCodeEl = document.getElementById('prev-hex-code')
+
+    const showColor = checkColor.checked
+    const showSwatch = checkColorSwatch.checked
+    const hasHex = !!labelData.hex_code
+
+    if (showSwatch && hasHex) {
+      colorSwatch.style.display = 'block'
+      colorSwatch.style.backgroundColor = labelData.hex_code.startsWith('#') ? labelData.hex_code : `#${labelData.hex_code}`
+    } else {
+      colorSwatch.style.display = 'none'
+    }
+
+    if (showColor && labelData.color) {
+      colorName.textContent = labelData.color
+      colorName.style.display = 'inline'
+      colorName.style.fontSize = (fontSizeBase * 10) + 'pt'
+    } else {
+      colorName.style.display = 'none'
+    }
+
+    colorRow.style.display = (showColor || showSwatch) ? 'flex' : 'none'
+
+    if (hasHex && (showColor || showSwatch)) {
+      const hexStr = labelData.hex_code.startsWith('#') ? labelData.hex_code.toUpperCase() : `#${labelData.hex_code.toUpperCase()}`
+      hexCodeEl.textContent = hexStr
+      hexCodeEl.style.display = 'block'
+      hexCodeEl.style.fontSize = (fontSizeBase * 9) + 'pt'
+    } else {
+      hexCodeEl.style.display = 'none'
+    }
+
+    // === BOTTOM: ID + Extra fields + QR ===
+    const idEl = document.getElementById('prev-id')
+    if (checkID.checked) {
+      idEl.textContent = `#${labelData.id}`
+      idEl.style.display = 'block'
+      idEl.style.fontSize = (fontSizeBase * 7.5) + 'pt'
+    } else {
+      idEl.style.display = 'none'
+    }
 
     // Extra fields
     const extraContainer = document.getElementById('prev-extra-fields')
@@ -565,20 +818,20 @@ const { id } = Astro.params
     for (const ef of extraFieldChecks) {
       if (ef.checkbox.checked) {
         const div = document.createElement('div')
-        div.style.fontSize = (fontSizeBase * 7.5) + 'pt'
-        div.style.color = '#333'
+        div.style.fontSize = (fontSizeBase * 7) + 'pt'
+        div.style.color = 'black'
         div.style.whiteSpace = 'nowrap'
         div.style.overflow = 'hidden'
         div.style.textOverflow = 'ellipsis'
-        div.textContent = `${ef.label}: ${ef.value}`
+        div.style.lineHeight = '1.3'
+        div.innerHTML = `<span style="color:#555">${ef.label}:</span> ${ef.value}`
         extraContainer.appendChild(div)
       }
     }
 
-    document.getElementById('prev-id').textContent = `#${labelData.id}`
-    document.getElementById('prev-filament').textContent = labelData.designation
-
-    if ((checkQR as HTMLInputElement).checked) {
+    // QR Code
+    qrContainer.style.display = checkQR.checked ? 'block' : 'none'
+    if (checkQR.checked) {
       qrContainer.innerHTML = ''
       const url = window.location.origin + '/spools/' + labelData.id
       const qrPx = Math.round(parseInt(qrSize) * 3.78)
@@ -634,6 +887,7 @@ const { id } = Astro.params
       qrContainer.style.flexShrink = '0'
     }
 
+    // Print styles
     const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
     const style = document.createElement('style')
     // Safari doesn't support @page { size } — use default page margins so label stays in printable area
@@ -661,7 +915,7 @@ const { id } = Astro.params
     saveSettings()
   }
 
-  ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkQR, checkID, checkMfr, checkMat, checkColor].forEach(el => {
+  ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch].forEach(el => {
     el.addEventListener('change', updatePreview)
     if ((el as HTMLInputElement).type === 'range' || (el as HTMLInputElement).type === 'number') {
       el.addEventListener('input', updatePreview)
@@ -671,19 +925,22 @@ const { id } = Astro.params
   document.getElementById('btn-reset')?.addEventListener('click', () => {
     localStorage.removeItem(LABEL_SETTINGS_KEY);
     (widthInput as HTMLInputElement).value = '60';
-    (heightInput as HTMLInputElement).value = '25';
+    (heightInput as HTMLInputElement).value = '40';
     (fontSizeInput as HTMLInputElement).value = '100';
-    (qrSizeInput as HTMLInputElement).value = '22';
-    (checkQR as HTMLInputElement).checked = true;
-    (checkID as HTMLInputElement).checked = true;
-    (checkMfr as HTMLInputElement).checked = true;
-    (checkMat as HTMLInputElement).checked = true;
-    (checkColor as HTMLInputElement).checked = true;
+    (qrSizeInput as HTMLInputElement).value = '18';
+    checkLogo.checked = true;
+    checkQR.checked = true;
+    checkID.checked = true;
+    checkMfr.checked = true;
+    checkMat.checked = true;
+    checkColor.checked = true;
+    checkColorSwatch.checked = true;
     for (const ef of extraFieldChecks) {
       ef.checkbox.checked = false
     }
     updatePreview()
   })
 
-  updatePreview()
+  // Initialize: load logo then render
+  loadLabelLogo().then(() => updatePreview())
 </script>

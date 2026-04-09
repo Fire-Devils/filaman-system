@@ -200,6 +200,7 @@ class PrepareFilamentRequest(BaseModel):
     manufacturer_website: str | None = None
     manufacturer_slug: str | None = None
     manufacturer_has_web_logo: bool = False
+    manufacturer_has_label_logo: bool = False
 
     # Filament info (for form pre-fill only, not persisted here)
     designation: str
@@ -274,12 +275,14 @@ async def prepare_filament(
 
         # Download brand logo from FilamentDB (non-blocking: log errors, don't fail)
         if data.manufacturer_has_web_logo and data.manufacturer_slug:
-            logo_url = (
-                f"{settings.filamentdb_url.rstrip('/')}"
-                f"/uploads/logos/web/{data.manufacturer_slug}.png"
-            )
+            MANUFACTURER_LOGO_DIR.mkdir(parents=True, exist_ok=True)
+            base_url = settings.filamentdb_url.rstrip("/")
             try:
                 async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                    # Web logo
+                    logo_url = (
+                        f"{base_url}/uploads/logos/web/{data.manufacturer_slug}.png"
+                    )
                     resp = await client.get(logo_url)
                     resp.raise_for_status()
                 logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer.id}.png"
@@ -298,6 +301,30 @@ async def prepare_filament(
                     data.manufacturer_slug,
                     exc,
                 )
+
+            # Label logo (grayscale, for label printing) — non-critical
+            if data.manufacturer_has_label_logo:
+                try:
+                    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                        label_url = f"{base_url}/uploads/logos/label/{data.manufacturer_slug}.png"
+                        label_resp = await client.get(label_url)
+                        label_resp.raise_for_status()
+                    label_path = MANUFACTURER_LOGO_DIR / f"{manufacturer.id}_label.png"
+                    label_path.write_bytes(label_resp.content)
+                    manufacturer.label_logo_file = f"{manufacturer.id}_label.png"
+                    logger.info(
+                        "Downloaded label logo for auto-created manufacturer '%s' (id=%s, slug=%s)",
+                        manufacturer.name,
+                        manufacturer.id,
+                        data.manufacturer_slug,
+                    )
+                except (httpx.HTTPError, OSError) as exc:
+                    logger.warning(
+                        "Could not download label logo for manufacturer '%s' (slug=%s): %s",
+                        manufacturer.name,
+                        data.manufacturer_slug,
+                        exc,
+                    )
 
     # ── 2. Colors ────────────────────────────────────────────────────
     color_ids: list[int] = []

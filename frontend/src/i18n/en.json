@@ -354,6 +354,8 @@
     "showMaterial": "Material",
     "showColor": "Color",
     "showManufacturer": "Manufacturer",
+    "showLogo": "Logo",
+    "showColorSwatch": "Color Swatch",
     "fontSize": "Font Size",
     "qrSize": "QR Size",
     "extraFieldsLabel": "Extra Fields",

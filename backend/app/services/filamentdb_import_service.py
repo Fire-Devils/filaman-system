@@ -1445,46 +1445,79 @@ class FilamentDBImportService:
                 fdb_id = mfr_data.get("id")
                 slug = mfr_data.get("slug")
                 has_logo = mfr_data.get("has_web_logo", False)
+                has_label_logo = mfr_data.get("has_label_logo", False)
 
-                if not has_logo or not slug:
+                if (not has_logo and not has_label_logo) or not slug:
                     continue
 
                 filaman_mfr_id = manufacturer_map.get(fdb_id)
                 if not filaman_mfr_id:
                     continue
 
-                logo_filename = f"{filaman_mfr_id}.png"
-                logo_path = LOGO_DIR / logo_filename
+                # Download web logo
+                if has_logo:
+                    logo_filename = f"{filaman_mfr_id}.png"
+                    logo_path = LOGO_DIR / logo_filename
 
-                # Skip wenn schon vorhanden
-                if logo_path.exists():
-                    continue
+                    if not logo_path.exists():
+                        logo_url = f"{FILAMENTDB_URL}/uploads/logos/web/{slug}.png"
+                        try:
+                            resp = await client.get(logo_url)
+                            if resp.status_code == 200:
+                                logo_path.write_bytes(resp.content)
 
-                logo_url = f"{FILAMENTDB_URL}/uploads/logos/web/{slug}.png"
-                try:
-                    resp = await client.get(logo_url)
-                    if resp.status_code == 200:
-                        logo_path.write_bytes(resp.content)
-
-                        # DB updaten
-                        mfr_result = await self.db.execute(
-                            select(Manufacturer).where(
-                                Manufacturer.id == filaman_mfr_id
+                                # DB updaten
+                                mfr_result = await self.db.execute(
+                                    select(Manufacturer).where(
+                                        Manufacturer.id == filaman_mfr_id
+                                    )
+                                )
+                                mfr = mfr_result.scalar_one_or_none()
+                                if mfr:
+                                    mfr.logo_file = logo_filename
+                                result.logos_downloaded += 1
+                            else:
+                                result.logos_failed += 1
+                                result.warnings.append(
+                                    f"Logo fuer '{mfr_data.get('name', '?')}' nicht verfuegbar "
+                                    f"(HTTP {resp.status_code})"
+                                )
+                        except httpx.RequestError as e:
+                            result.logos_failed += 1
+                            result.warnings.append(
+                                f"Logo-Download fuer '{mfr_data.get('name', '?')}' "
+                                f"fehlgeschlagen: {e}"
                             )
-                        )
-                        mfr = mfr_result.scalar_one_or_none()
-                        if mfr:
-                            mfr.logo_file = logo_filename
-                        result.logos_downloaded += 1
-                    else:
-                        result.logos_failed += 1
-                        result.warnings.append(
-                            f"Logo fuer '{mfr_data.get('name', '?')}' nicht verfuegbar "
-                            f"(HTTP {resp.status_code})"
-                        )
-                except httpx.RequestError as e:
-                    result.logos_failed += 1
-                    result.warnings.append(
-                        f"Logo-Download fuer '{mfr_data.get('name', '?')}' "
-                        f"fehlgeschlagen: {e}"
-                    )
+
+                # Download label logo (grayscale, for label printing)
+                if has_label_logo:
+                    label_filename = f"{filaman_mfr_id}_label.png"
+                    label_path = LOGO_DIR / label_filename
+
+                    if not label_path.exists():
+                        label_url = f"{FILAMENTDB_URL}/uploads/logos/label/{slug}.png"
+                        try:
+                            resp = await client.get(label_url)
+                            if resp.status_code == 200:
+                                label_path.write_bytes(resp.content)
+
+                                # DB updaten
+                                mfr_result = await self.db.execute(
+                                    select(Manufacturer).where(
+                                        Manufacturer.id == filaman_mfr_id
+                                    )
+                                )
+                                mfr = mfr_result.scalar_one_or_none()
+                                if mfr:
+                                    mfr.label_logo_file = label_filename
+                                result.logos_downloaded += 1
+                            else:
+                                result.warnings.append(
+                                    f"Label-Logo fuer '{mfr_data.get('name', '?')}' nicht verfuegbar "
+                                    f"(HTTP {resp.status_code})"
+                                )
+                        except httpx.RequestError as e:
+                            result.warnings.append(
+                                f"Label-Logo-Download fuer '{mfr_data.get('name', '?')}' "
+                                f"fehlgeschlagen: {e}"
+                            )

@@ -22,6 +22,7 @@ class Manufacturer(Base, TimestampMixin):
     spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     logo_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    label_logo_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 

@@ -8,13 +8,17 @@
           { "type": "removed", "text": "Das SpoolmanDB-Plugin wird beim Update automatisch entfernt, da es nicht mehr benötigt wird" },
           { "type": "feature", "text": "Beim Wiederherstellen eines Backups werden installierte Plugins automatisch aus der Registry heruntergeladen und installiert" },
           { "type": "fix", "text": "Das Restgewicht neuer Spulen wird jetzt automatisch aus Gesamtgewicht minus Leergewicht berechnet, wenn kein Verbrauch vorliegt" },
-          { "type": "improvement", "text": "Spulen- und Filamente-Listen laden jetzt deutlich schneller — Filterung, Sortierung und Suche werden serverseitig verarbeitet" }
+          { "type": "improvement", "text": "Spulen- und Filamente-Listen laden jetzt deutlich schneller — Filterung, Sortierung und Suche werden serverseitig verarbeitet" },
+          { "type": "feature", "text": "Neues Label-Design: Hersteller-Logo, Farbbalken mit Hex-Code, optimiertes Layout mit QR-Code und Extra-Feldern" },
+          { "type": "feature", "text": "Label-Logos werden beim Import aus der FilaManDB automatisch heruntergeladen" }
         ],
         "en": [
           { "type": "removed", "text": "The SpoolmanDB plugin is now automatically removed during update as it is no longer needed" },
           { "type": "feature", "text": "When restoring a backup, installed plugins are now automatically downloaded and reinstalled from the registry" },
           { "type": "fix", "text": "Remaining weight of new spools is now automatically calculated from total weight minus empty spool weight when no usage exists" },
-          { "type": "improvement", "text": "Spool and filament lists now load significantly faster — filtering, sorting and search are processed server-side" }
+          { "type": "improvement", "text": "Spool and filament lists now load significantly faster — filtering, sorting and search are processed server-side" },
+          { "type": "feature", "text": "New label design: manufacturer logo, color swatch with hex code, optimized layout with QR code and extra fields" },
+          { "type": "feature", "text": "Label logos are now automatically downloaded when importing from FilaManDB" }
         ]
       }
     },

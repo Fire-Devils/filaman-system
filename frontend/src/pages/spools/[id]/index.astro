@@ -419,7 +419,7 @@ const { id } = Astro.params
         ` : ''}
       `
       
-      const printUrl = `/spools/${spool.id}/print?designation=${encodeURIComponent(spool.filament?.designation || '')}&mfr=${encodeURIComponent(spool.filament?.manufacturer?.name || '')}&type=${encodeURIComponent(spool.filament?.material_type || '')}&color=${encodeURIComponent(spool.filament?.manufacturer_color_name || '')}`
+      const printUrl = `/spools/${spool.id}/print?designation=${encodeURIComponent(spool.filament?.designation || '')}&mfr=${encodeURIComponent(spool.filament?.manufacturer?.name || '')}&type=${encodeURIComponent(spool.filament?.material_type || '')}&color=${encodeURIComponent(spool.filament?.manufacturer_color_name || '')}&mfr_id=${encodeURIComponent(spool.filament?.manufacturer?.id || '')}&hex_code=${encodeURIComponent(spool.filament?.colors?.[0]?.hex_code || '')}`
 
       // Store extra fields for label printing (spool + filament)
       const efForPrint: {key: string, label: string, value: string, source: string}[] = []
