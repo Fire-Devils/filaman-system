@@ -48,6 +48,14 @@ class TTLCache:
     def clear(self) -> None:
         self._store.clear()
 
+    def purge_expired(self) -> int:
+        """Remove all expired entries and return how many were purged."""
+        now = time.monotonic()
+        expired = [k for k, (_, exp) in self._store.items() if now > exp]
+        for k in expired:
+            del self._store[k]
+        return len(expired)
+
 
 # Singleton – import this everywhere
 response_cache = TTLCache()

@@ -989,9 +989,11 @@ class FilamentDBImportRequest(BaseModel):
     skip_fuzzy_ids: list[int] | None = (
         None  # FDB-IDs, fuer die Fuzzy-Matching uebersprungen wird
     )
+    snapshot_id: str | None = None
 
 
 class FilamentDBPreviewResponse(BaseModel):
+    snapshot_id: str | None = None
     summary: dict[str, int]
     manufacturers: list[dict[str, Any]]
     materials: list[dict[str, Any]]
@@ -999,15 +1001,18 @@ class FilamentDBPreviewResponse(BaseModel):
 
 class FilamentDBFilamentsRequest(BaseModel):
     manufacturer_ids: list[int]
+    snapshot_id: str | None = None
 
 
 class FilamentDBFilamentsResponse(BaseModel):
+    snapshot_id: str | None = None
     filaments: list[dict[str, Any]]
     colors: list[dict[str, str]]
 
 
 class FilamentDBDiffRequest(BaseModel):
     filament_ids: list[int]
+    snapshot_id: str | None = None
 
 
 class FilamentDBImportResultResponse(BaseModel):
@@ -1069,9 +1074,10 @@ async def filamentdb_preview(
     await _require_filamentdb_active(db)
     service = FilamentDBImportService(db)
     try:
-        preview = await service.preview_manufacturers()
+        preview = await service.preview_manufacturers(force_refresh=True)
         return JSONResponse(
             {
+                "snapshot_id": preview.snapshot_id,
                 "summary": preview.summary,
                 "manufacturers": preview.manufacturers,
                 "materials": preview.materials,
@@ -1110,9 +1116,13 @@ async def filamentdb_filaments(
     await _require_filamentdb_active(db)
     service = FilamentDBImportService(db)
     try:
-        result = await service.fetch_filaments(body.manufacturer_ids)
+        result = await service.fetch_filaments(
+            body.manufacturer_ids,
+            snapshot_id=body.snapshot_id,
+        )
         return JSONResponse(
             {
+                "snapshot_id": result.snapshot_id,
                 "filaments": result.filaments,
                 "colors": result.colors,
             }
@@ -1150,8 +1160,16 @@ async def filamentdb_diff(
     await _require_filamentdb_active(db)
     service = FilamentDBImportService(db)
     try:
-        diff = await service.diff_filaments(body.filament_ids)
-        return JSONResponse({"results": diff})
+        diff = await service.diff_filaments(
+            body.filament_ids,
+            snapshot_id=body.snapshot_id,
+        )
+        return JSONResponse(
+            {
+                "snapshot_id": diff.snapshot_id,
+                "results": diff.results,
+            }
+        )
     except FilamentDBImportError as e:
         logger.warning("FilamentDB Diff Error: %s", e, exc_info=True)
         return JSONResponse(
@@ -1205,6 +1223,7 @@ async def filamentdb_execute(
             filament_ids=body.filament_ids,
             update_filament_ids=body.update_filament_ids,
             skip_fuzzy_ids=body.skip_fuzzy_ids,
+            snapshot_id=body.snapshot_id,
         )
         return result
     except FilamentDBImportError as e:

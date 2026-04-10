@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improvement", "text": "FilaManDB-Import: Sync-Daten werden jetzt innerhalb einer Import-Session zwischengespeichert — alle Schritte (Vorschau, Filamentauswahl, Diff, Import) laden deutlich schneller" }
+        ],
+        "en": [
+          { "type": "improvement", "text": "FilaManDB import: Sync data is now cached within an import session — all steps (preview, filament selection, diff, import) load significantly faster" }
+        ]
+      }
+    },
+    {
       "version": "1.2.5",
       "date": "",
       "changes": {
