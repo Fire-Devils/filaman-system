@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "FilaManDB-Import: Importfehler bei wiederholtem Löschen und Neuimportieren von Filamenten behoben" }
+        ],
+        "en": [
+          { "type": "fix", "text": "FilaManDB import: Fixed import errors when repeatedly deleting and re-importing filaments" }
+        ]
+      }
+    },
+    {
       "version": "1.2.2",
       "date": "",
       "changes": {

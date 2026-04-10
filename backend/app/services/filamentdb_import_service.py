@@ -1311,14 +1311,7 @@ class FilamentDBImportService:
                 custom[temp_key] = val
         existing.custom_fields = custom
 
-        # FilamentColors neu aufbauen
-        # Bestehende loeschen (direkt per DELETE, kein Lazy-Load noetig)
-        await self.db.execute(
-            delete(FilamentColor).where(FilamentColor.filament_id == existing.id)
-        )
-        await self.db.flush()
-
-        # Neue erstellen
+        # FilamentColors neu aufbauen (Helper raeumt alte Zuordnungen defensiv auf)
         await self._create_filament_colors(existing.id, fil_data, color_map)
 
     # ------------------------------------------------------------------ #
@@ -1332,6 +1325,13 @@ class FilamentDBImportService:
         color_map: dict[str, int],
     ) -> None:
         """Farb-Zuordnungen fuer ein Filament erstellen."""
+        # Defensiv alte Zuordnungen entfernen: SQLite kann IDs wiederverwenden,
+        # und aeltere Datenbanken koennen dadurch noch verwaiste Farbzeilen haben.
+        await self.db.execute(
+            delete(FilamentColor).where(FilamentColor.filament_id == filament_id)
+        )
+        await self.db.flush()
+
         fil_colors = fil_data.get("colors", [])
 
         if not fil_colors:
@@ -1350,18 +1350,30 @@ class FilamentDBImportService:
             return
 
         used_positions: set[int] = set()
+        next_position = 1
         for c in fil_colors:
             hex_code = c.get("hex_code")
             if not hex_code:
                 continue
+
             color_id = color_map.get(hex_code.lower())
             if not color_id:
                 continue
-            position = c.get("position", 0)
-            # Bei doppelter oder fehlender Position: naechste freie vergeben
+
+            raw_position = c.get("position", 0)
+            try:
+                position = int(raw_position) if raw_position is not None else 0
+            except (TypeError, ValueError):
+                position = 0
+
+            # Bei doppelter, ungueltiger oder fehlender Position: naechste freie vergeben
             if position < 1 or position in used_positions:
-                position = max(used_positions, default=0) + 1
+                while next_position in used_positions:
+                    next_position += 1
+                position = next_position
+
             used_positions.add(position)
+            next_position = max(next_position, position + 1)
             display_name = c.get("color_name")
 
             fc = FilamentColor(

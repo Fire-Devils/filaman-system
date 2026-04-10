@@ -39,6 +39,8 @@ if _is_sqlite:
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragmas(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
+        # Enforce FK constraints/cascades so deleted parent rows cannot leave stale children behind
+        cursor.execute("PRAGMA foreign_keys=ON")
         # WAL mode: allows readers and writer to operate concurrently
         cursor.execute("PRAGMA journal_mode=WAL")
         # NORMAL sync: faster than FULL, still safe (WAL protects against corruption)
