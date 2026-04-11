@@ -1,0 +1,9 @@
+{
+    "plugin_key": "spoolmanapi",
+    "name": "Spoolman API",
+    "version": "1.0.0",
+    "plugin_type": "integration",
+    "description": "Spoolman-compatible REST API endpoints for Bambuddy and other Spoolman clients.",
+    "author": "FilaMan",
+    "mount_prefix": "/spoolman"
+}

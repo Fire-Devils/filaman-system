@@ -75,9 +75,11 @@ skills-lock.json
 Agents.md
 Claude.md
 
-# Installed plugins (only spoolman_import ships as default)
+# Installed plugins – only spoolman_import ships as a built-in.
+# spoolmanapi source is tracked here so it can be packaged for manual installation.
 backend/app/plugins/*/
 !backend/app/plugins/spoolman_import/
+!backend/app/plugins/spoolmanapi/
 
 # Video
 _video
