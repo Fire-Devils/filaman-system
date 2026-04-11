@@ -368,42 +368,6 @@ import Layout from '../../layouts/Layout.astro'
       return { search, statusId, locationId, manufacturerId, material, groupBy }
     }
 
-    function filterSpools(spools: any[]): any[] {
-      const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
-
-      return spools.filter(s => {
-        if (statusId && String(s.status_id) !== statusId) return false
-        if (locationId && String(s.location_id) !== locationId) return false
-        if (manufacturerId) {
-          const fil = getFilamentForSpool(s)
-          if (!fil || String(fil.manufacturer_id) !== manufacturerId) return false
-        }
-        if (material) {
-          const fil = getFilamentForSpool(s)
-          if (!fil || fil.material_type !== material) return false
-        }
-        if (search) {
-          const fil = getFilamentForSpool(s)
-          const filName = fil ? (fil.designation || '').toLowerCase() : ''
-          const filType = fil ? (fil.material_type || '').toLowerCase() : ''
-          const mfName = fil?.manufacturer?.name ? fil.manufacturer.name.toLowerCase() : ''
-          const mfColorName = fil ? (fil.manufacturer_color_name || '').toLowerCase() : ''
-          const colorNames = fil && fil.colors ? fil.colors.map((fc: any) => {
-            const parts: string[] = []
-            if (fc.color?.name) parts.push(fc.color.name.toLowerCase())
-            if (fc.display_name_override) parts.push(fc.display_name_override.toLowerCase())
-            return parts.join(' ')
-          }).join(' ') : ''
-          const locationName = getLocationName(s.location_id).toLowerCase()
-          const statusLabel = getStatusLabel(s.status_id).toLowerCase()
-
-          const haystack = `${filName} ${filType} ${mfName} ${mfColorName} ${colorNames} ${locationName} ${statusLabel}`
-          if (!haystack.includes(search)) return false
-        }
-        return true
-      })
-    }
-
     function applyFiltersAndRender() {
       if (isInitialLoad) {
         isInitialLoad = false

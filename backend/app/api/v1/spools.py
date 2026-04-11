@@ -230,7 +230,9 @@ async def list_spools(
         needs_filament_join = True
 
     if include_archived:
-        pass
+        if status_id:
+            conditions.append(Spool.status_id == status_id)
+        # else: no filter — include all spools (archived + non-archived)
     elif status_id:
         conditions.append(Spool.status_id == status_id)
     else:
