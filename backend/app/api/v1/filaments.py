@@ -574,13 +574,14 @@ async def list_filaments(
     search: str | None = Query(None, max_length=200),
     sort_by: str = Query(
         "designation",
-        pattern="^(id|designation|material_type|diameter_mm|price|manufacturer_color_name|density_g_cm3|raw_material_weight_g|finish_type|material_subgroup|manufacturer)$",
+        pattern="^(id|designation|material_type|diameter_mm|price|manufacturer_color_name|density_g_cm3|raw_material_weight_g|finish_type|material_subgroup|manufacturer|spool_count)$",
     ),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
 ):
     # -- Build filter conditions (shared between data query and count query) --
     conditions = []
     needs_manufacturer_join = False
+    needs_spool_count_join = False
 
     if type:
         conditions.append(Filament.material_type == type)
@@ -603,9 +604,23 @@ async def list_filaments(
     if sort_by == "manufacturer":
         sort_column = Manufacturer.name
         needs_manufacturer_join = True
+    elif sort_by == "spool_count":
+        spool_count_subquery = (
+            select(
+                Spool.filament_id.label("filament_id"),
+                func.count(Spool.id).label("spool_count"),
+            )
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+            .where(SpoolStatus.key != "archived")
+            .group_by(Spool.filament_id)
+            .subquery()
+        )
+        sort_column = func.coalesce(spool_count_subquery.c.spool_count, 0)
+        needs_spool_count_join = True
     else:
         sort_column = getattr(Filament, sort_by, Filament.designation)
     order = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+    tie_breaker = Filament.id.asc() if sort_order == "asc" else Filament.id.desc()
 
     # -- Data query --
     query = select(Filament).options(
@@ -616,11 +631,15 @@ async def list_filaments(
         query = query.join(
             Manufacturer, Filament.manufacturer_id == Manufacturer.id, isouter=True
         )
+    if needs_spool_count_join:
+        query = query.outerjoin(
+            spool_count_subquery, spool_count_subquery.c.filament_id == Filament.id
+        )
 
     for cond in conditions:
         query = query.where(cond)
 
-    query = query.order_by(order).offset((page - 1) * page_size).limit(page_size)
+    query = query.order_by(order, tie_breaker).offset((page - 1) * page_size).limit(page_size)
 
     # -- Count query (same filters, no eager loading / pagination) --
     count_query = select(func.count()).select_from(Filament)
