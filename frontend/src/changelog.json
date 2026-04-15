@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Backup-Import: Import schlug bei großen Datenbanken mit vielen Filamenten/Farben fehl (FOREIGN KEY constraint)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Backup import: Import failed on large databases with many filaments/colors (FOREIGN KEY constraint)" }
+        ]
+      }
+    },
+    {
       "version": "1.2.8",
       "date": "",
       "changes": {

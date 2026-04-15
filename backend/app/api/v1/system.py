@@ -1996,6 +1996,19 @@ async def import_backup(
         auto_backup_path = await _create_auto_backup(db)
         logger.info(f"Auto-backup created at: {auto_backup_path}")
 
+        # Clean session identity map — the auto-backup loaded all objects
+        # via select(), and bulk-delete below bypasses the ORM.  Without
+        # expunge_all() the session may still track stale instances whose
+        # PKs collide with the rows we are about to re-insert, causing
+        # SQLAlchemy to skip INSERTs or emit UPDATEs instead.
+        db.expunge_all()
+
+        # For SQLite: defer FK constraint checks until COMMIT so that
+        # INSERT order within a single flush does not matter.  This
+        # PRAGMA *can* be set inside a transaction (unlike foreign_keys).
+        if settings.database_url.startswith("sqlite"):
+            await db.execute(text("PRAGMA defer_foreign_keys = ON"))
+
         # Step 2: Delete all existing data
         deleted = await _delete_all_data(db)
         logger.info(f"Deleted data: {deleted}")
@@ -2004,7 +2017,7 @@ async def import_backup(
         imported = await _import_all_data(db, backup_data["data"])
         logger.info(f"Imported data: {imported}")
 
-        # Commit transaction
+        # Commit transaction (deferred FK constraints checked here)
         await db.commit()
 
         logger.info(f"Backup import completed successfully by user {principal.user_id}")
@@ -2108,6 +2121,13 @@ async def import_inventory_backup(
     try:
         auto_backup_path = await _create_auto_backup(db)
         logger.info(f"Auto-backup created at: {auto_backup_path}")
+
+        # Clean session identity map — see import_backup for rationale
+        db.expunge_all()
+
+        # For SQLite: defer FK constraint checks until COMMIT
+        if settings.database_url.startswith("sqlite"):
+            await db.execute(text("PRAGMA defer_foreign_keys = ON"))
 
         deleted = await _delete_inventory_data(db)
         logger.info(f"Deleted inventory data: {deleted}")
