@@ -10,7 +10,7 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import text
 
 from app.api.auth import router as auth_router
@@ -319,6 +319,31 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Note: Rate limiting for /auth/login is handled by nginx (see nginx.conf)
 # This ensures consistent limits across all Gunicorn workers
+
+
+# Redirect /spool → /spools (singular → plural alias)
+# Covers both API paths (/api/v1/spool/...) and frontend paths (/spool/...)
+# Uses 307 to preserve the HTTP method (POST stays POST)
+_SPOOL_SINGULAR_PREFIXES = ("/spool/", "/api/v1/spool/")
+_SPOOL_SINGULAR_EXACT = ("/spool", "/api/v1/spool")
+
+
+@app.middleware("http")
+async def redirect_singular_spool(request, call_next):
+    path = request.url.path
+    for prefix in _SPOOL_SINGULAR_PREFIXES:
+        plural = prefix[:-1] + "s/"  # e.g. "/spools/", "/api/v1/spools/"
+        if path.startswith(prefix) and not path.startswith(plural):
+            new_path = plural + path[len(prefix) :]
+            return RedirectResponse(
+                url=str(request.url.replace(path=new_path)), status_code=307
+            )
+    for exact in _SPOOL_SINGULAR_EXACT:
+        if path == exact:
+            return RedirectResponse(
+                url=str(request.url.replace(path=exact + "s")), status_code=307
+            )
+    return await call_next(request)
 
 
 # Slow-Request Logging Middleware - helps diagnose performance issues
