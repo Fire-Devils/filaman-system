@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "added", "text": "Filamente können jetzt nach Anzahl der Spulen sortiert werden" }
+        ],
+        "en": [
+          { "type": "added", "text": "Filaments can now be sorted by spool count" }
+        ]
+      }
+    },
+    {
       "version": "1.2.9",
       "date": "",
       "changes": {

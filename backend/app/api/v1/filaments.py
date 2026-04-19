@@ -582,6 +582,7 @@ async def list_filaments(
     conditions = []
     needs_manufacturer_join = False
     needs_spool_count_join = False
+    spool_count_subquery = None
 
     if type:
         conditions.append(Filament.material_type == type)
@@ -639,7 +640,11 @@ async def list_filaments(
     for cond in conditions:
         query = query.where(cond)
 
-    query = query.order_by(order, tie_breaker).offset((page - 1) * page_size).limit(page_size)
+    query = (
+        query.order_by(order, tie_breaker)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
 
     # -- Count query (same filters, no eager loading / pagination) --
     count_query = select(func.count()).select_from(Filament)
