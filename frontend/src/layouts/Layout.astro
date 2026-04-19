@@ -408,12 +408,19 @@ const { title } = Astro.props
 
       /* ── Active nav highlighting ─────────────────────────────── */
       const currentPath = window.location.pathname
+      let bestNavMatch: Element | null = null
+      let bestNavLen = 0
       document.querySelectorAll('.fm-nav-item').forEach(item => {
         const href = item.getAttribute('href')
-        if (href === currentPath || (href !== '/' && currentPath.startsWith(href!))) {
-          item.classList.add('active')
+        if (!href) return
+        if (href === currentPath || (href !== '/' && currentPath.startsWith(href + '/'))) {
+          if (href.length > bestNavLen) {
+            bestNavLen = href.length
+            bestNavMatch = item
+          }
         }
       })
+      if (bestNavMatch) (bestNavMatch as Element).classList.add('active')
 
       /* ── Sidebar toggle ──────────────────────────────────────── */
       const page = document.getElementById('fm-page')!
