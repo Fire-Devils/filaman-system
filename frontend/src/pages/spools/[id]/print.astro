@@ -838,7 +838,10 @@ const { id } = Astro.params
     if (checkQR.checked) {
       qrContainer.innerHTML = ''
       const url = window.location.origin + '/spools/' + labelData.id
-      const qrPx = Math.round(parseInt(qrSize) * 3.78)
+      // Oversample the QR bitmap so it stays sharp on Retina screens and in
+      // the 300 DPI PNG export. Display size is controlled via CSS (mm).
+      const QR_OVERSAMPLE = 4
+      const qrPx = Math.round(parseInt(qrSize) * 3.78 * QR_OVERSAMPLE)
 
       // @ts-ignore
       new QRCode(qrContainer, {
