@@ -359,7 +359,6 @@ const { title } = Astro.props
           const plugins: { plugin_key: string; name: string; page_url: string }[] = await resp.json()
           if (!plugins.length) return
 
-          const currentPath = window.location.pathname
           const hr = document.createElement('hr')
           hr.className = 'fm-divider'
           hr.style.marginBottom = '8px'
@@ -376,14 +375,14 @@ const { title } = Astro.props
             const a = document.createElement('a')
             a.href = p.page_url
             a.className = 'fm-nav-item'
-            if (currentPath === p.page_url || currentPath.startsWith(p.page_url + '/')) {
-              a.classList.add('active')
-            }
             a.innerHTML = `<span class="fm-nav-icon"><svg><use href="/icons.svg#icon-plugin"></use></svg></span><span>${p.name}</span>`
             pluginNav.appendChild(a)
           }
 
           pluginNav.classList.remove('invisible')
+          // Re-run active-highlighting now that plugin links are in the DOM,
+          // so the longest-prefix match wins across all nav items (including plugins).
+          highlightActiveNav()
         } catch { /* Plugin nav is non-critical */ }
       }
 
@@ -407,20 +406,25 @@ const { title } = Astro.props
       })
 
       /* ── Active nav highlighting ─────────────────────────────── */
-      const currentPath = window.location.pathname
-      let bestNavMatch: Element | null = null
-      let bestNavLen = 0
-      document.querySelectorAll('.fm-nav-item').forEach(item => {
-        const href = item.getAttribute('href')
-        if (!href) return
-        if (href === currentPath || (href !== '/' && currentPath.startsWith(href + '/'))) {
-          if (href.length > bestNavLen) {
-            bestNavLen = href.length
-            bestNavMatch = item
+      function highlightActiveNav() {
+        const currentPath = window.location.pathname
+        let bestNavMatch: Element | null = null
+        let bestNavLen = 0
+        const items = document.querySelectorAll('.fm-nav-item')
+        items.forEach(item => {
+          item.classList.remove('active')
+          const href = item.getAttribute('href')
+          if (!href) return
+          if (href === currentPath || (href !== '/' && currentPath.startsWith(href + '/'))) {
+            if (href.length > bestNavLen) {
+              bestNavLen = href.length
+              bestNavMatch = item
+            }
           }
-        }
-      })
-      if (bestNavMatch) (bestNavMatch as Element).classList.add('active')
+        })
+        if (bestNavMatch) (bestNavMatch as Element).classList.add('active')
+      }
+      highlightActiveNav()
 
       /* ── Sidebar toggle ──────────────────────────────────────── */
       const page = document.getElementById('fm-page')!
