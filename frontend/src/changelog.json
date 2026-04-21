@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "added", "text": "Filamente können jetzt nach Anzahl der Spulen sortiert werden" }
+          { "type": "added", "text": "Filamente können jetzt nach Anzahl der Spulen sortiert werden" },
+          { "type": "added", "text": "Spaltenbreiten in den Tabellen Hersteller, Filamente, Spulen und Standorte können jetzt per Ziehen am Spaltenrand angepasst werden und werden pro Browser gespeichert (Doppelklick auf den Spaltenrand setzt die einzelne Spalte zurück)" }
         ],
         "en": [
-          { "type": "added", "text": "Filaments can now be sorted by spool count" }
+          { "type": "added", "text": "Filaments can now be sorted by spool count" },
+          { "type": "added", "text": "Column widths in Manufacturers, Filaments, Spools, and Locations tables can now be resized by dragging column edges and are saved per browser (double-click the edge resets a single column)" }
         ]
       }
     },

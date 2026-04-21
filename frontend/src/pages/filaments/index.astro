@@ -145,6 +145,7 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
+    import { initColumnResize } from '../../lib/column-resize'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     await initI18n()
 
@@ -770,13 +771,19 @@ import Layout from '../../layouts/Layout.astro'
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
       orderStorageKey: 'filaman-column-order-filaments',
+      widthsStorageKey: 'filaman-column-widths-filaments',
       resetLabel: t('common.columnsReset'),
       onReset: () => filReorder.resetOrder(),
+      onResetWidths: () => filResize.resetWidths(),
     })
 
     const filReorder = initColumnReorder({
       tableSelector: '.fm-table',
       storageKey: 'filaman-column-order-filaments',
+    })
+    const filResize = initColumnResize({
+      tableSelector: '.fm-table',
+      storageKey: 'filaman-column-widths-filaments',
     })
 
     // Load SystemExtraFields for filaments and add as dynamic column group
@@ -806,6 +813,7 @@ import Layout from '../../layouts/Layout.astro'
         ;(window as any).__filamentExtraFields = fields
         // Refresh column reorder to include new extra field columns
         filReorder.refreshColumns()
+        filResize.refreshColumns()
       } catch (e) {
         if (isAbortError(e)) return
         console.error('Failed to load filament extra field columns:', e)

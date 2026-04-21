@@ -233,6 +233,7 @@ import Layout from '../../layouts/Layout.astro'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
+    import { initColumnResize } from '../../lib/column-resize'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../lib/filamentdb-lookup'
     await initI18n()
@@ -961,13 +962,19 @@ import Layout from '../../layouts/Layout.astro'
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
       orderStorageKey: 'filaman-column-order-manufacturers',
+      widthsStorageKey: 'filaman-column-widths-manufacturers',
       resetLabel: t('common.columnsReset'),
       onReset: () => mfrReorder.resetOrder(),
+      onResetWidths: () => mfrResize.resetWidths(),
     })
 
     const mfrReorder = initColumnReorder({
       tableSelector: '.fm-table',
       storageKey: 'filaman-column-order-manufacturers',
+    })
+    const mfrResize = initColumnResize({
+      tableSelector: '.fm-table',
+      storageKey: 'filaman-column-widths-manufacturers',
     })
     // ── End Column Visibility ──────────────────────────────────────────
 
