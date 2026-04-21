@@ -361,6 +361,8 @@
     "qrSize": "QR Size",
     "extraFieldsLabel": "Extra Fields",
     "resetDefaults": "Defaults",
+    "exportAsPng": "Export as PNG",
+    "exportPngError": "PNG export failed",
     "quickActions": "Quick Actions",
     "printerSlots": "Printer Slots",
     "slotAssignSpool": "Assign spool to this tray",

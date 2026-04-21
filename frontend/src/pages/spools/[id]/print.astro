@@ -79,6 +79,7 @@ const { id } = Astro.params
 
       <div class="action-buttons">
         <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Drucken</button>
+        <button id="btn-export-png" class="fm-btn fm-btn-outline">Als PNG exportieren</button>
         <button id="btn-reset" class="fm-btn fm-btn-outline">Zurücksetzen</button>
       </div>
     </aside>
@@ -534,6 +535,8 @@ const { id } = Astro.params
     }
   }
 
+  import { toPng } from 'html-to-image'
+
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
 
   const params = new URLSearchParams(window.location.search)
@@ -700,6 +703,7 @@ const { id } = Astro.params
   backBtn.href = `/spools/${id}`
   document.getElementById('label-back').textContent = (window as any).__t('spools.backToSpool')
   document.getElementById('btn-print').textContent = (window as any).__t('common.print')
+  document.getElementById('btn-export-png').textContent = (window as any).__t('spools.exportAsPng')
   document.getElementById('btn-reset').textContent = (window as any).__t('spools.resetDefaults')
 
   async function updatePreview() {
@@ -921,6 +925,67 @@ const { id } = Astro.params
       el.addEventListener('input', updatePreview)
     }
   })
+
+  // PNG Export at 300 DPI
+  async function exportAsPng() {
+    const btn = document.getElementById('btn-export-png') as HTMLButtonElement
+    const originalText = btn.textContent
+    btn.disabled = true
+    try {
+      // Ensure preview (incl. QR canvas -> img conversion) is fully rendered
+      await updatePreview()
+      // Wait for webfonts so text renders correctly in the snapshot
+      if ((document as any).fonts && (document as any).fonts.ready) {
+        try { await (document as any).fonts.ready } catch { /* ignore */ }
+      }
+
+      const wMm = parseFloat((widthInput as HTMLInputElement).value) || 60
+      const hMm = parseFloat((heightInput as HTMLInputElement).value) || 40
+      const dpi = 300
+      const widthPx = Math.round(wMm / 25.4 * dpi)
+      const heightPx = Math.round(hMm / 25.4 * dpi)
+      const pixelRatio = dpi / 96
+
+      const dataUrl = await toPng(labelPreview as HTMLElement, {
+        pixelRatio,
+        width: labelPreview.offsetWidth,
+        height: labelPreview.offsetHeight,
+        canvasWidth: widthPx,
+        canvasHeight: heightPx,
+        backgroundColor: '#ffffff',
+        cacheBust: true,
+        filter: (node: HTMLElement) => {
+          // Skip <img> elements without a real src — empty src triggers an
+          // error event during html-to-image cloning and aborts the export.
+          if (node instanceof HTMLImageElement) {
+            const src = node.getAttribute('src')
+            if (!src || src === window.location.href) return false
+          }
+          // Skip hidden elements so they don't leave whitespace in the PNG.
+          if (node instanceof HTMLElement && node.style && node.style.display === 'none') {
+            return false
+          }
+          return true
+        },
+      })
+
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `filaman-spool-${labelData.id}.png`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } catch (err) {
+      console.error('PNG export failed', err)
+      const msg = (window as any).__t('spools.exportPngError') || 'PNG export failed'
+      alert(msg)
+    } finally {
+      btn.disabled = false
+      btn.textContent = originalText
+    }
+  }
+
+  document.getElementById('btn-export-png')?.addEventListener('click', exportAsPng)
 
   document.getElementById('btn-reset')?.addEventListener('click', () => {
     localStorage.removeItem(LABEL_SETTINGS_KEY);
