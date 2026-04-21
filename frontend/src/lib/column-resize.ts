@@ -58,20 +58,31 @@ function ensureGlobalStyles(): void {
 .fm-table th.col-resizable { position: relative; }
 .fm-table th .col-resize-handle {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 6px;
+  top: 20%;
+  right: -1px;
+  bottom: 20%;
+  width: 7px;
   cursor: col-resize;
   user-select: none;
   z-index: 2;
-  background: transparent;
-  transition: background-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.fm-table th .col-resize-handle:hover,
-.fm-table th .col-resize-handle.col-resize-active {
+/* Sichtbare Griff-Linie in der Mitte des Handles */
+.fm-table th .col-resize-handle::before {
+  content: '';
+  display: block;
+  width: 2px;
+  height: 100%;
+  background: var(--border);
+  border-radius: 1px;
+  transition: background-color 0.15s ease, width 0.15s ease;
+}
+.fm-table th .col-resize-handle:hover::before,
+.fm-table th .col-resize-handle.col-resize-active::before {
   background: var(--accent);
-  opacity: 0.55;
+  width: 3px;
 }
 body.col-resize-dragging,
 body.col-resize-dragging * { cursor: col-resize !important; user-select: none !important; }
