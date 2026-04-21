@@ -164,6 +164,18 @@ import Layout from '../../layouts/Layout.astro'
     let sortDirection: 'asc' | 'desc' | null = null
     const selectedFilamentIds = new Set<number>()
 
+    // Map frontend sort keys to backend sort_by values; empty string = client-side only (not server-sortable)
+    const sortKeyMap: Record<string, string> = {
+      'type': 'material_type',
+      'colors': '', // aggregated (count) — client-side only
+    }
+    // Returns true if the given sort key cannot be sorted server-side and must be handled client-side over the full dataset
+    function isClientOnlySort(key: string | null): boolean {
+      if (!key) return false
+      if (key.startsWith('cf_')) return true // custom fields are not server-sortable
+      return sortKeyMap[key] === ''
+    }
+
     // Restore sort state from localStorage
     try {
       const savedSort = localStorage.getItem('filaman-sort-filaments')
@@ -242,7 +254,10 @@ import Layout from '../../layouts/Layout.astro'
     function getSortValue(item: any, key: string): any {
       if (key === 'manufacturer') return item.manufacturer?.name || ''
       if (key === 'type') return item.material_type || ''
-      if (key === 'colors') return item.colors?.length || 0
+      if (key === 'colors') {
+        const first = item.colors?.[0]
+        return (first?.display_name_override || first?.color?.name || '').toLowerCase()
+      }
       if (key.startsWith('cf_')) {
         const cfKey = key.slice(3)
         return item.custom_fields?.[cfKey] ?? ''
@@ -327,8 +342,8 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderPage() {
       const { groupBy, color } = getFilterValues()
-      // In needsAllData modes (color filter or groupBy), data is already fully loaded + filtered
-      const needsAllData = !!color || groupBy
+      // In needsAllData modes (color filter, groupBy, or client-only sort key), data is already fully loaded + filtered
+      const needsAllData = !!color || groupBy || isClientOnlySort(sortKey)
 
       if (groupBy) {
         const sorted = sortFilaments(allFilaments)
@@ -415,11 +430,7 @@ import Layout from '../../layouts/Layout.astro'
       if (manufacturerId) params.set('manufacturer_id', manufacturerId)
       if (type) params.set('type', type)
       if (search) params.set('search', search)
-      // Map frontend sort keys to backend sort_by values
-      const sortKeyMap: Record<string, string> = {
-        'type': 'material_type',
-        'colors': '', // not sortable server-side
-      }
+      // sortKeyMap lives at module scope; '' means client-side only
       if (sortKey && sortDirection) {
         const backendSortKey = sortKeyMap[sortKey] ?? sortKey
         if (backendSortKey) {
@@ -428,8 +439,8 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
 
-      // If color filter is active or groupBy, we need ALL matching data (client-side post-filter)
-      const needsAllData = !!color || groupBy
+      // If color filter is active, groupBy is on, or sort key is client-only, we need ALL matching data
+      const needsAllData = !!color || groupBy || isClientOnlySort(sortKey)
 
       try {
         const signal = getAbortSignal()

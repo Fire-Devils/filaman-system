@@ -86,33 +86,33 @@ const { id } = Astro.params
 
     <main class="preview-container">
       <div id="label-preview" class="label-preview">
-        <!-- Top: Logo area -->
-        <div id="label-top" class="label-top">
-          <img id="prev-logo" class="label-logo" alt="" />
-          <div id="prev-mfr-text" class="label-mfr-text"></div>
-        </div>
-        <div id="label-top-divider" class="label-divider"></div>
-
-        <!-- Middle: Designation + Color swatch -->
-        <div id="label-middle" class="label-middle">
-          <div class="label-middle-left">
-            <div id="prev-filament" class="label-designation"></div>
-            <div id="prev-color-row" class="label-color-row">
-              <div id="prev-color-swatch" class="label-color-swatch"></div>
-              <span id="prev-color-name" class="label-color-name"></span>
-            </div>
+        <div class="label-content">
+          <!-- Top: Logo area -->
+          <div id="label-top" class="label-top">
+            <img id="prev-logo" class="label-logo" alt="" />
+            <div id="prev-mfr-text" class="label-mfr-text"></div>
           </div>
-          <div id="prev-hex-code" class="label-hex-code"></div>
-        </div>
+          <div id="label-top-divider" class="label-divider"></div>
 
-        <!-- Bottom: ID + Extra fields left, QR right -->
-        <div id="label-bottom" class="label-bottom">
-          <div class="label-bottom-left">
+          <!-- Middle: Designation + Color swatch -->
+          <div id="label-middle" class="label-middle">
+            <div class="label-middle-left">
+              <div id="prev-filament" class="label-designation"></div>
+              <div id="prev-color-row" class="label-color-row">
+                <div id="prev-color-swatch" class="label-color-swatch"></div>
+                <span id="prev-color-name" class="label-color-name"></span>
+              </div>
+            </div>
+            <div id="prev-hex-code" class="label-hex-code"></div>
+          </div>
+
+          <!-- Bottom: ID + Extra fields -->
+          <div id="label-bottom" class="label-bottom">
             <div id="prev-id" class="label-spool-id"></div>
             <div id="prev-extra-fields" class="label-extra-fields"></div>
           </div>
-          <div id="label-qr-container" class="label-qr"></div>
         </div>
+        <div id="label-qr-container" class="label-qr"></div>
       </div>
     </main>
   </div>
@@ -187,7 +187,8 @@ const { id } = Astro.params
     background: white;
     box-shadow: var(--shadow-lg);
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    gap: 2mm;
     padding: 2mm;
     box-sizing: border-box;
     overflow: hidden;
@@ -196,6 +197,13 @@ const { id } = Astro.params
     border-radius: 4px;
     color: black;
     font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  }
+
+  .label-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   /* Top: Logo area */
@@ -218,10 +226,15 @@ const { id } = Astro.params
   .label-mfr-text {
     font-weight: 600;
     text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     color: black;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .label-divider {
@@ -249,10 +262,15 @@ const { id } = Astro.params
 
   .label-designation {
     font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     color: black;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .label-color-row {
@@ -269,10 +287,15 @@ const { id } = Astro.params
   }
 
   .label-color-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     color: black;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .label-hex-code {
@@ -283,21 +306,13 @@ const { id } = Astro.params
     align-self: flex-end;
   }
 
-  /* Bottom: ID + Extra fields left, QR right */
+  /* Bottom: ID + Extra fields */
   .label-bottom {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 2mm;
-    margin-top: auto;
-  }
-
-  .label-bottom-left {
-    flex: 1;
-    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 0.3mm;
+    margin-top: auto;
+    min-width: 0;
   }
 
   .label-spool-id {
@@ -311,8 +326,19 @@ const { id } = Astro.params
     gap: 0;
   }
 
+  .label-extra-fields > div {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .label-qr {
     flex-shrink: 0;
+    align-self: flex-end;
   }
 
   .fm-label {
@@ -482,7 +508,7 @@ const { id } = Astro.params
       border: none !important;
       border-radius: 0 !important;
       display: flex !important;
-      flex-direction: column !important;
+      flex-direction: row !important;
       background: white !important;
       color: black !important;
       margin: 0 !important;
@@ -586,7 +612,15 @@ const { id } = Astro.params
       })
       if (resp.ok) {
         const blob = await resp.blob()
-        labelLogoUrl = URL.createObjectURL(blob)
+        // Convert to data URL instead of object URL so html-to-image can
+        // embed the image without re-fetching a blob: URL (which fails in
+        // some container/HTTPS setups).
+        labelLogoUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(blob)
+        })
         labelLogoLoaded = true
       }
     } catch {
@@ -824,9 +858,6 @@ const { id } = Astro.params
         const div = document.createElement('div')
         div.style.fontSize = (fontSizeBase * 7) + 'pt'
         div.style.color = 'black'
-        div.style.whiteSpace = 'nowrap'
-        div.style.overflow = 'hidden'
-        div.style.textOverflow = 'ellipsis'
         div.style.lineHeight = '1.3'
         div.innerHTML = `<span style="color:#555">${ef.label}:</span> ${ef.value}`
         extraContainer.appendChild(div)
