@@ -454,25 +454,35 @@ import Layout from '../../layouts/Layout.astro'
     if (spoolId == null) {
       throw new Error('Cannot capture label: spool is missing an id')
     }
-
     const el = document.getElementById(`label-${spoolId}`)
     if (!(el instanceof HTMLElement)) {
       throw new Error(`Cannot capture label: element label-${spoolId} was not found`)
     }
-
     const oz = el.style.zoom
     el.style.zoom = '1'
     try {
-      await document.fonts.ready
+      if (document.fonts?.ready) {
+        await document.fonts.ready
+      }
       await new Promise(r => requestAnimationFrame(r))
       const dataUrl = await toPng(el, {
         pixelRatio: 4,
         backgroundColor: '#ffffff',
         skipFonts: true,
         filter: (node: Node) => {
-          // Skip img elements with no valid src (e.g. hidden logo placeholder)
-          if (node instanceof HTMLImageElement && node.classList.contains('label-logo')) {
-            return node.src.startsWith('data:') || node.src.startsWith('http')
+        if (node instanceof Element) {
+          const style = window.getComputedStyle(node)
+          if (style.display === 'none') {
+            return false
+          }
+        }
+        // Skip logo img elements with no explicit/usable src (e.g. hidden placeholder)
+        if (node instanceof HTMLImageElement && node.classList.contains('label-logo')) {
+          const srcAttr = node.getAttribute('src')?.trim() ?? ''
+          if (!srcAttr) {
+            return false
+          }
+          return srcAttr.startsWith('data:') || srcAttr.startsWith('http://') || srcAttr.startsWith('https://') || srcAttr.startsWith('/')
           }
           return true
         },
