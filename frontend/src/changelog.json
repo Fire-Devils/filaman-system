@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "Fehler beim Anpassen einer Spule behoben: Die Option 'Tara setzen' im Anpassungs-Dialog führte zu einem Serverfehler. Die Tara wird weiterhin über die Spulen-Bearbeitung gesetzt." }
+          { "type": "fix", "text": "Fehler beim Anpassen einer Spule behoben: Die Option 'Tara setzen' im Anpassungs-Dialog führte zu einem Serverfehler. Die Tara wird weiterhin über die Spulen-Bearbeitung gesetzt." },
+          { "type": "fix", "text": "Beim Ändern des Leerspulen-Gewichts (Tara) einer bereits benutzten Spule wird die Restmenge jetzt automatisch korrigiert. Das ursprüngliche Gesamtgewicht bleibt dabei unverändert." }
         ],
         "en": [
-          { "type": "fix", "text": "Fixed error when adjusting a spool: The 'Set tara' option in the adjustment dialog caused a server error. Tara is still set via the spool edit dialog." }
+          { "type": "fix", "text": "Fixed error when adjusting a spool: The 'Set tara' option in the adjustment dialog caused a server error. Tara is still set via the spool edit dialog." },
+          { "type": "fix", "text": "When changing the empty spool weight (tara) of a used spool, the remaining weight is now automatically corrected. The initial total weight stays unchanged." }
         ]
       }
     },

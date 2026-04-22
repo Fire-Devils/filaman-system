@@ -650,8 +650,67 @@ async def update_spool(
         for dup in dup_result.scalars().all():
             dup.rfid_uid = None
 
+    # Capture pre-update tara/remaining for tara-change propagation
+    tara_in_payload = "empty_spool_weight_g" in update_data
+    old_tara = spool.empty_spool_weight_g
+    old_remaining = spool.remaining_weight_g
+
     for key, value in update_data.items():
         setattr(spool, key, value)
+
+    # If tara (empty_spool_weight_g) changed on a spool that has a remaining
+    # weight, shift remaining by -delta_tara so the brutto (initial_total_weight_g)
+    # stays constant while the netto (remaining) is corrected. Log a SpoolEvent
+    # for traceability.
+    tara_event_payload: dict | None = None
+    if tara_in_payload:
+        new_tara = spool.empty_spool_weight_g
+        if (
+            old_tara is not None
+            and new_tara is not None
+            and old_tara != new_tara
+            and old_remaining is not None
+        ):
+            delta_tara = new_tara - old_tara
+            new_remaining = old_remaining - delta_tara
+            clamped = False
+            if new_remaining < 0:
+                new_remaining = 0.0
+                clamped = True
+            spool.remaining_weight_g = new_remaining
+            tara_event_payload = {
+                "delta_tara": delta_tara,
+                "old_tara": old_tara,
+                "new_tara": new_tara,
+                "old_remaining": old_remaining,
+                "new_remaining": new_remaining,
+                "clamped": clamped,
+            }
+
+    if tara_event_payload is not None:
+        service = SpoolService(db)
+        meta: dict = {
+            "adjustment_type": "tara_change",
+            "old_tara_g": tara_event_payload["old_tara"],
+            "new_tara_g": tara_event_payload["new_tara"],
+            "old_remaining_g": tara_event_payload["old_remaining"],
+            "new_remaining_g": tara_event_payload["new_remaining"],
+        }
+        if tara_event_payload["clamped"]:
+            meta["clamped_to_zero"] = True
+        user_id = getattr(principal, "user_id", None)
+        device_id = getattr(principal, "device_id", None)
+        await service._create_event(
+            spool_id=spool.id,
+            event_type="manual_adjust",
+            event_at=datetime.now(timezone.utc),
+            user_id=user_id,
+            device_id=device_id,
+            source="ui",
+            delta_weight_g=-tara_event_payload["delta_tara"],
+            note=None,
+            meta=meta,
+        )
 
     await db.commit()
     await event_bus.publish({"event": "spools_changed"})
