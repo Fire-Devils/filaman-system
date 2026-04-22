@@ -167,6 +167,10 @@ import Layout from '../../layouts/Layout.astro'
   // Per-field checkbox state: key -> {checkbox, checked}
   const efCheckMap: Record<string, HTMLInputElement> = {}
 
+  function efMapKey(targetType: string, key: string): string {
+    return `${targetType}:${key}`
+  }
+
   function truncLabel(label: string, max: number): string {
     if (!max || max <= 0) return label
     return label.length > max ? label.slice(0, max) : label
@@ -229,7 +233,7 @@ import Layout from '../../layouts/Layout.astro'
     const result: {key: string, label: string, value: string}[] = []
 
     for (const def of efDefs) {
-      const cb = efCheckMap[def.key]
+      const cb = efCheckMap[efMapKey(def.target_type, def.key)]
       if (!cb?.checked) continue
 
       let val: string | null = null
@@ -426,7 +430,7 @@ import Layout from '../../layouts/Layout.astro'
         if (scopeAttr) { row.setAttribute(scopeAttr.name, ''); cb.setAttribute(scopeAttr.name, ''); span.setAttribute(scopeAttr.name, '') }
         row.appendChild(cb); row.appendChild(span)
         container.appendChild(row)
-        efCheckMap[def.key] = cb
+        efCheckMap[efMapKey(def.target_type, def.key)] = cb
         cb.addEventListener('change', renderAll)
       }
     } catch {}
