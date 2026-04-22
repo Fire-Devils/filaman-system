@@ -303,7 +303,11 @@ import Layout from '../../layouts/Layout.astro'
     for (const ef of efValues) {
       const div = document.createElement('div')
       div.style.cssText = `font-size:${fsBase*7}pt;color:black;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3`
-      div.innerHTML = `<span style="color:#555">${ef.label}:</span> ${ef.value}`
+      const labelSpan = document.createElement('span')
+      labelSpan.style.color = '#555'
+      labelSpan.textContent = `${ef.label}:`
+      div.appendChild(labelSpan)
+      div.appendChild(document.createTextNode(` ${ef.value}`))
       efContainer.appendChild(div)
     }
 
