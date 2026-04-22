@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "added", "text": "Label-Druck komplett überarbeitet: Jetzt können Labels für mehrere Spulen gleichzeitig aus der Spulenübersicht heraus gedruckt werden" },
+          { "type": "added", "text": "Labels können zusätzlich als PDF oder als ZIP-Archiv mit einzelnen PNG-Dateien exportiert werden" },
+          { "type": "added", "text": "Neuer Button 'Labels drucken' in der Massenaktion der Spulenübersicht" }
+        ],
+        "en": [
+          { "type": "added", "text": "Label printing overhauled: Labels for multiple spools can now be printed together from the spools overview" },
+          { "type": "added", "text": "Labels can additionally be exported as PDF or as a ZIP archive with individual PNG files" },
+          { "type": "added", "text": "New 'Print Labels' bulk action button on the spools overview" }
+        ]
+      }
+    },
+    {
       "version": "1.2.12",
       "date": "",
       "changes": {
