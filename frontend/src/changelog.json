@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Fehler beim Anpassen einer Spule behoben: Die Option 'Tara setzen' im Anpassungs-Dialog führte zu einem Serverfehler. Die Tara wird weiterhin über die Spulen-Bearbeitung gesetzt." }
+        ],
+        "en": [
+          { "type": "fix", "text": "Fixed error when adjusting a spool: The 'Set tara' option in the adjustment dialog caused a server error. Tara is still set via the spool edit dialog." }
+        ]
+      }
+    },
+    {
       "version": "1.2.13",
       "date": "",
       "changes": {
