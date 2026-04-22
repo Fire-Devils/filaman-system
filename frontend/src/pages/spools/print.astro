@@ -438,15 +438,6 @@ import Layout from '../../layouts/Layout.astro'
 
   // ── Export helpers ────────────────────────────────────────────────────────
 
-  async function loadJsPDF(): Promise<void> {
-    if ((window as any).jspdf) return
-    await new Promise<void>((res, rej) => {
-      const s = document.createElement('script')
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
-      s.onload = () => res(); s.onerror = rej; document.head.appendChild(s)
-    })
-  }
-
   function downloadDataUrl(dataUrl: string, filename: string) {
     const a = document.createElement('a')
     a.download = filename; a.href = dataUrl; a.click()
@@ -497,15 +488,6 @@ import Layout from '../../layouts/Layout.astro'
     }
   }
 
-  async function loadJSZip(): Promise<void> {
-    if ((window as any).JSZip) return
-    await new Promise<void>((res, rej) => {
-      const s = document.createElement('script')
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
-      s.onload = () => res(); s.onerror = rej; document.head.appendChild(s)
-    })
-  }
-
   ;(window as any).filamanExportPNG = async function() {
     if (spools.length === 0) return
     const btn = document.getElementById('btn-export-png') as HTMLButtonElement
@@ -514,8 +496,8 @@ import Layout from '../../layouts/Layout.astro'
       if (spools.length === 1) {
         downloadDataUrl(await captureLabel(spools[0]), `label-${spools[0].id}.png`)
       } else {
-        await loadJSZip()
-        const zip = new (window as any).JSZip()
+        const JSZip = (await import('jszip')).default
+        const zip = new JSZip()
         for (const spool of spools) {
           const dataUrl = await captureLabel(spool)
           zip.file(`label-${spool.id}.png`, dataUrl.split(',')[1], { base64: true })
@@ -536,8 +518,7 @@ import Layout from '../../layouts/Layout.astro'
     const btn = document.getElementById('btn-export-pdf') as HTMLButtonElement
     const orig = btn.textContent; btn.disabled = true; btn.textContent = t('labelPrint.exporting')
     try {
-      await loadJsPDF()
-      const { jsPDF } = (window as any).jspdf
+      const { jsPDF } = await import('jspdf')
       const w = parseFloat(widthInput.value), h = parseFloat(heightInput.value)
       const orient = w > h ? 'l' : 'p'
       const pdf = new jsPDF({ orientation: orient, unit: 'mm', format: [w, h] })
