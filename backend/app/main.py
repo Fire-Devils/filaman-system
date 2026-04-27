@@ -367,6 +367,23 @@ async def log_slow_requests(request, call_next):
     return response
 
 
+# Allow iframe embedding from any origin for Bambuddy and self-hosted integrations
+@app.middleware("http")
+async def allow_iframe_embedding(request, call_next):
+    response = await call_next(request)
+    
+    # Remove restrictive X-Frame-Options header (if set by upstream proxy)
+    if "x-frame-options" in response.headers:
+        del response.headers["x-frame-options"]
+    
+    # Allow embedding from any origin
+    # This enables Bambuddy and other self-hosted integrations to display
+    # FilaMan pages in iframes
+    response.headers["content-security-policy"] = "frame-ancestors *"
+    
+    return response
+
+
 # Cache-Control Middleware for static files
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):

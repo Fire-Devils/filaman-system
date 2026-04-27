@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "FilaMan-Seiten können jetzt in anderen Anwendungen wie Bambuddy eingebettet werden - ideal für die Integration in selbst gehostete Tools" }
+        ],
+        "en": [
+          { "type": "feature", "text": "FilaMan pages can now be embedded in other applications like Bambuddy - perfect for integration with self-hosted tools" }
+        ]
+      }
+    },
+    {
       "version": "1.2.15",
       "date": "",
       "changes": {
