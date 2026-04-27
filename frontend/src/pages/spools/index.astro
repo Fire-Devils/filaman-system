@@ -679,6 +679,7 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = spools.map(s => renderSpoolRow(s)).join('')
       translatePage()
       splReorder.applyOrder()
+      splResize.refreshColumns()
     }
 
     function renderGroupedSpools(spools: any[]) {
@@ -737,6 +738,7 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = html
       translatePage()
       splReorder.applyOrder()
+      splResize.refreshColumns()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -955,6 +957,11 @@ import Layout from '../../layouts/Layout.astro'
     }
     Promise.all([loadFilters(), loadActiveDevices(), initCurrency(), loadSpoolExtraFieldColumns()])
       .then(() => loadSpools())
+      .then(() => {
+        // Refresh column utilities after first render to ensure handles are attached
+        splReorder.refreshColumns()
+        splResize.refreshColumns()
+      })
 
     // Live-Update via SSE: Spulen automatisch neu laden
     let _spoolsReloadTimer: ReturnType<typeof setTimeout> | null = null

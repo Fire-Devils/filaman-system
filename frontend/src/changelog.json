@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Spaltenbreite auf der Spulen-Seite kann jetzt durch Ziehen am Spaltenrand angepasst werden (Bugfix: Feature war bereits implementiert, aber nicht funktionsfähig)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Column widths on the spools page can now be adjusted by dragging the column edge (bugfix: feature was already implemented but not functional)" }
+        ]
+      }
+    },
+    {
       "version": "1.2.14",
       "date": "",
       "changes": {

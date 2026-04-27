@@ -545,6 +545,7 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = filaments.map(f => renderFilamentRow(f)).join('')
       filReorder.applyOrder()
+      filResize.refreshColumns()
     }
 
     function renderFilamentRow(f: any): string {
@@ -626,6 +627,7 @@ import Layout from '../../layouts/Layout.astro'
 
       tbody.innerHTML = html
       filReorder.applyOrder()
+      filResize.refreshColumns()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -839,6 +841,11 @@ import Layout from '../../layouts/Layout.astro'
       (document.getElementById('filter-group') as HTMLInputElement).checked = true
     }
     Promise.all([initCurrency(), loadFilamentExtraFieldColumns(), populateFilterDropdowns()]).then(() => loadFilaments())
+      .then(() => {
+        // Refresh column utilities after first render to ensure handles are attached
+        filReorder.refreshColumns()
+        filResize.refreshColumns()
+      })
 
     // Live-Update via SSE: Filamente automatisch neu laden
     let _filamentsReloadTimer: ReturnType<typeof setTimeout> | null = null
