@@ -148,6 +148,7 @@ import Layout from '../../layouts/Layout.astro'
     <button class="fm-btn fm-btn-outline" id="bulk-btn-threshold" data-i18n="spools.bulkSetThreshold">Set Threshold</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-empty-weight" data-i18n="spools.bulkSetEmptyWeight">Set Empty Weight</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="spools.bulkSetPrice">Set Price</button>
+    <button class="fm-btn fm-btn-outline" id="bulk-btn-labels" data-i18n="spools.bulkLabel">Print Labels</button>
     <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="spools.bulkDelete">Delete</button>
   </div>
 
@@ -214,6 +215,7 @@ import Layout from '../../layouts/Layout.astro'
     import { fetchSequential } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
+    import { initColumnResize } from '../../lib/column-resize'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
@@ -677,6 +679,7 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = spools.map(s => renderSpoolRow(s)).join('')
       translatePage()
       splReorder.applyOrder()
+      splResize.refreshColumns()
     }
 
     function renderGroupedSpools(spools: any[]) {
@@ -735,6 +738,7 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = html
       translatePage()
       splReorder.applyOrder()
+      splResize.refreshColumns()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -894,13 +898,19 @@ import Layout from '../../layouts/Layout.astro'
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
       orderStorageKey: 'filaman-column-order-spools',
+      widthsStorageKey: 'filaman-column-widths-spools',
       resetLabel: t('common.columnsReset'),
       onReset: () => splReorder.resetOrder(),
+      onResetWidths: () => splResize.resetWidths(),
     })
 
     const splReorder = initColumnReorder({
       tableSelector: '.fm-table',
       storageKey: 'filaman-column-order-spools',
+    })
+    const splResize = initColumnResize({
+      tableSelector: '.fm-table',
+      storageKey: 'filaman-column-widths-spools',
     })
 
     // Load SystemExtraFields for spools and add as dynamic column group
@@ -931,6 +941,7 @@ import Layout from '../../layouts/Layout.astro'
         ;(window as any).__spoolExtraFields = fields
         // Refresh column reorder to include new extra field columns
         splReorder.refreshColumns()
+        splResize.refreshColumns()
       } catch (e) {
         if (isAbortError(e)) return
         console.error('Failed to load spool extra field columns:', e)
@@ -946,6 +957,11 @@ import Layout from '../../layouts/Layout.astro'
     }
     Promise.all([loadFilters(), loadActiveDevices(), initCurrency(), loadSpoolExtraFieldColumns()])
       .then(() => loadSpools())
+      .then(() => {
+        // Refresh column utilities after first render to ensure handles are attached
+        splReorder.refreshColumns()
+        splResize.refreshColumns()
+      })
 
     // Live-Update via SSE: Spulen automatisch neu laden
     let _spoolsReloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -1097,6 +1113,13 @@ import Layout from '../../layouts/Layout.astro'
         // user-initiated action — show error even on abort
         (window as any).__fmAlert(t('spools.bulkError'))
       }
+    })
+
+    // ── Label Print ──────────────────────────────────────────────────────
+    document.getElementById('bulk-btn-labels')?.addEventListener('click', () => {
+      if (selectedSpoolIds.size === 0) return
+      const ids = [...selectedSpoolIds].join(',')
+      window.open(`/spools/print?ids=${ids}`, '_blank')
     })
 
     // Set Location

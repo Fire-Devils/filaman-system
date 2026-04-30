@@ -145,6 +145,7 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
+    import { initColumnResize } from '../../lib/column-resize'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     await initI18n()
 
@@ -162,6 +163,18 @@ import Layout from '../../layouts/Layout.astro'
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     const selectedFilamentIds = new Set<number>()
+
+    // Map frontend sort keys to backend sort_by values; empty string = client-side only (not server-sortable)
+    const sortKeyMap: Record<string, string> = {
+      'type': 'material_type',
+      'colors': '', // aggregated (count) — client-side only
+    }
+    // Returns true if the given sort key cannot be sorted server-side and must be handled client-side over the full dataset
+    function isClientOnlySort(key: string | null): boolean {
+      if (!key) return false
+      if (key.startsWith('cf_')) return true // custom fields are not server-sortable
+      return sortKeyMap[key] === ''
+    }
 
     // Restore sort state from localStorage
     try {
@@ -241,7 +254,10 @@ import Layout from '../../layouts/Layout.astro'
     function getSortValue(item: any, key: string): any {
       if (key === 'manufacturer') return item.manufacturer?.name || ''
       if (key === 'type') return item.material_type || ''
-      if (key === 'colors') return item.colors?.length || 0
+      if (key === 'colors') {
+        const first = item.colors?.[0]
+        return (first?.display_name_override || first?.color?.name || '').toLowerCase()
+      }
       if (key.startsWith('cf_')) {
         const cfKey = key.slice(3)
         return item.custom_fields?.[cfKey] ?? ''
@@ -251,6 +267,7 @@ import Layout from '../../layouts/Layout.astro'
 
     function sortFilaments(filaments: any[]): any[] {
       if (!sortKey || !sortDirection) return filaments
+      if (sortKey === 'spool_count') return filaments  // server-only sort: skip client re-sort
       return [...filaments].sort((a, b) => {
         const aVal = getSortValue(a, sortKey)
         const bVal = getSortValue(b, sortKey)
@@ -325,8 +342,8 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderPage() {
       const { groupBy, color } = getFilterValues()
-      // In needsAllData modes (color filter or groupBy), data is already fully loaded + filtered
-      const needsAllData = !!color || groupBy
+      // In needsAllData modes (color filter, groupBy, or client-only sort key), data is already fully loaded + filtered
+      const needsAllData = !!color || groupBy || isClientOnlySort(sortKey)
 
       if (groupBy) {
         const sorted = sortFilaments(allFilaments)
@@ -413,12 +430,7 @@ import Layout from '../../layouts/Layout.astro'
       if (manufacturerId) params.set('manufacturer_id', manufacturerId)
       if (type) params.set('type', type)
       if (search) params.set('search', search)
-      // Map frontend sort keys to backend sort_by values
-      const sortKeyMap: Record<string, string> = {
-        'type': 'material_type',
-        'colors': '', // not sortable server-side
-        'spool_count': '', // not sortable server-side
-      }
+      // sortKeyMap lives at module scope; '' means client-side only
       if (sortKey && sortDirection) {
         const backendSortKey = sortKeyMap[sortKey] ?? sortKey
         if (backendSortKey) {
@@ -427,8 +439,8 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
 
-      // If color filter is active or groupBy, we need ALL matching data (client-side post-filter)
-      const needsAllData = !!color || groupBy
+      // If color filter is active, groupBy is on, or sort key is client-only, we need ALL matching data
+      const needsAllData = !!color || groupBy || isClientOnlySort(sortKey)
 
       try {
         const signal = getAbortSignal()
@@ -533,6 +545,7 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = filaments.map(f => renderFilamentRow(f)).join('')
       filReorder.applyOrder()
+      filResize.refreshColumns()
     }
 
     function renderFilamentRow(f: any): string {
@@ -614,6 +627,7 @@ import Layout from '../../layouts/Layout.astro'
 
       tbody.innerHTML = html
       filReorder.applyOrder()
+      filResize.refreshColumns()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -770,13 +784,19 @@ import Layout from '../../layouts/Layout.astro'
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
       orderStorageKey: 'filaman-column-order-filaments',
+      widthsStorageKey: 'filaman-column-widths-filaments',
       resetLabel: t('common.columnsReset'),
       onReset: () => filReorder.resetOrder(),
+      onResetWidths: () => filResize.resetWidths(),
     })
 
     const filReorder = initColumnReorder({
       tableSelector: '.fm-table',
       storageKey: 'filaman-column-order-filaments',
+    })
+    const filResize = initColumnResize({
+      tableSelector: '.fm-table',
+      storageKey: 'filaman-column-widths-filaments',
     })
 
     // Load SystemExtraFields for filaments and add as dynamic column group
@@ -806,6 +826,7 @@ import Layout from '../../layouts/Layout.astro'
         ;(window as any).__filamentExtraFields = fields
         // Refresh column reorder to include new extra field columns
         filReorder.refreshColumns()
+        filResize.refreshColumns()
       } catch (e) {
         if (isAbortError(e)) return
         console.error('Failed to load filament extra field columns:', e)
@@ -820,6 +841,11 @@ import Layout from '../../layouts/Layout.astro'
       (document.getElementById('filter-group') as HTMLInputElement).checked = true
     }
     Promise.all([initCurrency(), loadFilamentExtraFieldColumns(), populateFilterDropdowns()]).then(() => loadFilaments())
+      .then(() => {
+        // Refresh column utilities after first render to ensure handles are attached
+        filReorder.refreshColumns()
+        filResize.refreshColumns()
+      })
 
     // Live-Update via SSE: Filamente automatisch neu laden
     let _filamentsReloadTimer: ReturnType<typeof setTimeout> | null = null

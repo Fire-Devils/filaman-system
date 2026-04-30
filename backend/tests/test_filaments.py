@@ -359,6 +359,59 @@ class TestFilamentCRUD:
         assert item["colors"][0]["color_id"] == color.id
 
     @pytest.mark.asyncio
+    async def test_list_filaments_sort_by_spool_count(self, auth_client, db_session):
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="SortMaker")
+        zero_spools = await _create_filament(db_session, manufacturer.id, designation="Zero Spools")
+        one_spool_a = await _create_filament(db_session, manufacturer.id, designation="One Spool A")
+        one_spool_b = await _create_filament(db_session, manufacturer.id, designation="One Spool B")
+        two_spools = await _create_filament(db_session, manufacturer.id, designation="Two Spools")
+
+        new_status = await _get_status(db_session, "new")
+        archived_status = await _get_status(db_session, "archived")
+
+        await _create_spool(db_session, one_spool_a.id, new_status.id)
+        await _create_spool(db_session, one_spool_a.id, archived_status.id)
+        await _create_spool(db_session, one_spool_b.id, new_status.id)
+        await _create_spool(db_session, two_spools.id, new_status.id)
+        await _create_spool(db_session, two_spools.id, new_status.id)
+
+        asc_response = await client.get(
+            "/api/v1/filaments?page=1&page_size=10&sort_by=spool_count&sort_order=asc"
+        )
+
+        assert asc_response.status_code == 200
+        asc_items = [
+            item
+            for item in asc_response.json()["items"]
+            if item["id"] in {zero_spools.id, one_spool_a.id, one_spool_b.id, two_spools.id}
+        ]
+        assert [(item["id"], item["spool_count"]) for item in asc_items] == [
+            (zero_spools.id, 0),
+            (one_spool_a.id, 1),
+            (one_spool_b.id, 1),
+            (two_spools.id, 2),
+        ]
+
+        desc_response = await client.get(
+            "/api/v1/filaments?page=1&page_size=10&sort_by=spool_count&sort_order=desc"
+        )
+
+        assert desc_response.status_code == 200
+        desc_items = [
+            item
+            for item in desc_response.json()["items"]
+            if item["id"] in {zero_spools.id, one_spool_a.id, one_spool_b.id, two_spools.id}
+        ]
+        assert [(item["id"], item["spool_count"]) for item in desc_items] == [
+            (two_spools.id, 2),
+            (one_spool_b.id, 1),
+            (one_spool_a.id, 1),
+            (zero_spools.id, 0),
+        ]
+
+    @pytest.mark.asyncio
     async def test_create_filament_basic(self, auth_client, db_session):
         client, csrf_token = auth_client
 

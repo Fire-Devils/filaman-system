@@ -13,7 +13,17 @@ import Layout from '../../layouts/Layout.astro'
       Add Location
     </button>
   </div>
-  
+
+  <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+    <div class="col-picker-wrap">
+      <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+        <span data-i18n="common.columns">Spalten</span>
+      </button>
+      <div id="columns-dropdown" class="col-picker-dropdown"></div>
+    </div>
+  </div>
+
   <div class="fm-card" style="padding: 0;">
     <style>
       .spinner {
@@ -34,9 +44,9 @@ import Layout from '../../layouts/Layout.astro'
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th data-i18n="locations.name">Name</th>
-          <th data-i18n="locations.identifier">Identifier</th>
-          <th style="text-align: right;" data-i18n="locations.spools">Spools</th>
+          <th class="col-name" data-i18n="locations.name">Name</th>
+          <th class="col-identifier" data-i18n="locations.identifier">Identifier</th>
+          <th class="col-spools" style="text-align: right;" data-i18n="locations.spools">Spools</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
           <th style="width: 40px;"></th>
         </tr>
@@ -112,6 +122,8 @@ import Layout from '../../layouts/Layout.astro'
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
+    import { initColumnResize } from '../../lib/column-resize'
     await initI18n()
 
     let locations: any[] = []
@@ -184,9 +196,9 @@ import Layout from '../../layouts/Layout.astro'
 
         return `
         <tr style="cursor: pointer;" onclick="window.location='/spools?location_id=${loc.id}'">
-          <td style="padding: 12px; font-weight: 500;">${loc.name}</td>
-          <td style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${loc.identifier || '-'}</td>
-          <td style="padding: 12px; text-align: right; color: var(--text-muted);">${loc.spool_count || 0}</td>
+          <td class="col-name" style="padding: 12px; font-weight: 500;">${loc.name}</td>
+          <td class="col-identifier" style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${loc.identifier || '-'}</td>
+          <td class="col-spools" style="padding: 12px; text-align: right; color: var(--text-muted);">${loc.spool_count || 0}</td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
             <button data-id="${loc.id}" data-name="${loc.name}" data-identifier="${loc.identifier || ''}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
             <button data-id="${loc.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
@@ -498,6 +510,33 @@ import Layout from '../../layouts/Layout.astro'
       }
     })
     
+    // ── Column Picker & Resize ─────────────────────────────────────────
+    const locColumnGroups: ColumnGroup[] = [
+      {
+        heading: t('common.columnsStandard'),
+        columns: [
+          { key: 'name', label: t('locations.name') },
+          { key: 'identifier', label: t('locations.identifier') },
+          { key: 'spools', label: t('locations.spools') },
+        ],
+      },
+    ]
+    initColumnPicker({
+      storageKey: 'filaman-columns-locations',
+      defaultVisible: ['name', 'identifier', 'spools'],
+      groups: locColumnGroups,
+      btnId: 'btn-columns',
+      dropdownId: 'columns-dropdown',
+      widthsStorageKey: 'filaman-column-widths-locations',
+      resetLabel: t('common.columnsReset'),
+      onResetWidths: () => locResize.resetWidths(),
+    })
+    const locResize = initColumnResize({
+      tableSelector: '.fm-table',
+      storageKey: 'filaman-column-widths-locations',
+    })
+    // ── End Column Picker & Resize ────────────────────────────────────
+
     loadActiveDevices().then(() => loadLocations())
 
     // Live-Update via SSE: Standorte automatisch neu laden

@@ -51,8 +51,12 @@ export interface ColumnPickerOptions {
   onVisibilityChange?: () => void
   /** Optional: localStorage key for column order (to reset alongside visibility) */
   orderStorageKey?: string
+  /** Optional: localStorage key for column widths (to reset alongside visibility) */
+  widthsStorageKey?: string
   /** Optional: callback to reset column order (called when reset button is clicked) */
   onReset?: () => void
+  /** Optional: callback to reset column widths (called when reset button is clicked) */
+  onResetWidths?: () => void
   /** Label for the reset button (i18n). Defaults to 'Reset columns'. */
   resetLabel?: string
 }
@@ -175,7 +179,12 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
       if (opts.orderStorageKey) {
         localStorage.removeItem(opts.orderStorageKey)
       }
+      // Reset column widths
+      if (opts.widthsStorageKey) {
+        localStorage.removeItem(opts.widthsStorageKey)
+      }
       opts.onReset?.()
+      opts.onResetWidths?.()
       opts.onVisibilityChange?.()
       renderDropdown() // re-render checkboxes
     })

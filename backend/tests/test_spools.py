@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import select
 
-from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.models import Filament, Location, Manufacturer, Spool, SpoolEvent, SpoolStatus
 
 
 async def _create_manufacturer(db_session, name: str = "Test Manufacturer") -> Manufacturer:
@@ -298,6 +298,329 @@ class TestSpoolCRUD:
         data = response.json()
         assert data["lot_number"] == "LOT-123"
         assert data["purchase_price"] == 19.99
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_shifts_remaining_down(self, auth_client, db_session):
+        """Increasing tara reduces remaining by delta_tara; initial_total unchanged."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 220.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["empty_spool_weight_g"] == 220.0
+        assert data["remaining_weight_g"] == 680.0
+        assert data["initial_total_weight_g"] == 1200.0
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 1
+        ev = events[0]
+        assert ev.event_type == "manual_adjust"
+        assert ev.source == "ui"
+        assert ev.delta_weight_g == -20.0
+        assert ev.meta["adjustment_type"] == "tara_change"
+        assert ev.meta["old_tara_g"] == 200.0
+        assert ev.meta["new_tara_g"] == 220.0
+        assert ev.meta["old_remaining_g"] == 700.0
+        assert ev.meta["new_remaining_g"] == 680.0
+        assert "clamped_to_zero" not in ev.meta
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_shifts_remaining_up(self, auth_client, db_session):
+        """Decreasing tara increases remaining by -delta_tara."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 180.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["empty_spool_weight_g"] == 180.0
+        assert data["remaining_weight_g"] == 720.0
+        assert data["initial_total_weight_g"] == 1200.0
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_clamps_to_zero(self, auth_client, db_session):
+        """If delta_tara exceeds remaining, clamp to 0 and set meta.clamped_to_zero."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 1000.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["remaining_weight_g"] == 0.0
+        assert data["initial_total_weight_g"] == 1200.0
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 1
+        assert events[0].meta.get("clamped_to_zero") is True
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_from_null_no_shift(self, auth_client, db_session):
+        """When old tara is NULL, delta is undefined; remaining unchanged, no event."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=None,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 200.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["empty_spool_weight_g"] == 200.0
+        assert data["remaining_weight_g"] == 700.0
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 0
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_to_null_no_shift(self, auth_client, db_session):
+        """When new tara is NULL, remaining unchanged, no event."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["empty_spool_weight_g"] is None
+        assert data["remaining_weight_g"] == 700.0
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 0
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_unchanged_no_event(self, auth_client, db_session):
+        """Patching tara with the same value: no event, no shift."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 200.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["remaining_weight_g"] == 700.0
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 0
+
+    @pytest.mark.asyncio
+    async def test_update_spool_tara_with_remaining_null_no_event(
+        self, auth_client, db_session
+    ):
+        """When remaining is NULL, no event, remaining stays NULL."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=None,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 220.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["empty_spool_weight_g"] == 220.0
+        assert data["remaining_weight_g"] is None
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 0
+
+    @pytest.mark.asyncio
+    async def test_update_spool_other_field_does_not_touch_remaining(
+        self, auth_client, db_session
+    ):
+        """Patching a non-tara field leaves remaining and events alone."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1200.0,
+            empty_spool_weight_g=200.0,
+            remaining_weight_g=700.0,
+        )
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"lot_number": "LOT-XYZ"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["remaining_weight_g"] == 700.0
+        assert data["empty_spool_weight_g"] == 200.0
+
+        events = (
+            await db_session.execute(
+                select(SpoolEvent).where(SpoolEvent.spool_id == spool.id)
+            )
+        ).scalars().all()
+        assert len(events) == 0
+
+    @pytest.mark.asyncio
+    async def test_update_spool_initial_total_never_changes(self, auth_client, db_session):
+        """initial_total_weight_g must never be mutated by a tara change."""
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            initial_total_weight_g=1500.0,
+            empty_spool_weight_g=250.0,
+            remaining_weight_g=900.0,
+        )
+
+        # Increase tara
+        await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 300.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        await db_session.refresh(spool)
+        assert spool.initial_total_weight_g == 1500.0
+
+        # Decrease tara
+        await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"empty_spool_weight_g": 100.0},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        await db_session.refresh(spool)
+        assert spool.initial_total_weight_g == 1500.0
 
     @pytest.mark.asyncio
     async def test_get_spool_not_found(self, auth_client):
