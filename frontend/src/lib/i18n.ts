@@ -10,10 +10,11 @@
 
 import en from '../i18n/en.json'
 import de from '../i18n/de.json'
+import zh from '../i18n/zh.json'
 
 type Dict = Record<string, any>
 
-const dictionaries: Record<string, Dict> = { en, de }
+const dictionaries: Record<string, Dict> = { en, de, zh }
 const FALLBACK = 'en'
 
 let currentLang: string = 'en'
