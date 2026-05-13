@@ -2,7 +2,7 @@
 
 ## Fork Project Status / Roadmap
 
-See [ROADMAP.md](./ROADMAP.md) for planned features and ongoing ideas for eventual PR push upstream.
+See [ROADMAP.md](./Roadmap.md) for planned features and ongoing ideas for eventual PR push upstream.
 
 ## About the Upstream Project
 FilaMan is a comprehensive filament management system for 3D printing. It helps you keep track of your filament spools, manufacturers, colors, and current stock levels. It also features integrations with printers and AMS (Automatic Material System) units.
