@@ -336,8 +336,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       renderCustomFields()
     })
 
-    let filaments = []
-    let systemFields = []
+    let filaments: any[] = []
+    let systemFields: any[] = []
 
     // ── Spool Profile Lookup ──
     let spoolProfileLookup: LookupInstance | null = null
@@ -548,7 +548,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       container.style.display = 'block'
       grid.innerHTML = ''
       
-      systemFields.forEach(field => {
+      systemFields.forEach((field: any) => {
         const defaultVal = field.default_value || ''
         const div = document.createElement('div')
         let inputHtml = ''
@@ -558,7 +558,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" step="any" />`
             break
           case 'dropdown': {
-            const opts = (field.options || []).map(opt => {
+            const opts = (field.options || []).map((opt: string) => {
               const selected = opt === defaultVal ? ' selected' : ''
               return `<option value="${opt}"${selected}>${opt}</option>`
             }).join('')
@@ -607,7 +607,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         
         if (locationsData) {
           const select = document.getElementById('location_id')
-          locationsData.items.forEach((l) => {
+          locationsData.items.forEach((l: any) => {
             const option = document.createElement('option')
             option.value = l.id
             option.textContent = l.name
@@ -705,7 +705,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
     }
 
-    function applyFilamentDefaults(selectedFilamentId) {
+    function applyFilamentDefaults(selectedFilamentId: number) {
       const filament = filaments.find((f) => f.id === selectedFilamentId)
       if (!filament) return
 
@@ -856,7 +856,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
           const errorData = await response.json()
           let msg = t('spools.failedCreate')
           if (Array.isArray(errorData.detail)) {
-            msg = errorData.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ')
+            msg = errorData.detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ')
           } else if (errorData.detail?.message) {
             msg = errorData.detail.message
           } else if (errorData.message) {
