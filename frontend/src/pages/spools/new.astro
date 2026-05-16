@@ -539,8 +539,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     })
 
     function renderSystemFields() {
-      const container = document.getElementById('system-fields-container')
-      const grid = document.getElementById('system-fields-grid')
+      const container = document.getElementById('system-fields-container') as HTMLElement
+      const grid = document.getElementById('system-fields-grid') as HTMLElement
       if (!systemFields || systemFields.length === 0) {
         container.style.display = 'none'
         return
@@ -606,7 +606,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         }
         
         if (locationsData) {
-          const select = document.getElementById('location_id')
+          const select = document.getElementById('location_id') as HTMLSelectElement
           locationsData.items.forEach((l: any) => {
             const option = document.createElement('option')
             option.value = l.id
@@ -751,22 +751,22 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       return match ? decodeURIComponent(match[1]) : ''
     }
     
-    const form = document.getElementById('spool-form')
-    const errorMessage = document.getElementById('error-message')
-    const submitBtn = document.getElementById('submit-btn')
+    const form = document.getElementById('spool-form') as HTMLFormElement
+    const errorMessage = document.getElementById('error-message') as HTMLElement
+    const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
     
     form.addEventListener('submit', async (e) => {
       e.preventDefault()
       
       const formData = new FormData(form)
       const selectedFilamentId = parseInt(formData.get('filament_id'))
-      const data = {
+      const data: Record<string, unknown> = {
         filament_id: selectedFilamentId,
-        low_weight_threshold_g: parseInt(formData.get('low_weight_threshold_g')) || 100,
+        low_weight_threshold_g: parseInt(formData.get('low_weight_threshold_g') as string) || 100,
       }
       
       const initialWeight = formData.get('initial_total_weight_g')
-      if (initialWeight) data.initial_total_weight_g = parseFloat(initialWeight)
+      if (initialWeight) data.initial_total_weight_g = parseFloat(initialWeight as string)
       
       const emptyWeight = formData.get('empty_spool_weight_g')
       if (emptyWeight) data.empty_spool_weight_g = parseFloat(emptyWeight as string)
@@ -778,10 +778,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       if (purchaseDate) data.purchase_date = purchaseDate
 
       const spoolOuterDiameter = formData.get('spool_outer_diameter_mm')
-      if (spoolOuterDiameter) data.spool_outer_diameter_mm = parseFloat(spoolOuterDiameter)
+      if (spoolOuterDiameter) data.spool_outer_diameter_mm = parseFloat(spoolOuterDiameter as string)
 
       const spoolWidth = formData.get('spool_width_mm')
-      if (spoolWidth) data.spool_width_mm = parseFloat(spoolWidth)
+      if (spoolWidth) data.spool_width_mm = parseFloat(spoolWidth as string)
 
       const spoolMaterial = formData.get('spool_material')
       if (spoolMaterial) data.spool_material = spoolMaterial
@@ -793,7 +793,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
       
       const locationId = formData.get('location_id')
-      if (locationId) data.location_id = parseInt(locationId)
+      if (locationId) data.location_id = parseInt(locationId as string)
       
       const lotNumber = formData.get('lot_number')
       if (lotNumber) data.lot_number = lotNumber
@@ -805,7 +805,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       if (externalId) data.external_id = externalId
 
       // System Fields + Custom Fields
-      const fieldsObj = {}
+      const fieldsObj: Record<string, string> = {}
       
       // Collect System Fields
       document.querySelectorAll<HTMLInputElement>('.system-field-input').forEach(input => {
@@ -875,7 +875,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         }
       } catch (error) {
         if (isAbortError(error)) return
-        errorMessage.textContent = error.message || t('spools.failedCreate')
+        errorMessage.textContent = (error instanceof Error ? error.message : null) || t('spools.failedCreate')
         errorMessage.classList.remove('hidden')
       } finally {
         submitBtn.disabled = false
