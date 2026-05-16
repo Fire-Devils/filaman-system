@@ -1,8 +1,7 @@
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
-    Boolean,
     ForeignKey,
     Integer,
     String,
@@ -13,6 +12,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, TZDateTime
+
+if TYPE_CHECKING:
+    from app.models.filament import FilamentRating
+    from app.models.rbac import Permission, Role
+    from app.models.spool import SpoolEvent
 
 
 class User(Base, TimestampMixin):
