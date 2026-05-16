@@ -597,7 +597,7 @@ const { id } = Astro.params
 
       const url = window.location.origin + '/spools/' + spool.id
       
-      // @ts-ignore
+      // @ts-expect-error – QRCode is a UMD global loaded via script tag, not typed
       new QRCode(qrContainer, {
         text: url,
         width: 84, // approx 22mm at 96dpi
