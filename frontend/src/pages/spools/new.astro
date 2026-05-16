@@ -808,7 +808,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       const fieldsObj = {}
       
       // Collect System Fields
-      document.querySelectorAll('.system-field-input').forEach(input => {
+      document.querySelectorAll<HTMLInputElement>('.system-field-input').forEach(input => {
         const key = input.dataset.key
         const type = input.dataset.type
         if (!key) return
@@ -833,7 +833,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         data.custom_fields = unflattenObject(fieldsObj)
       }
       
-      const quantity = Math.max(1, parseInt(document.getElementById('spool_quantity').value) || 1)
+      const quantity = Math.max(1, parseInt((document.getElementById('spool_quantity') as HTMLInputElement).value) || 1)
       data.quantity = quantity
       
       errorMessage.classList.add('hidden')
