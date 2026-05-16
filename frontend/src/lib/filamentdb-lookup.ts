@@ -182,7 +182,7 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
 
     try {
       const data = await request<any>(`${endpoint}?${params.toString()}`)
-      let items = extractItems(data)
+      let items: T[] = extractItems(data)
 
       // Sort by fuzzy score if a scoring function is provided
       if (fuzzyScore && items.length > 0) {
