@@ -759,7 +759,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       e.preventDefault()
       
       const formData = new FormData(form)
-      const selectedFilamentId = parseInt(formData.get('filament_id'))
+      const selectedFilamentId = parseInt(formData.get('filament_id') as string)
       const data: Record<string, unknown> = {
         filament_id: selectedFilamentId,
         low_weight_threshold_g: parseInt(formData.get('low_weight_threshold_g') as string) || 100,
