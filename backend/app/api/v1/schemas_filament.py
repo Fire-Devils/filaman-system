@@ -2,6 +2,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
+# mypy does not support decorators stacked above @property.
+# pydantic still supports this usage at runtime.
+# mypy: disable-error-code=prop-decorator
+
 
 class ManufacturerCreate(BaseModel):
     name: str
