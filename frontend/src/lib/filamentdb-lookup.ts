@@ -82,7 +82,7 @@ export function fuzzyTokenScore(a: string, b: string): number {
 
 // ── Lookup component ────────────────────────────────────────────────
 
-export interface LookupOptions<T = any> {
+export interface LookupOptions<T = unknown> {
   /** Container element to inject the dropdown into */
   container: HTMLElement
   /** API proxy endpoint path (e.g. '/filamentdb/manufacturers') */
@@ -94,7 +94,7 @@ export interface LookupOptions<T = any> {
   /** Called when user selects an item */
   onSelect: (item: T) => void
   /** Extract items from response (default: response.items) */
-  extractItems?: (response: any) => T[]
+  extractItems?: (response: unknown) => T[]
   /** Minimum characters to trigger search (default: 2) */
   minChars?: number
   /** Debounce delay in ms (default: 300) */
@@ -119,14 +119,20 @@ export interface LookupInstance {
   search: (query: string) => void
 }
 
-export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupInstance {
+export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): LookupInstance {
   const {
     container,
     endpoint,
     placeholder = '',
     renderItem,
     onSelect,
-    extractItems = (r: any) => r.items ?? r ?? [],
+    extractItems = (r: unknown) => {
+      if (r && typeof r === 'object' && 'items' in r) {
+        const withItems = r as { items?: T[] }
+        return withItems.items ?? []
+      }
+      return Array.isArray(r) ? (r as T[]) : []
+    },
     minChars = 2,
     debounceMs = 300,
     extraParams = {},
@@ -181,14 +187,14 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
     }
 
     try {
-      const data = await request<any>(`${endpoint}?${params.toString()}`)
+      const data = await request<unknown>(`${endpoint}?${params.toString()}`)
       let items = extractItems(data)
 
       // Sort by fuzzy score if a scoring function is provided
       if (fuzzyScore && items.length > 0) {
         const scored = items.map(item => ({ item, score: fuzzyScore(item) }))
         scored.sort((a, b) => b.score - a.score)
-        items = scored.map(s => s.item)
+        items = scored.map((s: { item: T; score: number }) => s.item)
         currentItems = items
 
         // Find best match index (score >= 0.75)
@@ -196,7 +202,7 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
         const bestIdx = bestScore >= 0.75 ? 0 : -1
 
         resultsEl.innerHTML = items
-          .map((item, idx) => {
+          .map((item: T, idx: number) => {
             const cls = idx === bestIdx ? 'fdb-lookup-item fdb-lookup-item--best-match' : 'fdb-lookup-item'
             return `<div class="${cls}" data-index="${idx}">${renderItem(item)}</div>`
           })
@@ -208,14 +214,15 @@ export function createFilamentDbLookup<T = any>(opts: LookupOptions<T>): LookupI
           resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.noResults')}</div>`
         } else {
           resultsEl.innerHTML = items
-            .map((item, idx) => `<div class="fdb-lookup-item" data-index="${idx}">${renderItem(item)}</div>`)
+            .map((item: T, idx: number) => `<div class="fdb-lookup-item" data-index="${idx}">${renderItem(item)}</div>`)
             .join('')
         }
       }
 
       dropdown.style.display = ''
-    } catch (err: any) {
-      if (err?.name === 'AbortError') return
+    } catch (err: unknown) {
+      const maybeAbortError = err as { name?: string }
+      if (maybeAbortError?.name === 'AbortError') return
       resultsEl.innerHTML = `<div class="fdb-lookup-empty">${t('filamentdbLookup.connectionError')}</div>`
       dropdown.style.display = ''
     } finally {
