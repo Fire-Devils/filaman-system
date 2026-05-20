@@ -2,9 +2,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+T = TypeVar("T")
+
+
+class SpoolmanPage(BaseModel, Generic[T]):
+    """Paginated list response matching the Spoolman API envelope."""
+
+    items: list[T]
+    total: int
 
 
 class Vendor(BaseModel):
@@ -14,7 +23,7 @@ class Vendor(BaseModel):
     comment: str | None = None
     empty_spool_weight: float | None = None
     external_id: str | None = None
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class Filament(BaseModel):
@@ -36,7 +45,7 @@ class Filament(BaseModel):
     multi_color_hexes: str | None = None
     multi_color_direction: str | None = None
     external_id: str | None = None
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class Spool(BaseModel):
@@ -56,11 +65,15 @@ class Spool(BaseModel):
     lot_nr: str | None = None
     comment: str | None = None
     archived: bool = False
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class SpoolParameters(BaseModel):
-    """Used by spool create/update operations."""
+    """Parameters for spool create/update operations.
+
+    Reserved for future CRUD routes (PATCH /spool, POST /spool, etc.).
+    Not used by the current read-only router.
+    """
 
     filament_id: int
     price: float | None = None
@@ -74,4 +87,4 @@ class SpoolParameters(BaseModel):
     first_used: datetime | None = None
     last_used: datetime | None = None
     archived: bool = False
-    extra: dict[str, Any] = {}
+    extra: dict[str, Any] = Field(default_factory=dict)

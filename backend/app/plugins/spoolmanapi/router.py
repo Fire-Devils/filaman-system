@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from app.api.deps import DBSession
 
 from . import schemas
+from .schemas import SpoolmanPage
 from .service import SpoolmanService
 
 router = APIRouter(prefix="/api/v1", tags=["Spoolman Compat API"])
@@ -38,7 +39,7 @@ async def info() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/vendor", response_model=dict)
+@router.get("/vendor", response_model=SpoolmanPage[schemas.Vendor])
 async def list_vendors(
     db: DBSession,
     name: str | None = Query(default=None),
@@ -46,7 +47,7 @@ async def list_vendors(
     sort: str | None = Query(default=None),
     limit: int | None = Query(default=None),
     offset: int = Query(default=0),
-) -> dict:
+) -> SpoolmanPage[schemas.Vendor]:
     svc = SpoolmanService(db)
     items, total = await svc.list_vendors(
         name=name,
@@ -55,7 +56,7 @@ async def list_vendors(
         limit=limit,
         offset=offset,
     )
-    return {"items": [item.model_dump() for item in items], "total": total}
+    return SpoolmanPage(items=items, total=total)
 
 
 @router.get("/vendor/{vendor_id}", response_model=schemas.Vendor)
@@ -72,7 +73,7 @@ async def get_vendor(vendor_id: int, db: DBSession) -> schemas.Vendor:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/filament", response_model=dict)
+@router.get("/filament", response_model=SpoolmanPage[schemas.Filament])
 async def list_filaments(
     db: DBSession,
     vendor_name: str | None = Query(default=None),
@@ -85,7 +86,7 @@ async def list_filaments(
     sort: str | None = Query(default=None),
     limit: int | None = Query(default=None),
     offset: int = Query(default=0),
-) -> dict:
+) -> SpoolmanPage[schemas.Filament]:
     svc = SpoolmanService(db)
     items, total = await svc.list_filaments(
         vendor_name=vendor_name,
@@ -99,7 +100,7 @@ async def list_filaments(
         limit=limit,
         offset=offset,
     )
-    return {"items": [item.model_dump() for item in items], "total": total}
+    return SpoolmanPage(items=items, total=total)
 
 
 @router.get("/filament/{filament_id}", response_model=schemas.Filament)
@@ -116,7 +117,7 @@ async def get_filament(filament_id: int, db: DBSession) -> schemas.Filament:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/spool", response_model=dict)
+@router.get("/spool", response_model=SpoolmanPage[schemas.Spool])
 async def list_spools(
     db: DBSession,
     filament_name: str | None = Query(default=None),
@@ -130,7 +131,7 @@ async def list_spools(
     sort: str | None = Query(default=None),
     limit: int | None = Query(default=None),
     offset: int = Query(default=0),
-) -> dict:
+) -> SpoolmanPage[schemas.Spool]:
     svc = SpoolmanService(db)
     items, total = await svc.list_spools(
         filament_name=filament_name,
@@ -145,7 +146,7 @@ async def list_spools(
         limit=limit,
         offset=offset,
     )
-    return {"items": [item.model_dump() for item in items], "total": total}
+    return SpoolmanPage(items=items, total=total)
 
 
 @router.get("/spool/{spool_id}", response_model=schemas.Spool)
