@@ -17,6 +17,20 @@ from .service import SpoolmanService
 
 router = APIRouter(prefix="/api/v1", tags=["Spoolman Compat API"])
 
+# ---------------------------------------------------------------------------
+# Authentication policy
+# ---------------------------------------------------------------------------
+# All routes in this router are intentionally unauthenticated.
+# Spoolman-native clients (e.g. spoolman-filament-swatch) communicate over
+# the plain Spoolman HTTP API and do not carry FilaMan JWT tokens.
+# This matches Spoolman's own default behaviour (no-auth by default).
+#
+# IMPORTANT: Deploy FilaMan behind a network boundary (reverse proxy, VPN, or
+# firewall rule) if you do not want the inventory readable by unauthenticated
+# clients on your network.  A future PR will add an optional API-key guard
+# mirroring Spoolman's SPOOLMAN_API_KEY mechanism.
+# ---------------------------------------------------------------------------
+
 
 # ---------------------------------------------------------------------------
 # Health / info

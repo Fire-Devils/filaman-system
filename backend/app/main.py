@@ -444,9 +444,6 @@ app.include_router(auth_oidc_router)
 app.include_router(api_router)
 mount_deferred_plugin_routers(app)
 
-from app.plugins.spoolmanapi.router import router as _spoolmanapi_router  # noqa: E402
-app.include_router(_spoolmanapi_router, prefix="/spoolman")
-
 
 # --- Plugin Page Serving (works in both debug and production) ---
 # Dynamic catch-all: resolves plugin pages at request time so that
