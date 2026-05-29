@@ -6,9 +6,10 @@ can point at FilaMan without modification.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from app.api.deps import DBSession
 
@@ -16,20 +17,6 @@ from . import schemas
 from .service import SpoolmanService
 
 router = APIRouter(prefix="/api/v1", tags=["Spoolman Compat API"])
-
-# ---------------------------------------------------------------------------
-# Authentication policy
-# ---------------------------------------------------------------------------
-# All routes in this router are intentionally unauthenticated.
-# Spoolman-native clients (e.g. spoolman-filament-swatch) communicate over
-# the plain Spoolman HTTP API and do not carry FilaMan JWT tokens.
-# This matches Spoolman's own default behaviour (no-auth by default).
-#
-# IMPORTANT: Deploy FilaMan behind a network boundary (reverse proxy, VPN, or
-# firewall rule) if you do not want the inventory readable by unauthenticated
-# clients on your network.  A future PR will add an optional API-key guard
-# mirroring Spoolman's SPOOLMAN_API_KEY mechanism.
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +73,7 @@ async def get_vendor(vendor_id: int, db: DBSession) -> schemas.Vendor:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/filament", response_model=list[schemas.Filament])
+@router.get("/filament", response_model=list[schemas.Filament], response_model_exclude_none=True)
 async def list_filaments(
     db: DBSession,
     vendor_name: str | None = Query(default=None),
@@ -116,7 +103,7 @@ async def list_filaments(
     return items
 
 
-@router.get("/filament/{filament_id}", response_model=schemas.Filament)
+@router.get("/filament/{filament_id}", response_model=schemas.Filament, response_model_exclude_none=True)
 async def get_filament(filament_id: int, db: DBSession) -> schemas.Filament:
     svc = SpoolmanService(db)
     filament = await svc.get_filament(filament_id)
@@ -130,7 +117,7 @@ async def get_filament(filament_id: int, db: DBSession) -> schemas.Filament:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/spool", response_model=list[schemas.Spool])
+@router.get("/spool", response_model=list[schemas.Spool], response_model_exclude_none=True)
 async def list_spools(
     db: DBSession,
     filament_name: str | None = Query(default=None),
@@ -162,13 +149,42 @@ async def list_spools(
     return items
 
 
-@router.get("/spool/{spool_id}", response_model=schemas.Spool)
+@router.get("/spool/{spool_id}", response_model=schemas.Spool, response_model_exclude_none=True)
 async def get_spool(spool_id: int, db: DBSession) -> schemas.Spool:
     svc = SpoolmanService(db)
     spool = await svc.get_spool(spool_id)
     if spool is None:
         raise HTTPException(status_code=404, detail="Spool not found")
     return spool
+
+
+@router.websocket("/spool")
+async def websocket_spool_list(websocket: WebSocket) -> None:
+    """WebSocket endpoint required by Moonraker's native [spoolman] integration.
+
+    Moonraker connects here to receive real-time spool-change events.
+    This implementation keeps the connection alive; future work can push
+    FilaMan spool-change events over this socket.
+    """
+    await websocket.accept()
+    try:
+        while True:
+            await asyncio.sleep(30)
+            await websocket.send_json({"type": "ping"})
+    except (WebSocketDisconnect, Exception):
+        pass
+
+
+@router.websocket("/spool/{spool_id}")
+async def websocket_spool_single(websocket: WebSocket, spool_id: int) -> None:  # noqa: ARG001
+    """WebSocket endpoint for a specific spool, required by Moonraker."""
+    await websocket.accept()
+    try:
+        while True:
+            await asyncio.sleep(30)
+            await websocket.send_json({"type": "ping"})
+    except (WebSocketDisconnect, Exception):
+        pass
 
 
 # ---------------------------------------------------------------------------
