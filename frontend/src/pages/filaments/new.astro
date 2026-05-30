@@ -344,6 +344,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { renderFieldInput } from '../../lib/extra-fields'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
@@ -851,7 +852,22 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
-    function renderSystemFields() {
+    function flattenObject(obj: any, prefix = '', res: any = {}) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key]
+          const newKey = prefix ? `${prefix}.${key}` : key
+          if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            flattenObject(val, newKey, res)
+          } else {
+            res[newKey] = val
+          }
+        }
+      }
+      return res
+    }
+
+    function renderSystemFields(flat: Record<string, any> = {}, raw?: Record<string, any>) {
       const container = document.getElementById('system-fields-container') as HTMLDivElement
       const grid = document.getElementById('system-fields-grid') as HTMLDivElement
       if (!systemFields || systemFields.length === 0) {
@@ -861,32 +877,10 @@ import Layout from '../../layouts/Layout.astro'
       container.style.display = 'block'
       grid.innerHTML = ''
       
-      systemFields.forEach(field => {
-        const defaultVal = field.default_value || ''
+      systemFields.forEach((field: any) => {
         const div = document.createElement('div')
-        let inputHtml = ''
-
-        switch (field.field_type) {
-          case 'number':
-            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" step="any" />`
-            break
-          case 'dropdown': {
-            const opts = (field.options || []).map((opt: string) => {
-              const selected = opt === defaultVal ? ' selected' : ''
-              return `<option value="${opt}"${selected}>${opt}</option>`
-            }).join('')
-            inputHtml = `<select class="fm-select system-field-input" data-key="${field.key}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
-            break
-          }
-          case 'checkbox': {
-            const checked = defaultVal === 'true' ? ' checked' : ''
-            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${field.key}" data-type="${field.field_type}"${checked} /> ${field.label}</label>`
-            break
-          }
-          default:
-            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" />`
-        }
-
+        const rawValue = raw ? (raw[field.key] ?? null) : null
+        const inputHtml = renderFieldInput(field, rawValue, flat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
@@ -1101,17 +1095,29 @@ import Layout from '../../layouts/Layout.astro'
       // System Fields + Custom Fields
       const fieldsObj: Record<string, any> = {}
 
-      // Collect System Fields
+      // Collect System Fields (scalar)
       document.querySelectorAll('.system-field-input').forEach((el: any) => {
         const key = el.dataset.key
         const type = el.dataset.type
         if (!key) return
         if (type === 'checkbox') {
           fieldsObj[key] = el.checked ? 'true' : 'false'
+        } else if (type === 'number') {
+          const value = el.value.trim()
+          if (value) fieldsObj[key] = parseFloat(value)
         } else {
           const value = el.value.trim()
           if (value) fieldsObj[key] = value
         }
+      })
+
+      // Collect Multiselect Fields
+      const multiselectByKey: Record<string, string[]> = {}
+      document.querySelectorAll('.system-field-input-multi').forEach((el: any) => {
+        const key = el.dataset.key
+        if (!key) return
+        if (!multiselectByKey[key]) multiselectByKey[key] = []
+        if ((el as HTMLInputElement).checked) multiselectByKey[key].push(el.value)
       })
 
       // Collect Custom Fields
@@ -1123,8 +1129,11 @@ import Layout from '../../layouts/Layout.astro'
         })
       }
 
-      if (Object.keys(fieldsObj).length > 0) {
+      if (Object.keys(fieldsObj).length > 0 || Object.keys(multiselectByKey).length > 0) {
         data.custom_fields = unflattenObject(fieldsObj)
+        for (const [k, v] of Object.entries(multiselectByKey)) {
+          data.custom_fields[k] = v
+        }
       }
 
       errorMessage.classList.add('hidden')
@@ -1260,13 +1269,20 @@ import Layout from '../../layouts/Layout.astro'
           const shopInput = document.getElementById('shop_url') as HTMLInputElement
           if (dup.shop_url) shopInput.value = dup.shop_url
 
-          // Custom Fields
+          // Custom Fields (non-system) + System Fields
           if (dup.custom_fields && typeof dup.custom_fields === 'object') {
-            const entries = Object.entries(dup.custom_fields)
-            if (entries.length > 0) {
-              customFields = entries.map(([key, value]) => ({ key, value: String(value) }))
+            const systemKeySet = new Set((systemFields ?? []).map((f: any) => f.key))
+            const allEntries = Object.entries(dup.custom_fields as Record<string, any>)
+            const customEntries = allEntries.filter(
+              ([k]) => !systemKeySet.has(k) && ![...systemKeySet].some(sk => k.startsWith(sk + '.'))
+            )
+            if (customEntries.length > 0) {
+              customFields = customEntries.map(([key, value]) => ({ key, value: String(value) }))
               renderCustomFields()
             }
+            // Prefill system fields from duplicate
+            const dupFlat = flattenObject(dup.custom_fields)
+            renderSystemFields(dupFlat, dup.custom_fields)
           }
         } catch (e) {
           console.error('Failed to apply duplicate filament data:', e)
