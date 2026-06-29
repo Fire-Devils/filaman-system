@@ -8,7 +8,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
-    "lint": "eslint 'src/pages/spools/[id]/index.astro' 'src/pages/spools/[id]/print.astro' 'src/pages/spools/print.astro' 'src/pages/filaments/[id]/index.astro' 'src/pages/filaments/[id]/print.astro' 'src/pages/filaments/print.astro' 'src/components/LabelDesignerEditor.astro' 'src/components/SingleLabelPrintStyles.astro' 'src/components/StandardLabelSettingsPanel.astro' 'src/components/BatchLabelPrintStyles.astro' 'src/lib/label-template.ts' 'src/lib/label-export.ts' 'src/lib/label-designer.ts' 'src/lib/label-designer-editor.ts' 'src/lib/label-standard.ts' 'src/lib/filament-label-data.ts' 'src/lib/label-extra-fields.ts' 'src/lib/label-print-page.ts' 'src/lib/label-print-style.ts' 'src/lib/qr-code.ts' --no-error-on-unmatched-pattern"
+    "lint": "eslint 'src/pages/spools/[id]/index.astro' 'src/pages/spools/[id]/print.astro' 'src/pages/spools/print.astro' 'src/pages/filaments/[id]/index.astro' 'src/pages/filaments/[id]/print.astro' 'src/pages/filaments/print.astro' 'src/components/LabelDesignerEditor.astro' 'src/components/LabelSheetOutputSettings.astro' 'src/components/SingleLabelPrintStyles.astro' 'src/components/StandardLabelSettingsPanel.astro' 'src/components/BatchLabelPrintStyles.astro' 'src/lib/label-template.ts' 'src/lib/label-export.ts' 'src/lib/label-designer.ts' 'src/lib/label-designer-editor.ts' 'src/lib/label-standard.ts' 'src/lib/filament-label-data.ts' 'src/lib/label-extra-fields.ts' 'src/lib/label-print-page.ts' 'src/lib/label-print-style.ts' 'src/lib/label-sheet.ts' 'src/lib/qr-code.ts' --no-error-on-unmatched-pattern"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

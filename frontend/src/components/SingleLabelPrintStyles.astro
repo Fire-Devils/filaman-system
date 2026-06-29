@@ -221,6 +221,13 @@
     font-family: var(--font-sans);
   }
 
+  .fm-btn:disabled,
+  .fm-btn.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none !important;
+  }
+
   .fm-btn-primary {
     background: var(--accent);
     color: var(--btn-primary-text);

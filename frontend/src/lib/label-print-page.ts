@@ -14,12 +14,14 @@ const STORAGE_SOFT_LIMIT_BYTES = 4_500_000
 
 export function installPrintFunction() {
   window.filamanPrint = function() {
-    try {
-      if (document.execCommand('print', false, undefined)) return
-    } catch {
-      // Fall back below.
-    }
-    window.print()
+    requestAnimationFrame(() => {
+      try {
+        if (document.execCommand('print', false, undefined)) return
+      } catch {
+        // Fall back below.
+      }
+      window.print()
+    })
   }
 }
 
@@ -103,6 +105,41 @@ function normalizeZoom(value: number, min: number, max: number, step: number, fa
   return Math.min(max, Math.max(min, Math.round(clamped / step) * step))
 }
 
+const fixedBatchToolbarRoots = new WeakSet<HTMLElement>()
+const pendingBatchToolbarSync = new WeakSet<HTMLElement>()
+
+function getPreviewToolbar(previewRoot: HTMLElement) {
+  const toolbar = previewRoot.querySelector('.preview-zoom-bar')
+  return toolbar instanceof HTMLElement ? toolbar : null
+}
+
+function syncFixedBatchToolbar(previewRoot: HTMLElement) {
+  const toolbar = getPreviewToolbar(previewRoot)
+  if (!toolbar) return
+  const rect = previewRoot.getBoundingClientRect()
+  toolbar.style.position = 'fixed'
+  toolbar.style.top = `${rect.top}px`
+  toolbar.style.left = `${rect.left + rect.width / 2}px`
+  toolbar.style.transform = 'translateX(-50%)'
+}
+
+function scheduleFixedBatchToolbarSync(previewRoot: HTMLElement) {
+  if (pendingBatchToolbarSync.has(previewRoot)) return
+  pendingBatchToolbarSync.add(previewRoot)
+  requestAnimationFrame(() => {
+    pendingBatchToolbarSync.delete(previewRoot)
+    syncFixedBatchToolbar(previewRoot)
+  })
+}
+
+function bindFixedBatchToolbar(previewRoot: HTMLElement) {
+  syncFixedBatchToolbar(previewRoot)
+  if (fixedBatchToolbarRoots.has(previewRoot)) return
+  fixedBatchToolbarRoots.add(previewRoot)
+  previewRoot.addEventListener('scroll', () => scheduleFixedBatchToolbarSync(previewRoot), { passive: true })
+  window.addEventListener('resize', () => scheduleFixedBatchToolbarSync(previewRoot), { passive: true })
+}
+
 export function bindPreviewZoomControls(options: PreviewZoomControlsOptions) {
   const min = options.min ?? 25
   const max = options.max ?? 300
@@ -147,6 +184,25 @@ export function bindPreviewZoomControls(options: PreviewZoomControlsOptions) {
   sync()
 
   return { getZoom, applyZoom, sync }
+}
+
+export function applyBatchLabelPreviewZoom(previewRoot: HTMLElement, zoomPercent: number) {
+  const zoom = normalizeZoom(Number(zoomPercent), 25, 300, 5, 100) / 100
+  bindFixedBatchToolbar(previewRoot)
+  const labels = Array.from(previewRoot.querySelectorAll<HTMLElement>(':scope > .label-wrapper')).map(wrapper => {
+    const label = wrapper.querySelector<HTMLElement>(':scope > .label-preview')
+    return label ? { wrapper, label, width: label.offsetWidth, height: label.offsetHeight } : null
+  }).filter((entry): entry is { wrapper: HTMLElement; label: HTMLElement; width: number; height: number } => !!entry)
+
+  labels.forEach(({ wrapper, label, width, height }) => {
+    label.style.zoom = '1'
+    label.style.transform = `scale(${zoom})`
+    label.style.transformOrigin = 'top left'
+    wrapper.style.width = `${width * zoom}px`
+    wrapper.style.height = `${height * zoom}px`
+    wrapper.style.flex = '0 0 auto'
+    wrapper.style.overflow = 'visible'
+  })
 }
 
 export type PrintDesignerTab = 'print' | 'designer'
@@ -272,7 +328,7 @@ export async function captureBatchLabel<T>(
   if (!(element instanceof HTMLElement)) {
     throw new Error(`Cannot capture label: element ${elementId} was not found`)
   }
-  return captureLabelElement(element, { pixelRatio, resetZoom: true })
+  return captureLabelElement(element, { pixelRatio, resetZoom: true, resetTransform: true })
 }
 
 interface BatchLabelExportOptions<T> {
@@ -288,6 +344,10 @@ interface BatchLabelExportOptions<T> {
   zipName: () => string
   zipEntryName: (entity: T) => string
   pdfName: () => string
+  exportPdf?: (
+    pages: { dataUrl: string; widthMm: number; heightMm: number }[],
+    defaultExport: () => Promise<void>,
+  ) => Promise<void>
   skipCaptureErrorsInZip?: boolean
   skipCaptureErrorsInPdf?: boolean
 }
@@ -308,6 +368,7 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
   const exportingText = () => options.getTranslation('labelPrint.exporting', 'Exporting...')
 
   window.filamanExportPNG = async function() {
+    if (options.pngButton.disabled || options.pngButton.getAttribute('aria-disabled') === 'true') return
     const entities = options.entities()
     if (entities.length === 0) return
 
@@ -360,7 +421,10 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
             if (!options.skipCaptureErrorsInPdf) throw error
           }
         }
-        if (pages.length > 0) await saveLabelPagesAsPdf(pages, options.pdfName())
+        if (pages.length === 0) return
+        const defaultExport = async () => saveLabelPagesAsPdf(pages, options.pdfName())
+        if (options.exportPdf) await options.exportPdf(pages, defaultExport)
+        else await defaultExport()
       } catch (error) {
         alert(options.getTranslation('labelPrint.pdfExportFailed', 'PDF export failed.'))
         console.error(error)
@@ -378,6 +442,7 @@ interface SingleLabelExportOptions {
   buildBaseName: () => string
   getDimensions: () => { widthMm: number; heightMm: number }
   refreshPreview: () => Promise<void>
+  exportPdf?: (defaultExport: () => Promise<void>) => Promise<void>
 }
 
 export function bindSingleLabelExport(options: SingleLabelExportOptions) {
@@ -420,11 +485,15 @@ export function bindSingleLabelExport(options: SingleLabelExportOptions) {
   options.exportPdfBtn.addEventListener('click', () => {
     void withExportButtonsDisabled(async () => {
       try {
-        const { widthMm, heightMm } = options.getDimensions()
-        await saveLabelPagesAsPdf(
-          [{ dataUrl: await captureActiveLabelPng(), widthMm, heightMm }],
-          `${options.buildBaseName()}.pdf`,
-        )
+        const defaultExport = async () => {
+          const { widthMm, heightMm } = options.getDimensions()
+          await saveLabelPagesAsPdf(
+            [{ dataUrl: await captureActiveLabelPng(), widthMm, heightMm }],
+            `${options.buildBaseName()}.pdf`,
+          )
+        }
+        if (options.exportPdf) await options.exportPdf(defaultExport)
+        else await defaultExport()
       } catch (error) {
         alert(options.getTranslation('labelPrint.pdfExportFailed', 'PDF export failed.'))
         console.error('Failed to export label PDF:', error)

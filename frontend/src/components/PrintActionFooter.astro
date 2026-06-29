@@ -1,0 +1,30 @@
+---
+interface Props {
+  printLabel?: string
+  resetLabel?: string
+  printI18n?: string
+  resetI18n?: string
+  exportPngI18n?: string
+  exportPdfI18n?: string
+  printButtonId?: string
+}
+
+const {
+  printLabel = 'Print',
+  resetLabel = 'Reset',
+  printI18n,
+  resetI18n,
+  exportPngI18n = 'labelPrint.btnExportPng',
+  exportPdfI18n = 'labelPrint.btnExportPdf',
+  printButtonId,
+} = Astro.props
+---
+
+<div class="action-buttons">
+  <div class="export-buttons">
+    <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPngI18n}>Export PNG</button>
+    <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPdfI18n}>Export PDF</button>
+  </div>
+  <button id={printButtonId} class="fm-btn fm-btn-primary" type="button" onclick="filamanPrint()" data-i18n={printI18n}>{printLabel}</button>
+  <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
+</div>

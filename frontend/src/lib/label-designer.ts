@@ -5,6 +5,7 @@ import {
   renderTemplateText,
   type SpoolData,
 } from './label-template'
+import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
 import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 
@@ -502,7 +503,7 @@ export function getFirstFilamentColor(filament: any): any {
   return {}
 }
 
-function flattenExtraFields(value: any, source: 'spool' | 'filament', prefix = ''): DesignerExtraField[] {
+function flattenExtraFields(value: any, source: LabelExtraFieldSource, prefix = ''): DesignerExtraField[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return []
   const fields: DesignerExtraField[] = []
   for (const [key, raw] of Object.entries(value)) {
@@ -510,6 +511,7 @@ function flattenExtraFields(value: any, source: 'spool' | 'filament', prefix = '
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       fields.push(...flattenExtraFields(raw, source, path))
     } else {
+      if (isBuiltInLabelField(source, path)) continue
       fields.push({
         key: `${source}.${path}`,
         label: path,

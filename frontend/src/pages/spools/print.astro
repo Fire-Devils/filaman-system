@@ -1,6 +1,10 @@
 ---
 import Layout from '../../layouts/Layout.astro'
 import LabelDesignerEditor from '../../components/LabelDesignerEditor.astro'
+import LabelSheetOutputSettings from '../../components/LabelSheetOutputSettings.astro'
+import PrintActionFooter from '../../components/PrintActionFooter.astro'
+import PrintSidebar from '../../components/PrintSidebar.astro'
+import PreviewZoomBar from '../../components/PreviewZoomBar.astro'
 import StandardLabelSettingsPanel from '../../components/StandardLabelSettingsPanel.astro'
 import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 ---
@@ -9,17 +13,14 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   <BatchLabelPrintStyles />
 
   <div class="print-page">
-    <aside class="print-sidebar">
-      <a id="btn-back" href="/spools" class="sidebar-header back-link">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        <span id="btn-back-label" data-i18n="labelPrint.backToOverview">Back to Overview</span>
-      </a>
-
-      <div class="tab-nav">
-        <button class="tab-btn active" id="tab-btn-print" data-tab="print" data-i18n="labelPrint.standardLabel">Standard Label</button>
-        <button class="tab-btn" id="tab-btn-designer" data-tab="designer" data-i18n="spools.labelDesigner">Label Designer</button>
-      </div>
-
+    <PrintSidebar
+      backHref="/spools"
+      backLabel="Back to Overview"
+      backLabelId="btn-back-label"
+      backI18n="labelPrint.backToOverview"
+      standardI18n="labelPrint.standardLabel"
+      designerI18n="spools.labelDesigner"
+    >
       <StandardLabelSettingsPanel
         idLabelI18n="labelPrint.checkId"
         idFallback="Spool ID"
@@ -29,30 +30,20 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
       <LabelDesignerEditor />
 
-      <div class="action-buttons">
-        <div class="export-buttons">
-          <button id="btn-export-png" class="fm-btn fm-btn-outline" onclick="filamanExportPNG()" data-i18n="labelPrint.btnExportPng">Export PNG</button>
-          <button id="btn-export-pdf" class="fm-btn fm-btn-outline" onclick="filamanExportPDF()" data-i18n="labelPrint.btnExportPdf">Export PDF</button>
-        </div>
-        <button class="fm-btn fm-btn-primary" onclick="filamanPrint()" data-i18n="labelPrint.btnPrint">Print</button>
-        <button id="btn-reset" class="fm-btn fm-btn-outline" data-i18n="labelPrint.btnReset">Reset</button>
-      </div>
-    </aside>
+      <LabelSheetOutputSettings />
+
+      <PrintActionFooter slot="footer" printI18n="labelPrint.btnPrint" resetI18n="labelPrint.btnReset" />
+    </PrintSidebar>
 
     <main class="preview-container" id="preview-container">
-      <div class="preview-zoom-bar">
-        <button class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-        <input type="range" id="preview-zoom-slider" min="25" max="300" step="5" value="100" class="preview-zoom-slider">
-        <button class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-        <span id="preview-zoom-label" class="preview-zoom-label">100%</span>
-        <button class="preview-zoom-btn" id="preview-zoom-reset" title="Reset zoom" aria-label="Reset zoom">⟳</button>
-      </div>
+      <PreviewZoomBar />
       <div class="label-count" id="label-count"></div>
     </main>
   </div>
 </Layout>
 
 <script>
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
   import { initLabelDesignerEditor } from '../../lib/label-designer-editor'
   import {
     buildDesignerExtraFieldsFromApiSpool,
@@ -73,6 +64,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     type StandardLabelSettings,
   } from '../../lib/label-standard'
   import {
+    applyBatchLabelPreviewZoom,
     bindBatchLabelExport,
     captureBatchLabel,
     findBatchLabelElement,
@@ -121,6 +113,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
+  const previewContainer = document.getElementById('preview-container') as HTMLElement
+  const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
 
   type ExtraFieldDef = { key: string; label: string; target_type: 'spool' | 'filament' }
   type ApiObject = Record<string, unknown>
@@ -138,6 +132,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const logoCache: Record<number, string | null> = {}
   let activePreviewTab: PrintDesignerTab = readPrintDesignerTab('filaman-label-active-tab')
   let renderVersion = 0
+  let previewZoomFrame = 0
 
   // Extra field definitions from API: {key, label, target_type}
   let efDefs: ExtraFieldDef[] = []
@@ -322,7 +317,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       showColor: checkColor.checked,
       showColorSwatch: checkColorSwatch.checked,
       showColorHex: checkColorHex.checked,
-      zoom: (parseInt(zoomInput.value) || 100) / 100,
     }
   }
 
@@ -359,8 +353,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       presetsKey: DESIGNER_PRESETS_KEY,
       settingsKey: DESIGNER_SETTINGS_KEY,
     })
-    const zoom = parseInt(zoomInput.value) / 100
-    container.style.zoom = String(zoom)
     await renderDesignerLabel({
       element: container,
       previewBorder: false,
@@ -400,11 +392,71 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       await new Promise(r => setTimeout(r, 0))
     }
     if (isStale()) return
+    syncOutputPreview()
     saveSettings()
   }
 
   function queueRenderAll() {
     void renderAll()
+  }
+
+  function getActiveLabelDimensions() {
+    if (activePreviewTab === 'designer') {
+      return getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
+        presetsKey: DESIGNER_PRESETS_KEY,
+        settingsKey: DESIGNER_SETTINGS_KEY,
+      }))
+    }
+    return getStandardLabelDimensions(getStandardSettings())
+  }
+
+  function getLabelSourceElements() {
+    return spools
+      .map(spool => document.getElementById(`wrapper-${spool.id}`))
+      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+  }
+
+  function updateLabelCount() {
+    if (!countEl || ids.length === 0) return
+    const copies = sheetControls.getOutputMode() === 'sheet' ? sheetControls.getSettings().copies : 1
+    const renderedCount = spools.length * copies
+    countEl.textContent = spools.length === ids.length
+      ? t('labelPrint.labelsReady', { count: String(renderedCount) })
+      : `${t('labelPrint.labelsReady', { count: String(renderedCount) })} (${spools.length}/${ids.length})`
+  }
+
+  function applyCurrentPreviewZoom() {
+    if (sheetControls.getOutputMode() === 'sheet') {
+      applyLabelSheetPreviewZoom(previewContainer, Number(zoomInput.value))
+    } else {
+      applyBatchLabelPreviewZoom(previewContainer, Number(zoomInput.value))
+    }
+  }
+
+  function schedulePreviewZoomUpdate() {
+    if (previewZoomFrame) return
+    previewZoomFrame = requestAnimationFrame(() => {
+      previewZoomFrame = 0
+      applyCurrentPreviewZoom()
+      saveSettings()
+    })
+  }
+
+  function syncOutputPreview() {
+    const sources = getLabelSourceElements()
+    syncLabelSheetPreview({
+      controls: sheetControls,
+      previewRoot: previewContainer,
+      sourceElements: sources,
+      labelDimensions: getActiveLabelDimensions(),
+    })
+    applyCurrentPreviewZoom()
+    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => t(key) || fallback)
+    updateLabelCount()
+  }
+
+  function handlePreviewZoomChange() {
+    schedulePreviewZoomUpdate()
   }
 
   async function loadExtraFieldDefs() {
@@ -462,6 +514,10 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         const groupContainer = document.createElement('div')
         groupContainer.className = container.className
         groupContainer.style.removeProperty('display')
+        if (scopeAttr) {
+          title.setAttribute(scopeAttr.name, '')
+          groupContainer.setAttribute(scopeAttr.name, '')
+        }
         lastExtraFieldGroupNode.insertAdjacentElement('afterend', title)
         title.insertAdjacentElement('afterend', groupContainer)
         lastExtraFieldGroupNode = groupContainer
@@ -470,7 +526,11 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         return group
       }
 
-      for (const def of allDefs) {
+      const sortedDefs = [...allDefs].sort((a, b) => (
+        (a.target_type === 'spool' ? 0 : 1) - (b.target_type === 'spool' ? 0 : 1)
+      ))
+
+      for (const def of sortedDefs) {
         const group = getExtraFieldGroup(def.target_type)
         const row = document.createElement('label')
         row.className = 'fm-checkbox-group'
@@ -510,7 +570,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     zoomInBtn,
     zoomResetBtn,
     getTranslation: (key, fallback) => t(key) || fallback,
-    onChange: queueRenderAll,
+    onChange: handlePreviewZoomChange,
   })
 
   const designerEditor = initLabelDesignerEditor({
@@ -528,16 +588,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     ownPresetsLabel: (t('spools.dsPresetsOwnGroup') || 'Spool presets'),
     crossPresetsLabel: (t('spools.dsPresetsCrossGroupFilament') || 'Filament presets'),
   })
-
-  const getCurrentLabelDimensions = () => {
-    if (activePreviewTab === 'designer') {
-      return getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
-        presetsKey: DESIGNER_PRESETS_KEY,
-        settingsKey: DESIGNER_SETTINGS_KEY,
-      }))
-    }
-    return getStandardLabelDimensions(getStandardSettings())
-  }
 
   const tabControls = bindPrintDesignerTabs({
     buttons: tabBtns,
@@ -561,11 +611,18 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     getTranslation: (key, fallback) => t(key) || fallback,
     renderAll,
     captureLabel,
-    getPdfDimensions: getCurrentLabelDimensions,
+    getPdfDimensions: getActiveLabelDimensions,
     singlePngName: labelAdapter.singlePngName,
     zipName: labelAdapter.zipName,
     zipEntryName: labelAdapter.zipEntryName,
     pdfName: labelAdapter.pdfName,
+    exportPdf: async (pages, defaultExport) => {
+      if (sheetControls.getOutputMode() === 'sheet') {
+        await saveLabelSheetPagesAsPdf(pages, datedExportName('label-sheet', 'pdf'), sheetControls.getSettings())
+      } else {
+        await defaultExport()
+      }
+    },
   })
 
   // ── Spool model field checkboxes ─────────────────────────────────────────
@@ -624,7 +681,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
   const idsParam = urlParams.get('ids') || ''
   const ids = idsParam.split(',').map(Number).filter(n => n > 0)
-  const previewContainer = document.getElementById('preview-container')!
   const countEl = document.getElementById('label-count')!
 
   if (ids.length === 0) {
@@ -643,9 +699,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     ])
     spools = spoolResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiSpool>).value)
     designerEditor.refreshExtraFields(getBatchDesignerExtraFields())
-    countEl.textContent = spoolResults.length === spools.length
-      ? t('labelPrint.labelsReady', { count: String(spools.length) })
-      : `${t('labelPrint.labelsReady', { count: String(spools.length) })} (${spools.length}/${ids.length})`
+    updateLabelCount()
 
     loadSettings()
     previewZoomControls.sync()
@@ -655,12 +709,20 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
   ;[widthInput, heightInput, fontInput, qrSizeInput, zoomInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch, checkColorHex].forEach(el => {
     el.addEventListener('change', () => {
-      if (el === zoomInput) previewZoomControls.sync()
+      if (el === zoomInput) {
+        previewZoomControls.sync()
+        handlePreviewZoomChange()
+        return
+      }
       queueRenderAll()
     })
     if (el.type === 'range' || el.type === 'number') {
       el.addEventListener('input', () => {
-        if (el === zoomInput) previewZoomControls.sync()
+        if (el === zoomInput) {
+          previewZoomControls.sync()
+          handlePreviewZoomChange()
+          return
+        }
         queueRenderAll()
       })
     }

@@ -1,6 +1,10 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
 import LabelDesignerEditor from '../../../components/LabelDesignerEditor.astro'
+import LabelSheetOutputSettings from '../../../components/LabelSheetOutputSettings.astro'
+import PrintActionFooter from '../../../components/PrintActionFooter.astro'
+import PrintSidebar from '../../../components/PrintSidebar.astro'
+import PreviewZoomBar from '../../../components/PreviewZoomBar.astro'
 import SingleLabelPrintStyles from '../../../components/SingleLabelPrintStyles.astro'
 import StandardLabelSettingsPanel from '../../../components/StandardLabelSettingsPanel.astro'
 
@@ -15,43 +19,17 @@ export function getStaticPaths() {
   <SingleLabelPrintStyles />
 
   <div class="print-page">
-    <aside class="print-sidebar">
-      <div class="print-sidebar-scroll">
-      <a id="btn-back" class="sidebar-header back-link">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        <span id="label-back">Back to Filament</span>
-      </a>
-
-      <!-- Tab navigation -->
-      <div class="tab-nav">
-        <button class="tab-btn active" id="tab-btn-print" data-tab="print">Standard Label</button>
-        <button class="tab-btn" id="tab-btn-designer" data-tab="designer">Label Designer</button>
-      </div>
-
+    <PrintSidebar backLabel="Back to Filament" backLabelId="label-back">
       <StandardLabelSettingsPanel idLabelI18n="filaments.showFilamentId" idFallback="Filament ID" />
 
       <LabelDesignerEditor />
+      <LabelSheetOutputSettings />
 
-      </div><!-- /.print-sidebar-scroll -->
-
-      <div class="action-buttons">
-        <div class="export-buttons">
-          <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button">Export PNG</button>
-          <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button">Export PDF</button>
-        </div>
-        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Print</button>
-        <button id="btn-reset" class="fm-btn fm-btn-outline">Defaults</button>
-      </div>
-    </aside>
+      <PrintActionFooter slot="footer" printButtonId="btn-print" resetLabel="Defaults" />
+    </PrintSidebar>
 
     <main class="preview-container">
-      <div class="preview-zoom-bar">
-        <button class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out">−</button>
-        <input type="range" id="preview-zoom-slider" min="50" max="300" step="5" value="100" class="preview-zoom-slider">
-        <button class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in">+</button>
-        <span id="preview-zoom-label" class="preview-zoom-label">100%</span>
-        <button class="preview-zoom-btn preview-zoom-reset" id="preview-zoom-reset" title="Reset zoom">⟳</button>
-      </div>
+      <PreviewZoomBar min="50" resetClass="preview-zoom-reset" />
       <div class="preview-scroll-area">
       <div id="label-preview" class="label-preview"></div>
       </div>
@@ -67,6 +45,8 @@ export function getStaticPaths() {
     loadDesignerSettingsFromStorage,
     renderDesignerLabel,
   } from '../../../lib/label-designer'
+  import { captureLabelElement } from '../../../lib/label-export'
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../../lib/label-sheet'
   import {
     buildStandardLabelDataFromFlat,
     getStandardLabelDimensions,
@@ -96,6 +76,7 @@ export function getStaticPaths() {
     type PrintDesignerTab,
     writeStorageValue,
   } from '../../../lib/label-print-page'
+  import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
 
   function applyPrintSidebarCollapse() {
     const page = document.getElementById('fm-page')
@@ -145,12 +126,19 @@ export function getStaticPaths() {
     if (stored) {
       const parsed = JSON.parse(stored)
       if (Array.isArray(parsed)) {
+        const seenExtraFields = new Set<string>()
         extraFields = parsed.filter((item) => (
           item &&
           typeof item.key === 'string' &&
           typeof item.label === 'string' &&
           typeof item.value === 'string'
-        ))
+        )).filter((item) => {
+          const source = item.source === 'spool' ? 'spool' : 'filament'
+          const identity = `${source}:${normalizeLabelFieldName(item.label || item.key)}`
+          if (seenExtraFields.has(identity)) return false
+          seenExtraFields.add(identity)
+          return true
+        })
       }
     }
   } catch { /* ignore */ }
@@ -210,6 +198,8 @@ export function getStaticPaths() {
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
+  const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+  const sheetControls = bindLabelSheetControls(syncOutputPreview)
 
   // --- Tab switching ---
   const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
@@ -242,6 +232,27 @@ export function getStaticPaths() {
     }
   }
 
+  function getActiveLabelDimensions() {
+    if (activePreviewTab === 'designer') {
+      return getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
+        presetsKey: DESIGNER_PRESETS_KEY,
+        settingsKey: DESIGNER_SETTINGS_KEY,
+      }))
+    }
+    return getStandardLabelDimensions(getStandardSettings())
+  }
+
+  function syncOutputPreview() {
+    syncLabelSheetPreview({
+      controls: sheetControls,
+      previewRoot,
+      sourceElements: [labelPreview],
+      labelDimensions: getActiveLabelDimensions(),
+    })
+    if (sheetControls.getOutputMode() === 'sheet') applyLabelSheetPreviewZoom(previewRoot, _previewZoom)
+    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => (window as Window & { __t?: (key: string) => string }).__t?.(key) || fallback)
+  }
+
   const tabControls = bindPrintDesignerTabs({
     buttons: tabBtns,
     printPanel: tabPanelPrint!,
@@ -260,8 +271,12 @@ export function getStaticPaths() {
 
   // ─── Label Designer ────────────────────────────────────────────────────────
 
+  function getDesignerExtraFields() {
+    return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'filament', ef.key, ef.label))
+  }
+
   const designerEditor = initLabelDesignerEditor({
-    extraFields,
+    extraFields: getDesignerExtraFields(),
     entityType: 'filament',
     getFilamentColorHex: () => labelData.hex_code,
     getFilamentColorHexes: () => labelData.color_hexes,
@@ -295,6 +310,7 @@ export function getStaticPaths() {
     _previewZoom = Math.min(300, Math.max(50, Math.round(z / 5) * 5))
     const lp = document.getElementById('label-preview') as HTMLElement
     if (lp) { lp.style.transform = `scale(${_previewZoom / 100})`; lp.style.transformOrigin = 'center center' }
+    applyLabelSheetPreviewZoom(previewRoot, _previewZoom)
     ;(document.getElementById('preview-zoom-slider') as HTMLInputElement).value = String(_previewZoom)
     const label = document.getElementById('preview-zoom-label')
     if (label) label.textContent = _previewZoom + '%'
@@ -500,6 +516,7 @@ export function getStaticPaths() {
     })
     if (isStale() || activePreviewTab !== 'print') return
     saveSettings()
+    syncOutputPreview()
   }
 
   ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch, checkColorHex].forEach(el => {
@@ -527,6 +544,8 @@ export function getStaticPaths() {
       isStale: () => isStale() || activePreviewTab !== 'designer',
       entityPath: 'filaments',
     })
+    if (isStale() || activePreviewTab !== 'designer') return
+    syncOutputPreview()
   }
 
   // ─── Export ───────────────────────────────────────────────────────────────
@@ -558,6 +577,24 @@ export function getStaticPaths() {
     refreshPreview: async () => {
       if (activePreviewTab === 'designer') await updateDesignerPreview()
       else await updatePreview()
+    },
+    exportPdf: async (defaultExport) => {
+      if (sheetControls.getOutputMode() !== 'sheet') {
+        await defaultExport()
+        return
+      }
+      if (activePreviewTab === 'designer') await updateDesignerPreview()
+      else await updatePreview()
+      const dimensions = getActiveLabelDimensions()
+      await saveLabelSheetPagesAsPdf(
+        [{
+          dataUrl: await captureLabelElement(labelPreview, { pixelRatio: LABEL_EXPORT_PIXEL_RATIO, resetTransform: true }),
+          widthMm: dimensions.widthMm,
+          heightMm: dimensions.heightMm,
+        }],
+        `${buildExportBaseName()}-sheet.pdf`,
+        sheetControls.getSettings(),
+      )
     },
   })
 
@@ -599,7 +636,8 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
         ])
-        const allDefs: {key: string, label: string}[] = Array.isArray(defs) ? defs : (defs.items || [])
+        const allDefs: {key: string, label: string}[] = (Array.isArray(defs) ? defs : (defs.items || []))
+          .filter((def: {key: string, label: string}) => !isBuiltInLabelField('filament', def.key, def.label))
 
         const filamentCustom: Record<string, string> = {}
         if (filRes.ok) {
@@ -661,7 +699,7 @@ export function getStaticPaths() {
         extraFieldsCheckboxes.style.display = ''
         document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
 
-        designerEditor.refreshExtraFields(extraFields)
+        designerEditor.refreshExtraFields(getDesignerExtraFields())
 
         // Re-load logo if mfr_id was populated from API
         if (!labelLogoLoaded && labelData.mfr_id) {

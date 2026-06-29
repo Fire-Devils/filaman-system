@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { isBuiltInLabelField } from './label-extra-fields'
 
 export interface FilamentLabelData {
   id: string
@@ -225,6 +226,7 @@ export function buildFilamentExtraFieldsForPrint(
   const fields = buildReducedStandardFilamentExtraFieldsFromLabelData(buildFilamentLabelDataFromApi(filament))
   const customFlat: Record<string, unknown> = filament?.custom_fields ?? {}
   for (const [key, def] of Object.entries(systemFieldMap)) {
+    if (isBuiltInLabelField('filament', key, def.label)) continue
     const raw = customFlat[key]
     fields.push({
       key: `filament.${key}`,
@@ -234,7 +236,7 @@ export function buildFilamentExtraFieldsForPrint(
     })
   }
   for (const [key, value] of Object.entries(customFlat)) {
-    if (!systemFieldMap[key]) {
+    if (!systemFieldMap[key] && !isBuiltInLabelField('filament', key)) {
       fields.push({
         key: `filament.${key}`,
         label: key,
@@ -248,10 +250,12 @@ export function buildFilamentExtraFieldsForPrint(
 
 export function buildDesignerExtraFieldsFromFilament(filament: any): FilamentExtraField[] {
   const customFields = filament?.custom_fields ?? {}
-  return Object.entries(customFields as Record<string, unknown>).map(([key, value]) => ({
-    key: `filament.${key}`,
-    label: key,
-    value: toLabelString(value),
-    source: 'filament',
-  }))
+  return Object.entries(customFields as Record<string, unknown>)
+    .filter(([key]) => !isBuiltInLabelField('filament', key))
+    .map(([key, value]) => ({
+      key: `filament.${key}`,
+      label: key,
+      value: toLabelString(value),
+      source: 'filament',
+    }))
 }

@@ -179,6 +179,7 @@ const { id } = Astro.params
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
+    import { isBuiltInLabelField } from '../../../lib/label-extra-fields'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -527,21 +528,27 @@ const { id } = Astro.params
 
       const spoolFlat = spool.custom_fields ? flattenObject(spool.custom_fields) : {}
       for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
+        if (isBuiltInLabelField('spool', key, def.label)) continue
         const raw = spoolFlat[key]
         efForPrint.push({ key: `spool.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'spool' })
       }
       // Also include any spool custom fields not covered by system definitions
       for (const [key, value] of Object.entries(spoolFlat)) {
-        if (!spoolSystemFieldMap[key]) efForPrint.push({ key: `spool.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
+        if (!spoolSystemFieldMap[key] && !isBuiltInLabelField('spool', key)) {
+          efForPrint.push({ key: `spool.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
+        }
       }
       const filamentFlat = spool.filament?.custom_fields ? flattenObject(spool.filament.custom_fields) : {}
       for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
+        if (isBuiltInLabelField('filament', key, def.label)) continue
         const raw = filamentFlat[key]
         efForPrint.push({ key: `filament.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'filament' })
       }
       // Also include any filament custom fields not covered by system definitions
       for (const [key, value] of Object.entries(filamentFlat)) {
-        if (!filamentSystemFieldMap[key]) efForPrint.push({ key: `filament.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'filament' })
+        if (!filamentSystemFieldMap[key] && !isBuiltInLabelField('filament', key)) {
+          efForPrint.push({ key: `filament.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'filament' })
+        }
       }
       sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
 

@@ -1,6 +1,10 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
 import LabelDesignerEditor from '../../../components/LabelDesignerEditor.astro'
+import LabelSheetOutputSettings from '../../../components/LabelSheetOutputSettings.astro'
+import PrintActionFooter from '../../../components/PrintActionFooter.astro'
+import PrintSidebar from '../../../components/PrintSidebar.astro'
+import PreviewZoomBar from '../../../components/PreviewZoomBar.astro'
 import SingleLabelPrintStyles from '../../../components/SingleLabelPrintStyles.astro'
 import StandardLabelSettingsPanel from '../../../components/StandardLabelSettingsPanel.astro'
 
@@ -15,43 +19,17 @@ export function getStaticPaths() {
   <SingleLabelPrintStyles />
 
   <div class="print-page">
-    <aside class="print-sidebar">
-      <div class="print-sidebar-scroll">
-      <a id="btn-back" class="sidebar-header back-link">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        <span id="label-back">Zurück zur Spule</span>
-      </a>
-
-      <!-- Tab navigation -->
-      <div class="tab-nav">
-        <button class="tab-btn active" id="tab-btn-print" data-tab="print">Standard Label</button>
-        <button class="tab-btn" id="tab-btn-designer" data-tab="designer">Label Designer</button>
-      </div>
-
+    <PrintSidebar backLabel="Zurück zur Spule" backLabelId="label-back">
       <StandardLabelSettingsPanel idLabelI18n="spools.showSpoolId" idFallback="Spool ID" />
 
       <LabelDesignerEditor />
+      <LabelSheetOutputSettings />
 
-      </div><!-- /.print-sidebar-scroll -->
-
-      <div class="action-buttons">
-        <div class="export-buttons">
-          <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button">Export PNG</button>
-          <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button">Export PDF</button>
-        </div>
-        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Drucken</button>
-        <button id="btn-reset" class="fm-btn fm-btn-outline">Zurücksetzen</button>
-      </div>
-    </aside>
+      <PrintActionFooter slot="footer" printButtonId="btn-print" printLabel="Drucken" resetLabel="Zurücksetzen" />
+    </PrintSidebar>
 
     <main class="preview-container">
-      <div class="preview-zoom-bar">
-        <button class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out">−</button>
-        <input type="range" id="preview-zoom-slider" min="50" max="300" step="5" value="100" class="preview-zoom-slider">
-        <button class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in">+</button>
-        <span id="preview-zoom-label" class="preview-zoom-label">100%</span>
-        <button class="preview-zoom-btn preview-zoom-reset" id="preview-zoom-reset" title="Reset zoom">⟳</button>
-      </div>
+      <PreviewZoomBar min="50" resetClass="preview-zoom-reset" />
       <div class="preview-scroll-area">
       <div id="label-preview" class="label-preview">
         <!-- Top: Logo area -->
@@ -95,6 +73,8 @@ export function getStaticPaths() {
     loadDesignerSettingsFromStorage,
     renderDesignerLabel,
   } from '../../../lib/label-designer'
+  import { captureLabelElement } from '../../../lib/label-export'
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../../lib/label-sheet'
   import {
     buildStandardLabelDataFromFlat,
     getStandardLabelDimensions,
@@ -117,6 +97,7 @@ export function getStaticPaths() {
     type PrintDesignerTab,
     writeStorageValue,
   } from '../../../lib/label-print-page'
+  import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
 
   // Auto-collapse nav sidebar on the print page when the viewport is narrow —
   // the print page needs maximum horizontal space and the overlay would cover the controls.
@@ -355,12 +336,20 @@ export function getStaticPaths() {
     if (stored) {
       const parsed = JSON.parse(stored)
       if (Array.isArray(parsed)) {
+        const seenExtraFields = new Set<string>()
         extraFields = parsed.filter((item) => (
           item &&
           typeof item.key === 'string' &&
           typeof item.label === 'string' &&
           typeof item.value === 'string'
-        ))
+        )).filter((item) => {
+          const source = item.source === 'filament' ? 'filament' : 'spool'
+          if (item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label)) return false
+          const identity = `${source}:${normalizeLabelFieldName(item.label || item.key)}`
+          if (seenExtraFields.has(identity)) return false
+          seenExtraFields.add(identity)
+          return true
+        })
       }
     }
   } catch { /* ignore */ }
@@ -429,6 +418,8 @@ export function getStaticPaths() {
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
+  const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+  const sheetControls = bindLabelSheetControls(syncOutputPreview)
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
   const ACTIVE_TAB_KEY = 'filaman-label-active-tab'
@@ -468,6 +459,27 @@ export function getStaticPaths() {
     }
   }
 
+  function getActiveLabelDimensions() {
+    if (activePreviewTab === 'designer') {
+      return getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
+        presetsKey: DESIGNER_PRESETS_KEY,
+        settingsKey: DESIGNER_SETTINGS_KEY,
+      }))
+    }
+    return getStandardLabelDimensions(getStandardSettings())
+  }
+
+  function syncOutputPreview() {
+    syncLabelSheetPreview({
+      controls: sheetControls,
+      previewRoot,
+      sourceElements: [labelPreview],
+      labelDimensions: getActiveLabelDimensions(),
+    })
+    if (sheetControls.getOutputMode() === 'sheet') applyLabelSheetPreviewZoom(previewRoot, _previewZoom)
+    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => (window as Window & { __t?: (key: string) => string }).__t?.(key) || fallback)
+  }
+
   const tabControls = bindPrintDesignerTabs({
     buttons: tabBtns,
     printPanel: tabPanelPrint!,
@@ -487,8 +499,12 @@ export function getStaticPaths() {
 
   // ─── Label Designer ────────────────────────────────────────────────────────
 
+  function getDesignerExtraFields() {
+    return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'spool', ef.key, ef.label))
+  }
+
   const designerEditor = initLabelDesignerEditor({
-    extraFields,
+    extraFields: getDesignerExtraFields(),
     entityType: 'spool',
     getFilamentColorHex: () => labelData.hex_code,
     getFilamentColorHexes: () => labelData.color_hexes,
@@ -522,6 +538,7 @@ export function getStaticPaths() {
     _previewZoom = Math.min(300, Math.max(50, Math.round(z / 5) * 5))
     const lp = document.getElementById('label-preview') as HTMLElement
     if (lp) { lp.style.transform = `scale(${_previewZoom / 100})`; lp.style.transformOrigin = 'center center' }
+    applyLabelSheetPreviewZoom(previewRoot, _previewZoom)
     ;(document.getElementById('preview-zoom-slider') as HTMLInputElement).value = String(_previewZoom)
     const label = document.getElementById('preview-zoom-label')
     if (label) label.textContent = _previewZoom + '%'
@@ -569,37 +586,79 @@ export function getStaticPaths() {
     savedExtraFieldSettings = parsedClassicSettings.extraFields as Record<string, boolean>
   }
 
-  if (extraFields.length > 0) {
-    extraFieldsTitle.style.display = ''
-    extraFieldsCheckboxes.style.display = ''
-    const hasBothSources = extraFields.some(ef => ef.source === 'spool') && extraFields.some(ef => ef.source === 'filament')
+  const scopeAttr = (() => {
+    const existing = document.querySelector('.fm-checkbox-group')
+    if (!existing) return null
+    return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
+  })()
 
-    // Copy Astro scoped-style attribute from existing checkboxes so dynamic elements get the same styles
-    const scopeAttr = (() => {
-      const existing = document.querySelector('.fm-checkbox-group')
-      if (!existing) return null
-      return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
-    })()
+  const extraFieldGroups = new Map<string, { title: HTMLElement; container: HTMLElement }>()
 
-    for (const ef of extraFields) {
-      const lbl = document.createElement('label')
-      lbl.className = 'fm-checkbox-group'
-      const cb = document.createElement('input')
-      cb.type = 'checkbox'
-      cb.id = `check-ef-${ef.key}`
-      cb.checked = savedExtraFieldSettings[ef.key] || false
-      const span = document.createElement('span')
-      span.textContent = hasBothSources ? `${ef.label} (${ef.source === 'spool' ? translate('dashboard.spool', 'Spool') : translate('spools.filament', 'Filament')})` : ef.label
-      if (scopeAttr) {
-        lbl.setAttribute(scopeAttr.name, '')
-        cb.setAttribute(scopeAttr.name, '')
-        span.setAttribute(scopeAttr.name, '')
-      }
-      lbl.appendChild(cb)
-      lbl.appendChild(span)
-      extraFieldsCheckboxes.appendChild(lbl)
-      extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
-      cb.addEventListener('change', () => updatePreview())
+  function getExtraFieldSource(source?: string) {
+    return source === 'filament' ? 'filament' : 'spool'
+  }
+
+  function getExtraFieldGroupTitle(source: string) {
+    return source === 'filament'
+      ? translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
+      : translate('spools.extraFieldsLabel', 'Spool Extra Fields')
+  }
+
+  function getExtraFieldGroup(source?: string) {
+    const normalizedSource = getExtraFieldSource(source)
+    const existing = extraFieldGroups.get(normalizedSource)
+    if (existing) return existing
+
+    const titleText = getExtraFieldGroupTitle(normalizedSource)
+    if (extraFieldGroups.size === 0) {
+      extraFieldsTitle.textContent = titleText
+      extraFieldsTitle.style.display = ''
+      extraFieldsCheckboxes.style.display = ''
+      const group = { title: extraFieldsTitle as HTMLElement, container: extraFieldsCheckboxes as HTMLElement }
+      extraFieldGroups.set(normalizedSource, group)
+      return group
+    }
+
+    const title = document.createElement('h3')
+    title.textContent = titleText
+    const container = document.createElement('div')
+    container.className = 'checkbox-grid checkbox-grid-single'
+    if (scopeAttr) {
+      title.setAttribute(scopeAttr.name, '')
+      container.setAttribute(scopeAttr.name, '')
+    }
+    extraFieldsCheckboxes.insertAdjacentElement('afterend', container)
+    container.insertAdjacentElement('beforebegin', title)
+    const group = { title, container }
+    extraFieldGroups.set(normalizedSource, group)
+    return group
+  }
+
+  function addExtraFieldCheckbox(ef: {key: string, label: string, value: string, source?: string}) {
+    const group = getExtraFieldGroup(ef.source)
+    const lbl = document.createElement('label')
+    lbl.className = 'fm-checkbox-group'
+    const cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.id = `check-ef-${ef.key}`
+    cb.checked = savedExtraFieldSettings[ef.key] || false
+    const span = document.createElement('span')
+    span.textContent = ef.label
+    if (scopeAttr) {
+      lbl.setAttribute(scopeAttr.name, '')
+      cb.setAttribute(scopeAttr.name, '')
+      span.setAttribute(scopeAttr.name, '')
+    }
+    lbl.appendChild(cb)
+    lbl.appendChild(span)
+    group.container.appendChild(lbl)
+    extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+    cb.addEventListener('change', () => updatePreview())
+  }
+
+  for (const source of ['spool', 'filament']) {
+    for (const ef of extraFields.filter(item => getExtraFieldSource(item.source) === source)) {
+      addExtraFieldCheckbox(ef)
     }
   }
 
@@ -727,6 +786,7 @@ export function getStaticPaths() {
     })
     if (isStale() || activePreviewTab !== 'print') return
     saveSettings()
+    syncOutputPreview()
   }
 
   ;[widthInput, heightInput, fontSizeInput, qrSizeInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch, checkColorHex].forEach(el => {
@@ -753,6 +813,8 @@ export function getStaticPaths() {
       logoUrl: labelLogoLoaded ? labelLogoUrl : null,
       isStale: () => isStale() || activePreviewTab !== 'designer',
     })
+    if (isStale() || activePreviewTab !== 'designer') return
+    syncOutputPreview()
   }
 
   // ─── Export ───────────────────────────────────────────────────────────────
@@ -784,6 +846,24 @@ export function getStaticPaths() {
     refreshPreview: async () => {
       if (activePreviewTab === 'designer') await updateDesignerPreview()
       else await updatePreview()
+    },
+    exportPdf: async (defaultExport) => {
+      if (sheetControls.getOutputMode() !== 'sheet') {
+        await defaultExport()
+        return
+      }
+      if (activePreviewTab === 'designer') await updateDesignerPreview()
+      else await updatePreview()
+      const dimensions = getActiveLabelDimensions()
+      await saveLabelSheetPagesAsPdf(
+        [{
+          dataUrl: await captureLabelElement(labelPreview, { pixelRatio: LABEL_EXPORT_PIXEL_RATIO, resetTransform: true }),
+          widthMm: dimensions.widthMm,
+          heightMm: dimensions.heightMm,
+        }],
+        `${buildExportBaseName()}-sheet.pdf`,
+        sheetControls.getSettings(),
+      )
     },
   })
 
@@ -829,7 +909,7 @@ export function getStaticPaths() {
         const allDefs: {key: string, label: string, target_type: string}[] = [
           ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'spool'})),
           ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'filament'})),
-        ]
+        ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
         if (allDefs.length === 0) return
 
         // Attempt to get actual spool values
@@ -849,15 +929,12 @@ export function getStaticPaths() {
           }
         }
 
-        // Populate extraFields and rebuild UI
-        const hasBothSources = allDefs.some(d => d.target_type === 'spool') && allDefs.some(d => d.target_type === 'filament')
-        const scopeAttr = (() => {
-          const existing = document.querySelector('.fm-checkbox-group')
-          if (!existing) return null
-          return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
-        })()
+        // Populate extraFields and rebuild UI.
+        const sortedDefs = [...allDefs].sort((a, b) => (
+          (a.target_type === 'spool' ? 0 : 1) - (b.target_type === 'spool' ? 0 : 1)
+        ))
 
-        for (const def of allDefs) {
+        for (const def of sortedDefs) {
           const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
           const ef = {
             key: `${def.target_type}.${def.key}`,
@@ -866,36 +943,11 @@ export function getStaticPaths() {
             source: def.target_type,
           }
           extraFields.push(ef)
-
-          const lbl = document.createElement('label')
-          lbl.className = 'fm-checkbox-group'
-          const cb = document.createElement('input')
-          cb.type = 'checkbox'
-          cb.id = `check-ef-${ef.key}`
-          cb.checked = savedExtraFieldSettings[ef.key] || false
-          const span = document.createElement('span')
-          span.textContent = hasBothSources
-            ? `${ef.label} (${def.target_type === 'spool' ? translate('dashboard.spool', 'Spool') : translate('spools.filament', 'Filament')})`
-            : ef.label
-          if (scopeAttr) {
-            lbl.setAttribute(scopeAttr.name, '')
-            cb.setAttribute(scopeAttr.name, '')
-            span.setAttribute(scopeAttr.name, '')
-          }
-          lbl.appendChild(cb)
-          lbl.appendChild(span)
-          extraFieldsCheckboxes.appendChild(lbl)
-          extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
-          cb.addEventListener('change', () => updatePreview())
+          addExtraFieldCheckbox(ef)
         }
 
-        // Show the print-settings extra-fields section
-        extraFieldsTitle.style.display = ''
-        extraFieldsCheckboxes.style.display = ''
-        document.getElementById('title-extra-fields')!.textContent = translate('spools.extraFieldsLabel', 'Spool Extra Fields')
-
         // Rebuild token areas in the designer so extra-field chips appear.
-        designerEditor.refreshExtraFields(extraFields)
+        designerEditor.refreshExtraFields(getDesignerExtraFields())
 
         updatePreview()
       } catch { /* ignore */ }

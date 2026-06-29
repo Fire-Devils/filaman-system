@@ -420,7 +420,7 @@ export function localizeLabelDesignerEditor(translate: (key: string, fallback: s
     el.setAttribute('aria-label', value)
   }
 
-  text('dsh-presets-text', 'spools.dsPresets', 'Presets')
+  text('dsh-presets-text', 'spools.dsPresets', 'Label Presets')
   text('dsl-preset-saved', 'spools.dsPresetsSaved', 'Saved presets')
   text('ds-preset-load-btn', 'spools.dsPresetsLoad', 'Load')
   title('ds-preset-delete-btn', 'spools.dsPresetsDelete', 'Delete selected preset')
@@ -580,7 +580,7 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   function markPresetDirty(dirty: boolean) {
     const hdr = byId('dsh-presets-text')
     if (!hdr) return
-    const label = translate('spools.dsPresets', 'Presets')
+    const label = translate('spools.dsPresets', 'Label Presets')
     hdr.textContent = dirty ? `* ${label}` : label
     hdr.classList.toggle('ds-preset-dirty', dirty)
   }
@@ -717,19 +717,19 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     const existingPreset = getPresets().find(p => p.name === name)
     if (!name) {
       btn.textContent = translate('spools.dsPresetsSaveNew', 'Save as New')
-      btn.className = 'ds-action-btn ds-action-btn-primary'
+      btn.className = 'preset-action-btn preset-action-btn-primary'
       btn.disabled = true
     } else if (existingPreset && sameSettings(existingPreset.settings, currentSettings)) {
       btn.textContent = translate('spools.dsPresetsSavedState', 'Saved')
-      btn.className = 'ds-action-btn ds-action-btn-saved'
+      btn.className = 'preset-action-btn preset-action-btn-saved'
       btn.disabled = true
     } else if (existingPreset) {
       btn.textContent = translate('spools.dsPresetsOverwrite', 'Overwrite')
-      btn.className = 'ds-action-btn ds-action-btn-overwrite'
+      btn.className = 'preset-action-btn preset-action-btn-overwrite'
       btn.disabled = false
     } else {
       btn.textContent = translate('spools.dsPresetsSaveNew', 'Save as New')
-      btn.className = 'ds-action-btn ds-action-btn-primary'
+      btn.className = 'preset-action-btn preset-action-btn-primary'
       btn.disabled = false
     }
     // Load/Delete: disabled for cross-type selections or empty
@@ -1125,8 +1125,9 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   presetNameInput?.addEventListener('input', updateSaveBtn)
   presetList?.addEventListener('change', () => {
     const val = presetList.value
-    // For cross-type picks, clear the name input so user can't accidentally save over them
-    if (presetNameInput) presetNameInput.value = val.startsWith(CROSS_OPTION_PREFIX) ? '' : val
+    if (presetNameInput) {
+      presetNameInput.value = val.startsWith(CROSS_OPTION_PREFIX) ? val.slice(CROSS_OPTION_PREFIX.length) : val
+    }
     updateSaveBtn()
   })
   const saveNamedPreset = () => {
@@ -1179,11 +1180,11 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     applyDesignerSettingsToForm(settings)
     persistDesignerSettings(settings, setItem, effectiveSettingsKey)
     if (isCross) {
-      // Cross-type load: apply settings but don't set as active own preset
+      // Cross-type load applies settings without making the source preset editable/deletable here.
       activePresetName = null
       activePresetSettings = null
       markPresetDirty(false)
-      if (presetNameInput) presetNameInput.value = ''
+      if (presetNameInput) presetNameInput.value = name
       refreshPresetList()
     } else {
       activePresetName = name
