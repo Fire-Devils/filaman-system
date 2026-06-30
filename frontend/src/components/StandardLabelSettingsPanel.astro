@@ -1,0 +1,88 @@
+---
+interface Props {
+  idLabelI18n?: string
+  idFallback?: string
+  includeSpoolFields?: boolean
+  extraFieldsMode?: 'single' | 'batch'
+  includePreviewZoom?: boolean
+}
+
+// The standard print tab is intentionally reduced for quick labels.
+// Full field/token selection belongs in the advanced label designer.
+const {
+  idLabelI18n = 'labelPrint.checkId',
+  idFallback = 'Spool ID',
+  includeSpoolFields = false,
+  extraFieldsMode = 'single',
+  includePreviewZoom = false,
+} = Astro.props
+---
+
+<div id="tab-panel-print" class="settings-section">
+  <h3 id="title-settings" data-i18n="labelPrint.settingsTitle">Print Settings</h3>
+
+  <div>
+    <label class="fm-label" id="label-width-text" data-i18n="labelPrint.widthMm">Width (mm)</label>
+    <input type="number" id="input-width" value="60" class="fm-input">
+  </div>
+
+  <div>
+    <label class="fm-label" id="label-height-text" data-i18n="labelPrint.heightMm">Height (mm)</label>
+    <input type="number" id="input-height" value="40" class="fm-input">
+  </div>
+
+  <div>
+    <label class="fm-label" id="label-font-size-text" data-i18n="labelPrint.fontSize">Font Size (%)</label>
+    <input type="range" id="input-font-size" min="50" max="200" value="100" class="fm-input" style="padding: 8px;">
+  </div>
+
+  <div>
+    <label class="fm-label" id="label-qr-size-text" data-i18n="labelPrint.qrSize">QR Size (mm)</label>
+    <input type="number" id="input-qr-size" value="18" class="fm-input">
+  </div>
+
+  <h3 id="title-display" data-i18n="labelPrint.displayTitle">Display</h3>
+  <div class="checkbox-grid">
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-logo" checked><span id="label-show-logo" data-i18n="labelPrint.checkLogo">Logo</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-qr" checked><span id="label-show-qr" data-i18n="labelPrint.checkQR">QR Code</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-id" checked><span id="label-show-id" data-i18n={idLabelI18n}>{idFallback}</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-mfr" checked><span id="label-show-mfr" data-i18n="labelPrint.checkMfr">Manufacturer</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-mat" checked><span id="label-show-mat" data-i18n="labelPrint.checkMat">Material</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-color" checked><span id="label-show-color" data-i18n="labelPrint.checkColor">Color</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-color-swatch" checked><span id="label-show-color-swatch" data-i18n="labelPrint.checkColorSwatch">Color Swatch</span></label>
+    <label class="fm-checkbox-group"><input type="checkbox" id="check-color-hex" checked><span id="label-show-color-hex" data-i18n="labelPrint.checkColorHex">Color Hex</span></label>
+  </div>
+
+  {includeSpoolFields && (
+    <>
+      <h3 data-i18n="labelPrint.spoolFieldsTitle">Spool Fields</h3>
+      <div id="spool-model-checkboxes" class="checkbox-grid checkbox-grid-single"></div>
+    </>
+  )}
+
+  {extraFieldsMode === 'batch' ? (
+    <>
+      <h3 id="ef-section-title" data-i18n="labelPrint.extraFieldsTitle" style="display:none;">Extra Fields</h3>
+      <div id="ef-checkboxes" class="checkbox-grid checkbox-grid-single" style="display:none;"></div>
+      <div id="ef-truncate-row" style="display:none;">
+        <label class="fm-label" data-i18n="labelPrint.truncateLabel">Truncate field name (chars, 0 = off)</label>
+        <input type="number" id="input-ef-truncate" value="0" min="0" max="60" class="fm-input">
+      </div>
+    </>
+  ) : (
+    <>
+      <h3 id="title-extra-fields" data-i18n="labelPrint.extraFieldsTitle" style="display: none;">Extra Fields</h3>
+      <div id="extra-fields-checkboxes" class="checkbox-grid checkbox-grid-single" style="display: none;"></div>
+    </>
+  )}
+
+  {includePreviewZoom && (
+    <>
+      <h3 data-i18n="labelPrint.previewTitle">Preview</h3>
+      <div>
+        <label class="fm-label" data-i18n="labelPrint.zoomLabel">Preview zoom (%)</label>
+        <input type="range" id="input-zoom" min="25" max="300" value="100" class="fm-input" style="padding: 8px;">
+      </div>
+    </>
+  )}
+</div>

@@ -22,14 +22,50 @@
 
 export interface SpoolData {
   id: string | number
+  // ── Filament profile fields ───────────────────────────────────────────────
+  'filament.id': string
   'filament.name': string
+  /** @deprecated compatibility alias for filament.type */
   'filament.material': string
   'filament.color': string
+  'filament.colors': string
   'filament.color_hex': string
+  'filament.color_hexes': string
   'filament.manufacturer': string
+  'filament.manufacturer_id': string
+  'filament.color_mode': string
+  'filament.multi_color_style': string
   'filament.extruder_temp': string | number
   'filament.bed_temp': string | number
+  'filament.raw_material_weight_g': string | number
+  /** @deprecated compatibility alias for filament.raw_material_weight_g */
   'filament.weight': string | number
+  'filament.type'?: string
+  'filament.subtype'?: string
+  'filament.manufacturer_color_name'?: string
+  'filament.diameter'?: string
+  'filament.finish'?: string
+  'filament.density'?: string
+  'filament.price'?: string
+  'filament.default_spool_weight_g'?: string
+  'filament.spool_outer_diameter_mm'?: string
+  'filament.spool_width_mm'?: string
+  'filament.spool_material'?: string
+  'filament.shop_url'?: string
+  // ── Spool model fields (only populated on spool print pages) ─────────────
+  lot_number?: string
+  external_id?: string
+  rfid_uid?: string
+  location?: string
+  status?: string
+  purchase_date?: string
+  purchase_price?: string
+  remaining_weight_g?: string
+  initial_total_weight_g?: string
+  empty_spool_weight_g?: string
+  low_weight_threshold_g?: string
+  stocked_in_at?: string
+  last_used_at?: string
   extra?: Record<string, string>
   [key: string]: unknown
 }

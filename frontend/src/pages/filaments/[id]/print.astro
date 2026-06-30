@@ -11,7 +11,7 @@ export function getStaticPaths() {
 }
 ---
 
-<Layout title="FilaMan - Print Label">
+<Layout title="FilaMan - Print Filament Label">
   <SingleLabelPrintStyles />
 
   <div class="print-page">
@@ -19,16 +19,16 @@ export function getStaticPaths() {
       <div class="print-sidebar-scroll">
       <a id="btn-back" class="sidebar-header back-link">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
-        <span id="label-back">Zurück zur Spule</span>
+        <span id="label-back">Back to Filament</span>
       </a>
 
       <!-- Tab navigation -->
       <div class="tab-nav">
-        <button class="tab-btn active" id="tab-btn-print" data-tab="print">Standard Label</button>
+        <button class="tab-btn active" id="tab-btn-print" data-tab="print">Print Settings</button>
         <button class="tab-btn" id="tab-btn-designer" data-tab="designer">Label Designer</button>
       </div>
 
-      <StandardLabelSettingsPanel idLabelI18n="spools.showSpoolId" idFallback="Spool ID" />
+      <StandardLabelSettingsPanel idLabelI18n="filaments.showFilamentId" idFallback="Filament ID" />
 
       <LabelDesignerEditor />
 
@@ -39,8 +39,8 @@ export function getStaticPaths() {
           <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button">Export PNG</button>
           <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button">Export PDF</button>
         </div>
-        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Drucken</button>
-        <button id="btn-reset" class="fm-btn fm-btn-outline">Zurücksetzen</button>
+        <button id="btn-print" class="fm-btn fm-btn-primary" onclick="filamanPrint()">Print</button>
+        <button id="btn-reset" class="fm-btn fm-btn-outline">Defaults</button>
       </div>
     </aside>
 
@@ -53,35 +53,7 @@ export function getStaticPaths() {
         <button class="preview-zoom-btn preview-zoom-reset" id="preview-zoom-reset" title="Reset zoom">⟳</button>
       </div>
       <div class="preview-scroll-area">
-      <div id="label-preview" class="label-preview">
-        <!-- Top: Logo area -->
-        <div id="label-top" class="label-top">
-          <img id="prev-logo" class="label-logo" alt="" />
-          <div id="prev-mfr-text" class="label-mfr-text"></div>
-        </div>
-        <div id="label-top-divider" class="label-divider"></div>
-
-        <!-- Middle: Designation + Color swatch -->
-        <div id="label-middle" class="label-middle">
-          <div class="label-middle-left">
-            <div id="prev-filament" class="label-designation"></div>
-            <div id="prev-color-row" class="label-color-row">
-              <div id="prev-color-swatch" class="label-color-swatch"></div>
-              <span id="prev-color-name" class="label-color-name"></span>
-            </div>
-          </div>
-          <div id="prev-hex-code" class="label-hex-code"></div>
-        </div>
-
-        <!-- Bottom: ID + Extra fields left, QR right -->
-        <div id="label-bottom" class="label-bottom">
-          <div class="label-bottom-left">
-            <div id="prev-id" class="label-spool-id"></div>
-            <div id="prev-extra-fields" class="label-extra-fields"></div>
-          </div>
-          <div id="label-qr-container" class="label-qr"></div>
-        </div>
-      </div>
+      <div id="label-preview" class="label-preview"></div>
       </div>
     </main>
   </div>
@@ -103,6 +75,13 @@ export function getStaticPaths() {
     type StandardLabelSettings,
   } from '../../../lib/label-standard'
   import {
+    buildFilamentLabelDataFromApi,
+    buildFilamentLabelDataFromParams,
+    buildReducedStandardFilamentExtraFieldsFromLabelData,
+    mergeMissingFilamentLabelData,
+    type FilamentExtraField,
+  } from '../../../lib/filament-label-data'
+  import {
     LABEL_EXPORT_PIXEL_RATIO,
     bindPrintDesignerTabs,
     bindSingleLabelExport,
@@ -118,8 +97,6 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
 
-  // Auto-collapse nav sidebar on the print page when the viewport is narrow —
-  // the print page needs maximum horizontal space and the overlay would cover the controls.
   function applyPrintSidebarCollapse() {
     const page = document.getElementById('fm-page')
     if (!page) return
@@ -138,6 +115,7 @@ export function getStaticPaths() {
 
   type TranslationWindow = Window & { __t?: (key: string) => string }
   type SavedLabelSettings = {
+    _v?: unknown
     width?: unknown
     height?: unknown
     fontSize?: unknown
@@ -155,203 +133,15 @@ export function getStaticPaths() {
 
   const translate = (key: string, fallback = '') => (window as TranslationWindow).__t?.(key) || fallback
 
+  // Filament ID from URL: /filaments/{id}/print
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
 
   const params = new URLSearchParams(window.location.search)
-  const labelData = {
-    id: id,
-    filament_id: params.get('filament_id') || '',
-    designation: params.get('designation') || '',
-    manufacturer: params.get('mfr') || '',
-    manufacturer_id: params.get('manufacturer_id') || params.get('mfr_id') || '',
-    type: params.get('type') || '',
-    color: params.get('color') || '',
-    colors: params.get('colors') || '',
-    subtype: params.get('subtype') || '',
-    mfr_id: params.get('mfr_id') || '',
-    hex_code: params.get('hex_code') || '',
-    color_hexes: params.get('color_hexes') || '',
-    color_mode: params.get('color_mode') || '',
-    multi_color_style: params.get('multi_color_style') || '',
-    extruder_temp: params.get('extruder_temp') || '',
-    bed_temp: params.get('bed_temp') || '',
-    raw_material_weight_g: params.get('raw_material_weight_g') || params.get('weight') || '',
-    weight: params.get('weight') || '',
-    diameter: params.get('diameter') || '',
-    finish: params.get('finish') || '',
-    density: params.get('density') || '',
-    price: params.get('price') || '',
-    manufacturer_color_name: params.get('color_name') || '',
-    default_spool_weight_g: params.get('default_spool_wt') || '',
-    spool_outer_diameter_mm: params.get('spool_outer_dia') || '',
-    spool_width_mm: params.get('spool_width') || '',
-    spool_material: params.get('spool_material') || '',
-    shop_url: params.get('shop_url') || '',
-    lot_number: params.get('lot') || '',
-    external_id: params.get('ext_id') || '',
-    rfid_uid: params.get('rfid') || '',
-    location: params.get('location') || '',
-    status: params.get('status') || '',
-    purchase_date: params.get('purchase_date') || '',
-    purchase_price: params.get('purchase_price') || '',
-    remaining_weight_g: params.get('remaining_wt') || '',
-    initial_total_weight_g: params.get('initial_wt') || '',
-    empty_spool_weight_g: params.get('empty_spool_wt') || '',
-    low_weight_threshold_g: params.get('low_wt') || '',
-    stocked_in_at: params.get('stocked_in') || '',
-    last_used_at: params.get('last_used') || '',
-  }
+  const labelData = buildFilamentLabelDataFromParams(id, params)
 
-  function toLabelString(value: unknown): string {
-    return value === undefined || value === null ? '' : String(value)
-  }
-
-  function firstValue(...values: unknown[]): string {
-    for (const value of values) {
-      const text = toLabelString(value)
-      if (text) return text
-    }
-    return ''
-  }
-
-  type ApiColorEntry = {
-    display_name_override?: unknown
-    color?: { name?: unknown; hex_code?: unknown }
-  }
-  type ApiFilamentForPrint = {
-    id?: unknown
-    manufacturer_id?: unknown
-    designation?: unknown
-    material_type?: unknown
-    type?: unknown
-    material_subgroup?: unknown
-    manufacturer_color_name?: unknown
-    finish_type?: unknown
-    raw_material_weight_g?: unknown
-    default_spool_weight_g?: unknown
-    spool_outer_diameter_mm?: unknown
-    spool_width_mm?: unknown
-    spool_material?: unknown
-    price?: unknown
-    shop_url?: unknown
-    density_g_cm3?: unknown
-    diameter_mm?: unknown
-    color_mode?: unknown
-    multi_color_style?: unknown
-    custom_fields?: Record<string, unknown>
-    colors?: ApiColorEntry[]
-    filament_colors?: ApiColorEntry[]
-    manufacturer?: {
-      id?: unknown
-      name?: unknown
-      spool_outer_diameter_mm?: unknown
-      spool_width_mm?: unknown
-      spool_material?: unknown
-    }
-  }
-  type ApiSpoolForPrint = {
-    filament_id?: unknown
-    lot_number?: unknown
-    rfid_uid?: unknown
-    external_id?: unknown
-    purchase_date?: unknown
-    purchase_price?: unknown
-    stocked_in_at?: unknown
-    last_used_at?: unknown
-    initial_total_weight_g?: unknown
-    empty_spool_weight_g?: unknown
-    remaining_weight_g?: unknown
-    spool_outer_diameter_mm?: unknown
-    spool_width_mm?: unknown
-    spool_material?: unknown
-    low_weight_threshold_g?: unknown
-    custom_fields?: Record<string, unknown>
-    filament?: ApiFilamentForPrint
-    status?: { label?: unknown }
-    location?: { label?: unknown; name?: unknown }
-  }
-
-  function getApiFilamentColors(filament: ApiFilamentForPrint): ApiColorEntry[] {
-    const list = Array.isArray(filament?.filament_colors)
-      ? filament.filament_colors
-      : filament?.colors
-    return Array.isArray(list) ? list : []
-  }
-
-  function applySpoolApiData(spool: ApiSpoolForPrint) {
-    const filament = spool?.filament ?? {}
-    const manufacturer = filament?.manufacturer ?? {}
-    const colors = getApiFilamentColors(filament)
-    const firstColor = colors[0] ?? {}
-    const colorNames = colors
-      .map(color => color?.display_name_override || color?.color?.name)
-      .filter(Boolean)
-      .join(', ')
-    const colorHexes = colors
-      .map(color => color?.color?.hex_code)
-      .filter(Boolean)
-      .join(', ')
-
-    Object.assign(labelData, {
-      filament_id: firstValue(spool?.filament_id, labelData.filament_id),
-      designation: firstValue(filament?.designation, labelData.designation),
-      manufacturer: firstValue(manufacturer?.name, labelData.manufacturer),
-      manufacturer_id: firstValue(filament?.manufacturer_id, manufacturer?.id, labelData.manufacturer_id),
-      type: firstValue(filament?.material_type, filament?.type, labelData.type),
-      subtype: firstValue(filament?.material_subgroup, labelData.subtype),
-      color: firstValue(firstColor?.display_name_override, filament?.manufacturer_color_name, firstColor?.color?.name, labelData.color),
-      colors: firstValue(colorNames, labelData.colors),
-      hex_code: firstValue(firstColor?.color?.hex_code, labelData.hex_code),
-      color_hexes: firstValue(colorHexes, labelData.color_hexes),
-      color_mode: firstValue(filament?.color_mode, labelData.color_mode),
-      multi_color_style: firstValue(filament?.multi_color_style, labelData.multi_color_style),
-      extruder_temp: firstValue(filament?.custom_fields?.extruder_temp, labelData.extruder_temp),
-      bed_temp: firstValue(filament?.custom_fields?.bed_temp, labelData.bed_temp),
-      raw_material_weight_g: firstValue(filament?.raw_material_weight_g, labelData.raw_material_weight_g),
-      weight: firstValue(filament?.raw_material_weight_g, labelData.weight),
-      diameter: firstValue(filament?.diameter_mm, labelData.diameter),
-      finish: firstValue(filament?.finish_type, labelData.finish),
-      density: firstValue(filament?.density_g_cm3, labelData.density),
-      price: firstValue(filament?.price, labelData.price),
-      manufacturer_color_name: firstValue(filament?.manufacturer_color_name, labelData.manufacturer_color_name),
-      default_spool_weight_g: firstValue(filament?.default_spool_weight_g, labelData.default_spool_weight_g),
-      spool_outer_diameter_mm: firstValue(spool?.spool_outer_diameter_mm, filament?.spool_outer_diameter_mm, manufacturer?.spool_outer_diameter_mm, labelData.spool_outer_diameter_mm),
-      spool_width_mm: firstValue(spool?.spool_width_mm, filament?.spool_width_mm, manufacturer?.spool_width_mm, labelData.spool_width_mm),
-      spool_material: firstValue(spool?.spool_material, filament?.spool_material, manufacturer?.spool_material, labelData.spool_material),
-      shop_url: firstValue(filament?.shop_url, labelData.shop_url),
-      mfr_id: firstValue(manufacturer?.id, filament?.manufacturer_id, labelData.mfr_id),
-      lot_number: firstValue(spool?.lot_number, labelData.lot_number),
-      external_id: firstValue(spool?.external_id, labelData.external_id),
-      rfid_uid: firstValue(spool?.rfid_uid, labelData.rfid_uid),
-      location: firstValue(spool?.location?.label, spool?.location?.name, labelData.location),
-      status: firstValue(spool?.status?.label, labelData.status),
-      purchase_date: firstValue(spool?.purchase_date, labelData.purchase_date),
-      purchase_price: firstValue(spool?.purchase_price, labelData.purchase_price),
-      remaining_weight_g: firstValue(spool?.remaining_weight_g, labelData.remaining_weight_g),
-      initial_total_weight_g: firstValue(spool?.initial_total_weight_g, labelData.initial_total_weight_g),
-      empty_spool_weight_g: firstValue(spool?.empty_spool_weight_g, labelData.empty_spool_weight_g),
-      low_weight_threshold_g: firstValue(spool?.low_weight_threshold_g, labelData.low_weight_threshold_g),
-      stocked_in_at: firstValue(spool?.stocked_in_at, labelData.stocked_in_at),
-      last_used_at: firstValue(spool?.last_used_at, labelData.last_used_at),
-    })
-  }
-
-  async function fetchSpoolApiData() {
-    try {
-      const response = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
-      if (!response.ok) return null
-      const spool = await response.json()
-      applySpoolApiData(spool)
-      return spool
-    } catch {
-      return null
-    }
-  }
-
-
-  let extraFields: {key: string, label: string, value: string, source?: string}[] = []
+  let extraFields: FilamentExtraField[] = []
   try {
-    const stored = sessionStorage.getItem('filaman-label-extra-fields')
+    const stored = sessionStorage.getItem('filaman-filament-label-extra-fields')
     if (stored) {
       const parsed = JSON.parse(stored)
       if (Array.isArray(parsed)) {
@@ -365,12 +155,17 @@ export function getStaticPaths() {
     }
   } catch { /* ignore */ }
 
-  // Flat SpoolData object consumed by the template parser (Phase 3)
-  // Keys match the {token} names used in designer templates.
+  const LABEL_SETTINGS_KEY = 'filaman-filament-label-settings'
+  const LABEL_SETTINGS_VERSION = 2
+  const ACTIVE_TAB_KEY = 'filaman-filament-label-active-tab'
+  const DESIGNER_PRESETS_KEY = 'filaman-filament-label-presets-v1'
+  const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
+
+  // SpoolData for the template parser — filament fields map directly
   function buildSpoolData() {
     return buildSpoolDataFromFlatLabel({
       id: labelData.id,
-      filament_id: labelData.filament_id,
+      filament_id: labelData.id,
       designation: labelData.designation,
       manufacturer: labelData.manufacturer,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
@@ -396,24 +191,10 @@ export function getStaticPaths() {
       spool_width_mm: labelData.spool_width_mm,
       spool_material: labelData.spool_material,
       shop_url: labelData.shop_url,
-      lot_number: labelData.lot_number,
-      external_id: labelData.external_id,
-      rfid_uid: labelData.rfid_uid,
-      location: labelData.location,
-      status: labelData.status,
-      purchase_date: labelData.purchase_date,
-      purchase_price: labelData.purchase_price,
-      remaining_weight_g: labelData.remaining_weight_g,
-      initial_total_weight_g: labelData.initial_total_weight_g,
-      empty_spool_weight_g: labelData.empty_spool_weight_g,
-      low_weight_threshold_g: labelData.low_weight_threshold_g,
-      stocked_in_at: labelData.stocked_in_at,
-      last_used_at: labelData.last_used_at,
       extraFields,
     })
   }
 
-  // DOM references
   const widthInput = document.getElementById('input-width') as HTMLInputElement
   const heightInput = document.getElementById('input-height') as HTMLInputElement
   const fontSizeInput = document.getElementById('input-font-size') as HTMLInputElement
@@ -429,11 +210,6 @@ export function getStaticPaths() {
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
-
-  const LABEL_SETTINGS_KEY = 'filaman-label-settings'
-  const ACTIVE_TAB_KEY = 'filaman-label-active-tab'
-  const DESIGNER_PRESETS_KEY = 'filaman-spool-label-presets-v1'
-  const DESIGNER_SETTINGS_KEY = 'filaman-spool-label-designer-v1'
 
   // --- Tab switching ---
   const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
@@ -453,14 +229,12 @@ export function getStaticPaths() {
     if (!tabPanelPrint || !tabPanelDesigner || !labelPreview) return
     if (tab === 'designer') {
       const isStale = beginPreviewRender('designer')
-      // Clear any classic preview remnants before building designer layout
       labelPreview.innerHTML = ''
       labelPreview.style.border = ''
       labelPreview.style.padding = ''
       updateDesignerPreview(isStale)
     } else {
       const isStale = beginPreviewRender('print')
-      // Force reset of classic layout detection before building print preview
       labelPreview.innerHTML = ''
       labelPreview.style.border = 'none'
       labelPreview.style.padding = ''
@@ -482,29 +256,28 @@ export function getStaticPaths() {
     },
   })
 
-  // Restore last active tab — deferred until after designer setup completes
   const savedTab = readStorageValue(ACTIVE_TAB_KEY)
 
   // ─── Label Designer ────────────────────────────────────────────────────────
 
   const designerEditor = initLabelDesignerEditor({
     extraFields,
-    entityType: 'spool',
+    entityType: 'filament',
     getFilamentColorHex: () => labelData.hex_code,
     safeSetLocalStorage,
     translate,
     onChange: () => updateDesignerPreview(),
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
-    entityLabel: 'Spool',
-    crossPresetsKey: 'filaman-filament-label-presets-v1',
-    ownPresetsLabel: translate('spools.dsPresetsOwnGroup', 'Spool presets'),
-    crossPresetsLabel: translate('spools.dsPresetsCrossGroupFilament', 'Filament presets'),
+    entityLabel: 'Filament',
+    crossPresetsKey: 'filaman-spool-label-presets-v1',
+    ownPresetsLabel: translate('filaments.dsPresetsOwnGroup', 'Filament presets'),
+    crossPresetsLabel: translate('filaments.dsPresetsCrossGroupSpool', 'Spool presets'),
   })
 
   // ─── Preview zoom ─────────────────────────────────────────────────────────
 
-  const ZOOM_KEY = 'filaman-label-zoom-v1'
+  const ZOOM_KEY = 'filaman-filament-label-zoom-v1'
   const setZoomTitle = (id: string, key: string, fallback: string) => {
     const button = document.getElementById(id)
     if (!button) return
@@ -531,15 +304,12 @@ export function getStaticPaths() {
   document.getElementById('preview-zoom-in')?.addEventListener('click', () => applyZoom(_previewZoom + 10))
   document.getElementById('preview-zoom-out')?.addEventListener('click', () => applyZoom(_previewZoom - 10))
   document.getElementById('preview-zoom-reset')?.addEventListener('click', () => applyZoom(100))
-  // Restore persisted zoom level
   ;(() => { const z = Number(readStorageValue(ZOOM_KEY)); if (z >= 50 && z <= 300) applyZoom(z) })()
-
 
   // Label logo state
   let labelLogoUrl: string | null = null
   let labelLogoLoaded = false
 
-  // Try to load the manufacturer's label-logo
   async function loadLabelLogo() {
     if (!labelData.mfr_id) return
     try {
@@ -570,9 +340,7 @@ export function getStaticPaths() {
   if (extraFields.length > 0) {
     extraFieldsTitle.style.display = ''
     extraFieldsCheckboxes.style.display = ''
-    const hasBothSources = extraFields.some(ef => ef.source === 'spool') && extraFields.some(ef => ef.source === 'filament')
 
-    // Copy Astro scoped-style attribute from existing checkboxes so dynamic elements get the same styles
     const scopeAttr = (() => {
       const existing = document.querySelector('.fm-checkbox-group')
       if (!existing) return null
@@ -587,7 +355,7 @@ export function getStaticPaths() {
       cb.id = `check-ef-${ef.key}`
       cb.checked = savedExtraFieldSettings[ef.key] || false
       const span = document.createElement('span')
-      span.textContent = hasBothSources ? `${ef.label} (${ef.source === 'spool' ? translate('dashboard.spool', 'Spool') : translate('spools.filament', 'Filament')})` : ef.label
+      span.textContent = ef.label
       if (scopeAttr) {
         lbl.setAttribute(scopeAttr.name, '')
         cb.setAttribute(scopeAttr.name, '')
@@ -603,10 +371,11 @@ export function getStaticPaths() {
 
   function saveSettings() {
     const settings: SavedLabelSettings = {
-      width: (widthInput as HTMLInputElement).value,
-      height: (heightInput as HTMLInputElement).value,
-      fontSize: (fontSizeInput as HTMLInputElement).value,
-      qrSize: (qrSizeInput as HTMLInputElement).value,
+      _v: LABEL_SETTINGS_VERSION,
+      width: widthInput.value,
+      height: heightInput.value,
+      fontSize: fontSizeInput.value,
+      qrSize: qrSizeInput.value,
       showLogo: checkLogo.checked,
       showQR: checkQR.checked,
       showID: checkID.checked,
@@ -625,7 +394,10 @@ export function getStaticPaths() {
 
   function loadSettings() {
     const s = parseJsonOrNull<SavedLabelSettings>(readStorageValue(LABEL_SETTINGS_KEY))
-    if (!s || typeof s !== 'object') return
+    if (!s || typeof s !== 'object' || Number(s._v ?? 0) < LABEL_SETTINGS_VERSION) {
+      removeStorageValue(LABEL_SETTINGS_KEY)
+      return
+    }
     if (s.width !== undefined) widthInput.value = String(s.width)
     if (s.height !== undefined) heightInput.value = String(s.height)
     if (s.fontSize !== undefined) fontSizeInput.value = String(s.fontSize)
@@ -646,32 +418,32 @@ export function getStaticPaths() {
 
   loadSettings()
 
-  document.getElementById('tab-btn-print')!.textContent = translate('labelPrint.standardLabel', 'Standard Label')
+  // i18n labels
+  document.getElementById('tab-btn-print')!.textContent = translate('spools.printSettings', 'Print Settings')
   document.getElementById('tab-btn-designer')!.textContent = translate('spools.labelDesigner', 'Label Designer')
-  document.getElementById('title-settings')!.textContent = translate('labelPrint.settingsTitle', 'Label Settings')
-
-  document.getElementById('label-width-text')!.textContent = translate('spools.labelWidth')
-  document.getElementById('label-height-text')!.textContent = translate('spools.labelHeight')
-  document.getElementById('label-font-size-text')!.textContent = translate('spools.fontSize')
-  document.getElementById('label-qr-size-text')!.textContent = translate('spools.qrSize')
+  document.getElementById('title-settings')!.textContent = translate('spools.printSettings', 'Print Settings')
+  document.getElementById('label-width-text')!.textContent = translate('spools.labelWidth', 'Width (mm)')
+  document.getElementById('label-height-text')!.textContent = translate('spools.labelHeight', 'Height (mm)')
+  document.getElementById('label-font-size-text')!.textContent = translate('spools.fontSize', 'Font Size (%)')
+  document.getElementById('label-qr-size-text')!.textContent = translate('spools.qrSize', 'QR Size (mm)')
   document.getElementById('label-show-logo')!.textContent = translate('spools.showLogo', 'Logo')
-  document.getElementById('label-show-qr')!.textContent = translate('spools.showQRCode')
-  document.getElementById('label-show-id')!.textContent = translate('spools.showSpoolId')
-  document.getElementById('label-show-mfr')!.textContent = translate('spools.showManufacturer')
-  document.getElementById('label-show-mat')!.textContent = translate('spools.showMaterial')
-  document.getElementById('label-show-color')!.textContent = translate('spools.showColor')
+  document.getElementById('label-show-qr')!.textContent = translate('spools.showQRCode', 'QR Code')
+  document.getElementById('label-show-id')!.textContent = translate('filaments.showFilamentId', 'Filament ID')
+  document.getElementById('label-show-mfr')!.textContent = translate('spools.showManufacturer', 'Manufacturer')
+  document.getElementById('label-show-mat')!.textContent = translate('spools.showMaterial', 'Material')
+  document.getElementById('label-show-color')!.textContent = translate('spools.showColor', 'Color')
   document.getElementById('label-show-color-swatch')!.textContent = translate('spools.showColorSwatch', 'Color Swatch')
   document.getElementById('label-show-color-hex')!.textContent = translate('labelPrint.checkColorHex', 'Color Hex')
   if (extraFields.length > 0) {
-    document.getElementById('title-extra-fields')!.textContent = translate('spools.extraFieldsLabel')
+    document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
   }
   const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
-  backBtn.href = `/spools/${id}`
-  document.getElementById('label-back')!.textContent = translate('spools.backToSpool')
+  backBtn.href = `/filaments/${id}`
+  document.getElementById('label-back')!.textContent = translate('filaments.backToFilament', 'Back to Filament')
   exportPngBtn.textContent = translate('labelPrint.btnExportPng', 'Export PNG')
   exportPdfBtn.textContent = translate('labelPrint.btnExportPdf', 'Export PDF')
-  document.getElementById('btn-print')!.textContent = translate('common.print')
-  document.getElementById('btn-reset')!.textContent = translate('spools.resetDefaults')
+  document.getElementById('btn-print')!.textContent = translate('common.print', 'Print')
+  document.getElementById('btn-reset')!.textContent = translate('spools.resetDefaults', 'Defaults')
 
   function getSelectedStandardExtraFields(): StandardExtraField[] {
     return extraFieldChecks
@@ -705,6 +477,7 @@ export function getStaticPaths() {
       colorName: labelData.color,
       hexCode: labelData.hex_code,
       extraFields: getSelectedStandardExtraFields(),
+      qrUrl: `${window.location.origin}/filaments/${labelData.id}`,
     })
   }
 
@@ -748,6 +521,7 @@ export function getStaticPaths() {
       data: buildSpoolData(),
       logoUrl: labelLogoLoaded ? labelLogoUrl : null,
       isStale: () => isStale() || activePreviewTab !== 'designer',
+      entityPath: 'filaments',
     })
   }
 
@@ -756,12 +530,12 @@ export function getStaticPaths() {
   function buildExportBaseName() {
     const mode = activePreviewTab === 'designer' ? 'designer' : 'classic'
     return buildLabelExportBaseName([
-      'spool-label',
+      'filament-label',
       labelData.manufacturer,
       labelData.designation,
-      labelData.id ? `spool-${labelData.id}` : '',
+      labelData.id ? `filament-${labelData.id}` : '',
       mode,
-    ], `spool-label-${mode}`)
+    ], `filament-label-${mode}`)
   }
 
   bindSingleLabelExport({
@@ -785,10 +559,10 @@ export function getStaticPaths() {
 
   document.getElementById('btn-reset')?.addEventListener('click', () => {
     removeStorageValue(LABEL_SETTINGS_KEY);
-    (widthInput as HTMLInputElement).value = '60';
-    (heightInput as HTMLInputElement).value = '40';
-    (fontSizeInput as HTMLInputElement).value = '100';
-    (qrSizeInput as HTMLInputElement).value = '18';
+    widthInput.value = '60';
+    heightInput.value = '40';
+    fontSizeInput.value = '100';
+    qrSizeInput.value = '18';
     checkLogo.checked = true;
     checkQR.checked = true;
     checkID.checked = true;
@@ -803,8 +577,6 @@ export function getStaticPaths() {
     updatePreview()
   })
 
-  const apiSpoolData = await fetchSpoolApiData()
-
   // Restore active tab now that all designer state is fully initialized
   if (savedTab === 'designer') tabControls.activate('designer')
 
@@ -813,56 +585,41 @@ export function getStaticPaths() {
     tabControls.activate(readPrintDesignerTab(ACTIVE_TAB_KEY))
   })
 
-  // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),
-  // fetch definitions from the API and rebuild the extra-fields UI.
+  // Fallback for direct navigation. The standard Print Settings tab remains
+  // intentionally reduced; the API fetch is primarily to complete Label Designer
+  // token data and custom-field chips when sessionStorage is unavailable.
   if (extraFields.length === 0) {
     ;(async () => {
       try {
-        const [spoolDefs, filamentDefs] = await Promise.all([
-          fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+        const [defs, filRes] = await Promise.all([
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+          fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
         ])
-        const allDefs: {key: string, label: string, target_type: string}[] = [
-          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'spool'})),
-          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'filament'})),
-        ]
-        if (allDefs.length === 0) return
+        const allDefs: {key: string, label: string}[] = Array.isArray(defs) ? defs : (defs.items || [])
 
-        // Attempt to get actual spool values
-        const spoolCustom: Record<string, string> = {}
         const filamentCustom: Record<string, string> = {}
-        const sd = apiSpoolData ?? await fetchSpoolApiData()
-        if (sd) {
-          if (sd.custom_fields) {
-            for (const [k, v] of Object.entries(sd.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) spoolCustom[k] = String(v)
-            }
-          }
-          if (sd.filament?.custom_fields) {
-            for (const [k, v] of Object.entries(sd.filament.custom_fields as Record<string, unknown>)) {
+        if (filRes.ok) {
+          const fd = await filRes.json()
+          if (fd.custom_fields) {
+            for (const [k, v] of Object.entries(fd.custom_fields as Record<string, unknown>)) {
               if (v !== null && v !== undefined) filamentCustom[k] = String(v)
             }
           }
+          mergeMissingFilamentLabelData(labelData, buildFilamentLabelDataFromApi(fd, id))
         }
 
-        // Populate extraFields and rebuild UI
-        const hasBothSources = allDefs.some(d => d.target_type === 'spool') && allDefs.some(d => d.target_type === 'filament')
+        const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
+
+        if (standardFilamentFields.length === 0 && allDefs.length === 0) return
+
         const scopeAttr = (() => {
           const existing = document.querySelector('.fm-checkbox-group')
           if (!existing) return null
           return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
         })()
 
-        for (const def of allDefs) {
-          const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
-          const ef = {
-            key: `${def.target_type}.${def.key}`,
-            label: def.label,
-            value: valueMap[def.key] ?? '',
-            source: def.target_type,
-          }
-          extraFields.push(ef)
-
+        function makeEfCheckbox(ef: {key: string, label: string, value: string, source?: string}) {
+          extraFields.push({ ...ef, source: ef.source ?? 'filament' })
           const lbl = document.createElement('label')
           lbl.className = 'fm-checkbox-group'
           const cb = document.createElement('input')
@@ -870,9 +627,7 @@ export function getStaticPaths() {
           cb.id = `check-ef-${ef.key}`
           cb.checked = savedExtraFieldSettings[ef.key] || false
           const span = document.createElement('span')
-          span.textContent = hasBothSources
-            ? `${ef.label} (${def.target_type === 'spool' ? translate('dashboard.spool', 'Spool') : translate('spools.filament', 'Filament')})`
-            : ef.label
+          span.textContent = ef.label
           if (scopeAttr) {
             lbl.setAttribute(scopeAttr.name, '')
             cb.setAttribute(scopeAttr.name, '')
@@ -885,14 +640,29 @@ export function getStaticPaths() {
           cb.addEventListener('change', () => updatePreview())
         }
 
-        // Show the print-settings extra-fields section
+        for (const sfd of standardFilamentFields) {
+          makeEfCheckbox(sfd)
+        }
+
+        for (const def of allDefs) {
+          makeEfCheckbox({
+            key: `filament.${def.key}`,
+            label: def.label,
+            value: filamentCustom[def.key] ?? '',
+            source: 'filament',
+          })
+        }
+
         extraFieldsTitle.style.display = ''
         extraFieldsCheckboxes.style.display = ''
-        document.getElementById('title-extra-fields')!.textContent = translate('spools.extraFieldsLabel', 'Spool Extra Fields')
+        document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
 
-        // Rebuild token areas in the designer so extra-field chips appear.
         designerEditor.refreshExtraFields(extraFields)
 
+        // Re-load logo if mfr_id was populated from API
+        if (!labelLogoLoaded && labelData.mfr_id) {
+          await loadLabelLogo()
+        }
         updatePreview()
       } catch { /* ignore */ }
     })()

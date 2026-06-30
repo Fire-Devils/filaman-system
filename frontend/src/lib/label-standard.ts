@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
+import { LABEL_EXPORT_DPI } from './label-export'
 import { updateLabelPrintPageStyle } from './label-print-style'
 
-const QR_PIXEL_SIZE = 400
+const MM_PER_INCH = 25.4
+const MIN_QR_PIXEL_SIZE = 256
+
+function getPrintQrPixelSize(sizeMm: number) {
+  return Math.max(MIN_QR_PIXEL_SIZE, Math.round(sizeMm * (LABEL_EXPORT_DPI / MM_PER_INCH)))
+}
 
 export interface StandardExtraField {
   label: string
@@ -17,6 +23,8 @@ export interface StandardLabelData {
   colorName: string
   hexCode: string
   extraFields: StandardExtraField[]
+  /** Override the QR code URL. Defaults to /spools/{id} if omitted. */
+  qrUrl?: string
 }
 
 export interface StandardLabelSettings {
@@ -31,6 +39,7 @@ export interface StandardLabelSettings {
   showMaterial: boolean
   showColor: boolean
   showColorSwatch: boolean
+  showColorHex: boolean
   zoom?: number | null
 }
 
@@ -107,6 +116,7 @@ export function buildStandardLabelDataFromFlat(data: {
   colorName?: unknown
   hexCode?: unknown
   extraFields?: StandardExtraField[]
+  qrUrl?: string
 }): StandardLabelData {
   return {
     id: toStringValue(data.id),
@@ -116,6 +126,7 @@ export function buildStandardLabelDataFromFlat(data: {
     colorName: toStringValue(data.colorName),
     hexCode: cleanHex(data.hexCode),
     extraFields: data.extraFields ?? [],
+    qrUrl: data.qrUrl,
   }
 }
 
@@ -206,9 +217,13 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     colorName.style.fontSize = `${fontScale * 10}pt`
   }
 
-  colorRow.style.display = (settings.showColor && data.colorName) || (settings.showColorSwatch && hex) ? 'flex' : 'none'
+  colorRow.style.display = (
+    (settings.showColor && data.colorName) ||
+    (settings.showColorSwatch && hex) ||
+    (settings.showColorHex && hex)
+  ) ? 'flex' : 'none'
 
-  if (hex) {
+  if (settings.showColorHex && hex) {
     hexElement.textContent = `#${hex.toUpperCase()}`
     hexElement.style.cssText = `display:block;font-size:${fontScale * 9}pt`
   } else {
@@ -228,7 +243,7 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     const div = document.createElement('div')
     div.style.cssText = `font-size:${fontScale * 7}pt;color:black;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3`
     const labelSpan = document.createElement('span')
-    labelSpan.style.color = '#555'
+    labelSpan.style.cssText = 'color:#555;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
     labelSpan.textContent = `${extraField.label}:`
     div.appendChild(labelSpan)
     div.appendChild(document.createTextNode(` ${extraField.value}`))
@@ -241,13 +256,13 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     await ensureQrCodeLoaded()
     if (options.isStale?.()) return
     qrElement.innerHTML = ''
-    const url = `${window.location.origin}/spools/${encodeURIComponent(String(data.id))}`
+    const url = data.qrUrl ?? `${window.location.origin}/spools/${encodeURIComponent(String(data.id))}`
     const QRCode = getQrCodeConstructor()
     if (!QRCode) throw new Error('QRCode is not available')
     new QRCode(qrElement, {
       text: url,
-      width: QR_PIXEL_SIZE,
-      height: QR_PIXEL_SIZE,
+      width: getPrintQrPixelSize(qrSizeMm),
+      height: getPrintQrPixelSize(qrSizeMm),
       colorDark: '#000',
       colorLight: '#fff',
       correctLevel: QRCode.CorrectLevel.H,

@@ -181,7 +181,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-title2-tpl">Subtitle Format</label><button class="ds-syntax-btn" id="ds-title2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.material}"></textarea>
+          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.type}"></textarea>
           <div class="ds-token-area" id="ds-title2-token-area"></div>
         </div>
       </div>
@@ -259,6 +259,13 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         <input type="range" id="ds-info-size-range" min="1" max="10" step="0.5" value="2.5" class="ds-slider">
         <input type="number" id="ds-info-size" value="2.5" step="0.5" min="1" max="10" class="fm-input ds-size-num">
       </div>
+      <div class="ds-title-gap-inline">
+        <label class="fm-label ds-mini-label" id="dsl-info-gap">Margin (mm)</label>
+        <div class="ds-size-row ds-size-row-compact">
+          <input type="range" id="ds-info-gap-range" min="-1" max="4" step="0.1" value="0" class="ds-slider">
+          <input type="number" id="ds-info-gap" value="0" min="-1" max="4" step="0.1" class="fm-input ds-size-num">
+        </div>
+      </div>
       <div class="ds-two-col-row">
         <div class="ds-field-col"><label class="fm-label" id="dsl-info-halign">Justification</label><div class="ds-align-group" id="ds-info-align-group" data-value="left">
           {align.map(item => <button class:list={['ds-align-btn', item.value === 'left' && 'active']} data-align={item.value} type="button" title={item.label} aria-label={item.label}>
@@ -277,7 +284,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info-tpl">Information Format</label><button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.material}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C"></textarea>
+        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C"></textarea>
         <div class="ds-token-area" id="ds-info-token-area"></div>
       </div>
       <div class="ds-secondary-toggle" id="ds-info2-toggle"><label class="fm-checkbox-group ds-secondary-check"><input type="checkbox" id="ds-info2-show"><span id="dsl-info2-show">Side Column</span></label></div>
@@ -306,7 +313,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info2-tpl">Side Column Format</label><button class="ds-syntax-btn" id="ds-info2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.weight}g&#10;{filament.color_hex}"></textarea>
+          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}"></textarea>
           <div class="ds-token-area" id="ds-info2-token-area"></div>
         </div>
       </div>
