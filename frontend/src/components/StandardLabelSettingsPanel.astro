@@ -4,7 +4,6 @@ interface Props {
   idFallback?: string
   includeSpoolFields?: boolean
   extraFieldsMode?: 'single' | 'batch'
-  includePreviewZoom?: boolean
 }
 
 // The standard print tab is intentionally reduced for quick labels.
@@ -14,7 +13,6 @@ const {
   idFallback = 'Spool ID',
   includeSpoolFields = false,
   extraFieldsMode = 'single',
-  includePreviewZoom = false,
 } = Astro.props
 ---
 
@@ -64,25 +62,11 @@ const {
     <>
       <h3 id="ef-section-title" data-i18n="labelPrint.extraFieldsTitle" style="display:none;">Extra Fields</h3>
       <div id="ef-checkboxes" class="checkbox-grid checkbox-grid-single" style="display:none;"></div>
-      <div id="ef-truncate-row" style="display:none;">
-        <label class="fm-label" data-i18n="labelPrint.truncateLabel">Truncate field name (chars, 0 = off)</label>
-        <input type="number" id="input-ef-truncate" value="0" min="0" max="60" class="fm-input">
-      </div>
     </>
   ) : (
     <>
       <h3 id="title-extra-fields" data-i18n="labelPrint.extraFieldsTitle" style="display: none;">Extra Fields</h3>
       <div id="extra-fields-checkboxes" class="checkbox-grid checkbox-grid-single" style="display: none;"></div>
-    </>
-  )}
-
-  {includePreviewZoom && (
-    <>
-      <h3 data-i18n="labelPrint.previewTitle">Preview</h3>
-      <div>
-        <label class="fm-label" data-i18n="labelPrint.zoomLabel">Preview zoom (%)</label>
-        <input type="range" id="input-zoom" min="25" max="300" value="100" class="fm-input" style="padding: 8px;">
-      </div>
     </>
   )}
 </div>
