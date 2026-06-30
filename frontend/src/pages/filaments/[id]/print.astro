@@ -264,6 +264,8 @@ export function getStaticPaths() {
     extraFields,
     entityType: 'filament',
     getFilamentColorHex: () => labelData.hex_code,
+    getFilamentColorHexes: () => labelData.color_hexes,
+    getFilamentMultiColorStyle: () => labelData.multi_color_style,
     safeSetLocalStorage,
     translate,
     onChange: () => updateDesignerPreview(),
@@ -476,6 +478,8 @@ export function getStaticPaths() {
       material: labelData.type,
       colorName: labelData.color,
       hexCode: labelData.hex_code,
+      colorHexes: labelData.color_hexes,
+      multiColorStyle: labelData.multi_color_style,
       extraFields: getSelectedStandardExtraFields(),
       qrUrl: `${window.location.origin}/filaments/${labelData.id}`,
     })

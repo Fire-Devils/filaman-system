@@ -486,7 +486,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   .ds-modifier-inverse:hover, .ds-modifier-inverse.active { background: #fff; border-color: #fff; color: #000; }
   .ds-modifier-color-inverse { min-width: 24px; padding: 0; background: color-mix(in srgb, var(--accent) 72%, #000); border-color: var(--accent); color: var(--btn-primary-text); font-size: 0.84rem; }
   .ds-modifier-color-inverse::after { content: ''; position: absolute; right: 3px; bottom: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); border: 1px solid var(--btn-primary-text); }
-  .ds-modifier-color-inverse.has-filament-color { background: var(--ds-filament-bg, #000); border-color: var(--ds-filament-bg, #000); color: var(--ds-filament-fg, #fff); }
+  .ds-modifier-color-inverse.has-filament-color { background: var(--ds-filament-bg, #000); border-color: var(--ds-filament-border, #000); color: var(--ds-filament-fg, #fff); }
   .ds-modifier-color-inverse.has-filament-color::after { content: none; }
   .ds-modifier-caps { font-size: 0.72rem; line-height: 0.9; }
   .ds-syntax-popover { position: fixed; z-index: 9999; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 10px; padding: 14px 16px 12px; width: min(760px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100vh - 40px); overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3); font-size: 0.78rem; line-height: 1.6; color: var(--text); }

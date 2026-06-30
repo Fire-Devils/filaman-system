@@ -13,7 +13,7 @@
  *   @@inverse@@            — inverted text using filament color with automatic black/white text
  *   [size=120]text[/size]  — inline relative size in percent (50..300)
  *   [size=120%]text[/size] — same as above; percent sign is optional
- *   {color_swatch[8]}      — inline color bar using filament.color_hex; width is in ch units (default 1)
+ *   {color_swatch[8]}      — inline color bar using filament color(s); width is in ch units (default 1)
  *   \n                     — line-break (<br>)
  *
  * SpoolData is a flat object passed from the print page; the "extra" key holds
@@ -70,7 +70,9 @@ export interface SpoolData {
   [key: string]: unknown
 }
 
-const SWATCH_MARKER_RE = /^\[\[FM_SWATCH\|(\d{1,3})\|(#[0-9A-F]{6})\]\]$/
+type FilamentSwatchMode = 'bands' | 'layers'
+
+const SWATCH_MARKER_RE = /^\[\[FM_SWATCH\|(\d{1,3})\|(bands|layers)\|((?:#[0-9A-F]{6})(?:,#[0-9A-F]{6})*)\]\]$/
 const MAX_TEMPLATE_CHARS = 8000
 const MAX_MARKUP_CHARS = 12000
 
@@ -87,6 +89,36 @@ export function normalizeHexColor(raw: unknown): string | null {
   return null
 }
 
+export function getFilamentSwatchColors(colorHexes: unknown, fallbackHex?: unknown): string[] {
+  const candidates = String(colorHexes ?? '')
+    .split(',')
+    .map(part => normalizeHexColor(part))
+    .filter((hex): hex is string => Boolean(hex))
+  if (candidates.length > 0) return [...new Set(candidates)]
+  const fallback = normalizeHexColor(fallbackHex)
+  return fallback ? [fallback] : []
+}
+
+export function getFilamentSwatchMode(style: unknown): FilamentSwatchMode {
+  const normalized = String(style ?? '').toLowerCase().replace(/[\s_-]+/g, '')
+  if (normalized === 'gradient' || normalized === 'layered' || normalized === 'layers' || normalized === 'layer') return 'layers'
+  return 'bands'
+}
+
+export function buildFilamentSwatchBackground(colors: string[], style: unknown): string {
+  if (colors.length === 0) return ''
+  if (colors.length === 1) return colors[0]
+
+  const stops: string[] = []
+  const direction = getFilamentSwatchMode(style) === 'layers' ? '180deg' : '90deg'
+  colors.forEach((color, index) => {
+    const start = (index / colors.length) * 100
+    const end = ((index + 1) / colors.length) * 100
+    stops.push(`${color} ${start.toFixed(3)}% ${end.toFixed(3)}%`)
+  })
+  return `linear-gradient(${direction}, ${stops.join(', ')})`
+}
+
 export function getReadableTextColor(backgroundHex: string | null): '#000' | '#fff' {
   if (!backgroundHex) return '#fff'
   const hex = backgroundHex.replace('#', '')
@@ -98,9 +130,29 @@ export function getReadableTextColor(backgroundHex: string | null): '#000' | '#f
   return contrastWithBlack >= contrastWithWhite ? '#000' : '#fff'
 }
 
-function getFilamentColorTheme(data: SpoolData): { background: string; foreground: '#000' | '#fff' } {
-  const background = normalizeHexColor(data['filament.color_hex']) ?? '#000000'
-  return { background, foreground: getReadableTextColor(background) }
+export function getReadableTextColorForColors(colors: string[]): '#000' | '#fff' {
+  if (colors.length === 0) return '#fff'
+  const totals = colors.reduce<[number, number, number]>((sum, color) => {
+    const hex = color.replace('#', '')
+    return [
+      sum[0] + Number.parseInt(hex.slice(0, 2), 16),
+      sum[1] + Number.parseInt(hex.slice(2, 4), 16),
+      sum[2] + Number.parseInt(hex.slice(4, 6), 16),
+    ]
+  }, [0, 0, 0])
+  const averageHex = totals
+    .map(total => Math.round(total / colors.length).toString(16).padStart(2, '0'))
+    .join('')
+  return getReadableTextColor(`#${averageHex}`)
+}
+
+export function getFilamentColorTheme(data: SpoolData): { background: string; foreground: '#000' | '#fff' } {
+  const colors = getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex'])
+  const fallback = '#000000'
+  return {
+    background: buildFilamentSwatchBackground(colors, data['filament.multi_color_style']) || fallback,
+    foreground: colors.length > 0 ? getReadableTextColorForColors(colors) : getReadableTextColor(fallback),
+  }
 }
 
 function parseColorSwatchToken(token: string): number | null {
@@ -113,9 +165,9 @@ function parseColorSwatchToken(token: string): number | null {
 function renderColorSwatchMarker(token: string, data: SpoolData): string | null {
   const widthCh = parseColorSwatchToken(token)
   if (widthCh === null) return null
-  const hex = normalizeHexColor(data['filament.color_hex'])
-  if (!hex) return ''
-  return `[[FM_SWATCH|${widthCh}|${hex}]]`
+  const colors = getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex'])
+  if (colors.length === 0) return ''
+  return `[[FM_SWATCH|${widthCh}|${getFilamentSwatchMode(data['filament.multi_color_style'])}|${colors.join(',')}]]`
 }
 
 function applyCapsMarkup(text: string): string {
@@ -170,7 +222,7 @@ export function renderTemplateText(template: string, data: SpoolData): string {
 function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: SpoolData): void {
   // Regex: match swatch marker, [size=NNN]...[/size] (case-insensitive),
   // bold (**...**), underline (__...__), italic (*...*), inverse (==...==), filament inverse (@@...@@)
-  const regex = /(\[\[FM_SWATCH\|\d{1,3}\|#[0-9A-F]{6}\]\]|\[size=\d{1,3}%?\][\s\S]*?\[\/size\]|\*\*[\s\S]*?\*\*|__[\s\S]*?__|\*(?!\*)([\s\S]*?)\*(?!\*)|==[\s\S]*?==|@@[\s\S]*?@@)/gi
+  const regex = /(\[\[FM_SWATCH\|\d{1,3}\|(bands|layers)\|(?:#[0-9A-F]{6})(?:,#[0-9A-F]{6})*\]\]|\[size=\d{1,3}%?\][\s\S]*?\[\/size\]|\*\*[\s\S]*?\*\*|__[\s\S]*?__|\*(?!\*)([\s\S]*?)\*(?!\*)|==[\s\S]*?==|@@[\s\S]*?@@)/gi
   let last = 0
 
   const appendPlainText = (raw: string, container: DocumentFragment | HTMLElement) => {
@@ -193,12 +245,12 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
 
     const swatch = part.match(SWATCH_MARKER_RE)
     if (swatch) {
-      const [, widthCh, hex] = swatch
+      const [, widthCh, mode, rawColors] = swatch
       const el = document.createElement('span')
       el.style.display = 'inline-block'
       el.style.width = `${Number(widthCh)}ch`
       el.style.height = '0.82em'
-      el.style.backgroundColor = hex
+      el.style.background = buildFilamentSwatchBackground(rawColors.split(','), mode)
       el.style.borderRadius = '0.14em'
       el.style.border = '1px solid rgba(0,0,0,0.28)'
       el.style.verticalAlign = 'baseline'
@@ -239,7 +291,7 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
       const inner = part.slice(2, -2)
       const theme = getFilamentColorTheme(data)
       const el = document.createElement('span')
-      el.style.backgroundColor = theme.background
+      el.style.background = theme.background
       el.style.color = theme.foreground
       el.style.padding = '0 0.6mm'
       el.style.display = 'inline-block'

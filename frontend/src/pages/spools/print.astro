@@ -238,13 +238,30 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return Array.from(fields.values())
   }
 
-  function getBatchFilamentColorHex() {
+  function getBatchFilamentColorData() {
     for (const spool of spools) {
-      const firstColor = getFirstFilamentColor(spool?.filament)
-      const hex = firstColor?.color?.hex_code
-      if (hex) return hex
+      const filament = spool?.filament
+      const firstColor = getFirstFilamentColor(filament)
+      const hex = typeof firstColor?.color?.hex_code === 'string' ? firstColor.color.hex_code : ''
+      const colors = Array.isArray(filament?.colors) ? filament.colors : []
+      const colorHexes = colors
+        .map(color => {
+          const colorData = typeof color === 'object' && color !== null
+            ? (color as { color?: { hex_code?: unknown } }).color
+            : null
+          return typeof colorData?.hex_code === 'string' ? colorData.hex_code : ''
+        })
+        .filter(Boolean)
+        .join(', ')
+      if (hex || colorHexes) {
+        return {
+          hex,
+          colorHexes,
+          multiColorStyle: typeof filament?.multi_color_style === 'string' ? filament.multi_color_style : '',
+        }
+      }
     }
-    return ''
+    return null
   }
 
   function getExtraFieldsForSpool(spool: ApiSpool): {key: string, label: string, value: string}[] {
@@ -499,7 +516,9 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const designerEditor = initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
-    getFilamentColorHex: getBatchFilamentColorHex,
+    getFilamentColorHex: () => getBatchFilamentColorData()?.hex || '',
+    getFilamentColorHexes: () => getBatchFilamentColorData()?.colorHexes || '',
+    getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multiColorStyle || '',
     translate: (key, fallback) => t(key) || fallback,
     onChange: queueRenderAll,
     presetsKey: DESIGNER_PRESETS_KEY,

@@ -70,7 +70,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS,
     buildDesignerExtraFieldsFromFilament,
     buildFilamentLabelDataFromApi,
-    getFirstFilamentColor,
   } from '../../lib/filament-label-data'
   import {
     bindBatchLabelExport,
@@ -243,8 +242,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return Array.from(fields.values())
   }
 
-  function getBatchFilamentColorHex(): string {
-    return getFirstFilamentColor(filaments[0])?.color?.hex_code || ''
+  function getBatchFilamentColorData() {
+    return filaments[0] ? buildFilamentLabelDataFromApi(filaments[0]) : null
   }
 
   function getExtraFieldsForFilament(filament: ApiFilament): {label: string, value: string}[] {
@@ -288,6 +287,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       material: data.type,
       colorName: data.color,
       hexCode: data.hex_code,
+      colorHexes: data.color_hexes,
+      multiColorStyle: data.multi_color_style,
       extraFields: getExtraFieldsForFilament(filament),
       qrUrl: `${window.location.origin}/filaments/${data.id}`,
     })
@@ -480,7 +481,9 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const designerEditor = initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
-    getFilamentColorHex: getBatchFilamentColorHex,
+    getFilamentColorHex: () => getBatchFilamentColorData()?.hex_code || '',
+    getFilamentColorHexes: () => getBatchFilamentColorData()?.color_hexes || '',
+    getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multi_color_style || '',
     translate: (key, fallback) => t(key) || fallback,
     onChange: queueRenderAll,
     presetsKey: DESIGNER_PRESETS_KEY,

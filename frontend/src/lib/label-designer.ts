@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  getReadableTextColor,
-  normalizeHexColor,
+  getFilamentColorTheme,
   parseTemplate,
   renderTemplateText,
   type SpoolData,
@@ -706,9 +705,9 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     const renderTemplate = rowInverseMatch ? rowInverseMatch[1] : rowColorInverseMatch ? rowColorInverseMatch[1] : cfg.template
     if (rowInverseEnabled) {
       if (rowColorInverseMatch) {
-        const bg = normalizeHexColor(data['filament.color_hex']) ?? '#000000'
-        titleEl.style.backgroundColor = bg
-        titleEl.style.color = getReadableTextColor(bg)
+        const theme = getFilamentColorTheme(data)
+        titleEl.style.background = theme.background
+        titleEl.style.color = theme.foreground
       } else {
         titleEl.style.backgroundColor = '#000'
         titleEl.style.color = '#fff'

@@ -13,8 +13,9 @@ import {
   type LabelDesignerSettings,
 } from './label-designer'
 import {
-  getReadableTextColor,
-  normalizeHexColor,
+  buildFilamentSwatchBackground,
+  getReadableTextColorForColors,
+  getFilamentSwatchColors,
 } from './label-template'
 
 const PRESETS_KEY = 'filaman-label-presets-v1'
@@ -45,6 +46,8 @@ export interface LabelDesignerEditorOptions {
   /** Controls which token groups appear in the picker. 'spool' adds the Spool group. Defaults to 'spool'. */
   entityType?: 'spool' | 'filament'
   getFilamentColorHex?: () => string | null | undefined
+  getFilamentColorHexes?: () => string | null | undefined
+  getFilamentMultiColorStyle?: () => string | null | undefined
   onChange: () => void | Promise<void>
   safeSetLocalStorage?: (key: string, value: string) => boolean
   translate?: (key: string, fallback: string) => string
@@ -735,11 +738,13 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   }
 
   function getFilamentInverseChipTheme() {
-    const normalized = normalizeHexColor(options.getFilamentColorHex?.() ?? '')
-    if (!normalized) return null
+    const colors = getFilamentSwatchColors(options.getFilamentColorHexes?.() ?? '', options.getFilamentColorHex?.() ?? '')
+    if (colors.length === 0) return null
+    const background = buildFilamentSwatchBackground(colors, options.getFilamentMultiColorStyle?.() ?? '') || colors[0]
     return {
-      background: normalized,
-      foreground: getReadableTextColor(normalized),
+      background,
+      border: colors[0],
+      foreground: getReadableTextColorForColors(colors),
     }
   }
 
@@ -817,6 +822,7 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
         if (theme) {
           chip.classList.add('has-filament-color')
           chip.style.setProperty('--ds-filament-bg', theme.background)
+          chip.style.setProperty('--ds-filament-border', theme.border)
           chip.style.setProperty('--ds-filament-fg', theme.foreground)
         }
       }
