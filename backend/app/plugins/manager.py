@@ -1160,8 +1160,11 @@ class PluginManager:
             if value is not None and value != "":
                 enriched[key] = value
 
-        # 6. Inject the FilaMan spool ID so plugin drivers can use it
+        # 6. Inject the FilaMan spool and filament IDs so plugin drivers can
+        # resolve spool- AND filament-level config (e.g. per-model slicer
+        # profiles stored in Filament.custom_fields) at assign time.
         enriched["id"] = spool_id
+        enriched["filament_id"] = filament_id
 
         return enriched
 

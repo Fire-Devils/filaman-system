@@ -4,7 +4,7 @@ import httpx
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
@@ -377,13 +377,16 @@ async def device_rfid_result(
         return RfidResultResponse(status="error", message="No tag_uuid provided")
 
     # Duplicate check and cleanup - clear rfid_uid from ALL spools (incl. archived)
-    # to prevent UNIQUE constraint violation on spools.rfid_uid
+    # to prevent UNIQUE constraint violation on spools.rfid_uid.
+    # Case-insensitive: the weigh lookup matches UIDs via lower(), so a UID stored
+    # with different casing would otherwise survive cleanup and later cause
+    # MultipleResultsFound on weigh.
     removed_info = []
     
     # Check spools - all spools regardless of status
     spool_query = (
         select(Spool)
-        .where(Spool.rfid_uid == data.tag_uuid)
+        .where(func.lower(Spool.rfid_uid) == data.tag_uuid.lower())
     )
     if data.spool_id:
         spool_query = spool_query.where(Spool.id != data.spool_id)
