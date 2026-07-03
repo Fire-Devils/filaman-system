@@ -968,7 +968,7 @@ export async function initPerModelProfilePicker(
       return 0
     }
 
-    const coverageParams =
+    const coverageParams: Record<string, number> =
       opts.entityType === 'spool'
         ? { spool_id: opts.entityId }
         : { filament_id: opts.entityId }
