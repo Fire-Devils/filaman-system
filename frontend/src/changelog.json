@@ -1,6 +1,38 @@
 {
   "versions": [
     {
+      "version": "1.2.21",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Etiketten können jetzt auch für Filamente gedruckt werden – einzeln oder als Massendruck direkt aus der Filamentübersicht." },
+          { "type": "feature", "text": "Etiketten lassen sich jetzt auf handelsübliche Etikettenbögen (z. B. Avery) drucken – mit Layout-Steuerung für Spalten, Zeilen und Kopien, wählbaren Bogen-Vorlagen und Vorschau." },
+          { "type": "feature", "text": "Mehrfarbige Filamente (gestreift, co-extrudiert, Gradient/mehrschichtig) werden auf Etiketten jetzt korrekt mit passenden Farbfeldern dargestellt; zusätzlich gibt es eine Invers-Option für die Farbdarstellung." },
+          { "type": "feature", "text": "Im Filament- und Spulen-Editor kann jetzt ein Bambu-Slicer-Profil druckerunabhängig über eine durchsuchbare Liste ausgewählt werden. Beim Filament lässt sich das Profil wahlweise auf bestehende Spulen oder nur auf neue anwenden." },
+          { "type": "feature", "text": "Neuer Workflow für modellspezifische Slicer-Profile über die gesamte Druckerflotte: Abfrage verbundener Modelle, Abdeckungsprüfung beim Zuweisen und eine Admin-Einstellung, ob bei fehlendem Modell-Profil 'Generic' oder 'Bambu' als Fallback verwendet wird." },
+          { "type": "feature", "text": "Pro Spule kann jetzt ein Kern- bzw. Adaptergewicht hinterlegt werden (mit globalem Standardwert). Das Gewicht der Pappinnenrolle, des Spulenhalters oder des Waagenadapters wird beim Wiegen automatisch abgezogen, sodass die Restmenge korrekt berechnet wird." },
+          { "type": "feature", "text": "Das globale Ereignisprotokoll zeigt jetzt Hersteller, Herstellerfarbe und Material – passend zur Spulenübersicht und mit kompakter ID-Spalte." },
+          { "type": "fix", "text": "Etiketten-Export mit hochgeladenen Logos (Blob) korrigiert." },
+          { "type": "fix", "text": "Druckgröße von Spulen-Etiketten beim Browser-Druck korrigiert." },
+          { "type": "fix", "text": "RFID-Tag-Duplikate werden jetzt unabhängig von Groß-/Kleinschreibung der UID bereinigt, um Fehler beim Tag-Schreiben zu vermeiden." },
+          { "type": "fix", "text": "Cloud-Voreinstellungen überschreiben beim Speichern der Drucker-Parameter nicht mehr versehentlich den zugewiesenen Slicer-Profil-Index (bambu_idx)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Labels can now be printed for filaments too – individually or as a batch directly from the filament list." },
+          { "type": "feature", "text": "Labels can now be printed onto standard label sheets (e.g. Avery) – with layout controls for columns, rows and copies, selectable sheet presets, and a preview." },
+          { "type": "feature", "text": "Multi-color filaments (striped, co-extruded, gradient/layered) are now rendered correctly on labels with matching color swatches; an inverse option for color output was also added." },
+          { "type": "feature", "text": "A Bambu slicer profile can now be selected directly in the filament and spool editors – printer-independent, via a searchable list. For filaments, the profile can optionally be applied to existing spools or only to new ones." },
+          { "type": "feature", "text": "New workflow for model-specific slicer profiles across the whole printer fleet: querying connected models, coverage checks on assignment, and an admin setting for whether 'Generic' or 'Bambu' is used as fallback when no model-specific profile resolves." },
+          { "type": "feature", "text": "A core / adapter weight can now be set per spool (with a global default). The weight of the cardboard inner tube, spool holder, or scale adapter is automatically subtracted when weighing, so the remaining amount is calculated correctly." },
+          { "type": "feature", "text": "The global event log now shows manufacturer, manufacturer color, and material – matching the spools list and with a compact ID column." },
+          { "type": "fix", "text": "Fixed label export with uploaded (blob) logos." },
+          { "type": "fix", "text": "Fixed print sizing of spool labels for browser printing." },
+          { "type": "fix", "text": "RFID tag duplicates are now cleaned up regardless of UID letter case, preventing errors when writing tags." },
+          { "type": "fix", "text": "Cloud presets no longer accidentally overwrite the assigned slicer profile index (bambu_idx) when saving printer parameters." }
+        ]
+      }
+    },
+    {
       "version": "1.2.20",
       "date": "",
       "changes": {
