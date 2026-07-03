@@ -121,6 +121,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 response = await call_next(request)
 
                 # Check if session needs extension and update the cookie
+                from app.core.csrf import maybe_attach_csrf_cookie
+
+                maybe_attach_csrf_cookie(request, response)
+
                 if getattr(principal, "needs_cookie_extension", False):
                     secure_cookie = not settings.debug
                     if secure_cookie:
@@ -463,11 +467,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return principal
 
 
+_PRIMARY_PROXY_HEADER = "x-filaman-primary-hop"
+
+
 class CsrfMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             path = request.url.path
             if path.startswith("/api/v1/") or path == "/auth/logout":
+                hop_header = request.headers.get(_PRIMARY_PROXY_HEADER, "0")
+                if hop_header.isdigit() and int(hop_header) > 0:
+                    return await call_next(request)
+
                 principal = getattr(request.state, "principal", None)
                 if principal and principal.auth_type == "session":
                     csrf_cookie = request.cookies.get("csrf_token")

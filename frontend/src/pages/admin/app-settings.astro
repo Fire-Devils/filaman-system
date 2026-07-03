@@ -157,6 +157,27 @@ import Layout from '../../layouts/Layout.astro'
       </div>
     </div>
 
+    <!-- Slicer Profile Fallback Card (full width) -->
+    <div class="fm-card" style="padding: 20px;">
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;">Slicer Profile Fallback</h2>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;">
+        Determines which profile is sent to a Bambu printer's AMS slot when no specific slicer
+        profile resolves for a filament (e.g. a third-party filament with no matching cloud profile
+        for the connected printer model).
+      </p>
+
+      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="bambu-unmatched-fallback">Default for unmatched filament</label>
+      <select id="bambu-unmatched-fallback" class="fm-select" style="max-width: 320px;">
+        <option value="generic">Generic profile (Generic PLA, PETG, …)</option>
+        <option value="bambu">Bambu profile (Bambu PLA Basic, PETG Basic, …)</option>
+      </select>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 8px 0 0;">
+        Choose <strong>Bambu profile</strong> if you prefer Bambu's own material profiles for
+        third-party filament instead of the bland Generic ones. Falls back to Generic for materials
+        without a Bambu-brand equivalent.
+      </p>
+    </div>
+
     <!-- Form message AND Save button OUTSIDE the cards, below the grid -->
     <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
     <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.appSettingsSave">Save</button>
@@ -186,6 +207,7 @@ import Layout from '../../layouts/Layout.astro'
       const rfidProtocolSelect = document.getElementById('rfid-protocol') as HTMLSelectElement
       const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
+      const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
@@ -218,6 +240,7 @@ import Layout from '../../layouts/Layout.astro'
           rfidProtocolSelect.value = data.rfid_protocol || 'openspool'
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
+          bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
         }
@@ -239,6 +262,7 @@ import Layout from '../../layouts/Layout.astro'
           rfid_extended_data_enabled: rfidExtendedDataInput.checked,
           rfid_protocol: rfidProtocolSelect.value,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
+          bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
         }
 
         try {

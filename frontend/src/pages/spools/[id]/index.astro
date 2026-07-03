@@ -105,8 +105,9 @@ const { id } = Astro.params
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.slicerProfile">Slicer Profile</h2>
     <div class="fm-card" style="padding: 24px;">
       <label class="fm-label" data-i18n="printers.bambuSlicerProfile">Bambu Slicer Profile</label>
-      <div id="slicer-profile-picker" style="max-width: 520px;"></div>
+      <div id="slicer-profile-picker"></div>
       <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 8px;" data-i18n="printers.slicerProfileSpoolHint">Synced to this spool in Bambuddy across all Bambu printers.</p>
+      <div id="slicer-profile-coverage" class="hidden" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
       <span id="slicer-profile-msg" class="hidden" style="font-size: 0.85rem;"></span>
     </div>
   </div>
@@ -177,6 +178,7 @@ const { id } = Astro.params
     import { t, initI18n } from '../../../lib/i18n'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
+    import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -301,7 +303,14 @@ const { id } = Astro.params
         renderSpool()
         loadPrinterSlotOverview()
         loadPrintersForParams()
-        initSlicerProfilePicker()
+        initPerModelProfilePicker({
+          entityType: 'spool',
+          entityId: parseInt(id),
+          t,
+          getCsrfToken,
+          getAbortSignal,
+          isAbortError,
+        })
         loadEvents()
         setupActions()
       } catch (error) {
@@ -1220,7 +1229,42 @@ const { id } = Astro.params
         wireCombo(combo, (code: string) => onCloudProfileSelected(code, currentPrinterId)))
     }
 
-    // Spool-level select: push immediately to Bambuddy so both systems match.
+    // -- Standalone per-model slicer profile picker (see cloud-profile-picker.ts) --
+
+    function showSlicerMsg(text: string, isError: boolean) {
+      const msg = document.getElementById('slicer-profile-msg')
+      if (!msg) return
+      msg.textContent = text
+      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
+      msg.classList.remove('hidden')
+      setTimeout(() => msg.classList.add('hidden'), 3000)
+    }
+
+    function renderProfileCoverage(result: any) {
+      const el = document.getElementById('slicer-profile-coverage')
+      const data = result?.data ?? result
+      if (!el || !data?.coverage) return
+      const entries = Object.entries(data.coverage) as [string, any][]
+      if (entries.length === 0) { el.classList.add('hidden'); return }
+      el.innerHTML = entries.map(([model, c]) => {
+        const nozzle = c.nozzle_resolved != null ? ` ${c.nozzle_resolved} mm` : ''
+        let color = 'var(--success-text)'
+        let label = `${model}${nozzle} ok`
+        let title = c.code || ''
+        if (!c.mapped) {
+          color = 'var(--error-text, #c44)'
+          label = `${model} missing`
+          title = c.expected_name || 'Create matching variant in Bambu Studio'
+        } else if (c.fallback_nozzle) {
+          color = 'var(--warning-text, #b8860b)'
+          label = `${model}${nozzle} (fallback)`
+          title = (c.expected_name || '') + ' — using closest nozzle variant'
+        }
+        return `<span title="${title}" style="font-size:0.75rem;padding:2px 8px;border-radius:999px;border:1px solid ${color};color:${color}">${label}</span>`
+      }).join('')
+      el.classList.remove('hidden')
+    }
+
     async function onCloudProfileSelected(code: string, printerId: number) {
       if (!code || !printerId) return
       try {
@@ -1232,72 +1276,25 @@ const { id } = Astro.params
           body: JSON.stringify({ action: 'set_spool_profile', params: { spool_id: parseInt(id), code } }),
         })
         if (!res.ok) throw new Error('set_spool_profile failed')
+        const result = await res.json().catch(() => ({}))
+        renderProfileCoverage(result)
         try {
           const pr = await fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() })
           if (pr.ok) currentPrinterParams = await pr.json()
         } catch {}
-        showSlicerMsg(t('common.saved') || 'Saved', false)
+        const data = result?.data ?? result
+        if (data?.base_name) {
+          showSlicerMsg((t('common.saved') || 'Saved') + ` — ${data.base_name}`, false)
+        } else {
+          showSlicerMsg(t('common.saved') || 'Saved', false)
+        }
         showParamsFeedback(true)
       } catch (e) {
         if (!isAbortError(e)) { console.error('Failed to set spool profile:', e); showSlicerMsg(t('printers.paramsSaveFailed') || 'Failed', true) }
       }
     }
 
-    // -- Standalone (printer-independent) slicer profile picker --
-    let slicerRepPrinterId = 0
-
-    function showSlicerMsg(text: string, isError: boolean) {
-      const msg = document.getElementById('slicer-profile-msg')
-      if (!msg) return
-      msg.textContent = text
-      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
-      msg.classList.remove('hidden')
-      setTimeout(() => msg.classList.add('hidden'), 3000)
-    }
-
-    async function initSlicerProfilePicker() {
-      try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
-        const data = await res.json()
-        const bambuPrinters = (data.items || data || []).filter((p: any) => p.driver_key === 'bambuddy')
-        if (bambuPrinters.length === 0) return
-        let rep = 0
-        for (const p of bambuPrinters) {
-          try {
-            const h = await fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
-            if (h.ok) { const hj = await h.json(); if (hj && (hj.connected || hj.running)) { rep = p.id; break } }
-          } catch {}
-        }
-        if (!rep) rep = bambuPrinters[0].id
-        slicerRepPrinterId = rep
-        await loadCloudPresets(rep, 'bambuddy')
-        if (cloudPresets.length === 0) return
-        // current value: spool-level, fallback to filament-level
-        let currentCode = ''
-        try {
-          const [spRes, flRes] = await Promise.all([
-            fetch(`/api/v1/spools/${id}/printer-params?printer_id=${rep}`, { credentials: 'include', signal: getAbortSignal() }),
-            spool?.filament_id ? fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${rep}`, { credentials: 'include', signal: getAbortSignal() }) : Promise.resolve(null),
-          ])
-          const sp = spRes && spRes.ok ? await spRes.json() : []
-          const fl = flRes && flRes.ok ? await flRes.json() : []
-          const sSid = (sp || []).find((x: any) => x.param_key === 'bambu_slicer_setting_id')
-          const fSid = (fl || []).find((x: any) => x.param_key === 'bambu_slicer_setting_id')
-          const sm = (sp || []).find((x: any) => x.param_key === 'bambu_idx')
-          const fm = (fl || []).find((x: any) => x.param_key === 'bambu_idx')
-          currentCode = (sSid && sSid.param_value) || (fSid && fSid.param_value) || (sm && sm.param_value) || (fm && fm.param_value) || ''
-        } catch {}
-        await ensureCodeLabel(rep, currentCode)
-        const c = document.getElementById('slicer-profile-picker')!
-        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode, '', '', false)
-        const combo = c.querySelector('.cloud-combo')
-        if (combo) wireCombo(combo, (code: string) => onCloudProfileSelected(code, slicerRepPrinterId))
-        document.getElementById('slicer-profile-section')!.classList.remove('hidden')
-      } catch (e) {
-        if (!isAbortError(e)) console.error('Slicer picker init failed:', e)
-      }
-    }
+    /* removed initSlicerProfilePicker — replaced by initPerModelProfilePicker */
 
     function renderPrinterParams() {
       const container = document.getElementById('printer-params-list') as HTMLElement
@@ -1790,6 +1787,31 @@ const { id } = Astro.params
       pendingSlotPollTimer = setTimeout(poll, 3000)
     }
 
+    async function getModelCoverageForPrinter(printerId: any): Promise<{ model: string, status: string } | null> {
+      try {
+        const [cmRes, covRes] = await Promise.all([
+          fetch(`/api/v1/printers/${printerId}/driver/connected-models`, { credentials: 'include', signal: getAbortSignal() }),
+          fetch(`/api/v1/printers/${printerId}/driver/profile-coverage?spool_id=${id}`, { credentials: 'include', signal: getAbortSignal() }),
+        ])
+        if (!cmRes.ok || !covRes.ok) return null
+        const cm = await cmRes.json().catch(() => ({}))
+        const cov = await covRes.json().catch(() => ({}))
+        if (cov?.per_model_profiles_enabled === false) return null
+        const models = cm?.models || []
+        let model: string | null = null
+        for (const m of models) {
+          const pids = (m.printer_ids || m.printerIds || []).map(Number)
+          if (pids.includes(Number(printerId))) { model = m.model; break }
+        }
+        if (!model) return null
+        const c = (cov?.coverage || {})[model]
+        return { model, status: c?.status || 'not_set' }
+      } catch (e) {
+        if (isAbortError(e)) throw e
+        return null
+      }
+    }
+
     async function handleAssignSpoolToTray(slot: any, printerId: any) {
       if (!spool) return
       const idx = slot.slot_index || ''
@@ -1797,6 +1819,22 @@ const { id } = Astro.params
       const amsId = parseInt(parts[0])
       const trayId = parseInt(parts[1])
       const slotIndex = `${amsId}-${trayId}`
+
+      // Warn before assigning when no Bambu cloud profile resolves for this
+      // printer's model — the slot would otherwise get generic settings silently.
+      try {
+        const mc = await getModelCoverageForPrinter(printerId)
+        if (mc && (mc.status === 'missing' || mc.status === 'not_set')) {
+          const proceed = window.confirm(
+            `No Bambu slicer profile resolves for ${mc.model} on this printer ` +
+            `(${mc.status}). The slot will be assigned with generic settings and ` +
+            `may not match in Bambu Studio.\n\nAssign anyway?`
+          )
+          if (!proceed) return
+        }
+      } catch (e) {
+        if (isAbortError(e)) return
+      }
 
       // Clear any previous pending state
       clearPendingSlotAssign()

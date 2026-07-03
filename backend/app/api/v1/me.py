@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep
+from app.core.csrf import maybe_attach_csrf_cookie
 from app.core.security import hash_password_async, verify_password_async
 from app.models import User, Role, Permission, UserRole, RolePermission
 
@@ -36,6 +39,7 @@ class ChangePasswordRequest(BaseModel):
 
 @router.get("", response_model=MeResponse)
 async def get_me(
+    request: Request,
     principal: PrincipalDep,
     db: DBSession,
 ):
@@ -57,7 +61,7 @@ async def get_me(
         p.key for r in user.roles for p in r.permissions
     ))
 
-    return MeResponse(
+    payload = MeResponse(
         id=user.id,
         email=user.email,
         display_name=user.display_name,
@@ -66,6 +70,9 @@ async def get_me(
         roles=roles,
         permissions=permissions,
     )
+    response = JSONResponse(content=jsonable_encoder(payload))
+    maybe_attach_csrf_cookie(request, response)
+    return response
 
 
 @router.patch("", response_model=MeResponse)

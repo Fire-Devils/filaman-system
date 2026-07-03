@@ -2,14 +2,15 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.v1.printers import pick_bambuddy_driver, _is_primary_worker, _proxy_to_primary
 from app.core.cache import response_cache
 from app.core.db_utils import get_next_available_id
 from app.api.v1.schemas import PaginatedResponse
@@ -1191,3 +1192,110 @@ async def delete_filament(
     await db.commit()
     await event_bus.publish({"event": "filaments_changed"})
     response_cache.delete("filament_types")
+
+
+class DefaultFilamentSlicerProfileBody(BaseModel):
+    base_name: str = Field(..., min_length=1)
+    apply_to_existing: bool = False
+
+
+class ModelFilamentSlicerProfileBody(BaseModel):
+    base_name: str | None = None
+    clear_override: bool = False
+
+
+@router_filaments.post("/{filament_id}/slicer-profile/default")
+@router_filaments.put("/{filament_id}/slicer-profile/default")
+async def set_filament_default_slicer_profile(
+    filament_id: int,
+    body: DefaultFilamentSlicerProfileBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Set default Bambu cloud slicer profile for a filament."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/filaments/{filament_id}/slicer-profile/default",
+            json_body=body.model_dump(),
+        )
+    filament = await db.get(Filament, filament_id)
+    if not filament:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Filament not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "set_default_filament_profile", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support default slicer profiles",
+            },
+        )
+    result = await method(
+        int(filament_id),
+        base_name=body.base_name.strip(),
+        apply_to_existing=body.apply_to_existing,
+    )
+    return result
+
+
+@router_filaments.post("/{filament_id}/slicer-profile/models/{model}")
+@router_filaments.put("/{filament_id}/slicer-profile/models/{model}")
+async def set_filament_model_slicer_profile(
+    filament_id: int,
+    model: str,
+    body: ModelFilamentSlicerProfileBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Set or clear a per-model slicer profile override on a filament."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/filaments/{filament_id}/slicer-profile/models/{model}",
+            json_body=body.model_dump(),
+        )
+    filament = await db.get(Filament, filament_id)
+    if not filament:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Filament not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "set_filament_profile_for_model", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support per-model slicer profiles",
+            },
+        )
+    if body.clear_override:
+        result = await method(
+            int(filament_id), model.strip().upper(), clear_override=True
+        )
+    else:
+        if not body.base_name or not body.base_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "invalid_params",
+                    "message": "base_name is required",
+                },
+            )
+        result = await method(
+            int(filament_id),
+            model.strip().upper(),
+            base_name=body.base_name.strip(),
+            link_others=False,
+        )
+    return result

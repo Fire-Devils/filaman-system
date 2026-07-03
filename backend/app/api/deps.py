@@ -119,3 +119,47 @@ def RequirePermission(permission_key: str):
         return principal
 
     return Depends(dependency)
+
+
+async def ensure_any_permission(
+    db: AsyncSession,
+    principal: Principal,
+    *permission_keys: str,
+) -> None:
+    """Raise 403 unless the principal has at least one of the given permissions."""
+    if principal.is_superadmin:
+        return
+
+    if principal.auth_type == "device":
+        if principal.scopes is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "forbidden",
+                    "message": "Device has no scopes assigned",
+                },
+            )
+        if not any(key in principal.scopes for key in permission_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "forbidden",
+                    "message": f"One of {permission_keys} required",
+                },
+            )
+        return
+
+    rbac_permissions = await resolve_user_permissions(db, principal.user_id)
+    if principal.scopes is not None:
+        effective = rbac_permissions.intersection(set(principal.scopes))
+    else:
+        effective = rbac_permissions
+
+    if not any(key in effective for key in permission_keys):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "forbidden",
+                "message": f"One of {permission_keys} required",
+            },
+        )

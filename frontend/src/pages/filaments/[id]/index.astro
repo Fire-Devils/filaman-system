@@ -23,7 +23,8 @@ const { id } = Astro.params
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.slicerProfile">Slicer Profile</h2>
     <div class="fm-card" style="padding: 24px;">
       <label class="fm-label" data-i18n="printers.bambuSlicerProfile">Bambu Slicer Profile</label>
-      <div id="slicer-profile-picker" style="max-width: 520px;"></div>
+      <div id="slicer-profile-picker"></div>
+      <div id="slicer-profile-coverage" class="hidden" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
       <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 8px;" data-i18n="printers.slicerProfileHint">Applies to this filament across all Bambu printers and any new spools made from it.</p>
       <span id="slicer-profile-msg" class="hidden" style="font-size: 0.85rem;"></span>
     </div>
@@ -95,6 +96,7 @@ const { id } = Astro.params
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
+    import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     await initI18n()
     await initCurrency()
 
@@ -166,7 +168,14 @@ const { id } = Astro.params
         renderFilament(filament)
         loadSpools(filament.id)
         loadPrinters()
-        initSlicerProfilePicker()
+        initPerModelProfilePicker({
+          entityType: 'filament',
+          entityId: parseInt(id),
+          t,
+          getCsrfToken: getCsrfTokenGlobal,
+          getAbortSignal,
+          isAbortError,
+        })
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load filament:', error)
@@ -805,39 +814,7 @@ const { id } = Astro.params
       }
     }
 
-    async function initSlicerProfilePicker() {
-      try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
-        const data = await res.json()
-        const bambuPrinters = (data.items || data || []).filter((p: any) => p.driver_key === 'bambuddy')
-        if (bambuPrinters.length === 0) return
-        let rep = 0
-        for (const p of bambuPrinters) {
-          try {
-            const h = await fetch(`/api/v1/printers/${p.id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
-            if (h.ok) { const hj = await h.json(); if (hj && (hj.connected || hj.running)) { rep = p.id; break } }
-          } catch {}
-        }
-        if (!rep) rep = bambuPrinters[0].id
-        slicerRepPrinterId = rep
-        await loadCloudPresets(rep, 'bambuddy')
-        if (cloudPresets.length === 0) return
-        let currentCode = ''
-        try {
-          const pr = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${rep}`, { credentials: 'include', signal: getAbortSignal() })
-          if (pr.ok) { const pp = await pr.json(); const sid = (pp || []).find((x: any) => x.param_key === 'bambu_slicer_setting_id'); const m = (pp || []).find((x: any) => x.param_key === 'bambu_idx'); currentCode = (sid && sid.param_value) || (m && m.param_value) || '' }
-        } catch {}
-        await ensureCodeLabel(rep, currentCode)
-        const c = document.getElementById('slicer-profile-picker')!
-        c.innerHTML = renderCloudCombobox('bambu_idx', currentCode, false)
-        const combo = c.querySelector('.cloud-combo')
-        if (combo) wireCombo(combo, applyFilamentProfileFromPicker)
-        document.getElementById('slicer-profile-section')!.classList.remove('hidden')
-      } catch (e) {
-        if (!isAbortError(e)) console.error('Slicer picker init failed:', e)
-      }
-    }
+    /* removed initSlicerProfilePicker — replaced by initPerModelProfilePicker */
 
     function renderPrinterParams() {
       const container = document.getElementById('printer-params-list')!

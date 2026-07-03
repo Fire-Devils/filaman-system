@@ -165,6 +165,11 @@ class MoveLocationRequest(BaseModel):
     note: str | None = None
 
 
+class SpoolEventColor(BaseModel):
+    hex_code: str
+    name: str | None = None
+
+
 class SpoolEventResponse(BaseModel):
     id: int
     spool_id: int
@@ -181,6 +186,12 @@ class SpoolEventResponse(BaseModel):
     to_location_id: int | None
     note: str | None
     meta: dict[str, Any] | None
+    # Enriched filament context (populated by the all-events listing); may be
+    # null when the spool or its filament has since been deleted.
+    manufacturer_name: str | None = None
+    manufacturer_color_name: str | None = None
+    material_type: str | None = None
+    colors: list[SpoolEventColor] | None = None
 
     class Config:
         from_attributes = True

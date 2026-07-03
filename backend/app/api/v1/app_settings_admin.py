@@ -17,6 +17,7 @@ class AppSettingsResponse(BaseModel):
     rfid_extended_data_enabled: bool
     rfid_protocol: str
     default_spool_core_weight_g: float | None = None
+    bambu_unmatched_profile_fallback: str = "generic"
 
 
 class AppSettingsUpdate(BaseModel):
@@ -41,6 +42,7 @@ class AppSettingsUpdate(BaseModel):
     rfid_extended_data_enabled: bool | None = None
     rfid_protocol: Literal["openspool", "filaman"] | None = None
     default_spool_core_weight_g: float | None = None
+    bambu_unmatched_profile_fallback: Literal["generic", "bambu"] | None = None
 
 
 @router.get("/", response_model=AppSettingsResponse)
@@ -59,6 +61,7 @@ async def get_app_settings(
         rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
         rfid_protocol=settings_row.rfid_protocol,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
+        bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
     )
 
 
@@ -91,6 +94,7 @@ async def update_app_settings(
         rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
         rfid_protocol=settings_row.rfid_protocol,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
+        bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
     )
 
 
@@ -114,6 +118,7 @@ async def get_public_app_settings(db: DBSession):
             rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
             rfid_protocol=settings_row.rfid_protocol,
             default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
+            bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
         )
 
     response_cache.set("app_settings_public", resp, ttl=300)

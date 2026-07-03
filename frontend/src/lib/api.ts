@@ -3,10 +3,12 @@ import { getAbortSignal } from './abort'
 const API_BASE = '/api/v1'
 const AUTH_BASE = '/auth'
 
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
   return match ? decodeURIComponent(match[1]) : null
 }
+
+type ApiRequestOptions = RequestInit & { csrfToken?: string | null }
 
 export class ApiError extends Error {
   status: number
@@ -30,7 +32,7 @@ interface ApiErrorResponse {
   detail?: Record<string, string[]>
 }
 
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   let url: string
   if (path.startsWith('/auth')) {
     url = AUTH_BASE + path.slice(5)
@@ -38,29 +40,38 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     url = API_BASE + path
   }
 
+  const { csrfToken: csrfOverride, ...fetchOptions } = options
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers as Record<string, string>,
+    ...fetchOptions.headers as Record<string, string>,
   }
 
-  const csrfToken = getCsrfToken()
+  const csrfToken = csrfOverride ?? getCsrfToken()
   if (csrfToken) {
     headers['X-CSRF-Token'] = csrfToken
   }
 
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     headers,
     credentials: 'include',
-    signal: options.signal ?? getAbortSignal(),
+    signal: fetchOptions.signal ?? getAbortSignal(),
   })
 
   if (!response.ok) {
-    const errorData: ApiErrorResponse = await response.json().catch(() => ({
-      code: 'unknown_error',
-      message: `HTTP ${response.status}`,
-    }))
-    throw new ApiError(response.status, errorData.code, errorData.message)
+    const errorBody: any = await response.json().catch(() => ({}))
+    const detail = errorBody?.detail
+    const code =
+      (typeof detail === 'object' && detail?.code) ||
+      errorBody?.code ||
+      'unknown_error'
+    const message =
+      (typeof detail === 'object' && detail?.message) ||
+      (typeof detail === 'string' ? detail : '') ||
+      errorBody?.message ||
+      `HTTP ${response.status}`
+    throw new ApiError(response.status, code, message)
   }
 
   if (response.status === 204) {
@@ -71,23 +82,28 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path, { method: 'GET' }),
-  post: <T>(path: string, body?: unknown) =>
+  get: <T>(path: string, options?: Omit<ApiRequestOptions, 'method'>) =>
+    request<T>(path, { ...options, method: 'GET' }),
+  post: <T>(path: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) =>
     request<T>(path, {
+      ...options,
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
     }),
-  put: <T>(path: string, body?: unknown) =>
+  put: <T>(path: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) =>
     request<T>(path, {
+      ...options,
       method: 'PUT',
       body: body ? JSON.stringify(body) : undefined,
     }),
-  patch: <T>(path: string, body?: unknown) =>
+  patch: <T>(path: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) =>
     request<T>(path, {
+      ...options,
       method: 'PATCH',
       body: body ? JSON.stringify(body) : undefined,
     }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  delete: <T>(path: string, options?: Omit<ApiRequestOptions, 'method'>) =>
+    request<T>(path, { ...options, method: 'DELETE' }),
 }
 
 /**

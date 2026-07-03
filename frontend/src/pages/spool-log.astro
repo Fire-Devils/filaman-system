@@ -10,6 +10,7 @@ import Layout from '../layouts/Layout.astro'
     .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
     .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
     .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
+    .fm-table .col-spool-id { width: 6ch; max-width: 6ch; white-space: nowrap; padding: 10px 4px 10px 8px; }
   </style>
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="spoolLog.title">Spool Log</h1>
@@ -23,7 +24,10 @@ import Layout from '../layouts/Layout.astro'
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th data-i18n="spoolLog.spool">Spool</th>
+          <th class="col-spool-id" data-i18n="spoolLog.spool">Spool</th>
+          <th data-i18n="spools.colMfrColor">Mfr. Color</th>
+          <th data-i18n="spools.manufacturer">Manufacturer</th>
+          <th data-i18n="spools.material">Material</th>
           <th data-i18n="spoolLog.eventType">Type</th>
           <th data-i18n="spoolLog.eventDate">Date</th>
           <th data-i18n="spoolLog.eventWeight">Weight</th>
@@ -32,7 +36,7 @@ import Layout from '../layouts/Layout.astro'
       </thead>
       <tbody id="events-table">
         <tr>
-          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="8" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -67,7 +71,7 @@ import Layout from '../layouts/Layout.astro'
         if (isAbortError(error)) return
         console.error('Failed to load events:', error)
         const tbody = document.getElementById('events-table')!
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error-text);">${t('spoolLog.failedLoad')}</td></tr>`
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--error-text);">${t('spoolLog.failedLoad')}</td></tr>`
       }
     }
 
@@ -77,7 +81,7 @@ import Layout from '../layouts/Layout.astro'
       if (events.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--text-muted);">${t('spoolLog.noEvents')}</td>
+            <td colspan="8" style="text-align: center; color: var(--text-muted);">${t('spoolLog.noEvents')}</td>
           </tr>
         `
         return
@@ -85,9 +89,14 @@ import Layout from '../layouts/Layout.astro'
 
       tbody.innerHTML = events.map(e => `
         <tr>
-          <td style="padding: 12px;">
+          <td class="col-spool-id">
             <a href="/spools/${e.spool_id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">#${e.spool_id}</a>
           </td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text); white-space: nowrap;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderMfrColorCell(e.colors, e.manufacturer_color_name)}</span>
+          </td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.manufacturer_name) || '-'}</td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.material_type) || '-'}</td>
           <td style="padding: 12px;">
             <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${e.event_type}</span>
           </td>
@@ -101,6 +110,45 @@ import Layout from '../layouts/Layout.astro'
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${e.note || '-'}</td>
         </tr>
       `).join('')
+    }
+
+    function escapeHtml(value: any): string {
+      if (value === null || value === undefined) return ''
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+    }
+
+    function normalizeHexColor(hex: string | null | undefined): string {
+      const value = (hex || '').trim()
+      if (!value) return ''
+      return value.startsWith('#') ? value : `#${value}`
+    }
+
+    function renderColorDots(colors: any[] | null | undefined): string {
+      if (!colors || colors.length === 0) return ''
+      return colors.map(c => {
+        if (!c) return ''
+        const hex = normalizeHexColor(c.hex_code)
+        if (!hex) return ''
+        const title = escapeHtml(c.name || '')
+        return `<span title="${title}" style="display: inline-block; width: 18px; height: 18px; border-radius: 50%; background-color: ${hex}; border: 2px solid var(--border); vertical-align: middle; margin-right: 6px;"></span>`
+      }).join('')
+    }
+
+    function renderMfrColorCell(
+      colors: any[] | null | undefined,
+      manufacturerColorName: string | null | undefined
+    ): string {
+      const dots = renderColorDots(colors)
+      const label = escapeHtml(manufacturerColorName)
+      if (!dots && !label) return '<span style="color: var(--text-muted);">-</span>'
+      if (!label) return dots
+      if (!dots) return label
+      return `${dots}<span>${label}</span>`
     }
 
     function getEventTypeStyle(type: string): string {

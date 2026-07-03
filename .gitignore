@@ -86,3 +86,4 @@ package.json
 package-lock.json
 filaman.db*
 uploads/
+frontend/version.txt

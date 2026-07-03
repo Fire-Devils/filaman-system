@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.core.security import Principal
+from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.api.v1.schemas import PaginatedResponse
 from app.models import (
     Location,
@@ -553,14 +554,100 @@ class DriverActionResponse(BaseModel):
     data: dict | None = None
 
 
+_READ_ONLY_DRIVER_ACTIONS = frozenset(
+    {"list_connected_models", "get_profile_coverage"}
+)
+_SPOOL_PROFILE_DRIVER_ACTIONS = frozenset(
+    {"set_spool_profile_for_model", "set_default_spool_profile"}
+)
+_FILAMENT_PROFILE_DRIVER_ACTIONS = frozenset(
+    {"set_filament_profile_for_model", "set_default_filament_profile"}
+)
+
+
+async def _ensure_driver_action_permission(
+    db: DBSession, principal: Principal, action: str
+) -> None:
+    if action in _READ_ONLY_DRIVER_ACTIONS:
+        await ensure_any_permission(
+            db, principal, "printers:read", "printers:update"
+        )
+    elif action in _SPOOL_PROFILE_DRIVER_ACTIONS:
+        await ensure_slicer_profile_write_permission(db, principal, entity="spool")
+    elif action in _FILAMENT_PROFILE_DRIVER_ACTIONS:
+        await ensure_slicer_profile_write_permission(db, principal, entity="filament")
+    else:
+        await ensure_any_permission(db, principal, "printers:update")
+
+
+async def ensure_slicer_profile_write_permission(
+    db: DBSession, principal: Principal, *, entity: str = "spool"
+) -> None:
+    """Profile picker is visible to read-only users; allow matching write access."""
+    if entity == "filament":
+        await ensure_any_permission(
+            db,
+            principal,
+            "filaments:update",
+            "printers:update",
+            "filaments:read",
+        )
+    else:
+        await ensure_any_permission(
+            db,
+            principal,
+            "spools:update",
+            "printers:update",
+            "spools:read",
+        )
+
+
+async def pick_bambuddy_driver(db: DBSession) -> tuple[int, Any]:
+    """Return (printer_id, driver) for the first running Bambuddy driver."""
+    result = await db.execute(
+        select(Printer).where(
+            Printer.driver_key == "bambuddy",
+            Printer.deleted_at.is_(None),
+        )
+    )
+    for printer in result.scalars().all():
+        driver = plugin_manager.drivers.get(printer.id)
+        if driver is not None:
+            return printer.id, driver
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "code": "driver_not_running",
+            "message": "No Bambuddy driver is running",
+        },
+    )
+
+
+async def _invoke_driver_method(driver: Any, method_name: str, **kwargs: Any) -> Any:
+    method = getattr(driver, method_name, None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": f"Driver does not support '{method_name}'",
+            },
+        )
+    result = method(**kwargs)
+    if inspect.isawaitable(result):
+        result = await result
+    return result
+
+
 @router.post("/{printer_id}/driver/action", response_model=DriverActionResponse)
 async def driver_action(
     printer_id: int,
     data: DriverActionRequest,
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:update"),
+    principal: PrincipalDep,
 ):
+    await _ensure_driver_action_permission(db, principal, data.action)
     if not _is_primary_worker():
         payload = await _proxy_to_primary(
             request,
@@ -650,6 +737,91 @@ async def driver_action(
         )
 
 
+@router.get("/{printer_id}/driver/connected-models")
+async def driver_connected_models(
+    printer_id: int,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """List distinct Bambu printer models connected via this driver URL."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="GET",
+            path=f"/api/v1/printers/{printer_id}/driver/connected-models",
+        )
+
+    driver = plugin_manager.drivers.get(printer_id)
+    if not driver:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "driver_not_running",
+                "message": "Driver is not running for this printer",
+            },
+        )
+
+    try:
+        return await _invoke_driver_method(driver, "list_connected_models")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "action_failed", "message": str(e)},
+        )
+
+
+@router.get("/{printer_id}/driver/profile-coverage")
+async def driver_profile_coverage(
+    printer_id: int,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+    spool_id: int | None = Query(None),
+    filament_id: int | None = Query(None),
+):
+    """Read-only per-model profile resolution for the slicer profile picker."""
+    if not _is_primary_worker():
+        qs_parts = []
+        if spool_id is not None:
+            qs_parts.append(f"spool_id={spool_id}")
+        if filament_id is not None:
+            qs_parts.append(f"filament_id={filament_id}")
+        qs = ("?" + "&".join(qs_parts)) if qs_parts else ""
+        return await _proxy_to_primary(
+            request,
+            method="GET",
+            path=f"/api/v1/printers/{printer_id}/driver/profile-coverage{qs}",
+        )
+
+    driver = plugin_manager.drivers.get(printer_id)
+    if not driver:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "driver_not_running",
+                "message": "Driver is not running for this printer",
+            },
+        )
+
+    try:
+        return await _invoke_driver_method(
+            driver,
+            "get_profile_coverage",
+            spool_id=spool_id,
+            filament_id=filament_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "action_failed", "message": str(e)},
+        )
+
+
 @router.get("/{printer_id}/driver/health")
 async def driver_health(
     printer_id: int,
@@ -711,18 +883,28 @@ async def driver_cloud_presets(
     db: DBSession,
     principal: PrincipalDep,
     refresh: int | None = Query(None),
+    model: str | None = Query(None),
+    group: str | None = Query(None),
 ):
     """Returns the driver's cloud slicer-profile catalog for the FilaMan picker.
 
     Read-only. Proxies to the primary worker (where the driver runs).
+    Optional ``model`` filters presets; ``group=base`` dedupes by logical base name.
     Response shape: {"presets": [{code, name, displayName, isCustom}], "count": N}.
     """
     if not _is_primary_worker():
+        qs_parts = []
+        if refresh:
+            qs_parts.append("refresh=1")
+        if model:
+            qs_parts.append(f"model={model}")
+        if group:
+            qs_parts.append(f"group={group}")
+        qs = ("?" + "&".join(qs_parts)) if qs_parts else ""
         payload = await _proxy_to_primary(
             request,
             method="GET",
-            path=f"/api/v1/printers/{printer_id}/driver/cloud-presets"
-            + ("?refresh=1" if refresh else ""),
+            path=f"/api/v1/printers/{printer_id}/driver/cloud-presets{qs}",
         )
         if isinstance(payload, dict):
             return payload
@@ -749,7 +931,12 @@ async def driver_cloud_presets(
         )
 
     try:
-        result = method(force=bool(refresh))
+        kwargs: dict[str, Any] = {"force": bool(refresh)}
+        if model is not None:
+            kwargs["model"] = model
+        if group is not None:
+            kwargs["group"] = group
+        result = method(**kwargs)
         if inspect.isawaitable(result):
             result = await result
         if isinstance(result, dict):
