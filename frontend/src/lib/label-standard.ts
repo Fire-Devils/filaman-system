@@ -1,8 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
+import { LABEL_EXPORT_DPI } from './label-export'
 import { updateLabelPrintPageStyle } from './label-print-style'
+import {
+  buildFilamentSwatchBackground,
+  getFilamentSwatchColors,
+} from './label-template'
 
-const QR_PIXEL_SIZE = 400
+const MM_PER_INCH = 25.4
+const MIN_QR_PIXEL_SIZE = 256
+
+function getPrintQrPixelSize(sizeMm: number) {
+  return Math.max(MIN_QR_PIXEL_SIZE, Math.round(sizeMm * (LABEL_EXPORT_DPI / MM_PER_INCH)))
+}
 
 export interface StandardExtraField {
   label: string
@@ -16,7 +26,11 @@ export interface StandardLabelData {
   material: string
   colorName: string
   hexCode: string
+  colorHexes: string
+  multiColorStyle: string
   extraFields: StandardExtraField[]
+  /** Override the QR code URL. Defaults to /spools/{id} if omitted. */
+  qrUrl?: string
 }
 
 export interface StandardLabelSettings {
@@ -31,6 +45,7 @@ export interface StandardLabelSettings {
   showMaterial: boolean
   showColor: boolean
   showColorSwatch: boolean
+  showColorHex: boolean
   zoom?: number | null
 }
 
@@ -106,7 +121,10 @@ export function buildStandardLabelDataFromFlat(data: {
   material?: unknown
   colorName?: unknown
   hexCode?: unknown
+  colorHexes?: unknown
+  multiColorStyle?: unknown
   extraFields?: StandardExtraField[]
+  qrUrl?: string
 }): StandardLabelData {
   return {
     id: toStringValue(data.id),
@@ -115,8 +133,25 @@ export function buildStandardLabelDataFromFlat(data: {
     material: toStringValue(data.material),
     colorName: toStringValue(data.colorName),
     hexCode: cleanHex(data.hexCode),
+    colorHexes: toStringValue(data.colorHexes),
+    multiColorStyle: toStringValue(data.multiColorStyle),
     extraFields: data.extraFields ?? [],
+    qrUrl: data.qrUrl,
   }
+}
+
+function getApiFilamentColors(filament: any): any[] {
+  const list = Array.isArray(filament?.filament_colors)
+    ? filament.filament_colors
+    : filament?.colors
+  return Array.isArray(list) ? list : []
+}
+
+function getFilamentColorHexes(filament: any): string {
+  return getApiFilamentColors(filament)
+    .map(color => color?.color?.hex_code)
+    .filter(Boolean)
+    .join(', ')
 }
 
 export function buildStandardLabelDataFromApiSpool(spool: any, extraFields: StandardExtraField[] = []): StandardLabelData {
@@ -130,6 +165,8 @@ export function buildStandardLabelDataFromApiSpool(spool: any, extraFields: Stan
     material: filament.material_type,
     colorName: firstColor?.display_name_override || filament.manufacturer_color_name || firstColor?.color?.name,
     hexCode: firstColor?.color?.hex_code,
+    colorHexes: getFilamentColorHexes(filament),
+    multiColorStyle: filament.multi_color_style,
     extraFields,
   })
 }
@@ -194,10 +231,13 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
   const colorName = requiredElement<HTMLElement>(container, '.label-color-name')
   const hexElement = requiredElement<HTMLElement>(container, '.label-hex-code')
   const hex = cleanHex(data.hexCode)
+  const swatchColors = getFilamentSwatchColors(data.colorHexes, hex)
+  const swatchBackground = buildFilamentSwatchBackground(swatchColors, data.multiColorStyle)
 
-  colorSwatch.style.display = settings.showColorSwatch && hex ? 'block' : 'none'
-  if (settings.showColorSwatch && hex) {
-    colorSwatch.style.backgroundColor = `#${hex}`
+  colorSwatch.style.display = settings.showColorSwatch && swatchBackground ? 'block' : 'none'
+  colorSwatch.style.background = ''
+  if (settings.showColorSwatch && swatchBackground) {
+    colorSwatch.style.background = swatchBackground
   }
 
   colorName.style.display = settings.showColor && data.colorName ? 'inline' : 'none'
@@ -206,9 +246,13 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     colorName.style.fontSize = `${fontScale * 10}pt`
   }
 
-  colorRow.style.display = (settings.showColor && data.colorName) || (settings.showColorSwatch && hex) ? 'flex' : 'none'
+  colorRow.style.display = (
+    (settings.showColor && data.colorName) ||
+    (settings.showColorSwatch && swatchBackground) ||
+    (settings.showColorHex && hex)
+  ) ? 'flex' : 'none'
 
-  if (hex) {
+  if (settings.showColorHex && hex) {
     hexElement.textContent = `#${hex.toUpperCase()}`
     hexElement.style.cssText = `display:block;font-size:${fontScale * 9}pt`
   } else {
@@ -228,7 +272,7 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     const div = document.createElement('div')
     div.style.cssText = `font-size:${fontScale * 7}pt;color:black;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3`
     const labelSpan = document.createElement('span')
-    labelSpan.style.color = '#555'
+    labelSpan.style.cssText = 'color:#555;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace'
     labelSpan.textContent = `${extraField.label}:`
     div.appendChild(labelSpan)
     div.appendChild(document.createTextNode(` ${extraField.value}`))
@@ -241,13 +285,13 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     await ensureQrCodeLoaded()
     if (options.isStale?.()) return
     qrElement.innerHTML = ''
-    const url = `${window.location.origin}/spools/${encodeURIComponent(String(data.id))}`
+    const url = data.qrUrl ?? `${window.location.origin}/spools/${encodeURIComponent(String(data.id))}`
     const QRCode = getQrCodeConstructor()
     if (!QRCode) throw new Error('QRCode is not available')
     new QRCode(qrElement, {
       text: url,
-      width: QR_PIXEL_SIZE,
-      height: QR_PIXEL_SIZE,
+      width: getPrintQrPixelSize(qrSizeMm),
+      height: getPrintQrPixelSize(qrSizeMm),
       colorDark: '#000',
       colorLight: '#fff',
       correctLevel: QRCode.CorrectLevel.H,

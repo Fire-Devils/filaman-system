@@ -292,6 +292,113 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234ee3a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
+.preset-control-row {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.preset-select,
+.preset-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.preset-select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--input-bg);
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+}
+
+.preset-action-btn {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.preset-action-btn:hover {
+  background: var(--bg-elevated);
+}
+
+.preset-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.preset-action-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--btn-primary-text);
+}
+
+.preset-action-btn-primary:hover,
+.preset-action-btn-overwrite:hover {
+  opacity: 0.88;
+}
+
+.preset-action-btn-overwrite {
+  background: var(--warning, #f59e0b);
+  border-color: var(--warning, #f59e0b);
+  color: #fff;
+}
+
+.preset-action-btn-saved {
+  background: var(--success, var(--accent));
+  border-color: var(--success, var(--accent));
+  color: var(--btn-primary-text);
+  cursor: default;
+}
+
+.preset-action-btn-saved:disabled {
+  opacity: 1;
+}
+
+.preset-action-btn-danger {
+  border-color: var(--danger, #ef4444);
+  color: var(--danger, #ef4444);
+}
+
+.preset-action-btn-danger:hover {
+  background: var(--danger, #ef4444);
+  color: #fff;
+}
+
+.preset-action-btn-icon {
+  align-items: center;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+}
+
+.preset-action-btn-icon svg {
+  fill: none;
+  height: 13px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+  width: 13px;
+}
+
+@media (max-width: 720px) {
+  .preset-control-row {
+    flex-wrap: wrap;
+  }
+}
+
 /* Checkboxes */
 .fm-checkbox {
   appearance: none;

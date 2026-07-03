@@ -125,6 +125,7 @@ import Layout from '../../layouts/Layout.astro'
     <button class="fm-btn fm-btn-outline" id="bulk-btn-diameter" data-i18n="filaments.bulkSetDiameter">Set Diameter</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-density" data-i18n="filaments.bulkSetDensity">Set Density</button>
+    <button class="fm-btn fm-btn-outline" id="bulk-btn-print" data-i18n="filaments.bulkLabel">Print Labels</button>
     <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="filaments.bulkDelete">Delete</button>
   </div>
 
@@ -965,6 +966,13 @@ import Layout from '../../layouts/Layout.astro'
         (window as any).__fmAlert(t('filaments.bulkError'))
       }
     }
+
+    // Print Labels
+    document.getElementById('bulk-btn-print')?.addEventListener('click', () => {
+      if (selectedFilamentIds.size === 0) return
+      const ids = [...selectedFilamentIds].join(',')
+      window.location.href = `/filaments/print?ids=${ids}`
+    })
 
     // Delete
     document.getElementById('bulk-btn-delete')?.addEventListener('click', async () => {

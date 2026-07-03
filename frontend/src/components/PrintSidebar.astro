@@ -1,0 +1,41 @@
+---
+interface Props {
+  backHref?: string
+  backLabel: string
+  backLabelId?: string
+  backI18n?: string
+  standardLabel?: string
+  standardI18n?: string
+  designerLabel?: string
+  designerI18n?: string
+}
+
+const {
+  backHref,
+  backLabel,
+  backLabelId,
+  backI18n,
+  standardLabel = 'Standard Label',
+  standardI18n,
+  designerLabel = 'Label Designer',
+  designerI18n,
+} = Astro.props
+---
+
+<aside class="print-sidebar">
+  <div class="print-sidebar-scroll">
+    <a id="btn-back" href={backHref} class="sidebar-header back-link">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      <span id={backLabelId} data-i18n={backI18n}>{backLabel}</span>
+    </a>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" id="tab-btn-print" data-tab="print" data-i18n={standardI18n}>{standardLabel}</button>
+      <button class="tab-btn" id="tab-btn-designer" data-tab="designer" data-i18n={designerI18n}>{designerLabel}</button>
+    </div>
+
+    <slot />
+  </div>
+
+  <slot name="footer" />
+</aside>

@@ -24,23 +24,23 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
 
 <div id="tab-panel-designer" class="settings-section" style="display: none;">
   <details class="ds-section" open>
-    <summary class="ds-section-header" id="dsh-presets"><span id="dsh-presets-text">Presets</span></summary>
+    <summary class="ds-section-header" id="dsh-presets"><span id="dsh-presets-text">Label Presets</span></summary>
     <div class="ds-section-body">
       <div>
         <label class="fm-label" id="dsl-preset-saved">Saved presets</label>
-        <div class="ds-preset-row">
-          <select id="ds-preset-list" class="fm-input fm-select ds-preset-select"></select>
-          <button id="ds-preset-load-btn" class="ds-action-btn" type="button">Load</button>
-          <button id="ds-preset-delete-btn" class="ds-action-btn ds-action-btn-danger ds-action-btn-icon" type="button" title="Delete selected preset" aria-label="Delete selected preset">
+        <div class="preset-control-row">
+          <select id="ds-preset-list" class="fm-select preset-select"></select>
+          <button id="ds-preset-load-btn" class="preset-action-btn" type="button">Load</button>
+          <button id="ds-preset-delete-btn" class="preset-action-btn preset-action-btn-danger preset-action-btn-icon" type="button" title="Delete selected preset" aria-label="Delete selected preset">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
           </button>
         </div>
       </div>
       <div>
         <label class="fm-label" id="dsl-preset-name">Preset name</label>
-        <div class="ds-preset-row">
-          <input type="text" id="ds-preset-name-input" class="fm-input ds-preset-name-input" placeholder="My label">
-          <button id="ds-preset-save-btn" class="ds-action-btn ds-action-btn-primary" type="button">Save as New</button>
+        <div class="preset-control-row">
+          <input type="text" id="ds-preset-name-input" class="fm-input preset-name-input" placeholder="My label">
+          <button id="ds-preset-save-btn" class="preset-action-btn preset-action-btn-primary" type="button">Save as New</button>
         </div>
       </div>
     </div>
@@ -181,7 +181,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-title2-tpl">Subtitle Format</label><button class="ds-syntax-btn" id="ds-title2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.material}"></textarea>
+          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.type}"></textarea>
           <div class="ds-token-area" id="ds-title2-token-area"></div>
         </div>
       </div>
@@ -259,6 +259,13 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         <input type="range" id="ds-info-size-range" min="1" max="10" step="0.5" value="2.5" class="ds-slider">
         <input type="number" id="ds-info-size" value="2.5" step="0.5" min="1" max="10" class="fm-input ds-size-num">
       </div>
+      <div class="ds-title-gap-inline">
+        <label class="fm-label ds-mini-label" id="dsl-info-gap">Margin (mm)</label>
+        <div class="ds-size-row ds-size-row-compact">
+          <input type="range" id="ds-info-gap-range" min="-1" max="4" step="0.1" value="0" class="ds-slider">
+          <input type="number" id="ds-info-gap" value="0" min="-1" max="4" step="0.1" class="fm-input ds-size-num">
+        </div>
+      </div>
       <div class="ds-two-col-row">
         <div class="ds-field-col"><label class="fm-label" id="dsl-info-halign">Justification</label><div class="ds-align-group" id="ds-info-align-group" data-value="left">
           {align.map(item => <button class:list={['ds-align-btn', item.value === 'left' && 'active']} data-align={item.value} type="button" title={item.label} aria-label={item.label}>
@@ -277,7 +284,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info-tpl">Information Format</label><button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.material}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C"></textarea>
+        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C"></textarea>
         <div class="ds-token-area" id="ds-info-token-area"></div>
       </div>
       <div class="ds-secondary-toggle" id="ds-info2-toggle"><label class="fm-checkbox-group ds-secondary-check"><input type="checkbox" id="ds-info2-show"><span id="dsl-info2-show">Side Column</span></label></div>
@@ -306,7 +313,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info2-tpl">Side Column Format</label><button class="ds-syntax-btn" id="ds-info2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.weight}g&#10;{filament.color_hex}"></textarea>
+          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}"></textarea>
           <div class="ds-token-area" id="ds-info2-token-area"></div>
         </div>
       </div>
@@ -340,20 +347,6 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   .ds-reset-btn { margin-left: auto; margin-right: 18px; width: 26px; height: 22px; padding: 2px 6px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-muted); cursor: pointer; opacity: 0.6; transition: opacity var(--transition), color var(--transition), border-color var(--transition); }
   .ds-reset-btn:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
   .ds-reset-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .ds-preset-row { display: flex; gap: 6px; align-items: center; }
-  .ds-preset-select, .ds-preset-name-input { flex: 1; min-width: 0; }
-  .ds-action-btn { flex-shrink: 0; padding: 5px 10px; font-size: 0.75rem; font-weight: 600; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-soft); color: var(--text); cursor: pointer; white-space: nowrap; transition: background var(--transition), color var(--transition), border-color var(--transition); }
-  .ds-action-btn:hover { background: var(--bg-elevated); }
-  .ds-action-btn-icon { width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-  .ds-action-btn-icon svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-  .ds-action-btn-primary { background: var(--accent); color: var(--btn-primary-text); border-color: var(--accent); }
-  .ds-action-btn-primary:hover { opacity: 0.88; }
-  .ds-action-btn-overwrite { background: var(--warning, #f59e0b); color: #fff; border-color: var(--warning, #f59e0b); }
-  .ds-action-btn-overwrite:hover { opacity: 0.88; }
-  .ds-action-btn-saved { background: var(--success, var(--accent)); color: var(--btn-primary-text); border-color: var(--success, var(--accent)); cursor: default; }
-  .ds-action-btn-saved:disabled { opacity: 1; }
-  .ds-action-btn-danger { color: var(--danger, #ef4444); border-color: var(--danger, #ef4444); }
-  .ds-action-btn-danger:hover { background: var(--danger, #ef4444); color: #fff; }
   .ds-preset-dirty { color: var(--accent); }
   .ds-dim-grid, .ds-two-col-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .ds-label-bottom-row, .ds-options-row, .ds-align-combo, .ds-logo-fit-row, .ds-logo-primary-inline, .ds-logo-justify-inline, .ds-logo-manual-inline, .ds-qr-top-row, .ds-size-row, .ds-tpl-label-row { display: flex; align-items: center; gap: 8px; }
@@ -397,7 +390,6 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   .ds-valign-btn svg, .ds-icon-pill-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .ds-valign-btn:hover, .ds-icon-pill-btn:hover { color: var(--text); }
   .ds-align-btn.active, .ds-pill-btn.active { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-text); }
-  .fm-select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
   .fm-checkbox-group { display: inline-flex; align-items: center; gap: 8px; margin: 0; min-width: 0; color: var(--text); cursor: pointer; line-height: 1.2; font-size: 0.8rem; font-weight: 600; }
   .fm-checkbox-group span { color: var(--text); font-size: inherit; font-weight: inherit; }
   .fm-checkbox-group input[type="checkbox"], .ds-header-show input[type="checkbox"] {
@@ -479,7 +471,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   .ds-modifier-inverse:hover, .ds-modifier-inverse.active { background: #fff; border-color: #fff; color: #000; }
   .ds-modifier-color-inverse { min-width: 24px; padding: 0; background: color-mix(in srgb, var(--accent) 72%, #000); border-color: var(--accent); color: var(--btn-primary-text); font-size: 0.84rem; }
   .ds-modifier-color-inverse::after { content: ''; position: absolute; right: 3px; bottom: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); border: 1px solid var(--btn-primary-text); }
-  .ds-modifier-color-inverse.has-filament-color { background: var(--ds-filament-bg, #000); border-color: var(--ds-filament-bg, #000); color: var(--ds-filament-fg, #fff); }
+  .ds-modifier-color-inverse.has-filament-color { background: var(--ds-filament-bg, #000); border-color: var(--ds-filament-border, #000); color: var(--ds-filament-fg, #fff); }
   .ds-modifier-color-inverse.has-filament-color::after { content: none; }
   .ds-modifier-caps { font-size: 0.72rem; line-height: 0.9; }
   .ds-syntax-popover { position: fixed; z-index: 9999; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 10px; padding: 14px 16px 12px; width: min(760px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100vh - 40px); overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3); font-size: 0.78rem; line-height: 1.6; color: var(--text); }

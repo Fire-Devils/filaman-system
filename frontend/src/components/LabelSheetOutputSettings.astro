@@ -1,0 +1,360 @@
+<details class="ds-section sheet-output-section" open>
+  <summary class="ds-section-header" data-i18n="labelPrint.outputTitle">Output</summary>
+  <div class="ds-section-body">
+    <div>
+      <label class="fm-label" for="output-mode" data-i18n="labelPrint.outputMode">Output mode</label>
+      <select id="output-mode" class="fm-input">
+        <option value="individual" data-i18n="labelPrint.outputIndividual">Individual labels</option>
+        <option value="sheet" data-i18n="labelPrint.outputSheet">Label paper</option>
+      </select>
+    </div>
+    <div id="label-sheet-settings" class="sheet-settings-grid" style="display:none;">
+      <details class="sheet-paper-presets full" open>
+        <summary class="sheet-subsection-header" data-i18n="labelPrint.paperPresetsTitle">Label Paper Presets</summary>
+        <div class="sheet-subsection-body">
+          <div>
+            <label class="fm-label" for="sheet-preset" data-i18n="labelPrint.savedPaperPresets">Saved presets</label>
+            <div class="preset-control-row">
+              <select id="sheet-preset" class="fm-select preset-select"></select>
+              <button type="button" id="sheet-load-preset" class="preset-action-btn" data-i18n="labelPrint.loadPaperPreset">Load</button>
+              <button type="button" id="sheet-delete-preset" class="preset-action-btn preset-action-btn-danger preset-action-btn-icon" data-i18n-title="labelPrint.deletePaperPreset" title="Delete selected preset" aria-label="Delete selected preset">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="fm-label" for="sheet-preset-name" data-i18n="labelPrint.paperPresetName">Preset name</label>
+            <div class="preset-control-row">
+              <input type="text" id="sheet-preset-name" class="fm-input preset-name-input" data-i18n-placeholder="labelPrint.paperPresetNamePlaceholder" placeholder="My label paper">
+              <button type="button" id="sheet-save-preset" class="preset-action-btn preset-action-btn-primary" data-i18n="labelPrint.savePaperPreset">Save as New</button>
+            </div>
+          </div>
+        </div>
+      </details>
+      <section class="sheet-layout-guide full" aria-label="Label paper layout">
+        <h3 class="sheet-layout-guide-title" data-i18n="labelPrint.paperLayoutTitle">Label Paper Layout</h3>
+        <div class="sheet-geometry-guide" aria-label="Label paper geometry guide">
+          <svg viewBox="0 0 800 420" role="img" aria-label="Label paper geometry guide">
+            <defs>
+              <marker id="sheet-guide-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0 0l10 5-10 5z"></path>
+              </marker>
+            </defs>
+            <rect class="sheet-guide-paper" x="185" y="82" width="500" height="260"></rect>
+            <rect class="sheet-guide-label" x="215" y="145" width="385" height="150"></rect>
+            <rect class="sheet-guide-label" x="625" y="145" width="60" height="150"></rect>
+            <rect class="sheet-guide-label" x="215" y="320" width="385" height="22"></rect>
+            <rect class="sheet-guide-label" x="625" y="320" width="60" height="22"></rect>
+
+            <path class="sheet-guide-ext" d="M185 82H152M215 145H152M215 320H152M185 342v19M685 342v19M625 145V54M600 145v150M215 268h385M600 145h25M600 295h25M215 295v25M600 295v25"></path>
+
+            <path class="sheet-guide-dim" d="M185 67h30" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M170 82v63" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M158 145v175" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M215 58h410" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M215 178h385" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M580 145v150" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M605 125h20" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M242 298v19" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M185 356h500" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+            <path class="sheet-guide-dim" d="M702 82v260" marker-start="url(#sheet-guide-arrow)" marker-end="url(#sheet-guide-arrow)"></path>
+
+            <text class="sheet-guide-text" x="137" y="45" text-anchor="middle" data-i18n="labelPrint.leftMarginShort">Left margin</text>
+            <text class="sheet-guide-text" x="144" y="119" text-anchor="end" data-i18n="labelPrint.marginTop">Top margin</text>
+            <text class="sheet-guide-text" x="132" y="217" text-anchor="end" data-i18n="labelPrint.verticalPitchShort">V. Pitch</text>
+            <text class="sheet-guide-text" x="420" y="45" text-anchor="middle" data-i18n="labelPrint.horizontalPitchShort">H. Pitch</text>
+            <text class="sheet-guide-text" x="407" y="386" text-anchor="middle" data-i18n="labelPrint.columnsShort">Columns</text>
+            <text class="sheet-guide-text" x="720" y="214" text-anchor="start" data-i18n="labelPrint.rowsShort">Rows</text>
+
+            <g class="sheet-guide-callout">
+              <rect x="225" y="164" width="72" height="30" rx="4"></rect>
+              <text x="261" y="184" text-anchor="middle" data-i18n="labelPrint.labelWidthShort">Width</text>
+            </g>
+            <g class="sheet-guide-callout">
+              <rect x="514" y="227" width="78" height="30" rx="4"></rect>
+              <text x="553" y="247" text-anchor="middle" data-i18n="labelPrint.labelHeightShort">Height</text>
+            </g>
+            <g class="sheet-guide-callout sheet-guide-gap-callout">
+              <rect x="581" y="93" width="68" height="26" rx="4"></rect>
+              <text x="615" y="111" text-anchor="middle" data-i18n="labelPrint.horizontalGapShort">H. Gap</text>
+            </g>
+            <g class="sheet-guide-callout sheet-guide-gap-callout">
+              <rect x="254" y="295" width="64" height="26" rx="4"></rect>
+              <text x="286" y="313" text-anchor="middle" data-i18n="labelPrint.verticalGapShort">V. Gap</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+      <div class="full">
+        <label class="fm-label" for="sheet-paper-size" data-i18n="labelPrint.paperSize">Paper size</label>
+        <select id="sheet-paper-size" class="fm-input" data-label-sheet-control>
+          <option value="a4">A4</option>
+          <option value="letter">Letter</option>
+          <option value="custom" data-i18n="labelPrint.customPaper">Custom</option>
+        </select>
+      </div>
+      <div id="sheet-custom-size" class="sheet-settings-grid full" style="display:none;">
+        <div><label class="fm-label" for="sheet-custom-width" data-i18n="labelPrint.paperWidth">Paper width (mm)</label><input type="number" id="sheet-custom-width" class="fm-input" data-label-sheet-control></div>
+        <div><label class="fm-label" for="sheet-custom-height" data-i18n="labelPrint.paperHeight">Paper height (mm)</label><input type="number" id="sheet-custom-height" class="fm-input" data-label-sheet-control></div>
+      </div>
+      <div><label class="fm-label" for="sheet-columns" data-i18n="labelPrint.sheetColumns">Columns</label><input type="number" id="sheet-columns" min="1" max="10" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-rows" data-i18n="labelPrint.sheetRows">Rows</label><input type="number" id="sheet-rows" min="1" max="30" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-margin-top" data-i18n="labelPrint.marginTop">Top margin</label><input type="number" id="sheet-margin-top" min="0" step="0.5" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-margin-right" data-i18n="labelPrint.marginRight">Right side margin</label><input type="number" id="sheet-margin-right" min="0" step="0.5" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-margin-bottom" data-i18n="labelPrint.marginBottom">Bottom margin</label><input type="number" id="sheet-margin-bottom" min="0" step="0.5" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-margin-left" data-i18n="labelPrint.marginLeft">Left side margin</label><input type="number" id="sheet-margin-left" min="0" step="0.5" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-gap-horizontal" data-i18n="labelPrint.gapHorizontal">Horizontal gap</label><input type="number" id="sheet-gap-horizontal" min="0" step="0.5" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-gap-vertical" data-i18n="labelPrint.gapVertical">Vertical gap</label><input type="number" id="sheet-gap-vertical" min="0" step="0.5" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-skip-cells" data-i18n="labelPrint.skipCells">Skip cells</label><input type="number" id="sheet-skip-cells" min="0" class="fm-input" data-label-sheet-control></div>
+      <div><label class="fm-label" for="sheet-copies" data-i18n="labelPrint.sheetCopies">Copies</label><input type="number" id="sheet-copies" min="1" class="fm-input" data-label-sheet-control></div>
+      <div class="sheet-toggle-row full">
+        <label class="fm-checkbox-group"><input type="checkbox" id="sheet-show-grid" data-label-sheet-control><span data-i18n="labelPrint.showGrid">Show grid</span></label>
+        <label class="fm-checkbox-group"><input type="checkbox" id="sheet-print-grid" data-label-sheet-control><span data-i18n="labelPrint.printGrid">Print grid</span></label>
+        <label class="fm-checkbox-group"><input type="checkbox" id="sheet-fit-to-cell" data-label-sheet-control><span data-i18n="labelPrint.fitToCell">Fit label to cell</span></label>
+      </div>
+      <div id="sheet-layout-summary" class="sheet-layout-summary full">
+        <div class="sheet-layout-summary-title" data-i18n="labelPrint.resultingOutputTitle">Resulting Label Page Output</div>
+        <div id="sheet-layout-summary-value"></div>
+      </div>
+    </div>
+  </div>
+</details>
+
+<style>
+  .sheet-output-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: block;
+    flex: 0 0 auto;
+    margin-top: auto;
+    overflow: hidden;
+  }
+
+  .sheet-output-section > .ds-section-header {
+    align-items: center;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    font-size: 0.82rem;
+    font-weight: 700;
+    gap: 10px;
+    justify-content: space-between;
+    letter-spacing: 1px;
+    list-style: none;
+    padding: 10px 14px;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .sheet-output-section > .ds-section-header::-webkit-details-marker {
+    display: none;
+  }
+
+  .sheet-output-section > .ds-section-header::after {
+    border-bottom: 1.5px solid currentColor;
+    border-right: 1.5px solid currentColor;
+    content: '';
+    flex-shrink: 0;
+    height: 7px;
+    opacity: 0.75;
+    transform: rotate(45deg);
+    transition: transform var(--transition), opacity var(--transition);
+    width: 7px;
+  }
+
+  .sheet-output-section[open] > .ds-section-header::after {
+    transform: rotate(-135deg);
+  }
+
+  .sheet-output-section > .ds-section-body {
+    background: var(--bg-elevated);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .sheet-settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .sheet-settings-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  .sheet-paper-presets {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .sheet-subsection-header {
+    align-items: center;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    font-size: 0.82rem;
+    font-weight: 700;
+    gap: 10px;
+    justify-content: space-between;
+    letter-spacing: 1px;
+    list-style: none;
+    padding: 10px 14px;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .sheet-subsection-header::-webkit-details-marker {
+    display: none;
+  }
+
+  .sheet-subsection-header::after {
+    border-bottom: 1.5px solid currentColor;
+    border-right: 1.5px solid currentColor;
+    content: '';
+    flex-shrink: 0;
+    height: 7px;
+    opacity: 0.75;
+    transform: rotate(45deg);
+    transition: transform var(--transition), opacity var(--transition);
+    width: 7px;
+  }
+
+  .sheet-paper-presets[open] > .sheet-subsection-header::after {
+    transform: rotate(-135deg);
+  }
+
+  .sheet-subsection-body {
+    background: var(--bg-elevated);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .sheet-layout-summary {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    padding: 10px 12px;
+  }
+
+  .sheet-layout-summary-title {
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+
+  .sheet-layout-guide {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sheet-layout-guide-title {
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .sheet-toggle-row {
+    display: grid;
+    gap: 6px;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  }
+
+  .sheet-toggle-row .fm-checkbox-group {
+    min-width: 0;
+    padding: 8px 10px;
+  }
+
+  .sheet-toggle-row .fm-checkbox-group span {
+    line-height: 1.2;
+  }
+
+  .sheet-geometry-guide {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    padding: 8px;
+  }
+
+  .sheet-geometry-guide svg {
+    display: block;
+    height: auto;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .sheet-guide-paper {
+    fill: color-mix(in srgb, var(--text-muted) 22%, var(--bg-elevated));
+    stroke: var(--text-muted);
+    stroke-width: 1.5;
+  }
+
+  .sheet-guide-label {
+    fill: color-mix(in srgb, var(--accent) 12%, var(--bg));
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+
+  .sheet-guide-dim {
+    fill: none;
+    stroke: var(--text);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  .sheet-guide-ext {
+    fill: none;
+    opacity: 0.45;
+    stroke: var(--text-muted);
+    stroke-dasharray: 5 5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1;
+  }
+
+  .sheet-guide-dim {
+    marker-start: url(#sheet-guide-arrow);
+    marker-end: url(#sheet-guide-arrow);
+  }
+
+  .sheet-geometry-guide marker path {
+    fill: var(--text);
+  }
+
+  .sheet-guide-text {
+    fill: var(--text);
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .sheet-guide-callout rect {
+    fill: var(--bg-elevated);
+    opacity: 0.95;
+  }
+
+  .sheet-guide-callout text {
+    fill: var(--accent);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .sheet-guide-gap-callout text {
+    font-size: 15px;
+  }
+
+</style>

@@ -1,0 +1,19 @@
+---
+interface Props {
+  min?: string
+  resetClass?: string
+}
+
+const {
+  min = '25',
+  resetClass = '',
+} = Astro.props
+---
+
+<div class="preview-zoom-bar">
+  <button class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+  <input type="range" id="preview-zoom-slider" min={min} max="300" step="5" value="100" class="preview-zoom-slider">
+  <button class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+  <span id="preview-zoom-label" class="preview-zoom-label">100%</span>
+  <button class={`preview-zoom-btn ${resetClass}`} id="preview-zoom-reset" title="Reset zoom" aria-label="Reset zoom">⟳</button>
+</div>

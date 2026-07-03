@@ -1,0 +1,654 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import LabelDesignerEditor from '../../components/LabelDesignerEditor.astro'
+import LabelSheetOutputSettings from '../../components/LabelSheetOutputSettings.astro'
+import PrintActionFooter from '../../components/PrintActionFooter.astro'
+import PrintSidebar from '../../components/PrintSidebar.astro'
+import PreviewZoomBar from '../../components/PreviewZoomBar.astro'
+import StandardLabelSettingsPanel from '../../components/StandardLabelSettingsPanel.astro'
+import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
+---
+
+<Layout title="FilaMan - Print Filament Labels">
+  <BatchLabelPrintStyles />
+
+  <div class="print-page">
+    <PrintSidebar
+      backHref="/filaments"
+      backLabel="Back to Filaments"
+      backLabelId="btn-back-label"
+      backI18n="filaments.backToFilaments"
+      standardI18n="labelPrint.standardLabel"
+      designerI18n="spools.labelDesigner"
+    >
+      <StandardLabelSettingsPanel
+        idLabelI18n="filaments.showFilamentId"
+        idFallback="Filament ID"
+        extraFieldsMode="batch"
+      />
+
+      <LabelDesignerEditor />
+
+      <LabelSheetOutputSettings />
+
+      <PrintActionFooter slot="footer" printI18n="labelPrint.btnPrint" resetI18n="labelPrint.btnReset" />
+    </PrintSidebar>
+
+    <main class="preview-container" id="preview-container">
+      <PreviewZoomBar />
+      <div class="label-count" id="label-count"></div>
+    </main>
+  </div>
+</Layout>
+
+<script>
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
+  import { initLabelDesignerEditor } from '../../lib/label-designer-editor'
+  import {
+    buildSpoolDataFromFlatLabel,
+    clampNumber,
+    getDesignerLabelDimensions,
+    loadDesignerSettingsFromStorage,
+    renderDesignerLabel,
+    type DesignerExtraField,
+  } from '../../lib/label-designer'
+  import {
+    buildStandardLabelDataFromFlat,
+    buildStandardLabelHtml,
+    renderStandardLabel,
+    type StandardLabelSettings,
+  } from '../../lib/label-standard'
+  import {
+    REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS,
+    buildDesignerExtraFieldsFromFilament,
+    buildFilamentLabelDataFromApi,
+  } from '../../lib/filament-label-data'
+  import {
+    applyBatchLabelPreviewZoom,
+    bindBatchLabelExport,
+    captureBatchLabel,
+    findBatchLabelElement,
+    getCachedEntityLogoUrl,
+    makeBatchLabelHtml,
+    bindPrintDesignerTabs,
+    bindPreviewZoomControls,
+    installPrintFunction,
+    prefetchEntityLogos,
+    readPrintDesignerTab,
+    readStorageValue,
+    removeStorageValue,
+    type LabelPrintEntityAdapter,
+    type PrintDesignerTab,
+    writeStorageValue,
+  } from '../../lib/label-print-page'
+  import { isBuiltInLabelField } from '../../lib/label-extra-fields'
+  import { t, initI18n } from '../../lib/i18n'
+
+  installPrintFunction()
+
+  const SETTINGS_KEY = 'filaman-filament-batch-label-settings'
+  const SETTINGS_VERSION = 2
+  const DESIGNER_PRESETS_KEY = 'filaman-filament-label-presets-v1'
+  const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
+
+  const widthInput       = document.getElementById('input-width') as HTMLInputElement
+  const heightInput      = document.getElementById('input-height') as HTMLInputElement
+  const fontInput        = document.getElementById('input-font-size') as HTMLInputElement
+  const qrSizeInput      = document.getElementById('input-qr-size') as HTMLInputElement
+  const checkLogo        = document.getElementById('check-logo') as HTMLInputElement
+  const checkQR          = document.getElementById('check-qr') as HTMLInputElement
+  const checkID          = document.getElementById('check-id') as HTMLInputElement
+  const checkMfr         = document.getElementById('check-mfr') as HTMLInputElement
+  const checkMat         = document.getElementById('check-mat') as HTMLInputElement
+  const checkColor       = document.getElementById('check-color') as HTMLInputElement
+  const checkColorSwatch = document.getElementById('check-color-swatch') as HTMLInputElement
+  const checkColorHex    = document.getElementById('check-color-hex') as HTMLInputElement
+  const zoomInput        = document.createElement('input')
+  zoomInput.type = 'hidden'
+  zoomInput.value = '100'
+  const previewZoomSlider = document.getElementById('preview-zoom-slider') as HTMLInputElement | null
+  const previewZoomLabel  = document.getElementById('preview-zoom-label') as HTMLElement | null
+  const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
+  const tabPanelPrint    = document.getElementById('tab-panel-print') as HTMLElement
+  const tabPanelDesigner = document.getElementById('tab-panel-designer') as HTMLElement
+  const resetBtn         = document.getElementById('btn-reset') as HTMLButtonElement | null
+  const exportPngBtn     = document.getElementById('btn-export-png') as HTMLButtonElement
+  const exportPdfBtn     = document.getElementById('btn-export-pdf') as HTMLButtonElement
+  const previewContainer = document.getElementById('preview-container') as HTMLElement
+  const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
+
+  type ExtraFieldDef = { key: string; label: string }
+  type ApiObject = Record<string, unknown>
+  type ApiFilament = ApiObject & {
+    id?: string | number
+    custom_fields?: Record<string, unknown>
+    manufacturer?: { id?: string | number; name?: string }
+  }
+
+  let filaments: ApiFilament[] = []
+  type FilamentLabelEntity = ApiFilament
+  const logoCache: Record<number, string | null> = {}
+  let activePreviewTab: PrintDesignerTab = readPrintDesignerTab('filaman-label-active-tab')
+  let renderVersion = 0
+  let previewZoomFrame = 0
+
+  // Extra field definitions for filaments only. The Standard Label tab is
+  // reduced to common fields; Label Designer still receives all fields.
+  let efDefs: ExtraFieldDef[] = []
+  const efCheckMap: Record<string, HTMLInputElement> = {}
+
+  const STANDARD_FILAMENT_EF = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS
+  const STANDARD_FILAMENT_EF_KEYS = new Set(STANDARD_FILAMENT_EF.map(def => def.key))
+
+  function efMapKey(key: string): string { return `filament:${key}` }
+
+  function isApiObject(value: unknown): value is ApiObject {
+    return typeof value === 'object' && value !== null
+  }
+
+  function isExtraFieldDef(value: unknown): value is ExtraFieldDef {
+    return isApiObject(value) && typeof value.key === 'string' && typeof value.label === 'string'
+  }
+
+  function normalizeExtraFieldDefs(value: unknown): ExtraFieldDef[] {
+    const items = Array.isArray(value)
+      ? value
+      : isApiObject(value) && Array.isArray(value.items)
+        ? value.items
+        : []
+    return items.filter(isExtraFieldDef)
+  }
+
+  function saveSettings() {
+    const efState: Record<string, boolean> = {}
+    Object.entries(efCheckMap).forEach(([k, cb]) => { efState[k] = cb.checked })
+    writeStorageValue(SETTINGS_KEY, JSON.stringify({
+      _v: SETTINGS_VERSION,
+      width: widthInput.value, height: heightInput.value,
+      fontSize: fontInput.value, qrSize: qrSizeInput.value,
+      showLogo: checkLogo.checked, showQR: checkQR.checked, showID: checkID.checked,
+      showMfr: checkMfr.checked, showMat: checkMat.checked,
+      showColor: checkColor.checked, showColorSwatch: checkColorSwatch.checked, showColorHex: checkColorHex.checked,
+      zoom: zoomInput.value, extraFields: efState,
+    }))
+  }
+
+  function loadSettings() {
+    try {
+      const s = JSON.parse(readStorageValue(SETTINGS_KEY) || 'null')
+      if (!s || (s._v ?? 0) < SETTINGS_VERSION) { writeStorageValue(SETTINGS_KEY, ''); return }
+      if (s.width) widthInput.value = s.width
+      if (s.height) heightInput.value = s.height
+      if (s.fontSize) fontInput.value = s.fontSize
+      if (s.qrSize) qrSizeInput.value = s.qrSize
+      if (s.showLogo !== undefined) checkLogo.checked = s.showLogo
+      if (s.showQR !== undefined) checkQR.checked = s.showQR
+      if (s.showID !== undefined) checkID.checked = s.showID
+      if (s.showMfr !== undefined) checkMfr.checked = s.showMfr
+      if (s.showMat !== undefined) checkMat.checked = s.showMat
+      if (s.showColor !== undefined) checkColor.checked = s.showColor
+      if (s.showColorSwatch !== undefined) checkColorSwatch.checked = s.showColorSwatch
+      if (s.showColorHex !== undefined) checkColorHex.checked = s.showColorHex
+      if (s.zoom !== undefined) zoomInput.value = s.zoom
+      if (s.extraFields) {
+        Object.entries(s.extraFields as Record<string, boolean>).forEach(([k, v]) => {
+          if (efCheckMap[k]) efCheckMap[k].checked = v
+        })
+      }
+      previewZoomControls.sync()
+    } catch {}
+  }
+
+  async function loadLogo(mfrId: number): Promise<string | null> {
+    if (mfrId in logoCache) return logoCache[mfrId]
+    try {
+      const r = await fetch(`/api/v1/manufacturers/${mfrId}/label-logo`, { credentials: 'include' })
+      if (r.ok) {
+        const blob = await r.blob()
+        const dataUrl = await new Promise<string>((res) => {
+          const reader = new FileReader()
+          reader.onload = () => res(reader.result as string)
+          reader.readAsDataURL(blob)
+        })
+        logoCache[mfrId] = dataUrl; return dataUrl
+      }
+    } catch {}
+    logoCache[mfrId] = null; return null
+  }
+
+  function getFilamentMfrId(filament: ApiFilament): number | null {
+    const value = filament?.manufacturer?.id
+    const id = Number(value)
+    return Number.isFinite(id) && id > 0 ? id : null
+  }
+
+  function getBatchDesignerExtraFields(): DesignerExtraField[] {
+    const fields = new Map<string, DesignerExtraField>()
+    for (const def of efDefs) {
+      if (STANDARD_FILAMENT_EF_KEYS.has(def.key)) continue
+      const key = `filament.${def.key}`
+      fields.set(key, { key, label: def.label, value: '', source: 'filament' })
+    }
+    for (const filament of filaments) {
+      for (const field of buildDesignerExtraFieldsFromFilament(filament)) {
+        if (!field?.key || fields.has(field.key)) continue
+        fields.set(field.key, field)
+      }
+    }
+    return Array.from(fields.values())
+  }
+
+  function getBatchFilamentColorData() {
+    return filaments[0] ? buildFilamentLabelDataFromApi(filaments[0]) : null
+  }
+
+  function getExtraFieldsForFilament(filament: ApiFilament): {label: string, value: string}[] {
+    const result: {label: string, value: string}[] = []
+    const custom = filament?.custom_fields ?? {}
+    for (const def of efDefs) {
+      if (!efCheckMap[efMapKey(def.key)]?.checked) continue
+      // Standard fields use shared reduced definitions; system custom fields use custom_fields[key].
+      const stdDef = STANDARD_FILAMENT_EF.find(s => s.key === def.key)
+      const rawValue = stdDef ? stdDef.valueFromApi(filament) : (custom[def.key] !== null && custom[def.key] !== undefined ? String(custom[def.key]) : '')
+      if (rawValue !== '') {
+        result.push({ label: def.label, value: rawValue })
+      }
+    }
+    return result
+  }
+
+  function buildStandardSettings(): StandardLabelSettings {
+    return {
+      widthMm:   clampNumber(Number(widthInput.value), 20, 200, 60),
+      heightMm:  clampNumber(Number(heightInput.value), 10, 120, 40),
+      fontScale: clampNumber(Number(fontInput.value), 50, 200, 100) / 100,
+      qrSizeMm:  clampNumber(Number(qrSizeInput.value), 8, 40, 18),
+      showLogo: checkLogo.checked,
+      showQR: checkQR.checked,
+      showID: checkID.checked,
+      showManufacturer: checkMfr.checked,
+      showMaterial: checkMat.checked,
+      showColor: checkColor.checked,
+      showColorSwatch: checkColorSwatch.checked,
+      showColorHex: checkColorHex.checked,
+    }
+  }
+
+  function buildStandardDataFromFilament(filament: ApiFilament): ReturnType<typeof buildStandardLabelDataFromFlat> {
+    const data = buildFilamentLabelDataFromApi(filament)
+    return buildStandardLabelDataFromFlat({
+      id: data.id,
+      designation: data.designation,
+      manufacturer: data.manufacturer,
+      material: data.type,
+      colorName: data.color,
+      hexCode: data.hex_code,
+      colorHexes: data.color_hexes,
+      multiColorStyle: data.multi_color_style,
+      extraFields: getExtraFieldsForFilament(filament),
+      qrUrl: `${window.location.origin}/filaments/${data.id}`,
+    })
+  }
+
+  function buildDesignerDataFromFilament(filament: ApiFilament): ReturnType<typeof buildSpoolDataFromFlatLabel> {
+    const data = buildFilamentLabelDataFromApi(filament)
+    return buildSpoolDataFromFlatLabel({
+      id: data.id,
+      filament_id: data.id,
+      designation: data.designation,
+      manufacturer: data.manufacturer,
+      manufacturer_id: data.manufacturer_id || data.mfr_id,
+      type: data.type,
+      subtype: data.subtype,
+      color: data.color,
+      colors: data.colors,
+      hex_code: data.hex_code,
+      color_hexes: data.color_hexes,
+      color_mode: data.color_mode,
+      multi_color_style: data.multi_color_style,
+      extruder_temp: data.extruder_temp,
+      bed_temp: data.bed_temp,
+      raw_material_weight_g: data.raw_material_weight_g,
+      weight: data.weight,
+      diameter: data.diameter,
+      finish: data.finish,
+      density: data.density,
+      price: data.price,
+      manufacturer_color_name: data.manufacturer_color_name,
+      default_spool_weight_g: data.default_spool_weight_g,
+      spool_outer_diameter_mm: data.spool_outer_diameter_mm,
+      spool_width_mm: data.spool_width_mm,
+      spool_material: data.spool_material,
+      shop_url: data.shop_url,
+      extraFields: buildDesignerExtraFieldsFromFilament(filament),
+    })
+  }
+
+  const labelAdapter = {
+    entityType: 'filament',
+    entityPath: 'filaments',
+    getId: filament => filament?.id,
+    getLogoManufacturerId: getFilamentMfrId,
+    buildStandardData: buildStandardDataFromFilament,
+    buildDesignerData: buildDesignerDataFromFilament,
+    singlePngName: filament => `filament-label-${filament.id}.png`,
+    zipName: () => 'filament-labels.zip',
+    zipEntryName: filament => `filament-label-${filament.id}.png`,
+    pdfName: () => 'filament-labels.pdf',
+    missingIdMessage: 'Cannot capture label: filament is missing an id',
+  } satisfies LabelPrintEntityAdapter<FilamentLabelEntity>
+
+  function makeLabelHtml(filamentId: number): string {
+    return makeBatchLabelHtml(filamentId, buildStandardLabelHtml())
+  }
+
+  async function prefetchLogos() {
+    await prefetchEntityLogos(filaments, labelAdapter, loadLogo)
+  }
+
+  async function renderLabel(container: HTMLElement, filament: ApiFilament, isStale = () => false) {
+    const settings = buildStandardSettings()
+    await renderStandardLabel({
+      element: container,
+      data: labelAdapter.buildStandardData(filament),
+      settings,
+      logoUrl: getCachedEntityLogoUrl(labelAdapter, logoCache, filament),
+      isStale,
+    })
+  }
+
+  async function renderDesignerLabelForFilament(container: HTMLElement, filament: ApiFilament, isStale = () => false) {
+    const settings = loadDesignerSettingsFromStorage({
+      presetsKey: DESIGNER_PRESETS_KEY,
+      settingsKey: DESIGNER_SETTINGS_KEY,
+    })
+    await renderDesignerLabel({
+      element: container,
+      previewBorder: false,
+      settings,
+      data: labelAdapter.buildDesignerData(filament),
+      logoUrl: getCachedEntityLogoUrl(labelAdapter, logoCache, filament),
+      isStale,
+      entityPath: labelAdapter.entityPath,
+    })
+  }
+
+  async function renderAll(tab: 'print' | 'designer' = activePreviewTab) {
+    const token = ++renderVersion
+    const isStale = () => token !== renderVersion || activePreviewTab !== tab
+    const CHUNK = 6
+    for (let i = 0; i < filaments.length; i += CHUNK) {
+      if (isStale()) return
+      const chunk = filaments.slice(i, i + CHUNK)
+      await Promise.all(chunk.map(filament => {
+        const el = findBatchLabelElement(labelAdapter, filament)
+        if (!el) return Promise.resolve()
+        return tab === 'designer'
+          ? renderDesignerLabelForFilament(el, filament, isStale)
+          : renderLabel(el, filament, isStale)
+      }))
+      if (isStale()) return
+      await new Promise(r => setTimeout(r, 0))
+    }
+    if (isStale()) return
+    syncOutputPreview()
+    saveSettings()
+  }
+
+  function queueRenderAll() { void renderAll() }
+
+  function getActiveLabelDimensions() {
+    if (activePreviewTab === 'designer') {
+      return getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
+        presetsKey: DESIGNER_PRESETS_KEY,
+        settingsKey: DESIGNER_SETTINGS_KEY,
+      }))
+    }
+    const settings = buildStandardSettings()
+    return { widthMm: settings.widthMm, heightMm: settings.heightMm }
+  }
+
+  function getLabelSourceElements() {
+    return filaments
+      .map(filament => document.getElementById(`wrapper-${filament.id}`))
+      .filter((element): element is HTMLElement => element instanceof HTMLElement)
+  }
+
+  function updateLabelCount() {
+    if (!countEl || ids.length === 0) return
+    const copies = sheetControls.getOutputMode() === 'sheet' ? sheetControls.getSettings().copies : 1
+    const renderedCount = filaments.length * copies
+    countEl.textContent = filaments.length === ids.length
+      ? t('labelPrint.labelsReady', { count: String(renderedCount) })
+      : `${t('labelPrint.labelsReady', { count: String(renderedCount) })} (${filaments.length}/${ids.length})`
+  }
+
+  function applyCurrentPreviewZoom() {
+    if (sheetControls.getOutputMode() === 'sheet') {
+      applyLabelSheetPreviewZoom(previewContainer, Number(zoomInput.value))
+    } else {
+      applyBatchLabelPreviewZoom(previewContainer, Number(zoomInput.value))
+    }
+  }
+
+  function schedulePreviewZoomUpdate() {
+    if (previewZoomFrame) return
+    previewZoomFrame = requestAnimationFrame(() => {
+      previewZoomFrame = 0
+      applyCurrentPreviewZoom()
+      saveSettings()
+    })
+  }
+
+  function syncOutputPreview() {
+    const sources = getLabelSourceElements()
+    syncLabelSheetPreview({
+      controls: sheetControls,
+      previewRoot: previewContainer,
+      sourceElements: sources,
+      labelDimensions: getActiveLabelDimensions(),
+    })
+    applyCurrentPreviewZoom()
+    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => t(key) || fallback)
+    updateLabelCount()
+  }
+
+  function handlePreviewZoomChange() {
+    schedulePreviewZoomUpdate()
+  }
+
+  async function loadExtraFieldDefs() {
+    try {
+      const defs = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.json())
+      const customDefs = normalizeExtraFieldDefs(defs)
+        .filter(def => !isBuiltInLabelField('filament', def.key, def.label))
+      const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
+
+      // Keep the Standard Label tab compact: reduced standard fields first,
+      // then true system custom fields in their own group.
+      efDefs = [...standardDefs, ...customDefs]
+      if (efDefs.length === 0) return
+
+      const titleEl = document.getElementById('ef-section-title')!
+      const container = document.getElementById('ef-checkboxes')!
+      titleEl.textContent = t('labelPrint.filamentFieldsTitle') || 'Filament Fields'
+      titleEl.style.display = ''
+      container.style.removeProperty('display')
+
+      const scopeAttr = (() => {
+        const existing = document.querySelector('.fm-checkbox-group')
+        if (!existing) return null
+        return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
+      })()
+
+      const addFieldRows = (fields: ExtraFieldDef[], target: HTMLElement) => {
+        for (const def of fields) {
+          const row = document.createElement('label')
+          row.className = 'fm-checkbox-group'
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = false
+          const span = document.createElement('span')
+          span.textContent = def.label
+          if (scopeAttr) { row.setAttribute(scopeAttr.name, ''); cb.setAttribute(scopeAttr.name, ''); span.setAttribute(scopeAttr.name, '') }
+          row.appendChild(cb); row.appendChild(span)
+          target.appendChild(row)
+          efCheckMap[efMapKey(def.key)] = cb
+          cb.addEventListener('change', queueRenderAll)
+        }
+      }
+
+      addFieldRows(standardDefs, container)
+
+      if (customDefs.length > 0) {
+        const customTitle = document.createElement('h3')
+        customTitle.textContent = t('filaments.extraFieldsLabel') || 'Filament Extra Fields'
+        const customContainer = document.createElement('div')
+        customContainer.className = container.className
+        customContainer.style.removeProperty('display')
+        container.insertAdjacentElement('afterend', customTitle)
+        customTitle.insertAdjacentElement('afterend', customContainer)
+        addFieldRows(customDefs, customContainer)
+      }
+    } catch {}
+  }
+
+  async function captureLabel(filament: ApiFilament): Promise<string> {
+    return captureBatchLabel(labelAdapter, filament)
+  }
+
+  await initI18n()
+
+  const zoomOutBtn   = document.getElementById('preview-zoom-out')
+  const zoomInBtn    = document.getElementById('preview-zoom-in')
+  const zoomResetBtn = document.getElementById('preview-zoom-reset')
+  const previewZoomControls = bindPreviewZoomControls({
+    zoomInput,
+    slider: previewZoomSlider,
+    label: previewZoomLabel,
+    zoomOutBtn,
+    zoomInBtn,
+    zoomResetBtn,
+    getTranslation: (key, fallback) => t(key) || fallback,
+    onChange: handlePreviewZoomChange,
+  })
+
+  const designerEditor = initLabelDesignerEditor({
+    extraFields: [],
+    entityType: labelAdapter.entityType,
+    getFilamentColorHex: () => getBatchFilamentColorData()?.hex_code || '',
+    getFilamentColorHexes: () => getBatchFilamentColorData()?.color_hexes || '',
+    getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multi_color_style || '',
+    translate: (key, fallback) => t(key) || fallback,
+    onChange: queueRenderAll,
+    presetsKey: DESIGNER_PRESETS_KEY,
+    settingsKey: DESIGNER_SETTINGS_KEY,
+    entityLabel: 'Filament',
+    crossPresetsKey: 'filaman-spool-label-presets-v1',
+    ownPresetsLabel: (t('filaments.dsPresetsOwnGroup') || 'Filament presets'),
+    crossPresetsLabel: (t('filaments.dsPresetsCrossGroupSpool') || 'Spool presets'),
+  })
+
+  const tabControls = bindPrintDesignerTabs({
+    buttons: tabBtns,
+    printPanel: tabPanelPrint,
+    designerPanel: tabPanelDesigner,
+    resetButton: resetBtn,
+    sidebar: document.querySelector<HTMLElement>('.print-sidebar'),
+    storageKey: 'filaman-label-active-tab',
+    initialTab: activePreviewTab,
+    onChange: tab => {
+      activePreviewTab = tab
+      queueRenderAll()
+    },
+  })
+
+  bindBatchLabelExport({
+    entities: () => filaments,
+    activeTab: () => activePreviewTab,
+    pngButton: exportPngBtn,
+    pdfButton: exportPdfBtn,
+    getTranslation: (key, fallback) => t(key) || fallback,
+    renderAll,
+    captureLabel,
+    getPdfDimensions: getActiveLabelDimensions,
+    singlePngName: labelAdapter.singlePngName,
+    zipName: labelAdapter.zipName,
+    zipEntryName: labelAdapter.zipEntryName,
+    pdfName: labelAdapter.pdfName,
+    exportPdf: async (pages, defaultExport) => {
+      if (sheetControls.getOutputMode() === 'sheet') {
+        await saveLabelSheetPagesAsPdf(pages, 'filament-label-sheet.pdf', sheetControls.getSettings())
+      } else {
+        await defaultExport()
+      }
+    },
+    skipCaptureErrorsInZip: true,
+    skipCaptureErrorsInPdf: true,
+  })
+
+  const urlParams = new URLSearchParams(window.location.search)
+  const backId = urlParams.get('back')
+  const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
+  if (backId) {
+    backBtn.href = `/filaments/${backId}`
+    ;(document.getElementById('btn-back-label') as HTMLElement).textContent = t('filaments.backToFilament') || 'Back to Filament'
+  }
+
+  const idsParam = urlParams.get('ids') || ''
+  const ids = idsParam.split(',').map(Number).filter(n => n > 0)
+  const countEl = document.getElementById('label-count')!
+
+  if (ids.length === 0) {
+    countEl.textContent = t('labelPrint.noFilamentsSelected')
+  } else {
+    countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
+    ids.forEach(id => previewContainer.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
+
+    const [filamentResults] = await Promise.all([
+      Promise.allSettled(ids.map(async id => {
+        const r = await fetch(`/api/v1/filaments/${id}`, { credentials: 'include' })
+        if (!r.ok) throw new Error(`Failed to load filament ${id}: ${r.status}`)
+        return await r.json()
+      })),
+      loadExtraFieldDefs(),
+    ])
+    filaments = filamentResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiFilament>).value)
+    designerEditor.refreshExtraFields(getBatchDesignerExtraFields())
+    updateLabelCount()
+
+    loadSettings()
+    previewZoomControls.sync()
+    await prefetchLogos()
+    tabControls.activate(activePreviewTab)
+  }
+
+  ;[widthInput, heightInput, fontInput, qrSizeInput, zoomInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch, checkColorHex].forEach(el => {
+    el.addEventListener('change', () => {
+      if (el === zoomInput) {
+        previewZoomControls.sync()
+        handlePreviewZoomChange()
+        return
+      }
+      queueRenderAll()
+    })
+    if (el.type === 'range' || el.type === 'number') {
+      el.addEventListener('input', () => {
+        if (el === zoomInput) {
+          previewZoomControls.sync()
+          handlePreviewZoomChange()
+          return
+        }
+        queueRenderAll()
+      })
+    }
+  })
+
+  resetBtn?.addEventListener('click', () => {
+    removeStorageValue(SETTINGS_KEY)
+    widthInput.value = '60'; heightInput.value = '40'; fontInput.value = '100'; qrSizeInput.value = '18'
+    zoomInput.value = '100'
+    previewZoomControls.sync()
+    checkLogo.checked = checkQR.checked = checkID.checked = checkMfr.checked = checkMat.checked = checkColor.checked = checkColorSwatch.checked = checkColorHex.checked = true
+    Object.values(efCheckMap).forEach(cb => { cb.checked = false })
+    queueRenderAll()
+  })
+</script>

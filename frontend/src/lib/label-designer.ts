@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  getReadableTextColor,
-  normalizeHexColor,
+  getFilamentColorTheme,
   parseTemplate,
   renderTemplateText,
   type SpoolData,
 } from './label-template'
+import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
 import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 
@@ -18,6 +18,7 @@ const QR_MODE_VALUES = ['simple', 'logo', 'colorLogo'] as const
 const QR_POSITION_VALUES = ['left', 'right'] as const
 const VALIGN_VALUES = ['top', 'center', 'bottom'] as const
 const QR_LINK_VALUES = ['spool', 'url'] as const
+const DEFAULT_PRESET_NAME = 'Default'
 
 export interface LabelDesignerSettings {
   logo:   { show: boolean; spaceMm: number; scaleToFit: boolean; manualSizeMm: number; align: 'left'|'center'|'right' }
@@ -25,7 +26,7 @@ export interface LabelDesignerSettings {
   title:  { show: boolean; sizeMm: number; marginMm: number; fitToWidth: boolean; align: 'left'|'center'|'right'; template: string; dividerAbove: boolean; dividerBelow: boolean }
   title2: { show: boolean; sizeMm: number; marginMm: number; fitToWidth: boolean; align: 'left'|'center'|'right'; template: string; dividerAbove: boolean; dividerBelow: boolean }
   qr:     { show: boolean; mode: 'simple'|'logo'|'colorLogo'; sizeMm: number; position: 'left'|'right'; vAlign: 'top'|'center'|'bottom'; linkMode: 'spool'|'url'; urlTemplate: string }
-  info:   { show: boolean; sizeMm: number; hAlign: 'left'|'center'|'right'; vAlign: 'top'|'center'|'bottom'; template: string }
+  info:   { show: boolean; sizeMm: number; marginMm: number; hAlign: 'left'|'center'|'right'; vAlign: 'top'|'center'|'bottom'; template: string }
   info2:  { show: boolean; vsep: boolean; sizeMm: number; hAlign: 'left'|'center'|'right'; vAlign: 'top'|'center'|'bottom'; template: string }
 }
 
@@ -35,28 +36,61 @@ export const DESIGNER_DEFAULTS: LabelDesignerSettings = {
   title:  { show: true, sizeMm: 4, marginMm: 0, fitToWidth: true, align: 'left', template: '{filament.name}', dividerAbove: false, dividerBelow: true },
   title2: { show: false, sizeMm: 3.5, marginMm: 0, fitToWidth: true, align: 'left', template: '', dividerAbove: false, dividerBelow: false },
   qr:     { show: true, mode: 'logo', sizeMm: 18, position: 'right', vAlign: 'bottom', linkMode: 'spool', urlTemplate: '' },
-  info:   { show: true, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom',
-            template: '{filament.material}\n{filament.color}\nExt: {filament.extruder_temp}°C\nBed: {filament.bed_temp}°C' },
+  info:   { show: true, sizeMm: 2.5, marginMm: 0, hAlign: 'left', vAlign: 'bottom',
+            template: '{filament.type}\n{filament.color}\nExt: {filament.extruder_temp}°C\nBed: {filament.bed_temp}°C' },
   info2:  { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
 }
 
-export const DESIGNER_TOKENS: { token: string; label: string }[] = [
-  { token: '{color_swatch[1]}',      label: 'color_swatch[1]' },
-  { token: '{id}',                   label: 'id' },
-  { token: '{filament.name}',         label: 'name' },
-  { token: '{filament.type}',         label: 'type' },
-  { token: '{filament.subtype}',      label: 'subtype' },
-  { token: '{filament.color}',        label: 'color' },
-  { token: '{filament.color_hex}',    label: 'color_hex' },
-  { token: '{filament.manufacturer}', label: 'manufacturer' },
-  { token: '{filament.extruder_temp}',label: 'extruder_temp' },
-  { token: '{filament.bed_temp}',     label: 'bed_temp' },
-  { token: '{filament.weight}',       label: 'weight' },
-  { token: '{filament.diameter}',     label: 'diameter' },
-  { token: '{filament.finish}',       label: 'finish' },
-  { token: '{filament.density}',      label: 'density' },
-  { token: '{filament.price}',        label: 'price' },
+/** Token chips shown in the Filament group — available on all 4 print pages. */
+export const FILAMENT_TOKENS: { token: string; label: string }[] = [
+  { token: '{color_swatch[1]}',                  label: 'color_swatch' },
+  { token: '{id}',                               label: 'id' },
+  { token: '{filament.id}',                      label: 'filament_id' },
+  { token: '{filament.name}',                    label: 'name' },
+  { token: '{filament.manufacturer}',            label: 'manufacturer' },
+  { token: '{filament.manufacturer_id}',         label: 'manufacturer_id' },
+  { token: '{filament.type}',                    label: 'type' },
+  { token: '{filament.subtype}',                 label: 'subtype' },
+  { token: '{filament.manufacturer_color_name}', label: 'color_name' },
+  { token: '{filament.color}',                   label: 'color' },
+  { token: '{filament.colors}',                  label: 'colors' },
+  { token: '{filament.color_hex}',               label: 'color_hex' },
+  { token: '{filament.color_hexes}',             label: 'color_hexes' },
+  { token: '{filament.color_mode}',              label: 'color_mode' },
+  { token: '{filament.multi_color_style}',       label: 'multi_color_style' },
+  { token: '{filament.extruder_temp}',           label: 'extruder_temp' },
+  { token: '{filament.bed_temp}',                label: 'bed_temp' },
+  { token: '{filament.raw_material_weight_g}',   label: 'raw_material_weight_g' },
+  { token: '{filament.diameter}',                label: 'diameter' },
+  { token: '{filament.finish}',                  label: 'finish' },
+  { token: '{filament.density}',                 label: 'density' },
+  { token: '{filament.price}',                   label: 'price' },
+  { token: '{filament.default_spool_weight_g}',  label: 'default_spool_wt' },
+  { token: '{filament.spool_outer_diameter_mm}', label: 'spool_outer_dia' },
+  { token: '{filament.spool_width_mm}',          label: 'spool_width' },
+  { token: '{filament.spool_material}',          label: 'spool_material' },
+  { token: '{filament.shop_url}',                label: 'shop_url' },
 ]
+
+/** Token chips shown in the Spool group — only on spool print pages. */
+export const SPOOL_TOKENS: { token: string; label: string }[] = [
+  { token: '{lot_number}',             label: 'lot_number' },
+  { token: '{external_id}',            label: 'external_id' },
+  { token: '{rfid_uid}',               label: 'rfid_uid' },
+  { token: '{location}',               label: 'location' },
+  { token: '{status}',                 label: 'status' },
+  { token: '{purchase_date}',          label: 'purchase_date' },
+  { token: '{purchase_price}',         label: 'purchase_price' },
+  { token: '{remaining_weight_g}',     label: 'remaining_weight_g' },
+  { token: '{initial_total_weight_g}', label: 'initial_weight_g' },
+  { token: '{empty_spool_weight_g}',   label: 'empty_spool_wt' },
+  { token: '{low_weight_threshold_g}', label: 'low_weight_g' },
+  { token: '{stocked_in_at}',          label: 'stocked_in_at' },
+  { token: '{last_used_at}',           label: 'last_used_at' },
+]
+
+/** @deprecated use FILAMENT_TOKENS. Kept for backwards compatibility. */
+export const DESIGNER_TOKENS = FILAMENT_TOKENS
 
 function safeGetLocalStorageItem(key: string): string | null {
   try {
@@ -71,6 +105,21 @@ function safeRemoveLocalStorageItem(key: string) {
     localStorage.removeItem(key)
   } catch {
     // Ignore blocked storage.
+  }
+}
+
+function loadDefaultDesignerPresetSettings(presetsKey?: string): LabelDesignerSettings | null {
+  if (!presetsKey) return null
+  const raw = safeGetLocalStorageItem(presetsKey)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    const presets = Array.isArray(parsed) ? parsed : parsed?.presets
+    if (!Array.isArray(presets)) return null
+    const preset = presets.find((item: any) => item?.name === DEFAULT_PRESET_NAME && item?.settings)
+    return preset ? mergeDesignerSettings(preset.settings) : null
+  } catch {
+    return null
   }
 }
 
@@ -172,6 +221,7 @@ export function mergeDesignerSettings(raw: any): LabelDesignerSettings {
     info: {
       show: readBoolean(merged.info.show, DESIGNER_DEFAULTS.info.show),
       sizeMm: clampNumber(Number(merged.info.sizeMm), 1, 10, DESIGNER_DEFAULTS.info.sizeMm),
+      marginMm: clampNumber(Number(merged.info.marginMm), -1, 4, DESIGNER_DEFAULTS.info.marginMm),
       hAlign: readChoice(merged.info.hAlign, ALIGN_VALUES, DESIGNER_DEFAULTS.info.hAlign),
       vAlign: readChoice(merged.info.vAlign, VALIGN_VALUES, DESIGNER_DEFAULTS.info.vAlign),
       template: readTemplate(merged.info.template, DESIGNER_DEFAULTS.info.template),
@@ -187,9 +237,12 @@ export function mergeDesignerSettings(raw: any): LabelDesignerSettings {
   }
 }
 
-export function loadDesignerSettingsFromStorage(): LabelDesignerSettings {
-  const raw = safeGetLocalStorageItem(DESIGNER_KEY)
-  if (!raw) return DESIGNER_DEFAULTS
+export function loadDesignerSettingsFromStorage(options: { presetsKey?: string; settingsKey?: string } = {}): LabelDesignerSettings {
+  const defaultPresetSettings = loadDefaultDesignerPresetSettings(options.presetsKey)
+  const fallback = defaultPresetSettings ?? DESIGNER_DEFAULTS
+  const storageKey = options.settingsKey ?? DESIGNER_KEY
+  const raw = safeGetLocalStorageItem(storageKey)
+  if (!raw) return fallback
   try {
     const parsed = JSON.parse(raw)
     if (typeof parsed.version === 'number' && parsed.version >= DESIGNER_SCHEMA_VERSION && parsed.settings) {
@@ -197,20 +250,21 @@ export function loadDesignerSettingsFromStorage(): LabelDesignerSettings {
     }
     return mergeDesignerSettings(parsed)
   } catch {
-    safeRemoveLocalStorageItem(DESIGNER_KEY)
-    return DESIGNER_DEFAULTS
+    safeRemoveLocalStorageItem(storageKey)
+    return fallback
   }
 }
 
 export function persistDesignerSettings(
   settings: LabelDesignerSettings,
   setItem: (key: string, value: string) => boolean = safeSetLocalStorageItem,
+  settingsKey = DESIGNER_KEY,
 ) {
   const payload = JSON.stringify({
     version: DESIGNER_SCHEMA_VERSION,
     settings: mergeDesignerSettings(settings),
   })
-  return setItem(DESIGNER_KEY, payload)
+  return setItem(settingsKey, payload)
 }
 
 export function getDesignerLabelDimensions(settings: LabelDesignerSettings) {
@@ -225,18 +279,18 @@ export function clampNumber(value: number, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, value))
 }
 
-export function buildSafeQrUrl(linkMode: 'spool'|'url', templateBase: string, spoolId: string | number) {
+export function buildSafeQrUrl(linkMode: 'spool'|'url', templateBase: string, entityId: string | number, entityPath = 'spools') {
   if (linkMode === 'url' && templateBase.trim()) {
     try {
       const url = new URL(templateBase.trim())
       if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('invalid protocol')
       const path = url.pathname.replace(/\/+$/, '')
-      return `${url.origin}${path}/spools/${encodeURIComponent(String(spoolId))}`
+      return `${url.origin}${path}/${entityPath}/${encodeURIComponent(String(entityId))}`
     } catch {
       // Fall through to safe default.
     }
   }
-  return `${window.location.origin}/spools/${encodeURIComponent(String(spoolId))}`
+  return `${window.location.origin}/${entityPath}/${encodeURIComponent(String(entityId))}`
 }
 
 export interface DesignerExtraField {
@@ -248,20 +302,69 @@ export interface DesignerExtraField {
 
 export interface DesignerFlatLabelData {
   id: string | number
+  // Filament profile fields
+  filament_id?: unknown
   designation?: unknown
   manufacturer?: unknown
+  manufacturer_id?: unknown
   type?: unknown
   subtype?: unknown
   color?: unknown
+  colors?: unknown
   hex_code?: unknown
+  color_hexes?: unknown
+  color_mode?: unknown
+  multi_color_style?: unknown
   extruder_temp?: unknown
   bed_temp?: unknown
+  raw_material_weight_g?: unknown
   weight?: unknown
   diameter?: unknown
   finish?: unknown
   density?: unknown
   price?: unknown
+  manufacturer_color_name?: unknown
+  default_spool_weight_g?: unknown
+  spool_outer_diameter_mm?: unknown
+  spool_width_mm?: unknown
+  spool_material?: unknown
+  shop_url?: unknown
+  // Spool model fields (only populated on spool print pages)
+  lot_number?: unknown
+  external_id?: unknown
+  rfid_uid?: unknown
+  location?: unknown
+  status?: unknown
+  purchase_date?: unknown
+  purchase_price?: unknown
+  remaining_weight_g?: unknown
+  initial_total_weight_g?: unknown
+  empty_spool_weight_g?: unknown
+  low_weight_threshold_g?: unknown
+  stocked_in_at?: unknown
+  last_used_at?: unknown
   extraFields?: DesignerExtraField[]
+}
+
+function getApiFilamentColors(filament: any): any[] {
+  const list = Array.isArray(filament?.filament_colors)
+    ? filament.filament_colors
+    : filament?.colors
+  return Array.isArray(list) ? list : []
+}
+
+function getFilamentColorNames(filament: any): string {
+  return getApiFilamentColors(filament)
+    .map(color => color?.display_name_override || color?.color?.name)
+    .filter(Boolean)
+    .join(', ')
+}
+
+function getFilamentColorHexes(filament: any): string {
+  return getApiFilamentColors(filament)
+    .map(color => color?.color?.hex_code)
+    .filter(Boolean)
+    .join(', ')
 }
 
 export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolData {
@@ -270,22 +373,55 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     if (!ef?.key) continue
     extra[ef.key] = ef.value === undefined || ef.value === null ? '' : String(ef.value)
   }
+  const rawMaterialWeight = data.raw_material_weight_g ?? data.weight
   return {
     id: data.id,
+    // Filament profile
+    'filament.id': toStringValue(data.filament_id ?? data.id),
     'filament.name': toStringValue(data.designation),
     'filament.type': toStringValue(data.type),
     'filament.subtype': toStringValue(data.subtype),
+    // Legacy alias for older saved label templates. New defaults and token
+    // pickers use the real filament field name: filament.type.
     'filament.material': toStringValue(data.type),
     'filament.color': toStringValue(data.color),
+    'filament.colors': toStringValue(data.colors ?? data.color),
     'filament.color_hex': toStringValue(data.hex_code),
+    'filament.color_hexes': toStringValue(data.color_hexes ?? data.hex_code),
+    'filament.color_mode': toStringValue(data.color_mode),
+    'filament.multi_color_style': toStringValue(data.multi_color_style),
     'filament.manufacturer': toStringValue(data.manufacturer),
+    'filament.manufacturer_id': toStringValue(data.manufacturer_id),
     'filament.extruder_temp': toStringValue(data.extruder_temp),
     'filament.bed_temp': toStringValue(data.bed_temp),
-    'filament.weight': toStringValue(data.weight),
+    'filament.raw_material_weight_g': toStringValue(rawMaterialWeight),
+    // Legacy alias for older saved label templates. New defaults and token
+    // pickers use the real filament field name: filament.raw_material_weight_g.
+    'filament.weight': toStringValue(rawMaterialWeight),
     'filament.diameter': toStringValue(data.diameter),
     'filament.finish': toStringValue(data.finish),
     'filament.density': toStringValue(data.density),
     'filament.price': toStringValue(data.price),
+    'filament.manufacturer_color_name': toStringValue(data.manufacturer_color_name),
+    'filament.default_spool_weight_g': toStringValue(data.default_spool_weight_g),
+    'filament.spool_outer_diameter_mm': toStringValue(data.spool_outer_diameter_mm),
+    'filament.spool_width_mm': toStringValue(data.spool_width_mm),
+    'filament.spool_material': toStringValue(data.spool_material),
+    'filament.shop_url': toStringValue(data.shop_url),
+    // Spool model fields
+    lot_number: toStringValue(data.lot_number),
+    external_id: toStringValue(data.external_id),
+    rfid_uid: toStringValue(data.rfid_uid),
+    location: toStringValue(data.location),
+    status: toStringValue(data.status),
+    purchase_date: toStringValue(data.purchase_date),
+    purchase_price: toStringValue(data.purchase_price),
+    remaining_weight_g: toStringValue(data.remaining_weight_g),
+    initial_total_weight_g: toStringValue(data.initial_total_weight_g),
+    empty_spool_weight_g: toStringValue(data.empty_spool_weight_g),
+    low_weight_threshold_g: toStringValue(data.low_weight_threshold_g),
+    stocked_in_at: toStringValue(data.stocked_in_at),
+    last_used_at: toStringValue(data.last_used_at),
     extra,
   }
 }
@@ -298,21 +434,50 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     || firstColor?.color?.name
     || ''
   const hex = firstColor?.color?.hex_code || ''
+  const formatDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
   return buildSpoolDataFromFlatLabel({
     id: spool?.id ?? '',
+    // Filament profile
+    filament_id: fil.id,
     designation: fil.designation,
     manufacturer: fil.manufacturer?.name,
+    manufacturer_id: fil.manufacturer_id ?? fil.manufacturer?.id,
     type: fil.material_type,
     subtype: fil.material_subgroup,
     color,
+    colors: getFilamentColorNames(fil),
     hex_code: hex,
+    color_hexes: getFilamentColorHexes(fil),
+    color_mode: fil.color_mode,
+    multi_color_style: fil.multi_color_style,
     extruder_temp: fil.settings_extruder_temp,
     bed_temp: fil.settings_bed_temp,
-    weight: fil.weight,
+    raw_material_weight_g: fil.raw_material_weight_g ?? fil.weight,
+    weight: fil.raw_material_weight_g ?? fil.weight,
     diameter: fil.diameter_mm,
     finish: fil.finish_type,
     density: fil.density_g_cm3,
     price: fil.price,
+    manufacturer_color_name: fil.manufacturer_color_name,
+    default_spool_weight_g: fil.default_spool_weight_g,
+    spool_outer_diameter_mm: fil.spool_outer_diameter_mm,
+    spool_width_mm: fil.spool_width_mm,
+    spool_material: fil.spool_material,
+    shop_url: fil.shop_url,
+    // Spool model fields
+    lot_number: spool?.lot_number,
+    external_id: spool?.external_id,
+    rfid_uid: spool?.rfid_uid,
+    location: spool?.location?.label ?? spool?.location?.name,
+    status: spool?.status?.label,
+    purchase_date: formatDate(spool?.purchase_date),
+    purchase_price: spool?.purchase_price,
+    remaining_weight_g: spool?.remaining_weight_g,
+    initial_total_weight_g: spool?.initial_total_weight_g,
+    empty_spool_weight_g: spool?.empty_spool_weight_g,
+    low_weight_threshold_g: spool?.low_weight_threshold_g,
+    stocked_in_at: formatDate(spool?.stocked_in_at),
+    last_used_at: formatDate(spool?.last_used_at),
     extraFields: buildDesignerExtraFieldsFromApiSpool(spool),
   })
 }
@@ -338,7 +503,7 @@ export function getFirstFilamentColor(filament: any): any {
   return {}
 }
 
-function flattenExtraFields(value: any, source: 'spool' | 'filament', prefix = ''): DesignerExtraField[] {
+function flattenExtraFields(value: any, source: LabelExtraFieldSource, prefix = ''): DesignerExtraField[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return []
   const fields: DesignerExtraField[] = []
   for (const [key, raw] of Object.entries(value)) {
@@ -346,6 +511,7 @@ function flattenExtraFields(value: any, source: 'spool' | 'filament', prefix = '
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       fields.push(...flattenExtraFields(raw, source, path))
     } else {
+      if (isBuiltInLabelField(source, path)) continue
       fields.push({
         key: `${source}.${path}`,
         label: path,
@@ -444,6 +610,8 @@ export interface RenderDesignerLabelOptions {
   isStale?: () => boolean
   updatePageStyle?: boolean
   pageStyleId?: string
+  /** Entity path used for QR URL generation. Defaults to 'spools'. */
+  entityPath?: string
 }
 
 export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
@@ -539,9 +707,9 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     const renderTemplate = rowInverseMatch ? rowInverseMatch[1] : rowColorInverseMatch ? rowColorInverseMatch[1] : cfg.template
     if (rowInverseEnabled) {
       if (rowColorInverseMatch) {
-        const bg = normalizeHexColor(data['filament.color_hex']) ?? '#000000'
-        titleEl.style.backgroundColor = bg
-        titleEl.style.color = getReadableTextColor(bg)
+        const theme = getFilamentColorTheme(data)
+        titleEl.style.background = theme.background
+        titleEl.style.color = theme.foreground
       } else {
         titleEl.style.backgroundColor = '#000'
         titleEl.style.color = '#fff'
@@ -600,6 +768,7 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
   mainRow.style.display = 'flex'
   mainRow.style.flex = '1'
   mainRow.style.minHeight = '0'
+  mainRow.style.marginTop = (s.info.marginMm ?? 0) + 'mm'
   mainRow.style.padding = '0'
   mainRow.style.gap = '1.5mm'
   mainRow.style.flexDirection = s.qr.position === 'left' ? 'row-reverse' : 'row'
@@ -659,7 +828,7 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     qrWrap.style.height = s.qr.sizeMm + 'mm'
     qrWrap.style.alignSelf = s.qr.vAlign === 'top' ? 'flex-start' : s.qr.vAlign === 'center' ? 'center' : 'flex-end'
 
-    const qrUrl = buildSafeQrUrl(s.qr.linkMode, s.qr.urlTemplate, data.id)
+    const qrUrl = buildSafeQrUrl(s.qr.linkMode, s.qr.urlTemplate, data.id, options.entityPath ?? 'spools')
     const qrPx = Math.min(1024, Math.max(256, Math.round(s.qr.sizeMm * (DESIGNER_PRINT_DPI / 25.4))))
 
     const QRCode = getQrCodeConstructor()
