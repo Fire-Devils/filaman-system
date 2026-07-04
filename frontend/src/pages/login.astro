@@ -202,6 +202,15 @@ const { error } = Astro.props
           if (resp.ok) {
             const data = await resp.json()
             if (data.enabled) {
+              // Force-SSO: skip the local form and go straight to the OIDC flow.
+              // Loop-breaker: if we arrived with an ?error (an OIDC soft-fail
+              // redirects back to /login?error=...), do NOT auto-redirect — show
+              // the button + error instead, so a down/misconfigured IdP can't cause
+              // an infinite /login -> /auth/oidc/start -> /login loop.
+              if (data.force && !oidcError) {
+                window.location.href = '/auth/oidc/start'
+                return
+              }
               const ssoSection = document.getElementById('sso-section')
               const ssoBtn = document.getElementById('sso-btn')
               if (ssoSection && ssoBtn) {

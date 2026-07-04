@@ -19,6 +19,7 @@ class OIDCSettingsResponse(BaseModel):
     button_text: str
     auto_provision: bool
     default_role: str | None
+    force_sso: bool
 
 
 class OIDCSettingsUpdate(BaseModel):
@@ -30,6 +31,7 @@ class OIDCSettingsUpdate(BaseModel):
     button_text: str | None = None
     auto_provision: bool | None = None
     default_role: str | None = None
+    force_sso: bool | None = None
 
 
 @router.get("/", response_model=OIDCSettingsResponse)
@@ -49,6 +51,7 @@ async def get_oidc_settings(
             button_text="Login with SSO",
             auto_provision=False,
             default_role=None,
+            force_sso=False,
         )
 
     return OIDCSettingsResponse(
@@ -60,6 +63,7 @@ async def get_oidc_settings(
         button_text=settings_row.button_text,
         auto_provision=settings_row.auto_provision,
         default_role=settings_row.default_role,
+        force_sso=settings_row.force_sso,
     )
 
 
@@ -107,6 +111,7 @@ async def update_oidc_settings(
         button_text=settings_row.button_text,
         auto_provision=settings_row.auto_provision,
         default_role=settings_row.default_role,
+        force_sso=settings_row.force_sso,
     )
 
 
@@ -115,5 +120,9 @@ async def get_public_oidc_info(db: DBSession):
     result = await db.execute(select(OIDCSettings).where(OIDCSettings.id == 1))
     settings_row = result.scalar_one_or_none()
     if settings_row is None or not settings_row.enabled:
-        return {"enabled": False, "button_text": ""}
-    return {"enabled": True, "button_text": settings_row.button_text}
+        return {"enabled": False, "button_text": "", "force": False}
+    return {
+        "enabled": True,
+        "button_text": settings_row.button_text,
+        "force": settings_row.force_sso,
+    }

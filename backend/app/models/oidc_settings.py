@@ -38,6 +38,10 @@ class OIDCSettings(Base, TimestampMixin):
     auto_provision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # Force-SSO: when true, the login page auto-redirects unauthenticated hits
+    # straight into the OIDC flow (no local login form). Default off.
+    force_sso: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
 
 class OIDCAuthState(Base):
     """Server-side OIDC auth state for PKCE flow.
