@@ -30,6 +30,14 @@ class OIDCSettings(Base, TimestampMixin):
     # Display: configurable button text on the login page
     button_text: Mapped[str] = mapped_column(String(100), default="Login with SSO", nullable=False)
 
+    # JIT provisioning: when true, a first-time OIDC login with a verified email and
+    # no matching local user CREATES the user instead of rejecting it. Default off
+    # (upstream-safe: preserves the link-only behavior). default_role is the role key
+    # (e.g. "viewer") assigned to a JIT-created user; null = no role (login works,
+    # zero permissions until an admin grants) — never auto-grant privilege.
+    auto_provision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    default_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
 
 class OIDCAuthState(Base):
     """Server-side OIDC auth state for PKCE flow.

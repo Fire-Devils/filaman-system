@@ -17,6 +17,8 @@ class OIDCSettingsResponse(BaseModel):
     has_client_secret: bool
     scopes: str
     button_text: str
+    auto_provision: bool
+    default_role: str | None
 
 
 class OIDCSettingsUpdate(BaseModel):
@@ -26,6 +28,8 @@ class OIDCSettingsUpdate(BaseModel):
     client_secret: str | None = None
     scopes: str | None = None
     button_text: str | None = None
+    auto_provision: bool | None = None
+    default_role: str | None = None
 
 
 @router.get("/", response_model=OIDCSettingsResponse)
@@ -43,6 +47,8 @@ async def get_oidc_settings(
             has_client_secret=False,
             scopes="openid email profile",
             button_text="Login with SSO",
+            auto_provision=False,
+            default_role=None,
         )
 
     return OIDCSettingsResponse(
@@ -52,6 +58,8 @@ async def get_oidc_settings(
         has_client_secret=bool(settings_row.client_secret_enc),
         scopes=settings_row.scopes,
         button_text=settings_row.button_text,
+        auto_provision=settings_row.auto_provision,
+        default_role=settings_row.default_role,
     )
 
 
@@ -97,6 +105,8 @@ async def update_oidc_settings(
         has_client_secret=bool(settings_row.client_secret_enc),
         scopes=settings_row.scopes,
         button_text=settings_row.button_text,
+        auto_provision=settings_row.auto_provision,
+        default_role=settings_row.default_role,
     )
 
 

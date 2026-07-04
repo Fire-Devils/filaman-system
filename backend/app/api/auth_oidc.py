@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.oidc_crypto import decrypt_secret
 from app.core.security import generate_token_secret, hash_password_async, hash_token
 from app.models import OIDCAuthState, OIDCSettings, OAuthIdentity, User, UserSession
+from app.models.rbac import Role, UserRole
 
 router = APIRouter(prefix="/auth/oidc", tags=["auth"])
 
@@ -219,6 +220,7 @@ async def oidc_callback(request: Request, db: DBSession):
     subject = claims.get("sub")
     email = claims.get("email")
     email_verified = bool(claims.get("email_verified"))
+    display_name = claims.get("name") or claims.get("preferred_username")
     if not subject:
         return RedirectResponse("/login?error=oidc_failed", status_code=302)
 
@@ -240,7 +242,30 @@ async def oidc_callback(request: Request, db: DBSession):
         result = await db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
         if user is None:
-            return RedirectResponse("/login?error=oidc_no_user", status_code=302)
+            # No local user for this verified email. JIT-provision one ONLY if the
+            # admin opted in (auto_provision); otherwise preserve the link-only
+            # behavior (a pre-existing account is required).
+            if not settings_row.auto_provision:
+                return RedirectResponse("/login?error=oidc_no_user", status_code=302)
+            user = User(
+                email=email,
+                email_verified=True,  # gated by the verified-email check above
+                display_name=display_name,
+                is_active=True,
+            )
+            db.add(user)
+            await db.flush()  # assign user.id before linking role/identity
+            # Optional admin-configured default role. Unset => no role (the user can
+            # log in but has zero permissions until an admin grants) — we never
+            # auto-grant privilege on JIT-create.
+            if settings_row.default_role:
+                role = (
+                    await db.execute(
+                        select(Role).where(Role.key == settings_row.default_role)
+                    )
+                ).scalar_one_or_none()
+                if role is not None:
+                    db.add(UserRole(user_id=user.id, role_id=role.id))
         identity = OAuthIdentity(
             user_id=user.id,
             provider=settings_row.issuer_url,
