@@ -71,7 +71,7 @@ class OAuthIdentity(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(255), nullable=False)
     provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     provider_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider_email_verified: Mapped[bool] = mapped_column(default=False)
