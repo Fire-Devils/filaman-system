@@ -30,6 +30,7 @@ This allows you to install and run the FilaMan System directly within your Home 
 - **Spool Management:** Track remaining weight, location, and status.
 - **Multi-User:** Role-based access control and tenant support.
 - **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
+- **Printable Labels:** Print and export spool or filament labels with QR codes, custom label designer layouts, and label-paper sheet output.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
 - **Responsive UI:** Modern design with light, dark, and brand themes.
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) via OpenID Connect for existing users.
@@ -38,7 +39,6 @@ This allows you to install and run the FilaMan System directly within your Home 
 We have exciting plans for the future of FilaMan:
 - **Printer Plugins:** Develop plugins to connect with various 3D printers (community contributions are highly welcome!).
 - **Mobile Apps:** Dedicated apps for iOS and Android.
-- **Printable Labels:** Generate and print custom labels for your spools.
 
 ## Installation
 
