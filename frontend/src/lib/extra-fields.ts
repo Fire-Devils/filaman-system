@@ -219,3 +219,54 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
       return escapeHtml(String(value))
   }
 }
+
+/**
+ * Render a system extra field for plain-text surfaces such as printed labels.
+ * This keeps label tokens from falling back to raw object/array stringification
+ * for rich field types like range and multiselect.
+ */
+export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const cfg = field.config ?? {}
+  const unit = cfg.unit ? ` ${cfg.unit}` : ''
+  const dp = cfg.decimal_places ?? null
+
+  switch (field.field_type) {
+    case 'float': // legacy alias — falls through
+    case 'number': {
+      const num = typeof value === 'number' ? value : parseFloat(String(value))
+      if (isNaN(num)) return String(value)
+      return `${dp != null ? num.toFixed(dp) : String(num)}${unit}`
+    }
+    case 'range': {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return renderUnknownFieldPlainText(value)
+      }
+      const rv = value as Record<string, unknown>
+      const minNum = typeof rv.min === 'number' ? rv.min : parseFloat(String(rv.min ?? ''))
+      const maxNum = typeof rv.max === 'number' ? rv.max : parseFloat(String(rv.max ?? ''))
+      const minStr = !isNaN(minNum) && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '')
+      const maxStr = !isNaN(maxNum) && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '')
+      return `${minStr}–${maxStr}${unit}`.trim()
+    }
+    case 'multiselect':
+      return Array.isArray(value) ? value.map(String).join(', ') : String(value)
+    case 'checkbox':
+      return value === true || value === 'true' ? '✓' : '✗'
+    default:
+      return renderUnknownFieldPlainText(value)
+  }
+}
+
+export function renderUnknownFieldPlainText(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) return value.map(String).join(', ')
+  if (typeof value === 'object') {
+    const objectValue = value as Record<string, unknown>
+    if ('min' in objectValue || 'max' in objectValue) {
+      return `${objectValue.min ?? ''}–${objectValue.max ?? ''}`.trim()
+    }
+    return JSON.stringify(value)
+  }
+  return String(value)
+}

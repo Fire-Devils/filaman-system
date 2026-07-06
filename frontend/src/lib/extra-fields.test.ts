@@ -4,6 +4,8 @@ import {
   dpToStep,
   renderFieldInput,
   renderFieldDisplay,
+  renderFieldPlainText,
+  renderUnknownFieldPlainText,
   type SystemExtraFieldDef,
 } from './extra-fields'
 
@@ -462,5 +464,34 @@ describe('renderFieldDisplay — text (default)', () => {
     const result = renderFieldDisplay(field({ field_type: 'text' }), 'Hello <World>')
     expect(result).toContain('&lt;World&gt;')
     expect(result).not.toContain('<World>')
+  })
+})
+
+describe('renderFieldPlainText', () => {
+  it('formats numbers with configured decimals and unit for labels', () => {
+    const result = renderFieldPlainText(
+      field({ field_type: 'number', config: { decimal_places: 1, unit: 'g' } }),
+      215.55,
+    )
+    expect(result).toBe('215.6 g')
+  })
+
+  it('formats ranges without object stringification', () => {
+    const result = renderFieldPlainText(
+      field({ field_type: 'range', config: { decimal_places: 1, unit: '°C' } }),
+      { min: 190, max: 215 },
+    )
+    expect(result).toBe('190.0–215.0 °C')
+  })
+
+  it('formats multiselect values with readable separators', () => {
+    expect(renderFieldPlainText(field({ field_type: 'multiselect' }), ['Matte', 'Silk']))
+      .toBe('Matte, Silk')
+  })
+})
+
+describe('renderUnknownFieldPlainText', () => {
+  it('keeps unknown range-like objects readable for labels', () => {
+    expect(renderUnknownFieldPlainText({ min: 12.5, max: 88.5 })).toBe('12.5–88.5')
   })
 })
