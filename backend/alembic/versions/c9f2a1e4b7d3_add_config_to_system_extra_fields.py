@@ -1,7 +1,7 @@
 """add config to system_extra_fields
 
 Revision ID: c9f2a1e4b7d3
-Revises: add_rfid_settings
+Revises: add_bambu_unmatched_fallback
 Create Date: 2026-05-18 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c9f2a1e4b7d3"
-down_revision: str | Sequence[str] | None = "add_rfid_settings"
+down_revision: str | Sequence[str] | None = "add_bambu_unmatched_fallback"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
