@@ -10,6 +10,8 @@ export interface SystemExtraFieldDef {
   field_type?: string
   options?: string[] | null
   default_value?: string | null
+  formula?: unknown
+  show_in_template?: boolean
   config?: {
     unit?: string
     decimal_places?: number | null

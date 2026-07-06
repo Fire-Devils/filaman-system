@@ -6,7 +6,11 @@ import {
   type SpoolData,
 } from './label-template'
 import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
-import { type SystemExtraFieldDef } from './extra-fields'
+import {
+  renderFieldPlainText,
+  renderUnknownFieldPlainText,
+  type SystemExtraFieldDef,
+} from './extra-fields'
 import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
@@ -512,12 +516,14 @@ export function buildDesignerExtraFieldsFromApiSpool(
       fieldDefs?.spool,
       'spool',
     ),
+    ...mapDerivedExtraFields(spool?.derived, 'spool', fieldDefs?.spool),
     ...buildDesignerExtraFields(
       spool?.filament?.custom_fields,
       spool?.filament?.custom_field_definitions,
       fieldDefs?.filament,
       'filament',
     ),
+    ...mapDerivedExtraFields(spool?.filament?.derived, 'filament', fieldDefs?.filament),
   ]
 }
 
@@ -551,6 +557,28 @@ function buildDesignerExtraFields(
       fieldType: field.fieldType,
       source,
     }))
+}
+
+function mapDerivedExtraFields(
+  value: any,
+  source: LabelExtraFieldSource,
+  fieldDefs: Record<string, SystemExtraFieldDef> = {},
+): DesignerExtraField[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value)
+    .filter(([key]) => {
+      const def = fieldDefs[key]
+      return !isBuiltInLabelField(source, key, def?.label) && (!def?.formula || def.show_in_template === true)
+    })
+    .map(([key, raw]) => {
+      const def = fieldDefs[key]
+      return {
+        key: `${source}.${key}`,
+        label: def?.label ?? key,
+        value: def ? renderFieldPlainText(def, raw) : renderUnknownFieldPlainText(raw),
+        source: `${source}-derived`,
+      }
+    })
 }
 
 function toStringValue(value: unknown): string {

@@ -720,18 +720,31 @@ async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Spool not found"},
         )
-    # Compute formula-derived fields
-    formula_fields_result = await db.execute(
+    # Compute formula-derived fields for the spool and its nested filament so
+    # label-printing flows can expose both spool.* and filament.* formula tokens.
+    spool_formula_fields_result = await db.execute(
         select(SystemExtraField).where(
             SystemExtraField.target_type == "spool",
             SystemExtraField.formula.is_not(None),
             SystemExtraField.include_in_api == True,  # noqa: E712
         )
     )
-    formula_fields = list(formula_fields_result.scalars().all())
+    filament_formula_fields_result = await db.execute(
+        select(SystemExtraField).where(
+            SystemExtraField.target_type == "filament",
+            SystemExtraField.formula.is_not(None),
+            SystemExtraField.include_in_api == True,  # noqa: E712
+        )
+    )
+    spool_formula_fields = list(spool_formula_fields_result.scalars().all())
+    filament_formula_fields = list(filament_formula_fields_result.scalars().all())
     spool_data = SpoolResponse.model_validate(spool).model_dump()
-    if formula_fields:
-        spool_data["derived"] = compute_derived(spool, "spool", formula_fields)
+    if spool_formula_fields:
+        spool_data["derived"] = compute_derived(spool, "spool", spool_formula_fields)
+    if filament_formula_fields and spool.filament and spool_data.get("filament"):
+        spool_data["filament"]["derived"] = compute_derived(
+            spool.filament, "filament", filament_formula_fields
+        )
     return spool_data
 
 

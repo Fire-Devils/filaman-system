@@ -140,6 +140,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     id?: string | number
     custom_fields?: Record<string, unknown>
     custom_field_definitions?: EntityExtraFieldDefinitions
+    derived?: Record<string, unknown>
     manufacturer?: { id?: string | number; name?: string }
   }
 
@@ -189,6 +190,10 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       efDefs,
       def => systemFieldKeys.has(def.key),
     )
+  }
+
+  function isPrintableExtraFieldDef(def: ExtraFieldDef) {
+    return !def.formula || def.show_in_template === true
   }
 
   function saveSettings() {
@@ -264,7 +269,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         label: def.label,
         value: '',
         fieldType: def.field_type,
-        source: 'filament',
+        source: def.formula ? 'filament-derived' : 'filament',
       })
     }
     for (const filament of filaments) {
@@ -286,6 +291,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     const recordDefinitions = normalizeEntityExtraFieldDefinitions(
       filament.custom_field_definitions,
     )
+    const derived = filament?.derived ?? {}
     for (const def of efDefs) {
       if (!efCheckMap[efMapKey(def.key)]?.checked) continue
       // Standard fields use shared reduced definitions; system custom fields use custom_fields[key].
@@ -293,6 +299,11 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       const customValue = getExtraFieldValue(custom, def.key)
       const rendered = stdDef
         ? { label: def.label, value: String(stdDef.valueFromApi(filament) ?? '') }
+        : def.formula
+          ? {
+              label: def.label,
+              value: renderFieldPlainText(def, derived[def.key]),
+            }
         : customValue !== null && customValue !== undefined
           ? renderRecordExtraField(
               def.key,
@@ -513,7 +524,9 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     try {
       const defs = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.json())
       const customDefs = normalizeExtraFieldDefs(defs)
-        .filter(def => !isBuiltInLabelField('filament', def.key, def.label))
+        .filter(def => isPrintableExtraFieldDef(def) && !def.formula && !isBuiltInLabelField('filament', def.key, def.label))
+      const derivedDefs = normalizeExtraFieldDefs(defs)
+        .filter(def => isPrintableExtraFieldDef(def) && !!def.formula && !isBuiltInLabelField('filament', def.key, def.label))
       const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
       systemFieldKeys.clear()
       customDefs.forEach(def => systemFieldKeys.add(def.key))
@@ -529,8 +542,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       const uniqueEntityDefs = Array.from(new Map(entityDefs.map(def => [def.key, def])).values())
 
       // Keep the Standard Label tab compact: reduced standard fields first,
-      // then system and record-local custom fields.
-      efDefs = [...standardDefs, ...customDefs, ...uniqueEntityDefs]
+      // then system, record-local custom, and derived fields.
+      efDefs = [...standardDefs, ...customDefs, ...uniqueEntityDefs, ...derivedDefs]
       if (efDefs.length === 0) return
 
       const titleEl = document.getElementById('ef-section-title')!
@@ -571,6 +584,17 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         container.insertAdjacentElement('afterend', customTitle)
         customTitle.insertAdjacentElement('afterend', customContainer)
         addFieldRows([...customDefs, ...uniqueEntityDefs], customContainer)
+      }
+      if (derivedDefs.length > 0) {
+        const derivedTitle = document.createElement('h3')
+        derivedTitle.textContent = `${t('spools.filament') || 'Filament'} ${t('common.derivedFields') || 'Derived Fields'}`
+        const derivedContainer = document.createElement('div')
+        derivedContainer.className = container.className
+        derivedContainer.style.removeProperty('display')
+        const insertAfter = customDefs.length > 0 ? container.nextElementSibling?.nextElementSibling : container
+        insertAfter?.insertAdjacentElement('afterend', derivedTitle)
+        derivedTitle.insertAdjacentElement('afterend', derivedContainer)
+        addFieldRows(derivedDefs, derivedContainer)
       }
     } catch {}
   }

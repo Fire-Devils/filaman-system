@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isBuiltInLabelField } from './label-extra-fields'
-import { type SystemExtraFieldDef } from './extra-fields'
+import { renderFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
 import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 
 export interface FilamentLabelData {
@@ -244,6 +244,21 @@ export function buildFilamentExtraFieldsForPrint(
       source: 'filament',
     })
   }
+  const derived: Record<string, unknown> = filament?.derived ?? {}
+  for (const [key, def] of Object.entries(systemFieldMap)) {
+    if (!def.formula || def.show_in_template !== true) continue
+    if (isBuiltInLabelField('filament', key, def.label)) continue
+    const raw = derived[key]
+    const fieldDef = { ...def, key, label: def.label ?? key, field_type: def.field_type ?? 'text' } as SystemExtraFieldDef
+    fields.push({
+      key: `filament.${key}`,
+      label: def.label ?? key,
+      value: renderFieldPlainText(fieldDef, raw),
+      rawValue: raw,
+      fieldType: fieldDef.field_type,
+      source: 'filament-derived',
+    })
+  }
   return fields
 }
 
@@ -251,7 +266,7 @@ export function buildDesignerExtraFieldsFromFilament(
   filament: any,
   systemFieldMap: Record<string, Partial<SystemExtraFieldDef> & { label?: string }> = {},
 ): FilamentExtraField[] {
-  return buildEntityExtraFieldsForPrint(
+  const custom = buildEntityExtraFieldsForPrint(
     filament?.custom_fields,
     filament?.custom_field_definitions,
     systemFieldMap as Record<string, SystemExtraFieldDef>,
@@ -267,4 +282,24 @@ export function buildDesignerExtraFieldsFromFilament(
         source: 'filament',
       }
     })
+  const derivedFields = Object.entries(
+    (filament?.derived ?? {}) as Record<string, unknown>,
+  )
+    .filter(([key]) => {
+      const def = systemFieldMap[key]
+      return !isBuiltInLabelField('filament', key, def?.label) && (!def?.formula || def.show_in_template === true)
+    })
+    .map(([key, value]) => {
+      const def = systemFieldMap[key]
+      const fieldDef = { ...def, key, label: def?.label ?? key, field_type: def?.field_type ?? 'formula' } as SystemExtraFieldDef
+      return {
+        key: `filament.${key}`,
+        label: def?.label ?? key,
+        value: renderFieldPlainText(fieldDef, value),
+        rawValue: value,
+        fieldType: fieldDef.field_type,
+        source: 'filament-derived',
+      }
+    })
+  return [...custom, ...derivedFields]
 }

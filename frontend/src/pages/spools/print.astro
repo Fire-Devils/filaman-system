@@ -144,11 +144,13 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   type ApiFilament = ApiObject & {
     custom_fields?: Record<string, unknown>
     custom_field_definitions?: EntityExtraFieldDefinitions
+    derived?: Record<string, unknown>
   }
   type ApiSpool = ApiObject & {
     id?: string | number
     custom_fields?: Record<string, unknown>
     custom_field_definitions?: EntityExtraFieldDefinitions
+    derived?: Record<string, unknown>
     filament?: ApiFilament
     location_id?: unknown
     status_id?: unknown
@@ -216,6 +218,10 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return maps
   }
 
+  function isPrintableExtraFieldDef(def: ExtraFieldDef) {
+    return !def.formula || def.show_in_template === true
+  }
+
   function saveSettings() {
     const efState: Record<string, boolean> = {}
     Object.entries(efCheckMap).forEach(([k, cb]) => { efState[k] = cb.checked })
@@ -281,7 +287,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         label: def.label,
         value: '',
         fieldType: def.field_type,
-        source: def.target_type,
+        source: def.formula ? `${def.target_type}-derived` : def.target_type,
       })
     }
     for (const spool of spools) {
@@ -358,7 +364,14 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       if (!cb?.checked) continue
 
       let rendered: { label: string; value: string } | null = null
-      if (def.target_type === 'spool' && spool.custom_fields) {
+      if (def.formula) {
+        const raw = def.target_type === 'spool'
+          ? spool.derived?.[def.key]
+          : spool.filament?.derived?.[def.key]
+        if (raw !== undefined && raw !== null) {
+          rendered = { label: def.label, value: renderFieldPlainText(def, raw) }
+        }
+      } else if (def.target_type === 'spool' && spool.custom_fields) {
         const raw = getExtraFieldValue(spool.custom_fields, def.key)
         if (raw !== undefined && raw !== null) {
           rendered = renderRecordExtraField(
@@ -553,7 +566,10 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       const allDefs = [
         ...normalizeExtraFieldDefs(spoolDefs, 'spool'),
         ...normalizeExtraFieldDefs(filamentDefs, 'filament'),
-      ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
+      ].filter(def =>
+        isPrintableExtraFieldDef(def)
+        && !isBuiltInLabelField(def.target_type, def.key, def.label),
+      )
       systemFieldKeys.clear()
       allDefs.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))
       const knownKeys = new Set(systemFieldKeys)
@@ -598,10 +614,14 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       let lastExtraFieldGroupNode: Element = container
 
       function getExtraFieldSource(source?: string) {
+        if (source === 'filament-derived') return 'filament-derived'
+        if (source === 'spool-derived') return 'spool-derived'
         return source === 'filament' ? 'filament' : 'spool'
       }
 
       function getExtraFieldGroupTitle(source: string) {
+        if (source === 'filament-derived') return `${t('spools.filament') || 'Filament'} ${t('common.derivedFields') || 'Derived Fields'}`
+        if (source === 'spool-derived') return `${t('spools.dsSpool') || 'Spool'} ${t('common.derivedFields') || 'Derived Fields'}`
         return source === 'filament'
           ? (t('filaments.extraFieldsLabel') || 'Filament Extra Fields')
           : (t('spools.extraFieldsLabel') || 'Spool Extra Fields')
@@ -644,7 +664,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       ))
 
       for (const def of sortedDefs) {
-        const group = getExtraFieldGroup(def.target_type)
+        const group = getExtraFieldGroup(def.formula ? `${def.target_type}-derived` : def.target_type)
         const row = document.createElement('label')
         row.className = 'fm-checkbox-group'
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = false

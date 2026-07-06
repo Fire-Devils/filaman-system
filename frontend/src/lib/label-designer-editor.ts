@@ -986,28 +986,64 @@ export async function initLabelDesignerEditor(options: LabelDesignerEditorOption
       body.appendChild(spoolGroup)
     }
 
-    const extGroup = document.createElement('div')
-    const extLbl = document.createElement('div')
-    const extChips = document.createElement('div')
-    extLbl.className = 'ds-tokens-group-label'
-    extLbl.textContent = translate(`${entityLabel.toLowerCase()}s.extraFieldsLabel`, `${entityLabel} Extra Fields`)
-    extChips.className = 'ds-token-hints'
-    if (extraFields.length > 0) {
-      for (const ef of extraFields) {
+    const getExtraFieldGroupLabel = (source?: string) => {
+      const isDerived = source?.endsWith('-derived') === true
+      const baseSource = source?.replace(/-derived$/, '')
+      if (isDerived) {
+        const derivedLabel = translate('common.derivedFields', 'Derived Fields')
+        if (baseSource === 'spool') return `${translate('spools.dsSpool', 'Spool')} ${derivedLabel}`
+        if (baseSource === 'filament') return `${translate('spools.filament', 'Filament')} ${derivedLabel}`
+        return derivedLabel
+      }
+      if (baseSource === 'spool') return translate('spools.extraFieldsLabel', 'Spool Extra Fields')
+      if (baseSource === 'filament') return translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
+      return translate(`${entityLabel.toLowerCase()}s.extraFieldsLabel`, `${entityLabel} Extra Fields`)
+    }
+
+    const appendExtraFieldGroup = (labelText: string, fields: typeof extraFields) => {
+      const extGroup = document.createElement('div')
+      const extLbl = document.createElement('div')
+      const extChips = document.createElement('div')
+      extLbl.className = 'ds-tokens-group-label'
+      extLbl.textContent = labelText
+      extChips.className = 'ds-token-hints'
+      for (const ef of fields) {
         if (!ef?.key) continue
         const tok = `{extra.${ef.key}}`
         const label = ef.label && ef.label !== ef.key ? ef.label : ef.key
         extChips.appendChild(makeChip(tok, label))
       }
+      extGroup.appendChild(extLbl)
+      extGroup.appendChild(extChips)
+      body.appendChild(extGroup)
+    }
+
+    if (extraFields.length > 0) {
+      const groupedFields = new Map<string, typeof extraFields>()
+      for (const ef of extraFields) {
+        const groupKey = ef.source || 'extra'
+        const fields = groupedFields.get(groupKey) ?? []
+        fields.push(ef)
+        groupedFields.set(groupKey, fields)
+      }
+      for (const [source, fields] of groupedFields) {
+        appendExtraFieldGroup(getExtraFieldGroupLabel(source), fields)
+      }
     } else {
+      const extGroup = document.createElement('div')
+      const extLbl = document.createElement('div')
+      const extChips = document.createElement('div')
+      extLbl.className = 'ds-tokens-group-label'
+      extLbl.textContent = translate(`${entityLabel.toLowerCase()}s.extraFieldsLabel`, `${entityLabel} Extra Fields`)
+      extChips.className = 'ds-token-hints'
       const empty = document.createElement('span')
       empty.className = 'ds-tokens-empty'
       empty.textContent = translate(`${entityLabel.toLowerCase()}s.dsNoCustomFields`, `No custom fields for this ${entityLabel.toLowerCase()}`)
       extChips.appendChild(empty)
+      extGroup.appendChild(extLbl)
+      extGroup.appendChild(extChips)
+      body.appendChild(extGroup)
     }
-    extGroup.appendChild(extLbl)
-    extGroup.appendChild(extChips)
-    body.appendChild(extGroup)
 
     toggle.addEventListener('click', () => {
       const open = body.style.display === 'none'

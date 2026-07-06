@@ -176,7 +176,11 @@ const { id } = Astro.params
 
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
+    import {
+      escapeHtml as escapeExtraFieldHtml,
+      renderFieldDisplay,
+      renderFieldPlainText,
+    } from '../../../lib/extra-fields'
     import {
       buildEntityExtraFieldsForPrint,
       getExtraFieldValue,
@@ -565,6 +569,32 @@ const { id } = Astro.params
           rawValue: field.rawValue,
           fieldType: field.fieldType,
           source: 'filament',
+        })
+      }
+      for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
+        if (!def.formula || def.show_in_template !== true) continue
+        if (isBuiltInLabelField('spool', key, def.label)) continue
+        const raw = spool.derived?.[key]
+        efForPrint.push({
+          key: `spool.${key}`,
+          label: def.label,
+          value: renderFieldPlainText(def, raw),
+          rawValue: raw,
+          fieldType: def.field_type,
+          source: 'spool-derived',
+        })
+      }
+      for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
+        if (!def.formula || def.show_in_template !== true) continue
+        if (isBuiltInLabelField('filament', key, def.label)) continue
+        const raw = spool.filament?.derived?.[key]
+        efForPrint.push({
+          key: `filament.${key}`,
+          label: def.label,
+          value: renderFieldPlainText(def, raw),
+          rawValue: raw,
+          fieldType: def.field_type,
+          source: 'filament-derived',
         })
       }
       sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
