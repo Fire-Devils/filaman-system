@@ -818,6 +818,7 @@
     "namePlaceholder": "e.g. Bambu Lab",
     "url": "URL",
     "urlPlaceholder": "e.g. https://bambulab.com",
+    "logo": "Logo",
     "filaments": "Filaments",
     "spools": "Spools",
     "materials": "Materials",

@@ -21,6 +21,44 @@ import Layout from '../../layouts/Layout.astro'
       min-width: 200px;
       max-width: 400px;
     }
+    .manufacturers-name-cell {
+      min-width: 180px;
+      width: 22%;
+      white-space: normal;
+      word-break: break-word;
+    }
+    .fm-table th.col-logo,
+    .fm-table td.col-logo {
+      width: 132px;
+      min-width: 132px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .manufacturer-logo-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .manufacturer-logo-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 72px;
+      min-height: 38px;
+      padding: 4px 8px;
+      background: color-mix(in srgb, white 30%, var(--bg-soft) 70%);
+      border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%);
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+    .manufacturer-logo-pill img {
+      max-width: 92px;
+      max-height: 28px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: block;
+    }
   </style>
   <style is:global>
     .pagination-container { display: flex; justify-content: space-between; align-items: center; }
@@ -65,7 +103,8 @@ import Layout from '../../layouts/Layout.astro'
     <table class="fm-table">
       <thead>
         <tr>
-          <th data-i18n="manufacturers.name" data-sort="name" class="sortable col-name">Name</th>
+          <th data-i18n="manufacturers.name" data-sort="name" class="sortable manufacturers-name-cell">Name</th>
+          <th data-i18n="manufacturers.logo" class="col-logo">Logo</th>
           <th data-i18n="manufacturers.url" data-sort="url" class="sortable col-url">URL</th>
           <th data-i18n="manufacturers.filaments" data-sort="filament_count" class="sortable col-filaments">Filaments</th>
           <th data-i18n="manufacturers.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
@@ -78,7 +117,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="manufacturers-table">
         <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+          <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -405,7 +444,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+            <td colspan="10" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
           </tr>
         `
       }
@@ -523,7 +562,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
               ${hasFilters ? t('manufacturers.noResults') : t('manufacturers.noManufacturers')}
             </td>
           </tr>
@@ -539,7 +578,8 @@ import Layout from '../../layouts/Layout.astro'
       // Note: escapeHtml() is used for all user-supplied data; URLs use escapeHtml for both href and text
       tbody.innerHTML = paged.map(mf => `
         <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
-          <td class="col-name" style="font-weight: 500;">${mf.logo_url ? `<span style="display: inline-flex; align-items: center; gap: 8px;">${escapeHtml(mf.name)}<img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 1.4em; width: auto; flex-shrink: 0; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px;" onerror="this.style.display='none'" /></span>` : escapeHtml(mf.name)}</td>
+          <td class="manufacturers-name-cell" style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td class="col-logo">${mf.logo_url ? `<div class="manufacturer-logo-cell"><span class="manufacturer-logo-pill"><img src="${escapeHtml(mf.logo_url)}" alt="" onerror="this.closest('.manufacturer-logo-pill')?.replaceChildren(document.createTextNode('-'))" /></span></div>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-url">${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
           <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
@@ -941,6 +981,7 @@ import Layout from '../../layouts/Layout.astro'
       {
         heading: t('common.columnsStandard'),
         columns: [
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'url', label: t('manufacturers.url') },
           { key: 'filaments', label: t('manufacturers.filaments') },
           { key: 'spools', label: t('manufacturers.spools') },
@@ -958,7 +999,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     initColumnPicker({
       storageKey: 'filaman-columns-manufacturers',
-      defaultVisible: ['url', 'filaments', 'spools', 'materials'],
+      defaultVisible: ['logo', 'url', 'filaments', 'spools', 'materials'],
       groups: mfrColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
