@@ -422,6 +422,30 @@ const { id } = Astro.params
             </div>
           </div>
         ` : ''}
+
+        ${spool.derived && Object.keys(spool.derived).length > 0 ? `
+          <div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+              <span>${t('common.derivedFields') || 'Derived Fields'}</span>
+              <span style="font-size: 0.7rem; opacity: 0.7;">ƒ</span>
+            </div>
+            <div>
+              ${Object.entries(spool.derived).map(([key, value]) => {
+                const sysDef = spoolSystemFieldMap ? [...(Object.values(spoolSystemFieldMap) as any[])].find(f => f.key === key && f.formula) : null
+                const label = sysDef?.label || key
+                return `
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                    <span style="display: flex; align-items: center; gap: 6px;">
+                      <span style="color: var(--text-muted); font-style: italic;">${label}</span>
+                      <span style="font-size: 0.7rem; opacity: 0.6; font-family: monospace;">ƒ</span>
+                    </span>
+                    <span style="font-family: monospace; word-break: break-all;">${value}</span>
+                  </div>
+                `
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
       `
       
       const fmtDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''

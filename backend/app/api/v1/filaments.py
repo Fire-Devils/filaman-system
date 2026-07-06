@@ -44,6 +44,7 @@ from app.models import (
     SpoolStatus,
     SystemExtraField,
 )
+from app.services.derived_fields import compute_derived
 
 logger = logging.getLogger(__name__)
 
@@ -982,14 +983,24 @@ async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep)
     )
     spool_count = spool_count_result.scalar() or 0
 
-    return FilamentDetailResponse.model_validate(
-        {
-            **filament.__dict__,
-            "manufacturer": filament.manufacturer,
-            "spool_count": spool_count,
-            "colors": sorted(filament.filament_colors, key=lambda fc: fc.position),
-        }
+    # Compute formula-derived fields
+    formula_fields_result = await db.execute(
+        select(SystemExtraField).where(
+            SystemExtraField.target_type == "filament",
+            SystemExtraField.formula.is_not(None),
+            SystemExtraField.include_in_api == True,  # noqa: E712
+        )
     )
+    formula_fields = list(formula_fields_result.scalars().all())
+    filament_data = {
+        **filament.__dict__,
+        "manufacturer": filament.manufacturer,
+        "spool_count": spool_count,
+        "colors": sorted(filament.filament_colors, key=lambda fc: fc.position),
+    }
+    if formula_fields:
+        filament_data["derived"] = compute_derived(filament, "filament", formula_fields)
+    return FilamentDetailResponse.model_validate(filament_data)
 
 
 @router_filaments.patch("/bulk", status_code=status.HTTP_200_OK)

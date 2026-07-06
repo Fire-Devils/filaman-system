@@ -83,7 +83,8 @@
     "retry": "Retry",
     "errorLoadingData": "Error loading data",
     "copied": "Copied!",
-    "systemFieldsUnavailable": "System Extra Fields could not be loaded. Reload the page before saving."
+    "systemFieldsUnavailable": "System Extra Fields could not be loaded. Reload the page before saving.",
+    "derivedFields": "Derived Fields"
   },
   "rfid": {
     "writeTag": "Write RFID Tag",

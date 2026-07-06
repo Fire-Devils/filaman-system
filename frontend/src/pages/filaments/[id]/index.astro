@@ -310,6 +310,33 @@ const { id } = Astro.params
         `
       }
 
+      // Derived (formula) fields
+      let derivedFieldsHtml = ''
+      if (f.derived && Object.keys(f.derived).length > 0) {
+        const derivedRows = Object.entries(f.derived).map(([key, value]) => {
+          const sysDef = systemFieldMap ? (Object.values(systemFieldMap) as any[]).find((fd: any) => fd.key === key && fd.formula) : null
+          const label = sysDef?.label || key
+          return `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <span style="color: var(--text-muted); font-style: italic;">${label}</span>
+              <span style="font-size: 0.7rem; opacity: 0.6; font-family: monospace;">ƒ</span>
+            </span>
+            <span style="font-family: monospace; word-break: break-all;">${value}</span>
+          </div>
+          `
+        }).join('')
+        derivedFieldsHtml = `
+          <div class="fm-card" style="margin-top: 16px;">
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+              <span>${t('common.derivedFields') || 'Derived Fields'}</span>
+              <span style="font-size: 0.7rem; opacity: 0.7;">ƒ</span>
+            </div>
+            <div>${derivedRows}</div>
+          </div>
+        `
+      }
+
       document.getElementById('filament-content')!.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
           <div>
@@ -343,6 +370,7 @@ const { id } = Astro.params
         ${mfgColorHtml}
         ${shopHtml}
         ${customFieldsHtml}
+        ${derivedFieldsHtml}
       `
 
       document.getElementById('btn-duplicate-filament')?.addEventListener('click', () => {

@@ -221,6 +221,7 @@ class FilamentResponse(BaseModel):
     custom_field_definitions: EntityExtraFieldDefinitions | None = (
         optional_entity_definitions_field(omit_none=True)
     )
+    derived: dict[str, Any] | None = None
 
     class Config:
         from_attributes = True

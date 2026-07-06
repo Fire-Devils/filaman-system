@@ -47,6 +47,8 @@ from app.models import (
     SpoolStatus,
 )
 from app.services.spool_service import SpoolService
+from app.services.derived_fields import compute_derived
+from app.models.system_extra_field import SystemExtraField
 
 
 async def _reject_driver_managed_create_location(
@@ -718,7 +720,19 @@ async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep):
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Spool not found"},
         )
-    return spool
+    # Compute formula-derived fields
+    formula_fields_result = await db.execute(
+        select(SystemExtraField).where(
+            SystemExtraField.target_type == "spool",
+            SystemExtraField.formula.is_not(None),
+            SystemExtraField.include_in_api == True,  # noqa: E712
+        )
+    )
+    formula_fields = list(formula_fields_result.scalars().all())
+    spool_data = SpoolResponse.model_validate(spool).model_dump()
+    if formula_fields:
+        spool_data["derived"] = compute_derived(spool, "spool", formula_fields)
+    return spool_data
 
 
 @router_spools.patch("/{spool_id}", response_model=SpoolResponse)

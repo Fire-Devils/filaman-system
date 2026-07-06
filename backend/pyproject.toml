@@ -24,6 +24,7 @@ dependencies = [
     "httpx>=0.26.0",
     "authlib>=1.3.0",
     "slowapi>=0.1.9",
+    "json-logic-qubit>=0.9",
 ]
 
 [project.optional-dependencies]

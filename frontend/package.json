@@ -23,8 +23,10 @@
   },
   "dependencies": {
     "@astrojs/node": "^9.5.3",
+    "@codemirror/lang-json": "^6.0.2",
     "@tailwindcss/vite": "^4.1.18",
     "astro": "^5.17.1",
+    "codemirror": "^6.0.2",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
