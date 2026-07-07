@@ -1140,3 +1140,119 @@ async def set_spool_model_slicer_profile(
             link_others=False,
         )
     return result
+
+
+class BackfillToFilamentBody(BaseModel):
+    apply_to_sibling_spools: bool = False
+
+
+async def _sibling_spool_counts(db: DBSession, filament_id: int) -> dict[str, int]:
+    result = await db.execute(
+        select(Spool.id)
+        .join(SpoolStatus)
+        .where(
+            Spool.filament_id == int(filament_id),
+            SpoolStatus.key != "archived",
+        )
+    )
+    spool_ids = [row[0] for row in result.all()]
+    total = len(spool_ids)
+    return {
+        "total_count": total,
+        "other_count": max(0, total - 1),
+        "spool_ids": spool_ids,
+    }
+
+
+@router_spools.get("/{spool_id}/slicer-profile/backfill-preview")
+async def preview_backfill_spool_profiles(
+    spool_id: int,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Preview copying this spool's slicer profiles to its parent filament."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="GET",
+            path=f"/api/v1/spools/{spool_id}/slicer-profile/backfill-preview",
+        )
+    spool = await db.get(Spool, spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "preview_backfill_spool_profiles_to_filament", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support profile backfill preview",
+            },
+        )
+    preview = await method(int(spool_id))
+    if preview.get("filament_id"):
+        filament_result = await db.execute(
+            select(Filament, Manufacturer.name)
+            .outerjoin(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+            .where(Filament.id == preview["filament_id"])
+        )
+        row = filament_result.one_or_none()
+        if row:
+            filament, mfr_name = row
+            preview["filament_designation"] = filament.designation
+            preview["filament_manufacturer"] = mfr_name
+        siblings = await _sibling_spool_counts(db, int(preview["filament_id"]))
+        preview["sibling_spools"] = siblings
+    return preview
+
+
+@router_spools.post("/{spool_id}/slicer-profile/backfill-to-filament")
+async def backfill_spool_profiles_to_filament(
+    spool_id: int,
+    body: BackfillToFilamentBody,
+    request: Request,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    """Copy this spool's slicer profiles to its parent filament."""
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/spools/{spool_id}/slicer-profile/backfill-to-filament",
+            json_body=body.model_dump(),
+        )
+    spool = await db.get(Spool, spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+    _printer_id, driver = await pick_bambuddy_driver(db)
+    method = getattr(driver, "backfill_spool_profiles_to_filament", None)
+    if not callable(method):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsupported",
+                "message": "Driver does not support profile backfill",
+            },
+        )
+    try:
+        result = await method(
+            int(spool_id),
+            apply_to_sibling_spools=body.apply_to_sibling_spools,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_state", "message": str(e)},
+        )
+    await event_bus.publish({"event": "filaments_changed"})
+    await event_bus.publish({"event": "spools_changed"})
+    return result
