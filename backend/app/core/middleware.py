@@ -121,7 +121,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 response = await call_next(request)
 
                 # Check if session needs extension and update the cookie
-                from app.core.csrf import maybe_attach_csrf_cookie
+                from app.core.csrf import attach_csrf_cookie, maybe_attach_csrf_cookie
 
                 maybe_attach_csrf_cookie(request, response)
 
@@ -144,6 +144,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         samesite="lax",
                         max_age=60 * 60 * 24 * 30,  # Extend by 30 days
                     )
+
+                    # Keep the CSRF cookie's lifetime in lock-step with the
+                    # rolling session cookie. Otherwise the CSRF cookie expires
+                    # 30 days after login while the session keeps rolling,
+                    # leaving a valid session with no CSRF cookie -> spurious
+                    # "csrf_failed" on the next write request until re-login.
+                    # Reuse the existing token value so in-flight requests
+                    # carrying the old value keep validating.
+                    existing_csrf = request.cookies.get("csrf_token")
+                    if existing_csrf:
+                        attach_csrf_cookie(request, response, existing_csrf)
                 return response
 
         auth_header = request.headers.get("Authorization", "")

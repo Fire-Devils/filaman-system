@@ -316,6 +316,56 @@ class TestCSRF:
 
         assert response.status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_renewed_when_session_rolls(
+        self, client: AsyncClient, admin_user, db_session
+    ):
+        """When a rolling session is extended, the CSRF cookie must be renewed
+        with the same value so its lifetime stays in lock-step with the
+        session cookie. Otherwise it expires 30 days after login while the
+        session keeps rolling, producing spurious csrf_failed errors."""
+        # Session that expires in < 15 days -> triggers rolling extension.
+        secret = generate_token_secret()
+        session = UserSession(
+            user_id=admin_user.id,
+            session_token_hash=hash_token(secret),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=10),
+        )
+        db_session.add(session)
+        await db_session.commit()
+        await db_session.refresh(session)
+
+        csrf_token = generate_token_secret()
+        client.cookies.set("session_id", f"sess.{session.id}.{secret}")
+        client.cookies.set("csrf_token", csrf_token)
+
+        response = await client.get("/api/v1/me")
+        assert response.status_code == 200
+
+        set_cookies = [
+            v for k, v in response.headers.multi_items() if k.lower() == "set-cookie"
+        ]
+        # Both cookies must be re-issued together on a rolling extension.
+        assert any(c.startswith("session_id=") for c in set_cookies)
+        csrf_set = [c for c in set_cookies if c.startswith("csrf_token=")]
+        assert csrf_set, "CSRF cookie was not renewed on rolling session extension"
+        # Same token value is reused so in-flight requests keep validating.
+        assert f"csrf_token={csrf_token}" in csrf_set[0]
+
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_not_renewed_without_rolling(self, auth_client):
+        """A healthy session far from expiry must not re-issue the CSRF cookie
+        on every request (only session-rolling triggers renewal)."""
+        client, _ = auth_client
+
+        response = await client.get("/api/v1/me")
+        assert response.status_code == 200
+
+        set_cookies = [
+            v for k, v in response.headers.multi_items() if k.lower() == "set-cookie"
+        ]
+        assert not any(c.startswith("csrf_token=") for c in set_cookies)
+
 
 class TestAuthMiddleware:
     @pytest.mark.asyncio
