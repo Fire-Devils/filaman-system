@@ -7,12 +7,16 @@
         "de": [
           { "type": "feature", "text": "Eine Spule kann ihr zugewiesenes Slicer-Profil jetzt an das übergeordnete Filament zurückschreiben – mit Vorschau, Bestätigungsdialog und optionaler Übernahme auf alle Geschwister-Spulen desselben Filaments." },
           { "type": "feature", "text": "Der Cloud-Slicer-Profil-Picker ist jetzt vollständig ins Deutsche und Englische übersetzt." },
-          { "type": "fix", "text": "Einzel-Etikettendruck in Firefox erzeugt keine überflüssige leere Seite mehr (Pagination korrigiert)." }
+          { "type": "fix", "text": "Einzel-Etikettendruck in Firefox erzeugt keine überflüssige leere Seite mehr (Pagination korrigiert)." },
+          { "type": "fix", "text": "In den App-Einstellungen sind die Bereiche 'Standard-Spulengewichte' und 'Slicer-Profil-Fallback' jetzt vollständig übersetzt (zuvor fest auf Englisch)." },
+          { "type": "fix", "text": "Behebt sporadische CSRF-Fehler bei angemeldeten Nutzern nach längerer Inaktivität: Das CSRF-Cookie wird jetzt gemeinsam mit der rollierenden Sitzung verlängert und läuft nicht mehr vorzeitig ab. Ein erneutes Ab- und Anmelden ist dafür nicht mehr nötig." }
         ],
         "en": [
           { "type": "feature", "text": "A spool can now write its assigned slicer profile back to its parent filament – with preview, confirmation dialog, and optional propagation to all sibling spools of the same filament." },
           { "type": "feature", "text": "The cloud slicer profile picker is now fully translated into English and German." },
-          { "type": "fix", "text": "Single label printing in Firefox no longer produces a spurious blank page (pagination fixed)." }
+          { "type": "fix", "text": "Single label printing in Firefox no longer produces a spurious blank page (pagination fixed)." },
+          { "type": "fix", "text": "The 'Spool Weight Defaults' and 'Slicer Profile Fallback' sections in App Settings are now fully translated (previously hard-coded in English)." },
+          { "type": "fix", "text": "Fixes sporadic CSRF errors for logged-in users after longer periods of inactivity: the CSRF cookie is now renewed together with the rolling session and no longer expires prematurely, so logging out and back in is no longer required." }
         ]
       }
     },
