@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "1.2.22",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Eine Spule kann ihr zugewiesenes Slicer-Profil jetzt an das übergeordnete Filament zurückschreiben – mit Vorschau, Bestätigungsdialog und optionaler Übernahme auf alle Geschwister-Spulen desselben Filaments." },
+          { "type": "feature", "text": "Der Cloud-Slicer-Profil-Picker ist jetzt vollständig ins Deutsche und Englische übersetzt." },
+          { "type": "fix", "text": "Einzel-Etikettendruck in Firefox erzeugt keine überflüssige leere Seite mehr (Pagination korrigiert)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "A spool can now write its assigned slicer profile back to its parent filament – with preview, confirmation dialog, and optional propagation to all sibling spools of the same filament." },
+          { "type": "feature", "text": "The cloud slicer profile picker is now fully translated into English and German." },
+          { "type": "fix", "text": "Single label printing in Firefox no longer produces a spurious blank page (pagination fixed)." }
+        ]
+      }
+    },
+    {
       "version": "1.2.21",
       "date": "",
       "changes": {
