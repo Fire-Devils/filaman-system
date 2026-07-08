@@ -307,6 +307,8 @@ const { id } = Astro.params
         initPerModelProfilePicker({
           entityType: 'spool',
           entityId: parseInt(id),
+          filamentId: spool.filament_id,
+          filamentLabel: spool.filament?.designation || `#${spool.filament_id}`,
           t,
           getCsrfToken,
           getAbortSignal,
