@@ -120,13 +120,14 @@ jobs:
             list_cat '^- (docs|test)(\(.+\))?: '
             echo ""
 
-            # Optional: wenn Du ein "sonstiges" willst (alles, was nicht matcht)
-            # echo "### Sonstiges"
-            # git log "$RANGE" --pretty=format:"- %s (%h)" \
-            #   | grep -v -E '^- (feat|fix|chore|refactor|perf|build|ci|deps|docs|test)(\(.+\))?: ' \
-            #   | grep -v -E '^- chore: bump version to ' \
-            #   || true
-            # echo ""
+            # Sonstiges: alles, was keinem Conventional-Commit-Präfix entspricht
+            # (fängt nicht-konforme Commit-Messages ab, damit keine Änderungen verloren gehen)
+            echo "### Sonstiges"
+            git log "$RANGE" --no-merges --pretty=format:"- %s (%an, %h)" \
+              | grep -v -E '^- (feat|fix|chore|refactor|perf|build|ci|deps|docs|test)(\(.+\))?: ' \
+              | grep -v -E '^- (chore: bump version to |Bump version to )' \
+              || true
+            echo ""
 
             if [ -n "$PREV_TAG" ]; then
               echo "**Full diff:** https://github.com/Fire-Devils/filaman-system/compare/${PREV_TAG}...${TAG}"
