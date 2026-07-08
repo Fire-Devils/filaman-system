@@ -134,16 +134,15 @@ import Layout from '../../layouts/Layout.astro'
 
     <!-- Spool Weight Defaults Card (full width) -->
     <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;">Spool Weight Defaults</h2>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;">Global weight settings applied to all spools. Individual spools can override these on their Edit page.</p>
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.spoolWeightDefaultsTitle">Spool Weight Defaults</h2>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;" data-i18n="admin.spoolWeightDefaultsDesc">Global weight settings applied to all spools. Individual spools can override these on their Edit page.</p>
 
       <div>
-        <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="default-spool-core-weight">Default Core / Adapter Weight (g)</label>
+        <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="default-spool-core-weight" data-i18n="admin.defaultCoreWeightLabel">Default Core / Adapter Weight (g)</label>
         <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px;">
-          Extra weight added on top of the empty spool weight when calculating remaining filament from a scale reading.
-          Use this for cardboard inner tubes, spool holders, or scale adapters that are always present when weighing a spool.
-          <br><strong>Formula:</strong> Remaining = Scale reading − Empty spool weight − Core/adapter weight.
-          <br>Leave blank or set to 0 to disable.
+          <span data-i18n="admin.defaultCoreWeightHint">Extra weight added on top of the empty spool weight when calculating remaining filament from a scale reading. Use this for cardboard inner tubes, spool holders, or scale adapters that are always present when weighing a spool.</span>
+          <br><strong data-i18n="admin.defaultCoreWeightFormulaLabel">Formula:</strong> <span data-i18n="admin.defaultCoreWeightFormula">Remaining = Scale reading − Empty spool weight − Core/adapter weight.</span>
+          <br><span data-i18n="admin.defaultCoreWeightDisableHint">Leave blank or set to 0 to disable.</span>
         </p>
         <input
           type="number"
@@ -151,6 +150,7 @@ import Layout from '../../layouts/Layout.astro'
           step="1"
           min="0"
           placeholder="0 (disabled)"
+          data-i18n-placeholder="admin.defaultCoreWeightPlaceholder"
           class="fm-input"
           style="max-width: 200px;"
         />
@@ -159,22 +159,20 @@ import Layout from '../../layouts/Layout.astro'
 
     <!-- Slicer Profile Fallback Card (full width) -->
     <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;">Slicer Profile Fallback</h2>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;">
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.slicerProfileFallbackTitle">Slicer Profile Fallback</h2>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;" data-i18n="admin.slicerProfileFallbackDesc">
         Determines which profile is sent to a Bambu printer's AMS slot when no specific slicer
         profile resolves for a filament (e.g. a third-party filament with no matching cloud profile
         for the connected printer model).
       </p>
 
-      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="bambu-unmatched-fallback">Default for unmatched filament</label>
+      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="bambu-unmatched-fallback" data-i18n="admin.slicerFallbackLabel">Default for unmatched filament</label>
       <select id="bambu-unmatched-fallback" class="fm-select" style="max-width: 320px;">
-        <option value="generic">Generic profile (Generic PLA, PETG, …)</option>
-        <option value="bambu">Bambu profile (Bambu PLA Basic, PETG Basic, …)</option>
+        <option value="generic" data-i18n="admin.slicerFallbackGeneric">Generic profile (Generic PLA, PETG, …)</option>
+        <option value="bambu" data-i18n="admin.slicerFallbackBambu">Bambu profile (Bambu PLA Basic, PETG Basic, …)</option>
       </select>
       <p style="font-size: 0.78rem; color: var(--text-muted); margin: 8px 0 0;">
-        Choose <strong>Bambu profile</strong> if you prefer Bambu's own material profiles for
-        third-party filament instead of the bland Generic ones. Falls back to Generic for materials
-        without a Bambu-brand equivalent.
+        <span data-i18n="admin.slicerFallbackHintPre">Choose</span> <strong data-i18n="admin.slicerFallbackHintStrong">Bambu profile</strong> <span data-i18n="admin.slicerFallbackHintPost">if you prefer Bambu's own material profiles for third-party filament instead of the bland Generic ones. Falls back to Generic for materials without a Bambu-brand equivalent.</span>
       </p>
     </div>
 
