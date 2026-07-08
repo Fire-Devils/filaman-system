@@ -475,6 +475,20 @@
       background: white !important;
     }
 
+    /* Screen preview padding must not enter print layout; small label pages can paginate otherwise. */
+    .preview-scroll-area {
+      padding: 0 !important;
+      margin: 0 !important;
+      display: block !important;
+      width: auto !important;
+      min-width: 0 !important;
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+      align-items: stretch !important;
+      justify-content: flex-start !important;
+    }
+
     .preview-zoom-bar { display: none !important; }
 
     .label-preview {
@@ -488,6 +502,8 @@
       margin: 0 !important;
       padding: var(--print-label-padding, 2mm) !important;
       overflow: hidden !important;
+      transform: none !important;
+      transform-origin: unset !important;
       break-inside: avoid !important;
       page-break-inside: avoid !important;
       -webkit-print-color-adjust: exact;

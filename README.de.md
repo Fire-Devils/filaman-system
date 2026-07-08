@@ -30,6 +30,7 @@ Damit lässt sich das FilaMan System mit wenigen Klicks direkt in deiner Home As
 - **Spulen-Verwaltung:** Tracking von Restgewicht, Lagerort und Status.
 - **Mandantenfähigkeit:** Multi-User-Unterstützung mit Rollensystem.
 - **Drucker-Integration:** Plugin-System zur Anbindung von 3D-Druckern und AMS-Einheiten.
+- **Druckbare Labels:** Spulen- und Filament-Labels mit QR-Codes, eigenem Label-Designer und Etikettenbogen-Ausgabe drucken und exportieren.
 - **Datenbank-Support:** Kompatibel mit SQLite (Standard), MySQL und PostgreSQL.
 - **Responsive UI:** Modernes Design (Hell, Dunkel und Brand-Theme).
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) über OpenID Connect für bestehende Benutzer.
@@ -38,7 +39,6 @@ Damit lässt sich das FilaMan System mit wenigen Klicks direkt in deiner Home As
 Wir haben spannende Pläne für die Zukunft von FilaMan:
 - **Drucker-Plugins:** Entwicklung von Plugins für die Verbindung zu verschiedenen 3D-Druckern (Beiträge durch die Community sind sehr willkommen!).
 - **Mobile Apps:** Native Apps für iOS und Android.
-- **Spulen-Labels:** Generieren und Drucken von Etiketten/Labels für Spulen.
 
 ## Installation
 
