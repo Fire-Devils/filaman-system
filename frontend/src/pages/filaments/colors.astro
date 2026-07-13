@@ -134,7 +134,12 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
-              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${c.hex_code}; border: 1px solid var(--border);"></span>
+              <div style="position: relative; width: 24px; height: 24px; flex-shrink: 0;">
+                ${c.image_url
+                  ? `<img src="${c.image_url}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border);" />`
+                  : `<span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${c.hex_code}; border: 1px solid var(--border);"></span>`
+                }
+              </div>
               <span style="font-weight: 500;">${c.name}</span>
             </div>
           </td>
@@ -147,8 +152,19 @@ import Layout from '../../layouts/Layout.astro'
               data-id="${c.id}" 
               data-name="${c.name}" 
               data-hex="${c.hex_code}" 
+              data-has-image="${c.image_url || ''}"
+              class="btn-upload-image" 
+              style="color: var(--accent-2); background: none; border: none; cursor: pointer; margin-right: 8px; font-size: 0.85rem;"
+              title="${t('colors.uploadImage') || 'Upload Image'}"
+            >
+              📷
+            </button>
+            <button 
+              data-id="${c.id}" 
+              data-name="${c.name}" 
+              data-hex="${c.hex_code}" 
               class="btn-edit" 
-              style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;"
+              style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;"
             >
               ${t('common.edit')}
             </button>
@@ -206,6 +222,60 @@ import Layout from '../../layouts/Layout.astro'
           } catch {
             await (window as any).__fmAlert(t('colors.failedDelete'))
           }
+        })
+      })
+      
+      document.querySelectorAll('.btn-upload-image').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const target = e.currentTarget as HTMLButtonElement
+          const id = parseInt(target.dataset.id!)
+          const hasImage = target.dataset.hasImage
+          
+          if (hasImage) {
+            if (!(await (window as any).__fmConfirm(t('colors.confirmReplaceImage') || 'Replace this image?'))) return
+            try {
+              const response = await fetch(`/api/v1/colors/${id}/image`, {
+                method: 'DELETE',
+                headers: { 'X-CSRF-Token': getCsrfToken() },
+                credentials: 'include',
+                signal: getAbortSignal(),
+              })
+              if (response.ok) loadColors()
+            } catch {}
+            return
+          }
+          
+          const input = document.createElement('input')
+          input.type = 'file'
+          input.accept = 'image/jpeg,image/png,image/webp'
+          input.addEventListener('change', async () => {
+            const file = input.files?.[0]
+            if (!file) return
+            
+            const formData = new FormData()
+            formData.append('file', file)
+            
+            try {
+              const response = await fetch(`/api/v1/colors/${id}/image/upload`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': getCsrfToken() },
+                credentials: 'include',
+                body: formData,
+                signal: getAbortSignal(),
+              })
+              
+              if (!response.ok) {
+                const data = await response.json()
+                await (window as any).__fmAlert(data.message || t('colors.failedUpload'))
+                return
+              }
+              
+              loadColors()
+            } catch {
+              await (window as any).__fmAlert(t('colors.failedUpload'))
+            }
+          })
+          input.click()
         })
       })
     }

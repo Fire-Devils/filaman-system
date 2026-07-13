@@ -195,8 +195,9 @@ const { id } = Astro.params
         const c = fc.color
         if (!c) return ''
         const label = fc.display_name_override || c.name
+        const imageUrl = c.image_url ? `<img src="${c.image_url}" style="width: 22px; height: 22px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); vertical-align: middle;" />` : `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle;"></span>`
         return `<span style="display: inline-flex; align-items: center; gap: 6px; margin-right: 10px;">
-          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle;"></span>
+          ${imageUrl}
           <span>${label}</span>
         </span>`
       }).join('')

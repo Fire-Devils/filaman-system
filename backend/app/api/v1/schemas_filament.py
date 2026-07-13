@@ -85,8 +85,16 @@ class ColorResponse(BaseModel):
     id: int
     name: str
     hex_code: str
+    image_file: str | None = None
     custom_fields: dict[str, Any] | None = None
     usage_count: int = 0
+
+    @computed_field
+    @property
+    def image_url(self) -> str | None:
+        if self.image_file:
+            return f"/api/v1/colors/{self.id}/image"
+        return None
 
     class Config:
         from_attributes = True

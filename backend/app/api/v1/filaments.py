@@ -1,8 +1,9 @@
 import logging
+from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select, literal_column
@@ -33,7 +34,7 @@ from app.api.v1.schemas_filament import (
     ManufacturerResponse,
     ManufacturerUpdate,
 )
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
+from app.core.config import settings, MANUFACTURER_LOGO_DIR, COLOR_IMAGE_DIR
 from app.core.event_bus import event_bus
 from app.models import (
     Color,
@@ -551,6 +552,149 @@ async def delete_color(
     await db.delete(color)
     await db.commit()
     await event_bus.publish({"event": "colors_changed"})
+
+    # Clean up image file from persistent storage
+    if color.image_file:
+        image_path = COLOR_IMAGE_DIR / color.image_file
+        if image_path.is_file():
+            try:
+                image_path.unlink()
+            except OSError:
+                pass
+
+
+# ── Color image endpoints ─────────────────────────────────────────
+
+ALLOWED_COLOR_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+@router_colors.get("/{color_id}/image")
+async def get_color_image(
+    color_id: int,
+    _db: DBSession,
+    _principal: PrincipalDep,
+):
+    """Serve the color's image from persistent storage."""
+    result = await _db.execute(select(Color).where(Color.id == color_id))
+    color = result.scalar_one_or_none()
+    if not color or not color.image_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Image not found"},
+        )
+
+    image_path = COLOR_IMAGE_DIR / color.image_file
+    if not image_path.is_file():
+        color.image_file = None
+        await _db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Image file missing from disk"},
+        )
+
+    ext = image_path.suffix.lower()
+    media_type_map = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+    media_type = media_type_map.get(ext, "image/jpeg")
+
+    return FileResponse(
+        image_path,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router_colors.post("/{color_id}/image/upload", status_code=status.HTTP_200_OK)
+async def upload_color_image(
+    color_id: int,
+    file: UploadFile,
+    db: DBSession,
+    principal=RequirePermission("colors:update"),
+):
+    """Upload an image for a color."""
+    # Validate content type
+    valid_types = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+    if file.content_type not in valid_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_content_type", "message": "Only JPG, PNG, and WebP images are allowed"},
+        )
+
+    # Validate extension
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_COLOR_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_extension", "message": f"Only {', '.join(ALLOWED_COLOR_IMAGE_EXTENSIONS)} extensions are allowed"},
+        )
+
+    result = await db.execute(select(Color).where(Color.id == color_id))
+    color = result.scalar_one_or_none()
+    if not color:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Color not found"},
+        )
+
+    # Remove old image if it exists
+    if color.image_file:
+        old_path = COLOR_IMAGE_DIR / color.image_file
+        if old_path.is_file():
+            try:
+                old_path.unlink()
+            except OSError:
+                pass
+
+    # Save new image
+    COLOR_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{color_id}{ext}"
+    image_path = COLOR_IMAGE_DIR / filename
+
+    content = await file.read()
+    image_path.write_bytes(content)
+
+    color.image_file = filename
+    await db.commit()
+    await event_bus.publish({"event": "colors_changed"})
+
+    return {
+        "ok": True,
+        "image_url": f"/api/v1/colors/{color_id}/image",
+        "filename": filename,
+    }
+
+
+@router_colors.delete("/{color_id}/image", status_code=status.HTTP_200_OK)
+async def delete_color_image(
+    color_id: int,
+    db: DBSession,
+    principal=RequirePermission("colors:update"),
+):
+    """Delete the image associated with a color."""
+    result = await db.execute(select(Color).where(Color.id == color_id))
+    color = result.scalar_one_or_none()
+    if not color:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Color not found"},
+        )
+
+    if color.image_file:
+        image_path = COLOR_IMAGE_DIR / color.image_file
+        if image_path.is_file():
+            try:
+                image_path.unlink()
+            except OSError:
+                pass
+        color.image_file = None
+        await db.commit()
+        await event_bus.publish({"event": "colors_changed"})
+
+    return {"ok": True}
 
 
 router_filaments = APIRouter(prefix="/filaments", tags=["filaments"])

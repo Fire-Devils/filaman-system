@@ -76,3 +76,4 @@ def _resolve_data_dir() -> Path:
 
 DATA_DIR = _resolve_data_dir()
 MANUFACTURER_LOGO_DIR = DATA_DIR / "logos" / "manufacturers"
+COLOR_IMAGE_DIR = DATA_DIR / "logos" / "colors"
