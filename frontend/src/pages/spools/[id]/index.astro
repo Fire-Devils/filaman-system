@@ -534,10 +534,28 @@ const { id } = Astro.params
       const deleteConfirmBtn = document.getElementById('btn-delete-confirm') as HTMLButtonElement
       
       document.getElementById('btn-duplicate-spool')?.addEventListener('click', () => {
+        // Copy physical/product fields only. Do NOT carry identity, RFID, AMS
+        // location, status, or remaining weight — those must be set by write-tag /
+        // weigh / driver assign-configure when the new spool is actually placed.
         const dupData = { ...spool }
-        delete dupData.rfid_uid
-        delete dupData.external_id
-        delete dupData.id
+        for (const key of [
+          'id',
+          'rfid_uid',
+          'external_id',
+          'location_id',
+          'location',
+          'status_id',
+          'status',
+          'remaining_weight_g',
+          'last_used_at',
+          'stocked_in_at',
+          'created_at',
+          'updated_at',
+          'printer_params',
+          'events',
+        ]) {
+          delete dupData[key]
+        }
         sessionStorage.setItem('filaman_duplicate_spool', JSON.stringify(dupData))
         window.location.href = '/spools/new'
       })

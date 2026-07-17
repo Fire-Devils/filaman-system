@@ -44,6 +44,34 @@ from app.models import (
 )
 from app.services.spool_service import SpoolService
 
+
+def _is_driver_managed_location(location: Location | None) -> bool:
+    """True for AMS/slot locations owned by a printer driver (e.g. Bambuddy).
+
+    These must only be set when the driver assigns after a physical place —
+    not on create/duplicate.
+    """
+    if location is None:
+        return False
+    cf = location.custom_fields
+    if not isinstance(cf, dict):
+        return False
+    managed = cf.get("managed_by")
+    return isinstance(managed, str) and managed.endswith("_plugin")
+
+
+async def _clear_driver_managed_create_location(
+    db: AsyncSession, spool_data: dict
+) -> None:
+    loc_id = spool_data.get("location_id")
+    if not loc_id:
+        return
+    result = await db.execute(select(Location).where(Location.id == loc_id))
+    location = result.scalar_one_or_none()
+    if _is_driver_managed_location(location):
+        spool_data["location_id"] = None
+
+
 router_locations = APIRouter(prefix="/locations", tags=["locations"])
 
 
@@ -378,6 +406,8 @@ async def create_spool(
 
     spool_data = data.model_dump()
 
+    await _clear_driver_managed_create_location(db, spool_data)
+
     # Cascade fields from Filament if not provided
     if spool_data.get("empty_spool_weight_g") is None:
         spool_data["empty_spool_weight_g"] = (
@@ -469,6 +499,8 @@ async def create_spools_bulk(
         )
 
     spool_data = data.model_dump(exclude={"quantity"})
+
+    await _clear_driver_managed_create_location(db, spool_data)
 
     # Cascade fields from Filament if not provided
     if spool_data.get("empty_spool_weight_g") is None:
