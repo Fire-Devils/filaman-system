@@ -1314,6 +1314,10 @@
     "suffixFilament": "Filament",
     "exporting": "Exporting...",
     "pngExportFailed": "PNG export failed. Please check that all label images and logos loaded correctly.",
-    "pdfExportFailed": "PDF export failed. Please check that all label images and logos loaded correctly."
+    "pdfExportFailed": "PDF export failed. Please check that all label images and logos loaded correctly.",
+    "printHelpTitle": "Printing issues?",
+    "printHelpIntro": "For small labels, use 100% scale and the exact matching paper size.",
+    "printHelpBrave": "Brave: if output is blank, offset, or clipped, use Export PDF or a slightly smaller matching label size.",
+    "printHelpFirefox": "Firefox: if the system dialog adds a blank page, use Firefox's print dialog or Export PDF."
   }
 }

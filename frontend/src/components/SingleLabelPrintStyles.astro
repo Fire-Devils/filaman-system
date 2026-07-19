@@ -16,6 +16,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
+    z-index: 2;
   }
 
   .print-sidebar-scroll {
@@ -67,21 +69,30 @@
 
   .preview-container {
     flex: 1;
-    min-width: 320px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     background: var(--bg-soft);
+    position: relative;
+    z-index: 1;
   }
 
   .preview-zoom-bar {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 20px 6px;
-    background: var(--bg-elevated);
-    border-bottom: 1px solid var(--border);
+    align-self: center;
+    width: min(520px, calc(100% - 32px));
+    margin: 12px 16px 0;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--bg-elevated) 94%, var(--accent));
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow-md);
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
   }
 
   .preview-zoom-btn {
@@ -129,7 +140,7 @@
     display: flex;
     align-items: safe center;
     justify-content: safe center;
-    padding: 40px;
+    padding: 28px 40px 40px;
     overflow: auto;
   }
 
@@ -506,6 +517,8 @@
       transform-origin: unset !important;
       break-inside: avoid !important;
       page-break-inside: avoid !important;
+      break-after: avoid !important;
+      page-break-after: avoid !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }

@@ -20,11 +20,141 @@ const {
 } = Astro.props
 ---
 
-<div class="action-buttons">
-  <div class="export-buttons">
-    <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPngI18n}>Export PNG</button>
-    <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPdfI18n}>Export PDF</button>
+<div class="print-footer">
+  <div class="action-buttons">
+    <div class="export-buttons">
+      <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPngI18n}>Export PNG</button>
+      <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPdfI18n}>Export PDF</button>
+    </div>
+    <button id={printButtonId} class="fm-btn fm-btn-primary" type="button" onclick="filamanPrint()" data-i18n={printI18n}>{printLabel}</button>
+    <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
   </div>
-  <button id={printButtonId} class="fm-btn fm-btn-primary" type="button" onclick="filamanPrint()" data-i18n={printI18n}>{printLabel}</button>
-  <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
+
+  <details class="print-help" id="print-help">
+    <summary id="print-help-toggle" class="print-help-toggle">
+      <span class="print-help-title">
+        <span class="print-help-icon" aria-hidden="true">i</span>
+        <span data-i18n="labelPrint.printHelpTitle">Printing issues?</span>
+      </span>
+      <span class="print-help-chevron" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="16" height="16" focusable="false">
+          <path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </span>
+    </summary>
+    <div id="print-help-panel" class="print-help-panel">
+      <p data-i18n="labelPrint.printHelpIntro">Use 100% scale and a matching paper size for small labels.</p>
+      <ul>
+        <li data-i18n="labelPrint.printHelpBrave">Brave: if output is blank or offset, use the system dialog or Export PDF.</li>
+        <li data-i18n="labelPrint.printHelpFirefox">Firefox: if the top is clipped, turn off headers and footers.</li>
+      </ul>
+    </div>
+  </details>
 </div>
+
+<style is:global>
+  .print-footer {
+    flex-shrink: 0;
+    padding: 12px 24px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-elevated);
+    box-shadow: 0 -12px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  .print-help {
+    margin: 12px 0 0;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  .print-help-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-soft));
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+    transition: border-color var(--transition), background var(--transition), color var(--transition);
+  }
+
+  .print-help-toggle::-webkit-details-marker { display: none; }
+
+  .print-help-toggle:hover {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-soft));
+  }
+
+  .print-help-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .print-help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    font-size: 0.68rem;
+    line-height: 1;
+    color: #dc2626;
+  }
+
+  .print-help-chevron {
+    display: inline-flex;
+    color: var(--text-muted);
+    transition: transform var(--transition), color var(--transition);
+  }
+
+  .print-help[open] .print-help-toggle {
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    border-bottom-color: transparent;
+  }
+
+  .print-help[open] .print-help-chevron {
+    transform: rotate(180deg);
+    color: var(--accent);
+  }
+
+  .print-help-panel {
+    margin-top: 0;
+    padding: 9px 11px;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+    border-top-color: color-mix(in srgb, var(--accent) 16%, var(--border));
+  }
+
+  .print-help[open] .print-help-panel { display: block; }
+
+  .print-help-panel p { margin: 0 0 6px; }
+
+  .print-help-panel ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+
+  .print-help-panel li + li { margin-top: 4px; }
+
+  .print-footer .action-buttons {
+    padding: 0;
+    border-top: 0;
+  }
+
+  @media print {
+    .print-footer { display: none !important; }
+  }
+</style>
