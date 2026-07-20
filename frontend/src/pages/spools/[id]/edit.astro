@@ -287,7 +287,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { renderFieldInput } from '../../../lib/extra-fields'
+    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../../lib/extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
@@ -336,28 +336,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         }
       }
       return res
-    }
-
-    function unflattenObject(data: any) {
-      const result: Record<string, any> = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current: any = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
     }
 
     function renderCustomFields() {
@@ -611,13 +589,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       })
     }
 
-    function escapeHtml(str: any) {
-      if (!str) return ''
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
-    }
-
     function prefillForm(s: any) {
       (document.getElementById('filament_id') as HTMLInputElement).value = String(s.filament_id)
 
@@ -749,31 +720,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       const purchaseDate = formData.get('purchase_date')
       patchData.purchase_date = purchaseDate || null
 
-      const fieldsObj: Record<string, any> = {}
-
-      document.querySelectorAll('.system-field-input').forEach((input: any) => {
-        const key = input.dataset.key
-        const type = input.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = input.checked ? 'true' : 'false'
-        } else if (type === 'number') {
-          const value = input.value.trim()
-          if (value) fieldsObj[key] = parseFloat(value)
-        } else {
-          const value = input.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
-
-      // Collect Multiselect Fields
-      const multiselectByKey: Record<string, string[]> = {}
-      document.querySelectorAll('.system-field-input-multi').forEach((el: any) => {
-        const key = el.dataset.key
-        if (!key) return
-        if (!multiselectByKey[key]) multiselectByKey[key] = []
-        if ((el as HTMLInputElement).checked) multiselectByKey[key].push(el.value)
-      })
+      const systemValues = collectSystemFieldValues()
+      if (!systemValues) return
+      const fieldsObj = systemValues.flat
 
       if (customFields.length > 0) {
         customFields.forEach(f => {
@@ -783,8 +732,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         })
       }
       
-      const cfUnflat = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : {}
-      for (const [k, v] of Object.entries(multiselectByKey)) {
+      const cfUnflat = Object.keys(fieldsObj).length > 0 ? unflattenFieldValues(fieldsObj) : {}
+      for (const [k, v] of Object.entries(systemValues.direct)) {
         cfUnflat[k] = v
       }
       patchData.custom_fields = Object.keys(cfUnflat).length > 0 ? cfUnflat : null

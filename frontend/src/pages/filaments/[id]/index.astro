@@ -93,7 +93,7 @@ const { id } = Astro.params
   <script is:inline src="/vendor/chart.min.js"></script>
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { renderFieldDisplay } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
@@ -298,7 +298,7 @@ const { id } = Astro.params
             return `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-left: 8px; padding-right: 8px;">
               <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="color: var(--text-muted); font-weight: 500;">${sysDef.label}</span>
+                <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(sysDef.label)}</span>
                 <span style="background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; white-space: nowrap;">${t('common.systemField')}</span>
               </span>
               <span style="word-break: break-all;">${displayHtml}</span>

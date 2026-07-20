@@ -1,12 +1,18 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 VALID_FIELD_TYPES = frozenset({
     "text", "number", "range",
     "dropdown", "checkbox", "formula",
     "date", "url", "multiselect", "textarea",
 })
+
+CONFIG_KEYS_BY_TYPE = {
+    "number": {"unit", "decimal_places", "min_bound", "max_bound"},
+    "range": {"unit", "decimal_places", "min_bound", "max_bound"},
+    "textarea": {"max_length"},
+}
 
 
 def validate_field_type_config(
@@ -22,8 +28,17 @@ def validate_field_type_config(
     if field_type in ("dropdown", "multiselect") and not options:
         raise ValueError(f"options must be provided for field_type={field_type!r}")
 
+    if options and field_type not in {"dropdown", "multiselect"}:
+        raise ValueError(f"options are not supported for field_type={field_type!r}")
+
     if not config:
         return
+
+    unknown_keys = set(config) - CONFIG_KEYS_BY_TYPE.get(field_type, set())
+    if unknown_keys:
+        raise ValueError(
+            f"Unsupported config keys for field_type={field_type!r}: {sorted(unknown_keys)}"
+        )
 
     unit = config.get("unit")
     if unit is not None and not isinstance(unit, str):
@@ -54,12 +69,12 @@ def validate_field_type_config(
         bounds[key] = value
 
     if (
-        field_type == "range"
+        field_type in {"number", "range"}
         and "min_bound" in bounds
         and "max_bound" in bounds
         and bounds["min_bound"] >= bounds["max_bound"]
     ):
-        raise ValueError("config.min_bound must be less than config.max_bound for range fields")
+        raise ValueError("config.min_bound must be less than config.max_bound")
 
 
 class SystemExtraFieldBase(BaseModel):
@@ -83,17 +98,16 @@ class SystemExtraFieldBase(BaseModel):
         ),
     )
 
-    @model_validator(mode="after")
-    def validate_type_and_config(self) -> "SystemExtraFieldBase":
-        validate_field_type_config(self.field_type, self.options, self.config)
-        return self
-
-
 class SystemExtraFieldCreate(SystemExtraFieldBase):
     source: str | None = Field(
         None,
         description="Plugin source, e.g. 'bambulab'. Protected from manual deletion.",
     )
+
+    @model_validator(mode="after")
+    def validate_type_and_config(self) -> "SystemExtraFieldCreate":
+        validate_field_type_config(self.field_type, self.options, self.config)
+        return self
 
 
 class SystemExtraFieldUpdate(BaseModel):
@@ -113,9 +127,7 @@ class SystemExtraFieldUpdate(BaseModel):
 
 
 class SystemExtraFieldResponse(SystemExtraFieldBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     source: str | None = None
-    config: dict[str, Any] | None = None
-
-    class Config:
-        from_attributes = True

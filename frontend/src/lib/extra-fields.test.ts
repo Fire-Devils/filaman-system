@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   escapeHtml,
   dpToStep,
+  collectSystemFieldValues,
+  unflattenFieldValues,
   renderFieldInput,
   renderFieldDisplay,
   renderFieldPlainText,
@@ -179,6 +181,68 @@ describe('renderFieldInput — range', () => {
   it('shows unit for range with unit config', () => {
     const html = renderFieldInput(field({ field_type: 'range', config: { unit: '°C' } }), null)
     expect(html).toContain('°C')
+  })
+})
+
+describe('collectSystemFieldValues', () => {
+  function rootWith(scalars: any[], multiselect: any[] = []): ParentNode {
+    return {
+      querySelectorAll: (selector: string) => selector === '.system-field-input' ? scalars : multiselect,
+    } as unknown as ParentNode
+  }
+
+  it('collects scalar, numeric, checkbox, and multiselect values centrally', () => {
+    const result = collectSystemFieldValues(rootWith([
+      { dataset: { key: 'name', type: 'text' }, value: 'PLA' },
+      { dataset: { key: 'temp', type: 'number' }, value: '215.5' },
+      { dataset: { key: 'enabled', type: 'checkbox' }, checked: true, value: '' },
+    ], [
+      { dataset: { key: 'tags' }, checked: true, value: 'Matte' },
+      { dataset: { key: 'tags' }, checked: false, value: 'Silk' },
+    ]))
+
+    expect(result).toEqual({
+      flat: { name: 'PLA', temp: 215.5, enabled: 'true' },
+      direct: { tags: ['Matte'] },
+    })
+  })
+
+  it('rejects a range whose minimum exceeds its maximum', () => {
+    let clearFromMin: (() => void) | undefined
+    const maxInput = {
+      dataset: { key: 'temps.max', type: 'number', rangeKey: 'temps', rangeEnd: 'max' },
+      value: '100',
+      setCustomValidity(message: string) { this.validationMessage = message },
+      addEventListener() {},
+      reportValidity() {},
+      validationMessage: '',
+    }
+    const result = collectSystemFieldValues(rootWith([
+      {
+        dataset: { key: 'temps.min', type: 'number', rangeKey: 'temps', rangeEnd: 'min' },
+        value: '200',
+        addEventListener(_event: string, listener: () => void) { clearFromMin = listener },
+      },
+      maxInput,
+    ]))
+
+    expect(result).toBeNull()
+    expect(maxInput.validationMessage).toContain('Maximum')
+    clearFromMin?.()
+    expect(maxInput.validationMessage).toBe('')
+  })
+})
+
+describe('unflattenFieldValues', () => {
+  it('builds range objects without coercing typed values', () => {
+    expect(unflattenFieldValues({
+      'temps.min': 190.5,
+      'temps.max': 220,
+      numeric_text: '00123',
+    })).toEqual({
+      temps: { min: 190.5, max: 220 },
+      numeric_text: '00123',
+    })
   })
 })
 
@@ -370,6 +434,10 @@ describe('renderFieldDisplay — number', () => {
     const html = renderFieldDisplay(field({ field_type: 'number' }), 'not-a-number')
     expect(html).toContain('not-a-number')
   })
+
+  it('does not partially parse malformed numeric strings', () => {
+    expect(renderFieldDisplay(field({ field_type: 'number' }), '12abc')).toBe('12abc')
+  })
 })
 
 describe('renderFieldDisplay — range', () => {
@@ -411,11 +479,16 @@ describe('renderFieldDisplay — url', () => {
     expect(html).toContain('rel="noopener noreferrer"')
   })
 
-  it('escapes URL to prevent XSS — javascript: scheme replaced with #', () => {
+  it('renders unsafe URL schemes as plain text', () => {
     const html = renderFieldDisplay(field({ field_type: 'url' }), 'javascript:alert(1)')
     expect(html).not.toContain('href="javascript:')
-    // Display text is still escaped and shown
+    expect(html).not.toContain('<a ')
     expect(html).toContain('javascript:alert(1)')
+  })
+
+  it('renders malformed HTTP URLs as plain text', () => {
+    const html = renderFieldDisplay(field({ field_type: 'url' }), 'https://')
+    expect(html).toBe('https://')
   })
 })
 

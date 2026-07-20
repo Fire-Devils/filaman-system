@@ -176,7 +176,7 @@ const { id } = Astro.params
 
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { renderFieldDisplay } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay, renderFieldPlainText } from '../../../lib/extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
@@ -434,7 +434,7 @@ const { id } = Astro.params
                     return `
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-left: 8px; padding-right: 8px;">
                       <span style="display: flex; align-items: center; gap: 6px;">
-                        <span style="color: var(--text-muted); font-weight: 500;">${sysDef.label}</span>
+                        <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(sysDef.label)}</span>
                         <span style="background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; white-space: nowrap;">${t('common.systemField')}</span>
                       </span>
                       <span style="word-break: break-all;">${displayHtml}</span>
@@ -537,26 +537,26 @@ const { id } = Astro.params
       }
 
       const spoolFlat = spool.custom_fields ? flattenObject(spool.custom_fields) : {}
+      const spoolSystemKeys = Object.keys(spoolSystemFieldMap)
       for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
         if (isBuiltInLabelField('spool', key, def.label)) continue
-        const raw = spoolFlat[key]
-        efForPrint.push({ key: `spool.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'spool' })
+        efForPrint.push({ key: `spool.${key}`, label: def.label, value: renderFieldPlainText(def, spool.custom_fields?.[key]), source: 'spool' })
       }
       // Also include any spool custom fields not covered by system definitions
       for (const [key, value] of Object.entries(spoolFlat)) {
-        if (!spoolSystemFieldMap[key] && !isBuiltInLabelField('spool', key)) {
+        if (!spoolSystemFieldMap[key] && !spoolSystemKeys.some(systemKey => key.startsWith(`${systemKey}.`)) && !isBuiltInLabelField('spool', key)) {
           efForPrint.push({ key: `spool.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
         }
       }
       const filamentFlat = spool.filament?.custom_fields ? flattenObject(spool.filament.custom_fields) : {}
+      const filamentSystemKeys = Object.keys(filamentSystemFieldMap)
       for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
         if (isBuiltInLabelField('filament', key, def.label)) continue
-        const raw = filamentFlat[key]
-        efForPrint.push({ key: `filament.${key}`, label: def.label, value: raw !== undefined && raw !== null ? String(raw) : '', source: 'filament' })
+        efForPrint.push({ key: `filament.${key}`, label: def.label, value: renderFieldPlainText(def, spool.filament?.custom_fields?.[key]), source: 'filament' })
       }
       // Also include any filament custom fields not covered by system definitions
       for (const [key, value] of Object.entries(filamentFlat)) {
-        if (!filamentSystemFieldMap[key] && !isBuiltInLabelField('filament', key)) {
+        if (!filamentSystemFieldMap[key] && !filamentSystemKeys.some(systemKey => key.startsWith(`${systemKey}.`)) && !isBuiltInLabelField('filament', key)) {
           efForPrint.push({ key: `filament.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'filament' })
         }
       }

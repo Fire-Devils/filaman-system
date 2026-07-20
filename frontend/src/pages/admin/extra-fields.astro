@@ -275,7 +275,7 @@ import Layout from '../../layouts/Layout.astro'
 
     function updateDefaultUi(type: string) {
       const wrapper = document.getElementById('default-value-wrapper') as HTMLDivElement
-      if (type === 'range') {
+      if (type === 'range' || type === 'multiselect') {
         wrapper.style.display = 'none'
         fieldDefaultInput.value = ''
         return

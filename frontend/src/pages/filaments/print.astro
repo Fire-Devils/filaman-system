@@ -147,7 +147,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return typeof value === 'object' && value !== null
   }
 
-  function isExtraFieldDef(value: unknown): value is { key: string; label: string; field_type?: string } {
+  function isExtraFieldDef(value: unknown): value is SystemExtraFieldDef {
     return isApiObject(value) && typeof value.key === 'string' && typeof value.label === 'string'
   }
 

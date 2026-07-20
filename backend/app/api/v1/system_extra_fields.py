@@ -64,7 +64,6 @@ async def get_system_extra_fields(
 @router.post(
     "",
     response_model=SystemExtraFieldResponse,
-    status_code=201,
     dependencies=[RequirePermission("admin:system")],
 )
 async def create_system_extra_field(

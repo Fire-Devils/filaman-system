@@ -344,7 +344,7 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { renderFieldInput } from '../../lib/extra-fields'
+    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../lib/extra-fields'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
@@ -399,28 +399,6 @@ import Layout from '../../layouts/Layout.astro'
 
     // ── Custom Fields Logic ──
     let customFields: Array<{ key: string, value: string }> = []
-
-    function unflattenObject(data: Record<string, any>) {
-      const result: any = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
-    }
 
     function renderCustomFields() {
       customFieldsContainer.innerHTML = ''
@@ -884,7 +862,7 @@ import Layout from '../../layouts/Layout.astro'
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
-          div.innerHTML = `<label class="fm-label">${field.label}</label>${inputHtml}`
+          div.innerHTML = `<label class="fm-label">${escapeHtml(field.label)}</label>${inputHtml}`
         }
         grid.appendChild(div)
       })
@@ -1003,7 +981,9 @@ import Layout from '../../layouts/Layout.astro'
         btnAddNewColor.parentElement!.classList.remove('hidden')
       } catch (error: any) {
         if (isAbortError(error)) return
-        await (window as any).__fmAlert?.(error.message) || alert(error.message)
+        const dialog = (window as any).__fmAlert
+        if (dialog) await dialog(error.message)
+        else alert(error.message)
       } finally {
         btnSaveNewColor.disabled = false
       }
@@ -1093,32 +1073,9 @@ import Layout from '../../layouts/Layout.astro'
       if (shopUrl) data.shop_url = shopUrl
 
       // System Fields + Custom Fields
-      const fieldsObj: Record<string, any> = {}
-
-      // Collect System Fields (scalar)
-      document.querySelectorAll('.system-field-input').forEach((el: any) => {
-        const key = el.dataset.key
-        const type = el.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = el.checked ? 'true' : 'false'
-        } else if (type === 'number') {
-          const value = el.value.trim()
-          if (value) fieldsObj[key] = parseFloat(value)
-        } else {
-          const value = el.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
-
-      // Collect Multiselect Fields
-      const multiselectByKey: Record<string, string[]> = {}
-      document.querySelectorAll('.system-field-input-multi').forEach((el: any) => {
-        const key = el.dataset.key
-        if (!key) return
-        if (!multiselectByKey[key]) multiselectByKey[key] = []
-        if ((el as HTMLInputElement).checked) multiselectByKey[key].push(el.value)
-      })
+      const systemValues = collectSystemFieldValues()
+      if (!systemValues) return
+      const fieldsObj = systemValues.flat
 
       // Collect Custom Fields
       if (customFields.length > 0) {
@@ -1129,9 +1086,9 @@ import Layout from '../../layouts/Layout.astro'
         })
       }
 
-      if (Object.keys(fieldsObj).length > 0 || Object.keys(multiselectByKey).length > 0) {
-        data.custom_fields = unflattenObject(fieldsObj)
-        for (const [k, v] of Object.entries(multiselectByKey)) {
+      if (Object.keys(fieldsObj).length > 0 || Object.keys(systemValues.direct).length > 0) {
+        data.custom_fields = unflattenFieldValues(fieldsObj)
+        for (const [k, v] of Object.entries(systemValues.direct)) {
           data.custom_fields[k] = v
         }
       }

@@ -4,10 +4,10 @@
  */
 
 export interface SystemExtraFieldDef {
-  id: number
+  id?: number
   key: string
   label: string
-  field_type: string
+  field_type?: string
   options?: string[] | null
   default_value?: string | null
   config?: {
@@ -41,6 +41,23 @@ export function dpToStep(dp: number | null | undefined): string {
   return (1 / Math.pow(10, dp)).toFixed(dp)
 }
 
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function safeHttpUrl(value: unknown): string | null {
+  const candidate = String(value).trim()
+  try {
+    const protocol = new URL(candidate).protocol.toLowerCase()
+    return protocol === 'http:' || protocol === 'https:' ? candidate : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Estimate a good pixel width for a number <input> from its field config.
  * Counts the expected digit count from min/max bounds and decimal places so
@@ -59,6 +76,82 @@ function numberInputWidth(cfg: SystemExtraFieldDef['config']): number {
   const chars = 1 + intDigits + (fracDigits > 0 ? 1 + fracDigits : 0)
   // 10px/char + 24px input padding + 20px for browser spin buttons; min 80px
   return Math.max(80, chars * 10 + 44)
+}
+
+export interface CollectedSystemFieldValues {
+  flat: Record<string, unknown>
+  direct: Record<string, string[]>
+}
+
+/** Collect rendered controls once for all create/edit forms. */
+export function collectSystemFieldValues(root: ParentNode = document): CollectedSystemFieldValues | null {
+  const flat: Record<string, unknown> = {}
+  const direct: Record<string, string[]> = {}
+  const ranges = new Map<string, Partial<Record<'min' | 'max', HTMLInputElement>>>()
+
+  root.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.system-field-input').forEach(input => {
+    const key = input.dataset.key
+    if (!key) return
+    if (input.dataset.type === 'checkbox') {
+      flat[key] = (input as HTMLInputElement).checked ? 'true' : 'false'
+    } else if (input.dataset.type === 'number') {
+      const value = input.value.trim()
+      if (value) flat[key] = Number(value)
+    } else {
+      const value = input.value.trim()
+      if (value) flat[key] = value
+    }
+
+    const rangeKey = input.dataset.rangeKey
+    const rangeEnd = input.dataset.rangeEnd as 'min' | 'max' | undefined
+    if (rangeKey && rangeEnd) {
+      const entries = ranges.get(rangeKey) ?? {}
+      entries[rangeEnd] = input as HTMLInputElement
+      ranges.set(rangeKey, entries)
+    }
+  })
+
+  for (const entries of ranges.values()) {
+    const min = entries.min
+    const max = entries.max
+    max?.setCustomValidity('')
+    if (min?.value && max?.value && Number(min.value) > Number(max.value)) {
+      max.setCustomValidity('Maximum must be greater than or equal to minimum.')
+      const clearRangeError = () => max.setCustomValidity('')
+      min.addEventListener('input', clearRangeError, { once: true })
+      max.addEventListener('input', clearRangeError, { once: true })
+      max.reportValidity()
+      return null
+    }
+  }
+
+  root.querySelectorAll<HTMLInputElement>('.system-field-input-multi').forEach(input => {
+    const key = input.dataset.key
+    if (!key) return
+    direct[key] ??= []
+    if (input.checked) direct[key].push(input.value)
+  })
+
+  return { flat, direct }
+}
+
+/** Expand dot-separated field paths while preserving already parsed value types. */
+export function unflattenFieldValues(flat: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [path, value] of Object.entries(flat)) {
+    const keys = path.split('.')
+    let current = result
+    keys.forEach((key, index) => {
+      if (index === keys.length - 1) {
+        current[key] = value
+      } else {
+        const child = current[key]
+        if (!child || typeof child !== 'object' || Array.isArray(child)) current[key] = {}
+        current = current[key] as Record<string, unknown>
+      }
+    })
+  }
+  return result
 }
 
 /**
@@ -123,9 +216,9 @@ export function renderFieldInput(
       const numW = numberInputWidth(cfg)
       return (
         `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
-        `<input type="number" class="fm-input system-field-input" data-key="${key}.min" data-type="number" placeholder="Min" value="${minVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
+        `<input type="number" class="fm-input system-field-input" data-key="${key}.min" data-type="number" data-range-key="${key}" data-range-end="min" placeholder="Min" value="${minVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
         `<span style="color:var(--text-muted)">–</span>` +
-        `<input type="number" class="fm-input system-field-input" data-key="${key}.max" data-type="number" placeholder="Max" value="${maxVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
+        `<input type="number" class="fm-input system-field-input" data-key="${key}.max" data-type="number" data-range-key="${key}" data-range-end="max" placeholder="Max" value="${maxVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
         `${unitHtml}</div>`
       )
     }
@@ -185,8 +278,8 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
   switch (field.field_type) {
     case 'float': // legacy alias — falls through
     case 'number': {
-      const num = typeof value === 'number' ? value : parseFloat(String(value))
-      if (isNaN(num)) return escapeHtml(String(value))
+      const num = finiteNumber(value)
+      if (num == null) return escapeHtml(String(value))
       const formatted = dp != null ? num.toFixed(dp) : String(num)
       return `<span>${escapeHtml(formatted)}${unitSpan}</span>`
     }
@@ -194,18 +287,18 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
       if (typeof value !== 'object' || value === null || Array.isArray(value))
         return escapeHtml(String(value))
       const rv = value as Record<string, any>
-      const minNum = typeof rv.min === 'number' ? rv.min : parseFloat(String(rv.min ?? ''))
-      const maxNum = typeof rv.max === 'number' ? rv.max : parseFloat(String(rv.max ?? ''))
-      const minStr = !isNaN(minNum) && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '?')
-      const maxStr = !isNaN(maxNum) && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '?')
+      const minNum = finiteNumber(rv.min)
+      const maxNum = finiteNumber(rv.max)
+      const minStr = minNum != null && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '?')
+      const maxStr = maxNum != null && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '?')
       return `<span>${escapeHtml(minStr)}–${escapeHtml(maxStr)}${unitSpan}</span>`
     }
     case 'date':
       return `<span>${escapeHtml(String(value))}</span>`
     case 'url': {
       const url = String(value)
-      // Only render as a link for safe schemes; show as plain text otherwise
-      const safeSrc = /^https?:\/\//i.test(url) ? url : '#'
+      const safeSrc = safeHttpUrl(url)
+      if (!safeSrc) return escapeHtml(url)
       return `<a href="${escapeHtml(safeSrc)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">${escapeHtml(url)}</a>`
     }
     case 'multiselect':
@@ -234,8 +327,8 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
   switch (field.field_type) {
     case 'float': // legacy alias — falls through
     case 'number': {
-      const num = typeof value === 'number' ? value : parseFloat(String(value))
-      if (isNaN(num)) return String(value)
+      const num = finiteNumber(value)
+      if (num == null) return String(value)
       return `${dp != null ? num.toFixed(dp) : String(num)}${unit}`
     }
     case 'range': {
@@ -243,10 +336,10 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
         return renderUnknownFieldPlainText(value)
       }
       const rv = value as Record<string, unknown>
-      const minNum = typeof rv.min === 'number' ? rv.min : parseFloat(String(rv.min ?? ''))
-      const maxNum = typeof rv.max === 'number' ? rv.max : parseFloat(String(rv.max ?? ''))
-      const minStr = !isNaN(minNum) && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '')
-      const maxStr = !isNaN(maxNum) && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '')
+      const minNum = finiteNumber(rv.min)
+      const maxNum = finiteNumber(rv.max)
+      const minStr = minNum != null && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '')
+      const maxStr = maxNum != null && dp != null ? maxNum.toFixed(dp) : String(rv.max ?? '')
       return `${minStr}–${maxStr}${unit}`.trim()
     }
     case 'multiselect':

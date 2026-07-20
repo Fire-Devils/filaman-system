@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from app.api.v1.schemas_system_extra_field import (
     VALID_FIELD_TYPES,
     SystemExtraFieldCreate,
+    SystemExtraFieldResponse,
 )
 
 # ──────────────────────────────────────────────────────────────
@@ -126,6 +127,13 @@ class TestSchemaValidation:
                 config={"min_bound": 50, "max_bound": 10},
             ))
 
+    def test_number_min_greater_than_max_raises(self):
+        with pytest.raises(ValidationError, match="min_bound must be less than"):
+            SystemExtraFieldCreate(**self._base(
+                field_type="number",
+                config={"min_bound": 50, "max_bound": 10},
+            ))
+
     def test_range_config_none_is_valid(self):
         """Range without config (no bounds) is allowed."""
         SystemExtraFieldCreate(**self._base(field_type="range", config=None))
@@ -148,6 +156,20 @@ class TestSchemaValidation:
     def test_text_config_none(self):
         SystemExtraFieldCreate(**self._base(field_type="text", config=None))
 
+    def test_text_rejects_numeric_config(self):
+        with pytest.raises(ValidationError, match="Unsupported config keys"):
+            SystemExtraFieldCreate(**self._base(
+                field_type="text",
+                config={"min_bound": 0},
+            ))
+
+    def test_text_rejects_unused_options(self):
+        with pytest.raises(ValidationError, match="options are not supported"):
+            SystemExtraFieldCreate(**self._base(
+                field_type="text",
+                options=["unused"],
+            ))
+
     def test_textarea_with_max_length(self):
         SystemExtraFieldCreate(**self._base(
             field_type="textarea",
@@ -167,6 +189,14 @@ class TestSchemaValidation:
                 field_type="textarea",
                 config={"max_length": 0},
             ))
+
+    def test_response_allows_legacy_dropdown_without_options(self):
+        """Existing invalid rows must not make the list endpoint fail after migration."""
+        response = SystemExtraFieldResponse.model_validate({
+            **self._base(field_type="dropdown", options=None),
+            "id": 1,
+        })
+        assert response.options is None
 
 
 # ──────────────────────────────────────────────────────────────
@@ -202,7 +232,7 @@ class TestCreateRichFieldTypes:
             key="print_temp", label="Print Temp", field_type="number",
             config={"unit": "°C", "decimal_places": 1},
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         data = resp.json()
         assert data["field_type"] == "number"
         assert data["config"]["unit"] == "°C"
@@ -216,7 +246,7 @@ class TestCreateRichFieldTypes:
             key="temp_range", label="Temp Range", field_type="range",
             config={"unit": "°C", "min_bound": 0, "max_bound": 300},
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         data = resp.json()
         assert data["field_type"] == "range"
         assert data["config"]["min_bound"] == 0
@@ -228,7 +258,7 @@ class TestCreateRichFieldTypes:
         resp = await _create_field(
             client, csrf, key="expire_date", label="Expiry", field_type="date",
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         assert resp.json()["field_type"] == "date"
 
     @pytest.mark.asyncio
@@ -237,7 +267,7 @@ class TestCreateRichFieldTypes:
         resp = await _create_field(
             client, csrf, key="datasheet_url", label="Datasheet", field_type="url",
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         assert resp.json()["field_type"] == "url"
 
     @pytest.mark.asyncio
@@ -248,7 +278,7 @@ class TestCreateRichFieldTypes:
             key="tags", label="Tags", field_type="multiselect",
             options=["PLA", "PETG", "ABS"],
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         data = resp.json()
         assert data["field_type"] == "multiselect"
         assert "PLA" in data["options"]
@@ -261,7 +291,7 @@ class TestCreateRichFieldTypes:
             key="notes", label="Notes", field_type="textarea",
             config={"max_length": 500},
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         data = resp.json()
         assert data["field_type"] == "textarea"
         assert data["config"]["max_length"] == 500
@@ -299,7 +329,7 @@ class TestCreateRichFieldTypes:
         resp = await _create_field(
             client, csrf, key="plain_text", label="Plain", field_type="text",
         )
-        assert resp.status_code == 201
+        assert resp.status_code == 200
         assert resp.json()["config"] is None
 
     @pytest.mark.asyncio
@@ -317,7 +347,7 @@ class TestFieldTypeImmutability:
         create_resp = await _create_field(
             client, csrf, key="immutable_type", label="Immut", field_type="text",
         )
-        assert create_resp.status_code == 201
+        assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
 
         patch_resp = await client.put(
@@ -335,7 +365,7 @@ class TestFieldTypeImmutability:
         create_resp = await _create_field(
             client, csrf, key="same_type", label="Same", field_type="text",
         )
-        assert create_resp.status_code == 201
+        assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
 
         patch_resp = await client.put(
@@ -354,7 +384,7 @@ class TestFieldTypeImmutability:
             key="upd_cfg", label="Update Config", field_type="number",
             config={"unit": "mm", "decimal_places": 1},
         )
-        assert create_resp.status_code == 201
+        assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
 
         patch_resp = await client.put(
@@ -375,7 +405,7 @@ class TestFieldTypeImmutability:
             key="upd_range", label="Update Range", field_type="range",
             config={"min_bound": 0, "max_bound": 100},
         )
-        assert create_resp.status_code == 201
+        assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
 
         patch_resp = await client.put(
@@ -394,7 +424,7 @@ class TestFieldTypeImmutability:
             key="upd_multi", label="Update Multi", field_type="multiselect",
             options=["A", "B"],
         )
-        assert create_resp.status_code == 201
+        assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
 
         patch_resp = await client.put(
