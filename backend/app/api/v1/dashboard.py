@@ -51,6 +51,8 @@ class EmptySpool(BaseModel):
 class DashboardStatsResponse(BaseModel):
     spool_distribution: dict[str, int]
     total_value_available: float
+    filament_count_active: int
+    filament_count_used: int
     filament_stats: list[FilamentStat]
     location_stats: list[LocationStat]
     manufacturers_with_spools: list[ManufacturerSpoolCount]
@@ -253,6 +255,25 @@ async def get_dashboard_stats(
         .where(SpoolStatus.key != "archived")
     )
 
+    # Filament-Anzahl nach Scope:
+    # active = mindestens eine nicht-archivierte, nicht-leere Spule
+    filament_count_active_stmt = select(
+        func.count(func.distinct(Filament.id))
+    ).where(
+        Filament.id.in_(
+            select(Spool.filament_id)
+            .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+            .where(SpoolStatus.key != "archived")
+            .where(Spool.remaining_weight_g.isnot(None))
+            .where(Spool.remaining_weight_g > 0)
+        )
+    )
+
+    # used = jemals mindestens eine Spule verknüpft (inkl. archiviert/leer)
+    filament_count_used_stmt = select(
+        func.count(func.distinct(Spool.filament_id))
+    ).where(Spool.filament_id.isnot(None))
+
     # Execute all queries sequentially (async sessions do not support concurrent operations)
     dist_res = await db.execute(spool_distribution_stmt)
     fil_stats_res = await db.execute(filament_stats_stmt)
@@ -262,6 +283,8 @@ async def get_dashboard_stats(
     types_res = await db.execute(types_stmt)
     loc_res = await db.execute(location_stats_stmt)
     total_val_res = await db.execute(total_value_stmt)
+    filament_count_active_res = await db.execute(filament_count_active_stmt)
+    filament_count_used_res = await db.execute(filament_count_used_stmt)
 
     total_value_available = float(total_val_res.scalar() or 0.0)
 
@@ -327,6 +350,8 @@ async def get_dashboard_stats(
     return DashboardStatsResponse(
         spool_distribution=spool_distribution,
         total_value_available=total_value_available,
+        filament_count_active=int(filament_count_active_res.scalar() or 0),
+        filament_count_used=int(filament_count_used_res.scalar() or 0),
         filament_stats=filament_stats,
         location_stats=location_stats,
         manufacturers_with_spools=manufacturers_with_spools,

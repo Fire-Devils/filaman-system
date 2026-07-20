@@ -161,8 +161,23 @@ async def delete_location(
             detail={"code": "not_found", "message": "Location not found"},
         )
 
+    # Only active spools block deletion — archived spools are not counted in the
+    # location's spool_count either (see list_locations), so a location shown as
+    # empty must also be deletable.
+    archived_status_id = (
+        select(SpoolStatus.id).where(SpoolStatus.key == "archived").scalar_subquery()
+    )
     result = await db.execute(
-        select(Spool).where(Spool.location_id == location_id).limit(1)
+        select(Spool)
+        .where(Spool.location_id == location_id)
+        .where(
+            or_(
+                Spool.status_id != archived_status_id,
+                # No "archived" status seeded — treat every spool as blocking
+                archived_status_id.is_(None),
+            )
+        )
+        .limit(1)
     )
     if result.scalar_one_or_none():
         raise HTTPException(
@@ -172,6 +187,13 @@ async def delete_location(
                 "message": "Location has spools, cannot delete",
             },
         )
+
+    # Detach archived spools so the FK does not block the delete
+    await db.execute(
+        update(Spool)
+        .where(Spool.location_id == location_id)
+        .values(location_id=None)
+    )
 
     await db.delete(location)
     await db.commit()

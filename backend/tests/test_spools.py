@@ -171,6 +171,33 @@ class TestLocationCRUD:
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "conflict"
 
+    @pytest.mark.asyncio
+    async def test_delete_location_with_only_archived_spools(self, auth_client, db_session):
+        """Archived spools are not counted in spool_count, so they must not block delete."""
+        client, csrf_token = auth_client
+
+        location = await _create_location(db_session, name="Shelf Archived")
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "archived")
+        spool = await _create_spool(
+            db_session, filament.id, status.id, location_id=location.id
+        )
+
+        response = await client.delete(
+            f"/api/v1/locations/{location.id}",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 204
+
+        result = await db_session.execute(select(Location).where(Location.id == location.id))
+        assert result.scalar_one_or_none() is None
+
+        # The archived spool survives, detached from the deleted location
+        await db_session.refresh(spool)
+        assert spool.location_id is None
+
 
 class TestSpoolCRUD:
     @pytest.mark.asyncio
