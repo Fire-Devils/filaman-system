@@ -115,7 +115,7 @@ class SystemExtraFieldUpdate(BaseModel):
         None,
         description=(
             "Field type: text, number, range, dropdown, checkbox, "
-            "formula, date, url, multiselect, textarea. Cannot be changed after creation."
+            "formula, date, url, multiselect, textarea."
         ),
     )
     options: list[str] | None = Field(None, description="Options for dropdown/multiselect fields")
