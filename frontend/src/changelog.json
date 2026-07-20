@@ -5,6 +5,18 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "fix", "text": "Moonraker-Plugin: Eine Spule, die einem zweiten oder weiteren Toolhead zugewiesen wurde, erschien im Protokoll und in den Standorten fälschlich an Toolhead 1. Die Zuweisung wird jetzt an den tatsächlichen Extruder übergeben und pro Toolhead ausgewertet – Drucker mit nur einem Toolhead verhalten sich unverändert." }
+        ],
+        "en": [
+          { "type": "fix", "text": "Moonraker plugin: a spool assigned to a second or later toolhead was incorrectly shown on toolhead 1 in the event log and in locations. The assignment is now passed to the actual extruder and tracked per toolhead – printers with a single toolhead behave as before." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.23",
+      "date": "",
+      "changes": {
+        "de": [
           { "type": "feature", "text": "Eine Spule kann ihr zugewiesenes Slicer-Profil jetzt an das übergeordnete Filament zurückschreiben – mit Vorschau, Bestätigungsdialog und optionaler Übernahme auf alle Geschwister-Spulen desselben Filaments." },
           { "type": "feature", "text": "Der Cloud-Slicer-Profil-Picker ist jetzt vollständig ins Deutsche und Englische übersetzt." },
           { "type": "fix", "text": "Einzel-Etikettendruck in Firefox erzeugt keine überflüssige leere Seite mehr (Pagination korrigiert)." },
