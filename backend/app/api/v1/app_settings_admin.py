@@ -36,6 +36,7 @@ class AppSettingsUpdate(BaseModel):
             "DKK",
             "PLN",
             "CZK",
+            "BRL",
         ]
         | None
     ) = None

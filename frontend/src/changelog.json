@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "fix", "text": "Moonraker-Plugin: Eine Spule, die einem zweiten oder weiteren Toolhead zugewiesen wurde, erschien im Protokoll und in den Standorten fälschlich an Toolhead 1. Die Zuweisung wird jetzt an den tatsächlichen Extruder übergeben und pro Toolhead ausgewertet – Drucker mit nur einem Toolhead verhalten sich unverändert." }
+          { "type": "fix", "text": "Moonraker-Plugin: Eine Spule, die einem zweiten oder weiteren Toolhead zugewiesen wurde, erschien im Protokoll und in den Standorten fälschlich an Toolhead 1. Die Zuweisung wird jetzt an den tatsächlichen Extruder übergeben und pro Toolhead ausgewertet – Drucker mit nur einem Toolhead verhalten sich unverändert." },
+          { "type": "feature", "text": "Brasilianischer Real (BRL – R$) steht jetzt als Anzeigewährung in den App-Einstellungen zur Auswahl." }
         ],
         "en": [
-          { "type": "fix", "text": "Moonraker plugin: a spool assigned to a second or later toolhead was incorrectly shown on toolhead 1 in the event log and in locations. The assignment is now passed to the actual extruder and tracked per toolhead – printers with a single toolhead behave as before." }
+          { "type": "fix", "text": "Moonraker plugin: a spool assigned to a second or later toolhead was incorrectly shown on toolhead 1 in the event log and in locations. The assignment is now passed to the actual extruder and tracked per toolhead – printers with a single toolhead behave as before." },
+          { "type": "feature", "text": "Brazilian Real (BRL – R$) is now available as a display currency in the app settings." }
         ]
       }
     },
