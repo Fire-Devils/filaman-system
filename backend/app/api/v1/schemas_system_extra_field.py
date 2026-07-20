@@ -20,21 +20,16 @@ def validate_field_type_config(
     options: list[str] | None,
     config: dict[str, Any] | None,
 ) -> None:
-    if field_type not in VALID_FIELD_TYPES:
-        raise ValueError(
-            f"Invalid field_type {field_type!r}. Must be one of: {sorted(VALID_FIELD_TYPES)}"
-        )
-
-    if field_type in ("dropdown", "multiselect") and not options:
+    # multiselect is new, so requiring choices does not reject legacy payloads.
+    # Existing field types and option combinations remain accepted as before.
+    if field_type == "multiselect" and not options:
         raise ValueError(f"options must be provided for field_type={field_type!r}")
-
-    if options and field_type not in {"dropdown", "multiselect"}:
-        raise ValueError(f"options are not supported for field_type={field_type!r}")
 
     if not config:
         return
 
-    unknown_keys = set(config) - CONFIG_KEYS_BY_TYPE.get(field_type, set())
+    allowed_keys = CONFIG_KEYS_BY_TYPE.get(field_type, set())
+    unknown_keys = set(config) - allowed_keys
     if unknown_keys:
         raise ValueError(
             f"Unsupported config keys for field_type={field_type!r}: {sorted(unknown_keys)}"
@@ -92,6 +87,7 @@ class SystemExtraFieldBase(BaseModel):
     options: list[str] | None = Field(None, description="Options for dropdown/multiselect fields")
     config: dict[str, Any] | None = Field(
         None,
+        exclude_if=lambda value: value is None,
         description=(
             "Type-specific config. Supported keys: unit (str), decimal_places (int|null), "
             "min_bound (number|null), max_bound (number|null), max_length (int|null)."

@@ -5,7 +5,7 @@ Covers:
   - Schema / Pydantic validator unit tests (no DB)
   - API integration tests for all new field types
   - config column roundtrip
-  - field_type immutability guard
+  - backwards compatibility for existing definition API payloads
   - plugin-source protection
 """
 
@@ -76,30 +76,27 @@ class TestSchemaValidation:
     def test_valid_type_dropdown_with_options(self):
         SystemExtraFieldCreate(**self._base(field_type="dropdown", options=["X", "Y"]))
 
-    # ── invalid field type ──
+    # ── legacy API compatibility ──
 
-    def test_invalid_field_type_raises(self):
-        with pytest.raises(ValidationError, match="Invalid field_type"):
-            SystemExtraFieldCreate(**self._base(field_type="integer"))
+    def test_spoolman_style_integer_type_remains_accepted(self):
+        field = SystemExtraFieldCreate(**self._base(field_type="integer"))
+        assert field.field_type == "integer"
 
-    def test_unknown_field_type_raises(self):
-        with pytest.raises(ValidationError, match="Invalid field_type"):
-            SystemExtraFieldCreate(**self._base(field_type="freetext"))
+    def test_unknown_field_type_remains_accepted(self):
+        field = SystemExtraFieldCreate(**self._base(field_type="freetext"))
+        assert field.field_type == "freetext"
 
-    def test_float_type_removed_raises(self):
-        """float was merged into number; the alias is no longer a valid type."""
-        with pytest.raises(ValidationError, match="Invalid field_type"):
-            SystemExtraFieldCreate(**self._base(field_type="float"))
+    def test_legacy_float_type_remains_accepted(self):
+        field = SystemExtraFieldCreate(**self._base(field_type="float"))
+        assert field.field_type == "float"
 
     # ── options required for dropdown / multiselect ──
 
-    def test_dropdown_without_options_raises(self):
-        with pytest.raises(ValidationError, match="options must be provided"):
-            SystemExtraFieldCreate(**self._base(field_type="dropdown", options=None))
+    def test_dropdown_without_options_remains_accepted(self):
+        SystemExtraFieldCreate(**self._base(field_type="dropdown", options=None))
 
-    def test_dropdown_empty_options_raises(self):
-        with pytest.raises(ValidationError, match="options must be provided"):
-            SystemExtraFieldCreate(**self._base(field_type="dropdown", options=[]))
+    def test_dropdown_empty_options_remains_accepted(self):
+        SystemExtraFieldCreate(**self._base(field_type="dropdown", options=[]))
 
     def test_multiselect_without_options_raises(self):
         with pytest.raises(ValidationError, match="options must be provided"):
@@ -163,12 +160,11 @@ class TestSchemaValidation:
                 config={"min_bound": 0},
             ))
 
-    def test_text_rejects_unused_options(self):
-        with pytest.raises(ValidationError, match="options are not supported"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="text",
-                options=["unused"],
-            ))
+    def test_text_with_options_remains_accepted(self):
+        SystemExtraFieldCreate(**self._base(
+            field_type="text",
+            options=["unused"],
+        ))
 
     def test_textarea_with_max_length(self):
         SystemExtraFieldCreate(**self._base(
@@ -197,6 +193,7 @@ class TestSchemaValidation:
             "id": 1,
         })
         assert response.options is None
+        assert "config" not in response.model_dump()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -297,12 +294,13 @@ class TestCreateRichFieldTypes:
         assert data["config"]["max_length"] == 500
 
     @pytest.mark.asyncio
-    async def test_create_invalid_type_returns_422(self, auth_client):
+    async def test_create_unknown_type_preserves_existing_api_behavior(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
             client, csrf, key="bad_field", label="Bad", field_type="integer",
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 200
+        assert resp.json()["field_type"] == "integer"
 
     @pytest.mark.asyncio
     async def test_create_multiselect_without_options_returns_422(self, auth_client):
@@ -330,7 +328,7 @@ class TestCreateRichFieldTypes:
             client, csrf, key="plain_text", label="Plain", field_type="text",
         )
         assert resp.status_code == 200
-        assert resp.json()["config"] is None
+        assert "config" not in resp.json()
 
     @pytest.mark.asyncio
     async def test_duplicate_key_returns_400(self, auth_client):
@@ -340,9 +338,9 @@ class TestCreateRichFieldTypes:
         assert resp.status_code == 400
 
 
-class TestFieldTypeImmutability:
+class TestFieldTypeUpdates:
     @pytest.mark.asyncio
-    async def test_change_field_type_returns_409(self, auth_client):
+    async def test_change_field_type_preserves_existing_api_behavior(self, auth_client):
         client, csrf = auth_client
         create_resp = await _create_field(
             client, csrf, key="immutable_type", label="Immut", field_type="text",
@@ -355,12 +353,12 @@ class TestFieldTypeImmutability:
             json={"field_type": "number"},
             headers={"X-CSRF-Token": csrf},
         )
-        assert patch_resp.status_code == 409
-        assert "field_type cannot be changed" in patch_resp.json()["detail"]
+        assert patch_resp.status_code == 200
+        assert patch_resp.json()["field_type"] == "number"
 
     @pytest.mark.asyncio
     async def test_update_same_field_type_is_allowed(self, auth_client):
-        """Sending the same field_type in an update must not raise 409."""
+        """Sending the same field_type in an update remains supported."""
         client, csrf = auth_client
         create_resp = await _create_field(
             client, csrf, key="same_type", label="Same", field_type="text",
@@ -510,4 +508,4 @@ class TestGetReturnsConfigField:
         assert resp.status_code == 200
         match = next((f for f in resp.json() if f["key"] == "no_cfg"), None)
         assert match is not None
-        assert match["config"] is None
+        assert "config" not in match

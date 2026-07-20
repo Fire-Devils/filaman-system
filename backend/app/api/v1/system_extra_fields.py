@@ -117,12 +117,6 @@ async def update_system_extra_field(
     # Apply updates (only non-None values)
     update_dict = update_data.model_dump(exclude_unset=True)
 
-    if "field_type" in update_dict and update_dict["field_type"] != field.field_type:
-        raise HTTPException(
-            status_code=409,
-            detail="field_type cannot be changed after the field has been created.",
-        )
-
     effective_field_type = update_dict.get("field_type", field.field_type)
     effective_options = update_dict.get("options", field.options)
     effective_config = update_dict.get("config", field.config)
