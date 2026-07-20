@@ -6,11 +6,13 @@
       "changes": {
         "de": [
           { "type": "fix", "text": "Moonraker-Plugin: Eine Spule, die einem zweiten oder weiteren Toolhead zugewiesen wurde, erschien im Protokoll und in den Standorten fälschlich an Toolhead 1. Die Zuweisung wird jetzt an den tatsächlichen Extruder übergeben und pro Toolhead ausgewertet – Drucker mit nur einem Toolhead verhalten sich unverändert." },
-          { "type": "feature", "text": "Brasilianischer Real (BRL – R$) steht jetzt als Anzeigewährung in den App-Einstellungen zur Auswahl." }
+          { "type": "feature", "text": "Brasilianischer Real (BRL – R$) steht jetzt als Anzeigewährung in den App-Einstellungen zur Auswahl." },
+          { "type": "fix", "text": "Standorte, denen nur noch archivierte Spulen zugewiesen waren, ließen sich nicht löschen (Fehler 409), obwohl die Übersicht sie als leer anzeigte. Archivierte Spulen blockieren das Löschen jetzt nicht mehr – sie bleiben erhalten und verlieren lediglich die Standortzuweisung." }
         ],
         "en": [
           { "type": "fix", "text": "Moonraker plugin: a spool assigned to a second or later toolhead was incorrectly shown on toolhead 1 in the event log and in locations. The assignment is now passed to the actual extruder and tracked per toolhead – printers with a single toolhead behave as before." },
-          { "type": "feature", "text": "Brazilian Real (BRL – R$) is now available as a display currency in the app settings." }
+          { "type": "feature", "text": "Brazilian Real (BRL – R$) is now available as a display currency in the app settings." },
+          { "type": "fix", "text": "Locations holding only archived spools could not be deleted (error 409) even though the overview showed them as empty. Archived spools no longer block deletion – they are kept and simply lose their location assignment." }
         ]
       }
     },
