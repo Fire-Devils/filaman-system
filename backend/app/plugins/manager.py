@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -114,6 +115,62 @@ class PluginManager:
                 pass
         return hash(slot_index) % 10000
 
+    @staticmethod
+    def _parse_spool_id(raw: Any) -> int | None:
+        """Coerce a driver-supplied spool id to a positive int, else None."""
+        if raw is None or isinstance(raw, bool):
+            return None
+        try:
+            parsed = int(raw)
+        except Exception:
+            return None
+        return parsed if parsed > 0 else None
+
+    async def _apply_spool_to_assignment(
+        self,
+        db: AsyncSession,
+        assignment: PrinterSlotAssignment,
+        spool_id: int | None,
+        meta: dict,
+    ) -> dict:
+        """Point an assignment at a spool and mirror its material/color into meta."""
+        assignment.spool_id = spool_id
+        assignment.present = spool_id is not None
+        assignment.updated_at = datetime.now(timezone.utc)
+
+        meta = dict(meta or {})
+        meta["active_spool_id"] = spool_id
+
+        if spool_id is None:
+            meta.pop("tray_type", None)
+            meta.pop("tray_color", None)
+            return meta
+
+        spool_res = await db.execute(
+            select(Spool)
+            .options(
+                selectinload(Spool.filament).selectinload(Filament.manufacturer),
+                selectinload(Spool.filament)
+                .selectinload(Filament.filament_colors)
+                .selectinload(FilamentColor.color),
+            )
+            .where(Spool.id == spool_id)
+        )
+        spool = spool_res.scalar_one_or_none()
+        if spool is None:
+            return meta
+
+        assignment.spool = spool
+        filament = spool.filament
+        if filament is not None:
+            if filament.material_type:
+                meta["tray_type"] = filament.material_type
+            if filament.filament_colors:
+                first_color = filament.filament_colors[0].color
+                if first_color and first_color.hex_code:
+                    meta["tray_color"] = first_color.hex_code.replace("#", "")[:6]
+        return meta
+
     async def _handle_slots_update(
         self,
         printer_id: int,
@@ -136,10 +193,12 @@ class PluginManager:
                     active_spool_id = None
 
             async with async_session_maker() as db:
+                # Set when the driver reports spool ownership per slot; suppresses
+                # the printer-wide fallback below.
+                per_slot_spools = False
+
                 # Upsert slots if any
                 if slots_data:
-                    active_slot: PrinterSlot | None = None
-
                     for slot_data in slots_data:
                         slot_index = slot_data.get("slot_index", "")
                         slot_no = self._slot_index_to_no(slot_index)
@@ -193,16 +252,10 @@ class PluginManager:
                         # Upsert PrinterSlotAssignment
                         # For new slots, always create assignment (no lazy-load risk)
                         # For existing slots, assignment is eager-loaded via selectinload
-                        if is_new:
-                            assignment = PrinterSlotAssignment(
-                                slot_id=printer_slot.id,
-                                present=present,
-                                meta=meta,
-                            )
-                            db.add(assignment)
-                        elif printer_slot.assignment:
-                            printer_slot.assignment.present = present
-                            printer_slot.assignment.meta = meta
+                        if not is_new and printer_slot.assignment:
+                            assignment = printer_slot.assignment
+                            assignment.present = present
+                            assignment.meta = meta
                         else:
                             assignment = PrinterSlotAssignment(
                                 slot_id=printer_slot.id,
@@ -211,11 +264,17 @@ class PluginManager:
                             )
                             db.add(assignment)
 
-                        slot_kind = str(slot_data.get("slot_kind") or "").lower()
-                        if slot_kind == "toolhead" and active_slot is None:
-                            active_slot = printer_slot
-                        elif slot_index == "0-0" and active_slot is None:
-                            active_slot = printer_slot
+                        # Drivers that track a spool per slot (e.g. multi-toolhead
+                        # Moonraker) report it here; that beats the printer-wide
+                        # active spool, which cannot say *which* slot it belongs to.
+                        if "spool_id" in slot_data:
+                            per_slot_spools = True
+                            assignment.meta = await self._apply_spool_to_assignment(
+                                db,
+                                assignment,
+                                self._parse_spool_id(slot_data["spool_id"]),
+                                meta,
+                            )
                     await db.commit()
                     logger.info(
                         f"Updated {len(slots_data)} slots for printer {printer_id}"
@@ -226,7 +285,7 @@ class PluginManager:
                     )
 
                 active_spool_synced = False
-                if active_spool_id_raw is not None:
+                if active_spool_id_raw is not None and not per_slot_spools:
                     slot_result = await db.execute(
                         select(PrinterSlot)
                         .options(selectinload(PrinterSlot.assignment))
@@ -255,46 +314,9 @@ class PluginManager:
                             db.add(assignment)
                             await db.flush()
 
-                        assignment.spool_id = active_spool_id
-                        assignment.present = active_spool_id is not None
-                        assignment.updated_at = datetime.now(timezone.utc)
-                        active_meta = dict(assignment.meta or {})
-                        active_meta["active_spool_id"] = active_spool_id
-
-                        if active_spool_id is not None:
-                            spool_res = await db.execute(
-                                select(Spool)
-                                .options(
-                                    selectinload(Spool.filament).selectinload(
-                                        Filament.manufacturer
-                                    ),
-                                    selectinload(Spool.filament)
-                                    .selectinload(Filament.filament_colors)
-                                    .selectinload(FilamentColor.color),
-                                )
-                                .where(Spool.id == active_spool_id)
-                            )
-                            active_spool = spool_res.scalar_one_or_none()
-
-                            if active_spool is not None:
-                                assignment.spool = active_spool
-
-                                filament = active_spool.filament
-                                if filament is not None:
-                                    if filament.material_type:
-                                        active_meta["tray_type"] = filament.material_type
-
-                                    if filament.filament_colors:
-                                        first_color = filament.filament_colors[0].color
-                                        if first_color and first_color.hex_code:
-                                            active_meta["tray_color"] = (
-                                                first_color.hex_code.replace("#", "")[:6]
-                                            )
-                        else:
-                            active_meta.pop("tray_type", None)
-                            active_meta.pop("tray_color", None)
-
-                        assignment.meta = active_meta
+                        assignment.meta = await self._apply_spool_to_assignment(
+                            db, assignment, active_spool_id, assignment.meta or {}
+                        )
                         active_spool_synced = True
 
                 if active_spool_synced:
