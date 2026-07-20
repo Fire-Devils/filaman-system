@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Der Umschalter auf der Filament-Kachel im Dashboard war unabhängig von der Spracheinstellung fest auf Englisch beschriftet ('All / Active / Used'). Die Beschriftungen sind jetzt übersetzt und die Schaltflächen übernehmen die Farben des eingestellten Farbschemas – zuvor war die aktive Schaltfläche fest auf weiße Schrift gesetzt und dadurch in einem der Themes kaum lesbar." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The scope toggle on the dashboard's Filaments tile was always labelled in English ('All / Active / Used') regardless of the selected language. The labels are now translated and the buttons follow the active colour scheme – previously the selected button used hard-coded white text, making it hard to read in one of the themes." }
+        ]
+      }
+    },
+    {
       "version": "1.2.27",
       "date": "",
       "changes": {

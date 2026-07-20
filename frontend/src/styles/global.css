@@ -616,6 +616,31 @@ body {
   box-shadow: var(--glow);
 }
 
+/* Scope pills (dashboard stat tiles) */
+.fm-scope-pill {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.65rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--font-sans);
+}
+
+.fm-scope-pill:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.fm-scope-pill.active {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--btn-primary-text);
+}
+
 /* Section dividers */
 .fm-divider {
   border: none;
