@@ -20,6 +20,13 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   valign.map(item => ({ ...item, id: `${prefix}-${item.id}` })),
   active,
 )
+
+const templateInputAttributes = {
+  spellcheck: false,
+  autocomplete: 'off',
+  autocapitalize: 'off',
+  autocorrect: 'off',
+}
 ---
 
 <div id="tab-panel-designer" class="settings-section" style="display: none;">
@@ -144,7 +151,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-title-tpl">Title Format</label><button class="ds-syntax-btn" id="ds-title-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-title-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.name}" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+        <textarea id="ds-title-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.name}" {...templateInputAttributes}></textarea>
         <div class="ds-token-area" id="ds-title-token-area"></div>
       </div>
 
@@ -181,7 +188,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-title2-tpl">Subtitle Format</label><button class="ds-syntax-btn" id="ds-title2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.type}" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.type}" {...templateInputAttributes}></textarea>
           <div class="ds-token-area" id="ds-title2-token-area"></div>
         </div>
       </div>
@@ -227,7 +234,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       <div><label class="fm-label" id="dsl-qr-link">Link mode</label><div class="ds-pill-group" id="ds-qr-link-group" data-value="spool">
         {pill([{ value: 'url', id: 'dsp-qr-url', label: 'Custom URL' }, { value: 'spool', id: 'dsp-qr-spool', label: 'Spool URL' }], 'spool').map(item => <button class:list={['ds-pill-btn', item.active && 'active']} data-val={item.value} id={item.id} type="button">{item.label}</button>)}
       </div></div>
-      <div id="ds-qr-url-wrap" style="display:none;"><label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label><input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com"></div>
+      <div id="ds-qr-url-wrap" style="display:none;"><label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label><input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com" {...templateInputAttributes}></div>
       <div class="ds-two-col-row">
         <div class="ds-field-col"><label class="fm-label" id="dsl-qr-pos">Position</label><div class="ds-pill-group" id="ds-qr-pos-group" data-value="right">
           {pill([{ value: 'left', id: 'dsp-qr-left', label: 'Left' }, { value: 'right', id: 'dsp-qr-right', label: 'Right' }], 'right').map(item => <button class:list={['ds-pill-btn', 'ds-icon-pill-btn', item.active && 'active']} data-val={item.value} id={item.id} type="button" title={item.label} aria-label={item.label}>
@@ -284,7 +291,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info-tpl">Information Format</label><button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C" {...templateInputAttributes}></textarea>
         <div class="ds-token-area" id="ds-info-token-area"></div>
       </div>
       <div class="ds-secondary-toggle" id="ds-info2-toggle"><label class="fm-checkbox-group ds-secondary-check"><input type="checkbox" id="ds-info2-show"><span id="dsl-info2-show">Side Column</span></label></div>
@@ -313,7 +320,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info2-tpl">Side Column Format</label><button class="ds-syntax-btn" id="ds-info2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}" {...templateInputAttributes}></textarea>
           <div class="ds-token-area" id="ds-info2-token-area"></div>
         </div>
       </div>
