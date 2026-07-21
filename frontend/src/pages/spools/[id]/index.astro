@@ -176,7 +176,7 @@ const { id } = Astro.params
 
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay, renderFieldPlainText } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay, renderFieldPlainText, renderUnknownFieldPlainText } from '../../../lib/extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
@@ -211,43 +211,6 @@ const { id } = Astro.params
     let pendingSlotTimeout: ReturnType<typeof setTimeout> | null = null
     let pendingSlotPollTimer: ReturnType<typeof setTimeout> | null = null
     
-    function flattenObject(obj: any, prefix = '', res: Record<string, string> = {}) {
-      for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-          const val = obj[key]
-          const newKey = prefix ? `${prefix}.${key}` : key
-          if (typeof val === 'object' && val !== null) {
-            flattenObject(val, newKey, res)
-          } else {
-            res[newKey] = String(val)
-          }
-        }
-      }
-      return res
-    }
-
-    function unflattenObject(data: any) {
-      const result: Record<string, any> = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current: any = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
-    }
-
     function getCsrfToken() {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
@@ -425,7 +388,6 @@ const { id } = Astro.params
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.extraFields')}</div>
             <div>
               ${(() => {
-                const flatFields = flattenObject(spool.custom_fields)
                 const sysKeys = new Set(Object.keys(spoolSystemFieldMap))
                 const sysRows = Object.values(spoolSystemFieldMap)
                   .filter(sysDef => spool.custom_fields[sysDef.key] !== undefined)
@@ -441,12 +403,12 @@ const { id } = Astro.params
                     </div>
                   `
                   }).join('')
-                const customRows = Object.entries(flatFields)
-                  .filter(([key]) => !sysKeys.has(key) && ![...sysKeys].some(sk => key.startsWith(sk + '.')))
+                const customRows = Object.entries(spool.custom_fields)
+                  .filter(([key]) => !sysKeys.has(key))
                   .map(([key, value]) => `
                   <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
-                    <span style="color: var(--text-muted); font-weight: 500;">${key}</span>
-                    <span style="font-family: monospace; word-break: break-all;">${value}</span>
+                    <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(key)}</span>
+                    <span style="font-family: monospace; word-break: break-all;">${escapeExtraFieldHtml(renderUnknownFieldPlainText(value))}</span>
                   </div>
                   `).join('')
                 return sysRows + customRows
@@ -536,28 +498,26 @@ const { id } = Astro.params
         efForPrint.push({ key, label, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
       }
 
-      const spoolFlat = spool.custom_fields ? flattenObject(spool.custom_fields) : {}
-      const spoolSystemKeys = Object.keys(spoolSystemFieldMap)
+      const spoolCustom = spool.custom_fields ?? {}
       for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
         if (isBuiltInLabelField('spool', key, def.label)) continue
-        efForPrint.push({ key: `spool.${key}`, label: def.label, value: renderFieldPlainText(def, spool.custom_fields?.[key]), source: 'spool' })
+        efForPrint.push({ key: `spool.${key}`, label: def.label, value: renderFieldPlainText(def, spoolCustom[key]), source: 'spool' })
       }
       // Also include any spool custom fields not covered by system definitions
-      for (const [key, value] of Object.entries(spoolFlat)) {
-        if (!spoolSystemFieldMap[key] && !spoolSystemKeys.some(systemKey => key.startsWith(`${systemKey}.`)) && !isBuiltInLabelField('spool', key)) {
-          efForPrint.push({ key: `spool.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
+      for (const [key, value] of Object.entries(spoolCustom)) {
+        if (!spoolSystemFieldMap[key] && !isBuiltInLabelField('spool', key)) {
+          efForPrint.push({ key: `spool.${key}`, label: key, value: renderUnknownFieldPlainText(value), source: 'spool' })
         }
       }
-      const filamentFlat = spool.filament?.custom_fields ? flattenObject(spool.filament.custom_fields) : {}
-      const filamentSystemKeys = Object.keys(filamentSystemFieldMap)
+      const filamentCustom = spool.filament?.custom_fields ?? {}
       for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
         if (isBuiltInLabelField('filament', key, def.label)) continue
-        efForPrint.push({ key: `filament.${key}`, label: def.label, value: renderFieldPlainText(def, spool.filament?.custom_fields?.[key]), source: 'filament' })
+        efForPrint.push({ key: `filament.${key}`, label: def.label, value: renderFieldPlainText(def, filamentCustom[key]), source: 'filament' })
       }
       // Also include any filament custom fields not covered by system definitions
-      for (const [key, value] of Object.entries(filamentFlat)) {
-        if (!filamentSystemFieldMap[key] && !filamentSystemKeys.some(systemKey => key.startsWith(`${systemKey}.`)) && !isBuiltInLabelField('filament', key)) {
-          efForPrint.push({ key: `filament.${key}`, label: key, value: value !== undefined && value !== null ? String(value) : '', source: 'filament' })
+      for (const [key, value] of Object.entries(filamentCustom)) {
+        if (!filamentSystemFieldMap[key] && !isBuiltInLabelField('filament', key)) {
+          efForPrint.push({ key: `filament.${key}`, label: key, value: renderUnknownFieldPlainText(value), source: 'filament' })
         }
       }
       sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))

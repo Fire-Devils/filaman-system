@@ -564,7 +564,15 @@ describe('renderFieldPlainText', () => {
 })
 
 describe('renderUnknownFieldPlainText', () => {
+  it('keeps unknown arrays at one readable top-level value', () => {
+    expect(renderUnknownFieldPlainText(['One', 'Two'])).toBe('One, Two')
+  })
+
   it('keeps unknown range-like objects readable for labels', () => {
     expect(renderUnknownFieldPlainText({ min: 12.5, max: 88.5 })).toBe('12.5–88.5')
+  })
+
+  it('serializes unknown objects without object stringification', () => {
+    expect(renderUnknownFieldPlainText({ alpha: 'A', beta: 'B' })).toBe('{"alpha":"A","beta":"B"}')
   })
 })
