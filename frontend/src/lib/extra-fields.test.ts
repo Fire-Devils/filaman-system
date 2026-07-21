@@ -494,6 +494,32 @@ describe('renderFieldInput — date', () => {
   })
 })
 
+describe('renderFieldInput — direct API structured fallback', () => {
+  it('prefills unexpected objects as JSON instead of object coercion', () => {
+    const html = renderFieldInput(
+      field({ field_type: 'text' }),
+      { profile: 'balanced', temps: [195, 220] },
+    )
+
+    expect(html).toContain('data-type="structured-json"')
+    expect(html).toContain('{&quot;profile&quot;:&quot;balanced&quot;,&quot;temps&quot;:[195,220]}')
+    expect(html).not.toContain('[object Object]')
+  })
+
+  it('collects unchanged structured JSON without converting it to a string', () => {
+    const input = {
+      dataset: { key: 'structured', type: 'structured-json' },
+      value: '{"profile":"balanced","temps":[195,220]}',
+    }
+    const root = {
+      querySelectorAll: (selector: string) => selector === '.system-field-input' ? [input] : [],
+    } as unknown as ParentNode
+    const result = collectSystemFieldValues(root)
+
+    expect(result?.flat.structured).toEqual({ profile: 'balanced', temps: [195, 220] })
+  })
+})
+
 describe('renderFieldInput — url', () => {
   it('renders url input', () => {
     const html = renderFieldInput(field({ field_type: 'url' }), null)
@@ -835,6 +861,34 @@ describe('renderFieldDisplay — text (default)', () => {
     const result = renderFieldDisplay(field({ field_type: 'text' }), 'Hello <World>')
     expect(result).toContain('&lt;World&gt;')
     expect(result).not.toContain('<World>')
+  })
+})
+
+describe('renderFieldDisplay — direct API structured fallback', () => {
+  it('renders an unexpected object as escaped JSON instead of object coercion', () => {
+    const result = renderFieldDisplay(
+      field({ field_type: 'text' }),
+      { profile: '<balanced>', temps: [195, 220] },
+    )
+
+    expect(result).toContain('&lt;balanced&gt;')
+    expect(result).toContain('&quot;temps&quot;:[195,220]')
+    expect(result).not.toContain('[object Object]')
+  })
+
+  it('renders an unexpected array, including nested structures, as readable text', () => {
+    const result = renderFieldDisplay(
+      field({ field_type: 'url' }),
+      ['A', { profile: 'balanced' }, [195, 220]],
+    )
+
+    expect(result).toBe('A, {&quot;profile&quot;:&quot;balanced&quot;}, [195,220]')
+    expect(result).not.toContain('[object Object]')
+  })
+
+  it('keeps unexpected structured values readable in label text', () => {
+    expect(renderFieldPlainText(field({ field_type: 'number' }), { value: 42 }))
+      .toBe('{"value":42}')
   })
 })
 

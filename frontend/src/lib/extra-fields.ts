@@ -287,6 +287,15 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
     } else if (input.dataset.type === 'number') {
       const value = input.value.trim()
       if (value) flat[key] = Number(value)
+    } else if (input.dataset.type === 'structured-json') {
+      const value = input.value.trim()
+      if (value) {
+        try {
+          flat[key] = JSON.parse(value)
+        } catch {
+          flat[key] = value
+        }
+      }
     } else {
       let value = input.value.trim()
       if (input.dataset.type === 'datetime') {
@@ -372,6 +381,17 @@ export function renderFieldInput(
   flat: Record<string, unknown> = {}
 ): string {
   const key = escapeHtml(field.key)
+  const isStructured = typeof rawValue === 'object' && rawValue !== null
+  const isExpectedRange = field.field_type === 'range' && !Array.isArray(rawValue)
+  const isExpectedMultiselect = field.field_type === 'multiselect' && Array.isArray(rawValue)
+  if (
+    field.field_type !== 'formula'
+    && isStructured
+    && !isExpectedRange
+    && !isExpectedMultiselect
+  ) {
+    return `<input type="text" class="fm-input system-field-input" data-key="${key}" data-type="structured-json" value="${escapeHtml(JSON.stringify(rawValue))}" />`
+  }
   const cfg = field.config ?? {}
   const dp = cfg.decimal_places ?? null
   const step = dpToStep(dp)
@@ -506,6 +526,12 @@ export function renderFieldInput(
  */
 export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): string {
   if (value === null || value === undefined) return '—'
+  const isStructured = typeof value === 'object'
+  const isExpectedRange = field.field_type === 'range' && !Array.isArray(value)
+  const isExpectedMultiselect = field.field_type === 'multiselect' && Array.isArray(value)
+  if (isStructured && !isExpectedRange && !isExpectedMultiselect) {
+    return escapeHtml(renderUnknownFieldPlainText(value))
+  }
   const cfg = field.config ?? {}
   const unit = cfg.unit ?? ''
   const dp = cfg.decimal_places ?? null
@@ -560,6 +586,12 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
  */
 export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown): string {
   if (value === null || value === undefined) return ''
+  const isStructured = typeof value === 'object'
+  const isExpectedRange = field.field_type === 'range' && !Array.isArray(value)
+  const isExpectedMultiselect = field.field_type === 'multiselect' && Array.isArray(value)
+  if (isStructured && !isExpectedRange && !isExpectedMultiselect) {
+    return renderUnknownFieldPlainText(value)
+  }
   const cfg = field.config ?? {}
   const unit = cfg.unit ? ` ${cfg.unit}` : ''
   const dp = cfg.decimal_places ?? null
@@ -595,7 +627,11 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
 
 export function renderUnknownFieldPlainText(value: unknown): string {
   if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return value.map(String).join(', ')
+  if (Array.isArray(value)) {
+    return value.map(item => (
+      item !== null && typeof item === 'object' ? JSON.stringify(item) : String(item)
+    )).join(', ')
+  }
   if (typeof value === 'object') {
     const objectValue = value as Record<string, unknown>
     if ('min' in objectValue || 'max' in objectValue) {
