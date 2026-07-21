@@ -98,6 +98,11 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
   import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../../lib/label-preset-storage'
 
   // Auto-collapse nav sidebar on the print page when the viewport is narrow —
   // the print page needs maximum horizontal space and the overlay would cover the controls.
@@ -419,11 +424,12 @@ export function getStaticPaths() {
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
   const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+  await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(syncOutputPreview)
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
   const ACTIVE_TAB_KEY = 'filaman-label-active-tab'
-  const DESIGNER_PRESETS_KEY = 'filaman-spool-label-presets-v1'
+  const DESIGNER_PRESETS_KEY = SPOOL_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-spool-label-designer-v1'
 
   // --- Tab switching ---
@@ -503,7 +509,7 @@ export function getStaticPaths() {
     return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'spool', ef.key, ef.label))
   }
 
-  const designerEditor = initLabelDesignerEditor({
+  const designerEditor = await initLabelDesignerEditor({
     extraFields: getDesignerExtraFields(),
     entityType: 'spool',
     getFilamentColorHex: () => labelData.hex_code,
@@ -515,7 +521,7 @@ export function getStaticPaths() {
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Spool',
-    crossPresetsKey: 'filaman-filament-label-presets-v1',
+    crossPresetsKey: FILAMENT_LABEL_PRESETS_KEY,
     ownPresetsLabel: translate('spools.dsPresetsOwnGroup', 'Spool presets'),
     crossPresetsLabel: translate('spools.dsPresetsCrossGroupFilament', 'Filament presets'),
   })

@@ -17,6 +17,7 @@ import {
   getReadableTextColorForColors,
   getFilamentSwatchColors,
 } from './label-template'
+import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 
 const PRESETS_KEY = 'filaman-label-presets-v1'
 const PRESETS_SCHEMA_VERSION = 1
@@ -389,11 +390,40 @@ function loadPresets(key = PRESETS_KEY): LabelPreset[] {
   }
 }
 
-function savePresets(presets: LabelPreset[], setItem: (key: string, value: string) => boolean, key = PRESETS_KEY) {
+function savePresetsLocally(presets: LabelPreset[], setItem: (key: string, value: string) => boolean, key = PRESETS_KEY) {
   return setItem(key, JSON.stringify({
     version: PRESETS_SCHEMA_VERSION,
     presets,
   }))
+}
+
+async function upsertPreset(
+  presets: LabelPreset[],
+  preset: LabelPreset,
+  setItem: (key: string, value: string) => boolean,
+  key = PRESETS_KEY,
+) {
+  const previous = safeGetLocalStorageItem(key)
+  const savedLocally = savePresetsLocally(presets, setItem, key)
+  if (!savedLocally) return false
+  if (await saveLabelPreset(key, preset)) return true
+  if (previous === null) safeRemoveLocalStorageItem(key)
+  else setItem(key, previous)
+  return false
+}
+
+async function removePreset(
+  presets: LabelPreset[],
+  name: string,
+  setItem: (key: string, value: string) => boolean,
+  key = PRESETS_KEY,
+) {
+  const previous = safeGetLocalStorageItem(key)
+  if (!savePresetsLocally(presets, setItem, key)) return false
+  if (await deleteLabelPreset(key, name)) return true
+  if (previous === null) safeRemoveLocalStorageItem(key)
+  else setItem(key, previous)
+  return false
 }
 
 export function localizeLabelDesignerEditor(translate: (key: string, fallback: string) => string, entityLabel = 'Spool') {
@@ -530,13 +560,24 @@ export function localizeLabelDesignerEditor(translate: (key: string, fallback: s
   }
 }
 
-export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): LabelDesignerEditorController {
+export async function initLabelDesignerEditor(options: LabelDesignerEditorOptions): Promise<LabelDesignerEditorController> {
   let extraFields = options.extraFields ?? []
   const setItem = options.safeSetLocalStorage ?? safeSetLocalStorageItem
   const effectivePresetsKey = options.presetsKey
   const effectiveSettingsKey = options.settingsKey
   const getPresets = () => loadPresets(effectivePresetsKey)
-  const storePresets = (presets: LabelPreset[]) => savePresets(presets, setItem, effectivePresetsKey)
+  const storePreset = (presets: LabelPreset[], preset: LabelPreset) => upsertPreset(
+    presets,
+    preset,
+    setItem,
+    effectivePresetsKey,
+  )
+  const deletePreset = (presets: LabelPreset[], name: string) => removePreset(
+    presets,
+    name,
+    setItem,
+    effectivePresetsKey,
+  )
   const getCrossPresets = options.crossPresetsKey
     ? () => loadPresets(options.crossPresetsKey!)
     : null
@@ -549,6 +590,7 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   const entityLabel = options.entityLabel ?? 'Spool'
   let activePresetName: string | null = null
   let activePresetSettings: LabelDesignerSettings | null = null
+  let presetMutationInFlight = false
   let previewTimer: ReturnType<typeof setTimeout> | null = null
 
   const saveDesignerSettings = () => {
@@ -735,6 +777,11 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     // Load/Delete: disabled for cross-type selections or empty
     if (loadBtn) loadBtn.disabled = !selectedVal
     if (deleteBtn) deleteBtn.disabled = !selectedVal || isCrossSelected
+    if (presetMutationInFlight) {
+      btn.disabled = true
+      if (loadBtn) loadBtn.disabled = true
+      if (deleteBtn) deleteBtn.disabled = true
+    }
   }
 
   function getFilamentInverseChipTheme() {
@@ -1130,32 +1177,37 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     }
     updateSaveBtn()
   })
-  const saveNamedPreset = () => {
+  const saveNamedPreset = async () => {
+    if (presetMutationInFlight) return
     const name = presetNameInput?.value.trim() ?? ''
     if (!name) return
     const presets = getPresets()
     const idx = presets.findIndex(p => p.name === name)
     const settings = readDesignerSettingsFromForm()
-    const settingsSaved = persistDesignerSettings(settings, setItem, effectiveSettingsKey)
+    persistDesignerSettings(settings, setItem, effectiveSettingsKey)
     if (idx >= 0) presets[idx].settings = settings
     else presets.push({ name, settings })
-    const presetsSaved = storePresets(presets)
-    if (!settingsSaved || !presetsSaved) {
-      console.warn('Failed to save label preset; browser storage may be full or blocked')
-      updateSaveBtn()
-      return
-    }
-    activePresetName = name
-    activePresetSettings = cloneSettings(settings)
-    markPresetDirty(false)
-    refreshPresetList(name)
+    presetMutationInFlight = true
     updateSaveBtn()
+    try {
+      if (!await storePreset(presets, { name, settings })) {
+        window.alert(translate('spools.dsPresetsSaveFailed', 'Label preset could not be saved to the database. Please try again.'))
+        return
+      }
+      activePresetName = name
+      activePresetSettings = cloneSettings(settings)
+      markPresetDirty(false)
+      refreshPresetList(name)
+    } finally {
+      presetMutationInFlight = false
+      updateSaveBtn()
+    }
   }
-  presetSaveBtn?.addEventListener('click', saveNamedPreset)
+  presetSaveBtn?.addEventListener('click', () => { void saveNamedPreset() })
   presetNameInput?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    saveNamedPreset()
+    void saveNamedPreset()
   })
   presetLoadBtn?.addEventListener('click', () => {
     const val = presetList?.value ?? ''
@@ -1196,18 +1248,29 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     updateSaveBtn()
     notifyChange()
   })
-  presetDeleteBtn?.addEventListener('click', () => {
+  presetDeleteBtn?.addEventListener('click', async () => {
+    if (presetMutationInFlight) return
     const val = presetList?.value ?? ''
     // Cross-type presets are read-only — ignore delete
     if (!val || val.startsWith(CROSS_OPTION_PREFIX)) return
-    storePresets(getPresets().filter(p => p.name !== val))
-    if (activePresetName === val) {
-      activePresetName = null
-      activePresetSettings = null
-      markPresetDirty(false)
+    presetMutationInFlight = true
+    updateSaveBtn()
+    try {
+      if (!await deletePreset(getPresets().filter(p => p.name !== val), val)) {
+        window.alert(translate('spools.dsPresetsDeleteFailed', 'Label preset could not be deleted from the database. Please try again.'))
+        return
+      }
+      if (activePresetName === val) {
+        activePresetName = null
+        activePresetSettings = null
+        markPresetDirty(false)
+      }
+      if (presetNameInput) presetNameInput.value = ''
+      refreshPresetList()
+    } finally {
+      presetMutationInFlight = false
+      updateSaveBtn()
     }
-    if (presetNameInput) presetNameInput.value = ''
-    refreshPresetList()
   })
 
   wireResetBtn('dsr-logo', () => {
@@ -1287,17 +1350,12 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   })
 
   refreshTokenAreas()
-  // One-time migration: presets previously saved under the legacy key (filaman-label-presets-v1)
-  // are spool presets. Copy them to the new spool key on first load, then delete the old key.
-  if (effectivePresetsKey === 'filaman-spool-label-presets-v1') {
-    migrateStoredValue(PRESETS_KEY, effectivePresetsKey, setItem)
-  }
   if (effectiveSettingsKey === 'filaman-spool-label-designer-v1') {
     migrateStoredValue(DESIGNER_KEY, effectiveSettingsKey, setItem)
   }
   const initialPresets = getPresets()
   if (!initialPresets.some(p => p.name === 'Default')) {
-    storePresets([{
+    const defaultPreset: LabelPreset = {
       name: 'Default',
       settings: {
         logo: { show: true, spaceMm: 5.5, scaleToFit: true, manualSizeMm: 6, align: 'center' },
@@ -1324,7 +1382,8 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
         },
         info2: { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
       },
-    }, ...initialPresets])
+    }
+    await storePreset([defaultPreset, ...initialPresets], defaultPreset)
   }
   refreshPresetList()
   loadSettings()
