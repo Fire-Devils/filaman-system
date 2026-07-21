@@ -684,6 +684,18 @@ class TestEvaluateFormula:
     def test_validation_allows_variable_backed_expression(self):
         validate_formula({"/": [{"var": "remaining_weight_g"}, 2]})
 
+    def test_validation_rejects_excessive_depth(self):
+        formula: dict[str, Any] = {"var": "id"}
+        for _ in range(33):
+            formula = {"!!": [formula]}
+        with pytest.raises(ValueError, match="depth limit"):
+            validate_formula(formula)
+
+    def test_validation_rejects_excessive_node_count(self):
+        formula = {"merge": list(range(513))}
+        with pytest.raises(ValueError, match="node limit"):
+            validate_formula(formula)
+
     def test_var_paths_only_returns_var_operands(self):
         formula = {"cat": [{"var": "custom_fields.note"}, "custom_fields.decoy"]}
         assert formula_var_paths(formula) == {"custom_fields.note"}

@@ -1,7 +1,15 @@
 import pytest
 from sqlalchemy import select
 
-from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+from app.models import (
+    Color,
+    Filament,
+    FilamentColor,
+    Manufacturer,
+    Spool,
+    SpoolStatus,
+    SystemExtraField,
+)
 
 
 async def _create_manufacturer(db_session, name: str = "Test Manufacturer", **kwargs) -> Manufacturer:
@@ -669,6 +677,103 @@ class TestFilamentCRUD:
         assert data["manufacturer"]["id"] == manufacturer.id
         assert data["spool_count"] == 1
         assert data["colors"][0]["color_id"] == color.id
+        assert "derived" not in data
+
+    @pytest.mark.asyncio
+    async def test_get_filament_preserves_derived_json_types_by_surface(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(
+            db_session,
+            manufacturer.id,
+            custom_fields={"structured": {"min": 190, "max": 220}},
+        )
+        db_session.add_all(
+            [
+                SystemExtraField(
+                    target_type="filament",
+                    key="structured",
+                    label="Structured",
+                    field_type="formula",
+                    formula={"var": "custom_fields.structured"},
+                    show_in_detail=True,
+                    include_in_api=False,
+                ),
+                SystemExtraField(
+                    target_type="filament",
+                    key="choices",
+                    label="Choices",
+                    field_type="formula",
+                    formula={"merge": [["PLA", "PETG"], ["ABS"]]},
+                    show_in_detail=True,
+                    include_in_api=False,
+                ),
+                SystemExtraField(
+                    target_type="filament",
+                    key="enabled",
+                    label="Enabled",
+                    field_type="formula",
+                    formula={"==": [1, 1]},
+                    show_in_detail=True,
+                    include_in_api=False,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        default_response = await client.get(f"/api/v1/filaments/{filament.id}")
+        detail_response = await client.get(
+            f"/api/v1/filaments/{filament.id}?derived_for=detail"
+        )
+
+        assert default_response.status_code == 200
+        assert "derived" not in default_response.json()
+        assert detail_response.status_code == 200
+        assert detail_response.json()["derived"] == {
+            "structured": {"min": 190, "max": 220},
+            "choices": ["PLA", "PETG", "ABS"],
+            "enabled": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_get_filament_omits_empty_derived_result(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        db_session.add(
+            SystemExtraField(
+                target_type="filament",
+                key="missing",
+                label="Missing",
+                field_type="formula",
+                formula={"var": "custom_fields.missing"},
+                include_in_api=True,
+            )
+        )
+        await db_session.commit()
+
+        response = await client.get(f"/api/v1/filaments/{filament.id}")
+
+        assert response.status_code == 200
+        assert "derived" not in response.json()
+
+    @pytest.mark.asyncio
+    async def test_get_filament_rejects_unknown_derived_surface(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+
+        response = await client.get(
+            f"/api/v1/filaments/{filament.id}?derived_for=unknown"
+        )
+
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_update_filament(self, auth_client, db_session):

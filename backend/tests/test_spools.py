@@ -473,6 +473,43 @@ class TestSpoolCRUD:
         assert data["filament"]["derived"]["label_name"] == "Derived PLA / PLA"
 
     @pytest.mark.asyncio
+    async def test_get_spool_omits_empty_spool_and_filament_derived_results(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+        db_session.add_all(
+            [
+                SystemExtraField(
+                    target_type="spool",
+                    key="missing_spool",
+                    label="Missing spool",
+                    field_type="formula",
+                    formula={"var": "custom_fields.missing"},
+                    include_in_api=True,
+                ),
+                SystemExtraField(
+                    target_type="filament",
+                    key="missing_filament",
+                    label="Missing filament",
+                    field_type="formula",
+                    formula={"var": "custom_fields.missing"},
+                    include_in_api=True,
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        response = await client.get(f"/api/v1/spools/{spool.id}")
+
+        assert response.status_code == 200
+        assert "derived" not in response.json()
+        assert "derived" not in response.json()["filament"]
+
+    @pytest.mark.asyncio
     async def test_update_spool(self, auth_client, db_session):
         client, csrf_token = auth_client
 

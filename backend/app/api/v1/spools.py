@@ -730,11 +730,15 @@ async def get_spool(
     filament_formula_fields = await load_formula_fields(db, "filament", derived_for)
     spool_data = SpoolResponse.model_validate(spool).model_dump()
     if spool_formula_fields:
-        spool_data["derived"] = compute_derived(spool, "spool", spool_formula_fields)
+        derived = compute_derived(spool, "spool", spool_formula_fields)
+        if derived:
+            spool_data["derived"] = derived
     if filament_formula_fields and spool.filament and spool_data.get("filament"):
-        spool_data["filament"]["derived"] = compute_derived(
+        filament_derived = compute_derived(
             spool.filament, "filament", filament_formula_fields
         )
+        if filament_derived:
+            spool_data["filament"]["derived"] = filament_derived
     return spool_data
 
 

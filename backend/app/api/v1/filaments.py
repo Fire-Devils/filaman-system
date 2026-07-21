@@ -995,7 +995,9 @@ async def get_filament(
         "colors": sorted(filament.filament_colors, key=lambda fc: fc.position),
     }
     if formula_fields:
-        filament_data["derived"] = compute_derived(filament, "filament", formula_fields)
+        derived = compute_derived(filament, "filament", formula_fields)
+        if derived:
+            filament_data["derived"] = derived
     return FilamentDetailResponse.model_validate(filament_data)
 
 
