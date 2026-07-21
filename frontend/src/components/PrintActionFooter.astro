@@ -27,4 +27,95 @@ const {
   </div>
   <button id={printButtonId} class="fm-btn fm-btn-primary" type="button" onclick="filamanPrint()" data-i18n={printI18n}>{printLabel}</button>
   <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
+
+  <div class="print-help">
+    <button class="print-help-trigger" type="button" aria-describedby="print-help-content">
+      <span class="print-help-icon" aria-hidden="true">i</span>
+      <span data-i18n="labelPrint.printHelpTitle">Printing issues?</span>
+    </button>
+    <div class="print-help-content" id="print-help-content" role="tooltip">
+      <p data-i18n="labelPrint.printHelpIntro">Use 100% scale and a matching paper size for small labels.</p>
+      <ul>
+        <li data-i18n="labelPrint.printHelpBrave">Brave: if output is blank or offset, use the system dialog or Export PDF.</li>
+        <li data-i18n="labelPrint.printHelpFirefox">Firefox: if the top is clipped, turn off headers and footers.</li>
+      </ul>
+    </div>
+  </div>
 </div>
+
+<style is:global>
+  .print-help {
+    position: relative;
+    align-self: flex-start;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .print-help-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .print-help-trigger:hover,
+  .print-help-trigger:focus-visible {
+    color: var(--text);
+  }
+
+  .print-help-trigger:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .print-help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    color: #dc2626;
+    font-size: 0.68rem;
+    line-height: 1;
+  }
+
+  .print-help-content {
+    position: absolute;
+    z-index: 20;
+    bottom: calc(100% + 8px);
+    left: 0;
+    display: none;
+    width: 272px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-md);
+    color: var(--text);
+  }
+
+  .print-help:hover .print-help-content,
+  .print-help:focus-within .print-help-content {
+    display: block;
+  }
+
+  .print-help-content p { margin: 0 0 6px; }
+
+  .print-help-content ul {
+    margin: 0 0 0 2px;
+    padding-left: 16px;
+  }
+
+  .print-help-content li + li { margin-top: 4px; }
+</style>

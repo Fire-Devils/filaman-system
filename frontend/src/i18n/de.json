@@ -1315,6 +1315,10 @@
     "suffixFilament": "Filament",
     "exporting": "Exportiere…",
     "pngExportFailed": "PNG-Export fehlgeschlagen. Bitte prüfen, ob alle Label-Bilder und Logos korrekt geladen wurden.",
-    "pdfExportFailed": "PDF-Export fehlgeschlagen. Bitte prüfen, ob alle Label-Bilder und Logos korrekt geladen wurden."
+    "pdfExportFailed": "PDF-Export fehlgeschlagen. Bitte prüfen, ob alle Label-Bilder und Logos korrekt geladen wurden.",
+    "printHelpTitle": "Druckprobleme?",
+    "printHelpIntro": "F\u00fcr kleine Etiketten 100 % Skalierung und die exakt passende Papiergr\u00f6\u00dfe verwenden.",
+    "printHelpBrave": "Brave: Wenn die Ausgabe leer, versetzt oder abgeschnitten ist, PDF exportieren oder eine etwas kleinere passende Labelgr\u00f6\u00dfe verwenden.",
+    "printHelpFirefox": "Firefox: Wenn der Systemdialog ein leeres Blatt hinzuf\u00fcgt, den Firefox-Druckdialog verwenden oder PDF exportieren."
   }
 }
