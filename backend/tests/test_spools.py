@@ -393,6 +393,42 @@ class TestSpoolCRUD:
         assert data["id"] == spool.id
         assert data["filament"]["id"] == filament.id
         assert data["filament"]["manufacturer"]["id"] == manufacturer.id
+        assert "derived" not in data
+        assert "derived" not in data["filament"]
+
+    @pytest.mark.asyncio
+    async def test_get_spool_selects_derived_fields_by_surface(self, auth_client, db_session):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        filament.custom_fields = {"temperature": 215}
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+        db_session.add(
+            SystemExtraField(
+                target_type="spool",
+                key="temperature_label",
+                label="Temperature label",
+                field_type="formula",
+                formula={"cat": [{"var": "filament.custom_fields.temperature"}, " C"]},
+                show_in_detail=True,
+                show_in_template=False,
+                include_in_api=False,
+            )
+        )
+        await db_session.commit()
+
+        api_response = await client.get(f"/api/v1/spools/{spool.id}")
+        detail_response = await client.get(
+            f"/api/v1/spools/{spool.id}?derived_for=detail"
+        )
+        template_response = await client.get(
+            f"/api/v1/spools/{spool.id}?derived_for=template"
+        )
+
+        assert "derived" not in api_response.json()
+        assert detail_response.json()["derived"] == {"temperature_label": "215 C"}
+        assert "derived" not in template_response.json()
 
     @pytest.mark.asyncio
     async def test_get_spool_includes_spool_and_filament_derived_fields(self, auth_client, db_session):

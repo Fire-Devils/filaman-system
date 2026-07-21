@@ -661,7 +661,7 @@ export function getStaticPaths() {
       try {
         const [defs, filRes] = await Promise.all([
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
-          fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
+          fetch(`/api/v1/filaments/${id}?derived_for=template`, { credentials: 'include' }),
         ])
         const allDefinitions = (Array.isArray(defs) ? defs : (defs.items || []))
           .map((definition: SystemExtraFieldDef) => ({

@@ -692,7 +692,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     ids.forEach(id => previewContainer.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
 
     const filamentResults = await Promise.allSettled(ids.map(async id => {
-        const r = await fetch(`/api/v1/filaments/${id}`, { credentials: 'include' })
+        const r = await fetch(`/api/v1/filaments/${id}?derived_for=template`, { credentials: 'include' })
         if (!r.ok) throw new Error(`Failed to load filament ${id}: ${r.status}`)
         return await r.json()
       }))

@@ -41,6 +41,8 @@ from app.services.derived_fields import (
     build_formula_context,
     compute_derived,
     evaluate_formula,
+    formula_var_paths,
+    validate_formula,
 )
 
 
@@ -671,6 +673,21 @@ class TestEvaluateFormula:
     def test_division_by_zero_returns_none(self):
         assert evaluate_formula({"/": [1, 0]}, {}) is None
 
+    def test_validation_rejects_unknown_operator(self):
+        with pytest.raises(ValueError, match="Unsupported JSON Logic operator"):
+            validate_formula({"nonexistent_op": [1, 2]})
+
+    def test_validation_rejects_literal_runtime_failure(self):
+        with pytest.raises(ZeroDivisionError):
+            validate_formula({"/": [1, 0]})
+
+    def test_validation_allows_variable_backed_expression(self):
+        validate_formula({"/": [{"var": "remaining_weight_g"}, 2]})
+
+    def test_var_paths_only_returns_var_operands(self):
+        formula = {"cat": [{"var": "custom_fields.note"}, "custom_fields.decoy"]}
+        assert formula_var_paths(formula) == {"custom_fields.note"}
+
 
 # ============================================================================
 # build_formula_context — spool
@@ -718,17 +735,16 @@ class TestBuildFormulaContextSpool:
         ctx2 = build_formula_context(_make_spool(location_id=7), "spool")
         assert ctx2["location_id"] == 7
 
-    def test_custom_fields_flattened(self):
+    def test_custom_fields_nested_for_json_logic_paths(self):
         spool = _make_spool(custom_fields={"notes": "test note", "batch": "B001"})
         ctx = build_formula_context(spool, "spool")
-        assert ctx["custom_fields.notes"] == "test note"
-        assert ctx["custom_fields.batch"] == "B001"
+        assert ctx["custom_fields"] == {"notes": "test note", "batch": "B001"}
+        assert evaluate_formula({"var": "custom_fields.notes"}, ctx) == "test note"
 
     def test_custom_fields_none_safe(self):
         spool = _make_spool(custom_fields=None)
         ctx = build_formula_context(spool, "spool")
-        # Should not raise; no custom_fields.* keys
-        assert not any(k.startswith("custom_fields.") for k in ctx)
+        assert ctx["custom_fields"] == {}
 
     def test_no_filament_attribute(self):
         spool = _make_spool(filament=None)
@@ -837,11 +853,16 @@ class TestBuildFormulaContextFilament:
         ctx = build_formula_context(fil, "filament")
         assert "manufacturer" not in ctx
 
-    def test_custom_fields_flattened(self):
+    def test_custom_fields_nested_for_json_logic_paths(self):
         fil = _make_filament(custom_fields={"temp_min": 200, "temp_max": 230})
         ctx = build_formula_context(fil, "filament")
-        assert ctx["custom_fields.temp_min"] == 200
-        assert ctx["custom_fields.temp_max"] == 230
+        assert ctx["custom_fields"] == {"temp_min": 200, "temp_max": 230}
+        assert evaluate_formula({"var": "custom_fields.temp_min"}, ctx) == 200
+
+    def test_spool_formula_reads_nested_filament_custom_field(self):
+        fil = _make_filament(custom_fields={"temp_min": 205})
+        ctx = build_formula_context(_make_spool(filament=fil), "spool")
+        assert evaluate_formula({"var": "filament.custom_fields.temp_min"}, ctx) == 205
 
     def test_shop_url_exposed(self):
         fil = _make_filament(shop_url="https://example.com/filament")

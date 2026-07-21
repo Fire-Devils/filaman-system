@@ -338,7 +338,7 @@ export function getStaticPaths() {
 
   async function fetchSpoolApiData() {
     try {
-      const response = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
+      const response = await fetch(`/api/v1/spools/${id}?derived_for=template`, { credentials: 'include' })
       if (!response.ok) return null
       const spool = await response.json()
       return spool

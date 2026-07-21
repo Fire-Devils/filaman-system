@@ -9,14 +9,36 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from json_logic import add_operation, jsonLogic
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
     from app.models.system_extra_field import SystemExtraField
 
 logger = logging.getLogger(__name__)
+
+DerivedSurface = Literal["api", "detail", "template"]
+
+# Explicitly omit operators such as ``method`` and ``log``. Formula fields are
+# persisted configuration, so the evaluator should expose a small data-only
+# language rather than every capability offered by the Python package.
+ALLOWED_OPERATORS = frozenset(
+    {
+        "==", "===", "!=", "!==", ">", ">=", "<", "<=", "!!", "!",
+        "in", "cat", "substr", "+", "-", "*", "/", "%", "min", "max",
+        "merge", "if", "?:", "and", "or", "filter", "map", "reduce",
+        "all", "none", "some", "var", "missing", "missing_some",
+        "hue_from_hex", "floor", "abs", "round", "coalesce", "upper",
+        "lower", "trim", "length", "left", "right", "year", "month",
+        "day", "hour", "minute", "second", "timestamp", "date_only",
+        "time_only", "today", "days_between", "hours_between",
+    }
+)
+MAX_FORMULA_DEPTH = 32
+MAX_FORMULA_NODES = 512
 
 
 # ---------------------------------------------------------------------------
@@ -255,9 +277,7 @@ def build_formula_context(entity: Any, target_type: str) -> dict[str, Any]:
             "spool_material": entity.spool_material,
             "low_weight_threshold_g": entity.low_weight_threshold_g,
         }
-        # Flatten custom_fields into top-level context
-        for k, v in (entity.custom_fields or {}).items():
-            ctx[f"custom_fields.{k}"] = v
+        ctx["custom_fields"] = dict(entity.custom_fields or {})
 
         # Nested filament sub-context
         fil = getattr(entity, "filament", None)
@@ -306,8 +326,7 @@ def _filament_context(fil: Any) -> dict[str, Any]:
         ctx["color_hex"] = None
         ctx["colors"] = []
 
-    for k, v in (fil.custom_fields or {}).items():
-        ctx[f"custom_fields.{k}"] = v
+    ctx["custom_fields"] = dict(fil.custom_fields or {})
 
     mfr = getattr(fil, "manufacturer", None)
     if mfr is not None:
@@ -319,6 +338,45 @@ def _filament_context(fil: Any) -> dict[str, Any]:
     return ctx
 
 
+def validate_formula(formula: dict[str, Any]) -> None:
+    """Validate shape, operators, size, and literal evaluation failures."""
+    if not formula:
+        raise ValueError("Formula must be a non-empty JSON Logic object")
+
+    nodes = 0
+
+    def walk(value: Any, depth: int = 0) -> None:
+        nonlocal nodes
+        nodes += 1
+        if nodes > MAX_FORMULA_NODES:
+            raise ValueError(f"Formula exceeds the {MAX_FORMULA_NODES}-node limit")
+        if depth > MAX_FORMULA_DEPTH:
+            raise ValueError(f"Formula exceeds the {MAX_FORMULA_DEPTH}-level depth limit")
+        if isinstance(value, list):
+            for item in value:
+                walk(item, depth + 1)
+            return
+        if not isinstance(value, dict):
+            return
+        if len(value) != 1:
+            raise ValueError("Each JSON Logic expression must contain exactly one operator")
+        operator, operands = next(iter(value.items()))
+        if operator not in ALLOWED_OPERATORS:
+            raise ValueError(f"Unsupported JSON Logic operator: {operator}")
+        walk(operands, depth + 1)
+
+    walk(formula)
+    # Literal-only expressions can be evaluated safely. Variable-backed rules
+    # are checked structurally here and evaluated against real/sample data later.
+    if not formula_var_paths(formula):
+        evaluate_formula_strict(formula, {})
+
+
+def evaluate_formula_strict(formula: dict[str, Any], context: dict[str, Any]) -> Any:
+    """Evaluate a validated expression and propagate evaluation errors."""
+    return jsonLogic(formula, context)
+
+
 def evaluate_formula(formula: dict[str, Any], context: dict[str, Any]) -> Any:
     """Evaluate a JSON Logic expression against *context*.
 
@@ -327,7 +385,7 @@ def evaluate_formula(formula: dict[str, Any], context: dict[str, Any]) -> Any:
     entire response.
     """
     try:
-        return jsonLogic(formula, context)
+        return evaluate_formula_strict(formula, context)
     except Exception:
         logger.debug("Formula evaluation failed: formula=%r context_keys=%s", formula, list(context))
         return None
@@ -350,3 +408,47 @@ def compute_derived(
             if value is not None:
                 result[field.key] = value
     return result
+
+
+async def load_formula_fields(
+    db: AsyncSession,
+    target_type: str,
+    surface: DerivedSurface = "api",
+) -> list[SystemExtraField]:
+    """Load formula definitions exposed on one native FilaMan surface."""
+    from app.models.system_extra_field import SystemExtraField
+
+    exposure_column = {
+        "api": SystemExtraField.include_in_api,
+        "detail": SystemExtraField.show_in_detail,
+        "template": SystemExtraField.show_in_template,
+    }[surface]
+    result = await db.execute(
+        select(SystemExtraField).where(
+            SystemExtraField.target_type == target_type,
+            SystemExtraField.field_type == "formula",
+            SystemExtraField.formula.is_not(None),
+            exposure_column.is_(True),
+        )
+    )
+    return list(result.scalars().all())
+
+
+def formula_var_paths(formula: object) -> set[str]:
+    """Return only actual JSON Logic ``var`` references from an expression."""
+    if isinstance(formula, list):
+        paths: set[str] = set()
+        for item in formula:
+            paths.update(formula_var_paths(item))
+        return paths
+    if not isinstance(formula, dict):
+        return set()
+    paths = set()
+    for operator, operands in formula.items():
+        if operator == "var":
+            candidate = operands[0] if isinstance(operands, list) and operands else operands
+            if isinstance(candidate, str):
+                paths.add(candidate)
+        else:
+            paths.update(formula_var_paths(operands))
+    return paths

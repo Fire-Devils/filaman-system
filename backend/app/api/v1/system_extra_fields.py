@@ -12,12 +12,17 @@ from app.api.v1.schemas_system_extra_field import (
     SystemExtraFieldResponse,
     SystemExtraFieldUpdate,
     validate_field_type_config,
+    validate_formula_definition,
 )
 from app.core.cache import response_cache
 from app.core.database import get_db
 from app.models import Filament, Spool
 from app.models.system_extra_field import SystemExtraField
-from app.services.derived_fields import evaluate_formula
+from app.services.derived_fields import (
+    evaluate_formula_strict,
+    formula_var_paths,
+    validate_formula,
+)
 from app.services.system_extra_field_compatibility import (
     is_existing_value_compatible,
     resolve_custom_field_value,
@@ -209,7 +214,6 @@ async def get_system_extra_fields(
     "",
     response_model=SystemExtraFieldResponse,
     dependencies=[RequirePermission("admin:system")],
-)
 async def create_system_extra_field(
     field: SystemExtraFieldCreate,
     db: AsyncSession = Depends(get_db),
@@ -254,11 +258,6 @@ async def create_system_extra_field(
         incompatible_count=incompatible_count,
         sample_record_ids=sample_record_ids,
     )
-
-    # Validate formula if provided
-    if field.formula is not None:
-        _validate_formula(field.formula)
-
     new_field = SystemExtraField(**field.model_dump())
     db.add(new_field)
     await db.commit()
@@ -315,9 +314,19 @@ async def update_system_extra_field(
             sample_record_ids=sample_record_ids,
         )
 
-    # Validate formula if being updated
-    if "formula" in update_dict and update_dict["formula"] is not None:
-        _validate_formula(update_dict["formula"])
+    effective_formula = update_dict.get("formula", field.formula)
+    if effective_field_type != field.field_type and "formula" in {
+        effective_field_type,
+        field.field_type,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Converting an existing field to or from formula is not supported",
+        )
+    try:
+        validate_formula_definition(effective_field_type, effective_formula)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     for key, value in update_dict.items():
         setattr(field, key, value)
@@ -344,15 +353,12 @@ async def delete_system_extra_field(
     # Reference protection: block deletion if any formula field references this key
     if field.formula is None:
         formula_refs = await db.execute(
-            select(SystemExtraField).where(
-                SystemExtraField.target_type == field.target_type,
-                SystemExtraField.formula.is_not(None),
-            )
+            select(SystemExtraField).where(SystemExtraField.formula.is_not(None))
         )
         referencing = [
             f.key
             for f in formula_refs.scalars().all()
-            if f.formula and _key_in_formula(field.key, f.formula)
+            if f.formula and _formula_references_field(field, f)
         ]
         if referencing:
             raise HTTPException(
@@ -379,24 +385,18 @@ async def delete_system_extra_field(
 # Formula utilities
 # ---------------------------------------------------------------------------
 
-def _validate_formula(formula: dict) -> None:
-    """Raise HTTP 400 if the formula is not a non-empty dict or fails a dry-run."""
-    if not formula:
-        raise HTTPException(status_code=400, detail="Formula must be a non-empty JSON Logic object")
-    # Dry-run with empty context to catch obvious syntax errors
-    result = evaluate_formula(formula, {})
-    # None is fine (missing context data); any non-exception result is valid
-    _ = result
-
-
-def _key_in_formula(key: str, formula: object) -> bool:
-    """Recursively check if *key* appears as a string value anywhere in *formula*."""
-    if isinstance(formula, str):
-        return formula == key
-    if isinstance(formula, list):
-        return any(_key_in_formula(key, item) for item in formula)
-    if isinstance(formula, dict):
-        return any(_key_in_formula(key, v) for v in formula.values())
+def _formula_references_field(
+    field: SystemExtraField,
+    formula_field: SystemExtraField,
+) -> bool:
+    paths = formula_var_paths(formula_field.formula)
+    if field.target_type == "spool" and formula_field.target_type == "spool":
+        return f"custom_fields.{field.key}" in paths
+    if field.target_type == "filament":
+        if formula_field.target_type == "filament":
+            return f"custom_fields.{field.key}" in paths
+        if formula_field.target_type == "spool":
+            return f"filament.custom_fields.{field.key}" in paths
     return False
 
 
@@ -408,7 +408,8 @@ def _key_in_formula(key: str, formula: object) -> bool:
 async def preview_formula(body: FormulaPreviewRequest) -> FormulaPreviewResponse:
     """Evaluate a JSON Logic formula against a sample context and return the result."""
     try:
-        result = evaluate_formula(body.formula, body.context)
+        validate_formula(body.formula)
+        result = evaluate_formula_strict(body.formula, body.context)
         return FormulaPreviewResponse(result=result)
     except Exception as exc:
         return FormulaPreviewResponse(result=None, error=str(exc))

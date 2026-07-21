@@ -146,7 +146,7 @@ const { id } = Astro.params
       try {
         const signal = getAbortSignal()
         const [response, sysFieldsRes] = await Promise.all([
-          fetch(`/api/v1/filaments/${id}`, { credentials: 'include', signal }),
+          fetch(`/api/v1/filaments/${id}?derived_for=detail`, { credentials: 'include', signal }),
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal }),
         ])
 
@@ -319,10 +319,10 @@ const { id } = Astro.params
           return `
           <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
             <span style="display: flex; align-items: center; gap: 6px;">
-              <span style="color: var(--text-muted); font-style: italic;">${label}</span>
+              <span style="color: var(--text-muted); font-style: italic;">${escapeHtml(String(label))}</span>
               <span style="font-size: 0.7rem; opacity: 0.6; font-family: monospace;">ƒ</span>
             </span>
-            <span style="font-family: monospace; word-break: break-all;">${value}</span>
+            <span style="font-family: monospace; word-break: break-all;">${escapeHtml(renderUnknownFieldPlainText(value))}</span>
           </div>
           `
         }).join('')
@@ -399,7 +399,7 @@ const { id } = Astro.params
 
         try {
           // First attempt to delete normally
-          let response = await fetch(`/api/v1/filaments/${f.id}`, {
+          let response = await fetch(`/api/v1/filaments/${f.id}?derived_for=detail`, {
             method: 'DELETE',
             headers: { 'X-CSRF-Token': getCsrfToken() },
             credentials: 'include',
@@ -420,7 +420,7 @@ const { id } = Astro.params
             if (!confirmCascade) return
 
             // Attempt to delete with force flag
-            response = await fetch(`/api/v1/filaments/${f.id}?force=true`, {
+            response = await fetch(`/api/v1/filaments/${f.id}?force=true&derived_for=detail`, {
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',

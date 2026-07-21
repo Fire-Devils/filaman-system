@@ -25,7 +25,6 @@ class SystemExtraField(Base, TimestampMixin):
     config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     # Formula fields (formula != NULL → computed at read time, not stored in custom_fields)
     formula: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # JSON Logic expression
-    show_in_list: Mapped[bool] = mapped_column(nullable=False, default=True)
     show_in_detail: Mapped[bool] = mapped_column(nullable=False, default=True)
     show_in_template: Mapped[bool] = mapped_column(nullable=False, default=False)
     include_in_api: Mapped[bool] = mapped_column(nullable=False, default=False)

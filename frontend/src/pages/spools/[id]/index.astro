@@ -231,7 +231,7 @@ const { id } = Astro.params
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [spoolRes, statusesRes, locationsData, sysFieldsRes, filamentSysFieldsRes] = await fetchSequential([
-          () => fetch(`/api/v1/spools/${id}`, { credentials: 'include', signal: getAbortSignal() }),
+          () => fetch(`/api/v1/spools/${id}?derived_for=detail`, { credentials: 'include', signal: getAbortSignal() }),
           () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() }),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').then(d => d.items).catch(() => []),
           () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() }),
@@ -440,10 +440,10 @@ const { id } = Astro.params
                 return `
                   <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
                     <span style="display: flex; align-items: center; gap: 6px;">
-                      <span style="color: var(--text-muted); font-style: italic;">${label}</span>
+                      <span style="color: var(--text-muted); font-style: italic;">${escapeHtml(String(label))}</span>
                       <span style="font-size: 0.7rem; opacity: 0.6; font-family: monospace;">ƒ</span>
                     </span>
-                    <span style="font-family: monospace; word-break: break-all;">${value}</span>
+                    <span style="font-family: monospace; word-break: break-all;">${escapeHtml(renderUnknownFieldPlainText(value))}</span>
                   </div>
                 `
               }).join('')}

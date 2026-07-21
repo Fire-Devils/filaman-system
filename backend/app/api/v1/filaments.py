@@ -1,12 +1,11 @@
 import logging
-from typing import Any
+from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, or_, select, literal_column
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
@@ -20,7 +19,6 @@ from app.api.v1.schemas_filament import (
     ColorCreate,
     ColorResponse,
     ColorUpdate,
-    FilamentColorEntry,
     FilamentColorResponse,
     FilamentColorsReplace,
     FilamentCreate,
@@ -44,7 +42,7 @@ from app.models import (
     SpoolStatus,
     SystemExtraField,
 )
-from app.services.derived_fields import compute_derived
+from app.services.derived_fields import compute_derived, load_formula_fields
 
 logger = logging.getLogger(__name__)
 
@@ -958,7 +956,12 @@ async def create_filament(
 
 
 @router_filaments.get("/{filament_id}", response_model=FilamentDetailResponse)
-async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep):
+async def get_filament(
+    filament_id: int,
+    db: DBSession,
+    principal: PrincipalDep,
+    derived_for: Literal["api", "detail", "template"] = Query("api"),
+):
     result = await db.execute(
         select(Filament)
         .where(Filament.id == filament_id)
@@ -984,14 +987,7 @@ async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep)
     spool_count = spool_count_result.scalar() or 0
 
     # Compute formula-derived fields
-    formula_fields_result = await db.execute(
-        select(SystemExtraField).where(
-            SystemExtraField.target_type == "filament",
-            SystemExtraField.formula.is_not(None),
-            SystemExtraField.include_in_api == True,  # noqa: E712
-        )
-    )
-    formula_fields = list(formula_fields_result.scalars().all())
+    formula_fields = await load_formula_fields(db, "filament", derived_for)
     filament_data = {
         **filament.__dict__,
         "manufacturer": filament.manufacturer,

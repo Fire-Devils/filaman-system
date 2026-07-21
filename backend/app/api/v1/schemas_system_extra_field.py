@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.services.derived_fields import validate_formula
+
 VALID_FIELD_TYPES = frozenset({
     "text", "number", "range",
     "dropdown", "checkbox", "formula",
@@ -109,18 +111,28 @@ class SystemExtraFieldBase(BaseModel):
             "min_bound (number|null), max_bound (number|null), max_length (int|null)."
         ),
     )
+    # Formula fields
     formula: dict[str, Any] | None = Field(
         None,
-        description="JSON Logic expression; non-null marks this as a formula field",
+        exclude_if=lambda value: value is None,
+        description="JSON Logic expression for formula fields",
     )
-    show_in_list: bool = Field(True, description="Show derived value in list views")
-    show_in_detail: bool = Field(True, description="Show derived value in detail views")
+    show_in_detail: bool = Field(
+        True,
+        exclude_if=lambda value: value is True,
+        description="Show the derived value in native detail views",
+    )
     show_in_template: bool = Field(
-        False, description="Expose derived value to label template tokens"
+        False,
+        exclude_if=lambda value: value is False,
+        description="Expose the derived value to label templates",
     )
     include_in_api: bool = Field(
-        False, description="Include derived value in API responses"
+        False,
+        exclude_if=lambda value: value is False,
+        description="Include the derived value in default entity API responses",
     )
+
 
 class SystemExtraFieldCreate(SystemExtraFieldBase):
     source: str | None = Field(
@@ -134,6 +146,7 @@ class SystemExtraFieldCreate(SystemExtraFieldBase):
             raise ValueError("target_type must be 'filament' or 'spool'")
         validate_custom_field_path(self.key)
         validate_field_type_config(self.field_type, self.options, self.config)
+        validate_formula_definition(self.field_type, self.formula)
         return self
 
 
@@ -152,7 +165,6 @@ class SystemExtraFieldUpdate(BaseModel):
     options: list[str] | None = Field(None, description="Options for dropdown/multiselect fields")
     config: dict[str, Any] | None = Field(None, description="Type-specific config")
     formula: dict[str, Any] | None = Field(None, description="JSON Logic expression")
-    show_in_list: bool | None = Field(None)
     show_in_detail: bool | None = Field(None)
     show_in_template: bool | None = Field(None)
     include_in_api: bool | None = Field(None)
@@ -173,3 +185,18 @@ class SystemExtraFieldResponse(SystemExtraFieldBase):
 
     id: int
     source: str | None = None
+
+
+def validate_formula_definition(
+    field_type: str,
+    formula: dict[str, Any] | None,
+) -> None:
+    if field_type == "formula":
+        if formula is None:
+            raise ValueError("field_type='formula' requires a formula")
+        try:
+            validate_formula(formula)
+        except (ArithmeticError, TypeError) as exc:
+            raise ValueError(f"Formula evaluation failed: {exc}") from exc
+    elif formula is not None:
+        raise ValueError("formula is only valid when field_type='formula'")
