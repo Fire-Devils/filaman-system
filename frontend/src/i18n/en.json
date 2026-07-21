@@ -476,6 +476,7 @@
     "dsPresets": "Label Presets",
     "dsPresetsSaved": "Saved presets",
     "dsPresetsLoad": "Load",
+    "dsPresetsLoaded": "Loaded",
     "dsPresetsDelete": "Delete selected preset",
     "dsPresetsName": "Preset name",
     "dsPresetsSaveNew": "Save as New",

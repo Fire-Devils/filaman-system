@@ -477,6 +477,7 @@
     "dsPresets": "Label-Vorlagen",
     "dsPresetsSaved": "Gespeicherte Vorlagen",
     "dsPresetsLoad": "Laden",
+    "dsPresetsLoaded": "Geladen",
     "dsPresetsDelete": "Ausgewählte Vorlage löschen",
     "dsPresetsName": "Vorlagenname",
     "dsPresetsSaveNew": "Als Neu speichern",

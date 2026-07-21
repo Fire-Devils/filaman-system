@@ -37,7 +37,7 @@ const templateInputAttributes = {
         <label class="fm-label" id="dsl-preset-saved">Saved presets</label>
         <div class="preset-control-row">
           <select id="ds-preset-list" class="fm-select preset-select"></select>
-          <button id="ds-preset-load-btn" class="preset-action-btn" type="button">Load</button>
+          <button id="ds-preset-load-btn" class="preset-action-btn preset-action-btn-inactive preset-load-state-btn" type="button">Load</button>
           <button id="ds-preset-delete-btn" class="preset-action-btn preset-action-btn-danger preset-action-btn-icon" type="button" title="Delete selected preset" aria-label="Delete selected preset">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
           </button>
@@ -47,7 +47,7 @@ const templateInputAttributes = {
         <label class="fm-label" id="dsl-preset-name">Preset name</label>
         <div class="preset-control-row">
           <input type="text" id="ds-preset-name-input" class="fm-input preset-name-input" placeholder="My label">
-          <button id="ds-preset-save-btn" class="preset-action-btn preset-action-btn-primary" type="button">Save as New</button>
+          <button id="ds-preset-save-btn" class="preset-action-btn preset-action-btn-inactive preset-save-state-btn" type="button">Save as New</button>
         </div>
       </div>
     </div>
