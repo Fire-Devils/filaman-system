@@ -403,6 +403,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             container: spoolProfileContainer,
             endpoint: '/filamentdb/spool-profiles',
             placeholder: t('filamentdbLookup.searchSpoolProfile'),
+            minChars: 0,
+            pageSize: 100,
             renderItem: (item: any) => {
               const weight = item.empty_weight_g ? `${item.empty_weight_g}g` : ''
               const material = item.spool_material || ''

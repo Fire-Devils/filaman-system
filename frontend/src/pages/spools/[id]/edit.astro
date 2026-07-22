@@ -482,6 +482,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
             container: spoolProfileContainer,
             endpoint: '/filamentdb/spool-profiles',
             placeholder: t('filamentdbLookup.searchSpoolProfile'),
+            minChars: 0,
+            pageSize: 100,
             renderItem: (item: any) => {
               const weight = item.empty_weight_g ? `${item.empty_weight_g}g` : ''
               const material = item.spool_material || ''

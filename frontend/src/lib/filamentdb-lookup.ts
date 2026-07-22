@@ -99,6 +99,8 @@ export interface LookupOptions<T = unknown> {
   minChars?: number
   /** Debounce delay in ms (default: 300) */
   debounceMs?: number
+  /** Number of results to request per search (default: 20) */
+  pageSize?: number
   /** Additional query params */
   extraParams?: Record<string, string | number>
   /** Initial search query — triggers a search immediately after creation */
@@ -135,6 +137,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
     },
     minChars = 2,
     debounceMs = 300,
+    pageSize = 20,
     extraParams = {},
     initialQuery,
     fuzzyScore,
@@ -181,7 +184,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
     if (query) {
       params.set('search', query)
     }
-    params.set('page_size', '20')
+    params.set('page_size', String(pageSize))
     for (const [k, v] of Object.entries(extraParams)) {
       params.set(k, String(v))
     }
@@ -296,6 +299,10 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
     input.value = initialQuery
     // Small delay to let the DOM settle
     setTimeout(() => doSearch(initialQuery), 50)
+  } else if (minChars === 0) {
+    // No minimum length: show the full list right away instead of waiting
+    // for the user to focus the input.
+    setTimeout(() => doSearch(''), 50)
   }
 
   // ── Public API ─────────────────────────────────────────────────
