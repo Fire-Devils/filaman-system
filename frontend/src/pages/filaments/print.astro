@@ -82,7 +82,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     writeStorageValue,
   } from '../../lib/label-print-page'
   import { isBuiltInLabelField } from '../../lib/label-extra-fields'
-  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../lib/extra-fields'
   import { t, initI18n } from '../../lib/i18n'
 
   installPrintFunction()
@@ -118,7 +117,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const previewContainer = document.getElementById('preview-container') as HTMLElement
   const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
 
-  type ExtraFieldDef = SystemExtraFieldDef
+  type ExtraFieldDef = { key: string; label: string }
   type ApiObject = Record<string, unknown>
   type ApiFilament = ApiObject & {
     id?: string | number
@@ -147,7 +146,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return typeof value === 'object' && value !== null
   }
 
-  function isExtraFieldDef(value: unknown): value is SystemExtraFieldDef {
+  function isExtraFieldDef(value: unknown): value is ExtraFieldDef {
     return isApiObject(value) && typeof value.key === 'string' && typeof value.label === 'string'
   }
 
@@ -157,17 +156,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       : isApiObject(value) && Array.isArray(value.items)
         ? value.items
         : []
-    return items.filter(isExtraFieldDef).map(def => ({
-      ...def,
-      id: typeof def.id === 'number' ? def.id : 0,
-      key: def.key,
-      label: def.label,
-      field_type: typeof def.field_type === 'string' ? def.field_type : 'text',
-    }))
-  }
-
-  function getExtraFieldDefinitionMap(): Record<string, SystemExtraFieldDef> {
-    return Object.fromEntries(efDefs.map(def => [def.key, def]))
+    return items.filter(isExtraFieldDef)
   }
 
   function saveSettings() {
@@ -241,7 +230,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       fields.set(key, { key, label: def.label, value: '', source: 'filament' })
     }
     for (const filament of filaments) {
-      for (const field of buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap())) {
+      for (const field of buildDesignerExtraFieldsFromFilament(filament)) {
         if (!field?.key || fields.has(field.key)) continue
         fields.set(field.key, field)
       }
@@ -260,9 +249,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       if (!efCheckMap[efMapKey(def.key)]?.checked) continue
       // Standard fields use shared reduced definitions; system custom fields use custom_fields[key].
       const stdDef = STANDARD_FILAMENT_EF.find(s => s.key === def.key)
-      const rawValue = stdDef
-        ? stdDef.valueFromApi(filament)
-        : (custom[def.key] !== null && custom[def.key] !== undefined ? renderFieldPlainText(def, custom[def.key]) : '')
+      const rawValue = stdDef ? stdDef.valueFromApi(filament) : (custom[def.key] !== null && custom[def.key] !== undefined ? String(custom[def.key]) : '')
       if (rawValue !== '') {
         result.push({ label: def.label, value: rawValue })
       }
@@ -333,7 +320,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       spool_width_mm: data.spool_width_mm,
       spool_material: data.spool_material,
       shop_url: data.shop_url,
-      extraFields: buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap()),
+      extraFields: buildDesignerExtraFieldsFromFilament(filament),
     })
   }
 
