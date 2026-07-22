@@ -15,6 +15,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.cache import response_cache
 from app.core.database import async_session_maker
+from app.core.shared_health import shared_health_store
 from app.models import Printer
 from app.models.plugin import InstalledPlugin
 from app.models.filament import Filament, FilamentColor
@@ -526,7 +527,7 @@ class PluginManager:
 
             result = await db.execute(
                 select(Printer).where(
-                    Printer.is_active.is_(True),
+                    Printer.is_active == True,
                     Printer.deleted_at.is_(None),
                 )
             )
@@ -550,7 +551,7 @@ class PluginManager:
         async with async_session_maker() as db:
             result = await db.execute(
                 select(Printer).where(
-                    Printer.is_active.is_(True),
+                    Printer.is_active == True,
                     Printer.deleted_at.is_(None),
                 )
             )
@@ -669,7 +670,6 @@ class PluginManager:
                     "label": fdef["label"],
                     "field_type": fdef.get("field_type", "text"),
                     "options": options,
-                    "config": fdef.get("config"),
                 }
             )
 
@@ -710,16 +710,6 @@ class PluginManager:
                         if field.field_type != fdef["field_type"]:
                             field.field_type = fdef["field_type"]
                             changed = True
-                        db_config_json = json.dumps(
-                            field.config or {}, ensure_ascii=False, sort_keys=True
-                        )
-                        new_config_json = json.dumps(
-                            fdef["config"] or {}, ensure_ascii=False, sort_keys=True
-                        )
-                        if db_config_json != new_config_json:
-                            field.config = fdef["config"]
-                            flag_modified(field, "config")
-                            changed = True
                         if changed:
                             logger.info(
                                 f"Updated {target_type}/{fdef['key']} field definition"
@@ -732,7 +722,6 @@ class PluginManager:
                                 label=fdef["label"],
                                 field_type=fdef["field_type"],
                                 options=fdef["options"],
-                                config=fdef["config"],
                                 source=driver_key,
                             )
                         )
