@@ -77,6 +77,7 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
   import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../../lib/extra-fields'
 
   function applyPrintSidebarCollapse() {
     const page = document.getElementById('fm-page')
@@ -636,17 +637,14 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
         ])
-        const allDefs: {key: string, label: string}[] = (Array.isArray(defs) ? defs : (defs.items || []))
-          .filter((def: {key: string, label: string}) => !isBuiltInLabelField('filament', def.key, def.label))
+        const allDefs: SystemExtraFieldDef[] = (Array.isArray(defs) ? defs : (defs.items || []))
+          .map((def: SystemExtraFieldDef) => ({ ...def, field_type: def.field_type || 'text' }))
+          .filter((def: SystemExtraFieldDef) => !isBuiltInLabelField('filament', def.key, def.label))
 
-        const filamentCustom: Record<string, string> = {}
+        let filamentCustom: Record<string, unknown> = {}
         if (filRes.ok) {
           const fd = await filRes.json()
-          if (fd.custom_fields) {
-            for (const [k, v] of Object.entries(fd.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) filamentCustom[k] = String(v)
-            }
-          }
+          filamentCustom = (fd.custom_fields ?? {}) as Record<string, unknown>
           mergeMissingFilamentLabelData(labelData, buildFilamentLabelDataFromApi(fd, id))
         }
 
@@ -690,7 +688,7 @@ export function getStaticPaths() {
           makeEfCheckbox({
             key: `filament.${def.key}`,
             label: def.label,
-            value: filamentCustom[def.key] ?? '',
+            value: renderFieldPlainText(def, filamentCustom[def.key]),
             source: 'filament',
           })
         }

@@ -98,6 +98,7 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
   import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../../lib/extra-fields'
 
   // Auto-collapse nav sidebar on the print page when the viewport is narrow —
   // the print page needs maximum horizontal space and the overlay would cover the controls.
@@ -906,27 +907,19 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
         ])
-        const allDefs: {key: string, label: string, target_type: string}[] = [
-          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'spool'})),
-          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'filament'})),
+        const allDefs: (SystemExtraFieldDef & {target_type: string})[] = [
+          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: SystemExtraFieldDef) => ({...d, field_type: d.field_type || 'text', target_type: 'spool'})),
+          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: SystemExtraFieldDef) => ({...d, field_type: d.field_type || 'text', target_type: 'filament'})),
         ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
         if (allDefs.length === 0) return
 
         // Attempt to get actual spool values
-        const spoolCustom: Record<string, string> = {}
-        const filamentCustom: Record<string, string> = {}
+        let spoolCustom: Record<string, unknown> = {}
+        let filamentCustom: Record<string, unknown> = {}
         const sd = apiSpoolData ?? await fetchSpoolApiData()
         if (sd) {
-          if (sd.custom_fields) {
-            for (const [k, v] of Object.entries(sd.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) spoolCustom[k] = String(v)
-            }
-          }
-          if (sd.filament?.custom_fields) {
-            for (const [k, v] of Object.entries(sd.filament.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) filamentCustom[k] = String(v)
-            }
-          }
+          spoolCustom = (sd.custom_fields ?? {}) as Record<string, unknown>
+          filamentCustom = (sd.filament?.custom_fields ?? {}) as Record<string, unknown>
         }
 
         // Populate extraFields and rebuild UI.
@@ -936,10 +929,11 @@ export function getStaticPaths() {
 
         for (const def of sortedDefs) {
           const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
+          const rawValue = valueMap[def.key]
           const ef = {
             key: `${def.target_type}.${def.key}`,
             label: def.label,
-            value: valueMap[def.key] ?? '',
+            value: renderFieldPlainText(def, rawValue),
             source: def.target_type,
           }
           extraFields.push(ef)

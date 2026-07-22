@@ -364,6 +364,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
+    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../../lib/extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../../lib/filamentdb-lookup'
@@ -463,29 +464,6 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         }
       }
       return res
-    }
-
-    function unflattenObject(data: Record<string, any>) {
-      const result: any = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              // Try to parse number if possible, else string
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
     }
 
     function renderCustomFields() {
@@ -1024,7 +1002,9 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         btnAddNewColor.parentElement!.classList.remove('hidden')
       } catch (error: any) {
         if (isAbortError(error)) return
-        await (window as any).__fmAlert?.(error.message) || alert(error.message)
+        const dialog = (window as any).__fmAlert
+        if (dialog) await dialog(error.message)
+        else alert(error.message)
       } finally {
         btnSaveNewColor.disabled = false
       }
@@ -1047,7 +1027,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       }
     }
 
-    function renderSystemFields(filamentCustomFieldsFlat: Record<string, any> = {}) {
+    function renderSystemFields(filamentCustomFieldsFlat: Record<string, any> = {}, rawFields?: Record<string, any>) {
       const container = document.getElementById('system-fields-container') as HTMLDivElement
       const grid = document.getElementById('system-fields-grid') as HTMLDivElement
       if (!systemFields || systemFields.length === 0) {
@@ -1058,31 +1038,9 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       grid.innerHTML = ''
       
       systemFields.forEach(field => {
-        const currentValue = filamentCustomFieldsFlat[field.key] !== undefined ? String(filamentCustomFieldsFlat[field.key]) : (field.default_value || '')
+        const rawValue = rawFields?.[field.key] ?? null
         const div = document.createElement('div')
-        let inputHtml = ''
-
-        switch (field.field_type) {
-          case 'number':
-            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" step="any" />`
-            break
-          case 'dropdown': {
-            const opts = (field.options || []).map((opt: string) => {
-              const selected = opt === currentValue ? ' selected' : ''
-              return `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
-            }).join('')
-            inputHtml = `<select class="fm-select system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
-            break
-          }
-          case 'checkbox': {
-            const checked = currentValue === 'true' ? ' checked' : ''
-            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"${checked} /> ${escapeHtml(field.label)}</label>`
-            break
-          }
-          default:
-            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" />`
-        }
-
+        const inputHtml = renderFieldInput(field, rawValue, filamentCustomFieldsFlat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
@@ -1090,13 +1048,6 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         }
         grid.appendChild(div)
       })
-    }
-
-    function escapeHtml(str: string) {
-      if (!str) return ''
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
     }
 
     // ── Pre-fill form with existing filament data ──
@@ -1179,10 +1130,10 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         const systemKeys = systemFields.map(field => field.key)
 
         customFields = Object.entries(flat)
-          .filter(([key]) => !systemKeys.includes(key))
+          .filter(([key]) => !systemKeys.some(sk => key === sk || key.startsWith(sk + '.')))
           .map(([key, value]) => ({ key, value: String(value) }))
           
-        renderSystemFields(flat)
+        renderSystemFields(flat, f.custom_fields)
       } else {
         customFields = []
         renderSystemFields({})
@@ -1262,19 +1213,9 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       patchData.shop_url = shopUrl || null
 
       // System Fields + Custom Fields
-      const fieldsObj: Record<string, any> = {}
-
-      document.querySelectorAll('.system-field-input').forEach((input: any) => {
-        const key = input.dataset.key
-        const type = input.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = input.checked ? 'true' : 'false'
-        } else {
-          const value = input.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
+      const systemValues = collectSystemFieldValues()
+      if (!systemValues) return
+      const fieldsObj = systemValues.flat
 
       if (customFields.length > 0) {
         customFields.forEach(f => {
@@ -1284,7 +1225,11 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         })
       }
       
-      patchData.custom_fields = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+      const cfUnflat = Object.keys(fieldsObj).length > 0 ? unflattenFieldValues(fieldsObj) : {}
+      for (const [k, v] of Object.entries(systemValues.direct)) {
+        cfUnflat[k] = v
+      }
+      patchData.custom_fields = Object.keys(cfUnflat).length > 0 ? cfUnflat : null
 
       // Build PUT /colors payload
       const colorsData = {

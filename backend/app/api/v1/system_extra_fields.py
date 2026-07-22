@@ -2,15 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache import response_cache
-from app.core.database import get_db
-from app.api.deps import RequirePermission, PrincipalDep
-from app.models.system_extra_field import SystemExtraField
+from app.api.deps import PrincipalDep, RequirePermission
 from app.api.v1.schemas_system_extra_field import (
     SystemExtraFieldCreate,
     SystemExtraFieldResponse,
     SystemExtraFieldUpdate,
+    validate_field_type_config,
 )
+from app.core.cache import response_cache
+from app.core.database import get_db
+from app.models.system_extra_field import SystemExtraField
 
 router = APIRouter()
 
@@ -115,6 +116,15 @@ async def update_system_extra_field(
 
     # Apply updates (only non-None values)
     update_dict = update_data.model_dump(exclude_unset=True)
+
+    effective_field_type = update_dict.get("field_type", field.field_type)
+    effective_options = update_dict.get("options", field.options)
+    effective_config = update_dict.get("config", field.config)
+    try:
+        validate_field_type_config(effective_field_type, effective_options, effective_config)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     for key, value in update_dict.items():
         setattr(field, key, value)
 

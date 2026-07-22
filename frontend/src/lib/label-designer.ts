@@ -6,6 +6,7 @@ import {
   type SpoolData,
 } from './label-template'
 import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
+import { renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
 import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 
@@ -346,6 +347,8 @@ export interface DesignerFlatLabelData {
   extraFields?: DesignerExtraField[]
 }
 
+type ExtraFieldDefinitionMap = Partial<Record<LabelExtraFieldSource, Record<string, SystemExtraFieldDef>>>
+
 function getApiFilamentColors(filament: any): any[] {
   const list = Array.isArray(filament?.filament_colors)
     ? filament.filament_colors
@@ -426,7 +429,7 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
   }
 }
 
-export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
+export function buildSpoolDataFromApiSpool(spool: any, fieldDefs?: ExtraFieldDefinitionMap): SpoolData {
   const fil = spool?.filament ?? {}
   const firstColor = getFirstFilamentColor(fil)
   const color = firstColor?.display_name_override
@@ -478,14 +481,14 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     low_weight_threshold_g: spool?.low_weight_threshold_g,
     stocked_in_at: formatDate(spool?.stocked_in_at),
     last_used_at: formatDate(spool?.last_used_at),
-    extraFields: buildDesignerExtraFieldsFromApiSpool(spool),
+    extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),
   })
 }
 
-export function buildDesignerExtraFieldsFromApiSpool(spool: any): DesignerExtraField[] {
+export function buildDesignerExtraFieldsFromApiSpool(spool: any, fieldDefs?: ExtraFieldDefinitionMap): DesignerExtraField[] {
   return [
-    ...flattenExtraFields(spool?.custom_fields, 'spool'),
-    ...flattenExtraFields(spool?.filament?.custom_fields, 'filament'),
+    ...flattenExtraFields(spool?.custom_fields, 'spool', '', fieldDefs?.spool),
+    ...flattenExtraFields(spool?.filament?.custom_fields, 'filament', '', fieldDefs?.filament),
   ]
 }
 
@@ -503,19 +506,25 @@ export function getFirstFilamentColor(filament: any): any {
   return {}
 }
 
-function flattenExtraFields(value: any, source: LabelExtraFieldSource, prefix = ''): DesignerExtraField[] {
+function flattenExtraFields(
+  value: any,
+  source: LabelExtraFieldSource,
+  prefix = '',
+  fieldDefs: Record<string, SystemExtraFieldDef> = {},
+): DesignerExtraField[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return []
   const fields: DesignerExtraField[] = []
   for (const [key, raw] of Object.entries(value)) {
     const path = prefix ? `${prefix}.${key}` : key
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      fields.push(...flattenExtraFields(raw, source, path))
+    const fieldDef = fieldDefs[path]
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && fieldDef?.field_type !== 'range') {
+      fields.push(...flattenExtraFields(raw, source, path, fieldDefs))
     } else {
       if (isBuiltInLabelField(source, path)) continue
       fields.push({
         key: `${source}.${path}`,
         label: path,
-        value: raw,
+        value: fieldDef ? renderFieldPlainText(fieldDef, raw) : renderUnknownFieldPlainText(raw),
         source,
       })
     }
