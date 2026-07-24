@@ -647,6 +647,22 @@ async def driver_action(
     db: DBSession,
     principal: PrincipalDep,
 ):
+    return await execute_driver_action(request, db, principal, printer_id, data)
+
+
+async def execute_driver_action(
+    request: Request,
+    db: DBSession,
+    principal: Principal,
+    printer_id: int,
+    data: DriverActionRequest,
+) -> DriverActionResponse:
+    """Run a driver action, proxying to the primary worker when needed.
+
+    Shared by the /driver/action endpoint and by callers that trigger the very
+    same action from another flow (e.g. moving a spool onto a slot location),
+    so both paths stay behaviourally identical.
+    """
     await _ensure_driver_action_permission(db, principal, data.action)
     if not _is_primary_worker():
         payload = await _proxy_to_primary(

@@ -944,6 +944,20 @@ const { id } = Astro.params
       }
     })
     
+    // Driver plugins tag the locations they create for a printer slot with
+    // "<plugin>_<printerId>_<amsId>_<trayId>". Mirrors resolve_slot_location()
+    // in backend/app/services/printer_slot_location.py.
+    function getSlotLocationRef(location: any): { printerId: number, amsId: number, trayId: number } | null {
+      const match = /^(.+)_(\d+)_(\d+)_(\d+)$/.exec(location?.identifier || '')
+      if (!match) return null
+      const cf = location.custom_fields
+      if (!cf || typeof cf !== 'object') return null
+      if (typeof cf.managed_by !== 'string' || !cf.managed_by.endsWith('_plugin')) return null
+      const printerId = parseInt(match[2])
+      if (cf.printer_id !== printerId) return null
+      return { printerId, amsId: parseInt(match[3]), trayId: parseInt(match[4]) }
+    }
+
     function showModal(type: any) {
       const container = document.getElementById('modal-container') as HTMLElement
       const title = document.getElementById('modal-title') as HTMLElement
@@ -1082,8 +1096,13 @@ const { id } = Astro.params
         const locId = (document.getElementById('field-location') as HTMLInputElement).value
         body.location_id = locId ? parseInt(locId) : null
         body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
+
+        // Moving onto a location that stands for a printer slot triggers the
+        // same driver action as the slot widget — so warn the same way first.
+        const slotRef = getSlotLocationRef(locations.find(l => String(l.id) === locId))
+        if (slotRef && !(await confirmSlotAssignProfile(slotRef.printerId))) return
       }
-      
+
       error.classList.add('hidden')
       submitBtn.disabled = true
       submitBtn.textContent = t('common.submitting')
@@ -1101,8 +1120,8 @@ const { id } = Astro.params
         })
         
         if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.message || t('spools.failedSubmit'))
+          const data = await response.json().catch(() => null)
+          throw new Error(data?.detail?.message || data?.message || t('spools.failedSubmit'))
         }
         
         container.classList.add('hidden')
@@ -1895,6 +1914,25 @@ const { id } = Astro.params
       }
     }
 
+    // Warn before assigning when no Bambu cloud profile resolves for this
+    // printer's model — the slot would otherwise get generic settings silently.
+    // Shared by the slot widget and by moving a spool onto a slot location.
+    async function confirmSlotAssignProfile(printerId: any): Promise<boolean> {
+      try {
+        const mc = await getModelCoverageForPrinter(printerId)
+        if (mc && (mc.status === 'missing' || mc.status === 'not_set')) {
+          return window.confirm(
+            `No Bambu slicer profile resolves for ${mc.model} on this printer ` +
+            `(${mc.status}). The slot will be assigned with generic settings and ` +
+            `may not match in Bambu Studio.\n\nAssign anyway?`
+          )
+        }
+      } catch (e) {
+        if (isAbortError(e)) return false
+      }
+      return true
+    }
+
     async function handleAssignSpoolToTray(slot: any, printerId: any) {
       if (!spool) return
       const idx = slot.slot_index || ''
@@ -1903,21 +1941,7 @@ const { id } = Astro.params
       const trayId = parseInt(parts[1])
       const slotIndex = `${amsId}-${trayId}`
 
-      // Warn before assigning when no Bambu cloud profile resolves for this
-      // printer's model — the slot would otherwise get generic settings silently.
-      try {
-        const mc = await getModelCoverageForPrinter(printerId)
-        if (mc && (mc.status === 'missing' || mc.status === 'not_set')) {
-          const proceed = window.confirm(
-            `No Bambu slicer profile resolves for ${mc.model} on this printer ` +
-            `(${mc.status}). The slot will be assigned with generic settings and ` +
-            `may not match in Bambu Studio.\n\nAssign anyway?`
-          )
-          if (!proceed) return
-        }
-      } catch (e) {
-        if (isAbortError(e)) return
-      }
+      if (!(await confirmSlotAssignProfile(printerId))) return
 
       // Clear any previous pending state
       clearPendingSlotAssign()

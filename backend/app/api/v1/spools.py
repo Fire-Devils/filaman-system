@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
-from app.api.v1.printers import pick_bambuddy_driver, _is_primary_worker, _proxy_to_primary
+from app.api.v1.printers import (
+    DriverActionRequest,
+    execute_driver_action,
+    pick_bambuddy_driver,
+    _is_primary_worker,
+    _proxy_to_primary,
+)
 from app.core.cache import response_cache
 from app.core.db_utils import get_next_available_id, get_next_available_ids
 from app.api.v1.schemas import PaginatedResponse
@@ -41,6 +47,10 @@ from app.models import (
     Spool,
     SpoolEvent,
     SpoolStatus,
+)
+from app.services.printer_slot_location import (
+    build_slot_filament_data,
+    resolve_slot_location,
 )
 from app.services.spool_service import SpoolService
 
@@ -969,6 +979,7 @@ async def change_status(
 async def move_location(
     spool_id: int,
     data: MoveLocationRequest,
+    request: Request,
     db: DBSession,
     principal=RequirePermission("spool_events:create_move_location"),
 ):
@@ -978,6 +989,30 @@ async def move_location(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Spool not found"},
+        )
+
+    # Locations that stand for a printer slot get the same treatment as the
+    # printer/slot widget on the spool detail page: push the filament into the
+    # tray first, and only record the move once the driver accepted it.
+    slot_ref = await resolve_slot_location(db, data.location_id)
+    if slot_ref:
+        filament_data = await build_slot_filament_data(
+            db, spool.id, slot_ref.printer_id
+        )
+        await execute_driver_action(
+            request,
+            db,
+            principal,
+            slot_ref.printer_id,
+            DriverActionRequest(
+                action="send_filament_to_tray",
+                params={
+                    "ams_id": slot_ref.ams_id,
+                    "tray_id": slot_ref.tray_id,
+                    "filament_data": filament_data,
+                    "spool_id": spool.id,
+                },
+            ),
         )
 
     event_at = data.event_at or datetime.now(timezone.utc)
