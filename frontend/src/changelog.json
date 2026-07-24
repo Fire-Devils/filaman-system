@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Die zuvor eingeführte automatische Drucker-Slot-Zuweisung beim Verschieben einer Spule auf einen Slot-Standort wurde wieder entfernt. Das Verschieben auf einen Standort setzt wie bisher nur den Standort der Spule und löst keine Aktion am Drucker aus." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The previously introduced automatic printer-slot assignment when moving a spool to a slot location has been removed again. Moving a spool to a location only sets the spool's location as before and no longer triggers any action on the printer." }
+        ]
+      }
+    },
+    {
       "version": "1.2.28",
       "date": "",
       "changes": {
