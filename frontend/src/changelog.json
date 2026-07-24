@@ -5,12 +5,10 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Wird eine Spule über 'Standort' einem Standort zugewiesen, der zu einem Drucker-Slot gehört, führt FilaMan jetzt dieselbe Zuweisung am Drucker aus wie das Drucker/Slot-Widget oben auf der Spulendetailseite – der Umweg über das Widget entfällt. Erkannt werden die Standorte, die die Treiber-Plugins beim Zuweisen selbst anlegen (z. B. 'Bambu P1S - AMS A2'). Ist der Drucker offline oder der Treiber gestoppt, wird die Zuweisung mit einer Fehlermeldung abgebrochen und der Standort der Spule bleibt unverändert. Hinweis: Bestand vor der ersten Zuweisung bereits ein namensgleicher Standort, hat das Plugin ihn ohne interne Kennung übernommen – ein solcher Standort löst die Druckerzuweisung nicht aus. Abhilfe: Standort umbenennen oder löschen, das Plugin legt ihn bei der nächsten Zuweisung korrekt neu an." },
-          { "type": "fix", "text": "Im Dialog auf der Spulendetailseite (Gewicht erfassen, Korrektur, Status ändern, Standort) wurde bei einem Fehler nur der allgemeine Hinweis 'Absenden fehlgeschlagen' angezeigt statt der konkreten Meldung des Servers. Die tatsächliche Ursache wird jetzt ausgegeben." }
+          { "type": "fix", "text": "Die zuvor eingeführte automatische Drucker-Slot-Zuweisung beim Verschieben einer Spule auf einen Slot-Standort wurde wieder entfernt. Das Verschieben auf einen Standort setzt wie bisher nur den Standort der Spule und löst keine Aktion am Drucker aus." }
         ],
         "en": [
-          { "type": "feature", "text": "Moving a spool to a location that belongs to a printer slot now performs the same assignment on the printer as the printer/slot widget at the top of the spool detail page – the detour via the widget is no longer needed. This applies to the locations the driver plugins create themselves when assigning (e.g. 'Bambu P1S - AMS A2'). If the printer is offline or its driver is stopped, the assignment is aborted with an error and the spool's location stays unchanged. Note: if a location with the same name already existed before the first assignment, the plugin adopted it without its internal marker – such a location does not trigger the printer assignment. Remedy: rename or delete the location and the plugin will recreate it correctly on the next assignment." },
-          { "type": "fix", "text": "In the dialog on the spool detail page (record weight, adjustment, change status, location) a failure only showed the generic 'Failed to submit' message instead of the server's actual one. The real cause is now shown." }
+          { "type": "fix", "text": "The previously introduced automatic printer-slot assignment when moving a spool to a slot location has been removed again. Moving a spool to a location only sets the spool's location as before and no longer triggers any action on the printer." }
         ]
       }
     },
