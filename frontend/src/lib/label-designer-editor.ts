@@ -17,6 +17,7 @@ import {
   getReadableTextColorForColors,
   getFilamentSwatchColors,
 } from './label-template'
+import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 
 const PRESETS_KEY = 'filaman-label-presets-v1'
 const PRESETS_SCHEMA_VERSION = 1
@@ -157,7 +158,7 @@ function cloneSettings(settings: LabelDesignerSettings): LabelDesignerSettings {
 
 function sameSettings(a: LabelDesignerSettings | null, b: LabelDesignerSettings) {
   if (!a) return false
-  return JSON.stringify(a) === JSON.stringify(b)
+  return JSON.stringify(mergeDesignerSettings(a)) === JSON.stringify(mergeDesignerSettings(b))
 }
 
 function setElementValue(id: string, value: string | number | boolean) {
@@ -389,11 +390,40 @@ function loadPresets(key = PRESETS_KEY): LabelPreset[] {
   }
 }
 
-function savePresets(presets: LabelPreset[], setItem: (key: string, value: string) => boolean, key = PRESETS_KEY) {
+function savePresetsLocally(presets: LabelPreset[], setItem: (key: string, value: string) => boolean, key = PRESETS_KEY) {
   return setItem(key, JSON.stringify({
     version: PRESETS_SCHEMA_VERSION,
     presets,
   }))
+}
+
+async function upsertPreset(
+  presets: LabelPreset[],
+  preset: LabelPreset,
+  setItem: (key: string, value: string) => boolean,
+  key = PRESETS_KEY,
+) {
+  const previous = safeGetLocalStorageItem(key)
+  const savedLocally = savePresetsLocally(presets, setItem, key)
+  if (!savedLocally) return false
+  if (await saveLabelPreset(key, preset)) return true
+  if (previous === null) safeRemoveLocalStorageItem(key)
+  else setItem(key, previous)
+  return false
+}
+
+async function removePreset(
+  presets: LabelPreset[],
+  name: string,
+  setItem: (key: string, value: string) => boolean,
+  key = PRESETS_KEY,
+) {
+  const previous = safeGetLocalStorageItem(key)
+  if (!savePresetsLocally(presets, setItem, key)) return false
+  if (await deleteLabelPreset(key, name)) return true
+  if (previous === null) safeRemoveLocalStorageItem(key)
+  else setItem(key, previous)
+  return false
 }
 
 export function localizeLabelDesignerEditor(translate: (key: string, fallback: string) => string, entityLabel = 'Spool') {
@@ -530,13 +560,24 @@ export function localizeLabelDesignerEditor(translate: (key: string, fallback: s
   }
 }
 
-export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): LabelDesignerEditorController {
+export async function initLabelDesignerEditor(options: LabelDesignerEditorOptions): Promise<LabelDesignerEditorController> {
   let extraFields = options.extraFields ?? []
   const setItem = options.safeSetLocalStorage ?? safeSetLocalStorageItem
   const effectivePresetsKey = options.presetsKey
   const effectiveSettingsKey = options.settingsKey
   const getPresets = () => loadPresets(effectivePresetsKey)
-  const storePresets = (presets: LabelPreset[]) => savePresets(presets, setItem, effectivePresetsKey)
+  const storePreset = (presets: LabelPreset[], preset: LabelPreset) => upsertPreset(
+    presets,
+    preset,
+    setItem,
+    effectivePresetsKey,
+  )
+  const deletePreset = (presets: LabelPreset[], name: string) => removePreset(
+    presets,
+    name,
+    setItem,
+    effectivePresetsKey,
+  )
   const getCrossPresets = options.crossPresetsKey
     ? () => loadPresets(options.crossPresetsKey!)
     : null
@@ -548,7 +589,10 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   }
   const entityLabel = options.entityLabel ?? 'Spool'
   let activePresetName: string | null = null
+  let activePresetOptionValue: string | null = null
+  let activePresetIsCross = false
   let activePresetSettings: LabelDesignerSettings | null = null
+  let presetMutationInFlight = false
   let previewTimer: ReturnType<typeof setTimeout> | null = null
 
   const saveDesignerSettings = () => {
@@ -593,6 +637,16 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     return getPresets().find(p => sameSettings(p.settings, settings)) ?? null
   }
 
+  function getPresetForOptionValue(value: string | null) {
+    if (!value) return null
+    const isCross = value.startsWith(CROSS_OPTION_PREFIX)
+    const name = isCross ? value.slice(CROSS_OPTION_PREFIX.length) : value
+    const preset = isCross
+      ? getCrossPresets?.().find(p => p.name === name)
+      : getPresets().find(p => p.name === name)
+    return preset ? { isCross, name, preset, value } : null
+  }
+
   function selectPresetName(name: string | null) {
     const list = byId<HTMLSelectElement>('ds-preset-list')
     if (!list) return
@@ -605,18 +659,35 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
 
   function syncPresetStateFromCurrentSettings() {
     const current = readDesignerSettingsFromForm()
-    const matchingPreset = findPresetMatchingSettings(current)
     const nameInput = byId<HTMLInputElement>('ds-preset-name-input')
+    const activePreset = getPresetForOptionValue(activePresetOptionValue)
+
+    if (activePreset) {
+      selectPresetName(activePreset.value)
+      markPresetDirty(
+        nameInput?.value.trim() !== activePresetName
+        || !sameSettings(activePresetSettings, current),
+      )
+      updateSaveBtn()
+      return
+    }
+
+    activePresetName = null
+    activePresetOptionValue = null
+    activePresetIsCross = false
+    activePresetSettings = null
+    const matchingPreset = findPresetMatchingSettings(current)
 
     if (matchingPreset) {
       activePresetName = matchingPreset.name
+      activePresetOptionValue = matchingPreset.name
       activePresetSettings = cloneSettings(matchingPreset.settings)
       if (nameInput) nameInput.value = matchingPreset.name
       selectPresetName(matchingPreset.name)
       markPresetDirty(false)
     } else {
-      selectPresetName(activePresetName)
-      markPresetDirty(activePresetName !== null && !sameSettings(activePresetSettings, current))
+      selectPresetName(null)
+      markPresetDirty(false)
     }
 
     updateSaveBtn()
@@ -715,26 +786,52 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     const isCrossSelected = selectedVal.startsWith(CROSS_OPTION_PREFIX)
     const currentSettings = readDesignerSettingsFromForm()
     const existingPreset = getPresets().find(p => p.name === name)
+    const activeNameUnchanged = activePresetName !== null && name === activePresetName
+    const activeSettingsUnchanged = sameSettings(activePresetSettings, currentSettings)
+    const activePresetUnchanged = activeNameUnchanged && activeSettingsUnchanged
+    const selectedPresetIsApplied = selectedVal !== ''
+      && selectedVal === activePresetOptionValue
+      && activePresetUnchanged
     if (!name) {
       btn.textContent = translate('spools.dsPresetsSaveNew', 'Save as New')
-      btn.className = 'preset-action-btn preset-action-btn-primary'
+      btn.className = 'preset-action-btn preset-action-btn-inactive preset-save-state-btn'
       btn.disabled = true
-    } else if (existingPreset && sameSettings(existingPreset.settings, currentSettings)) {
+    } else if (activePresetUnchanged || (!activePresetName && existingPreset && sameSettings(existingPreset.settings, currentSettings))) {
       btn.textContent = translate('spools.dsPresetsSavedState', 'Saved')
-      btn.className = 'preset-action-btn preset-action-btn-saved'
+      btn.className = 'preset-action-btn preset-action-btn-inactive preset-save-state-btn'
       btn.disabled = true
+    } else if (activeNameUnchanged) {
+      btn.textContent = translate('common.save', 'Save')
+      btn.className = 'preset-action-btn preset-action-btn-primary preset-save-state-btn'
+      btn.disabled = false
     } else if (existingPreset) {
       btn.textContent = translate('spools.dsPresetsOverwrite', 'Overwrite')
-      btn.className = 'preset-action-btn preset-action-btn-overwrite'
+      btn.className = 'preset-action-btn preset-action-btn-primary preset-save-state-btn'
       btn.disabled = false
     } else {
       btn.textContent = translate('spools.dsPresetsSaveNew', 'Save as New')
-      btn.className = 'preset-action-btn preset-action-btn-primary'
+      btn.className = 'preset-action-btn preset-action-btn-primary preset-save-state-btn'
       btn.disabled = false
     }
-    // Load/Delete: disabled for cross-type selections or empty
-    if (loadBtn) loadBtn.disabled = !selectedVal
+    // Keep Load available to restore a renamed or dirty preset, but show the
+    // selected preset as Loaded while its name and settings are still applied.
+    if (loadBtn) {
+      loadBtn.textContent = selectedPresetIsApplied
+        ? translate('spools.dsPresetsLoaded', 'Loaded')
+        : translate('spools.dsPresetsLoad', 'Load')
+      loadBtn.disabled = !selectedVal || selectedPresetIsApplied
+      loadBtn.className = `preset-action-btn ${loadBtn.disabled ? 'preset-action-btn-inactive' : 'preset-action-btn-primary'} preset-load-state-btn`
+    }
     if (deleteBtn) deleteBtn.disabled = !selectedVal || isCrossSelected
+    if (presetMutationInFlight) {
+      btn.disabled = true
+      btn.className = 'preset-action-btn preset-action-btn-inactive preset-save-state-btn'
+      if (loadBtn) {
+        loadBtn.disabled = true
+        loadBtn.className = 'preset-action-btn preset-action-btn-inactive preset-load-state-btn'
+      }
+      if (deleteBtn) deleteBtn.disabled = true
+    }
   }
 
   function getFilamentInverseChipTheme() {
@@ -1122,40 +1219,51 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   const presetLoadBtn = byId<HTMLButtonElement>('ds-preset-load-btn')
   const presetDeleteBtn = byId<HTMLButtonElement>('ds-preset-delete-btn')
 
-  presetNameInput?.addEventListener('input', updateSaveBtn)
-  presetList?.addEventListener('change', () => {
-    const val = presetList.value
-    if (presetNameInput) {
-      presetNameInput.value = val.startsWith(CROSS_OPTION_PREFIX) ? val.slice(CROSS_OPTION_PREFIX.length) : val
-    }
+  presetNameInput?.addEventListener('input', () => {
+    // Manual naming cancels a pending (not yet loaded) selection. Once loaded,
+    // retain the source selection so Load can restore its original name/data.
+    if (presetList && presetList.value !== activePresetOptionValue) presetList.value = ''
+    markPresetDirty(
+      activePresetName !== null
+      && (presetNameInput.value.trim() !== activePresetName
+        || !sameSettings(activePresetSettings, readDesignerSettingsFromForm())),
+    )
     updateSaveBtn()
   })
-  const saveNamedPreset = () => {
+  presetList?.addEventListener('change', updateSaveBtn)
+  const saveNamedPreset = async () => {
+    if (presetMutationInFlight) return
     const name = presetNameInput?.value.trim() ?? ''
     if (!name) return
     const presets = getPresets()
     const idx = presets.findIndex(p => p.name === name)
     const settings = readDesignerSettingsFromForm()
-    const settingsSaved = persistDesignerSettings(settings, setItem, effectiveSettingsKey)
+    persistDesignerSettings(settings, setItem, effectiveSettingsKey)
     if (idx >= 0) presets[idx].settings = settings
     else presets.push({ name, settings })
-    const presetsSaved = storePresets(presets)
-    if (!settingsSaved || !presetsSaved) {
-      console.warn('Failed to save label preset; browser storage may be full or blocked')
-      updateSaveBtn()
-      return
-    }
-    activePresetName = name
-    activePresetSettings = cloneSettings(settings)
-    markPresetDirty(false)
-    refreshPresetList(name)
+    presetMutationInFlight = true
     updateSaveBtn()
+    try {
+      if (!await storePreset(presets, { name, settings })) {
+        window.alert(translate('spools.dsPresetsSaveFailed', 'Label preset could not be saved to the database. Please try again.'))
+        return
+      }
+      activePresetName = name
+      activePresetOptionValue = name
+      activePresetIsCross = false
+      activePresetSettings = cloneSettings(settings)
+      markPresetDirty(false)
+      refreshPresetList(name)
+    } finally {
+      presetMutationInFlight = false
+      updateSaveBtn()
+    }
   }
-  presetSaveBtn?.addEventListener('click', saveNamedPreset)
+  presetSaveBtn?.addEventListener('click', () => { void saveNamedPreset() })
   presetNameInput?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    saveNamedPreset()
+    void saveNamedPreset()
   })
   presetLoadBtn?.addEventListener('click', () => {
     const val = presetList?.value ?? ''
@@ -1179,35 +1287,41 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     })
     applyDesignerSettingsToForm(settings)
     persistDesignerSettings(settings, setItem, effectiveSettingsKey)
-    if (isCross) {
-      // Cross-type load applies settings without making the source preset editable/deletable here.
-      activePresetName = null
-      activePresetSettings = null
-      markPresetDirty(false)
-      if (presetNameInput) presetNameInput.value = name
-      refreshPresetList()
-    } else {
-      activePresetName = name
-      activePresetSettings = cloneSettings(settings)
-      if (presetNameInput) presetNameInput.value = name
-      refreshPresetList(name)
-      markPresetDirty(false)
-    }
+    activePresetName = name
+    activePresetOptionValue = val
+    activePresetIsCross = isCross
+    activePresetSettings = cloneSettings(settings)
+    if (presetNameInput) presetNameInput.value = name
+    refreshPresetList(val)
+    markPresetDirty(false)
     updateSaveBtn()
     notifyChange()
   })
-  presetDeleteBtn?.addEventListener('click', () => {
+  presetDeleteBtn?.addEventListener('click', async () => {
+    if (presetMutationInFlight) return
     const val = presetList?.value ?? ''
     // Cross-type presets are read-only — ignore delete
     if (!val || val.startsWith(CROSS_OPTION_PREFIX)) return
-    storePresets(getPresets().filter(p => p.name !== val))
-    if (activePresetName === val) {
-      activePresetName = null
-      activePresetSettings = null
-      markPresetDirty(false)
+    presetMutationInFlight = true
+    updateSaveBtn()
+    try {
+      if (!await deletePreset(getPresets().filter(p => p.name !== val), val)) {
+        window.alert(translate('spools.dsPresetsDeleteFailed', 'Label preset could not be deleted from the database. Please try again.'))
+        return
+      }
+      if (!activePresetIsCross && activePresetName === val) {
+        activePresetName = null
+        activePresetOptionValue = null
+        activePresetIsCross = false
+        activePresetSettings = null
+        markPresetDirty(false)
+      }
+      if (presetNameInput) presetNameInput.value = ''
+      refreshPresetList()
+    } finally {
+      presetMutationInFlight = false
+      updateSaveBtn()
     }
-    if (presetNameInput) presetNameInput.value = ''
-    refreshPresetList()
   })
 
   wireResetBtn('dsr-logo', () => {
@@ -1287,17 +1401,12 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   })
 
   refreshTokenAreas()
-  // One-time migration: presets previously saved under the legacy key (filaman-label-presets-v1)
-  // are spool presets. Copy them to the new spool key on first load, then delete the old key.
-  if (effectivePresetsKey === 'filaman-spool-label-presets-v1') {
-    migrateStoredValue(PRESETS_KEY, effectivePresetsKey, setItem)
-  }
   if (effectiveSettingsKey === 'filaman-spool-label-designer-v1') {
     migrateStoredValue(DESIGNER_KEY, effectiveSettingsKey, setItem)
   }
   const initialPresets = getPresets()
   if (!initialPresets.some(p => p.name === 'Default')) {
-    storePresets([{
+    const defaultPreset: LabelPreset = {
       name: 'Default',
       settings: {
         logo: { show: true, spaceMm: 5.5, scaleToFit: true, manualSizeMm: 6, align: 'center' },
@@ -1324,7 +1433,8 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
         },
         info2: { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
       },
-    }, ...initialPresets])
+    }
+    await storePreset([defaultPreset, ...initialPresets], defaultPreset)
   }
   refreshPresetList()
   loadSettings()

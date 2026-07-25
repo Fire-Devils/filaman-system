@@ -1,4 +1,5 @@
 import type { LabelPdfPage } from './label-export'
+import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 
 export const LABEL_SHEET_SETTINGS_KEY = 'filaman-label-sheet-settings-v1'
 export const LABEL_SHEET_PRESETS_KEY = 'filaman-label-sheet-presets-v1'
@@ -250,16 +251,47 @@ function readStoredPresets(): LabelSheetPreset[] {
   }
 }
 
-function writeStoredPresets(presets: LabelSheetPreset[]) {
+async function persistStoredPresetMutation(
+  presets: LabelSheetPreset[],
+  mutateDatabase: () => Promise<boolean>,
+): Promise<boolean> {
+  let previous: string | null
   try {
+    previous = localStorage.getItem(LABEL_SHEET_PRESETS_KEY)
     localStorage.setItem(LABEL_SHEET_PRESETS_KEY, JSON.stringify(presets.map(preset => ({
       id: preset.id,
       name: preset.name,
       settings: preset.settings,
     }))))
   } catch {
-    // Sheet printing still works when storage is blocked.
+    return false
   }
+  if (await mutateDatabase()) return true
+  try {
+    if (previous === null) localStorage.removeItem(LABEL_SHEET_PRESETS_KEY)
+    else localStorage.setItem(LABEL_SHEET_PRESETS_KEY, previous)
+  } catch {
+    // The caller reports the failed save to the user.
+  }
+  return false
+}
+
+function upsertStoredPreset(
+  presets: LabelSheetPreset[],
+  preset: LabelSheetPreset,
+  previousName?: string,
+) {
+  return persistStoredPresetMutation(
+    presets,
+    () => saveLabelPreset(LABEL_SHEET_PRESETS_KEY, preset, previousName),
+  )
+}
+
+function removeStoredPreset(presets: LabelSheetPreset[], name: string) {
+  return persistStoredPresetMutation(
+    presets,
+    () => deleteLabelPreset(LABEL_SHEET_PRESETS_KEY, name),
+  )
 }
 
 function getInput(id: string): HTMLInputElement | null {
@@ -353,14 +385,16 @@ export function bindLabelSheetControls(
   const storedOutputMode = readStoredOutputMode()
   let customPresets = readStoredPresets()
   let selectedPresetId = CUSTOM_PRESET_ID
+  let presetMutationInFlight = false
 
   const findPreset = (id: string) => [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset => preset.id === id)
 
   const syncPresetControls = () => {
     const preset = findPreset(selectedPresetId)
     if (presetName) presetName.value = preset?.name ?? ''
-    if (loadPreset) loadPreset.disabled = !preset
-    if (deletePreset) deletePreset.disabled = !preset || preset.builtin === true
+    if (loadPreset) loadPreset.disabled = presetMutationInFlight || !preset
+    if (savePreset) savePreset.disabled = presetMutationInFlight
+    if (deletePreset) deletePreset.disabled = presetMutationInFlight || !preset || preset.builtin === true
   }
 
   const renderPresetOptions = () => {
@@ -482,7 +516,8 @@ export function bindLabelSheetControls(
     onChange()
   })
 
-  savePreset?.addEventListener('click', () => {
+  savePreset?.addEventListener('click', async () => {
+    if (presetMutationInFlight) return
     const selectedPreset = findPreset(selectedPresetId)
     const selectedCustomPreset = selectedPreset && !selectedPreset.builtin
       ? customPresets.find(preset => preset.id === selectedPreset.id)
@@ -497,21 +532,47 @@ export function bindLabelSheetControls(
       settings: makePresetSettings(readFormSettings()),
     }
 
-    customPresets = existingCustom
+    const nextPresets = existingCustom
       ? customPresets.map(item => item.id === preset.id ? preset : item)
       : [...customPresets, preset]
-    selectedPresetId = preset.id
-    writeStoredPresets(customPresets)
-    renderPresetOptions()
+    presetMutationInFlight = true
+    syncPresetControls()
+    try {
+      const previousName = selectedCustomPreset?.name !== preset.name
+        ? selectedCustomPreset?.name
+        : undefined
+      if (!await upsertStoredPreset(nextPresets, preset, previousName)) {
+        window.alert(getTranslation('labelPrint.paperPresetSaveFailed', 'Paper preset could not be saved to the database. Please try again.'))
+        return
+      }
+      customPresets = nextPresets
+      selectedPresetId = preset.id
+      renderPresetOptions()
+    } finally {
+      presetMutationInFlight = false
+      syncPresetControls()
+    }
   })
 
-  deletePreset?.addEventListener('click', () => {
+  deletePreset?.addEventListener('click', async () => {
+    if (presetMutationInFlight) return
     const preset = findPreset(selectedPresetId)
     if (!preset || preset.builtin) return
-    customPresets = customPresets.filter(item => item.id !== preset.id)
-    selectedPresetId = CUSTOM_PRESET_ID
-    writeStoredPresets(customPresets)
-    renderPresetOptions()
+    const nextPresets = customPresets.filter(item => item.id !== preset.id)
+    presetMutationInFlight = true
+    syncPresetControls()
+    try {
+      if (!await removeStoredPreset(nextPresets, preset.name)) {
+        window.alert(getTranslation('labelPrint.paperPresetDeleteFailed', 'Paper preset could not be deleted from the database. Please try again.'))
+        return
+      }
+      customPresets = nextPresets
+      selectedPresetId = CUSTOM_PRESET_ID
+      renderPresetOptions()
+    } finally {
+      presetMutationInFlight = false
+      syncPresetControls()
+    }
   })
 
   outputMode?.addEventListener('change', () => {

@@ -77,6 +77,11 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
   import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../../lib/label-preset-storage'
 
   function applyPrintSidebarCollapse() {
     const page = document.getElementById('fm-page')
@@ -146,7 +151,7 @@ export function getStaticPaths() {
   const LABEL_SETTINGS_KEY = 'filaman-filament-label-settings'
   const LABEL_SETTINGS_VERSION = 2
   const ACTIVE_TAB_KEY = 'filaman-filament-label-active-tab'
-  const DESIGNER_PRESETS_KEY = 'filaman-filament-label-presets-v1'
+  const DESIGNER_PRESETS_KEY = FILAMENT_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
 
   // SpoolData for the template parser — filament fields map directly
@@ -199,6 +204,7 @@ export function getStaticPaths() {
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
   const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+  await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(syncOutputPreview)
 
   // --- Tab switching ---
@@ -275,7 +281,7 @@ export function getStaticPaths() {
     return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'filament', ef.key, ef.label))
   }
 
-  const designerEditor = initLabelDesignerEditor({
+  const designerEditor = await initLabelDesignerEditor({
     extraFields: getDesignerExtraFields(),
     entityType: 'filament',
     getFilamentColorHex: () => labelData.hex_code,
@@ -287,7 +293,7 @@ export function getStaticPaths() {
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Filament',
-    crossPresetsKey: 'filaman-spool-label-presets-v1',
+    crossPresetsKey: SPOOL_LABEL_PRESETS_KEY,
     ownPresetsLabel: translate('filaments.dsPresetsOwnGroup', 'Filament presets'),
     crossPresetsLabel: translate('filaments.dsPresetsCrossGroupSpool', 'Spool presets'),
   })

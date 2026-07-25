@@ -82,13 +82,18 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     writeStorageValue,
   } from '../../lib/label-print-page'
   import { isBuiltInLabelField } from '../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../lib/label-preset-storage'
   import { t, initI18n } from '../../lib/i18n'
 
   installPrintFunction()
 
   const SETTINGS_KEY = 'filaman-filament-batch-label-settings'
   const SETTINGS_VERSION = 2
-  const DESIGNER_PRESETS_KEY = 'filaman-filament-label-presets-v1'
+  const DESIGNER_PRESETS_KEY = FILAMENT_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
 
   const widthInput       = document.getElementById('input-width') as HTMLInputElement
@@ -115,6 +120,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const exportPngBtn     = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn     = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const previewContainer = document.getElementById('preview-container') as HTMLElement
+  await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
 
   type ExtraFieldDef = { key: string; label: string }
@@ -531,7 +537,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     onChange: handlePreviewZoomChange,
   })
 
-  const designerEditor = initLabelDesignerEditor({
+  const designerEditor = await initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
     getFilamentColorHex: () => getBatchFilamentColorData()?.hex_code || '',
@@ -542,7 +548,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Filament',
-    crossPresetsKey: 'filaman-spool-label-presets-v1',
+    crossPresetsKey: SPOOL_LABEL_PRESETS_KEY,
     ownPresetsLabel: (t('filaments.dsPresetsOwnGroup') || 'Filament presets'),
     crossPresetsLabel: (t('filaments.dsPresetsCrossGroupSpool') || 'Spool presets'),
   })

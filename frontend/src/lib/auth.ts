@@ -1,4 +1,5 @@
 import { api } from './api'
+import { clearLabelPresetBrowserStorage } from './label-preset-storage'
 
 export interface User {
   id: number
@@ -37,6 +38,7 @@ export async function logout(): Promise<void> {
   } finally {
     currentUser = null
     if (typeof window !== 'undefined') {
+      clearLabelPresetBrowserStorage()
       window.location.href = '/login'
     }
   }
