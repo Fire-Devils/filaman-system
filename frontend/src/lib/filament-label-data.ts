@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { isBuiltInLabelField } from './label-extra-fields'
-import { renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
+import { type SystemExtraFieldDef } from './extra-fields'
+import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 
 export interface FilamentLabelData {
   id: string
@@ -36,6 +37,8 @@ export interface FilamentExtraField {
   key: string
   label: string
   value: string
+  rawValue?: unknown
+  fieldType?: string
   source?: string
 }
 
@@ -225,27 +228,21 @@ export function buildFilamentExtraFieldsForPrint(
   systemFieldMap: Record<string, Partial<SystemExtraFieldDef> & { label?: string }>,
 ): FilamentExtraField[] {
   const fields = buildReducedStandardFilamentExtraFieldsFromLabelData(buildFilamentLabelDataFromApi(filament))
-  const customFlat: Record<string, unknown> = filament?.custom_fields ?? {}
-  for (const [key, def] of Object.entries(systemFieldMap)) {
-    if (isBuiltInLabelField('filament', key, def.label)) continue
-    const raw = customFlat[key]
-    const fieldDef = { ...def, key, label: def.label ?? key, field_type: def.field_type ?? 'text' } as SystemExtraFieldDef
+  const customFields = buildEntityExtraFieldsForPrint(
+    filament?.custom_fields,
+    filament?.custom_field_definitions,
+    systemFieldMap as Record<string, SystemExtraFieldDef>,
+  )
+  for (const field of customFields) {
+    if (isBuiltInLabelField('filament', field.key, field.label)) continue
     fields.push({
-      key: `filament.${key}`,
-      label: def.label ?? key,
-      value: renderFieldPlainText(fieldDef, raw),
+      key: `filament.${field.key}`,
+      label: field.label,
+      value: field.value,
+      rawValue: field.rawValue,
+      fieldType: field.fieldType,
       source: 'filament',
     })
-  }
-  for (const [key, value] of Object.entries(customFlat)) {
-    if (!systemFieldMap[key] && !isBuiltInLabelField('filament', key)) {
-      fields.push({
-        key: `filament.${key}`,
-        label: key,
-        value: renderUnknownFieldPlainText(value),
-        source: 'filament',
-      })
-    }
   }
   return fields
 }
@@ -254,16 +251,19 @@ export function buildDesignerExtraFieldsFromFilament(
   filament: any,
   systemFieldMap: Record<string, Partial<SystemExtraFieldDef> & { label?: string }> = {},
 ): FilamentExtraField[] {
-  const customFields = filament?.custom_fields ?? {}
-  return Object.entries(customFields as Record<string, unknown>)
-    .filter(([key]) => !isBuiltInLabelField('filament', key))
-    .map(([key, value]) => {
-      const def = systemFieldMap[key]
-      const fieldDef = def ? { ...def, key, label: def.label ?? key, field_type: def.field_type ?? 'text' } as SystemExtraFieldDef : null
+  return buildEntityExtraFieldsForPrint(
+    filament?.custom_fields,
+    filament?.custom_field_definitions,
+    systemFieldMap as Record<string, SystemExtraFieldDef>,
+  )
+    .filter(field => !isBuiltInLabelField('filament', field.key, field.label))
+    .map(field => {
       return {
-        key: `filament.${key}`,
-        label: def?.label ?? key,
-        value: fieldDef ? renderFieldPlainText(fieldDef, value) : renderUnknownFieldPlainText(value),
+        key: `filament.${field.key}`,
+        label: field.label,
+        value: field.value,
+        rawValue: field.rawValue,
+        fieldType: field.fieldType,
         source: 'filament',
       }
     })

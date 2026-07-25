@@ -240,6 +240,81 @@ class TestSpoolCRUD:
         assert data["spool_outer_diameter_mm"] == 210.0
         assert data["spool_width_mm"] == 70.0
         assert data["spool_material"] == "Cardboard"
+        assert "custom_field_definitions" not in data
+
+    @pytest.mark.asyncio
+    async def test_create_spool_with_specific_field_definition(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        definition = {
+            "storage_humidity": {
+                "label": "Storage humidity",
+                "field_type": "range",
+                "config": {"unit": "%", "decimal_places": 0},
+            }
+        }
+
+        response = await client.post(
+            "/api/v1/spools",
+            json={
+                "filament_id": filament.id,
+                "custom_fields": {"storage_humidity": {"min": 10, "max": 20}},
+                "custom_field_definitions": definition,
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["custom_fields"]["storage_humidity"] == {"min": 10, "max": 20}
+        assert data["custom_field_definitions"] == definition
+
+        legacy_patch_response = await client.patch(
+            f"/api/v1/spools/{data['id']}",
+            json={"custom_fields": {"storage_humidity": {"min": 15, "max": 25}}},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert legacy_patch_response.status_code == 200
+        assert legacy_patch_response.json()["custom_fields"]["storage_humidity"] == {
+            "min": 15,
+            "max": 25,
+        }
+        assert legacy_patch_response.json()["custom_field_definitions"] == definition
+
+        clear_response = await client.patch(
+            f"/api/v1/spools/{data['id']}",
+            json={"custom_field_definitions": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert clear_response.status_code == 200
+        assert "custom_field_definitions" not in clear_response.json()
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_spool_specific_field_config(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+
+        response = await client.post(
+            "/api/v1/spools",
+            json={
+                "filament_id": filament.id,
+                "custom_field_definitions": {
+                    "notes": {
+                        "field_type": "textarea",
+                        "config": {"unit": "kg"},
+                    }
+                },
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_spool_invalid_filament(self, auth_client):

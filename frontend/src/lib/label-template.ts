@@ -3,6 +3,7 @@
  *
  * Template syntax:
  *   {token}                — simple dot-path substitution; resolves to "?" if missing
+ *   {token|date}           — date-only rendering for date/datetime tokens
  *   {prefix{token}suffix}  — optional block: rendered as prefix+value+suffix if token is not "?"
  *                            omitted entirely when token resolves to "?"
  *   **bold**               — <strong> text
@@ -19,6 +20,8 @@
  * SpoolData is a flat object passed from the print page; the "extra" key holds
  * extra-field values keyed by field key.
  */
+
+import { formatDateDisplay } from './extra-fields'
 
 export interface SpoolData {
   id: string | number
@@ -67,6 +70,8 @@ export interface SpoolData {
   stocked_in_at?: string
   last_used_at?: string
   extra?: Record<string, string>
+  /** Unformatted values used by token modifiers such as |date. */
+  extraRaw?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -174,16 +179,29 @@ function applyCapsMarkup(text: string): string {
   return text.replace(/\^\^([\s\S]*?)\^\^/g, (_match, inner: string) => inner.toUpperCase())
 }
 
+function splitDateModifier(token: string): { key: string; dateOnly: boolean } {
+  const match = token.trim().match(/^(.*?)\|date$/i)
+  return match
+    ? { key: match[1].trim(), dateOnly: true }
+    : { key: token.trim(), dateOnly: false }
+}
+
 /** Resolve a dot-path token against the spool data object. */
 function resolveToken(token: string, data: SpoolData): string {
-  if (token.startsWith('extra.')) {
-    const key = token.slice(6)
+  const { key: tokenKey, dateOnly } = splitDateModifier(token)
+  let value: unknown
+  let rawValue: unknown
+  if (tokenKey.startsWith('extra.')) {
+    const key = tokenKey.slice(6)
     const val = data.extra?.[key]
-    return val !== undefined && val !== '' ? String(val) : '?'
+    value = val
+    rawValue = data.extraRaw?.[key] ?? val
+  } else {
+    value = (data as Record<string, unknown>)[tokenKey]
+    rawValue = value
   }
-  const val = (data as Record<string, unknown>)[token]
-  if (val === undefined || val === null || val === '') return '?'
-  return String(val)
+  if (value === undefined || value === null || value === '') return '?'
+  return dateOnly ? formatDateDisplay(rawValue) : String(value)
 }
 
 /** Expand {token} and {prefix{token}suffix} placeholders to plain text. */

@@ -109,7 +109,8 @@ export function getStaticPaths() {
     resolveSpoolLabelRelations,
     type SpoolLabelLookups,
   } from '../../../lib/spool-label-lookups'
-  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../../lib/extra-fields'
+  import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
+  import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
 
   // Auto-collapse nav sidebar on the print page when the viewport is narrow —
   // the print page needs maximum horizontal space and the overlay would cover the controls.
@@ -345,7 +346,14 @@ export function getStaticPaths() {
   }
 
 
-  let extraFields: {key: string, label: string, value: string, source?: string}[] = []
+  let extraFields: {
+    key: string
+    label: string
+    value: string
+    rawValue?: unknown
+    fieldType?: string
+    source?: string
+  }[] = []
   try {
     const stored = sessionStorage.getItem('filaman-label-extra-fields')
     if (stored) {
@@ -934,34 +942,46 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
         ])
-        const allDefs: (SystemExtraFieldDef & {target_type: string})[] = [
-          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: SystemExtraFieldDef) => ({...d, field_type: d.field_type || 'text', target_type: 'spool'})),
-          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: SystemExtraFieldDef) => ({...d, field_type: d.field_type || 'text', target_type: 'filament'})),
-        ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
-        if (allDefs.length === 0) return
+        const toDefinitionMap = (definitions: unknown): Record<string, SystemExtraFieldDef> => (
+          Object.fromEntries(
+            (Array.isArray(definitions) ? definitions : [])
+              .map((definition: SystemExtraFieldDef) => [
+                definition.key,
+                { ...definition, field_type: definition.field_type || 'text' },
+              ]),
+          )
+        )
+        const spoolSystemDefinitions = toDefinitionMap(spoolDefs)
+        const filamentSystemDefinitions = toDefinitionMap(filamentDefs)
 
-        // Attempt to get actual spool values
-        let spoolCustom: Record<string, unknown> = {}
-        let filamentCustom: Record<string, unknown> = {}
         const sd = apiSpoolData ?? await fetchSpoolApiData()
-        if (sd) {
-          spoolCustom = (sd.custom_fields ?? {}) as Record<string, unknown>
-          filamentCustom = (sd.filament?.custom_fields ?? {}) as Record<string, unknown>
-        }
+        if (!sd) return
 
         // Populate extraFields and rebuild UI.
-        const sortedDefs = [...allDefs].sort((a, b) => (
-          (a.target_type === 'spool' ? 0 : 1) - (b.target_type === 'spool' ? 0 : 1)
-        ))
+        const fallbackFields = [
+          ...buildEntityExtraFieldsForPrint(
+            sd.custom_fields,
+            sd.custom_field_definitions,
+            spoolSystemDefinitions,
+            true,
+          ).map(field => ({ ...field, source: 'spool' })),
+          ...buildEntityExtraFieldsForPrint(
+            sd.filament?.custom_fields,
+            sd.filament?.custom_field_definitions,
+            filamentSystemDefinitions,
+            true,
+          ).map(field => ({ ...field, source: 'filament' })),
+        ].filter(field => !isBuiltInLabelField(field.source, field.key, field.label))
+        if (fallbackFields.length === 0) return
 
-        for (const def of sortedDefs) {
-          const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
-          const rawValue = valueMap[def.key]
+        for (const field of fallbackFields) {
           const ef = {
-            key: `${def.target_type}.${def.key}`,
-            label: def.label,
-            value: renderFieldPlainText(def, rawValue),
-            source: def.target_type,
+            key: `${field.source}.${field.key}`,
+            label: field.label,
+            value: field.value,
+            rawValue: field.rawValue,
+            fieldType: field.fieldType,
+            source: field.source,
           }
           extraFields.push(ef)
           addExtraFieldCheckbox(ef)

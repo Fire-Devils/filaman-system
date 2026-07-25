@@ -29,6 +29,36 @@ export function escapeHtml(s: string | null | undefined): string {
     .replace(/'/g, '&#x27;')
 }
 
+const RESERVED_EXTRA_FIELD_PATH_SEGMENTS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+])
+
+export function isUnsafeExtraFieldPath(path: string): boolean {
+  return path.split('.').some(segment => !segment || RESERVED_EXTRA_FIELD_PATH_SEGMENTS.has(segment))
+}
+
+export function hasOwnFieldValue(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+export function setOwnFieldValue(
+  record: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  })
+}
+
 /**
  * Convert decimal_places config value to an HTML <input step> attribute value.
  *   null/undefined → "any"
@@ -56,6 +86,44 @@ function safeHttpUrl(value: unknown): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Keep ISO-8601 datetimes lossless in storage, but make them compact wherever
+ * they are shown or printed. Invalid legacy values remain visible unchanged.
+ */
+export function formatDateTimeDisplay(value: unknown): string {
+  const raw = String(value)
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(parsed)
+}
+
+/** Format a date or datetime without its time component for compact print output. */
+export function formatDateDisplay(value: unknown): string {
+  const raw = String(value)
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short' }).format(parsed)
+}
+
+/** Convert an ISO datetime to the local, minute-precision shape accepted by datetime-local. */
+export function formatDateTimeInputValue(value: unknown): string | null {
+  const raw = String(value).trim()
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return (
+    `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}` +
+    `T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
+  )
 }
 
 /**
@@ -98,7 +166,14 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
       const value = input.value.trim()
       if (value) flat[key] = Number(value)
     } else {
-      const value = input.value.trim()
+      let value = input.value.trim()
+      if (
+        input.dataset.type === 'datetime' &&
+        input.dataset.originalRaw !== undefined &&
+        value === input.dataset.originalDisplay
+      ) {
+        value = input.dataset.originalRaw
+      }
       if (value) flat[key] = value
     }
 
@@ -143,10 +218,12 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
     let current = result
     keys.forEach((key, index) => {
       if (index === keys.length - 1) {
-        current[key] = value
+        setOwnFieldValue(current, key, value)
       } else {
-        const child = current[key]
-        if (!child || typeof child !== 'object' || Array.isArray(child)) current[key] = {}
+        const child = hasOwnFieldValue(current, key) ? current[key] : undefined
+        if (!child || typeof child !== 'object' || Array.isArray(child)) {
+          setOwnFieldValue(current, key, {})
+        }
         current = current[key] as Record<string, unknown>
       }
     })
@@ -224,6 +301,19 @@ export function renderFieldInput(
     }
     case 'date':
       return `<input type="date" class="fm-input system-field-input" data-key="${key}" data-type="date" value="${displayVal}" style="max-width:160px" />`
+    case 'datetime': {
+      const storedValue =
+        rawValue != null
+          ? String(rawValue)
+          : flat[field.key] != null
+            ? String(flat[field.key])
+            : field.default_value ?? ''
+      const inputValue = formatDateTimeInputValue(storedValue)
+      if (inputValue === null) {
+        return `<input type="text" class="fm-input system-field-input" data-key="${key}" data-type="datetime" value="${escapeHtml(storedValue)}" />`
+      }
+      return `<input type="datetime-local" class="fm-input system-field-input" data-key="${key}" data-type="datetime" data-original-raw="${escapeHtml(storedValue)}" data-original-display="${escapeHtml(inputValue)}" value="${escapeHtml(inputValue)}" style="max-width:220px" />`
+    }
     case 'url':
       return `<input type="url" class="fm-input system-field-input" data-key="${key}" data-type="url" value="${displayVal}" placeholder="https://" />`
     case 'multiselect': {
@@ -295,6 +385,8 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     }
     case 'date':
       return `<span>${escapeHtml(String(value))}</span>`
+    case 'datetime':
+      return `<span>${escapeHtml(formatDateTimeDisplay(value))}</span>`
     case 'url': {
       const url = String(value)
       const safeSrc = safeHttpUrl(url)
@@ -344,6 +436,8 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
     }
     case 'multiselect':
       return Array.isArray(value) ? value.map(String).join(', ') : String(value)
+    case 'datetime':
+      return formatDateTimeDisplay(value)
     case 'checkbox':
       return value === true || value === 'true' ? '✓' : '✗'
     default:

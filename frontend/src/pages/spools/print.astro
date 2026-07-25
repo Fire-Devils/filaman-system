@@ -93,7 +93,16 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     resolveSpoolLabelRelations,
     type SpoolLabelLookups,
   } from '../../lib/spool-label-lookups'
-  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import { type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import {
+    definitionForFlattenedExtraField,
+    extraFieldPathOverlaps,
+    flattenExtraFieldValues,
+    getExtraFieldValue,
+    normalizeEntityExtraFieldDefinitions,
+    renderRecordExtraField,
+    type EntityExtraFieldDefinitions,
+  } from '../../lib/entity-extra-fields'
   import { t, initI18n } from '../../lib/i18n'
 
   installPrintFunction()
@@ -131,10 +140,14 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
   type ExtraFieldDef = SystemExtraFieldDef & { target_type: 'spool' | 'filament' }
   type ApiObject = Record<string, unknown>
-  type ApiFilament = ApiObject & { custom_fields?: Record<string, unknown> }
+  type ApiFilament = ApiObject & {
+    custom_fields?: Record<string, unknown>
+    custom_field_definitions?: EntityExtraFieldDefinitions
+  }
   type ApiSpool = ApiObject & {
     id?: string | number
     custom_fields?: Record<string, unknown>
+    custom_field_definitions?: EntityExtraFieldDefinitions
     filament?: ApiFilament
     location_id?: unknown
     status_id?: unknown
@@ -152,6 +165,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
   // Extra field definitions from API: {key, label, target_type}
   let efDefs: ExtraFieldDef[] = []
+  const systemFieldKeys = new Set<string>()
   // Per-field checkbox state: key -> {checkbox, checked}
   const efCheckMap: Record<string, HTMLInputElement> = {}
 
@@ -256,7 +270,13 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     const fields = new Map<string, DesignerExtraField>()
     for (const def of efDefs) {
       const key = `${def.target_type}.${def.key}`
-      fields.set(key, { key, label: def.label, value: '', source: def.target_type })
+      fields.set(key, {
+        key,
+        label: def.label,
+        value: '',
+        fieldType: def.field_type,
+        source: def.target_type,
+      })
     }
     for (const spool of spools) {
       for (const field of buildDesignerExtraFieldsFromApiSpool(spool, getExtraFieldDefinitionMaps())) {
@@ -296,6 +316,12 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   function getExtraFieldsForSpool(spool: ApiSpool): {key: string, label: string, value: string}[] {
     const result: {key: string, label: string, value: string}[] = []
     const relations = resolveSpoolLabelRelations(spool, labelLookups)
+    const spoolRecordDefinitions = normalizeEntityExtraFieldDefinitions(
+      spool.custom_field_definitions,
+    )
+    const filamentRecordDefinitions = normalizeEntityExtraFieldDefinitions(
+      spool.filament?.custom_field_definitions,
+    )
 
     // ── Spool model field checkboxes (shown when checked in sidebar) ──────
     const fmtDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
@@ -325,15 +351,33 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       const cb = efCheckMap[efMapKey(def.target_type, def.key)]
       if (!cb?.checked) continue
 
-      let val: string | null = null
+      let rendered: { label: string; value: string } | null = null
       if (def.target_type === 'spool' && spool.custom_fields) {
-        const raw = spool.custom_fields[def.key]
-        if (raw !== undefined && raw !== null) val = renderFieldPlainText(def, raw)
+        const raw = getExtraFieldValue(spool.custom_fields, def.key)
+        if (raw !== undefined && raw !== null) {
+          rendered = renderRecordExtraField(
+            def.key,
+            raw,
+            def,
+            spoolRecordDefinitions,
+            systemFieldKeys.has(efMapKey('spool', def.key)),
+          )
+        }
       } else if (def.target_type === 'filament' && spool.filament?.custom_fields) {
-        const raw = spool.filament.custom_fields[def.key]
-        if (raw !== undefined && raw !== null) val = renderFieldPlainText(def, raw)
+        const raw = getExtraFieldValue(spool.filament.custom_fields, def.key)
+        if (raw !== undefined && raw !== null) {
+          rendered = renderRecordExtraField(
+            def.key,
+            raw,
+            def,
+            filamentRecordDefinitions,
+            systemFieldKeys.has(efMapKey('filament', def.key)),
+          )
+        }
       }
-      if (val !== null) result.push({ key: def.key, label: def.label, value: val })
+      if (rendered) {
+        result.push({ key: def.key, ...rendered })
+      }
     }
     return result
   }
@@ -504,6 +548,34 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         ...normalizeExtraFieldDefs(spoolDefs, 'spool'),
         ...normalizeExtraFieldDefs(filamentDefs, 'filament'),
       ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
+      systemFieldKeys.clear()
+      allDefs.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))
+      const knownKeys = new Set(systemFieldKeys)
+      const entityDefs = spools.flatMap(spool => {
+        const spoolEntityDefs = normalizeEntityExtraFieldDefinitions(spool.custom_field_definitions)
+        const filamentEntityDefs = normalizeEntityExtraFieldDefinitions(
+          spool.filament?.custom_field_definitions,
+        )
+        return [
+          ...flattenExtraFieldValues(spool.custom_fields, spoolEntityDefs)
+            .map(field => ({
+              ...definitionForFlattenedExtraField(field),
+              target_type: 'spool' as const,
+            })),
+          ...flattenExtraFieldValues(spool.filament?.custom_fields, filamentEntityDefs)
+            .map(field => ({
+              ...definitionForFlattenedExtraField(field),
+              target_type: 'filament' as const,
+            })),
+        ]
+      }).filter(def =>
+        !extraFieldPathOverlaps(efMapKey(def.target_type, def.key), knownKeys) &&
+        !isBuiltInLabelField(def.target_type, def.key, def.label),
+      )
+      const uniqueEntityDefs = Array.from(
+        new Map(entityDefs.map(def => [efMapKey(def.target_type, def.key), def])).values(),
+      )
+      allDefs.push(...uniqueEntityDefs)
       if (allDefs.length === 0) return
 
       efDefs = allDefs
@@ -724,17 +796,17 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
     ids.forEach(id => previewContainer.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
 
-    const [spoolResults, , loadedLookups] = await Promise.all([
+    const [spoolResults, loadedLookups] = await Promise.all([
       Promise.allSettled(ids.map(async id => {
         const r = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
         if (!r.ok) throw new Error(`Failed to load spool ${id}: ${r.status}`)
         return await r.json()
       })),
-      loadExtraFieldDefs(),
       loadSpoolLabelLookups(),
     ])
     labelLookups = loadedLookups
     spools = spoolResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiSpool>).value)
+    await loadExtraFieldDefs()
     designerEditor.refreshExtraFields(getBatchDesignerExtraFields())
     updateLabelCount()
 

@@ -2,6 +2,11 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from .schemas_entity_extra_field import (
+    EntityExtraFieldDefinitions,
+    optional_entity_definitions_field,
+)
 from .schemas_filament import FilamentDetailResponse
 
 
@@ -58,6 +63,9 @@ class SpoolCreate(BaseModel):
     spool_material: str | None = None
     low_weight_threshold_g: int = 100
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
 
 
 class SpoolBulkCreate(SpoolCreate):
@@ -80,6 +88,9 @@ class SpoolUpdate(BaseModel):
     spool_material: str | None = None
     low_weight_threshold_g: int | None = None
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
 
 
 class SpoolResponse(BaseModel):
@@ -104,6 +115,9 @@ class SpoolResponse(BaseModel):
     low_weight_threshold_g: int
     created_at: datetime
     custom_fields: dict[str, Any] | None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field(omit_none=True)
+    )
     filament: FilamentDetailResponse | None = None
 
     class Config:

@@ -10,6 +10,7 @@ import {
   createSpoolLabelLookups,
   resolveSpoolLabelRelations,
 } from './spool-label-lookups'
+import { formatDateDisplay, formatDateTimeDisplay } from './extra-fields'
 
 const apiSpool = {
   id: 42,
@@ -27,7 +28,16 @@ const apiSpool = {
   initial_total_weight_g: 1250,
   empty_spool_weight_g: 250,
   low_weight_threshold_g: 100,
-  custom_fields: { storage_note: 'Keep dry' },
+  custom_fields: {
+    storage_note: 'Keep dry',
+    certified_at: '2026-07-25T14:30:45.123Z',
+  },
+  custom_field_definitions: {
+    certified_at: {
+      label: 'Certified at',
+      field_type: 'datetime',
+    },
+  },
   filament: {
     id: 8,
     manufacturer_id: 5,
@@ -111,5 +121,17 @@ describe('spool label token contract', () => {
 
     expect(renderTemplateText('{Location: {location}}', data)).toBe('')
     expect(renderTemplateText('{Status: {status}}', data)).toBe('')
+  })
+
+  it('supports a date-only modifier while retaining compact datetime by default', () => {
+    const raw = apiSpool.custom_fields.certified_at
+    const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
+
+    expect(renderTemplateText('{extra.spool.certified_at}', data))
+      .toBe(formatDateTimeDisplay(raw))
+    expect(renderTemplateText('{extra.spool.certified_at|date}', data))
+      .toBe(formatDateDisplay(raw))
+    expect(renderTemplateText('{Certified: {extra.spool.certified_at|date}}', data))
+      .toBe(`Certified: ${formatDateDisplay(raw)}`)
   })
 })

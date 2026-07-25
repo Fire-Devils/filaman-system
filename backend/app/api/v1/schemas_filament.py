@@ -2,6 +2,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
+from app.api.v1.schemas_entity_extra_field import (
+    EntityExtraFieldDefinitions,
+    optional_entity_definitions_field,
+)
+
 # mypy does not support decorators stacked above @property.
 # pydantic still supports this usage at runtime.
 # mypy: disable-error-code=prop-decorator
@@ -140,6 +145,9 @@ class FilamentCreate(BaseModel):
     color_mode: str = "single"
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
     colors: list[FilamentColorEntry] | None = None
 
 
@@ -185,6 +193,9 @@ class FilamentUpdate(BaseModel):
     color_mode: str | None = None
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field()
+    )
 
 
 class FilamentResponse(BaseModel):
@@ -207,6 +218,9 @@ class FilamentResponse(BaseModel):
     color_mode: str
     multi_color_style: str | None
     custom_fields: dict[str, Any] | None
+    custom_field_definitions: EntityExtraFieldDefinitions | None = (
+        optional_entity_definitions_field(omit_none=True)
+    )
 
     class Config:
         from_attributes = True

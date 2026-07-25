@@ -7,6 +7,9 @@ import {
   renderFieldInput,
   renderFieldDisplay,
   renderFieldPlainText,
+  formatDateTimeDisplay,
+  formatDateTimeInputValue,
+  isUnsafeExtraFieldPath,
   renderUnknownFieldPlainText,
   type SystemExtraFieldDef,
 } from './extra-fields'
@@ -62,6 +65,35 @@ describe('escapeHtml', () => {
     expect(result).toContain('&amp;')
     expect(result).toContain('&lt;')
     expect(result).toContain('&gt;')
+  })
+})
+
+describe('extra-field path safety', () => {
+  it('recognizes reserved and empty dotted path segments', () => {
+    expect(isUnsafeExtraFieldPath('__proto__.polluted')).toBe(true)
+    expect(isUnsafeExtraFieldPath('constructor.prototype.polluted')).toBe(true)
+    expect(isUnsafeExtraFieldPath('safe..field')).toBe(true)
+    expect(isUnsafeExtraFieldPath('drying.temperature')).toBe(false)
+  })
+
+  it('unflattens reserved legacy keys without mutating object prototypes', () => {
+    const objectPrototype = Object.prototype as Record<string, unknown>
+    delete objectPrototype.polluted
+    delete objectPrototype.infected
+
+    const result = unflattenFieldValues({
+      '__proto__.polluted': 'no',
+      'constructor.prototype.infected': 'no',
+    })
+
+    expect(objectPrototype.polluted).toBeUndefined()
+    expect(objectPrototype.infected).toBeUndefined()
+    expect(Object.getOwnPropertyDescriptor(result, '__proto__')?.value).toEqual({
+      polluted: 'no',
+    })
+    expect(Object.getOwnPropertyDescriptor(result, 'constructor')?.value).toEqual({
+      prototype: { infected: 'no' },
+    })
   })
 })
 
@@ -184,6 +216,37 @@ describe('renderFieldInput — range', () => {
   })
 })
 
+describe('renderFieldInput — datetime', () => {
+  it('renders a datetime-local input and preserves the stored value', () => {
+    const html = renderFieldInput(
+      field({ field_type: 'datetime' }),
+      '2026-07-25T14:30',
+    )
+
+    expect(html).toContain('type="datetime-local"')
+    expect(html).toContain('data-type="datetime"')
+    expect(html).toContain('value="2026-07-25T14:30"')
+  })
+
+  it('shows a timezone-bearing value in local form without losing the original', () => {
+    const raw = '2026-07-25T14:30:45.123Z'
+    const local = formatDateTimeInputValue(raw)
+    const html = renderFieldInput(field({ field_type: 'datetime' }), raw)
+
+    expect(local).not.toBeNull()
+    expect(html).toContain(`value="${local}"`)
+    expect(html).toContain(`data-original-raw="${raw}"`)
+    expect(html).not.toContain(`value="${raw}"`)
+  })
+
+  it('uses a text fallback so an invalid legacy value remains editable', () => {
+    const html = renderFieldInput(field({ field_type: 'datetime' }), 'unknown')
+
+    expect(html).toContain('type="text"')
+    expect(html).toContain('value="unknown"')
+  })
+})
+
 describe('collectSystemFieldValues', () => {
   function rootWith(scalars: any[], multiselect: any[] = []): ParentNode {
     return {
@@ -205,6 +268,40 @@ describe('collectSystemFieldValues', () => {
       flat: { name: 'PLA', temp: 215.5, enabled: 'true' },
       direct: { tags: ['Matte'] },
     })
+  })
+
+  it('preserves a timezone-bearing datetime when its local display was not edited', () => {
+    const raw = '2026-07-25T14:30:45.123Z'
+    const local = formatDateTimeInputValue(raw)!
+    const result = collectSystemFieldValues(rootWith([
+      {
+        dataset: {
+          key: 'certified_at',
+          type: 'datetime',
+          originalRaw: raw,
+          originalDisplay: local,
+        },
+        value: local,
+      },
+    ]))
+
+    expect(result?.flat.certified_at).toBe(raw)
+  })
+
+  it('stores the new local value when a datetime was deliberately edited', () => {
+    const result = collectSystemFieldValues(rootWith([
+      {
+        dataset: {
+          key: 'certified_at',
+          type: 'datetime',
+          originalRaw: '2026-07-25T14:30:45.123Z',
+          originalDisplay: '2026-07-25T09:30',
+        },
+        value: '2026-07-26T10:45',
+      },
+    ]))
+
+    expect(result?.flat.certified_at).toBe('2026-07-26T10:45')
   })
 
   it('rejects a range whose minimum exceeds its maximum', () => {
@@ -471,6 +568,21 @@ describe('renderFieldDisplay — date', () => {
   })
 })
 
+describe('renderFieldDisplay — datetime', () => {
+  it('shows a compact local date and time instead of raw ISO metadata', () => {
+    const raw = '2026-07-25T14:30:45.123Z'
+    const html = renderFieldDisplay(field({ field_type: 'datetime' }), raw)
+
+    expect(html).toBe(`<span>${formatDateTimeDisplay(raw)}</span>`)
+    expect(html).not.toContain('T14:30:45.123Z')
+  })
+
+  it('keeps an invalid legacy value visible', () => {
+    expect(renderFieldDisplay(field({ field_type: 'datetime' }), 'unknown'))
+      .toBe('<span>unknown</span>')
+  })
+})
+
 describe('renderFieldDisplay — url', () => {
   it('renders anchor tag', () => {
     const html = renderFieldDisplay(field({ field_type: 'url' }), 'https://example.com')
@@ -560,6 +672,14 @@ describe('renderFieldPlainText', () => {
   it('formats multiselect values with readable separators', () => {
     expect(renderFieldPlainText(field({ field_type: 'multiselect' }), ['Matte', 'Silk']))
       .toBe('Matte, Silk')
+  })
+
+  it('prints datetimes compactly without seconds or timezone metadata', () => {
+    const raw = '2026-07-25T14:30:45.123Z'
+    const result = renderFieldPlainText(field({ field_type: 'datetime' }), raw)
+
+    expect(result).toBe(formatDateTimeDisplay(raw))
+    expect(result).not.toContain('T14:30:45.123Z')
   })
 })
 

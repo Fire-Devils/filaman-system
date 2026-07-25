@@ -328,11 +328,15 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         <!-- Custom Fields -->
         <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <label class="fm-label" style="margin: 0;" data-i18n="common.extraFields">Extra Fields (JSON)</label>
+            <label class="fm-label" style="margin: 0;" data-i18n="filaments.specificExtraFields">Filament-specific extra fields</label>
             <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
               + <span data-i18n="common.add">Add</span>
             </button>
           </div>
+          <p style="margin: -4px 0 12px; color: var(--text-muted); font-size: 0.82rem;">
+            <span data-i18n="filaments.specificExtraFieldsHelp">These typed fields apply only to this filament.</span>
+            <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="common.manageSystemExtraFields">Manage reusable System Extra Fields</a>
+          </p>
           <div id="custom-fields-container" style="display: grid; gap: 8px;">
             <!-- Dynamic fields go here -->
           </div>
@@ -364,7 +368,8 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../../lib/extra-fields'
+    import { escapeHtml, renderFieldInput } from '../../../lib/extra-fields'
+    import { collectExtraFieldPayload, createEntityExtraFieldEditor } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../../lib/filamentdb-lookup'
@@ -448,8 +453,11 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLDivElement
     const btnAddField = document.getElementById('btn-add-field') as HTMLButtonElement
 
-    // ── Custom Fields Logic ──
-    let customFields: Array<{ key: string, value: string }> = []
+    const entityExtraFields = createEntityExtraFieldEditor({
+      container: customFieldsContainer,
+      addButton: btnAddField,
+      emptyText: t('filaments.noSpecificExtraFields'),
+    })
 
     function flattenObject(obj: any, prefix = '', res: any = {}) {
       for (const key in obj) {
@@ -465,50 +473,6 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       }
       return res
     }
-
-    function renderCustomFields() {
-      customFieldsContainer.innerHTML = ''
-      customFields.forEach((field, index) => {
-        const row = document.createElement('div')
-        row.style.display = 'grid'
-        row.style.gridTemplateColumns = '1fr 1fr auto'
-        row.style.gap = '8px'
-        row.style.alignItems = 'center'
-        
-        row.innerHTML = `
-          <input type="text" placeholder="Key" class="fm-input custom-field-key" data-index="${index}" value="${field.key}" />
-          <input type="text" placeholder="Value" class="fm-input custom-field-value" data-index="${index}" value="${field.value}" />
-          <button type="button" class="fm-btn fm-btn-danger custom-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
-        `
-        customFieldsContainer.appendChild(row)
-      })
-
-      // Wire up inputs to update state
-      document.querySelectorAll('.custom-field-key').forEach((input: any) => {
-        input.addEventListener('input', (e: any) => {
-          customFields[parseInt(e.target.dataset.index)].key = e.target.value
-        })
-      })
-      document.querySelectorAll('.custom-field-value').forEach((input: any) => {
-        input.addEventListener('input', (e: any) => {
-          customFields[parseInt(e.target.dataset.index)].value = e.target.value
-        })
-      })
-      
-      // Wire up remove buttons
-      document.querySelectorAll('.custom-field-remove').forEach((btn: any) => {
-        btn.addEventListener('click', (e: any) => {
-          const index = parseInt(e.target.closest('button').dataset.index)
-          customFields.splice(index, 1)
-          renderCustomFields()
-        })
-      })
-    }
-
-    btnAddField.addEventListener('click', () => {
-      customFields.push({ key: '', value: '' })
-      renderCustomFields()
-    })
 
     // ── Color mode radio handling ──
     const colorModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="color_mode"]')
@@ -1021,6 +985,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to fetch system fields')
         systemFields = await response.json()
+        entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load system fields:', error)
@@ -1124,21 +1089,14 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       // Shop URL
       ;(document.getElementById('shop_url') as HTMLInputElement).value = f.shop_url || ''
 
-      // Custom Fields
+      // System and filament-specific extra fields
       if (f.custom_fields && Object.keys(f.custom_fields).length > 0) {
         const flat = flattenObject(f.custom_fields)
-        const systemKeys = systemFields.map(field => field.key)
-
-        customFields = Object.entries(flat)
-          .filter(([key]) => !systemKeys.some(sk => key === sk || key.startsWith(sk + '.')))
-          .map(([key, value]) => ({ key, value: String(value) }))
-          
         renderSystemFields(flat, f.custom_fields)
       } else {
-        customFields = []
         renderSystemFields({})
       }
-      renderCustomFields()
+      entityExtraFields.setData(f.custom_fields, f.custom_field_definitions)
     }
 
     // ── Form Submit ──
@@ -1212,24 +1170,11 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       const shopUrl = (formData.get('shop_url') as string || '').trim()
       patchData.shop_url = shopUrl || null
 
-      // System Fields + Custom Fields
-      const systemValues = collectSystemFieldValues()
-      if (!systemValues) return
-      const fieldsObj = systemValues.flat
-
-      if (customFields.length > 0) {
-        customFields.forEach(f => {
-          if (f.key.trim()) {
-            fieldsObj[f.key.trim()] = f.value
-          }
-        })
-      }
-      
-      const cfUnflat = Object.keys(fieldsObj).length > 0 ? unflattenFieldValues(fieldsObj) : {}
-      for (const [k, v] of Object.entries(systemValues.direct)) {
-        cfUnflat[k] = v
-      }
-      patchData.custom_fields = Object.keys(cfUnflat).length > 0 ? cfUnflat : null
+      const systemGrid = document.getElementById('system-fields-grid') as HTMLDivElement
+      const extraFieldPayload = collectExtraFieldPayload(systemGrid, entityExtraFields)
+      if (!extraFieldPayload) return
+      patchData.custom_fields = extraFieldPayload.customFields
+      patchData.custom_field_definitions = extraFieldPayload.customFieldDefinitions
 
       // Build PUT /colors payload
       const colorsData = {

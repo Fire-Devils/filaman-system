@@ -232,11 +232,15 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       <!-- Custom Fields -->
       <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <label class="fm-label" style="margin: 0;" data-i18n="common.extraFields">Extra Fields (JSON)</label>
+          <label class="fm-label" style="margin: 0;" data-i18n="spools.specificExtraFields">Spool-specific extra fields</label>
           <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
             + <span data-i18n="common.add">Add</span>
           </button>
         </div>
+        <p style="margin: -4px 0 12px; color: var(--text-muted); font-size: 0.82rem;">
+          <span data-i18n="spools.specificExtraFieldsHelp">These typed fields apply only to this spool.</span>
+          <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="common.manageSystemExtraFields">Manage reusable System Extra Fields</a>
+        </p>
         <div id="custom-fields-container" style="display: grid; gap: 8px;">
           <!-- Dynamic fields go here -->
         </div>
@@ -290,7 +294,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../lib/extra-fields'
+    import { escapeHtml, renderFieldInput } from '../../lib/extra-fields'
+    import { collectExtraFieldPayload, createEntityExtraFieldEditor } from '../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
@@ -310,51 +315,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLDivElement
     const btnAddField = document.getElementById('btn-add-field') as HTMLButtonElement
 
-    // ── Custom Fields Logic ──
-    let customFields: Array<{ key: string, value: string }> = []
-
-    function renderCustomFields() {
-      customFieldsContainer.innerHTML = ''
-      customFields.forEach((field, index) => {
-        const row = document.createElement('div')
-        row.style.display = 'grid'
-        row.style.gridTemplateColumns = '1fr 1fr auto'
-        row.style.gap = '8px'
-        row.style.alignItems = 'center'
-        
-        row.innerHTML = `
-          <input type="text" placeholder="Key" class="fm-input custom-field-key" data-index="${index}" value="${field.key}" />
-          <input type="text" placeholder="Value" class="fm-input custom-field-value" data-index="${index}" value="${field.value}" />
-          <button type="button" class="fm-btn fm-btn-danger custom-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
-        `
-        customFieldsContainer.appendChild(row)
-      })
-
-      // Wire up inputs to update state
-      document.querySelectorAll('.custom-field-key').forEach((input: any) => {
-        input.addEventListener('input', (e: any) => {
-          customFields[parseInt(e.target.dataset.index)].key = e.target.value
-        })
-      })
-      document.querySelectorAll('.custom-field-value').forEach((input: any) => {
-        input.addEventListener('input', (e: any) => {
-          customFields[parseInt(e.target.dataset.index)].value = e.target.value
-        })
-      })
-      
-      // Wire up remove buttons
-      document.querySelectorAll('.custom-field-remove').forEach((btn: any) => {
-        btn.addEventListener('click', (e: any) => {
-          const index = parseInt(e.target.closest('button').dataset.index)
-          customFields.splice(index, 1)
-          renderCustomFields()
-        })
-      })
-    }
-
-    btnAddField.addEventListener('click', () => {
-      customFields.push({ key: '', value: '' })
-      renderCustomFields()
+    const entityExtraFields = createEntityExtraFieldEditor({
+      container: customFieldsContainer,
+      addButton: btnAddField,
+      emptyText: t('spools.noSpecificExtraFields'),
     })
 
     let filaments: any[] = []
@@ -611,6 +575,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         
         if (systemFieldsRes.ok) {
           systemFields = await systemFieldsRes.json()
+          entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
           renderSystemFields()
         }
         
@@ -722,19 +687,11 @@ const filamentId = Astro.url.searchParams.get('filament_id')
 
             // Custom Fields (non-system) + System Fields
             if (dup.custom_fields && typeof dup.custom_fields === 'object') {
-              const systemKeySet = new Set((systemFields ?? []).map((f: any) => f.key))
-              const allEntries = Object.entries(dup.custom_fields as Record<string, any>)
-              const customEntries = allEntries.filter(
-                ([k]) => !systemKeySet.has(k) && ![...systemKeySet].some(sk => k.startsWith(sk + '.'))
-              )
-              if (customEntries.length > 0) {
-                customFields = customEntries.map(([key, value]) => ({ key, value: String(value) }))
-                renderCustomFields()
-              }
               // Prefill system fields from duplicate
               const dupFlat = flattenObject(dup.custom_fields)
               renderSystemFields(dupFlat, dup.custom_fields)
             }
+            entityExtraFields.setData(dup.custom_fields, dup.custom_field_definitions)
           } catch (e) {
             console.error('Failed to apply duplicate spool data:', e)
           }
@@ -872,27 +829,11 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       const externalId = formData.get('external_id')
       if (externalId) data.external_id = externalId
 
-      // System Fields + Custom Fields
-      const systemValues = collectSystemFieldValues()
-      if (!systemValues) return
-      const fieldsObj = systemValues.flat
-
-      // Collect Custom Fields
-      if (customFields.length > 0) {
-        customFields.forEach(f => {
-          if (f.key.trim()) {
-            fieldsObj[f.key.trim()] = f.value
-          }
-        })
-      }
-
-      if (Object.keys(fieldsObj).length > 0 || Object.keys(systemValues.direct).length > 0) {
-        const customFieldsData = unflattenFieldValues(fieldsObj) as Record<string, any>
-        for (const [k, v] of Object.entries(systemValues.direct)) {
-          customFieldsData[k] = v
-        }
-        data.custom_fields = customFieldsData
-      }
+      const systemGrid = document.getElementById('system-fields-grid') as HTMLDivElement
+      const extraFieldPayload = collectExtraFieldPayload(systemGrid, entityExtraFields)
+      if (!extraFieldPayload) return
+      data.custom_fields = extraFieldPayload.customFields
+      data.custom_field_definitions = extraFieldPayload.customFieldDefinitions
       
       const quantity = Math.max(1, parseInt((document.getElementById('spool_quantity') as HTMLInputElement).value) || 1)
       data.quantity = quantity
