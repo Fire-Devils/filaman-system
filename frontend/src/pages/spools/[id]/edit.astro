@@ -287,6 +287,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
+    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../../lib/extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
@@ -335,28 +336,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         }
       }
       return res
-    }
-
-    function unflattenObject(data: any) {
-      const result: Record<string, any> = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current: any = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
     }
 
     function renderCustomFields() {
@@ -589,7 +568,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       }
     }
 
-    function renderSystemFields(spoolCustomFieldsFlat: Record<string, any> = {}) {
+    function renderSystemFields(spoolCustomFieldsFlat: Record<string, any> = {}, rawFields?: Record<string, any>) {
       const container = document.getElementById('system-fields-container') as HTMLElement
       const grid = document.getElementById('system-fields-grid') as HTMLElement
       if (!systemFields || systemFields.length === 0) {
@@ -600,31 +579,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       grid.innerHTML = ''
       
       systemFields.forEach(field => {
-        const currentValue = spoolCustomFieldsFlat[field.key] !== undefined ? String(spoolCustomFieldsFlat[field.key]) : (field.default_value || '')
+        const rawValue = rawFields?.[field.key] ?? null
         const div = document.createElement('div')
-        let inputHtml = ''
-
-        switch (field.field_type) {
-          case 'number':
-            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" step="any" />`
-            break
-          case 'dropdown': {
-            const opts = (field.options || []).map((opt: any) => {
-              const selected = opt === currentValue ? ' selected' : ''
-              return `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
-            }).join('')
-            inputHtml = `<select class="fm-select system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
-            break
-          }
-          case 'checkbox': {
-            const checked = currentValue === 'true' ? ' checked' : ''
-            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"${checked} /> ${escapeHtml(field.label)}</label>`
-            break
-          }
-          default:
-            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" />`
-        }
-
+        const inputHtml = renderFieldInput(field, rawValue, spoolCustomFieldsFlat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
@@ -632,13 +589,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         }
         grid.appendChild(div)
       })
-    }
-
-    function escapeHtml(str: any) {
-      if (!str) return ''
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
     }
 
     function prefillForm(s: any) {
@@ -691,10 +641,10 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         const systemKeys = systemFields.map(f => f.key)
         
         customFields = Object.entries(flat)
-          .filter(([key]) => !systemKeys.includes(key))
+          .filter(([key]) => !systemKeys.some(sk => key === sk || key.startsWith(sk + '.')))
           .map(([key, value]) => ({ key, value: String(value) }))
           
-        renderSystemFields(flat)
+        renderSystemFields(flat, s.custom_fields)
       } else {
         customFields = []
         renderSystemFields({})
@@ -772,19 +722,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       const purchaseDate = formData.get('purchase_date')
       patchData.purchase_date = purchaseDate || null
 
-      const fieldsObj: Record<string, string> = {}
-
-      document.querySelectorAll<HTMLInputElement>('.system-field-input').forEach(input => {
-        const key = input.dataset.key
-        const type = input.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = input.checked ? 'true' : 'false'
-        } else {
-          const value = input.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
+      const systemValues = collectSystemFieldValues()
+      if (!systemValues) return
+      const fieldsObj = systemValues.flat
 
       if (customFields.length > 0) {
         customFields.forEach(f => {
@@ -794,7 +734,11 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         })
       }
       
-      patchData.custom_fields = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+      const cfUnflat = Object.keys(fieldsObj).length > 0 ? unflattenFieldValues(fieldsObj) : {}
+      for (const [k, v] of Object.entries(systemValues.direct)) {
+        cfUnflat[k] = v
+      }
+      patchData.custom_fields = Object.keys(cfUnflat).length > 0 ? cfUnflat : null
 
       errorMessage.classList.add('hidden')
       submitBtn.disabled = true

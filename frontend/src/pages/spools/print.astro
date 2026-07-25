@@ -93,6 +93,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     resolveSpoolLabelRelations,
     type SpoolLabelLookups,
   } from '../../lib/spool-label-lookups'
+  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../lib/extra-fields'
   import { t, initI18n } from '../../lib/i18n'
 
   installPrintFunction()
@@ -128,7 +129,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
 
-  type ExtraFieldDef = { key: string; label: string; target_type: 'spool' | 'filament' }
+  type ExtraFieldDef = SystemExtraFieldDef & { target_type: 'spool' | 'filament' }
   type ApiObject = Record<string, unknown>
   type ApiFilament = ApiObject & { custom_fields?: Record<string, unknown> }
   type ApiSpool = ApiObject & {
@@ -162,7 +163,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return typeof value === 'object' && value !== null
   }
 
-  function isExtraFieldDef(value: unknown): value is { key: string; label: string } {
+  function isExtraFieldDef(value: unknown): value is SystemExtraFieldDef {
     return isApiObject(value) && typeof value.key === 'string' && typeof value.label === 'string'
   }
 
@@ -174,7 +175,25 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         : []
     return items
       .filter(isExtraFieldDef)
-      .map(def => ({ key: def.key, label: def.label, target_type: targetType }))
+      .map(def => ({
+        ...def,
+        id: typeof def.id === 'number' ? def.id : 0,
+        key: def.key,
+        label: def.label,
+        field_type: typeof def.field_type === 'string' ? def.field_type : 'text',
+        target_type: targetType,
+      }))
+  }
+
+  function getExtraFieldDefinitionMaps() {
+    const maps: { spool: Record<string, SystemExtraFieldDef>; filament: Record<string, SystemExtraFieldDef> } = {
+      spool: {},
+      filament: {},
+    }
+    for (const def of efDefs) {
+      maps[def.target_type][def.key] = def
+    }
+    return maps
   }
 
   function saveSettings() {
@@ -240,7 +259,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       fields.set(key, { key, label: def.label, value: '', source: def.target_type })
     }
     for (const spool of spools) {
-      for (const field of buildDesignerExtraFieldsFromApiSpool(spool)) {
+      for (const field of buildDesignerExtraFieldsFromApiSpool(spool, getExtraFieldDefinitionMaps())) {
         if (!field?.key || fields.has(field.key)) continue
         fields.set(field.key, field)
       }
@@ -309,10 +328,10 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       let val: string | null = null
       if (def.target_type === 'spool' && spool.custom_fields) {
         const raw = spool.custom_fields[def.key]
-        if (raw !== undefined && raw !== null) val = String(raw)
+        if (raw !== undefined && raw !== null) val = renderFieldPlainText(def, raw)
       } else if (def.target_type === 'filament' && spool.filament?.custom_fields) {
         const raw = spool.filament.custom_fields[def.key]
-        if (raw !== undefined && raw !== null) val = String(raw)
+        if (raw !== undefined && raw !== null) val = renderFieldPlainText(def, raw)
       }
       if (val !== null) result.push({ key: def.key, label: def.label, value: val })
     }
@@ -346,7 +365,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     getId: spool => spool?.id,
     getLogoManufacturerId: getManufacturerIdFromApiSpool,
     buildStandardData: spool => buildStandardLabelDataFromApiSpool(spool, getExtraFieldsForSpool(spool)),
-    buildDesignerData: spool => buildSpoolDataFromApiSpool(spool, labelLookups),
+    buildDesignerData: spool => buildSpoolDataFromApiSpool(spool, labelLookups, getExtraFieldDefinitionMaps()),
     singlePngName: spool => `label-${spool.id}.png`,
     zipName: () => datedExportName('labels', 'zip'),
     zipEntryName: spool => `label-${spool.id}.png`,

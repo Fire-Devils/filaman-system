@@ -290,6 +290,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { collectSystemFieldValues, escapeHtml, renderFieldInput, unflattenFieldValues } from '../../lib/extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
@@ -311,28 +312,6 @@ const filamentId = Astro.url.searchParams.get('filament_id')
 
     // ── Custom Fields Logic ──
     let customFields: Array<{ key: string, value: string }> = []
-
-    function unflattenObject(data: Record<string, any>) {
-      const result: any = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
-    }
 
     function renderCustomFields() {
       customFieldsContainer.innerHTML = ''
@@ -582,9 +561,25 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
     })
 
-    function renderSystemFields() {
-      const container = document.getElementById('system-fields-container') as HTMLElement
-      const grid = document.getElementById('system-fields-grid') as HTMLElement
+    function flattenObject(obj: any, prefix = '', res: any = {}) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key]
+          const newKey = prefix ? `${prefix}.${key}` : key
+          if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            flattenObject(val, newKey, res)
+          } else {
+            res[newKey] = val
+          }
+        }
+      }
+      return res
+    }
+
+    function renderSystemFields(flat: Record<string, any> = {}, raw?: Record<string, any>) {
+      const container = document.getElementById('system-fields-container') as HTMLDivElement | null
+      const grid = document.getElementById('system-fields-grid') as HTMLDivElement | null
+      if (!container || !grid) return
       if (!systemFields || systemFields.length === 0) {
         container.style.display = 'none'
         return
@@ -593,35 +588,13 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       grid.innerHTML = ''
       
       systemFields.forEach((field: any) => {
-        const defaultVal = field.default_value || ''
         const div = document.createElement('div')
-        let inputHtml = ''
-
-        switch (field.field_type) {
-          case 'number':
-            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" step="any" />`
-            break
-          case 'dropdown': {
-            const opts = (field.options || []).map((opt: string) => {
-              const selected = opt === defaultVal ? ' selected' : ''
-              return `<option value="${opt}"${selected}>${opt}</option>`
-            }).join('')
-            inputHtml = `<select class="fm-select system-field-input" data-key="${field.key}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
-            break
-          }
-          case 'checkbox': {
-            const checked = defaultVal === 'true' ? ' checked' : ''
-            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${field.key}" data-type="${field.field_type}"${checked} /> ${field.label}</label>`
-            break
-          }
-          default:
-            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" />`
-        }
-
+        const rawValue = raw ? (raw[field.key] ?? null) : null
+        const inputHtml = renderFieldInput(field, rawValue, flat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
-          div.innerHTML = `<label class="fm-label">${field.label}</label>${inputHtml}`
+          div.innerHTML = `<label class="fm-label">${escapeHtml(field.label)}</label>${inputHtml}`
         }
         grid.appendChild(div)
       })
@@ -747,13 +720,20 @@ const filamentId = Astro.url.searchParams.get('filament_id')
               (document.getElementById('rfid_uid') as HTMLInputElement).value = dup.rfid_uid
             }
 
-            // Custom Fields
+            // Custom Fields (non-system) + System Fields
             if (dup.custom_fields && typeof dup.custom_fields === 'object') {
-              const entries = Object.entries(dup.custom_fields)
-              if (entries.length > 0) {
-                customFields = entries.map(([key, value]) => ({ key, value: String(value) }))
+              const systemKeySet = new Set((systemFields ?? []).map((f: any) => f.key))
+              const allEntries = Object.entries(dup.custom_fields as Record<string, any>)
+              const customEntries = allEntries.filter(
+                ([k]) => !systemKeySet.has(k) && ![...systemKeySet].some(sk => k.startsWith(sk + '.'))
+              )
+              if (customEntries.length > 0) {
+                customFields = customEntries.map(([key, value]) => ({ key, value: String(value) }))
                 renderCustomFields()
               }
+              // Prefill system fields from duplicate
+              const dupFlat = flattenObject(dup.custom_fields)
+              renderSystemFields(dupFlat, dup.custom_fields)
             }
           } catch (e) {
             console.error('Failed to apply duplicate spool data:', e)
@@ -893,21 +873,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       if (externalId) data.external_id = externalId
 
       // System Fields + Custom Fields
-      const fieldsObj: Record<string, string> = {}
-      
-      // Collect System Fields
-      document.querySelectorAll<HTMLInputElement>('.system-field-input').forEach(input => {
-        const key = input.dataset.key
-        const type = input.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = input.checked ? 'true' : 'false'
-        } else {
-          const value = input.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
-      
+      const systemValues = collectSystemFieldValues()
+      if (!systemValues) return
+      const fieldsObj = systemValues.flat
+
       // Collect Custom Fields
       if (customFields.length > 0) {
         customFields.forEach(f => {
@@ -916,9 +885,13 @@ const filamentId = Astro.url.searchParams.get('filament_id')
           }
         })
       }
-      
-      if (Object.keys(fieldsObj).length > 0) {
-        data.custom_fields = unflattenObject(fieldsObj)
+
+      if (Object.keys(fieldsObj).length > 0 || Object.keys(systemValues.direct).length > 0) {
+        const customFieldsData = unflattenFieldValues(fieldsObj) as Record<string, any>
+        for (const [k, v] of Object.entries(systemValues.direct)) {
+          customFieldsData[k] = v
+        }
+        data.custom_fields = customFieldsData
       }
       
       const quantity = Math.max(1, parseInt((document.getElementById('spool_quantity') as HTMLInputElement).value) || 1)

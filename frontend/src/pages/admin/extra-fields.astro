@@ -73,18 +73,52 @@ import Layout from '../../layouts/Layout.astro'
           <select id="field-type" required class="fm-select">
             <option value="text">Text</option>
             <option value="number">Number</option>
+            <option value="range">Range (min–max)</option>
             <option value="dropdown">Dropdown</option>
+            <option value="multiselect">Multi-select</option>
             <option value="checkbox">Checkbox</option>
+            <option value="date">Date</option>
+            <option value="url">URL</option>
+            <option value="textarea">Text Area</option>
           </select>
         </div>
 
         <div id="options-container" style="display: none;">
-          <label for="field-options" class="fm-label"><span data-i18n="admin.dropdownOptions">Dropdown Options</span> *</label>
+          <label for="field-options" class="fm-label"><span id="options-label">Options</span> *</label>
           <textarea id="field-options" class="fm-input" rows="5" placeholder="One option per line&#10;e.g.&#10;Option A&#10;Option B&#10;Option C" style="resize: vertical;"></textarea>
           <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.dropdownOptionsHint">Enter one option per line.</small>
         </div>
+
+        <div id="numeric-config-container" style="display: none; flex-direction: column; gap: 10px; border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: var(--bg-soft);">
+          <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Field Config</div>
+          <div style="display: flex; gap: 12px; align-items: flex-end;">
+            <div style="flex: 1;">
+              <label for="config-unit" class="fm-label" style="font-size: 0.8rem;">Unit <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
+              <input type="text" id="config-unit" class="fm-input" placeholder="e.g. °C, mm, %" style="height: 32px; font-size: 0.85rem;" />
+            </div>
+            <div style="flex: 1;">
+              <label for="config-decimal-places" class="fm-label" style="font-size: 0.8rem;">Decimal places <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
+              <input type="number" id="config-decimal-places" class="fm-input" min="0" max="10" placeholder="0=int, blank=any" style="height: 32px; font-size: 0.85rem;" />
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: flex-end;">
+            <div style="flex: 1;">
+              <label for="config-min-bound" class="fm-label" style="font-size: 0.8rem;">Min bound <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
+              <input type="number" id="config-min-bound" class="fm-input" placeholder="e.g. 0" step="any" style="height: 32px; font-size: 0.85rem;" />
+            </div>
+            <div style="flex: 1;">
+              <label for="config-max-bound" class="fm-label" style="font-size: 0.8rem;">Max bound <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
+              <input type="number" id="config-max-bound" class="fm-input" placeholder="e.g. 500" step="any" style="height: 32px; font-size: 0.85rem;" />
+            </div>
+          </div>
+        </div>
+
+        <div id="textarea-config-container" style="display: none;">
+          <label for="config-max-length" class="fm-label" style="font-size: 0.8rem;">Max length <small style="color: var(--text-muted); font-weight: 400;">(optional, default 2000)</small></label>
+          <input type="number" id="config-max-length" class="fm-input" min="1" max="100000" placeholder="2000" style="height: 32px; font-size: 0.85rem;" />
+        </div>
         
-        <div>
+        <div id="default-value-wrapper">
           <label for="field-default" class="fm-label" data-i18n="admin.defaultValue">Default Value (Optional)</label>
           <input type="text" id="field-default" class="fm-input" placeholder="e.g. PLA" />
           <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.defaultValueHint">This value will be pre-filled when creating new items.</small>
@@ -134,8 +168,15 @@ import Layout from '../../layouts/Layout.astro'
       switch (ft) {
         case 'text': return 'Text'
         case 'number': return 'Number'
+        case 'float': return 'Number'  // legacy alias
+        case 'range': return 'Range'
         case 'dropdown': return 'Dropdown'
+        case 'multiselect': return 'Multi-select'
         case 'checkbox': return 'Checkbox'
+        case 'formula': return 'Formula'
+        case 'date': return 'Date'
+        case 'url': return 'URL'
+        case 'textarea': return 'Text Area'
         default: return ft || 'Text'
       }
     }
@@ -154,7 +195,7 @@ import Layout from '../../layouts/Layout.astro'
           ? `<span title="${t('admin.pluginManagedField') || 'Managed by plugin'}: ${escapeHtml(f.source)}" style="color: var(--text-muted); cursor: help;">🔒</span>`
           : `<button data-id="${f.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button><button data-id="${f.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>`
         
-        const optionsInfo = f.field_type === 'dropdown' && f.options
+        const optionsInfo = (f.field_type === 'dropdown' || f.field_type === 'multiselect') && f.options
           ? ` <span title="${f.options.join('\n')}" style="color: var(--text-muted); cursor: help; font-size: 0.8rem;">(${f.options.length})</span>`
           : ''
 
@@ -210,13 +251,52 @@ import Layout from '../../layouts/Layout.astro'
 
     const fieldTypeSelect = document.getElementById('field-type') as HTMLSelectElement
     const optionsContainer = document.getElementById('options-container') as HTMLDivElement
+    const optionsLabel = document.getElementById('options-label') as HTMLElement
     const fieldOptionsTextarea = document.getElementById('field-options') as HTMLTextAreaElement
+    const numericConfigContainer = document.getElementById('numeric-config-container') as HTMLDivElement
+    const textareaConfigContainer = document.getElementById('textarea-config-container') as HTMLDivElement
+    const configUnit = document.getElementById('config-unit') as HTMLInputElement
+    const configDecimalPlaces = document.getElementById('config-decimal-places') as HTMLInputElement
+    const configMinBound = document.getElementById('config-min-bound') as HTMLInputElement
+    const configMaxBound = document.getElementById('config-max-bound') as HTMLInputElement
+    const configMaxLength = document.getElementById('config-max-length') as HTMLInputElement
 
-    fieldTypeSelect.addEventListener('change', () => {
-      const isDropdown = fieldTypeSelect.value === 'dropdown'
-      optionsContainer.style.display = isDropdown ? 'block' : 'none'
-      fieldOptionsTextarea.required = isDropdown
-    })
+    function updateTypeUi(type: string) {
+      const showOptions = type === 'dropdown' || type === 'multiselect'
+      const showNumeric = type === 'number' || type === 'range'
+      const showTextareaConfig = type === 'textarea'
+      optionsContainer.style.display = showOptions ? 'block' : 'none'
+      fieldOptionsTextarea.required = showOptions
+      optionsLabel.textContent = type === 'multiselect' ? 'Multi-select Options' : 'Dropdown Options'
+      numericConfigContainer.style.display = showNumeric ? 'flex' : 'none'
+      textareaConfigContainer.style.display = showTextareaConfig ? 'block' : 'none'
+      updateDefaultUi(type)
+    }
+
+    function updateDefaultUi(type: string) {
+      const wrapper = document.getElementById('default-value-wrapper') as HTMLDivElement
+      if (type === 'range' || type === 'multiselect') {
+        wrapper.style.display = 'none'
+        fieldDefaultInput.value = ''
+        return
+      }
+      wrapper.style.display = 'block'
+      if (type === 'number') {
+        fieldDefaultInput.type = 'number'
+        fieldDefaultInput.setAttribute('step', 'any')
+        fieldDefaultInput.placeholder = 'e.g. 0'
+      } else if (type === 'date') {
+        fieldDefaultInput.type = 'text'
+        fieldDefaultInput.removeAttribute('step')
+        fieldDefaultInput.placeholder = 'YYYY-MM-DD'
+      } else {
+        fieldDefaultInput.type = 'text'
+        fieldDefaultInput.removeAttribute('step')
+        fieldDefaultInput.placeholder = type === 'url' ? 'https://...' : 'e.g. PLA'
+      }
+    }
+
+    fieldTypeSelect.addEventListener('change', () => updateTypeUi(fieldTypeSelect.value))
     
     const fieldIdInput = document.getElementById('field-id') as HTMLInputElement
     const fieldTargetSelect = document.getElementById('field-target') as HTMLSelectElement
@@ -231,14 +311,20 @@ import Layout from '../../layouts/Layout.astro'
       
       error.classList.add('hidden')
       ;(document.getElementById('modal-form') as HTMLFormElement).reset()
-      optionsContainer.style.display = 'none'
-      fieldOptionsTextarea.required = false
+      updateTypeUi('text')
+      configUnit.value = ''
+      configDecimalPlaces.value = ''
+      configMinBound.value = ''
+      configMaxBound.value = ''
+      configMaxLength.value = ''
+      fieldDefaultInput.value = ''
       
       // Reset for "Add" mode
       fieldIdInput.value = ''
       modalTitle.textContent = t('admin.addField')
       fieldTargetSelect.disabled = false
       fieldKeyInput.disabled = false
+      fieldTypeSelect.disabled = false
       
       container.classList.add('open')
     }
@@ -257,16 +343,23 @@ import Layout from '../../layouts/Layout.astro'
       fieldDefaultInput.value = field.default_value || ''
       fieldTypeSelect.value = field.field_type || 'text'
       
-      // Handle dropdown options
-      const isDropdown = field.field_type === 'dropdown'
-      optionsContainer.style.display = isDropdown ? 'block' : 'none'
-      fieldOptionsTextarea.required = isDropdown
+      // Show/hide panels
+      updateTypeUi(field.field_type || 'text')
       fieldOptionsTextarea.value = field.options ? field.options.join('\n') : ''
+
+      // Populate config
+      const cfg = field.config || {}
+      configUnit.value = cfg.unit ?? ''
+      configDecimalPlaces.value = cfg.decimal_places != null ? String(cfg.decimal_places) : ''
+      configMinBound.value = cfg.min_bound != null ? String(cfg.min_bound) : ''
+      configMaxBound.value = cfg.max_bound != null ? String(cfg.max_bound) : ''
+      configMaxLength.value = cfg.max_length != null ? String(cfg.max_length) : ''
       
-      // Set Edit mode: target_type and key are read-only
+      // Set Edit mode: target_type and key are read-only; field_type is immutable
       modalTitle.textContent = t('admin.editField')
       fieldTargetSelect.disabled = true
       fieldKeyInput.disabled = true
+      fieldTypeSelect.disabled = true
       
       container.classList.add('open')
     }
@@ -294,17 +387,32 @@ import Layout from '../../layouts/Layout.astro'
       const fieldType = fieldTypeSelect.value
       
       let options: string[] | null = null
-      if (fieldType === 'dropdown') {
+      if (fieldType === 'dropdown' || fieldType === 'multiselect') {
         options = fieldOptionsTextarea.value
           .split('\n')
           .map(line => line.trim())
           .filter(line => line.length > 0)
         if (options.length === 0) {
           const error = document.getElementById('modal-error') as HTMLDivElement
-          error.textContent = t('admin.dropdownOptionsRequired') || 'At least one dropdown option is required'
+          error.textContent = t('admin.dropdownOptionsRequired') || 'At least one option is required'
           error.classList.remove('hidden')
           return
         }
+      }
+
+      // Build config object for numeric/textarea types
+      let config: Record<string, any> | null = null
+      if (fieldType === 'number' || fieldType === 'range') {
+        config = {}
+        if (configUnit.value.trim()) config.unit = configUnit.value.trim()
+        if (configDecimalPlaces.value !== '') config.decimal_places = parseInt(configDecimalPlaces.value, 10)
+        if (configMinBound.value !== '') config.min_bound = parseFloat(configMinBound.value)
+        if (configMaxBound.value !== '') config.max_bound = parseFloat(configMaxBound.value)
+        if (Object.keys(config).length === 0) config = null
+      } else if (fieldType === 'textarea') {
+        config = {}
+        if (configMaxLength.value !== '') config.max_length = parseInt(configMaxLength.value, 10)
+        if (Object.keys(config).length === 0) config = null
       }
       
       const error = document.getElementById('modal-error') as HTMLDivElement
@@ -320,8 +428,8 @@ import Layout from '../../layouts/Layout.astro'
           : '/api/v1/system-extra-fields'
         
         const body = isEdit
-          ? { label, default_value: defaultValue, field_type: fieldType, options }
-          : { target_type: targetType, key, label, default_value: defaultValue, field_type: fieldType, options }
+          ? { label, default_value: defaultValue, field_type: fieldType, options, config }
+          : { target_type: targetType, key, label, default_value: defaultValue, field_type: fieldType, options, config }
         
         const response = await fetch(url, {
           method: isEdit ? 'PUT' : 'POST',
