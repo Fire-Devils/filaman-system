@@ -202,25 +202,30 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _days_between(start: Any, end: Any) -> Any:
+def _aligned_datetimes(
+    start: Any, end: Any
+) -> tuple[datetime | None, datetime | None]:
     ds, de = _parse_dt(start), _parse_dt(end)
     if ds is None or de is None:
-        return None
+        return ds, de
     if ds.tzinfo is not None and de.tzinfo is None:
         de = de.replace(tzinfo=timezone.utc)
     elif ds.tzinfo is None and de.tzinfo is not None:
         ds = ds.replace(tzinfo=timezone.utc)
+    return ds, de
+
+
+def _days_between(start: Any, end: Any) -> Any:
+    ds, de = _aligned_datetimes(start, end)
+    if ds is None or de is None:
+        return None
     return (de - ds).days
 
 
 def _hours_between(start: Any, end: Any) -> Any:
-    ds, de = _parse_dt(start), _parse_dt(end)
+    ds, de = _aligned_datetimes(start, end)
     if ds is None or de is None:
         return None
-    if ds.tzinfo is not None and de.tzinfo is None:
-        de = de.replace(tzinfo=timezone.utc)
-    elif ds.tzinfo is None and de.tzinfo is not None:
-        ds = ds.replace(tzinfo=timezone.utc)
     return round((de - ds).total_seconds() / 3600, 2)
 
 
