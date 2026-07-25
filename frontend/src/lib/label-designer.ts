@@ -8,6 +8,11 @@ import {
 import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
 import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
+import {
+  EMPTY_SPOOL_LABEL_LOOKUPS,
+  resolveSpoolLabelRelations,
+  type SpoolLabelLookups,
+} from './spool-label-lookups'
 
 export const DESIGNER_KEY = 'filaman-label-designer-v1'
 export const DESIGNER_SCHEMA_VERSION = 1
@@ -426,8 +431,12 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
   }
 }
 
-export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
+export function buildSpoolDataFromApiSpool(
+  spool: any,
+  lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
+): SpoolData {
   const fil = spool?.filament ?? {}
+  const relations = resolveSpoolLabelRelations(spool, lookups)
   const firstColor = getFirstFilamentColor(fil)
   const color = firstColor?.display_name_override
     || fil.manufacturer_color_name
@@ -450,8 +459,8 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     color_hexes: getFilamentColorHexes(fil),
     color_mode: fil.color_mode,
     multi_color_style: fil.multi_color_style,
-    extruder_temp: fil.settings_extruder_temp,
-    bed_temp: fil.settings_bed_temp,
+    extruder_temp: fil.settings_extruder_temp ?? fil.custom_fields?.extruder_temp,
+    bed_temp: fil.settings_bed_temp ?? fil.custom_fields?.bed_temp,
     raw_material_weight_g: fil.raw_material_weight_g ?? fil.weight,
     weight: fil.raw_material_weight_g ?? fil.weight,
     diameter: fil.diameter_mm,
@@ -468,8 +477,8 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     lot_number: spool?.lot_number,
     external_id: spool?.external_id,
     rfid_uid: spool?.rfid_uid,
-    location: spool?.location?.label ?? spool?.location?.name,
-    status: spool?.status?.label,
+    location: relations.location,
+    status: relations.status,
     purchase_date: formatDate(spool?.purchase_date),
     purchase_price: spool?.purchase_price,
     remaining_weight_g: spool?.remaining_weight_g,
