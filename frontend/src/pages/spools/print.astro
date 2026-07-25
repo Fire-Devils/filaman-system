@@ -87,6 +87,12 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     hydrateLabelPresetStorage,
     SPOOL_LABEL_PRESETS_KEY,
   } from '../../lib/label-preset-storage'
+  import {
+    EMPTY_SPOOL_LABEL_LOOKUPS,
+    loadSpoolLabelLookups,
+    resolveSpoolLabelRelations,
+    type SpoolLabelLookups,
+  } from '../../lib/spool-label-lookups'
   import { t, initI18n } from '../../lib/i18n'
 
   installPrintFunction()
@@ -129,11 +135,14 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     id?: string | number
     custom_fields?: Record<string, unknown>
     filament?: ApiFilament
+    location_id?: unknown
+    status_id?: unknown
     location?: { label?: unknown; name?: unknown }
     status?: { label?: unknown }
   }
 
   let spools: ApiSpool[] = []
+  let labelLookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS
   type SpoolLabelEntity = ApiSpool
   const logoCache: Record<number, string | null> = {}
   let activePreviewTab: PrintDesignerTab = readPrintDesignerTab('filaman-label-active-tab')
@@ -267,6 +276,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
   function getExtraFieldsForSpool(spool: ApiSpool): {key: string, label: string, value: string}[] {
     const result: {key: string, label: string, value: string}[] = []
+    const relations = resolveSpoolLabelRelations(spool, labelLookups)
 
     // ── Spool model field checkboxes (shown when checked in sidebar) ──────
     const fmtDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
@@ -274,8 +284,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       ['lot_number',             'Lot Number',              spool.lot_number],
       ['external_id',            'External ID',             spool.external_id],
       ['rfid_uid',               'RFID UID',                spool.rfid_uid],
-      ['location',               'Location',                spool.location?.label ?? spool.location?.name],
-      ['status',                 'Status',                  spool.status?.label],
+      ['location',               'Location',                relations.location],
+      ['status',                 'Status',                  relations.status],
       ['purchase_date',          'Purchase Date',           fmtDate(spool.purchase_date)],
       ['purchase_price',         'Purchase Price',          spool.purchase_price],
       ['remaining_weight_g',     'Remaining Weight (g)',    spool.remaining_weight_g],
@@ -336,7 +346,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     getId: spool => spool?.id,
     getLogoManufacturerId: getManufacturerIdFromApiSpool,
     buildStandardData: spool => buildStandardLabelDataFromApiSpool(spool, getExtraFieldsForSpool(spool)),
-    buildDesignerData: buildSpoolDataFromApiSpool,
+    buildDesignerData: spool => buildSpoolDataFromApiSpool(spool, labelLookups),
     singlePngName: spool => `label-${spool.id}.png`,
     zipName: () => datedExportName('labels', 'zip'),
     zipEntryName: spool => `label-${spool.id}.png`,
@@ -695,14 +705,16 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
     ids.forEach(id => previewContainer.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
 
-    const [spoolResults] = await Promise.all([
+    const [spoolResults, , loadedLookups] = await Promise.all([
       Promise.allSettled(ids.map(async id => {
         const r = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
         if (!r.ok) throw new Error(`Failed to load spool ${id}: ${r.status}`)
         return await r.json()
       })),
       loadExtraFieldDefs(),
+      loadSpoolLabelLookups(),
     ])
+    labelLookups = loadedLookups
     spools = spoolResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiSpool>).value)
     designerEditor.refreshExtraFields(getBatchDesignerExtraFields())
     updateLabelCount()
