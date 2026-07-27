@@ -10,13 +10,12 @@ Covers:
 """
 
 import pytest
-from pydantic import ValidationError
-
 from app.api.v1.schemas_system_extra_field import (
     VALID_FIELD_TYPES,
     SystemExtraFieldCreate,
     SystemExtraFieldResponse,
 )
+from pydantic import ValidationError
 
 # ──────────────────────────────────────────────────────────────
 # Schema / validator unit tests  (pure Pydantic, no DB, no HTTP)
@@ -24,11 +23,11 @@ from app.api.v1.schemas_system_extra_field import (
 
 
 class TestValidFieldTypes:
-    def test_all_10_types_present(self):
+    def test_all_11_types_present(self):
         expected = {
             "text", "number", "range",
             "dropdown", "checkbox", "formula",
-            "date", "url", "multiselect", "textarea",
+            "date", "datetime", "url", "multiselect", "textarea",
         }
         assert VALID_FIELD_TYPES == expected
 
@@ -63,6 +62,9 @@ class TestSchemaValidation:
 
     def test_valid_type_date(self):
         SystemExtraFieldCreate(**self._base(field_type="date"))
+
+    def test_valid_type_datetime(self):
+        SystemExtraFieldCreate(**self._base(field_type="datetime"))
 
     def test_valid_type_url(self):
         SystemExtraFieldCreate(**self._base(field_type="url"))
@@ -257,6 +259,21 @@ class TestCreateRichFieldTypes:
         )
         assert resp.status_code == 200
         assert resp.json()["field_type"] == "date"
+
+    @pytest.mark.asyncio
+    async def test_create_datetime_field(self, auth_client):
+        client, csrf = auth_client
+        resp = await _create_field(
+            client,
+            csrf,
+            key="certified_at",
+            label="Certified at",
+            field_type="datetime",
+            default_value="2026-07-26T14:30",
+        )
+        assert resp.status_code == 200
+        assert resp.json()["field_type"] == "datetime"
+        assert resp.json()["default_value"] == "2026-07-26T14:30"
 
     @pytest.mark.asyncio
     async def test_create_url_field(self, auth_client):

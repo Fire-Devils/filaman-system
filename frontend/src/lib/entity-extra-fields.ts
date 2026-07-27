@@ -4,13 +4,23 @@ import {
   hasOwnFieldValue,
   isUnsafeExtraFieldPath,
   renderFieldDisplay,
-  renderFieldInput,
   renderFieldPlainText,
   renderUnknownFieldPlainText,
   setOwnFieldValue,
   unflattenFieldValues,
   type SystemExtraFieldDef,
 } from './extra-fields'
+import {
+  createExtraFieldDefinitionDialog,
+  extraFieldDefinitionFromDialogDraft,
+  type ExtraFieldDefinitionDialogResult,
+} from './extra-field-definition-dialog'
+import { t } from './i18n'
+
+type ExtraFieldDialogWindow = Window & {
+  __fmAlert: (message: string) => Promise<boolean>
+  __fmConfirm: (message: string) => Promise<boolean>
+}
 
 export type EntityExtraFieldDefinition = Omit<
   SystemExtraFieldDef,
@@ -266,55 +276,10 @@ export interface EntityExtraFieldEditor {
   getPayload: () => EntityExtraFieldPayload | null
 }
 
-const FIELD_TYPES = [
-  'text',
-  'number',
-  'range',
-  'dropdown',
-  'multiselect',
-  'checkbox',
-  'date',
-  'datetime',
-  'url',
-  'textarea',
-] as const
-
 let nextDraftId = 1
 
-function asOptionalNumber(value: string): number | undefined {
-  if (value.trim() === '') return undefined
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
 function definitionFromDraft(draft: DraftField): SystemExtraFieldDef {
-  const config: NonNullable<SystemExtraFieldDef['config']> = {}
-  if (draft.unit.trim() && ['number', 'range'].includes(draft.fieldType)) {
-    config.unit = draft.unit.trim()
-  }
-  if (draft.decimalPlaces !== '' && ['number', 'range'].includes(draft.fieldType)) {
-    config.decimal_places = asOptionalNumber(draft.decimalPlaces)
-  }
-  if (draft.minBound !== '' && ['number', 'range'].includes(draft.fieldType)) {
-    config.min_bound = asOptionalNumber(draft.minBound)
-  }
-  if (draft.maxBound !== '' && ['number', 'range'].includes(draft.fieldType)) {
-    config.max_bound = asOptionalNumber(draft.maxBound)
-  }
-  if (draft.maxLength !== '' && draft.fieldType === 'textarea') {
-    config.max_length = asOptionalNumber(draft.maxLength)
-  }
-
-  return {
-    key: '__entity_value',
-    label: draft.label.trim() || draft.key.trim() || 'Value',
-    field_type: draft.fieldType,
-    options:
-      ['dropdown', 'multiselect'].includes(draft.fieldType) && draft.options.length
-        ? draft.options
-        : null,
-    config: Object.keys(config).length ? config : null,
-  }
+  return extraFieldDefinitionFromDialogDraft(draft, '__entity_value')
 }
 
 function createDraft(
@@ -472,45 +437,68 @@ export function createEntityExtraFieldEditor(options: {
   const { container, addButton } = options
   let drafts: DraftField[] = []
   let systemKeys = new Set<string>()
+  const dialog = createExtraFieldDefinitionDialog({ mode: 'entity' })
 
-  function syncDraftsFromDom(): boolean {
-    for (const row of container.querySelectorAll<HTMLElement>('[data-entity-extra-id]')) {
-      const id = Number(row.dataset.entityExtraId)
-      const draft = drafts.find(item => item.id === id)
-      if (!draft) continue
+  function fieldTypeLabel(fieldType: string): string {
+    const translated = t(`admin.fieldType_${fieldType}`)
+    return translated === `admin.fieldType_${fieldType}` ? fieldType : translated
+  }
 
-      draft.key = row.querySelector<HTMLInputElement>('.entity-extra-key')?.value ?? draft.key
-      draft.label = row.querySelector<HTMLInputElement>('.entity-extra-label')?.value ?? draft.label
-      draft.fieldType =
-        row.querySelector<HTMLSelectElement>('.entity-extra-type')?.value ?? draft.fieldType
-      draft.unit = row.querySelector<HTMLInputElement>('.entity-extra-unit')?.value ?? ''
-      draft.decimalPlaces =
-        row.querySelector<HTMLInputElement>('.entity-extra-decimals')?.value ?? ''
-      draft.minBound =
-        row.querySelector<HTMLInputElement>('.entity-extra-min-bound')?.value ?? ''
-      draft.maxBound =
-        row.querySelector<HTMLInputElement>('.entity-extra-max-bound')?.value ?? ''
-      draft.maxLength =
-        row.querySelector<HTMLInputElement>('.entity-extra-max-length')?.value ?? ''
-      const optionsValue =
-        row.querySelector<HTMLTextAreaElement>('.entity-extra-options')?.value ?? ''
-      draft.options = optionsValue
-        .split(/\r?\n|,/)
-        .map(value => value.trim())
-        .filter(Boolean)
+  function applyDialogResult(draft: DraftField, result: ExtraFieldDefinitionDialogResult): void {
+    draft.key = result.key.trim()
+    draft.label = result.label.trim()
+    draft.fieldType = result.fieldType
+    draft.options = [...result.options]
+    draft.unit = result.unit
+    draft.decimalPlaces = result.decimalPlaces
+    draft.minBound = result.minBound
+    draft.maxBound = result.maxBound
+    draft.maxLength = result.maxLength
+    draft.value = result.value
+  }
 
-      const values = collectSystemFieldValues(row)
-      if (!values) return false
-      const nested = unflattenFieldValues(values.flat)
-      draft.value = values.direct.__entity_value ?? nested.__entity_value
-      if (
-        draft.value === undefined &&
-        ['text', 'url', 'date', 'datetime', 'textarea', 'dropdown'].includes(draft.fieldType)
-      ) {
-        draft.value = ''
-      }
+  function validateDialogResult(result: ExtraFieldDefinitionDialogResult, currentId?: number): void {
+    const key = result.key.trim()
+    if (isUnsafeExtraFieldPath(key)) {
+      throw new Error('Custom-field keys cannot contain empty or reserved path segments.')
     }
-    return true
+    if (isSystemKey(key, systemKeys)) {
+      throw new Error('This key is already defined as a System Extra Field.')
+    }
+    const overlap = drafts.find(
+      (draft) =>
+        draft.id !== currentId &&
+        (key === draft.key.trim() || key.startsWith(`${draft.key.trim()}.`) || draft.key.trim().startsWith(`${key}.`)),
+    )
+    if (overlap) {
+      throw new Error('Custom-field keys must be unique and cannot overlap nested paths.')
+    }
+  }
+
+  function openAddDialog(): void {
+    const next = createDraft()
+    dialog.open({
+      title: t('admin.addField'),
+      draft: next,
+      onSubmit(result) {
+        validateDialogResult(result)
+        applyDialogResult(next, result)
+        drafts.push(next)
+        render()
+      },
+    })
+  }
+
+  function openEditDialog(draft: DraftField): void {
+    dialog.open({
+      title: t('admin.editField'),
+      draft,
+      onSubmit(result) {
+        validateDialogResult(result, draft.id)
+        applyDialogResult(draft, result)
+        render()
+      },
+    })
   }
 
   function render(): void {
@@ -519,79 +507,61 @@ export function createEntityExtraFieldEditor(options: {
       return
     }
 
-    container.innerHTML = drafts
-      .map(draft => {
+    const rows = drafts
+      .map((draft) => {
         const definition = definitionFromDraft(draft)
-        const typeOptions = FIELD_TYPES.map(
-          type =>
-            `<option value="${type}"${draft.fieldType === type ? ' selected' : ''}>${type}</option>`,
-        ).join('')
-        const numericConfig = ['number', 'range'].includes(draft.fieldType)
-          ? `<div style="display:grid;grid-template-columns:repeat(4,minmax(90px,1fr));gap:8px">
-              <input class="fm-input entity-extra-unit" value="${escapeHtml(draft.unit)}" placeholder="Unit (e.g. °C)" />
-              <input type="number" min="0" max="10" class="fm-input entity-extra-decimals" value="${escapeHtml(draft.decimalPlaces)}" placeholder="Decimals" />
-              <input type="number" class="fm-input entity-extra-min-bound" value="${escapeHtml(draft.minBound)}" placeholder="Min bound" />
-              <input type="number" class="fm-input entity-extra-max-bound" value="${escapeHtml(draft.maxBound)}" placeholder="Max bound" />
-            </div>`
-          : ''
-        const choiceConfig = ['dropdown', 'multiselect'].includes(draft.fieldType)
-          ? `<textarea class="fm-input entity-extra-options" rows="2" placeholder="Options, one per line">${escapeHtml(draft.options.join('\n'))}</textarea>`
-          : ''
-        const textareaConfig =
-          draft.fieldType === 'textarea'
-            ? `<input type="number" min="1" class="fm-input entity-extra-max-length" value="${escapeHtml(draft.maxLength)}" placeholder="Maximum length" />`
+        const optionsInfo =
+          ['dropdown', 'multiselect'].includes(draft.fieldType) && draft.options.length
+            ? ` <span title="${escapeHtml(draft.options.join('\n'))}" style="color:var(--text-muted);cursor:help;font-size:0.8rem">(${draft.options.length})</span>`
             : ''
-
-        return `<div data-entity-extra-id="${draft.id}" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;display:grid;gap:10px;background:var(--bg-soft)">
-          <div style="display:grid;grid-template-columns:minmax(130px,1fr) minmax(150px,1fr) minmax(120px,0.7fr) auto;gap:8px;align-items:center">
-            <input class="fm-input entity-extra-key" value="${escapeHtml(draft.key)}" placeholder="Key" />
-            <input class="fm-input entity-extra-label" value="${escapeHtml(draft.label)}" placeholder="Label (optional)" />
-            <select class="fm-select entity-extra-type">${typeOptions}</select>
-            <button type="button" class="fm-btn fm-btn-danger entity-extra-remove" aria-label="Remove field" style="padding:6px 10px">&times;</button>
-          </div>
-          ${numericConfig}${choiceConfig}${textareaConfig}
-          <div class="entity-extra-value">${renderFieldInput(definition, draft.value)}</div>
-        </div>`
+        return `<tr data-entity-extra-id="${draft.id}">
+          <td style="font-family:monospace;color:var(--accent-2)">${escapeHtml(draft.key)}</td>
+          <td>${escapeHtml(draft.label || draft.key)}</td>
+          <td><span class="fm-pill">${escapeHtml(fieldTypeLabel(draft.fieldType))}</span>${optionsInfo}</td>
+          <td style="max-width:260px;word-break:break-word">${renderFieldDisplay(definition, draft.value)}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <button type="button" class="entity-extra-edit" style="color:var(--accent);background:none;border:none;cursor:pointer;margin-right:8px">${escapeHtml(t('common.edit'))}</button>
+            <button type="button" class="entity-extra-remove" style="color:var(--error-text);background:none;border:none;cursor:pointer">${escapeHtml(t('common.delete'))}</button>
+          </td>
+        </tr>`
       })
       .join('')
 
-    container.querySelectorAll<HTMLSelectElement>('.entity-extra-type').forEach(select => {
-      select.addEventListener('change', () => {
-        if (!syncDraftsFromDom()) return
-        render()
-      })
-    })
-    container
-      .querySelectorAll<HTMLInputElement>(
-        '.entity-extra-unit,.entity-extra-decimals,.entity-extra-min-bound,.entity-extra-max-bound,.entity-extra-max-length',
-      )
-      .forEach(input => {
-        input.addEventListener('change', () => {
-          if (!syncDraftsFromDom()) return
-          render()
-        })
-      })
-    container.querySelectorAll<HTMLTextAreaElement>('.entity-extra-options').forEach(input => {
-      input.addEventListener('change', () => {
-        if (!syncDraftsFromDom()) return
-        render()
-      })
-    })
-    container.querySelectorAll<HTMLButtonElement>('.entity-extra-remove').forEach(button => {
+    container.innerHTML = `<div style="overflow-x:auto"><table class="fm-table">
+      <thead style="background:var(--bg-soft)"><tr>
+        <th>${escapeHtml(t('admin.keyJson'))}</th>
+        <th>${escapeHtml(t('admin.displayLabel'))}</th>
+        <th>${escapeHtml(t('admin.fieldType'))}</th>
+        <th>${escapeHtml(t('admin.fieldValue'))}</th>
+        <th style="text-align:right">${escapeHtml(t('common.actions'))}</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`
+
+    container.querySelectorAll<HTMLButtonElement>('.entity-extra-edit').forEach((button) => {
       button.addEventListener('click', () => {
-        if (!syncDraftsFromDom()) return
         const row = button.closest<HTMLElement>('[data-entity-extra-id]')
-        drafts = drafts.filter(item => item.id !== Number(row?.dataset.entityExtraId))
+        const draft = drafts.find((item) => item.id === Number(row?.dataset.entityExtraId))
+        if (draft) openEditDialog(draft)
+      })
+    })
+    container.querySelectorAll<HTMLButtonElement>('.entity-extra-remove').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const dialogWindow = window as unknown as ExtraFieldDialogWindow
+        if (!(await dialogWindow.__fmConfirm(t('admin.deleteFieldConfirm')))) return
+        const row = button.closest<HTMLElement>('[data-entity-extra-id]')
+        drafts = drafts.filter((item) => item.id !== Number(row?.dataset.entityExtraId))
         render()
       })
     })
   }
 
-  addButton.addEventListener('click', () => {
-    if (!syncDraftsFromDom()) return
-    drafts.push(createDraft())
-    render()
-  })
+  addButton.addEventListener('click', openAddDialog)
+
+  function reportValidationError(message: string): null {
+    void (window as unknown as ExtraFieldDialogWindow).__fmAlert(message)
+    return null
+  }
 
   return {
     setData(customFields = null, definitions = null) {
@@ -612,13 +582,11 @@ export function createEntityExtraFieldEditor(options: {
       render()
     },
     setSystemFieldKeys(keys) {
-      if (!syncDraftsFromDom()) return
       systemKeys = new Set(keys)
-      drafts = drafts.filter(draft => !isSystemKey(draft.key.trim(), systemKeys))
+      drafts = drafts.filter((draft) => !isSystemKey(draft.key.trim(), systemKeys))
       render()
     },
     getPayload() {
-      if (!syncDraftsFromDom()) return null
       const values: Record<string, unknown> = {}
       const definitions: EntityExtraFieldDefinitions = {}
       const seen = new Set<string>()
@@ -626,31 +594,18 @@ export function createEntityExtraFieldEditor(options: {
       for (const draft of drafts) {
         const key = draft.key.trim()
         if (!key) continue
-        const keyInput = container
-          .querySelector<HTMLElement>(`[data-entity-extra-id="${draft.id}"]`)
-          ?.querySelector<HTMLInputElement>('.entity-extra-key')
-        keyInput?.setCustomValidity('')
         if (isUnsafeExtraFieldPath(key)) {
-          keyInput?.setCustomValidity(
-            'Custom-field keys cannot contain empty or reserved path segments.',
-          )
-          keyInput?.reportValidity()
-          return null
+          return reportValidationError('Custom-field keys cannot contain empty or reserved path segments.')
         }
         const overlapsLocalKey = [...seen].some(
-          existing =>
-            key === existing ||
-            key.startsWith(`${existing}.`) ||
-            existing.startsWith(`${key}.`),
+          (existing) => key === existing || key.startsWith(`${existing}.`) || existing.startsWith(`${key}.`),
         )
         if (overlapsLocalKey || isSystemKey(key, systemKeys)) {
-          keyInput?.setCustomValidity(
+          return reportValidationError(
             overlapsLocalKey
               ? 'Custom-field keys must be unique and cannot overlap nested paths.'
               : 'This key is already defined as a System Extra Field.',
           )
-          keyInput?.reportValidity()
-          return null
         }
         seen.add(key)
         if (draft.value !== undefined) setOwnFieldValue(values, key, draft.value)

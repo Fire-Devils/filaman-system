@@ -9,8 +9,11 @@ import {
   renderFieldPlainText,
   formatDateTimeDisplay,
   formatDateTimeInputValue,
+  formatExtraFieldDefaultValue,
   isUnsafeExtraFieldPath,
+  parseExtraFieldDefaultValue,
   renderUnknownFieldPlainText,
+  serializeExtraFieldDefaultValue,
   type SystemExtraFieldDef,
 } from './extra-fields'
 
@@ -94,6 +97,52 @@ describe('extra-field path safety', () => {
     expect(Object.getOwnPropertyDescriptor(result, 'constructor')?.value).toEqual({
       prototype: { infected: 'no' },
     })
+  })
+})
+
+describe('typed extra-field defaults', () => {
+  it('roundtrips range defaults as compact JSON', () => {
+    const serialized = serializeExtraFieldDefaultValue('range', { min: 190, max: 220 })
+
+    expect(serialized).toBe('{"min":190,"max":220}')
+    expect(parseExtraFieldDefaultValue({
+      field_type: 'range',
+      default_value: serialized,
+    })).toEqual({ min: 190, max: 220 })
+    expect(formatExtraFieldDefaultValue({
+      field_type: 'range',
+      default_value: serialized,
+    })).toBe('190–220')
+  })
+
+  it('roundtrips multi-select defaults as JSON', () => {
+    const serialized = serializeExtraFieldDefaultValue('multiselect', ['PLA', 'PETG'])
+
+    expect(serialized).toBe('["PLA","PETG"]')
+    expect(parseExtraFieldDefaultValue({
+      field_type: 'multiselect',
+      default_value: serialized,
+    })).toEqual(['PLA', 'PETG'])
+    expect(formatExtraFieldDefaultValue({
+      field_type: 'multiselect',
+      default_value: serialized,
+    })).toBe('PLA, PETG')
+  })
+
+  it('resolves the TODAY sentinel in local date form', () => {
+    expect(parseExtraFieldDefaultValue(
+      { field_type: 'date', default_value: 'TODAY' },
+      new Date(2026, 6, 26, 12),
+    )).toBe('2026-07-26')
+  })
+
+  it('serializes and formats checkbox defaults', () => {
+    expect(serializeExtraFieldDefaultValue('checkbox', true)).toBe('true')
+    expect(serializeExtraFieldDefaultValue('checkbox', false)).toBe('false')
+    expect(formatExtraFieldDefaultValue({
+      field_type: 'checkbox',
+      default_value: 'true',
+    })).toBe('✓')
   })
 })
 
@@ -214,6 +263,16 @@ describe('renderFieldInput — range', () => {
     const html = renderFieldInput(field({ field_type: 'range', config: { unit: '°C' } }), null)
     expect(html).toContain('°C')
   })
+
+  it('prefills min/max from a typed default', () => {
+    const html = renderFieldInput(field({
+      field_type: 'range',
+      default_value: '{"min":190,"max":220}',
+    }), null)
+
+    expect(html).toContain('value="190"')
+    expect(html).toContain('value="220"')
+  })
 })
 
 describe('renderFieldInput — datetime', () => {
@@ -245,10 +304,20 @@ describe('renderFieldInput — datetime', () => {
     expect(html).toContain('type="text"')
     expect(html).toContain('value="unknown"')
   })
+
+  it('prefills a valid datetime default', () => {
+    const html = renderFieldInput(field({
+      field_type: 'datetime',
+      default_value: '2026-07-26T14:30',
+    }), null)
+
+    expect(html).toContain('type="datetime-local"')
+    expect(html).toContain('value="2026-07-26T14:30"')
+  })
 })
 
 describe('collectSystemFieldValues', () => {
-  function rootWith(scalars: any[], multiselect: any[] = []): ParentNode {
+  function rootWith(scalars: unknown[], multiselect: unknown[] = []): ParentNode {
     return {
       querySelectorAll: (selector: string) => selector === '.system-field-input' ? scalars : multiselect,
     } as unknown as ParentNode
@@ -354,6 +423,19 @@ describe('renderFieldInput — date', () => {
     const html = renderFieldInput(field({ field_type: 'date' }), '2024-06-15')
     expect(html).toContain('value="2024-06-15"')
   })
+
+  it('prefills a TODAY default', () => {
+    const expected = new Date()
+    const pad = (part: number) => String(part).padStart(2, '0')
+    const localToday =
+      `${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`
+    const html = renderFieldInput(field({
+      field_type: 'date',
+      default_value: 'TODAY',
+    }), null)
+
+    expect(html).toContain(`value="${localToday}"`)
+  })
 })
 
 describe('renderFieldInput — url', () => {
@@ -384,6 +466,16 @@ describe('renderFieldInput — multiselect', () => {
     expect(html).toContain('" checked')
     const greenChecked = html.match(/value="Green"([^>]*)/)?.[0] ?? ''
     expect(greenChecked).toContain('checked')
+  })
+
+  it('marks default options as checked when no value exists', () => {
+    const html = renderFieldInput(field({
+      field_type: 'multiselect',
+      options: opts,
+      default_value: '["Red","Blue"]',
+    }), null)
+
+    expect(html.match(/ checked/g)).toHaveLength(2)
   })
 
   it('handles empty rawValue array', () => {
@@ -418,6 +510,11 @@ describe('renderFieldInput — textarea', () => {
     const html = renderFieldInput(field({ field_type: 'textarea' }), 'some notes')
     expect(html).toContain('some notes')
   })
+
+  it('uses a sentence-sized example placeholder', () => {
+    const html = renderFieldInput(field({ field_type: 'textarea' }), null)
+    expect(html).toContain('The quick brown fox jumps over the lazy dog.')
+  })
 })
 
 describe('renderFieldInput — checkbox', () => {
@@ -445,6 +542,15 @@ describe('renderFieldInput — checkbox', () => {
     const html = renderFieldInput(field({ field_type: 'checkbox', label: 'L' }), false)
     expect(html).not.toContain(' checked')
   })
+
+  it('uses a true default when no value exists', () => {
+    const html = renderFieldInput(field({
+      field_type: 'checkbox',
+      label: 'L',
+      default_value: 'true',
+    }), null)
+    expect(html).toContain(' checked')
+  })
 })
 
 describe('renderFieldInput — dropdown', () => {
@@ -463,6 +569,16 @@ describe('renderFieldInput — dropdown', () => {
   it('marks matching option as selected', () => {
     const html = renderFieldInput(field({ field_type: 'dropdown', options: ['A', 'B', 'C'] }), 'B')
     expect(html).toContain('value="B" selected')
+  })
+
+  it('selects a configured default option when no value exists', () => {
+    const html = renderFieldInput(field({
+      field_type: 'dropdown',
+      options: ['PLA', 'PETG'],
+      default_value: 'PETG',
+    }), null)
+
+    expect(html).toContain('value="PETG" selected')
   })
 })
 

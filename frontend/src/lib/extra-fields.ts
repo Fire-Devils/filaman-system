@@ -126,6 +126,121 @@ export function formatDateTimeInputValue(value: unknown): string | null {
   )
 }
 
+export const TODAY_EXTRA_FIELD_DEFAULT = 'TODAY'
+
+function localDateInputValue(date: Date): string {
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+/**
+ * Decode the string-backed System Extra Field default into the value shape used
+ * by the shared rich-field controls. Complex defaults use compact JSON while
+ * scalar defaults keep their existing wire representation.
+ */
+export function parseExtraFieldDefaultValue(
+  field: Pick<SystemExtraFieldDef, 'field_type' | 'default_value'>,
+  now = new Date(),
+): unknown {
+  const raw = field.default_value
+  if (raw === null || raw === undefined || raw === '') return undefined
+
+  switch (field.field_type) {
+    case 'range': {
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const value = parsed as Record<string, unknown>
+          const min = finiteNumber(value.min)
+          const max = finiteNumber(value.max)
+          if (min !== null || max !== null) {
+            return {
+              ...(min !== null ? { min } : {}),
+              ...(max !== null ? { max } : {}),
+            }
+          }
+        }
+      } catch {
+        const parts = raw.split(/\s*(?:,|–|\.\.)\s*/)
+        if (parts.length === 2) {
+          const min = finiteNumber(parts[0])
+          const max = finiteNumber(parts[1])
+          if (min !== null || max !== null) {
+            return {
+              ...(min !== null ? { min } : {}),
+              ...(max !== null ? { max } : {}),
+            }
+          }
+        }
+      }
+      return undefined
+    }
+    case 'multiselect':
+      try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed.map(String)
+      } catch {
+        return raw
+          .split(/\r?\n|,/)
+          .map(value => value.trim())
+          .filter(Boolean)
+      }
+      return []
+    case 'checkbox':
+      return raw === 'true'
+    case 'date':
+      return raw.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT
+        ? localDateInputValue(now)
+        : raw
+    default:
+      return raw
+  }
+}
+
+export function serializeExtraFieldDefaultValue(
+  fieldType: string,
+  value: unknown,
+): string | null {
+  if (fieldType === 'range') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const range = value as Record<string, unknown>
+    const min = finiteNumber(range.min)
+    const max = finiteNumber(range.max)
+    if (min === null && max === null) return null
+    return JSON.stringify({
+      ...(min !== null ? { min } : {}),
+      ...(max !== null ? { max } : {}),
+    })
+  }
+  if (fieldType === 'multiselect') {
+    if (!Array.isArray(value) || value.length === 0) return null
+    return JSON.stringify(value.map(String))
+  }
+  if (fieldType === 'checkbox') return value === true ? 'true' : 'false'
+  if (value === null || value === undefined || String(value) === '') return null
+  return String(value)
+}
+
+export function formatExtraFieldDefaultValue(
+  field: Pick<SystemExtraFieldDef, 'field_type' | 'default_value'>,
+): string {
+  if (!field.default_value) return '—'
+  if (
+    field.field_type === 'date' &&
+    field.default_value.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT
+  ) {
+    return TODAY_EXTRA_FIELD_DEFAULT
+  }
+  const parsed = parseExtraFieldDefaultValue(field)
+  if (field.field_type === 'range' && parsed && typeof parsed === 'object') {
+    const range = parsed as Record<string, unknown>
+    return `${range.min ?? ''}–${range.max ?? ''}`
+  }
+  if (field.field_type === 'multiselect' && Array.isArray(parsed)) return parsed.join(', ')
+  if (field.field_type === 'checkbox') return parsed === true ? '✓' : '✗'
+  return String(parsed ?? field.default_value)
+}
+
 /**
  * Estimate a good pixel width for a number <input> from its field config.
  * Counts the expected digit count from min/max bounds and decimal places so
@@ -244,7 +359,7 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
 export function renderFieldInput(
   field: SystemExtraFieldDef,
   rawValue: unknown,
-  flat: Record<string, any> = {}
+  flat: Record<string, unknown> = {}
 ): string {
   const key = escapeHtml(field.key)
   const cfg = field.config ?? {}
@@ -257,13 +372,20 @@ export function renderFieldInput(
     ? `<span style="color:var(--text-muted);font-size:0.85rem;flex-shrink:0">${escapeHtml(unit)}</span>`
     : ''
 
+  const defaultValue = parseExtraFieldDefaultValue(field)
   const scalarVal =
-    rawValue != null
-      ? escapeHtml(String(rawValue))
-      : flat[field.key] != null
-        ? escapeHtml(String(flat[field.key]))
-        : ''
-  const displayVal = scalarVal || (field.default_value ? escapeHtml(field.default_value) : '')
+    rawValue != null && String(rawValue) !== ''
+      ? rawValue
+      : flat[field.key] != null && String(flat[field.key]) !== ''
+        ? flat[field.key]
+        : defaultValue
+  const displayVal =
+    scalarVal !== null &&
+    scalarVal !== undefined &&
+    !Array.isArray(scalarVal) &&
+    typeof scalarVal !== 'object'
+      ? escapeHtml(String(scalarVal))
+      : ''
 
   switch (field.field_type) {
     case 'float': // legacy alias — falls through
@@ -276,20 +398,28 @@ export function renderFieldInput(
     case 'range': {
       const rangeObj =
         typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
-          ? (rawValue as Record<string, any>)
+          ? (rawValue as Record<string, unknown>)
+          : {}
+      const defaultRange =
+        defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)
+          ? (defaultValue as Record<string, unknown>)
           : {}
       const minVal =
         rangeObj.min != null
           ? escapeHtml(String(rangeObj.min))
           : flat[field.key + '.min'] != null
             ? escapeHtml(String(flat[field.key + '.min']))
-            : ''
+            : defaultRange.min != null
+              ? escapeHtml(String(defaultRange.min))
+              : ''
       const maxVal =
         rangeObj.max != null
           ? escapeHtml(String(rangeObj.max))
           : flat[field.key + '.max'] != null
             ? escapeHtml(String(flat[field.key + '.max']))
-            : ''
+            : defaultRange.max != null
+              ? escapeHtml(String(defaultRange.max))
+              : ''
       const numW = numberInputWidth(cfg)
       return (
         `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
@@ -317,7 +447,11 @@ export function renderFieldInput(
     case 'url':
       return `<input type="url" class="fm-input system-field-input" data-key="${key}" data-type="url" value="${displayVal}" placeholder="https://" />`
     case 'multiselect': {
-      const selected: string[] = Array.isArray(rawValue) ? rawValue.map(String) : []
+      const selected: string[] = Array.isArray(rawValue)
+        ? rawValue.map(String)
+        : Array.isArray(defaultValue)
+          ? defaultValue.map(String)
+          : []
       const opts = (field.options ?? [])
         .map(opt => {
           const esc = escapeHtml(opt)
@@ -329,7 +463,7 @@ export function renderFieldInput(
     }
     case 'textarea': {
       const maxLen = cfg.max_length ?? 2000
-      return `<textarea class="fm-input system-field-input" data-key="${key}" data-type="textarea" rows="3" maxlength="${maxLen}" style="resize:vertical">${displayVal}</textarea>`
+      return `<textarea class="fm-input system-field-input" data-key="${key}" data-type="textarea" rows="3" maxlength="${maxLen}" placeholder="e.g. The quick brown fox jumps over the lazy dog." style="resize:vertical">${displayVal}</textarea>`
     }
     case 'checkbox': {
       const chk = displayVal === 'true' || rawValue === true ? ' checked' : ''
@@ -376,7 +510,7 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     case 'range': {
       if (typeof value !== 'object' || value === null || Array.isArray(value))
         return escapeHtml(String(value))
-      const rv = value as Record<string, any>
+      const rv = value as Record<string, unknown>
       const minNum = finiteNumber(rv.min)
       const maxNum = finiteNumber(rv.max)
       const minStr = minNum != null && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '?')
@@ -395,7 +529,7 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     }
     case 'multiselect':
       if (!Array.isArray(value)) return escapeHtml(String(value))
-      return (value as any[]).map(v => `<span class="fm-pill">${escapeHtml(String(v))}</span>`).join(' ')
+      return value.map(v => `<span class="fm-pill">${escapeHtml(String(v))}</span>`).join(' ')
     case 'textarea':
       return `<div style="white-space:pre-wrap;font-size:0.9em">${escapeHtml(String(value))}</div>`
     case 'checkbox':

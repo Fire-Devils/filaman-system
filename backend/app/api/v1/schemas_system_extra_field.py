@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 VALID_FIELD_TYPES = frozenset({
     "text", "number", "range",
     "dropdown", "checkbox", "formula",
-    "date", "url", "multiselect", "textarea",
+    "date", "datetime", "url", "multiselect", "textarea",
 })
 
 CONFIG_KEYS_BY_TYPE = {
@@ -60,7 +60,7 @@ def validate_field_type_config(
         if value is None:
             continue
         if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ValueError(f"config.{key} must be a number")
+            raise ValueError(f"config.{key} must be a number")  # noqa: TRY004
         bounds[key] = value
 
     if (
@@ -81,7 +81,7 @@ class SystemExtraFieldBase(BaseModel):
         "text",
         description=(
             "Field type: text, number, range, dropdown, checkbox, "
-            "formula, date, url, multiselect, textarea"
+            "formula, date, datetime, url, multiselect, textarea"
         ),
     )
     options: list[str] | None = Field(None, description="Options for dropdown/multiselect fields")
@@ -115,7 +115,7 @@ class SystemExtraFieldUpdate(BaseModel):
         None,
         description=(
             "Field type: text, number, range, dropdown, checkbox, "
-            "formula, date, url, multiselect, textarea."
+            "formula, date, datetime, url, multiselect, textarea."
         ),
     )
     options: list[str] | None = Field(None, description="Options for dropdown/multiselect fields")

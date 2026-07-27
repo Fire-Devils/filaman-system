@@ -6,22 +6,16 @@ import Layout from '../../layouts/Layout.astro'
   <div style="margin-bottom: 24px;">
     <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
   </div>
-  
+
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.extraFieldsTitle">System Extra Fields</h1>
-    <button
-      id="btn-new"
-      class="fm-btn fm-btn-primary"
-      data-i18n="admin.addField"
-    >
-      Add Field
-    </button>
+    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="admin.addField">Add Field</button>
   </div>
 
   <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="admin.extraFieldsHint">
-    These fields will be automatically added to all filaments or spools. 
+    These fields will be automatically added to all filaments or spools.
   </p>
-  
+
   <div class="fm-card" style="padding: 0;">
     <table class="fm-table">
       <thead style="background: var(--bg-soft);">
@@ -42,420 +36,232 @@ import Layout from '../../layouts/Layout.astro'
       </tbody>
     </table>
   </div>
-  
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.addField">Add System Field</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
-        <input type="hidden" id="field-id" />
-        
-        <div>
-          <label for="field-target" class="fm-label"><span data-i18n="admin.targetType">Target Type</span> *</label>
-          <select id="field-target" required class="fm-select">
-            <option value="filament" data-i18n="dashboard.filament">Filament</option>
-            <option value="spool" data-i18n="dashboard.spool">Spool</option>
-          </select>
-        </div>
-        
-        <div>
-          <label for="field-key" class="fm-label"><span data-i18n="admin.keyJson">Key (JSON)</span> *</label>
-          <input type="text" id="field-key" required class="fm-input" placeholder="e.g. material_type" pattern="[a-zA-Z0-9_]+" title="Only letters, numbers, and underscores allowed" />
-          <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.keyJsonHint">Used as key in the custom_fields JSON.</small>
-        </div>
-        
-        <div>
-          <label for="field-label" class="fm-label"><span data-i18n="admin.displayLabel">Display Label</span> *</label>
-          <input type="text" id="field-label" required class="fm-input" placeholder="e.g. Material Type" />
-        </div>
 
-        <div>
-          <label for="field-type" class="fm-label"><span data-i18n="admin.fieldType">Field Type</span> *</label>
-          <select id="field-type" required class="fm-select">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="range">Range (min–max)</option>
-            <option value="dropdown">Dropdown</option>
-            <option value="multiselect">Multi-select</option>
-            <option value="checkbox">Checkbox</option>
-            <option value="date">Date</option>
-            <option value="url">URL</option>
-            <option value="textarea">Text Area</option>
-          </select>
-        </div>
-
-        <div id="options-container" style="display: none;">
-          <label for="field-options" class="fm-label"><span id="options-label">Options</span> *</label>
-          <textarea id="field-options" class="fm-input" rows="5" placeholder="One option per line&#10;e.g.&#10;Option A&#10;Option B&#10;Option C" style="resize: vertical;"></textarea>
-          <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.dropdownOptionsHint">Enter one option per line.</small>
-        </div>
-
-        <div id="numeric-config-container" style="display: none; flex-direction: column; gap: 10px; border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: var(--bg-soft);">
-          <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Field Config</div>
-          <div style="display: flex; gap: 12px; align-items: flex-end;">
-            <div style="flex: 1;">
-              <label for="config-unit" class="fm-label" style="font-size: 0.8rem;">Unit <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
-              <input type="text" id="config-unit" class="fm-input" placeholder="e.g. °C, mm, %" style="height: 32px; font-size: 0.85rem;" />
-            </div>
-            <div style="flex: 1;">
-              <label for="config-decimal-places" class="fm-label" style="font-size: 0.8rem;">Decimal places <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
-              <input type="number" id="config-decimal-places" class="fm-input" min="0" max="10" placeholder="0=int, blank=any" style="height: 32px; font-size: 0.85rem;" />
-            </div>
-          </div>
-          <div style="display: flex; gap: 12px; align-items: flex-end;">
-            <div style="flex: 1;">
-              <label for="config-min-bound" class="fm-label" style="font-size: 0.8rem;">Min bound <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
-              <input type="number" id="config-min-bound" class="fm-input" placeholder="e.g. 0" step="any" style="height: 32px; font-size: 0.85rem;" />
-            </div>
-            <div style="flex: 1;">
-              <label for="config-max-bound" class="fm-label" style="font-size: 0.8rem;">Max bound <small style="color: var(--text-muted); font-weight: 400;">(optional)</small></label>
-              <input type="number" id="config-max-bound" class="fm-input" placeholder="e.g. 500" step="any" style="height: 32px; font-size: 0.85rem;" />
-            </div>
-          </div>
-        </div>
-
-        <div id="textarea-config-container" style="display: none;">
-          <label for="config-max-length" class="fm-label" style="font-size: 0.8rem;">Max length <small style="color: var(--text-muted); font-weight: 400;">(optional, default 2000)</small></label>
-          <input type="number" id="config-max-length" class="fm-input" min="1" max="100000" placeholder="2000" style="height: 32px; font-size: 0.85rem;" />
-        </div>
-        
-        <div id="default-value-wrapper">
-          <label for="field-default" class="fm-label" data-i18n="admin.defaultValue">Default Value (Optional)</label>
-          <input type="text" id="field-default" class="fm-input" placeholder="e.g. PLA" />
-          <small style="color: var(--text-muted); font-size: 0.75rem;" data-i18n="admin.defaultValueHint">This value will be pre-filled when creating new items.</small>
-        </div>
-        
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
-  
   <script>
-    import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import {
+      createExtraFieldDefinitionDialog,
+      type ExtraFieldDefinitionDialogDraft,
+      type ExtraFieldDefinitionDialogResult,
+    } from '../../lib/extra-field-definition-dialog'
+    import {
+      escapeHtml,
+      formatExtraFieldDefaultValue,
+    } from '../../lib/extra-fields'
+    import { initI18n, t } from '../../lib/i18n'
+
     await initI18n()
 
-    let fields: any[] = []
-    
+    interface SystemExtraFieldRecord {
+      id: number
+      target_type: 'filament' | 'spool'
+      key: string
+      label: string
+      default_value: string | null
+      field_type: string
+      options: string[] | null
+      config: {
+        unit?: string
+        decimal_places?: number | null
+        min_bound?: number | null
+        max_bound?: number | null
+        max_length?: number | null
+      } | null
+      source: string | null
+    }
+
+    type ExtraFieldAdminWindow = Window & {
+      __fmAlert: (message: string) => Promise<boolean>
+      __fmConfirm: (message: string) => Promise<boolean>
+    }
+
+    let fields: SystemExtraFieldRecord[] = []
+
+    const fieldDialog = createExtraFieldDefinitionDialog({ mode: 'system' })
+
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
     }
-    
-    async function loadData() {
-      try {
-        const res = await fetch('/api/v1/system-extra-fields', { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) throw new Error('Failed to fetch fields')
-        fields = await res.json()
-        renderFields()
-      } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load data:', error)
-      }
-    }
-    
-    function escapeHtml(str: string): string {
-      if (!str) return ''
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
+
+    function fieldTypeLabel(fieldType: string): string {
+      const normalized = fieldType === 'float' ? 'number' : fieldType
+      const translated = t(`admin.fieldType_${normalized}`)
+      return translated === `admin.fieldType_${normalized}`
+        ? normalized || t('admin.fieldType_text')
+        : translated
     }
 
-    function fieldTypeLabel(ft: string): string {
-      switch (ft) {
-        case 'text': return 'Text'
-        case 'number': return 'Number'
-        case 'float': return 'Number'  // legacy alias
-        case 'range': return 'Range'
-        case 'dropdown': return 'Dropdown'
-        case 'multiselect': return 'Multi-select'
-        case 'checkbox': return 'Checkbox'
-        case 'formula': return 'Formula'
-        case 'date': return 'Date'
-        case 'url': return 'URL'
-        case 'textarea': return 'Text Area'
-        default: return ft || 'Text'
-      }
-    }
-    
-    function renderFields() {
-      const tbody = document.getElementById('fields-table')!
-      
-      if (fields.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">${t('admin.noFieldsDefined')}</td></tr>`
-        return
-      }
-      
-      tbody.innerHTML = fields.map(f => {
-        const isPluginManaged = !!f.source
-        const actionsCell = isPluginManaged
-          ? `<span title="${t('admin.pluginManagedField') || 'Managed by plugin'}: ${escapeHtml(f.source)}" style="color: var(--text-muted); cursor: help;">🔒</span>`
-          : `<button data-id="${f.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button><button data-id="${f.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>`
-        
-        const optionsInfo = (f.field_type === 'dropdown' || f.field_type === 'multiselect') && f.options
-          ? ` <span title="${f.options.join('\n')}" style="color: var(--text-muted); cursor: help; font-size: 0.8rem;">(${f.options.length})</span>`
-          : ''
-
-        const rowStyle = isPluginManaged ? 'background: var(--bg-soft); opacity: 0.85;' : ''
-        
-        return `
-        <tr style="${rowStyle}">
-          <td><span class="fm-pill" style="text-transform: capitalize;">${escapeHtml(f.target_type)}</span></td>
-          <td style="font-family: monospace; color: var(--accent-2);">${escapeHtml(f.key)}</td>
-          <td>${escapeHtml(f.label)}</td>
-          <td><span class="fm-pill">${fieldTypeLabel(f.field_type)}</span>${optionsInfo}</td>
-          <td style="color: var(--text-muted);">${escapeHtml(f.default_value || '-')}</td>
-          <td style="color: var(--text-muted);">${f.source ? escapeHtml(f.source) : '-'}</td>
-          <td style="text-align: right;">${actionsCell}</td>
-        </tr>`
-      }).join('')
-      
-      document.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          const field = fields.find(f => f.id === id)
-          if (field) openEditModal(field)
-        })
-      })
-
-      document.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          if (!(await (window as any).__fmConfirm(t('admin.deleteFieldConfirm') || "Delete field?"))) return
-          
-          try {
-            const response = await fetch(`/api/v1/system-extra-fields/${id}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) {
-              const data = await response.json()
-              throw new Error(data.detail || 'Failed to delete field')
-            }
-            loadData()
-          } catch (err: any) {
-            if (isAbortError(err)) return
-            await (window as any).__fmAlert(err.message || t('admin.failedDeleteField') || "Failed to delete field")
-          }
-        })
-      })
-    }
-    
-    // -- Modal logic --
-
-    const fieldTypeSelect = document.getElementById('field-type') as HTMLSelectElement
-    const optionsContainer = document.getElementById('options-container') as HTMLDivElement
-    const optionsLabel = document.getElementById('options-label') as HTMLElement
-    const fieldOptionsTextarea = document.getElementById('field-options') as HTMLTextAreaElement
-    const numericConfigContainer = document.getElementById('numeric-config-container') as HTMLDivElement
-    const textareaConfigContainer = document.getElementById('textarea-config-container') as HTMLDivElement
-    const configUnit = document.getElementById('config-unit') as HTMLInputElement
-    const configDecimalPlaces = document.getElementById('config-decimal-places') as HTMLInputElement
-    const configMinBound = document.getElementById('config-min-bound') as HTMLInputElement
-    const configMaxBound = document.getElementById('config-max-bound') as HTMLInputElement
-    const configMaxLength = document.getElementById('config-max-length') as HTMLInputElement
-
-    function updateTypeUi(type: string) {
-      const showOptions = type === 'dropdown' || type === 'multiselect'
-      const showNumeric = type === 'number' || type === 'range'
-      const showTextareaConfig = type === 'textarea'
-      optionsContainer.style.display = showOptions ? 'block' : 'none'
-      fieldOptionsTextarea.required = showOptions
-      optionsLabel.textContent = type === 'multiselect' ? 'Multi-select Options' : 'Dropdown Options'
-      numericConfigContainer.style.display = showNumeric ? 'flex' : 'none'
-      textareaConfigContainer.style.display = showTextareaConfig ? 'block' : 'none'
-      updateDefaultUi(type)
-    }
-
-    function updateDefaultUi(type: string) {
-      const wrapper = document.getElementById('default-value-wrapper') as HTMLDivElement
-      if (type === 'range' || type === 'multiselect') {
-        wrapper.style.display = 'none'
-        fieldDefaultInput.value = ''
-        return
-      }
-      wrapper.style.display = 'block'
-      if (type === 'number') {
-        fieldDefaultInput.type = 'number'
-        fieldDefaultInput.setAttribute('step', 'any')
-        fieldDefaultInput.placeholder = 'e.g. 0'
-      } else if (type === 'date') {
-        fieldDefaultInput.type = 'text'
-        fieldDefaultInput.removeAttribute('step')
-        fieldDefaultInput.placeholder = 'YYYY-MM-DD'
-      } else {
-        fieldDefaultInput.type = 'text'
-        fieldDefaultInput.removeAttribute('step')
-        fieldDefaultInput.placeholder = type === 'url' ? 'https://...' : 'e.g. PLA'
+    function draftFromField(
+      field?: SystemExtraFieldRecord,
+    ): ExtraFieldDefinitionDialogDraft {
+      const config = field?.config ?? {}
+      return {
+        targetType: field?.target_type ?? 'filament',
+        key: field?.key ?? '',
+        label: field?.label ?? '',
+        fieldType: field?.field_type ?? 'text',
+        options: field?.options ? [...field.options] : [],
+        unit: config.unit ?? '',
+        decimalPlaces: config.decimal_places == null ? '' : String(config.decimal_places),
+        minBound: config.min_bound == null ? '' : String(config.min_bound),
+        maxBound: config.max_bound == null ? '' : String(config.max_bound),
+        maxLength: config.max_length == null ? '' : String(config.max_length),
+        defaultValue: field?.default_value ?? null,
       }
     }
 
-    fieldTypeSelect.addEventListener('change', () => updateTypeUi(fieldTypeSelect.value))
-    
-    const fieldIdInput = document.getElementById('field-id') as HTMLInputElement
-    const fieldTargetSelect = document.getElementById('field-target') as HTMLSelectElement
-    const fieldKeyInput = document.getElementById('field-key') as HTMLInputElement
-    const fieldLabelInput = document.getElementById('field-label') as HTMLInputElement
-    const fieldDefaultInput = document.getElementById('field-default') as HTMLInputElement
-    const modalTitle = document.getElementById('modal-title') as HTMLElement
-
-    function openModal() {
-      const container = document.getElementById('modal-container')!
-      const error = document.getElementById('modal-error')!
-      
-      error.classList.add('hidden')
-      ;(document.getElementById('modal-form') as HTMLFormElement).reset()
-      updateTypeUi('text')
-      configUnit.value = ''
-      configDecimalPlaces.value = ''
-      configMinBound.value = ''
-      configMaxBound.value = ''
-      configMaxLength.value = ''
-      fieldDefaultInput.value = ''
-      
-      // Reset for "Add" mode
-      fieldIdInput.value = ''
-      modalTitle.textContent = t('admin.addField')
-      fieldTargetSelect.disabled = false
-      fieldKeyInput.disabled = false
-      fieldTypeSelect.disabled = false
-      
-      container.classList.add('open')
-    }
-
-    function openEditModal(field: any) {
-      const container = document.getElementById('modal-container')!
-      const error = document.getElementById('modal-error')!
-      
-      error.classList.add('hidden')
-      
-      // Populate form with existing values
-      fieldIdInput.value = field.id.toString()
-      fieldTargetSelect.value = field.target_type
-      fieldKeyInput.value = field.key
-      fieldLabelInput.value = field.label
-      fieldDefaultInput.value = field.default_value || ''
-      fieldTypeSelect.value = field.field_type || 'text'
-      
-      // Show/hide panels
-      updateTypeUi(field.field_type || 'text')
-      fieldOptionsTextarea.value = field.options ? field.options.join('\n') : ''
-
-      // Populate config
-      const cfg = field.config || {}
-      configUnit.value = cfg.unit ?? ''
-      configDecimalPlaces.value = cfg.decimal_places != null ? String(cfg.decimal_places) : ''
-      configMinBound.value = cfg.min_bound != null ? String(cfg.min_bound) : ''
-      configMaxBound.value = cfg.max_bound != null ? String(cfg.max_bound) : ''
-      configMaxLength.value = cfg.max_length != null ? String(cfg.max_length) : ''
-      
-      // Set Edit mode: target_type and key are read-only; field_type is immutable
-      modalTitle.textContent = t('admin.editField')
-      fieldTargetSelect.disabled = true
-      fieldKeyInput.disabled = true
-      fieldTypeSelect.disabled = true
-      
-      container.classList.add('open')
-    }
-    
-    function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
-    }
-    
-    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
-    document.getElementById('modal-container')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeModal()
-    })
-    
-    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      
-      const editId = fieldIdInput.value
-      const isEdit = !!editId
-      
-      const targetType = fieldTargetSelect.value
-      const key = fieldKeyInput.value
-      const label = fieldLabelInput.value
-      const defaultValue = fieldDefaultInput.value || null
-      const fieldType = fieldTypeSelect.value
-      
-      let options: string[] | null = null
-      if (fieldType === 'dropdown' || fieldType === 'multiselect') {
-        options = fieldOptionsTextarea.value
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-        if (options.length === 0) {
-          const error = document.getElementById('modal-error') as HTMLDivElement
-          error.textContent = t('admin.dropdownOptionsRequired') || 'At least one option is required'
-          error.classList.remove('hidden')
-          return
-        }
+    function configFromResult(result: ExtraFieldDefinitionDialogResult): Record<string, unknown> | null {
+      const config: Record<string, unknown> = {}
+      if (['number', 'range'].includes(result.fieldType)) {
+        if (result.unit.trim()) config.unit = result.unit.trim()
+        if (result.decimalPlaces !== '') config.decimal_places = Number(result.decimalPlaces)
+        if (result.minBound !== '') config.min_bound = Number(result.minBound)
+        if (result.maxBound !== '') config.max_bound = Number(result.maxBound)
+      } else if (result.fieldType === 'textarea' && result.maxLength !== '') {
+        config.max_length = Number(result.maxLength)
       }
+      return Object.keys(config).length ? config : null
+    }
 
-      // Build config object for numeric/textarea types
-      let config: Record<string, any> | null = null
-      if (fieldType === 'number' || fieldType === 'range') {
-        config = {}
-        if (configUnit.value.trim()) config.unit = configUnit.value.trim()
-        if (configDecimalPlaces.value !== '') config.decimal_places = parseInt(configDecimalPlaces.value, 10)
-        if (configMinBound.value !== '') config.min_bound = parseFloat(configMinBound.value)
-        if (configMaxBound.value !== '') config.max_bound = parseFloat(configMaxBound.value)
-        if (Object.keys(config).length === 0) config = null
-      } else if (fieldType === 'textarea') {
-        config = {}
-        if (configMaxLength.value !== '') config.max_length = parseInt(configMaxLength.value, 10)
-        if (Object.keys(config).length === 0) config = null
+    async function saveField(
+      result: ExtraFieldDefinitionDialogResult,
+      existing?: SystemExtraFieldRecord,
+    ): Promise<void> {
+      const isEdit = Boolean(existing)
+      const body = {
+        ...(isEdit
+          ? {}
+          : {
+              target_type: result.targetType,
+              key: result.key.trim(),
+            }),
+        label: result.label.trim(),
+        default_value: result.defaultValue,
+        field_type: result.fieldType,
+        options: ['dropdown', 'multiselect'].includes(result.fieldType)
+          ? result.options
+          : null,
+        config: configFromResult(result),
       }
-      
-      const error = document.getElementById('modal-error') as HTMLDivElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
-      
-      error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.saving')
-      
-      try {
-        const url = isEdit 
-          ? `/api/v1/system-extra-fields/${editId}`
-          : '/api/v1/system-extra-fields'
-        
-        const body = isEdit
-          ? { label, default_value: defaultValue, field_type: fieldType, options, config }
-          : { target_type: targetType, key, label, default_value: defaultValue, field_type: fieldType, options, config }
-        
-        const response = await fetch(url, {
+      const response = await fetch(
+        existing
+          ? `/api/v1/system-extra-fields/${existing.id}`
+          : '/api/v1/system-extra-fields',
+        {
           method: isEdit ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken(),
+          },
           credentials: 'include',
           body: JSON.stringify(body),
           signal: getAbortSignal(),
-        })
-        
-        if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.detail?.message || data.detail || data.message || (isEdit ? "Failed to update field" : "Failed to create field"))
-        }
-        
-        closeModal()
-        loadData()
-      } catch (err: any) {
-        if (isAbortError(err)) return
-        error.textContent = err.message
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.save')
+        },
+      )
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(
+          data.detail?.message
+          || data.detail
+          || data.message
+          || (isEdit ? 'Failed to update field' : 'Failed to create field'),
+        )
       }
-    })
-    
-    loadData()
+      await loadData()
+    }
+
+    function openCreateDialog(): void {
+      fieldDialog.open({
+        title: t('admin.addField'),
+        draft: draftFromField(),
+        onSubmit: result => saveField(result),
+      })
+    }
+
+    function openEditDialog(field: SystemExtraFieldRecord): void {
+      fieldDialog.open({
+        title: t('admin.editField'),
+        draft: draftFromField(field),
+        lockIdentity: true,
+        lockType: true,
+        onSubmit: result => saveField(result, field),
+      })
+    }
+
+    function renderFields(): void {
+      const tbody = document.getElementById('fields-table')!
+      if (fields.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">${escapeHtml(t('admin.noFieldsDefined'))}</td></tr>`
+        return
+      }
+
+      tbody.innerHTML = fields
+        .map(field => {
+          const isPluginManaged = Boolean(field.source)
+          const actions = isPluginManaged
+            ? `<span title="${escapeHtml(t('admin.pluginManagedField'))}: ${escapeHtml(field.source)}" style="color:var(--text-muted);cursor:help">🔒</span>`
+            : `<button data-id="${field.id}" class="btn-edit" style="color:var(--accent);background:none;border:none;cursor:pointer;margin-right:8px">${escapeHtml(t('common.edit'))}</button><button data-id="${field.id}" class="btn-delete" style="color:var(--error-text);background:none;border:none;cursor:pointer">${escapeHtml(t('common.delete'))}</button>`
+          const optionsInfo =
+            ['dropdown', 'multiselect'].includes(field.field_type) && field.options
+              ? ` <span title="${escapeHtml(field.options.join('\n'))}" style="color:var(--text-muted);cursor:help;font-size:0.8rem">(${field.options.length})</span>`
+              : ''
+          return `
+            <tr style="${isPluginManaged ? 'background:var(--bg-soft);opacity:0.85' : ''}">
+              <td><span class="fm-pill" style="text-transform:capitalize">${escapeHtml(field.target_type)}</span></td>
+              <td style="font-family:monospace;color:var(--accent-2)">${escapeHtml(field.key)}</td>
+              <td>${escapeHtml(field.label)}</td>
+              <td><span class="fm-pill">${escapeHtml(fieldTypeLabel(field.field_type))}</span>${optionsInfo}</td>
+              <td style="color:var(--text-muted)">${escapeHtml(formatExtraFieldDefaultValue(field))}</td>
+              <td style="color:var(--text-muted)">${field.source ? escapeHtml(field.source) : '—'}</td>
+              <td style="text-align:right">${actions}</td>
+            </tr>`
+        })
+        .join('')
+
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach(button => {
+        button.addEventListener('click', () => {
+          const field = fields.find(item => item.id === Number(button.dataset.id))
+          if (field) openEditDialog(field)
+        })
+      })
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-delete').forEach(button => {
+        button.addEventListener('click', async () => {
+          const dialogWindow = window as unknown as ExtraFieldAdminWindow
+          if (!(await dialogWindow.__fmConfirm(t('admin.deleteFieldConfirm')))) return
+          const response = await fetch(`/api/v1/system-extra-fields/${button.dataset.id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            signal: getAbortSignal(),
+          })
+          if (!response.ok) {
+            const data = await response.json()
+            void dialogWindow.__fmAlert(
+              data.detail || t('admin.failedDeleteField'),
+            )
+            return
+          }
+          await loadData()
+        })
+      })
+    }
+
+    async function loadData(): Promise<void> {
+      try {
+        const response = await fetch('/api/v1/system-extra-fields', {
+          credentials: 'include',
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) throw new Error('Failed to fetch fields')
+        fields = await response.json()
+        renderFields()
+      } catch (error) {
+        if (!isAbortError(error)) console.error('Failed to load data:', error)
+      }
+    }
+
+    document.getElementById('btn-new')?.addEventListener('click', openCreateDialog)
+    await loadData()
   </script>
 </Layout>
