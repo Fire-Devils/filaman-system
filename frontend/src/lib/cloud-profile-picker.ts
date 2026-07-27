@@ -324,13 +324,13 @@ function isProfileInvalid(
 
 function displayBaseForPicker(
   selectedBase: string,
-  cov: ProfileCoverage | undefined,
-  presets: any[]
+  _cov?: ProfileCoverage,
+  _presets?: any[]
 ): string {
-  if (!selectedBase) return ''
-  if (isProfileInvalid(cov, selectedBase)) return ''
-  if (presets.length > 0 && !presetBases(presets).has(selectedBase)) return ''
-  return selectedBase
+  // Always keep the committed base name visible. Coverage / catalog mismatches
+  // are shown via the invalid/fallback shell state — blanking the field after a
+  // successful save made it look like the override was cleared (reload fixed it).
+  return selectedBase || ''
 }
 
 function renderStaleNotice(staleBase: string, model: string, t: TranslateFn): string {
@@ -1445,7 +1445,32 @@ export async function initPerModelProfilePicker(
       const result = await saveModelProfile(opts, model, baseName)
       profilesByModel = result?.profiles_by_model || profilesByModel
       coverage = result?.coverage || coverage
+      // Ensure the just-saved override is present even if the response omitted it.
+      if (baseName) {
+        profilesByModel = {
+          ...profilesByModel,
+          [model]: {
+            ...(profilesByModel[model] || {}),
+            base_name: result?.base_name || baseName,
+            source: 'override',
+          },
+        }
+      }
       modelOverrideMode[model] = true
+      await reloadCoverage()
+      // Keep the combo showing the saved name immediately (coverage reload can
+      // briefly lag behind the write).
+      const mount = rowMounts[model]
+      if (mount && baseName) {
+        const hidden = mount.querySelector(
+          '.slicer-profile-base'
+        ) as HTMLInputElement | null
+        const search = mount.querySelector(
+          '.cloud-combo-search'
+        ) as HTMLInputElement | null
+        if (hidden) hidden.value = baseName
+        if (search) search.value = baseName
+      }
       refreshAll()
       showMsg(
         (opts.t('common.saved') || 'Saved') +
