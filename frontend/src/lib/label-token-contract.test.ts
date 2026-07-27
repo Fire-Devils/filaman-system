@@ -134,4 +134,17 @@ describe('spool label token contract', () => {
     expect(renderTemplateText('{Certified: {extra.spool.certified_at|date}}', data))
       .toBe(`Certified: ${formatDateDisplay(raw)}`)
   })
+
+  it('preserves literal Extra Field keys ending in the date modifier suffix', () => {
+    const data = buildSpoolDataFromApiSpool({
+      ...apiSpool,
+      custom_fields: {
+        ...apiSpool.custom_fields,
+        'inspection|date': 'Literal field value',
+      },
+    }, lookups)
+
+    expect(renderTemplateText('{extra.spool.inspection|date}', data))
+      .toBe('Literal field value')
+  })
 })

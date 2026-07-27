@@ -3,6 +3,7 @@ import {
   escapeHtml,
   formatDateTimeInputValue,
   parseExtraFieldDefaultValue,
+  readLosslessDateTimeInputValue,
   renderFieldInput,
   serializeExtraFieldDefaultValue,
   TODAY_EXTRA_FIELD_DEFAULT,
@@ -62,9 +63,9 @@ function translate(key: string, fallback: string): string {
   return translated === key ? fallback : translated
 }
 
-function parseOptions(value: string): string[] {
+export function parseExtraFieldOptions(value: string): string[] {
   return value
-    .split(/\r?\n|,/)
+    .split(/\r?\n/)
     .map(option => option.trim())
     .filter(Boolean)
 }
@@ -199,7 +200,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
         <div class="extra-field-dialog-default-row">
           <label class="fm-label">${escapeHtml(translate('admin.defaultValue', 'Default Value (Optional)'))}</label>
           <div class="extra-field-dialog-default"></div>
-          <small style="color:var(--text-muted);font-size:0.75rem">${escapeHtml(translate('admin.defaultValueHint', 'This value will be pre-filled when creating new items.'))}</small>
+          <small class="extra-field-dialog-default-hint" style="color:var(--text-muted);font-size:0.75rem"></small>
         </div>
 
         <div class="extra-field-dialog-value-row">
@@ -209,7 +210,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
 
         <div class="extra-field-dialog-system-lock-note" style="display:${options.mode === 'system' ? 'flex' : 'none'};gap:8px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-soft);color:var(--text-muted);font-size:0.78rem;line-height:1.45">
           <span aria-hidden="true">🔒</span>
-          <span>${escapeHtml(translate('admin.systemFieldLockNote', 'Target type, JSON key, and field type cannot be changed after creation. Delete and recreate the field to change them. The same key can be reused, but existing stored values remain and must be compatible with the new type.'))}</span>
+          <span>${escapeHtml(translate('admin.systemFieldLockNote', 'Target type, JSON key, and field type cannot be changed after creation. Delete and recreate the field to change them. The same key can be reused, but creation is blocked if retained values are incompatible with the new type.'))}</span>
         </div>
 
         <div class="fm-alert-error hidden extra-field-dialog-error"></div>
@@ -241,6 +242,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   const maxLength = overlay.querySelector<HTMLInputElement>('.extra-field-dialog-max-length')!
   const defaultRow = overlay.querySelector<HTMLElement>('.extra-field-dialog-default-row')!
   const defaultEditor = overlay.querySelector<HTMLElement>('.extra-field-dialog-default')!
+  const defaultHint = overlay.querySelector<HTMLElement>('.extra-field-dialog-default-hint')!
   const valueRow = overlay.querySelector<HTMLElement>('.extra-field-dialog-value-row')!
   const valueEditor = overlay.querySelector<HTMLElement>('.extra-field-dialog-value')!
   const error = overlay.querySelector<HTMLElement>('.extra-field-dialog-error')!
@@ -251,12 +253,24 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   let draft: ExtraFieldDefinitionDialogDraft | null = null
 
   const fieldTypes = options.mode === 'system' ? SYSTEM_FIELD_TYPES : ENTITY_FIELD_TYPES
-  fieldType.innerHTML = fieldTypes
-    .map(
+
+  function renderFieldTypeOptions(selectedType: string): void {
+    const knownOptions = fieldTypes.map(
       type =>
         `<option value="${type}">${escapeHtml(translate(`admin.fieldType_${type}`, type))}</option>`,
     )
-    .join('')
+    const legacyOption = fieldTypes.includes(selectedType as typeof fieldTypes[number])
+      ? []
+      : [
+          `<option value="${escapeHtml(selectedType)}">${escapeHtml(
+            translate('admin.legacyFieldType', 'Legacy type'),
+          )}: ${escapeHtml(selectedType)}</option>`,
+        ]
+    fieldType.innerHTML = [...knownOptions, ...legacyOption].join('')
+    fieldType.value = selectedType
+  }
+
+  renderFieldTypeOptions('text')
   targetRow.style.display = options.mode === 'system' ? 'block' : 'none'
   defaultRow.style.display = options.mode === 'system' ? 'block' : 'none'
   valueRow.style.display = options.mode === 'entity' ? 'block' : 'none'
@@ -265,11 +279,13 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
 
   function syncDefinition(): void {
     if (!draft) return
-    draft.targetType = target.value as 'filament' | 'spool'
-    draft.key = key.value
+    if (!current?.lockIdentity) {
+      draft.targetType = target.value as 'filament' | 'spool'
+      draft.key = key.value
+    }
     draft.label = label.value
-    draft.fieldType = fieldType.value
-    draft.options = parseOptions(fieldOptions.value)
+    if (!current?.lockType) draft.fieldType = fieldType.value
+    draft.options = parseExtraFieldOptions(fieldOptions.value)
     draft.unit = unit.value
     draft.decimalPlaces = decimals.value
     draft.minBound = minBound.value
@@ -316,6 +332,11 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
           ? TODAY_EXTRA_FIELD_DEFAULT
           : defaultEditor.querySelector<HTMLInputElement>('[data-default-scalar]')?.value
         break
+      case 'datetime': {
+        const input = defaultEditor.querySelector<HTMLInputElement>('[data-default-scalar]')
+        value = input ? readLosslessDateTimeInputValue(input) : undefined
+        break
+      }
       default:
         value = defaultEditor.querySelector<
           HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -388,7 +409,10 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
       }
       case 'datetime': {
         const inputValue = formatDateTimeInputValue(scalar)
-        defaultEditor.innerHTML = `<input type="datetime-local" class="fm-input" data-default-scalar value="${escapeHtml(inputValue ?? scalar)}" />`
+        defaultEditor.innerHTML =
+          inputValue === null
+            ? `<input type="text" class="fm-input" data-default-scalar value="${escapeHtml(scalar)}" />`
+            : `<input type="datetime-local" class="fm-input" data-default-scalar data-original-raw="${escapeHtml(scalar)}" data-original-display="${escapeHtml(inputValue)}" value="${escapeHtml(inputValue)}" />`
         break
       }
       case 'url':
@@ -400,6 +424,26 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
       default:
         defaultEditor.innerHTML = `<input type="text" class="fm-input" data-default-scalar value="${escapeHtml(scalar)}" placeholder="e.g. PLA" />`
     }
+
+    let hint = translate(
+      'admin.defaultValueHint',
+      'This value will be pre-filled when creating new items.',
+    )
+    if (draft.fieldType === 'checkbox' || draft.fieldType === 'multiselect') {
+      hint = ''
+    } else if (draft.fieldType === 'dropdown') {
+      hint = translate(
+        'admin.dropdownDefaultHint',
+        'The selected option will be the default for new items.',
+      )
+    } else if (draft.fieldType === 'range') {
+      hint = translate(
+        'admin.rangeDefaultHint',
+        'This range will be pre-filled when creating new items.',
+      )
+    }
+    defaultHint.textContent = hint
+    defaultHint.style.display = hint ? '' : 'none'
   }
 
   function renderValue(): void {
@@ -567,7 +611,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
       target.value = draft.targetType ?? 'filament'
       key.value = draft.key
       label.value = draft.label
-      fieldType.value = draft.fieldType
+      renderFieldTypeOptions(draft.fieldType)
       fieldOptions.value = draft.options.join('\n')
       unit.value = draft.unit
       decimals.value = draft.decimalPlaces

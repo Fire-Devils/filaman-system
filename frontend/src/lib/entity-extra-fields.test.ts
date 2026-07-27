@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildEntityExtraFieldsForPrint,
+  buildSystemExtraFieldDefinitionMap,
   extraFieldPathOverlaps,
   flattenExtraFieldValues,
   getExtraFieldValue,
@@ -8,7 +9,9 @@ import {
   normalizeEntityExtraFieldDefinitions,
   renderEntityExtraFieldRows,
   renderRecordExtraField,
+  renderUnregisteredExtraFieldRows,
   resolveRecordExtraFieldDefinition,
+  unflattenCollectedSystemFieldValues,
 } from './entity-extra-fields'
 import {
   buildDesignerExtraFieldsFromFilament,
@@ -48,6 +51,34 @@ describe('entity extra field helpers', () => {
     })
   })
 
+  it('keeps record-local batch definitions out of the authoritative System map', () => {
+    const definitions = [
+      {
+        id: 1,
+        key: 'inspection',
+        label: 'System inspection',
+        field_type: 'checkbox',
+      },
+      {
+        id: 0,
+        key: 'tolerance',
+        label: 'First record tolerance',
+        field_type: 'number',
+        config: { unit: '%' },
+      },
+    ]
+    const systemKeys = new Set(['inspection'])
+
+    expect(
+      buildSystemExtraFieldDefinitionMap(
+        definitions,
+        definition => systemKeys.has(definition.key),
+      ),
+    ).toEqual({
+      inspection: definitions[0],
+    })
+  })
+
   it('flattens nested values while keeping configured labels and types', () => {
     const values = flattenExtraFieldValues(
       { drying: { temperature: 55 }, humidity: { min: 10, max: 20 } },
@@ -82,6 +113,39 @@ describe('entity extra field helpers', () => {
       drying: { duration: 4, temperature: 55 },
       vendor: 'ACME',
     })
+  })
+
+  it('reconstructs dotted multiselect values as nested JSON', () => {
+    expect(
+      unflattenCollectedSystemFieldValues({
+        flat: { note: 'Keep dry' },
+        direct: { 'storage.tags': ['dry', 'sealed'] },
+      }),
+    ).toEqual({
+      note: 'Keep dry',
+      storage: { tags: ['dry', 'sealed'] },
+    })
+  })
+
+  it('renders unknown nested siblings beside typed children', () => {
+    const rows = renderUnregisteredExtraFieldRows(
+      {
+        drying: {
+          temperature: 55,
+          note: 'Keep sealed',
+        },
+      },
+      {
+        'drying.temperature': {
+          label: 'Drying temperature',
+          field_type: 'number',
+        },
+      },
+    )
+
+    expect(rows).toContain('drying.note')
+    expect(rows).toContain('Keep sealed')
+    expect(rows).not.toContain('drying.temperature')
   })
 
   it('merges reserved legacy properties without mutating object prototypes', () => {

@@ -8,6 +8,7 @@ import {
   renderUnknownFieldPlainText,
   setOwnFieldValue,
   unflattenFieldValues,
+  type CollectedSystemFieldValues,
   type SystemExtraFieldDef,
 } from './extra-fields'
 import {
@@ -154,6 +155,17 @@ export function mergeEntityExtraFieldDefinitions(
   }
 }
 
+export function buildSystemExtraFieldDefinitionMap<T extends SystemExtraFieldDef>(
+  definitions: Iterable<T>,
+  isSystemOwned: (definition: T) => boolean,
+): Record<string, SystemExtraFieldDef> {
+  return Object.fromEntries(
+    [...definitions]
+      .filter(isSystemOwned)
+      .map(definition => [definition.key, definition]),
+  )
+}
+
 export function flattenExtraFieldValues(
   value: Record<string, unknown> | null | undefined,
   definitions: Record<string, Partial<SystemExtraFieldDef> & { label?: string }> = {},
@@ -234,6 +246,19 @@ export function buildEntityExtraFieldsForPrint(
   return fields
 }
 
+export function unflattenCollectedSystemFieldValues(
+  values: CollectedSystemFieldValues,
+): Record<string, unknown> {
+  const combined: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values.flat)) {
+    setOwnFieldValue(combined, key, value)
+  }
+  for (const [key, value] of Object.entries(values.direct)) {
+    setOwnFieldValue(combined, key, value)
+  }
+  return unflattenFieldValues(combined)
+}
+
 export function collectExtraFieldPayload(
   systemRoot: ParentNode,
   editor: EntityExtraFieldEditor,
@@ -243,10 +268,7 @@ export function collectExtraFieldPayload(
   const entityPayload = editor.getPayload()
   if (!entityPayload) return null
 
-  const systemCustomFields = unflattenFieldValues(systemValues.flat)
-  for (const [key, value] of Object.entries(systemValues.direct)) {
-    systemCustomFields[key] = value
-  }
+  const systemCustomFields = unflattenCollectedSystemFieldValues(systemValues)
   return {
     customFields: mergeExtraFieldValues(systemCustomFields, entityPayload.customFields),
     customFieldDefinitions: entityPayload.customFieldDefinitions,
@@ -372,6 +394,30 @@ export function renderEntityExtraFieldRows(
       </div>
       `
     })
+    .join('')
+}
+
+export function renderUnregisteredExtraFieldRows(
+  customFields: Record<string, unknown>,
+  definitions: EntityExtraFieldDefinitions | Record<string, SystemExtraFieldDef> | null | undefined,
+  excludedKeys: Iterable<string> = [],
+): string {
+  const normalizedDefinitions = normalizeEntityExtraFieldDefinitions(definitions)
+  const excluded = [...excludedKeys]
+  return flattenExtraFieldValues(customFields, normalizedDefinitions)
+    .filter(
+      field =>
+        !field.definition &&
+        !extraFieldPathOverlaps(field.key, excluded),
+    )
+    .map(
+      field => `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+        <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(field.key)}</span>
+        <span style="font-family: monospace; word-break: break-all;">${escapeHtml(renderUnknownFieldPlainText(field.value))}</span>
+      </div>
+      `,
+    )
     .join('')
 }
 

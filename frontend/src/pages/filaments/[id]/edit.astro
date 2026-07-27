@@ -369,7 +369,11 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { escapeHtml, renderFieldInput } from '../../../lib/extra-fields'
-    import { collectExtraFieldPayload, createEntityExtraFieldEditor } from '../../../lib/entity-extra-fields'
+    import {
+      collectExtraFieldPayload,
+      createEntityExtraFieldEditor,
+      getExtraFieldValue,
+    } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../../lib/filamentdb-lookup'
@@ -981,15 +985,10 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     }
 
     async function loadSystemFields() {
-      try {
-        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
-        if (!response.ok) throw new Error('Failed to fetch system fields')
-        systemFields = await response.json()
-        entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
-      } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load system fields:', error)
-      }
+      const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
+      if (!response.ok) throw new Error(t('common.systemFieldsUnavailable'))
+      systemFields = await response.json()
+      entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
     }
 
     function renderSystemFields(filamentCustomFieldsFlat: Record<string, any> = {}, rawFields?: Record<string, any>) {
@@ -1003,7 +1002,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
       grid.innerHTML = ''
       
       systemFields.forEach(field => {
-        const rawValue = rawFields?.[field.key] ?? null
+        const rawValue = rawFields ? getExtraFieldValue(rawFields, field.key) : null
         const div = document.createElement('div')
         const inputHtml = renderFieldInput(field, rawValue, filamentCustomFieldsFlat)
         if (field.field_type === 'checkbox') {

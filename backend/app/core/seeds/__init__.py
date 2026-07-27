@@ -5,10 +5,10 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Permission, Role, SpoolStatus, User, UserRole
-from app.models.plugin import InstalledPlugin
 from app.core.config import settings
 from app.core.security import hash_password_async
+from app.models import Permission, Role, SpoolStatus, User, UserRole
+from app.models.plugin import InstalledPlugin
 from app.services.plugin_service import PLUGINS_DIR, PluginInstallService
 
 logger = logging.getLogger(__name__)
@@ -222,6 +222,11 @@ PERMISSIONS = [
     {
         "key": "admin:plugins_manage",
         "description": "Manage plugins (admin)",
+        "category": "admin",
+    },
+    {
+        "key": "admin:system",
+        "description": "Manage system configuration and extra fields (admin)",
         "category": "admin",
     },
 ]

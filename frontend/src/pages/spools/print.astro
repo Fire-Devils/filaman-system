@@ -95,6 +95,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   } from '../../lib/spool-label-lookups'
   import { type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
+    buildSystemExtraFieldDefinitionMap,
     definitionForFlattenedExtraField,
     extraFieldPathOverlaps,
     flattenExtraFieldValues,
@@ -204,9 +205,14 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       spool: {},
       filament: {},
     }
-    for (const def of efDefs) {
-      maps[def.target_type][def.key] = def
-    }
+    maps.spool = buildSystemExtraFieldDefinitionMap(
+      efDefs.filter(def => def.target_type === 'spool'),
+      def => systemFieldKeys.has(efMapKey('spool', def.key)),
+    )
+    maps.filament = buildSystemExtraFieldDefinitionMap(
+      efDefs.filter(def => def.target_type === 'filament'),
+      def => systemFieldKeys.has(efMapKey('filament', def.key)),
+    )
     return maps
   }
 

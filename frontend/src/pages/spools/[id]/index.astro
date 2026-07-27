@@ -176,8 +176,13 @@ const { id } = Astro.params
 
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay, renderUnknownFieldPlainText } from '../../../lib/extra-fields'
-    import { buildEntityExtraFieldsForPrint, getExtraFieldValue, renderEntityExtraFieldRows } from '../../../lib/entity-extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
+    import {
+      buildEntityExtraFieldsForPrint,
+      getExtraFieldValue,
+      renderEntityExtraFieldRows,
+      renderUnregisteredExtraFieldRows,
+    } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
@@ -391,7 +396,6 @@ const { id } = Astro.params
               ${(() => {
                 const sysKeys = new Set(Object.keys(spoolSystemFieldMap))
                 const entityDefs = spool.custom_field_definitions ?? {}
-                const entityKeys = new Set(Object.keys(entityDefs))
                 const sysRows = Object.values(spoolSystemFieldMap)
                   .filter(sysDef => getExtraFieldValue(spool.custom_fields, sysDef.key) !== undefined)
                   .map(sysDef => {
@@ -407,16 +411,11 @@ const { id } = Astro.params
                   `
                   }).join('')
                 const entityRows = renderEntityExtraFieldRows(spool.custom_fields, entityDefs, sysKeys)
-                const customRows = Object.entries(spool.custom_fields)
-                  .filter(([key]) =>
-                    ![...sysKeys, ...entityKeys].some(definedKey => key === definedKey || definedKey.startsWith(`${key}.`))
-                  )
-                  .map(([key, value]) => `
-                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
-                    <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(key)}</span>
-                    <span style="font-family: monospace; word-break: break-all;">${escapeExtraFieldHtml(renderUnknownFieldPlainText(value))}</span>
-                  </div>
-                  `).join('')
+                const customRows = renderUnregisteredExtraFieldRows(
+                  spool.custom_fields,
+                  entityDefs,
+                  sysKeys,
+                )
                 return sysRows + entityRows + customRows
               })()}
             </div>

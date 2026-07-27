@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,6 +14,19 @@ CONFIG_KEYS_BY_TYPE = {
     "range": {"unit", "decimal_places", "min_bound", "max_bound"},
     "textarea": {"max_length"},
 }
+_RESERVED_PATH_SEGMENTS = frozenset({"__proto__", "constructor", "prototype"})
+
+
+def validate_custom_field_path(path: str) -> None:
+    segments = path.split(".")
+    if any(not segment for segment in segments):
+        raise ValueError("custom-field keys cannot contain empty path segments")
+    reserved = _RESERVED_PATH_SEGMENTS.intersection(segments)
+    if reserved:
+        raise ValueError(
+            "custom-field keys cannot contain reserved path segments: "
+            f"{sorted(reserved)}"
+        )
 
 
 def validate_field_type_config(
@@ -61,6 +75,8 @@ def validate_field_type_config(
             continue
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise ValueError(f"config.{key} must be a number")  # noqa: TRY004
+        if not math.isfinite(value):
+            raise ValueError(f"config.{key} must be finite")
         bounds[key] = value
 
     if (
@@ -102,6 +118,9 @@ class SystemExtraFieldCreate(SystemExtraFieldBase):
 
     @model_validator(mode="after")
     def validate_type_and_config(self) -> "SystemExtraFieldCreate":
+        if self.target_type not in {"filament", "spool"}:
+            raise ValueError("target_type must be 'filament' or 'spool'")
+        validate_custom_field_path(self.key)
         validate_field_type_config(self.field_type, self.options, self.config)
         return self
 

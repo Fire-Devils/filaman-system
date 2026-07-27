@@ -89,6 +89,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   } from '../../lib/label-preset-storage'
   import { type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
+    buildSystemExtraFieldDefinitionMap,
     definitionForFlattenedExtraField,
     extraFieldPathOverlaps,
     flattenExtraFieldValues,
@@ -184,7 +185,10 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   }
 
   function getExtraFieldDefinitionMap(): Record<string, SystemExtraFieldDef> {
-    return Object.fromEntries(efDefs.map(def => [def.key, def]))
+    return buildSystemExtraFieldDefinitionMap(
+      efDefs,
+      def => systemFieldKeys.has(def.key),
+    )
   }
 
   function saveSettings() {

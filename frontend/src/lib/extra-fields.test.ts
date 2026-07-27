@@ -12,6 +12,7 @@ import {
   formatExtraFieldDefaultValue,
   isUnsafeExtraFieldPath,
   parseExtraFieldDefaultValue,
+  readLosslessDateTimeInputValue,
   renderUnknownFieldPlainText,
   serializeExtraFieldDefaultValue,
   type SystemExtraFieldDef,
@@ -97,6 +98,32 @@ describe('extra-field path safety', () => {
     expect(Object.getOwnPropertyDescriptor(result, 'constructor')?.value).toEqual({
       prototype: { infected: 'no' },
     })
+  })
+})
+
+describe('lossless datetime controls', () => {
+  it('preserves the original timestamp when the local display is unchanged', () => {
+    expect(
+      readLosslessDateTimeInputValue({
+        value: '2026-07-25T09:30',
+        dataset: {
+          originalRaw: '2026-07-25T14:30:45.123Z',
+          originalDisplay: '2026-07-25T09:30',
+        },
+      }),
+    ).toBe('2026-07-25T14:30:45.123Z')
+  })
+
+  it('uses the edited local value after the user changes it', () => {
+    expect(
+      readLosslessDateTimeInputValue({
+        value: '2026-07-25T10:45',
+        dataset: {
+          originalRaw: '2026-07-25T14:30:45.123Z',
+          originalDisplay: '2026-07-25T09:30',
+        },
+      }),
+    ).toBe('2026-07-25T10:45')
   })
 })
 
@@ -264,6 +291,11 @@ describe('renderFieldInput — range', () => {
     expect(html).toContain('°C')
   })
 
+  it('marks an existing null endpoint range for shape preservation', () => {
+    const html = renderFieldInput(field({ field_type: 'range' }), { min: 190, max: null })
+    expect(html).toContain('data-range-present="true"')
+  })
+
   it('prefills min/max from a typed default', () => {
     const html = renderFieldInput(field({
       field_type: 'range',
@@ -397,6 +429,30 @@ describe('collectSystemFieldValues', () => {
     clearFromMin?.()
     expect(maxInput.validationMessage).toBe('')
   })
+
+  it('preserves explicit null range endpoints on an untouched edit', () => {
+    const input = (end: 'min' | 'max', value: string) => ({
+      dataset: {
+        key: `temps.${end}`,
+        type: 'number',
+        rangeKey: 'temps',
+        rangeEnd: end,
+        rangePresent: 'true',
+      },
+      value,
+      setCustomValidity() {},
+    })
+
+    const result = collectSystemFieldValues(rootWith([
+      input('min', '190'),
+      input('max', ''),
+    ]))
+
+    expect(result?.flat).toEqual({ 'temps.min': 190, 'temps.max': null })
+    expect(unflattenFieldValues(result?.flat ?? {})).toEqual({
+      temps: { min: 190, max: null },
+    })
+  })
 })
 
 describe('unflattenFieldValues', () => {
@@ -474,6 +530,20 @@ describe('renderFieldInput — multiselect', () => {
       options: opts,
       default_value: '["Red","Blue"]',
     }), null)
+
+    expect(html.match(/ checked/g)).toHaveLength(2)
+  })
+
+  it('restores dotted selections from flattened nested values', () => {
+    const html = renderFieldInput(
+      field({
+        key: 'storage.tags',
+        field_type: 'multiselect',
+        options: ['Dry', 'Sealed'],
+      }),
+      null,
+      { 'storage.tags': ['Dry', 'Sealed'] },
+    )
 
     expect(html.match(/ checked/g)).toHaveLength(2)
   })

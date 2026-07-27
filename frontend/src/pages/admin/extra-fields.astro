@@ -76,6 +76,18 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     let fields: SystemExtraFieldRecord[] = []
+    const editableRichFieldTypes = new Set([
+      'text',
+      'number',
+      'range',
+      'dropdown',
+      'multiselect',
+      'checkbox',
+      'date',
+      'datetime',
+      'url',
+      'textarea',
+    ])
 
     const fieldDialog = createExtraFieldDefinitionDialog({ mode: 'system' })
 
@@ -90,6 +102,10 @@ import Layout from '../../layouts/Layout.astro'
       return translated === `admin.fieldType_${normalized}`
         ? normalized || t('admin.fieldType_text')
         : translated
+    }
+
+    function targetTypeLabel(targetType: SystemExtraFieldRecord['target_type']): string {
+      return t(`admin.targetType_${targetType}`)
     }
 
     function draftFromField(
@@ -129,20 +145,26 @@ import Layout from '../../layouts/Layout.astro'
       existing?: SystemExtraFieldRecord,
     ): Promise<void> {
       const isEdit = Boolean(existing)
-      const body = {
-        ...(isEdit
-          ? {}
-          : {
-              target_type: result.targetType,
-              key: result.key.trim(),
-            }),
+      const body: Record<string, unknown> = {
         label: result.label.trim(),
         default_value: result.defaultValue,
-        field_type: result.fieldType,
-        options: ['dropdown', 'multiselect'].includes(result.fieldType)
+      }
+      if (!existing) {
+        body.target_type = result.targetType
+        body.key = result.key.trim()
+        body.field_type = result.fieldType
+        body.options = ['dropdown', 'multiselect'].includes(result.fieldType)
           ? result.options
-          : null,
-        config: configFromResult(result),
+          : null
+        body.config = configFromResult(result)
+      } else if (editableRichFieldTypes.has(existing.field_type)) {
+        body.options = ['dropdown', 'multiselect'].includes(existing.field_type)
+          ? result.options
+          : null
+        body.config = configFromResult({
+          ...result,
+          fieldType: existing.field_type,
+        })
       }
       const response = await fetch(
         existing
@@ -161,6 +183,13 @@ import Layout from '../../layouts/Layout.astro'
       )
       if (!response.ok) {
         const data = await response.json()
+        if (data.detail?.code === 'incompatible_existing_values') {
+          throw new Error(t('admin.incompatibleExistingValues', {
+            count: data.detail.incompatible_count,
+            target: data.detail.target_type,
+            type: fieldTypeLabel(data.detail.field_type),
+          }))
+        }
         throw new Error(
           data.detail?.message
           || data.detail
@@ -208,7 +237,7 @@ import Layout from '../../layouts/Layout.astro'
               : ''
           return `
             <tr style="${isPluginManaged ? 'background:var(--bg-soft);opacity:0.85' : ''}">
-              <td><span class="fm-pill" style="text-transform:capitalize">${escapeHtml(field.target_type)}</span></td>
+              <td><span class="fm-pill">${escapeHtml(targetTypeLabel(field.target_type))}</span></td>
               <td style="font-family:monospace;color:var(--accent-2)">${escapeHtml(field.key)}</td>
               <td>${escapeHtml(field.label)}</td>
               <td><span class="fm-pill">${escapeHtml(fieldTypeLabel(field.field_type))}</span>${optionsInfo}</td>
@@ -229,20 +258,26 @@ import Layout from '../../layouts/Layout.astro'
         button.addEventListener('click', async () => {
           const dialogWindow = window as unknown as ExtraFieldAdminWindow
           if (!(await dialogWindow.__fmConfirm(t('admin.deleteFieldConfirm')))) return
-          const response = await fetch(`/api/v1/system-extra-fields/${button.dataset.id}`, {
-            method: 'DELETE',
-            headers: { 'X-CSRF-Token': getCsrfToken() },
-            credentials: 'include',
-            signal: getAbortSignal(),
-          })
-          if (!response.ok) {
-            const data = await response.json()
-            void dialogWindow.__fmAlert(
-              data.detail || t('admin.failedDeleteField'),
-            )
-            return
+          try {
+            const response = await fetch(`/api/v1/system-extra-fields/${button.dataset.id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+              signal: getAbortSignal(),
+            })
+            if (!response.ok) {
+              const data = await response.json()
+              void dialogWindow.__fmAlert(
+                data.detail || t('admin.failedDeleteField'),
+              )
+              return
+            }
+            await loadData()
+          } catch (error) {
+            if (!isAbortError(error)) {
+              void dialogWindow.__fmAlert(t('common.networkError'))
+            }
           }
-          await loadData()
         })
       })
     }
@@ -257,7 +292,19 @@ import Layout from '../../layouts/Layout.astro'
         fields = await response.json()
         renderFields()
       } catch (error) {
-        if (!isAbortError(error)) console.error('Failed to load data:', error)
+        if (isAbortError(error)) return
+        console.error('Failed to load data:', error)
+        const tbody = document.getElementById('fields-table')!
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="text-align:center;color:var(--error-text)">
+              ${escapeHtml(t('admin.failedLoadFields'))}
+              <button type="button" class="fm-btn" id="retry-fields" style="margin-left:8px">${escapeHtml(t('common.retry'))}</button>
+            </td>
+          </tr>`
+        document.getElementById('retry-fields')?.addEventListener('click', () => {
+          void loadData()
+        })
       }
     }
 

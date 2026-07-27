@@ -2,7 +2,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
-from app.api.v1.schemas_system_extra_field import validate_field_type_config
+from app.api.v1.schemas_system_extra_field import (
+    validate_custom_field_path,
+    validate_field_type_config,
+)
 
 
 class EntityExtraFieldDefinition(BaseModel):
@@ -30,22 +33,23 @@ class EntityExtraFieldDefinition(BaseModel):
         return self
 
 
-_RESERVED_PATH_SEGMENTS = frozenset({"__proto__", "constructor", "prototype"})
-
-
 def validate_definition_keys(
     definitions: dict[str, EntityExtraFieldDefinition],
 ) -> dict[str, EntityExtraFieldDefinition]:
     for key in definitions:
-        segments = key.split(".")
-        if any(not segment for segment in segments):
-            raise ValueError("custom-field definition keys cannot contain empty path segments")
-        reserved = _RESERVED_PATH_SEGMENTS.intersection(segments)
-        if reserved:
-            raise ValueError(
-                "custom-field definition keys cannot contain reserved path segments: "
-                f"{sorted(reserved)}"
-            )
+        validate_custom_field_path(key)
+    keys = list(definitions)
+    for index, key in enumerate(keys):
+        for other in keys[index + 1:]:
+            if (
+                key == other
+                or key.startswith(f"{other}.")
+                or other.startswith(f"{key}.")
+            ):
+                raise ValueError(
+                    "custom-field definition keys cannot overlap nested paths: "
+                    f"{key!r}, {other!r}"
+                )
     return definitions
 
 

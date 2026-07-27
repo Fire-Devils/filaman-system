@@ -295,7 +295,11 @@ const filamentId = Astro.url.searchParams.get('filament_id')
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { escapeHtml, renderFieldInput } from '../../lib/extra-fields'
-    import { collectExtraFieldPayload, createEntityExtraFieldEditor } from '../../lib/entity-extra-fields'
+    import {
+      collectExtraFieldPayload,
+      createEntityExtraFieldEditor,
+      getExtraFieldValue,
+    } from '../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
@@ -553,7 +557,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       systemFields.forEach((field: any) => {
         const div = document.createElement('div')
-        const rawValue = raw ? (raw[field.key] ?? null) : null
+        const rawValue = raw ? getExtraFieldValue(raw, field.key) : null
         const inputHtml = renderFieldInput(field, rawValue, flat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
@@ -573,11 +577,10 @@ const filamentId = Astro.url.searchParams.get('filament_id')
           () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() }),
         ] as const)
         
-        if (systemFieldsRes.ok) {
-          systemFields = await systemFieldsRes.json()
-          entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
-          renderSystemFields()
-        }
+        if (!systemFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
+        systemFields = await systemFieldsRes.json()
+        entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
+        renderSystemFields()
         
         if (filamentsData) {
           filaments = filamentsData.items
@@ -699,6 +702,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load options:', error)
+        errorMessage.textContent = t('common.systemFieldsUnavailable')
+        errorMessage.classList.remove('hidden')
+        submitBtn.disabled = true
       }
     }
 

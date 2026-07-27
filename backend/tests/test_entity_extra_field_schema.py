@@ -59,3 +59,13 @@ def test_entity_extra_field_accepts_safe_nested_definition_key():
     )
 
     assert definitions["drying.temperature"].field_type == "number"
+
+
+def test_entity_extra_field_rejects_overlapping_definition_paths():
+    with pytest.raises(ValidationError, match="cannot overlap"):
+        TypeAdapter(EntityExtraFieldDefinitions).validate_python(
+            {
+                "drying": {"field_type": "text"},
+                "drying.temperature": {"field_type": "number"},
+            }
+        )

@@ -133,6 +133,16 @@ function localDateInputValue(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+function parseRangeEndpoints(minValue: unknown, maxValue: unknown): Record<string, number> | undefined {
+  const min = finiteNumber(minValue)
+  const max = finiteNumber(maxValue)
+  if (min === null && max === null) return undefined
+  return {
+    ...(min !== null ? { min } : {}),
+    ...(max !== null ? { max } : {}),
+  }
+}
+
 /**
  * Decode the string-backed System Extra Field default into the value shape used
  * by the shared rich-field controls. Complex defaults use compact JSON while
@@ -151,27 +161,11 @@ export function parseExtraFieldDefaultValue(
         const parsed = JSON.parse(raw)
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           const value = parsed as Record<string, unknown>
-          const min = finiteNumber(value.min)
-          const max = finiteNumber(value.max)
-          if (min !== null || max !== null) {
-            return {
-              ...(min !== null ? { min } : {}),
-              ...(max !== null ? { max } : {}),
-            }
-          }
+          return parseRangeEndpoints(value.min, value.max)
         }
       } catch {
         const parts = raw.split(/\s*(?:,|–|\.\.)\s*/)
-        if (parts.length === 2) {
-          const min = finiteNumber(parts[0])
-          const max = finiteNumber(parts[1])
-          if (min !== null || max !== null) {
-            return {
-              ...(min !== null ? { min } : {}),
-              ...(max !== null ? { max } : {}),
-            }
-          }
-        }
+        if (parts.length === 2) return parseRangeEndpoints(parts[0], parts[1])
       }
       return undefined
     }
@@ -266,6 +260,17 @@ export interface CollectedSystemFieldValues {
   direct: Record<string, string[]>
 }
 
+export function readLosslessDateTimeInputValue(
+  input: Pick<HTMLInputElement, 'dataset' | 'value'>,
+): string {
+  return (
+    input.dataset.originalRaw !== undefined &&
+    input.value === input.dataset.originalDisplay
+  )
+    ? input.dataset.originalRaw
+    : input.value
+}
+
 /** Collect rendered controls once for all create/edit forms. */
 export function collectSystemFieldValues(root: ParentNode = document): CollectedSystemFieldValues | null {
   const flat: Record<string, unknown> = {}
@@ -282,12 +287,8 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
       if (value) flat[key] = Number(value)
     } else {
       let value = input.value.trim()
-      if (
-        input.dataset.type === 'datetime' &&
-        input.dataset.originalRaw !== undefined &&
-        value === input.dataset.originalDisplay
-      ) {
-        value = input.dataset.originalRaw
+      if (input.dataset.type === 'datetime') {
+        value = readLosslessDateTimeInputValue(input).trim()
       }
       if (value) flat[key] = value
     }
@@ -312,6 +313,13 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
       max.addEventListener('input', clearRangeError, { once: true })
       max.reportValidity()
       return null
+    }
+    const key = min?.dataset.rangeKey ?? max?.dataset.rangeKey
+    const preserveEmpty =
+      min?.dataset.rangePresent === 'true' || max?.dataset.rangePresent === 'true'
+    if (key && (min?.value || max?.value || preserveEmpty)) {
+      flat[`${key}.min`] = min?.value ? Number(min.value) : null
+      flat[`${key}.max`] = max?.value ? Number(max.value) : null
     }
   }
 
@@ -396,8 +404,10 @@ export function renderFieldInput(
       return numInput
     }
     case 'range': {
-      const rangeObj =
+      const hasRangeValue =
         typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
+      const rangeObj =
+        hasRangeValue
           ? (rawValue as Record<string, unknown>)
           : {}
       const defaultRange =
@@ -423,9 +433,9 @@ export function renderFieldInput(
       const numW = numberInputWidth(cfg)
       return (
         `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
-        `<input type="number" class="fm-input system-field-input" data-key="${key}.min" data-type="number" data-range-key="${key}" data-range-end="min" placeholder="Min" value="${minVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
+        `<input type="number" class="fm-input system-field-input" data-key="${key}.min" data-type="number" data-range-key="${key}" data-range-end="min" data-range-present="${hasRangeValue}" placeholder="Min" value="${minVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
         `<span style="color:var(--text-muted)">–</span>` +
-        `<input type="number" class="fm-input system-field-input" data-key="${key}.max" data-type="number" data-range-key="${key}" data-range-end="max" placeholder="Max" value="${maxVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
+        `<input type="number" class="fm-input system-field-input" data-key="${key}.max" data-type="number" data-range-key="${key}" data-range-end="max" data-range-present="${hasRangeValue}" placeholder="Max" value="${maxVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
         `${unitHtml}</div>`
       )
     }
@@ -449,6 +459,8 @@ export function renderFieldInput(
     case 'multiselect': {
       const selected: string[] = Array.isArray(rawValue)
         ? rawValue.map(String)
+        : Array.isArray(flat[field.key])
+          ? (flat[field.key] as unknown[]).map(String)
         : Array.isArray(defaultValue)
           ? defaultValue.map(String)
           : []

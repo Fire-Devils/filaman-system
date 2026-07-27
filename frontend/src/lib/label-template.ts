@@ -186,19 +186,33 @@ function splitDateModifier(token: string): { key: string; dateOnly: boolean } {
     : { key: token.trim(), dateOnly: false }
 }
 
-/** Resolve a dot-path token against the spool data object. */
-function resolveToken(token: string, data: SpoolData): string {
-  const { key: tokenKey, dateOnly } = splitDateModifier(token)
-  let value: unknown
-  let rawValue: unknown
+function readTokenValue(
+  tokenKey: string,
+  data: SpoolData,
+): { value: unknown; rawValue: unknown } {
   if (tokenKey.startsWith('extra.')) {
     const key = tokenKey.slice(6)
-    const val = data.extra?.[key]
-    value = val
-    rawValue = data.extraRaw?.[key] ?? val
-  } else {
-    value = (data as Record<string, unknown>)[tokenKey]
-    rawValue = value
+    const value = data.extra?.[key]
+    return {
+      value,
+      rawValue: data.extraRaw?.[key] ?? value,
+    }
+  }
+  const value = (data as Record<string, unknown>)[tokenKey]
+  return { value, rawValue: value }
+}
+
+/** Resolve a dot-path token against the spool data object. */
+function resolveToken(token: string, data: SpoolData): string {
+  const literalKey = token.trim()
+  let { value, rawValue } = readTokenValue(literalKey, data)
+  let dateOnly = false
+  if (value === undefined) {
+    const modified = splitDateModifier(literalKey)
+    if (modified.dateOnly) {
+      ;({ value, rawValue } = readTokenValue(modified.key, data))
+      dateOnly = true
+    }
   }
   if (value === undefined || value === null || value === '') return '?'
   return dateOnly ? formatDateDisplay(rawValue) : String(value)
