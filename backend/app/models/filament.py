@@ -1,7 +1,16 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, TZDateTime
@@ -82,6 +91,9 @@ class Filament(Base, TimestampMixin):
     multi_color_style: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    custom_field_definitions: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )
 
     manufacturer: Mapped["Manufacturer"] = relationship(back_populates="filaments")
     filament_colors: Mapped[list["FilamentColor"]] = relationship(
@@ -214,7 +226,7 @@ class FilamentPrinterProfile(Base, TimestampMixin):
     printer: Mapped["Printer"] = relationship(back_populates="filament_profiles")
 
 
-from app.models.spool import Spool
-from app.models.user import User
 from app.models.printer import Printer
 from app.models.printer_params import FilamentPrinterParam
+from app.models.spool import Spool
+from app.models.user import User

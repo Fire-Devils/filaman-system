@@ -481,6 +481,8 @@ const templateInputAttributes = {
   .ds-modifier-color-inverse.has-filament-color { background: var(--ds-filament-bg, #000); border-color: var(--ds-filament-border, #000); color: var(--ds-filament-fg, #fff); }
   .ds-modifier-color-inverse.has-filament-color::after { content: none; }
   .ds-modifier-caps { font-size: 0.72rem; line-height: 0.9; }
+  .ds-modifier-date { padding: 0; }
+  .ds-modifier-date svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   .ds-syntax-popover { position: fixed; z-index: 9999; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 10px; padding: 14px 16px 12px; width: min(760px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100vh - 40px); overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3); font-size: 0.78rem; line-height: 1.6; color: var(--text); }
   .ds-syntax-popover h4 { margin: 0 0 10px; padding-right: 20px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
   .ds-syntax-popover table { width: 100%; border-collapse: collapse; }
@@ -489,6 +491,14 @@ const templateInputAttributes = {
   .ds-syntax-popover td:first-child { font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.68rem; color: var(--accent); white-space: nowrap; padding-right: 12px; }
   .ds-syntax-popover td:last-child { color: var(--text-muted); font-size: 0.76rem; padding-left: 8px; }
   .ds-syntax-popover .ds-popover-eg { display: block; margin-top: 2px; font-size: 0.68rem; color: color-mix(in srgb, var(--accent) 60%, var(--text-muted)); font-style: italic; }
+  .ds-syntax-modifier-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 20px; margin-right: 8px; border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border)); border-radius: 4px; background: color-mix(in srgb, var(--bg-elevated) 72%, var(--accent) 12%); color: var(--accent); font-family: Arial, Helvetica, sans-serif; font-size: 0.57rem; font-weight: 700; line-height: 1; vertical-align: middle; }
+  .ds-syntax-modifier-bold { font-weight: 800; }
+  .ds-syntax-modifier-italic { font-style: italic; }
+  .ds-syntax-modifier-underline { text-decoration: underline; }
+  .ds-syntax-modifier-caps { font-size: 0.72rem; }
+  .ds-syntax-modifier-inverse { background: #000; border-color: #000; color: #fff; font-size: 0.84rem; }
+  .ds-syntax-modifier-color-inverse { background: #2A5BE8; border-color: #2A5BE8; color: #fff; font-size: 0.84rem; }
+  .ds-syntax-modifier-date svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   .ds-popover-close { position: absolute; top: 8px; right: 10px; width: 24px; height: 24px; padding: 2px 4px; display: inline-flex; align-items: center; justify-content: center; background: none; border: none; border-radius: 4px; cursor: pointer; color: var(--text-muted); transition: color 0.15s, background 0.15s; }
   .ds-popover-close:hover { color: var(--text); background: var(--border); }
   .ds-popover-close svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }

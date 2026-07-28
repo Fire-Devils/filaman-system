@@ -82,7 +82,8 @@ export function getStaticPaths() {
     hydrateLabelPresetStorage,
     SPOOL_LABEL_PRESETS_KEY,
   } from '../../../lib/label-preset-storage'
-  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../../lib/extra-fields'
+  import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
+  import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
 
   function applyPrintSidebarCollapse() {
     const page = document.getElementById('fm-page')
@@ -643,20 +644,29 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
         ])
-        const allDefs: SystemExtraFieldDef[] = (Array.isArray(defs) ? defs : (defs.items || []))
-          .map((def: SystemExtraFieldDef) => ({ ...def, field_type: def.field_type || 'text' }))
-          .filter((def: SystemExtraFieldDef) => !isBuiltInLabelField('filament', def.key, def.label))
+        const systemDefinitions = Object.fromEntries(
+          (Array.isArray(defs) ? defs : (defs.items || []))
+            .map((definition: SystemExtraFieldDef) => [
+              definition.key,
+              { ...definition, field_type: definition.field_type || 'text' },
+            ]),
+        ) as Record<string, SystemExtraFieldDef>
 
-        let filamentCustom: Record<string, unknown> = {}
+        let customPrintFields: ReturnType<typeof buildEntityExtraFieldsForPrint> = []
         if (filRes.ok) {
           const fd = await filRes.json()
-          filamentCustom = (fd.custom_fields ?? {}) as Record<string, unknown>
           mergeMissingFilamentLabelData(labelData, buildFilamentLabelDataFromApi(fd, id))
+          customPrintFields = buildEntityExtraFieldsForPrint(
+            fd.custom_fields,
+            fd.custom_field_definitions,
+            systemDefinitions,
+            true,
+          ).filter(field => !isBuiltInLabelField('filament', field.key, field.label))
         }
 
         const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
 
-        if (standardFilamentFields.length === 0 && allDefs.length === 0) return
+        if (standardFilamentFields.length === 0 && customPrintFields.length === 0) return
 
         const scopeAttr = (() => {
           const existing = document.querySelector('.fm-checkbox-group')
@@ -664,7 +674,14 @@ export function getStaticPaths() {
           return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
         })()
 
-        function makeEfCheckbox(ef: {key: string, label: string, value: string, source?: string}) {
+        function makeEfCheckbox(ef: {
+          key: string
+          label: string
+          value: string
+          rawValue?: unknown
+          fieldType?: string
+          source?: string
+        }) {
           extraFields.push({ ...ef, source: ef.source ?? 'filament' })
           const lbl = document.createElement('label')
           lbl.className = 'fm-checkbox-group'
@@ -690,11 +707,13 @@ export function getStaticPaths() {
           makeEfCheckbox(sfd)
         }
 
-        for (const def of allDefs) {
+        for (const field of customPrintFields) {
           makeEfCheckbox({
-            key: `filament.${def.key}`,
-            label: def.label,
-            value: renderFieldPlainText(def, filamentCustom[def.key]),
+            key: `filament.${field.key}`,
+            label: field.label,
+            value: field.value,
+            rawValue: field.rawValue,
+            fieldType: field.fieldType,
             source: 'filament',
           })
         }

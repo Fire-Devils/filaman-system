@@ -176,7 +176,13 @@ const { id } = Astro.params
 
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay, renderFieldPlainText, renderUnknownFieldPlainText } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
+    import {
+      buildEntityExtraFieldsForPrint,
+      getExtraFieldValue,
+      renderEntityExtraFieldRows,
+      renderUnregisteredExtraFieldRows,
+    } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
@@ -389,10 +395,11 @@ const { id } = Astro.params
             <div>
               ${(() => {
                 const sysKeys = new Set(Object.keys(spoolSystemFieldMap))
+                const entityDefs = spool.custom_field_definitions ?? {}
                 const sysRows = Object.values(spoolSystemFieldMap)
-                  .filter(sysDef => spool.custom_fields[sysDef.key] !== undefined)
+                  .filter(sysDef => getExtraFieldValue(spool.custom_fields, sysDef.key) !== undefined)
                   .map(sysDef => {
-                    const displayHtml = renderFieldDisplay(sysDef, spool.custom_fields[sysDef.key])
+                    const displayHtml = renderFieldDisplay(sysDef, getExtraFieldValue(spool.custom_fields, sysDef.key))
                     return `
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-left: 8px; padding-right: 8px;">
                       <span style="display: flex; align-items: center; gap: 6px;">
@@ -403,15 +410,13 @@ const { id } = Astro.params
                     </div>
                   `
                   }).join('')
-                const customRows = Object.entries(spool.custom_fields)
-                  .filter(([key]) => !sysKeys.has(key))
-                  .map(([key, value]) => `
-                  <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
-                    <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(key)}</span>
-                    <span style="font-family: monospace; word-break: break-all;">${escapeExtraFieldHtml(renderUnknownFieldPlainText(value))}</span>
-                  </div>
-                  `).join('')
-                return sysRows + customRows
+                const entityRows = renderEntityExtraFieldRows(spool.custom_fields, entityDefs, sysKeys)
+                const customRows = renderUnregisteredExtraFieldRows(
+                  spool.custom_fields,
+                  entityDefs,
+                  sysKeys,
+                )
+                return sysRows + entityRows + customRows
               })()}
             </div>
           </div>
@@ -476,7 +481,14 @@ const { id } = Astro.params
       // Store extra fields for label printing (spool + filament).
       // Iterate ALL system-defined fields so they appear in the designer even when
       // the spool hasn't had a value set for a field yet.
-      const efForPrint: {key: string, label: string, value: string, source: string}[] = []
+      const efForPrint: {
+        key: string
+        label: string
+        value: string
+        rawValue?: unknown
+        fieldType?: string
+        source: string
+      }[] = []
 
       // ── Spool model fields (always included so they appear as label checkboxes) ──
       const spoolModelFields: [string, string, unknown][] = [
@@ -498,27 +510,37 @@ const { id } = Astro.params
         efForPrint.push({ key, label, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
       }
 
-      const spoolCustom = spool.custom_fields ?? {}
-      for (const [key, def] of Object.entries(spoolSystemFieldMap)) {
-        if (isBuiltInLabelField('spool', key, def.label)) continue
-        efForPrint.push({ key: `spool.${key}`, label: def.label, value: renderFieldPlainText(def, spoolCustom[key]), source: 'spool' })
+      for (const field of buildEntityExtraFieldsForPrint(
+        spool.custom_fields,
+        spool.custom_field_definitions,
+        spoolSystemFieldMap,
+        true,
+      )) {
+        if (isBuiltInLabelField('spool', field.key, field.label)) continue
+        efForPrint.push({
+          key: `spool.${field.key}`,
+          label: field.label,
+          value: field.value,
+          rawValue: field.rawValue,
+          fieldType: field.fieldType,
+          source: 'spool',
+        })
       }
-      // Also include any spool custom fields not covered by system definitions
-      for (const [key, value] of Object.entries(spoolCustom)) {
-        if (!spoolSystemFieldMap[key] && !isBuiltInLabelField('spool', key)) {
-          efForPrint.push({ key: `spool.${key}`, label: key, value: renderUnknownFieldPlainText(value), source: 'spool' })
-        }
-      }
-      const filamentCustom = spool.filament?.custom_fields ?? {}
-      for (const [key, def] of Object.entries(filamentSystemFieldMap)) {
-        if (isBuiltInLabelField('filament', key, def.label)) continue
-        efForPrint.push({ key: `filament.${key}`, label: def.label, value: renderFieldPlainText(def, filamentCustom[key]), source: 'filament' })
-      }
-      // Also include any filament custom fields not covered by system definitions
-      for (const [key, value] of Object.entries(filamentCustom)) {
-        if (!filamentSystemFieldMap[key] && !isBuiltInLabelField('filament', key)) {
-          efForPrint.push({ key: `filament.${key}`, label: key, value: renderUnknownFieldPlainText(value), source: 'filament' })
-        }
+      for (const field of buildEntityExtraFieldsForPrint(
+        spool.filament?.custom_fields,
+        spool.filament?.custom_field_definitions,
+        filamentSystemFieldMap,
+        true,
+      )) {
+        if (isBuiltInLabelField('filament', field.key, field.label)) continue
+        efForPrint.push({
+          key: `filament.${field.key}`,
+          label: field.label,
+          value: field.value,
+          rawValue: field.rawValue,
+          fieldType: field.fieldType,
+          source: 'filament',
+        })
       }
       sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
 

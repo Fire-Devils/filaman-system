@@ -22,6 +22,7 @@ import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 const PRESETS_KEY = 'filaman-label-presets-v1'
 const PRESETS_SCHEMA_VERSION = 1
 const TOKENS_OPEN_KEY = 'filaman-tokens-open'
+const DATE_MODIFIER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 9h17M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>'
 
 interface DesignerModifier {
   key: string
@@ -80,6 +81,7 @@ const DESIGNER_MODIFIERS: DesignerModifier[] = [
   { key: 'inverse', label: '◐', title: 'Inverse', className: 'ds-modifier-inverse', wrap: (token) => `==${token}==` },
   { key: 'colorInverse', label: '◐', title: 'Color Hex Inverse', className: 'ds-modifier-color-inverse', wrap: (token) => `@@${token}@@` },
   { key: 'caps', label: '⇧', title: 'Uppercase', className: 'ds-modifier-caps', wrap: (token) => `^^${token}^^` },
+  { key: 'date', label: '', title: 'Date only', className: 'ds-modifier-date', wrap: (token) => token.replace(/}$/, '|date}') },
 ]
 
 const FIELD_IDS = [
@@ -905,12 +907,17 @@ export async function initLabelDesignerEditor(options: LabelDesignerEditorOption
               ? 'spools.dsModifierInverse'
               : modifier.key === 'colorInverse'
                 ? 'spools.dsModifierColorInverse'
-                : 'spools.dsModifierCaps'
+                : modifier.key === 'caps'
+                  ? 'spools.dsModifierCaps'
+                  : 'spools.dsModifierDate'
       const modifierTitle = translate(modifierKey, modifier.title)
       const chip = document.createElement('button')
       chip.className = `ds-modifier-chip ${modifier.className ?? ''}`.trim()
       chip.type = 'button'
       chip.textContent = modifier.label
+      if (modifier.key === 'date') {
+        chip.innerHTML = DATE_MODIFIER_ICON
+      }
       chip.title = translate('spools.dsModifierTooltip', '{modifier}: click, then click a token').replace('{modifier}', modifierTitle)
       chip.dataset.tooltip = modifierTitle
       chip.dataset.modifier = modifier.key
@@ -1033,15 +1040,16 @@ export async function initLabelDesignerEditor(options: LabelDesignerEditorOption
       <h4>${translate('spools.dsSyntaxTitle', 'Print Format Syntax')}</h4>
       <table>
         <tr><td>{token}</td><td>${translate('spools.dsSyntaxTokenDesc', 'Insert token value; chips show short labels, and the <code>filament.</code> prefix is added automatically when clicked.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxTokenEg', 'e.g. type inserts {filament.type}, which prints TPU')}</span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-date">${DATE_MODIFIER_ICON}</span>{token|date}</td><td>${translate('spools.dsSyntaxDateDesc', 'Print only the localized date from a date or datetime token.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxDateEg', 'e.g. {extra.filament.certified_at|date} prints 7/25/26')}</span></td></tr>
         <tr><td>{text{token}text}</td><td>${translate('spools.dsSyntaxWrapDesc', 'Wrap token with literal text; the whole wrapper is hidden if the token is empty.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxWrapEg', 'e.g. {Ext: {filament.extruder_temp}C} prints Ext: 210C, or nothing when temp is unset')}</span></td></tr>
         <tr><td>{color_swatch[1]}</td><td>${translate('spools.dsSyntaxSwatchDesc', 'Inline color swatch from <code>filament.color_hex</code>; the bracket number sets swatch width in character units.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSwatchEgPrefix', 'e.g.')} <span style="display:inline-block;width:1ch;height:0.82em;background:#2A5BE8;border:1px solid rgba(0,0,0,0.28);border-radius:0.14em;vertical-align:baseline;margin:0 0.2ch;"></span> ${translate('spools.dsSyntaxSwatchEgSuffix', 'Blue; [10] is wider')}</span></td></tr>
         <tr><td>[size=120%]text[/size]</td><td>${translate('spools.dsSyntaxSizeDesc', 'Inline relative text size in percent; works with literal text, field values, and swatches.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSizeEg', 'e.g. [size=140%]{filament.extruder_temp}[/size]C')}</span></td></tr>
-        <tr><td>**text**</td><td><strong>${translate('spools.dsModifierBold', 'Bold')}</strong></td></tr>
-        <tr><td>*text*</td><td><em>${translate('spools.dsModifierItalic', 'Italic')}</em></td></tr>
-        <tr><td>__text__</td><td><u>${translate('spools.dsModifierUnderline', 'Underline')}</u></td></tr>
-        <tr><td>^^text^^</td><td>${translate('spools.dsSyntaxCapsDesc', 'Uppercase text and field values.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxCapsEgPrefix', 'e.g. ^^ff6a00^^ prints')} <span style="font-style:normal">FF6A00</span> ${translate('spools.dsSyntaxCapsEgSuffix', 'in place of')} <span style="font-style:normal">ff6a00</span></span></td></tr>
-        <tr><td>==text==</td><td><span style="background:#000;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxInverseDesc', 'Inverse text, white on black')}</span></td></tr>
-        <tr><td>@@text@@</td><td>${translate('spools.dsSyntaxColorInverseDesc', 'Inverse using filament color with automatic black or white text for contrast.')}<br><span class="ds-popover-eg"><span style="background:#2A5BE8;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseBlue', 'Blue uses white text')}</span> <span style="background:#F5E663;color:#000;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseYellow', 'Yellow uses black text')}</span></span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-bold">B</span>**text**</td><td><strong>${translate('spools.dsModifierBold', 'Bold')}</strong></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-italic">I</span>*text*</td><td><em>${translate('spools.dsModifierItalic', 'Italic')}</em></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-underline">U</span>__text__</td><td><u>${translate('spools.dsModifierUnderline', 'Underline')}</u></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-caps">⇧</span>^^text^^</td><td>${translate('spools.dsSyntaxCapsDesc', 'Uppercase text and field values.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxCapsEgPrefix', 'e.g. ^^ff6a00^^ prints')} <span style="font-style:normal">FF6A00</span> ${translate('spools.dsSyntaxCapsEgSuffix', 'in place of')} <span style="font-style:normal">ff6a00</span></span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-inverse">◐</span>==text==</td><td><span style="background:#000;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxInverseDesc', 'Inverse text, white on black')}</span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-color-inverse">◐</span>@@text@@</td><td>${translate('spools.dsSyntaxColorInverseDesc', 'Inverse using filament color with automatic black or white text for contrast.')}<br><span class="ds-popover-eg"><span style="background:#2A5BE8;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseBlue', 'Blue uses white text')}</span> <span style="background:#F5E663;color:#000;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseYellow', 'Yellow uses black text')}</span></span></td></tr>
         <tr><td>${translate('spools.dsSyntaxNestedLabel', 'Nested')}</td><td>${translate('spools.dsSyntaxNestedDesc', 'Text modifiers can be nested manually.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxNestedEgPrefix', 'e.g. **__{filament.name}__** prints')} <span style="font-style:normal"><strong><u>Galaxy Black</u></strong></span></span></td></tr>
       </table>`
     pop.querySelector('.ds-popover-close')?.addEventListener('click', () => pop.remove())

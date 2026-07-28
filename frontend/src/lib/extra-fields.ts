@@ -29,6 +29,36 @@ export function escapeHtml(s: string | null | undefined): string {
     .replace(/'/g, '&#x27;')
 }
 
+const RESERVED_EXTRA_FIELD_PATH_SEGMENTS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+])
+
+export function isUnsafeExtraFieldPath(path: string): boolean {
+  return path.split('.').some(segment => !segment || RESERVED_EXTRA_FIELD_PATH_SEGMENTS.has(segment))
+}
+
+export function hasOwnFieldValue(
+  record: Record<string, unknown>,
+  key: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+export function setOwnFieldValue(
+  record: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(record, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  })
+}
+
 /**
  * Convert decimal_places config value to an HTML <input step> attribute value.
  *   null/undefined → "any"
@@ -59,6 +89,153 @@ function safeHttpUrl(value: unknown): string | null {
 }
 
 /**
+ * Keep ISO-8601 datetimes lossless in storage, but make them compact wherever
+ * they are shown or printed. Invalid legacy values remain visible unchanged.
+ */
+export function formatDateTimeDisplay(value: unknown): string {
+  const raw = String(value)
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(parsed)
+}
+
+/** Format a date or datetime without its time component for compact print output. */
+export function formatDateDisplay(value: unknown): string {
+  const raw = String(value)
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const parsed = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short' }).format(parsed)
+}
+
+/** Convert an ISO datetime to the local, minute-precision shape accepted by datetime-local. */
+export function formatDateTimeInputValue(value: unknown): string | null {
+  const raw = String(value).trim()
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return (
+    `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}` +
+    `T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
+  )
+}
+
+export const TODAY_EXTRA_FIELD_DEFAULT = 'TODAY'
+
+function localDateInputValue(date: Date): string {
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function parseRangeEndpoints(minValue: unknown, maxValue: unknown): Record<string, number> | undefined {
+  const min = finiteNumber(minValue)
+  const max = finiteNumber(maxValue)
+  if (min === null && max === null) return undefined
+  return {
+    ...(min !== null ? { min } : {}),
+    ...(max !== null ? { max } : {}),
+  }
+}
+
+/**
+ * Decode the string-backed System Extra Field default into the value shape used
+ * by the shared rich-field controls. Complex defaults use compact JSON while
+ * scalar defaults keep their existing wire representation.
+ */
+export function parseExtraFieldDefaultValue(
+  field: Pick<SystemExtraFieldDef, 'field_type' | 'default_value'>,
+  now = new Date(),
+): unknown {
+  const raw = field.default_value
+  if (raw === null || raw === undefined || raw === '') return undefined
+
+  switch (field.field_type) {
+    case 'range': {
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const value = parsed as Record<string, unknown>
+          return parseRangeEndpoints(value.min, value.max)
+        }
+      } catch {
+        const parts = raw.split(/\s*(?:,|–|\.\.)\s*/)
+        if (parts.length === 2) return parseRangeEndpoints(parts[0], parts[1])
+      }
+      return undefined
+    }
+    case 'multiselect':
+      try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed.map(String)
+      } catch {
+        return raw
+          .split(/\r?\n|,/)
+          .map(value => value.trim())
+          .filter(Boolean)
+      }
+      return []
+    case 'checkbox':
+      return raw === 'true'
+    case 'date':
+      return raw.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT
+        ? localDateInputValue(now)
+        : raw
+    default:
+      return raw
+  }
+}
+
+export function serializeExtraFieldDefaultValue(
+  fieldType: string,
+  value: unknown,
+): string | null {
+  if (fieldType === 'range') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const range = value as Record<string, unknown>
+    const min = finiteNumber(range.min)
+    const max = finiteNumber(range.max)
+    if (min === null && max === null) return null
+    return JSON.stringify({
+      ...(min !== null ? { min } : {}),
+      ...(max !== null ? { max } : {}),
+    })
+  }
+  if (fieldType === 'multiselect') {
+    if (!Array.isArray(value) || value.length === 0) return null
+    return JSON.stringify(value.map(String))
+  }
+  if (fieldType === 'checkbox') return value === true ? 'true' : 'false'
+  if (value === null || value === undefined || String(value) === '') return null
+  return String(value)
+}
+
+export function formatExtraFieldDefaultValue(
+  field: Pick<SystemExtraFieldDef, 'field_type' | 'default_value'>,
+): string {
+  if (!field.default_value) return '—'
+  if (
+    field.field_type === 'date' &&
+    field.default_value.toUpperCase() === TODAY_EXTRA_FIELD_DEFAULT
+  ) {
+    return TODAY_EXTRA_FIELD_DEFAULT
+  }
+  const parsed = parseExtraFieldDefaultValue(field)
+  if (field.field_type === 'range' && parsed && typeof parsed === 'object') {
+    const range = parsed as Record<string, unknown>
+    return `${range.min ?? ''}–${range.max ?? ''}`
+  }
+  if (field.field_type === 'multiselect' && Array.isArray(parsed)) return parsed.join(', ')
+  if (field.field_type === 'checkbox') return parsed === true ? '✓' : '✗'
+  return String(parsed ?? field.default_value)
+}
+
+/**
  * Estimate a good pixel width for a number <input> from its field config.
  * Counts the expected digit count from min/max bounds and decimal places so
  * the input is compact but wide enough for realistic values.
@@ -83,6 +260,17 @@ export interface CollectedSystemFieldValues {
   direct: Record<string, string[]>
 }
 
+export function readLosslessDateTimeInputValue(
+  input: Pick<HTMLInputElement, 'dataset' | 'value'>,
+): string {
+  return (
+    input.dataset.originalRaw !== undefined &&
+    input.value === input.dataset.originalDisplay
+  )
+    ? input.dataset.originalRaw
+    : input.value
+}
+
 /** Collect rendered controls once for all create/edit forms. */
 export function collectSystemFieldValues(root: ParentNode = document): CollectedSystemFieldValues | null {
   const flat: Record<string, unknown> = {}
@@ -98,7 +286,10 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
       const value = input.value.trim()
       if (value) flat[key] = Number(value)
     } else {
-      const value = input.value.trim()
+      let value = input.value.trim()
+      if (input.dataset.type === 'datetime') {
+        value = readLosslessDateTimeInputValue(input).trim()
+      }
       if (value) flat[key] = value
     }
 
@@ -123,6 +314,13 @@ export function collectSystemFieldValues(root: ParentNode = document): Collected
       max.reportValidity()
       return null
     }
+    const key = min?.dataset.rangeKey ?? max?.dataset.rangeKey
+    const preserveEmpty =
+      min?.dataset.rangePresent === 'true' || max?.dataset.rangePresent === 'true'
+    if (key && (min?.value || max?.value || preserveEmpty)) {
+      flat[`${key}.min`] = min?.value ? Number(min.value) : null
+      flat[`${key}.max`] = max?.value ? Number(max.value) : null
+    }
   }
 
   root.querySelectorAll<HTMLInputElement>('.system-field-input-multi').forEach(input => {
@@ -143,10 +341,12 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
     let current = result
     keys.forEach((key, index) => {
       if (index === keys.length - 1) {
-        current[key] = value
+        setOwnFieldValue(current, key, value)
       } else {
-        const child = current[key]
-        if (!child || typeof child !== 'object' || Array.isArray(child)) current[key] = {}
+        const child = hasOwnFieldValue(current, key) ? current[key] : undefined
+        if (!child || typeof child !== 'object' || Array.isArray(child)) {
+          setOwnFieldValue(current, key, {})
+        }
         current = current[key] as Record<string, unknown>
       }
     })
@@ -167,7 +367,7 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
 export function renderFieldInput(
   field: SystemExtraFieldDef,
   rawValue: unknown,
-  flat: Record<string, any> = {}
+  flat: Record<string, unknown> = {}
 ): string {
   const key = escapeHtml(field.key)
   const cfg = field.config ?? {}
@@ -180,13 +380,20 @@ export function renderFieldInput(
     ? `<span style="color:var(--text-muted);font-size:0.85rem;flex-shrink:0">${escapeHtml(unit)}</span>`
     : ''
 
+  const defaultValue = parseExtraFieldDefaultValue(field)
   const scalarVal =
-    rawValue != null
-      ? escapeHtml(String(rawValue))
-      : flat[field.key] != null
-        ? escapeHtml(String(flat[field.key]))
-        : ''
-  const displayVal = scalarVal || (field.default_value ? escapeHtml(field.default_value) : '')
+    rawValue != null && String(rawValue) !== ''
+      ? rawValue
+      : flat[field.key] != null && String(flat[field.key]) !== ''
+        ? flat[field.key]
+        : defaultValue
+  const displayVal =
+    scalarVal !== null &&
+    scalarVal !== undefined &&
+    !Array.isArray(scalarVal) &&
+    typeof scalarVal !== 'object'
+      ? escapeHtml(String(scalarVal))
+      : ''
 
   switch (field.field_type) {
     case 'float': // legacy alias — falls through
@@ -197,37 +404,66 @@ export function renderFieldInput(
       return numInput
     }
     case 'range': {
-      const rangeObj =
+      const hasRangeValue =
         typeof rawValue === 'object' && rawValue !== null && !Array.isArray(rawValue)
-          ? (rawValue as Record<string, any>)
+      const rangeObj =
+        hasRangeValue
+          ? (rawValue as Record<string, unknown>)
+          : {}
+      const defaultRange =
+        defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue)
+          ? (defaultValue as Record<string, unknown>)
           : {}
       const minVal =
         rangeObj.min != null
           ? escapeHtml(String(rangeObj.min))
           : flat[field.key + '.min'] != null
             ? escapeHtml(String(flat[field.key + '.min']))
-            : ''
+            : defaultRange.min != null
+              ? escapeHtml(String(defaultRange.min))
+              : ''
       const maxVal =
         rangeObj.max != null
           ? escapeHtml(String(rangeObj.max))
           : flat[field.key + '.max'] != null
             ? escapeHtml(String(flat[field.key + '.max']))
-            : ''
+            : defaultRange.max != null
+              ? escapeHtml(String(defaultRange.max))
+              : ''
       const numW = numberInputWidth(cfg)
       return (
         `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">` +
-        `<input type="number" class="fm-input system-field-input" data-key="${key}.min" data-type="number" data-range-key="${key}" data-range-end="min" placeholder="Min" value="${minVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
+        `<input type="number" class="fm-input system-field-input" data-key="${key}.min" data-type="number" data-range-key="${key}" data-range-end="min" data-range-present="${hasRangeValue}" placeholder="Min" value="${minVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
         `<span style="color:var(--text-muted)">–</span>` +
-        `<input type="number" class="fm-input system-field-input" data-key="${key}.max" data-type="number" data-range-key="${key}" data-range-end="max" placeholder="Max" value="${maxVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
+        `<input type="number" class="fm-input system-field-input" data-key="${key}.max" data-type="number" data-range-key="${key}" data-range-end="max" data-range-present="${hasRangeValue}" placeholder="Max" value="${maxVal}" step="${step}"${minAttr}${maxAttr} style="width:${numW}px;flex-shrink:0" />` +
         `${unitHtml}</div>`
       )
     }
     case 'date':
       return `<input type="date" class="fm-input system-field-input" data-key="${key}" data-type="date" value="${displayVal}" style="max-width:160px" />`
+    case 'datetime': {
+      const storedValue =
+        rawValue != null
+          ? String(rawValue)
+          : flat[field.key] != null
+            ? String(flat[field.key])
+            : field.default_value ?? ''
+      const inputValue = formatDateTimeInputValue(storedValue)
+      if (inputValue === null) {
+        return `<input type="text" class="fm-input system-field-input" data-key="${key}" data-type="datetime" value="${escapeHtml(storedValue)}" />`
+      }
+      return `<input type="datetime-local" class="fm-input system-field-input" data-key="${key}" data-type="datetime" data-original-raw="${escapeHtml(storedValue)}" data-original-display="${escapeHtml(inputValue)}" value="${escapeHtml(inputValue)}" style="max-width:220px" />`
+    }
     case 'url':
       return `<input type="url" class="fm-input system-field-input" data-key="${key}" data-type="url" value="${displayVal}" placeholder="https://" />`
     case 'multiselect': {
-      const selected: string[] = Array.isArray(rawValue) ? rawValue.map(String) : []
+      const selected: string[] = Array.isArray(rawValue)
+        ? rawValue.map(String)
+        : Array.isArray(flat[field.key])
+          ? (flat[field.key] as unknown[]).map(String)
+        : Array.isArray(defaultValue)
+          ? defaultValue.map(String)
+          : []
       const opts = (field.options ?? [])
         .map(opt => {
           const esc = escapeHtml(opt)
@@ -239,7 +475,7 @@ export function renderFieldInput(
     }
     case 'textarea': {
       const maxLen = cfg.max_length ?? 2000
-      return `<textarea class="fm-input system-field-input" data-key="${key}" data-type="textarea" rows="3" maxlength="${maxLen}" style="resize:vertical">${displayVal}</textarea>`
+      return `<textarea class="fm-input system-field-input" data-key="${key}" data-type="textarea" rows="3" maxlength="${maxLen}" placeholder="e.g. The quick brown fox jumps over the lazy dog." style="resize:vertical">${displayVal}</textarea>`
     }
     case 'checkbox': {
       const chk = displayVal === 'true' || rawValue === true ? ' checked' : ''
@@ -286,7 +522,7 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     case 'range': {
       if (typeof value !== 'object' || value === null || Array.isArray(value))
         return escapeHtml(String(value))
-      const rv = value as Record<string, any>
+      const rv = value as Record<string, unknown>
       const minNum = finiteNumber(rv.min)
       const maxNum = finiteNumber(rv.max)
       const minStr = minNum != null && dp != null ? minNum.toFixed(dp) : String(rv.min ?? '?')
@@ -295,6 +531,8 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     }
     case 'date':
       return `<span>${escapeHtml(String(value))}</span>`
+    case 'datetime':
+      return `<span>${escapeHtml(formatDateTimeDisplay(value))}</span>`
     case 'url': {
       const url = String(value)
       const safeSrc = safeHttpUrl(url)
@@ -303,7 +541,7 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     }
     case 'multiselect':
       if (!Array.isArray(value)) return escapeHtml(String(value))
-      return (value as any[]).map(v => `<span class="fm-pill">${escapeHtml(String(v))}</span>`).join(' ')
+      return value.map(v => `<span class="fm-pill">${escapeHtml(String(v))}</span>`).join(' ')
     case 'textarea':
       return `<div style="white-space:pre-wrap;font-size:0.9em">${escapeHtml(String(value))}</div>`
     case 'checkbox':
@@ -344,6 +582,8 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
     }
     case 'multiselect':
       return Array.isArray(value) ? value.map(String).join(', ') : String(value)
+    case 'datetime':
+      return formatDateTimeDisplay(value)
     case 'checkbox':
       return value === true || value === 'true' ? '✓' : '✗'
     default:
