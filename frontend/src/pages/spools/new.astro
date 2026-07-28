@@ -593,6 +593,11 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         if (locationsData) {
           const select = document.getElementById('location_id') as HTMLSelectElement
           locationsData.items.forEach((l: any) => {
+            // AMS/slot locations are driver-managed — only set via scan+place assign.
+            const managedBy = l.custom_fields?.managed_by
+            if (typeof managedBy === 'string' && managedBy.endsWith('_plugin')) {
+              return
+            }
             const option = document.createElement('option')
             option.value = l.id
             option.textContent = l.name
@@ -653,10 +658,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
               (document.getElementById('spool_width_mm') as HTMLInputElement).value = String(dup.spool_width_mm)
             }
 
-            // Location
-            if (dup.location_id) {
-              (document.getElementById('location_id') as HTMLSelectElement).value = String(dup.location_id)
-            }
+            // Location is intentionally NOT copied from duplicate. AMS/slot
+            // locations must be set only when the driver assigns after a scan+place.
 
             // Lot Number
             if (dup.lot_number) {
