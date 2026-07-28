@@ -17,10 +17,12 @@ import {
   getReadableTextColorForColors,
   getFilamentSwatchColors,
 } from './label-template'
+import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 
 const PRESETS_KEY = 'filaman-label-presets-v1'
 const PRESETS_SCHEMA_VERSION = 1
 const TOKENS_OPEN_KEY = 'filaman-tokens-open'
+const DATE_MODIFIER_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v3M17 2v3M3.5 9h17M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>'
 
 interface DesignerModifier {
   key: string
@@ -79,6 +81,7 @@ const DESIGNER_MODIFIERS: DesignerModifier[] = [
   { key: 'inverse', label: '◐', title: 'Inverse', className: 'ds-modifier-inverse', wrap: (token) => `==${token}==` },
   { key: 'colorInverse', label: '◐', title: 'Color Hex Inverse', className: 'ds-modifier-color-inverse', wrap: (token) => `@@${token}@@` },
   { key: 'caps', label: '⇧', title: 'Uppercase', className: 'ds-modifier-caps', wrap: (token) => `^^${token}^^` },
+  { key: 'date', label: '', title: 'Date only', className: 'ds-modifier-date', wrap: (token) => token.replace(/}$/, '|date}') },
 ]
 
 const FIELD_IDS = [
@@ -157,7 +160,7 @@ function cloneSettings(settings: LabelDesignerSettings): LabelDesignerSettings {
 
 function sameSettings(a: LabelDesignerSettings | null, b: LabelDesignerSettings) {
   if (!a) return false
-  return JSON.stringify(a) === JSON.stringify(b)
+  return JSON.stringify(mergeDesignerSettings(a)) === JSON.stringify(mergeDesignerSettings(b))
 }
 
 function setElementValue(id: string, value: string | number | boolean) {
@@ -389,11 +392,40 @@ function loadPresets(key = PRESETS_KEY): LabelPreset[] {
   }
 }
 
-function savePresets(presets: LabelPreset[], setItem: (key: string, value: string) => boolean, key = PRESETS_KEY) {
+function savePresetsLocally(presets: LabelPreset[], setItem: (key: string, value: string) => boolean, key = PRESETS_KEY) {
   return setItem(key, JSON.stringify({
     version: PRESETS_SCHEMA_VERSION,
     presets,
   }))
+}
+
+async function upsertPreset(
+  presets: LabelPreset[],
+  preset: LabelPreset,
+  setItem: (key: string, value: string) => boolean,
+  key = PRESETS_KEY,
+) {
+  const previous = safeGetLocalStorageItem(key)
+  const savedLocally = savePresetsLocally(presets, setItem, key)
+  if (!savedLocally) return false
+  if (await saveLabelPreset(key, preset)) return true
+  if (previous === null) safeRemoveLocalStorageItem(key)
+  else setItem(key, previous)
+  return false
+}
+
+async function removePreset(
+  presets: LabelPreset[],
+  name: string,
+  setItem: (key: string, value: string) => boolean,
+  key = PRESETS_KEY,
+) {
+  const previous = safeGetLocalStorageItem(key)
+  if (!savePresetsLocally(presets, setItem, key)) return false
+  if (await deleteLabelPreset(key, name)) return true
+  if (previous === null) safeRemoveLocalStorageItem(key)
+  else setItem(key, previous)
+  return false
 }
 
 export function localizeLabelDesignerEditor(translate: (key: string, fallback: string) => string, entityLabel = 'Spool') {
@@ -530,13 +562,24 @@ export function localizeLabelDesignerEditor(translate: (key: string, fallback: s
   }
 }
 
-export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): LabelDesignerEditorController {
+export async function initLabelDesignerEditor(options: LabelDesignerEditorOptions): Promise<LabelDesignerEditorController> {
   let extraFields = options.extraFields ?? []
   const setItem = options.safeSetLocalStorage ?? safeSetLocalStorageItem
   const effectivePresetsKey = options.presetsKey
   const effectiveSettingsKey = options.settingsKey
   const getPresets = () => loadPresets(effectivePresetsKey)
-  const storePresets = (presets: LabelPreset[]) => savePresets(presets, setItem, effectivePresetsKey)
+  const storePreset = (presets: LabelPreset[], preset: LabelPreset) => upsertPreset(
+    presets,
+    preset,
+    setItem,
+    effectivePresetsKey,
+  )
+  const deletePreset = (presets: LabelPreset[], name: string) => removePreset(
+    presets,
+    name,
+    setItem,
+    effectivePresetsKey,
+  )
   const getCrossPresets = options.crossPresetsKey
     ? () => loadPresets(options.crossPresetsKey!)
     : null
@@ -548,7 +591,10 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   }
   const entityLabel = options.entityLabel ?? 'Spool'
   let activePresetName: string | null = null
+  let activePresetOptionValue: string | null = null
+  let activePresetIsCross = false
   let activePresetSettings: LabelDesignerSettings | null = null
+  let presetMutationInFlight = false
   let previewTimer: ReturnType<typeof setTimeout> | null = null
 
   const saveDesignerSettings = () => {
@@ -593,6 +639,16 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     return getPresets().find(p => sameSettings(p.settings, settings)) ?? null
   }
 
+  function getPresetForOptionValue(value: string | null) {
+    if (!value) return null
+    const isCross = value.startsWith(CROSS_OPTION_PREFIX)
+    const name = isCross ? value.slice(CROSS_OPTION_PREFIX.length) : value
+    const preset = isCross
+      ? getCrossPresets?.().find(p => p.name === name)
+      : getPresets().find(p => p.name === name)
+    return preset ? { isCross, name, preset, value } : null
+  }
+
   function selectPresetName(name: string | null) {
     const list = byId<HTMLSelectElement>('ds-preset-list')
     if (!list) return
@@ -605,18 +661,35 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
 
   function syncPresetStateFromCurrentSettings() {
     const current = readDesignerSettingsFromForm()
-    const matchingPreset = findPresetMatchingSettings(current)
     const nameInput = byId<HTMLInputElement>('ds-preset-name-input')
+    const activePreset = getPresetForOptionValue(activePresetOptionValue)
+
+    if (activePreset) {
+      selectPresetName(activePreset.value)
+      markPresetDirty(
+        nameInput?.value.trim() !== activePresetName
+        || !sameSettings(activePresetSettings, current),
+      )
+      updateSaveBtn()
+      return
+    }
+
+    activePresetName = null
+    activePresetOptionValue = null
+    activePresetIsCross = false
+    activePresetSettings = null
+    const matchingPreset = findPresetMatchingSettings(current)
 
     if (matchingPreset) {
       activePresetName = matchingPreset.name
+      activePresetOptionValue = matchingPreset.name
       activePresetSettings = cloneSettings(matchingPreset.settings)
       if (nameInput) nameInput.value = matchingPreset.name
       selectPresetName(matchingPreset.name)
       markPresetDirty(false)
     } else {
-      selectPresetName(activePresetName)
-      markPresetDirty(activePresetName !== null && !sameSettings(activePresetSettings, current))
+      selectPresetName(null)
+      markPresetDirty(false)
     }
 
     updateSaveBtn()
@@ -715,26 +788,52 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     const isCrossSelected = selectedVal.startsWith(CROSS_OPTION_PREFIX)
     const currentSettings = readDesignerSettingsFromForm()
     const existingPreset = getPresets().find(p => p.name === name)
+    const activeNameUnchanged = activePresetName !== null && name === activePresetName
+    const activeSettingsUnchanged = sameSettings(activePresetSettings, currentSettings)
+    const activePresetUnchanged = activeNameUnchanged && activeSettingsUnchanged
+    const selectedPresetIsApplied = selectedVal !== ''
+      && selectedVal === activePresetOptionValue
+      && activePresetUnchanged
     if (!name) {
       btn.textContent = translate('spools.dsPresetsSaveNew', 'Save as New')
-      btn.className = 'preset-action-btn preset-action-btn-primary'
+      btn.className = 'preset-action-btn preset-action-btn-inactive preset-save-state-btn'
       btn.disabled = true
-    } else if (existingPreset && sameSettings(existingPreset.settings, currentSettings)) {
+    } else if (activePresetUnchanged || (!activePresetName && existingPreset && sameSettings(existingPreset.settings, currentSettings))) {
       btn.textContent = translate('spools.dsPresetsSavedState', 'Saved')
-      btn.className = 'preset-action-btn preset-action-btn-saved'
+      btn.className = 'preset-action-btn preset-action-btn-inactive preset-save-state-btn'
       btn.disabled = true
+    } else if (activeNameUnchanged) {
+      btn.textContent = translate('common.save', 'Save')
+      btn.className = 'preset-action-btn preset-action-btn-primary preset-save-state-btn'
+      btn.disabled = false
     } else if (existingPreset) {
       btn.textContent = translate('spools.dsPresetsOverwrite', 'Overwrite')
-      btn.className = 'preset-action-btn preset-action-btn-overwrite'
+      btn.className = 'preset-action-btn preset-action-btn-primary preset-save-state-btn'
       btn.disabled = false
     } else {
       btn.textContent = translate('spools.dsPresetsSaveNew', 'Save as New')
-      btn.className = 'preset-action-btn preset-action-btn-primary'
+      btn.className = 'preset-action-btn preset-action-btn-primary preset-save-state-btn'
       btn.disabled = false
     }
-    // Load/Delete: disabled for cross-type selections or empty
-    if (loadBtn) loadBtn.disabled = !selectedVal
+    // Keep Load available to restore a renamed or dirty preset, but show the
+    // selected preset as Loaded while its name and settings are still applied.
+    if (loadBtn) {
+      loadBtn.textContent = selectedPresetIsApplied
+        ? translate('spools.dsPresetsLoaded', 'Loaded')
+        : translate('spools.dsPresetsLoad', 'Load')
+      loadBtn.disabled = !selectedVal || selectedPresetIsApplied
+      loadBtn.className = `preset-action-btn ${loadBtn.disabled ? 'preset-action-btn-inactive' : 'preset-action-btn-primary'} preset-load-state-btn`
+    }
     if (deleteBtn) deleteBtn.disabled = !selectedVal || isCrossSelected
+    if (presetMutationInFlight) {
+      btn.disabled = true
+      btn.className = 'preset-action-btn preset-action-btn-inactive preset-save-state-btn'
+      if (loadBtn) {
+        loadBtn.disabled = true
+        loadBtn.className = 'preset-action-btn preset-action-btn-inactive preset-load-state-btn'
+      }
+      if (deleteBtn) deleteBtn.disabled = true
+    }
   }
 
   function getFilamentInverseChipTheme() {
@@ -808,12 +907,17 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
               ? 'spools.dsModifierInverse'
               : modifier.key === 'colorInverse'
                 ? 'spools.dsModifierColorInverse'
-                : 'spools.dsModifierCaps'
+                : modifier.key === 'caps'
+                  ? 'spools.dsModifierCaps'
+                  : 'spools.dsModifierDate'
       const modifierTitle = translate(modifierKey, modifier.title)
       const chip = document.createElement('button')
       chip.className = `ds-modifier-chip ${modifier.className ?? ''}`.trim()
       chip.type = 'button'
       chip.textContent = modifier.label
+      if (modifier.key === 'date') {
+        chip.innerHTML = DATE_MODIFIER_ICON
+      }
       chip.title = translate('spools.dsModifierTooltip', '{modifier}: click, then click a token').replace('{modifier}', modifierTitle)
       chip.dataset.tooltip = modifierTitle
       chip.dataset.modifier = modifier.key
@@ -936,15 +1040,16 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
       <h4>${translate('spools.dsSyntaxTitle', 'Print Format Syntax')}</h4>
       <table>
         <tr><td>{token}</td><td>${translate('spools.dsSyntaxTokenDesc', 'Insert token value; chips show short labels, and the <code>filament.</code> prefix is added automatically when clicked.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxTokenEg', 'e.g. type inserts {filament.type}, which prints TPU')}</span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-date">${DATE_MODIFIER_ICON}</span>{token|date}</td><td>${translate('spools.dsSyntaxDateDesc', 'Print only the localized date from a date or datetime token.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxDateEg', 'e.g. {extra.filament.certified_at|date} prints 7/25/26')}</span></td></tr>
         <tr><td>{text{token}text}</td><td>${translate('spools.dsSyntaxWrapDesc', 'Wrap token with literal text; the whole wrapper is hidden if the token is empty.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxWrapEg', 'e.g. {Ext: {filament.extruder_temp}C} prints Ext: 210C, or nothing when temp is unset')}</span></td></tr>
         <tr><td>{color_swatch[1]}</td><td>${translate('spools.dsSyntaxSwatchDesc', 'Inline color swatch from <code>filament.color_hex</code>; the bracket number sets swatch width in character units.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSwatchEgPrefix', 'e.g.')} <span style="display:inline-block;width:1ch;height:0.82em;background:#2A5BE8;border:1px solid rgba(0,0,0,0.28);border-radius:0.14em;vertical-align:baseline;margin:0 0.2ch;"></span> ${translate('spools.dsSyntaxSwatchEgSuffix', 'Blue; [10] is wider')}</span></td></tr>
         <tr><td>[size=120%]text[/size]</td><td>${translate('spools.dsSyntaxSizeDesc', 'Inline relative text size in percent; works with literal text, field values, and swatches.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSizeEg', 'e.g. [size=140%]{filament.extruder_temp}[/size]C')}</span></td></tr>
-        <tr><td>**text**</td><td><strong>${translate('spools.dsModifierBold', 'Bold')}</strong></td></tr>
-        <tr><td>*text*</td><td><em>${translate('spools.dsModifierItalic', 'Italic')}</em></td></tr>
-        <tr><td>__text__</td><td><u>${translate('spools.dsModifierUnderline', 'Underline')}</u></td></tr>
-        <tr><td>^^text^^</td><td>${translate('spools.dsSyntaxCapsDesc', 'Uppercase text and field values.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxCapsEgPrefix', 'e.g. ^^ff6a00^^ prints')} <span style="font-style:normal">FF6A00</span> ${translate('spools.dsSyntaxCapsEgSuffix', 'in place of')} <span style="font-style:normal">ff6a00</span></span></td></tr>
-        <tr><td>==text==</td><td><span style="background:#000;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxInverseDesc', 'Inverse text, white on black')}</span></td></tr>
-        <tr><td>@@text@@</td><td>${translate('spools.dsSyntaxColorInverseDesc', 'Inverse using filament color with automatic black or white text for contrast.')}<br><span class="ds-popover-eg"><span style="background:#2A5BE8;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseBlue', 'Blue uses white text')}</span> <span style="background:#F5E663;color:#000;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseYellow', 'Yellow uses black text')}</span></span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-bold">B</span>**text**</td><td><strong>${translate('spools.dsModifierBold', 'Bold')}</strong></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-italic">I</span>*text*</td><td><em>${translate('spools.dsModifierItalic', 'Italic')}</em></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-underline">U</span>__text__</td><td><u>${translate('spools.dsModifierUnderline', 'Underline')}</u></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-caps">⇧</span>^^text^^</td><td>${translate('spools.dsSyntaxCapsDesc', 'Uppercase text and field values.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxCapsEgPrefix', 'e.g. ^^ff6a00^^ prints')} <span style="font-style:normal">FF6A00</span> ${translate('spools.dsSyntaxCapsEgSuffix', 'in place of')} <span style="font-style:normal">ff6a00</span></span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-inverse">◐</span>==text==</td><td><span style="background:#000;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxInverseDesc', 'Inverse text, white on black')}</span></td></tr>
+        <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-color-inverse">◐</span>@@text@@</td><td>${translate('spools.dsSyntaxColorInverseDesc', 'Inverse using filament color with automatic black or white text for contrast.')}<br><span class="ds-popover-eg"><span style="background:#2A5BE8;color:#fff;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseBlue', 'Blue uses white text')}</span> <span style="background:#F5E663;color:#000;padding:0 2px;border-radius:2px">${translate('spools.dsSyntaxColorInverseYellow', 'Yellow uses black text')}</span></span></td></tr>
         <tr><td>${translate('spools.dsSyntaxNestedLabel', 'Nested')}</td><td>${translate('spools.dsSyntaxNestedDesc', 'Text modifiers can be nested manually.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxNestedEgPrefix', 'e.g. **__{filament.name}__** prints')} <span style="font-style:normal"><strong><u>Galaxy Black</u></strong></span></span></td></tr>
       </table>`
     pop.querySelector('.ds-popover-close')?.addEventListener('click', () => pop.remove())
@@ -1122,40 +1227,51 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   const presetLoadBtn = byId<HTMLButtonElement>('ds-preset-load-btn')
   const presetDeleteBtn = byId<HTMLButtonElement>('ds-preset-delete-btn')
 
-  presetNameInput?.addEventListener('input', updateSaveBtn)
-  presetList?.addEventListener('change', () => {
-    const val = presetList.value
-    if (presetNameInput) {
-      presetNameInput.value = val.startsWith(CROSS_OPTION_PREFIX) ? val.slice(CROSS_OPTION_PREFIX.length) : val
-    }
+  presetNameInput?.addEventListener('input', () => {
+    // Manual naming cancels a pending (not yet loaded) selection. Once loaded,
+    // retain the source selection so Load can restore its original name/data.
+    if (presetList && presetList.value !== activePresetOptionValue) presetList.value = ''
+    markPresetDirty(
+      activePresetName !== null
+      && (presetNameInput.value.trim() !== activePresetName
+        || !sameSettings(activePresetSettings, readDesignerSettingsFromForm())),
+    )
     updateSaveBtn()
   })
-  const saveNamedPreset = () => {
+  presetList?.addEventListener('change', updateSaveBtn)
+  const saveNamedPreset = async () => {
+    if (presetMutationInFlight) return
     const name = presetNameInput?.value.trim() ?? ''
     if (!name) return
     const presets = getPresets()
     const idx = presets.findIndex(p => p.name === name)
     const settings = readDesignerSettingsFromForm()
-    const settingsSaved = persistDesignerSettings(settings, setItem, effectiveSettingsKey)
+    persistDesignerSettings(settings, setItem, effectiveSettingsKey)
     if (idx >= 0) presets[idx].settings = settings
     else presets.push({ name, settings })
-    const presetsSaved = storePresets(presets)
-    if (!settingsSaved || !presetsSaved) {
-      console.warn('Failed to save label preset; browser storage may be full or blocked')
-      updateSaveBtn()
-      return
-    }
-    activePresetName = name
-    activePresetSettings = cloneSettings(settings)
-    markPresetDirty(false)
-    refreshPresetList(name)
+    presetMutationInFlight = true
     updateSaveBtn()
+    try {
+      if (!await storePreset(presets, { name, settings })) {
+        window.alert(translate('spools.dsPresetsSaveFailed', 'Label preset could not be saved to the database. Please try again.'))
+        return
+      }
+      activePresetName = name
+      activePresetOptionValue = name
+      activePresetIsCross = false
+      activePresetSettings = cloneSettings(settings)
+      markPresetDirty(false)
+      refreshPresetList(name)
+    } finally {
+      presetMutationInFlight = false
+      updateSaveBtn()
+    }
   }
-  presetSaveBtn?.addEventListener('click', saveNamedPreset)
+  presetSaveBtn?.addEventListener('click', () => { void saveNamedPreset() })
   presetNameInput?.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    saveNamedPreset()
+    void saveNamedPreset()
   })
   presetLoadBtn?.addEventListener('click', () => {
     const val = presetList?.value ?? ''
@@ -1179,35 +1295,41 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
     })
     applyDesignerSettingsToForm(settings)
     persistDesignerSettings(settings, setItem, effectiveSettingsKey)
-    if (isCross) {
-      // Cross-type load applies settings without making the source preset editable/deletable here.
-      activePresetName = null
-      activePresetSettings = null
-      markPresetDirty(false)
-      if (presetNameInput) presetNameInput.value = name
-      refreshPresetList()
-    } else {
-      activePresetName = name
-      activePresetSettings = cloneSettings(settings)
-      if (presetNameInput) presetNameInput.value = name
-      refreshPresetList(name)
-      markPresetDirty(false)
-    }
+    activePresetName = name
+    activePresetOptionValue = val
+    activePresetIsCross = isCross
+    activePresetSettings = cloneSettings(settings)
+    if (presetNameInput) presetNameInput.value = name
+    refreshPresetList(val)
+    markPresetDirty(false)
     updateSaveBtn()
     notifyChange()
   })
-  presetDeleteBtn?.addEventListener('click', () => {
+  presetDeleteBtn?.addEventListener('click', async () => {
+    if (presetMutationInFlight) return
     const val = presetList?.value ?? ''
     // Cross-type presets are read-only — ignore delete
     if (!val || val.startsWith(CROSS_OPTION_PREFIX)) return
-    storePresets(getPresets().filter(p => p.name !== val))
-    if (activePresetName === val) {
-      activePresetName = null
-      activePresetSettings = null
-      markPresetDirty(false)
+    presetMutationInFlight = true
+    updateSaveBtn()
+    try {
+      if (!await deletePreset(getPresets().filter(p => p.name !== val), val)) {
+        window.alert(translate('spools.dsPresetsDeleteFailed', 'Label preset could not be deleted from the database. Please try again.'))
+        return
+      }
+      if (!activePresetIsCross && activePresetName === val) {
+        activePresetName = null
+        activePresetOptionValue = null
+        activePresetIsCross = false
+        activePresetSettings = null
+        markPresetDirty(false)
+      }
+      if (presetNameInput) presetNameInput.value = ''
+      refreshPresetList()
+    } finally {
+      presetMutationInFlight = false
+      updateSaveBtn()
     }
-    if (presetNameInput) presetNameInput.value = ''
-    refreshPresetList()
   })
 
   wireResetBtn('dsr-logo', () => {
@@ -1287,17 +1409,12 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
   })
 
   refreshTokenAreas()
-  // One-time migration: presets previously saved under the legacy key (filaman-label-presets-v1)
-  // are spool presets. Copy them to the new spool key on first load, then delete the old key.
-  if (effectivePresetsKey === 'filaman-spool-label-presets-v1') {
-    migrateStoredValue(PRESETS_KEY, effectivePresetsKey, setItem)
-  }
   if (effectiveSettingsKey === 'filaman-spool-label-designer-v1') {
     migrateStoredValue(DESIGNER_KEY, effectiveSettingsKey, setItem)
   }
   const initialPresets = getPresets()
   if (!initialPresets.some(p => p.name === 'Default')) {
-    storePresets([{
+    const defaultPreset: LabelPreset = {
       name: 'Default',
       settings: {
         logo: { show: true, spaceMm: 5.5, scaleToFit: true, manualSizeMm: 6, align: 'center' },
@@ -1324,7 +1441,8 @@ export function initLabelDesignerEditor(options: LabelDesignerEditorOptions): La
         },
         info2: { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
       },
-    }, ...initialPresets])
+    }
+    await storePreset([defaultPreset, ...initialPresets], defaultPreset)
   }
   refreshPresetList()
   loadSettings()

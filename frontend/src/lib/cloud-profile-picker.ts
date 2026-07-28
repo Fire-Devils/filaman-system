@@ -313,24 +313,11 @@ function visualMeta(
   }
 }
 
-function isProfileInvalid(
-  cov: ProfileCoverage | undefined,
-  selectedBase: string
-): boolean {
-  if (!selectedBase) return false
-  if (cov?.mapped === false) return true
-  return coverageStatus(cov) === 'missing'
-}
-
-function displayBaseForPicker(
-  selectedBase: string,
-  cov: ProfileCoverage | undefined,
-  presets: any[]
-): string {
-  if (!selectedBase) return ''
-  if (isProfileInvalid(cov, selectedBase)) return ''
-  if (presets.length > 0 && !presetBases(presets).has(selectedBase)) return ''
-  return selectedBase
+function displayBaseForPicker(selectedBase: string): string {
+  // Always keep the committed base name visible. Coverage / catalog mismatches
+  // are shown via the invalid/fallback shell state — blanking the field after a
+  // successful save made it look like the override was cleared (reload fixed it).
+  return selectedBase || ''
 }
 
 function renderStaleNotice(staleBase: string, model: string, t: TranslateFn): string {
@@ -1288,7 +1275,7 @@ export async function initPerModelProfilePicker(
     const rowHeaders: Record<string, HTMLElement> = {}
     let defaultMount: HTMLElement | null = null
     let defaultPresets: any[] = []
-    let modelOverrideMode: Record<string, boolean> = {}
+    const modelOverrideMode: Record<string, boolean> = {}
 
     const loadPresets = async (model: string) => {
       if (!presetsCache[model]) {
@@ -1344,7 +1331,7 @@ export async function initPerModelProfilePicker(
       }
 
       const base = isOverride
-        ? displayBaseForPicker(effectiveBase, cov, presets)
+        ? displayBaseForPicker(effectiveBase)
         : effectiveBase
       const hidden = mount.querySelector('.slicer-profile-base') as HTMLInputElement | null
       const search = mount.querySelector('.cloud-combo-search') as HTMLInputElement | null
@@ -1446,6 +1433,21 @@ export async function initPerModelProfilePicker(
       profilesByModel = result?.profiles_by_model || profilesByModel
       coverage = result?.coverage || coverage
       modelOverrideMode[model] = true
+      await reloadCoverage()
+      // Re-apply the saved override *after* the reload: it re-reads profiles
+      // from the server, which can briefly lag behind the write and would
+      // otherwise drop the name we just committed. refreshAll() renders from
+      // this state, so patching it here is what keeps the combo filled.
+      if (baseName) {
+        profilesByModel = {
+          ...profilesByModel,
+          [model]: {
+            ...(profilesByModel[model] || {}),
+            base_name: result?.base_name || baseName,
+            source: 'override',
+          },
+        }
+      }
       refreshAll()
       showMsg(
         (opts.t('common.saved') || 'Saved') +
@@ -1647,7 +1649,7 @@ export async function initPerModelProfilePicker(
         } else {
           modelOverrideMode[m.model] = true
           const presets = await loadPresets(m.model)
-          const displayBase = displayBaseForPicker(effectiveBase, cov, presets)
+          const displayBase = displayBaseForPicker(effectiveBase)
           mount.innerHTML = renderCombo(
             presets,
             displayBase,
@@ -1683,7 +1685,7 @@ export async function initPerModelProfilePicker(
 
       if (isOverride) {
         const presets = await loadPresets(m.model)
-        const displayBase = displayBaseForPicker(effectiveBase, cov, presets)
+        const displayBase = displayBaseForPicker(effectiveBase)
         mount.innerHTML = renderCombo(
           presets,
           displayBase,
@@ -1742,7 +1744,7 @@ export async function initPerModelProfilePicker(
           const entry = profilesByModel[m.model] || {}
           const cov2 = coverage[m.model]
           const effectiveBase = entry.base_name || defaultBaseName || ''
-          const displayBase = displayBaseForPicker(effectiveBase, cov2, presets)
+          const displayBase = displayBaseForPicker(effectiveBase)
           mount.innerHTML = renderCombo(
             presets,
             displayBase,

@@ -59,14 +59,14 @@ interface PaginatedResponse<T> {
     </div>
 
     <div class="fm-card" style="display: flex; align-items: center; gap: 20px;">
-      <svg width="36" height="36" style="fill: var(--accent-2); transition: transform 0.2s ease;" class="db-icon" onclick="window.location.href='/filaments'" style="cursor:pointer;"><use href="/icons.svg#icon-filaments"></use></svg>
+      <svg width="36" height="36" style="fill: var(--accent-2); transition: transform 0.2s ease; cursor: pointer;" class="db-icon" onclick="window.location.href='/filaments'"><use href="/icons.svg#icon-filaments"></use></svg>
       <div>
         <div style="font-size: 1.6rem; font-weight: 700; cursor: pointer;" id="stat-total-filaments" onclick="window.location.href='/filaments'">-</div>
         <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.filaments">Filaments</div>
         <div id="filament-scope-toggle" style="display: flex; gap: 4px; margin-top: 6px;">
-          <button data-scope="all"    class="fm-scope-pill" style="font-size: 0.65rem; padding: 1px 6px; border-radius: 9999px; border: 1px solid var(--border); background: none; cursor: pointer; color: var(--text-muted);" data-i18n="dashboard.filamentScopeAll">All</button>
-          <button data-scope="active" class="fm-scope-pill" style="font-size: 0.65rem; padding: 1px 6px; border-radius: 9999px; border: 1px solid var(--border); background: none; cursor: pointer; color: var(--text-muted);" data-i18n="dashboard.filamentScopeActive">Active</button>
-          <button data-scope="used"   class="fm-scope-pill" style="font-size: 0.65rem; padding: 1px 6px; border-radius: 9999px; border: 1px solid var(--border); background: none; cursor: pointer; color: var(--text-muted);" data-i18n="dashboard.filamentScopeUsed">Used</button>
+          <button data-scope="all"    class="fm-scope-pill" data-i18n="dashboard.filamentScopeAll">All</button>
+          <button data-scope="active" class="fm-scope-pill" data-i18n="dashboard.filamentScopeActive">Active</button>
+          <button data-scope="used"   class="fm-scope-pill" data-i18n="dashboard.filamentScopeUsed">Used</button>
         </div>
       </div>
     </div>
@@ -203,10 +203,7 @@ interface PaginatedResponse<T> {
       const count = filamentCounts[scope] ?? filamentCounts.all
       document.getElementById('stat-total-filaments')!.textContent = String(count)
       document.querySelectorAll<HTMLButtonElement>('.fm-scope-pill').forEach(btn => {
-        const isActive = btn.dataset.scope === scope
-        btn.style.background = isActive ? 'var(--accent-2)' : 'none'
-        btn.style.color = isActive ? '#fff' : 'var(--text-muted)'
-        btn.style.borderColor = isActive ? 'var(--accent-2)' : 'var(--border)'
+        btn.classList.toggle('active', btn.dataset.scope === scope)
       })
     }
 

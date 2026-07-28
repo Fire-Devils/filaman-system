@@ -14,7 +14,7 @@ import time
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, select, text
+from sqlalchemy import DateTime, delete, select, text
 from sqlalchemy.inspection import inspect as sa_inspect
 
 import httpx
@@ -31,6 +31,7 @@ from app.models import (
     FilamentPrinterParam,
     FilamentRating,
     InstalledPlugin,
+    LabelPreset,
     Location,
     Manufacturer,
     OAuthIdentity,
@@ -53,6 +54,10 @@ from app.models import (
     UserPermission,
     UserRole,
     UserSession,
+)
+from app.models.label_preset import (
+    label_preset_name_key,
+    normalize_label_preset_name,
 )
 from app.services.plugin_service import PluginInstallError, PluginInstallService
 from app.core.seeds import DEPRECATED_PLUGINS, BUILTIN_PLUGINS
@@ -1411,6 +1416,7 @@ async def _export_all_data(db: DBSession) -> dict[str, list[dict[str, Any]]]:
         ("oauth_identities", OAuthIdentity),
         ("user_api_keys", UserApiKey),
         ("user_sessions", UserSession),
+        ("label_presets", LabelPreset),
         ("oidc_settings", OIDCSettings),
         ("oidc_auth_states", OIDCAuthState),
         # Devices
@@ -1664,6 +1670,7 @@ async def _delete_all_data(db: DBSession) -> dict[str, int]:
         ("user_sessions", UserSession),
         ("user_api_keys", UserApiKey),
         ("oauth_identities", OAuthIdentity),
+        ("label_presets", LabelPreset),
         ("role_permissions", RolePermission),
         ("user_permissions", UserPermission),
         ("user_roles", UserRole),
@@ -1795,6 +1802,7 @@ async def _import_all_data(
         ("oauth_identities", OAuthIdentity),
         ("user_api_keys", UserApiKey),
         ("user_sessions", UserSession),
+        ("label_presets", LabelPreset),
         ("oidc_settings", OIDCSettings),
         ("oidc_auth_states", OIDCAuthState),
         ("devices", Device),
@@ -1824,13 +1832,21 @@ async def _import_all_data(
             col_to_attr = {
                 attr.columns[0].name: attr.key for attr in mapper.column_attrs
             }
+            columns = {
+                attr.columns[0].name: attr.columns[0] for attr in mapper.column_attrs
+            }
 
             for row_data in rows:
                 attr_data = {}
                 for col_name, value in row_data.items():
                     attr_name = col_to_attr.get(col_name, col_name)
 
-                    if isinstance(value, str) and "T" in value:
+                    column = columns.get(col_name)
+                    column_type = getattr(column, "type", None)
+                    is_datetime_column = isinstance(
+                        column_type, DateTime
+                    ) or isinstance(getattr(column_type, "impl", None), DateTime)
+                    if isinstance(value, str) and is_datetime_column:
                         try:
                             attr_data[attr_name] = datetime.fromisoformat(
                                 value.replace("Z", "+00:00")
@@ -1839,6 +1855,10 @@ async def _import_all_data(
                             attr_data[attr_name] = value
                     else:
                         attr_data[attr_name] = value
+
+                if model is LabelPreset and isinstance(attr_data.get("name"), str):
+                    attr_data["name"] = normalize_label_preset_name(attr_data["name"])
+                    attr_data["name_key"] = label_preset_name_key(attr_data["name"])
 
                 db.add(model(**attr_data))
 

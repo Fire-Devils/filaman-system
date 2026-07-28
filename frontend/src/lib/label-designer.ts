@@ -6,8 +6,15 @@ import {
   type SpoolData,
 } from './label-template'
 import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
+import { type SystemExtraFieldDef } from './extra-fields'
+import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
+import {
+  EMPTY_SPOOL_LABEL_LOOKUPS,
+  resolveSpoolLabelRelations,
+  type SpoolLabelLookups,
+} from './spool-label-lookups'
 
 export const DESIGNER_KEY = 'filaman-label-designer-v1'
 export const DESIGNER_SCHEMA_VERSION = 1
@@ -297,6 +304,8 @@ export interface DesignerExtraField {
   key: string
   label?: string
   value: unknown
+  rawValue?: unknown
+  fieldType?: string
   source?: string
 }
 
@@ -346,6 +355,8 @@ export interface DesignerFlatLabelData {
   extraFields?: DesignerExtraField[]
 }
 
+type ExtraFieldDefinitionMap = Partial<Record<LabelExtraFieldSource, Record<string, SystemExtraFieldDef>>>
+
 function getApiFilamentColors(filament: any): any[] {
   const list = Array.isArray(filament?.filament_colors)
     ? filament.filament_colors
@@ -369,9 +380,11 @@ function getFilamentColorHexes(filament: any): string {
 
 export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolData {
   const extra: Record<string, string> = {}
+  const extraRaw: Record<string, unknown> = {}
   for (const ef of data.extraFields ?? []) {
     if (!ef?.key) continue
     extra[ef.key] = ef.value === undefined || ef.value === null ? '' : String(ef.value)
+    extraRaw[ef.key] = ef.rawValue ?? ef.value
   }
   const rawMaterialWeight = data.raw_material_weight_g ?? data.weight
   return {
@@ -423,11 +436,17 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     stocked_in_at: toStringValue(data.stocked_in_at),
     last_used_at: toStringValue(data.last_used_at),
     extra,
+    extraRaw,
   }
 }
 
-export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
+export function buildSpoolDataFromApiSpool(
+  spool: any,
+  lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
+  fieldDefs?: ExtraFieldDefinitionMap,
+): SpoolData {
   const fil = spool?.filament ?? {}
+  const relations = resolveSpoolLabelRelations(spool, lookups)
   const firstColor = getFirstFilamentColor(fil)
   const color = firstColor?.display_name_override
     || fil.manufacturer_color_name
@@ -450,8 +469,8 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     color_hexes: getFilamentColorHexes(fil),
     color_mode: fil.color_mode,
     multi_color_style: fil.multi_color_style,
-    extruder_temp: fil.settings_extruder_temp,
-    bed_temp: fil.settings_bed_temp,
+    extruder_temp: fil.settings_extruder_temp ?? fil.custom_fields?.extruder_temp,
+    bed_temp: fil.settings_bed_temp ?? fil.custom_fields?.bed_temp,
     raw_material_weight_g: fil.raw_material_weight_g ?? fil.weight,
     weight: fil.raw_material_weight_g ?? fil.weight,
     diameter: fil.diameter_mm,
@@ -468,8 +487,8 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     lot_number: spool?.lot_number,
     external_id: spool?.external_id,
     rfid_uid: spool?.rfid_uid,
-    location: spool?.location?.label ?? spool?.location?.name,
-    status: spool?.status?.label,
+    location: relations.location,
+    status: relations.status,
     purchase_date: formatDate(spool?.purchase_date),
     purchase_price: spool?.purchase_price,
     remaining_weight_g: spool?.remaining_weight_g,
@@ -478,14 +497,27 @@ export function buildSpoolDataFromApiSpool(spool: any): SpoolData {
     low_weight_threshold_g: spool?.low_weight_threshold_g,
     stocked_in_at: formatDate(spool?.stocked_in_at),
     last_used_at: formatDate(spool?.last_used_at),
-    extraFields: buildDesignerExtraFieldsFromApiSpool(spool),
+    extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),
   })
 }
 
-export function buildDesignerExtraFieldsFromApiSpool(spool: any): DesignerExtraField[] {
+export function buildDesignerExtraFieldsFromApiSpool(
+  spool: any,
+  fieldDefs?: ExtraFieldDefinitionMap,
+): DesignerExtraField[] {
   return [
-    ...flattenExtraFields(spool?.custom_fields, 'spool'),
-    ...flattenExtraFields(spool?.filament?.custom_fields, 'filament'),
+    ...buildDesignerExtraFields(
+      spool?.custom_fields,
+      spool?.custom_field_definitions,
+      fieldDefs?.spool,
+      'spool',
+    ),
+    ...buildDesignerExtraFields(
+      spool?.filament?.custom_fields,
+      spool?.filament?.custom_field_definitions,
+      fieldDefs?.filament,
+      'filament',
+    ),
   ]
 }
 
@@ -503,24 +535,22 @@ export function getFirstFilamentColor(filament: any): any {
   return {}
 }
 
-function flattenExtraFields(value: any, source: LabelExtraFieldSource, prefix = ''): DesignerExtraField[] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
-  const fields: DesignerExtraField[] = []
-  for (const [key, raw] of Object.entries(value)) {
-    const path = prefix ? `${prefix}.${key}` : key
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-      fields.push(...flattenExtraFields(raw, source, path))
-    } else {
-      if (isBuiltInLabelField(source, path)) continue
-      fields.push({
-        key: `${source}.${path}`,
-        label: path,
-        value: raw,
-        source,
-      })
-    }
-  }
-  return fields
+function buildDesignerExtraFields(
+  values: Record<string, unknown> | null | undefined,
+  entityDefinitions: Record<string, unknown> | null | undefined,
+  systemDefinitions: Record<string, SystemExtraFieldDef> | undefined,
+  source: LabelExtraFieldSource,
+): DesignerExtraField[] {
+  return buildEntityExtraFieldsForPrint(values, entityDefinitions, systemDefinitions)
+    .filter(field => !isBuiltInLabelField(source, field.key, field.label))
+    .map(field => ({
+      key: `${source}.${field.key}`,
+      label: field.label,
+      value: field.value,
+      rawValue: field.rawValue,
+      fieldType: field.fieldType,
+      source,
+    }))
 }
 
 function toStringValue(value: unknown): string {

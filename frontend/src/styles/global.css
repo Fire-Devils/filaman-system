@@ -336,32 +336,41 @@ body {
   opacity: 0.5;
 }
 
+.preset-save-state-btn {
+  min-width: 7.25rem;
+  text-align: center;
+}
+
+.preset-load-state-btn {
+  width: 4.75rem;
+  text-align: center;
+}
+
 .preset-action-btn-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--btn-primary-text);
 }
 
-.preset-action-btn-primary:hover,
-.preset-action-btn-overwrite:hover {
+.preset-action-btn-primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
   opacity: 0.88;
 }
 
-.preset-action-btn-overwrite {
-  background: var(--warning, #f59e0b);
-  border-color: var(--warning, #f59e0b);
-  color: #fff;
-}
-
-.preset-action-btn-saved {
-  background: var(--success, var(--accent));
-  border-color: var(--success, var(--accent));
-  color: var(--btn-primary-text);
+.preset-action-btn-inactive {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
   cursor: default;
 }
 
-.preset-action-btn-saved:disabled {
+.preset-action-btn-inactive:disabled {
   opacity: 1;
+}
+
+.preset-action-btn-inactive:hover {
+  background: transparent;
 }
 
 .preset-action-btn-danger {
@@ -614,6 +623,31 @@ body {
   background: var(--accent);
   color: var(--btn-primary-text);
   box-shadow: var(--glow);
+}
+
+/* Scope pills (dashboard stat tiles) */
+.fm-scope-pill {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.65rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--font-sans);
+}
+
+.fm-scope-pill:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.fm-scope-pill.active {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--btn-primary-text);
 }
 
 /* Section dividers */

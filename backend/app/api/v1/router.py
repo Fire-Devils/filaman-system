@@ -6,6 +6,7 @@ from app.api.v1.devices import router as devices_router
 from app.api.v1.filaments import router, router_colors, router_filaments
 from app.api.v1.me import router as me_router
 from app.api.v1.me_api_keys import router as me_api_keys_router
+from app.api.v1.label_presets import router as label_presets_router
 from app.api.v1.printers import router as printers_router
 from app.api.v1.spools import (
     router_locations,
@@ -34,6 +35,7 @@ api_router.include_router(router_spools)
 api_router.include_router(router_spool_measurements)
 api_router.include_router(me_router)
 api_router.include_router(me_api_keys_router)
+api_router.include_router(label_presets_router)
 api_router.include_router(printers_router)
 api_router.include_router(admin_router)
 api_router.include_router(devices_router)

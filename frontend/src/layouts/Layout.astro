@@ -23,14 +23,14 @@ const { title } = Astro.props
     <title>{title}</title>
     <script is:inline>
       (function() {
-        var t = localStorage.getItem('theme') || 'brand';
+        const t = localStorage.getItem('theme') || 'brand';
         document.documentElement.setAttribute('data-theme', t);
-        var l = localStorage.getItem('lang') || 'en';
+        const l = localStorage.getItem('lang') || 'en';
         document.documentElement.setAttribute('lang', l);
         
         // Sidebar state
-        var s = localStorage.getItem('sidebar-collapsed');
-        var isMobile = window.innerWidth <= 768;
+        const s = localStorage.getItem('sidebar-collapsed');
+        const isMobile = window.innerWidth <= 768;
         if (s === 'true' || isMobile) {
           document.documentElement.classList.add('sidebar-collapsed');
         }
@@ -177,8 +177,9 @@ const { title } = Astro.props
 
 
     <script>
-      import { t, initI18n, syncLangFromUser, translatePage, getLang } from '../lib/i18n'
+      import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
       import { getAbortSignal } from '../lib/abort'
+      import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
@@ -318,6 +319,9 @@ const { title } = Astro.props
           }
 
           const user = await response.json()
+          await ensureLabelPresetBrowserMigration(user.id).catch(error => {
+            console.warn('Could not migrate label presets to the database', error)
+          })
 
           // Sync language from user profile
           syncLangFromUser(user.language)
@@ -392,17 +396,20 @@ const { title } = Astro.props
           .find(row => row.startsWith('csrf_token='))
           ?.split('=')[1]
 
-        await fetch('/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': decodeURIComponent(csrfToken || ''),
-          },
-          credentials: 'include',
-        })
-
-        localStorage.removeItem('lang')
-        window.location.href = '/login'
+        try {
+          await fetch('/auth/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': decodeURIComponent(csrfToken || ''),
+            },
+            credentials: 'include',
+          })
+        } finally {
+          clearLabelPresetBrowserStorage()
+          localStorage.removeItem('lang')
+          window.location.href = '/login'
+        }
       })
 
       /* ── Active nav highlighting ─────────────────────────────── */

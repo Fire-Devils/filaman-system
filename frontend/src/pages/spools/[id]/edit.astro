@@ -252,11 +252,15 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         <!-- Custom Fields -->
         <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <span class="fm-label" style="margin: 0;" data-i18n="common.extraFields">Extra Fields</span>
+            <span class="fm-label" style="margin: 0;" data-i18n="spools.specificExtraFields">Spool-specific extra fields</span>
             <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
               + <span data-i18n="common.add">Add</span>
             </button>
           </div>
+          <p style="margin: -4px 0 12px; color: var(--text-muted); font-size: 0.82rem;">
+            <span data-i18n="spools.specificExtraFieldsHelp">These typed fields apply only to this spool.</span>
+            <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="spools.manageSystemExtraFields">Create/Manage cross-spool System Extra Fields here</a>
+          </p>
           <div id="custom-fields-container" style="display: grid; gap: 8px;">
           </div>
         </div>
@@ -287,7 +291,14 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
   
   <script>
     import { t, initI18n } from '../../../lib/i18n'
+    import { escapeHtml, renderFieldInput } from '../../../lib/extra-fields'
+    import {
+      collectExtraFieldPayload,
+      createEntityExtraFieldEditor,
+      getExtraFieldValue,
+    } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
+    import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
     await initI18n()
@@ -320,7 +331,11 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
     const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLElement
     const btnAddField = document.getElementById('btn-add-field') as HTMLButtonElement
-    let customFields: any[] = []
+    const entityExtraFields = createEntityExtraFieldEditor({
+      container: customFieldsContainer,
+      addButton: btnAddField,
+      emptyText: t('spools.noSpecificExtraFields'),
+    })
 
     function flattenObject(obj: any, prefix = '', res: Record<string, string> = {}) {
       for (const key in obj) {
@@ -336,70 +351,6 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       }
       return res
     }
-
-    function unflattenObject(data: any) {
-      const result: Record<string, any> = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current: any = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
-    }
-
-    function renderCustomFields() {
-      customFieldsContainer.innerHTML = ''
-      customFields.forEach((field, index) => {
-        const row = document.createElement('div')
-        row.style.display = 'grid'
-        row.style.gridTemplateColumns = '1fr 1fr auto'
-        row.style.gap = '8px'
-        row.style.alignItems = 'center'
-        
-        row.innerHTML = `
-          <input type="text" placeholder="Key" class="fm-input custom-field-key" data-index="${index}" value="${field.key}" />
-          <input type="text" placeholder="Value" class="fm-input custom-field-value" data-index="${index}" value="${field.value}" />
-          <button type="button" class="fm-btn fm-btn-danger custom-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
-        `
-        customFieldsContainer.appendChild(row)
-      })
-
-      document.querySelectorAll<HTMLInputElement>('.custom-field-key').forEach(input => {
-        input.addEventListener('input', () => {
-          customFields[parseInt(input.dataset.index ?? '0')].key = input.value
-        })
-      })
-      document.querySelectorAll<HTMLInputElement>('.custom-field-value').forEach(input => {
-        input.addEventListener('input', () => {
-          customFields[parseInt(input.dataset.index ?? '0')].value = input.value
-        })
-      })
-      
-      document.querySelectorAll<HTMLButtonElement>('.custom-field-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const index = parseInt(btn.dataset.index ?? '0')
-          customFields.splice(index, 1)
-          renderCustomFields()
-        })
-      })
-    }
-
-    btnAddField.addEventListener('click', () => {
-      customFields.push({ key: '', value: '' })
-      renderCustomFields()
-    })
 
     function applyFilamentDefaults(selectedFilamentId: any) {
       const filament = allFilaments.find((f) => f.id === selectedFilamentId)
@@ -482,6 +433,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
             container: spoolProfileContainer,
             endpoint: '/filamentdb/spool-profiles',
             placeholder: t('filamentdbLookup.searchSpoolProfile'),
+            minChars: 0,
+            pageSize: 100,
             renderItem: (item: any) => {
               const weight = item.empty_weight_g ? `${item.empty_weight_g}g` : ''
               const material = item.spool_material || ''
@@ -564,7 +517,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         const select = document.getElementById('location_id') as HTMLSelectElement
         allLocations = data.items
-        allLocations.forEach((l: any) => {
+        // AMS/slot locations are driver-managed and cannot be picked by hand.
+        // prefillForm re-adds the one this spool currently sits in.
+        assignableLocations(allLocations).forEach((l: any) => {
           const option = document.createElement('option')
           option.value = String(l.id)
           option.textContent = l.name
@@ -577,17 +532,13 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
     }
 
     async function loadSystemFields() {
-      try {
-        const response = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() })
-        if (!response.ok) throw new Error('Failed to fetch system fields')
-        systemFields = await response.json()
-      } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load system fields:', error)
-      }
+      const response = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() })
+      if (!response.ok) throw new Error(t('common.systemFieldsUnavailable'))
+      systemFields = await response.json()
+      entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
     }
 
-    function renderSystemFields(spoolCustomFieldsFlat: Record<string, any> = {}) {
+    function renderSystemFields(spoolCustomFieldsFlat: Record<string, any> = {}, rawFields?: Record<string, any>) {
       const container = document.getElementById('system-fields-container') as HTMLElement
       const grid = document.getElementById('system-fields-grid') as HTMLElement
       if (!systemFields || systemFields.length === 0) {
@@ -598,31 +549,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       grid.innerHTML = ''
       
       systemFields.forEach(field => {
-        const currentValue = spoolCustomFieldsFlat[field.key] !== undefined ? String(spoolCustomFieldsFlat[field.key]) : (field.default_value || '')
+        const rawValue = rawFields ? getExtraFieldValue(rawFields, field.key) : null
         const div = document.createElement('div')
-        let inputHtml = ''
-
-        switch (field.field_type) {
-          case 'number':
-            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" step="any" />`
-            break
-          case 'dropdown': {
-            const opts = (field.options || []).map((opt: any) => {
-              const selected = opt === currentValue ? ' selected' : ''
-              return `<option value="${escapeHtml(opt)}"${selected}>${escapeHtml(opt)}</option>`
-            }).join('')
-            inputHtml = `<select class="fm-select system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
-            break
-          }
-          case 'checkbox': {
-            const checked = currentValue === 'true' ? ' checked' : ''
-            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}"${checked} /> ${escapeHtml(field.label)}</label>`
-            break
-          }
-          default:
-            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${escapeHtml(field.key)}" data-type="${field.field_type}" value="${escapeHtml(currentValue)}" />`
-        }
-
+        const inputHtml = renderFieldInput(field, rawValue, spoolCustomFieldsFlat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
@@ -632,11 +561,18 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       })
     }
 
-    function escapeHtml(str: any) {
-      if (!str) return ''
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
+    function ensureLocationOption(locationId: number) {
+      // A spool assigned by a printer driver sits in a slot location that the
+      // picker hides. Without its option the select would fall back to "none"
+      // and saving the form would silently move the spool out of its slot.
+      const select = document.getElementById('location_id') as HTMLSelectElement
+      if (select.querySelector(`option[value="${locationId}"]`)) return
+      const current = allLocations.find((l: any) => l.id === locationId)
+      if (!current) return
+      const option = document.createElement('option')
+      option.value = String(locationId)
+      option.textContent = current.name
+      select.appendChild(option)
     }
 
     function prefillForm(s: any) {
@@ -673,7 +609,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       ;(document.getElementById('external_id') as HTMLInputElement).value = s.external_id || ''
 
       if (s.location_id) {
-        (document.getElementById('location_id') as HTMLInputElement).value = String(s.location_id)
+        ensureLocationOption(s.location_id)
+        ;(document.getElementById('location_id') as HTMLInputElement).value = String(s.location_id)
       }
 
       ;(document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = s.spool_outer_diameter_mm != null ? String(s.spool_outer_diameter_mm) : ''
@@ -686,18 +623,11 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
       if (s.custom_fields && Object.keys(s.custom_fields).length > 0) {
         const flat = flattenObject(s.custom_fields)
-        const systemKeys = systemFields.map(f => f.key)
-        
-        customFields = Object.entries(flat)
-          .filter(([key]) => !systemKeys.includes(key))
-          .map(([key, value]) => ({ key, value: String(value) }))
-          
-        renderSystemFields(flat)
+        renderSystemFields(flat, s.custom_fields)
       } else {
-        customFields = []
         renderSystemFields({})
       }
-      renderCustomFields()
+      entityExtraFields.setData(s.custom_fields, s.custom_field_definitions)
     }
 
     const form = document.getElementById('spool-form') as HTMLFormElement
@@ -770,29 +700,11 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       const purchaseDate = formData.get('purchase_date')
       patchData.purchase_date = purchaseDate || null
 
-      const fieldsObj: Record<string, string> = {}
-
-      document.querySelectorAll<HTMLInputElement>('.system-field-input').forEach(input => {
-        const key = input.dataset.key
-        const type = input.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = input.checked ? 'true' : 'false'
-        } else {
-          const value = input.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
-
-      if (customFields.length > 0) {
-        customFields.forEach(f => {
-          if (f.key.trim()) {
-            fieldsObj[f.key.trim()] = f.value
-          }
-        })
-      }
-      
-      patchData.custom_fields = Object.keys(fieldsObj).length > 0 ? unflattenObject(fieldsObj) : null
+      const systemGrid = document.getElementById('system-fields-grid') as HTMLDivElement
+      const extraFieldPayload = collectExtraFieldPayload(systemGrid, entityExtraFields)
+      if (!extraFieldPayload) return
+      patchData.custom_fields = extraFieldPayload.customFields
+      patchData.custom_field_definitions = extraFieldPayload.customFieldDefinitions
 
       errorMessage.classList.add('hidden')
       submitBtn.disabled = true

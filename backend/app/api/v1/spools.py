@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
-from app.api.v1.printers import pick_bambuddy_driver, _is_primary_worker, _proxy_to_primary
+from app.api.v1.printers import (
+    pick_bambuddy_driver,
+    _is_primary_worker,
+    _proxy_to_primary,
+)
 from app.core.cache import response_cache
 from app.core.db_utils import get_next_available_id, get_next_available_ids
 from app.api.v1.schemas import PaginatedResponse
@@ -43,6 +47,37 @@ from app.models import (
     SpoolStatus,
 )
 from app.services.spool_service import SpoolService
+
+
+async def _reject_driver_managed_create_location(
+    db: AsyncSession, spool_data: dict
+) -> None:
+    """Refuse to claim an AMS/slot location while creating or duplicating.
+
+    Driver-managed locations (see `Location.is_driver_managed`) may only be
+    claimed by the driver itself, after the spool was physically placed. The
+    update endpoints are deliberately not guarded — that is the path drivers
+    use to assign and release slots.
+    """
+    loc_id = spool_data.get("location_id")
+    if not loc_id:
+        return
+    result = await db.execute(select(Location).where(Location.id == loc_id))
+    location = result.scalar_one_or_none()
+    if location is not None and location.is_driver_managed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "driver_managed_location",
+                "message": (
+                    f"Location {location.name!r} is managed by a printer driver "
+                    "and is assigned when the driver detects a spool in that "
+                    "slot. Create the spool without a location instead."
+                ),
+                "location_id": location.id,
+            },
+        )
+
 
 router_locations = APIRouter(prefix="/locations", tags=["locations"])
 
@@ -190,9 +225,7 @@ async def delete_location(
 
     # Detach archived spools so the FK does not block the delete
     await db.execute(
-        update(Spool)
-        .where(Spool.location_id == location_id)
-        .values(location_id=None)
+        update(Spool).where(Spool.location_id == location_id).values(location_id=None)
     )
 
     await db.delete(location)
@@ -378,6 +411,8 @@ async def create_spool(
 
     spool_data = data.model_dump()
 
+    await _reject_driver_managed_create_location(db, spool_data)
+
     # Cascade fields from Filament if not provided
     if spool_data.get("empty_spool_weight_g") is None:
         spool_data["empty_spool_weight_g"] = (
@@ -469,6 +504,8 @@ async def create_spools_bulk(
         )
 
     spool_data = data.model_dump(exclude={"quantity"})
+
+    await _reject_driver_managed_create_location(db, spool_data)
 
     # Cascade fields from Filament if not provided
     if spool_data.get("empty_spool_weight_g") is None:
@@ -652,9 +689,7 @@ async def list_all_spool_events(
                     hex_code=fc.color.hex_code,
                     name=fc.display_name_override or fc.color.name,
                 )
-                for fc in sorted(
-                    filament.filament_colors, key=lambda c: c.position
-                )
+                for fc in sorted(filament.filament_colors, key=lambda c: c.position)
                 if fc.color is not None
             ]
         items.append(resp)
@@ -1143,9 +1178,7 @@ async def set_spool_model_slicer_profile(
             },
         )
     if body.clear_override:
-        result = await method(
-            int(spool_id), model.strip().upper(), clear_override=True
-        )
+        result = await method(int(spool_id), model.strip().upper(), clear_override=True)
     else:
         if not body.base_name or not body.base_name.strip():
             raise HTTPException(

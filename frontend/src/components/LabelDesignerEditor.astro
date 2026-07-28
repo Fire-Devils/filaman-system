@@ -20,6 +20,13 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   valign.map(item => ({ ...item, id: `${prefix}-${item.id}` })),
   active,
 )
+
+const templateInputAttributes = {
+  spellcheck: false,
+  autocomplete: 'off',
+  autocapitalize: 'off',
+  autocorrect: 'off',
+}
 ---
 
 <div id="tab-panel-designer" class="settings-section" style="display: none;">
@@ -30,7 +37,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         <label class="fm-label" id="dsl-preset-saved">Saved presets</label>
         <div class="preset-control-row">
           <select id="ds-preset-list" class="fm-select preset-select"></select>
-          <button id="ds-preset-load-btn" class="preset-action-btn" type="button">Load</button>
+          <button id="ds-preset-load-btn" class="preset-action-btn preset-action-btn-inactive preset-load-state-btn" type="button">Load</button>
           <button id="ds-preset-delete-btn" class="preset-action-btn preset-action-btn-danger preset-action-btn-icon" type="button" title="Delete selected preset" aria-label="Delete selected preset">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
           </button>
@@ -40,7 +47,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         <label class="fm-label" id="dsl-preset-name">Preset name</label>
         <div class="preset-control-row">
           <input type="text" id="ds-preset-name-input" class="fm-input preset-name-input" placeholder="My label">
-          <button id="ds-preset-save-btn" class="preset-action-btn preset-action-btn-primary" type="button">Save as New</button>
+          <button id="ds-preset-save-btn" class="preset-action-btn preset-action-btn-inactive preset-save-state-btn" type="button">Save as New</button>
         </div>
       </div>
     </div>
@@ -144,7 +151,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-title-tpl">Title Format</label><button class="ds-syntax-btn" id="ds-title-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-title-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.name}"></textarea>
+        <textarea id="ds-title-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.name}" {...templateInputAttributes}></textarea>
         <div class="ds-token-area" id="ds-title-token-area"></div>
       </div>
 
@@ -181,7 +188,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-title2-tpl">Subtitle Format</label><button class="ds-syntax-btn" id="ds-title2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.type}"></textarea>
+          <textarea id="ds-title2-tpl" class="fm-input ds-tpl-input ds-tpl-textarea" rows="1" placeholder="{filament.type}" {...templateInputAttributes}></textarea>
           <div class="ds-token-area" id="ds-title2-token-area"></div>
         </div>
       </div>
@@ -227,7 +234,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       <div><label class="fm-label" id="dsl-qr-link">Link mode</label><div class="ds-pill-group" id="ds-qr-link-group" data-value="spool">
         {pill([{ value: 'url', id: 'dsp-qr-url', label: 'Custom URL' }, { value: 'spool', id: 'dsp-qr-spool', label: 'Spool URL' }], 'spool').map(item => <button class:list={['ds-pill-btn', item.active && 'active']} data-val={item.value} id={item.id} type="button">{item.label}</button>)}
       </div></div>
-      <div id="ds-qr-url-wrap" style="display:none;"><label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label><input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com"></div>
+      <div id="ds-qr-url-wrap" style="display:none;"><label class="fm-label" id="dsl-qr-url-tpl">Custom URL base</label><input type="text" id="ds-qr-url-tpl" class="fm-input ds-tpl-input" placeholder="https://example.com" {...templateInputAttributes}></div>
       <div class="ds-two-col-row">
         <div class="ds-field-col"><label class="fm-label" id="dsl-qr-pos">Position</label><div class="ds-pill-group" id="ds-qr-pos-group" data-value="right">
           {pill([{ value: 'left', id: 'dsp-qr-left', label: 'Left' }, { value: 'right', id: 'dsp-qr-right', label: 'Right' }], 'right').map(item => <button class:list={['ds-pill-btn', 'ds-icon-pill-btn', item.active && 'active']} data-val={item.value} id={item.id} type="button" title={item.label} aria-label={item.label}>
@@ -284,7 +291,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info-tpl">Information Format</label><button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C"></textarea>
+        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C" {...templateInputAttributes}></textarea>
         <div class="ds-token-area" id="ds-info-token-area"></div>
       </div>
       <div class="ds-secondary-toggle" id="ds-info2-toggle"><label class="fm-checkbox-group ds-secondary-check"><input type="checkbox" id="ds-info2-show"><span id="dsl-info2-show">Side Column</span></label></div>
@@ -313,7 +320,7 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info2-tpl">Side Column Format</label><button class="ds-syntax-btn" id="ds-info2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}"></textarea>
+          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}" {...templateInputAttributes}></textarea>
           <div class="ds-token-area" id="ds-info2-token-area"></div>
         </div>
       </div>
@@ -474,6 +481,8 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   .ds-modifier-color-inverse.has-filament-color { background: var(--ds-filament-bg, #000); border-color: var(--ds-filament-border, #000); color: var(--ds-filament-fg, #fff); }
   .ds-modifier-color-inverse.has-filament-color::after { content: none; }
   .ds-modifier-caps { font-size: 0.72rem; line-height: 0.9; }
+  .ds-modifier-date { padding: 0; }
+  .ds-modifier-date svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   .ds-syntax-popover { position: fixed; z-index: 9999; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 10px; padding: 14px 16px 12px; width: min(760px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100vh - 40px); overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3); font-size: 0.78rem; line-height: 1.6; color: var(--text); }
   .ds-syntax-popover h4 { margin: 0 0 10px; padding-right: 20px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
   .ds-syntax-popover table { width: 100%; border-collapse: collapse; }
@@ -482,6 +491,14 @@ const verticalAlignButtons = (prefix: string, active = 'bottom') => pill(
   .ds-syntax-popover td:first-child { font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.68rem; color: var(--accent); white-space: nowrap; padding-right: 12px; }
   .ds-syntax-popover td:last-child { color: var(--text-muted); font-size: 0.76rem; padding-left: 8px; }
   .ds-syntax-popover .ds-popover-eg { display: block; margin-top: 2px; font-size: 0.68rem; color: color-mix(in srgb, var(--accent) 60%, var(--text-muted)); font-style: italic; }
+  .ds-syntax-modifier-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 20px; margin-right: 8px; border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border)); border-radius: 4px; background: color-mix(in srgb, var(--bg-elevated) 72%, var(--accent) 12%); color: var(--accent); font-family: Arial, Helvetica, sans-serif; font-size: 0.57rem; font-weight: 700; line-height: 1; vertical-align: middle; }
+  .ds-syntax-modifier-bold { font-weight: 800; }
+  .ds-syntax-modifier-italic { font-style: italic; }
+  .ds-syntax-modifier-underline { text-decoration: underline; }
+  .ds-syntax-modifier-caps { font-size: 0.72rem; }
+  .ds-syntax-modifier-inverse { background: #000; border-color: #000; color: #fff; font-size: 0.84rem; }
+  .ds-syntax-modifier-color-inverse { background: #2A5BE8; border-color: #2A5BE8; color: #fff; font-size: 0.84rem; }
+  .ds-syntax-modifier-date svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   .ds-popover-close { position: absolute; top: 8px; right: 10px; width: 24px; height: 24px; padding: 2px 4px; display: inline-flex; align-items: center; justify-content: center; background: none; border: none; border-radius: 4px; cursor: pointer; color: var(--text-muted); transition: color 0.15s, background 0.15s; }
   .ds-popover-close:hover { color: var(--text); background: var(--border); }
   .ds-popover-close svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }

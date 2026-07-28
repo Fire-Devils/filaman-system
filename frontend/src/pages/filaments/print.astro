@@ -82,13 +82,29 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     writeStorageValue,
   } from '../../lib/label-print-page'
   import { isBuiltInLabelField } from '../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../lib/label-preset-storage'
+  import { type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import {
+    buildSystemExtraFieldDefinitionMap,
+    definitionForFlattenedExtraField,
+    extraFieldPathOverlaps,
+    flattenExtraFieldValues,
+    getExtraFieldValue,
+    normalizeEntityExtraFieldDefinitions,
+    renderRecordExtraField,
+    type EntityExtraFieldDefinitions,
+  } from '../../lib/entity-extra-fields'
   import { t, initI18n } from '../../lib/i18n'
 
   installPrintFunction()
 
   const SETTINGS_KEY = 'filaman-filament-batch-label-settings'
   const SETTINGS_VERSION = 2
-  const DESIGNER_PRESETS_KEY = 'filaman-filament-label-presets-v1'
+  const DESIGNER_PRESETS_KEY = FILAMENT_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
 
   const widthInput       = document.getElementById('input-width') as HTMLInputElement
@@ -115,13 +131,15 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const exportPngBtn     = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn     = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const previewContainer = document.getElementById('preview-container') as HTMLElement
+  await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
 
-  type ExtraFieldDef = { key: string; label: string }
+  type ExtraFieldDef = SystemExtraFieldDef
   type ApiObject = Record<string, unknown>
   type ApiFilament = ApiObject & {
     id?: string | number
     custom_fields?: Record<string, unknown>
+    custom_field_definitions?: EntityExtraFieldDefinitions
     manufacturer?: { id?: string | number; name?: string }
   }
 
@@ -135,6 +153,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   // Extra field definitions for filaments only. The Standard Label tab is
   // reduced to common fields; Label Designer still receives all fields.
   let efDefs: ExtraFieldDef[] = []
+  const systemFieldKeys = new Set<string>()
   const efCheckMap: Record<string, HTMLInputElement> = {}
 
   const STANDARD_FILAMENT_EF = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS
@@ -146,7 +165,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return typeof value === 'object' && value !== null
   }
 
-  function isExtraFieldDef(value: unknown): value is ExtraFieldDef {
+  function isExtraFieldDef(value: unknown): value is SystemExtraFieldDef {
     return isApiObject(value) && typeof value.key === 'string' && typeof value.label === 'string'
   }
 
@@ -156,7 +175,20 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       : isApiObject(value) && Array.isArray(value.items)
         ? value.items
         : []
-    return items.filter(isExtraFieldDef)
+    return items.filter(isExtraFieldDef).map(def => ({
+      ...def,
+      id: typeof def.id === 'number' ? def.id : 0,
+      key: def.key,
+      label: def.label,
+      field_type: typeof def.field_type === 'string' ? def.field_type : 'text',
+    }))
+  }
+
+  function getExtraFieldDefinitionMap(): Record<string, SystemExtraFieldDef> {
+    return buildSystemExtraFieldDefinitionMap(
+      efDefs,
+      def => systemFieldKeys.has(def.key),
+    )
   }
 
   function saveSettings() {
@@ -227,10 +259,16 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     for (const def of efDefs) {
       if (STANDARD_FILAMENT_EF_KEYS.has(def.key)) continue
       const key = `filament.${def.key}`
-      fields.set(key, { key, label: def.label, value: '', source: 'filament' })
+      fields.set(key, {
+        key,
+        label: def.label,
+        value: '',
+        fieldType: def.field_type,
+        source: 'filament',
+      })
     }
     for (const filament of filaments) {
-      for (const field of buildDesignerExtraFieldsFromFilament(filament)) {
+      for (const field of buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap())) {
         if (!field?.key || fields.has(field.key)) continue
         fields.set(field.key, field)
       }
@@ -245,13 +283,27 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   function getExtraFieldsForFilament(filament: ApiFilament): {label: string, value: string}[] {
     const result: {label: string, value: string}[] = []
     const custom = filament?.custom_fields ?? {}
+    const recordDefinitions = normalizeEntityExtraFieldDefinitions(
+      filament.custom_field_definitions,
+    )
     for (const def of efDefs) {
       if (!efCheckMap[efMapKey(def.key)]?.checked) continue
       // Standard fields use shared reduced definitions; system custom fields use custom_fields[key].
       const stdDef = STANDARD_FILAMENT_EF.find(s => s.key === def.key)
-      const rawValue = stdDef ? stdDef.valueFromApi(filament) : (custom[def.key] !== null && custom[def.key] !== undefined ? String(custom[def.key]) : '')
-      if (rawValue !== '') {
-        result.push({ label: def.label, value: rawValue })
+      const customValue = getExtraFieldValue(custom, def.key)
+      const rendered = stdDef
+        ? { label: def.label, value: String(stdDef.valueFromApi(filament) ?? '') }
+        : customValue !== null && customValue !== undefined
+          ? renderRecordExtraField(
+              def.key,
+              customValue,
+              def,
+              recordDefinitions,
+              systemFieldKeys.has(def.key),
+            )
+          : null
+      if (rendered?.value) {
+        result.push(rendered)
       }
     }
     return result
@@ -320,7 +372,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       spool_width_mm: data.spool_width_mm,
       spool_material: data.spool_material,
       shop_url: data.shop_url,
-      extraFields: buildDesignerExtraFieldsFromFilament(filament),
+      extraFields: buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap()),
     })
   }
 
@@ -463,10 +515,22 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       const customDefs = normalizeExtraFieldDefs(defs)
         .filter(def => !isBuiltInLabelField('filament', def.key, def.label))
       const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
+      systemFieldKeys.clear()
+      customDefs.forEach(def => systemFieldKeys.add(def.key))
+      const knownKeys = new Set([...standardDefs, ...customDefs].map(def => def.key))
+      const entityDefs = filaments.flatMap(filament => {
+        const definitions = normalizeEntityExtraFieldDefinitions(filament.custom_field_definitions)
+        return flattenExtraFieldValues(filament.custom_fields, definitions)
+          .map(definitionForFlattenedExtraField)
+      }).filter(def =>
+        !extraFieldPathOverlaps(def.key, knownKeys) &&
+        !isBuiltInLabelField('filament', def.key, def.label),
+      )
+      const uniqueEntityDefs = Array.from(new Map(entityDefs.map(def => [def.key, def])).values())
 
       // Keep the Standard Label tab compact: reduced standard fields first,
-      // then true system custom fields in their own group.
-      efDefs = [...standardDefs, ...customDefs]
+      // then system and record-local custom fields.
+      efDefs = [...standardDefs, ...customDefs, ...uniqueEntityDefs]
       if (efDefs.length === 0) return
 
       const titleEl = document.getElementById('ef-section-title')!
@@ -498,7 +562,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 
       addFieldRows(standardDefs, container)
 
-      if (customDefs.length > 0) {
+      if (customDefs.length + uniqueEntityDefs.length > 0) {
         const customTitle = document.createElement('h3')
         customTitle.textContent = t('filaments.extraFieldsLabel') || 'Filament Extra Fields'
         const customContainer = document.createElement('div')
@@ -506,7 +570,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         customContainer.style.removeProperty('display')
         container.insertAdjacentElement('afterend', customTitle)
         customTitle.insertAdjacentElement('afterend', customContainer)
-        addFieldRows(customDefs, customContainer)
+        addFieldRows([...customDefs, ...uniqueEntityDefs], customContainer)
       }
     } catch {}
   }
@@ -531,7 +595,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     onChange: handlePreviewZoomChange,
   })
 
-  const designerEditor = initLabelDesignerEditor({
+  const designerEditor = await initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
     getFilamentColorHex: () => getBatchFilamentColorData()?.hex_code || '',
@@ -542,7 +606,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Filament',
-    crossPresetsKey: 'filaman-spool-label-presets-v1',
+    crossPresetsKey: SPOOL_LABEL_PRESETS_KEY,
     ownPresetsLabel: (t('filaments.dsPresetsOwnGroup') || 'Filament presets'),
     crossPresetsLabel: (t('filaments.dsPresetsCrossGroupSpool') || 'Spool presets'),
   })
@@ -603,15 +667,13 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
     ids.forEach(id => previewContainer.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
 
-    const [filamentResults] = await Promise.all([
-      Promise.allSettled(ids.map(async id => {
+    const filamentResults = await Promise.allSettled(ids.map(async id => {
         const r = await fetch(`/api/v1/filaments/${id}`, { credentials: 'include' })
         if (!r.ok) throw new Error(`Failed to load filament ${id}: ${r.status}`)
         return await r.json()
-      })),
-      loadExtraFieldDefs(),
-    ])
+      }))
     filaments = filamentResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiFilament>).value)
+    await loadExtraFieldDefs()
     designerEditor.refreshExtraFields(getBatchDesignerExtraFields())
     updateLabelCount()
 

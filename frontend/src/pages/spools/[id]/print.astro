@@ -98,6 +98,19 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
   import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../../lib/label-preset-storage'
+  import {
+    EMPTY_SPOOL_LABEL_LOOKUPS,
+    loadSpoolLabelLookups,
+    resolveSpoolLabelRelations,
+    type SpoolLabelLookups,
+  } from '../../../lib/spool-label-lookups'
+  import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
+  import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
 
   // Auto-collapse nav sidebar on the print page when the viewport is narrow —
   // the print page needs maximum horizontal space and the overlay would cover the controls.
@@ -137,6 +150,7 @@ export function getStaticPaths() {
   const translate = (key: string, fallback = '') => (window as TranslationWindow).__t?.(key) || fallback
 
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
+  let labelLookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS
 
   const params = new URLSearchParams(window.location.search)
   const labelData = {
@@ -231,6 +245,8 @@ export function getStaticPaths() {
     }
   }
   type ApiSpoolForPrint = {
+    status_id?: unknown
+    location_id?: unknown
     filament_id?: unknown
     lot_number?: unknown
     rfid_uid?: unknown
@@ -272,6 +288,7 @@ export function getStaticPaths() {
       .map(color => color?.color?.hex_code)
       .filter(Boolean)
       .join(', ')
+    const relations = resolveSpoolLabelRelations(spool, labelLookups)
 
     Object.assign(labelData, {
       filament_id: firstValue(spool?.filament_id, labelData.filament_id),
@@ -304,8 +321,8 @@ export function getStaticPaths() {
       lot_number: firstValue(spool?.lot_number, labelData.lot_number),
       external_id: firstValue(spool?.external_id, labelData.external_id),
       rfid_uid: firstValue(spool?.rfid_uid, labelData.rfid_uid),
-      location: firstValue(spool?.location?.label, spool?.location?.name, labelData.location),
-      status: firstValue(spool?.status?.label, labelData.status),
+      location: firstValue(relations.location, labelData.location),
+      status: firstValue(relations.status, labelData.status),
       purchase_date: firstValue(spool?.purchase_date, labelData.purchase_date),
       purchase_price: firstValue(spool?.purchase_price, labelData.purchase_price),
       remaining_weight_g: firstValue(spool?.remaining_weight_g, labelData.remaining_weight_g),
@@ -322,7 +339,6 @@ export function getStaticPaths() {
       const response = await fetch(`/api/v1/spools/${id}`, { credentials: 'include' })
       if (!response.ok) return null
       const spool = await response.json()
-      applySpoolApiData(spool)
       return spool
     } catch {
       return null
@@ -330,7 +346,14 @@ export function getStaticPaths() {
   }
 
 
-  let extraFields: {key: string, label: string, value: string, source?: string}[] = []
+  let extraFields: {
+    key: string
+    label: string
+    value: string
+    rawValue?: unknown
+    fieldType?: string
+    source?: string
+  }[] = []
   try {
     const stored = sessionStorage.getItem('filaman-label-extra-fields')
     if (stored) {
@@ -419,11 +442,12 @@ export function getStaticPaths() {
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
   const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+  await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(syncOutputPreview)
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
   const ACTIVE_TAB_KEY = 'filaman-label-active-tab'
-  const DESIGNER_PRESETS_KEY = 'filaman-spool-label-presets-v1'
+  const DESIGNER_PRESETS_KEY = SPOOL_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-spool-label-designer-v1'
 
   // --- Tab switching ---
@@ -503,7 +527,7 @@ export function getStaticPaths() {
     return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'spool', ef.key, ef.label))
   }
 
-  const designerEditor = initLabelDesignerEditor({
+  const designerEditor = await initLabelDesignerEditor({
     extraFields: getDesignerExtraFields(),
     entityType: 'spool',
     getFilamentColorHex: () => labelData.hex_code,
@@ -515,7 +539,7 @@ export function getStaticPaths() {
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Spool',
-    crossPresetsKey: 'filaman-filament-label-presets-v1',
+    crossPresetsKey: FILAMENT_LABEL_PRESETS_KEY,
     ownPresetsLabel: translate('spools.dsPresetsOwnGroup', 'Spool presets'),
     crossPresetsLabel: translate('spools.dsPresetsCrossGroupFilament', 'Filament presets'),
   })
@@ -737,7 +761,14 @@ export function getStaticPaths() {
   function getSelectedStandardExtraFields(): StandardExtraField[] {
     return extraFieldChecks
       .filter(ef => ef.checkbox.checked)
-      .map(ef => ({ label: ef.label, value: ef.value }))
+      .map(ef => ({
+        label: ef.label,
+        value: ef.key === 'location'
+          ? labelData.location
+          : ef.key === 'status'
+            ? labelData.status
+            : ef.value,
+      }))
   }
 
   function getStandardSettings(): StandardLabelSettings {
@@ -887,7 +918,12 @@ export function getStaticPaths() {
     updatePreview()
   })
 
-  const apiSpoolData = await fetchSpoolApiData()
+  const [apiSpoolData, loadedLookups] = await Promise.all([
+    fetchSpoolApiData(),
+    loadSpoolLabelLookups(),
+  ])
+  labelLookups = loadedLookups
+  if (apiSpoolData) applySpoolApiData(apiSpoolData)
 
   // Restore active tab now that all designer state is fully initialized
   if (savedTab === 'designer') tabControls.activate('designer')
@@ -906,41 +942,46 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
         ])
-        const allDefs: {key: string, label: string, target_type: string}[] = [
-          ...(Array.isArray(spoolDefs) ? spoolDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'spool'})),
-          ...(Array.isArray(filamentDefs) ? filamentDefs : []).map((d: {key: string, label: string}) => ({...d, target_type: 'filament'})),
-        ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
-        if (allDefs.length === 0) return
+        const toDefinitionMap = (definitions: unknown): Record<string, SystemExtraFieldDef> => (
+          Object.fromEntries(
+            (Array.isArray(definitions) ? definitions : [])
+              .map((definition: SystemExtraFieldDef) => [
+                definition.key,
+                { ...definition, field_type: definition.field_type || 'text' },
+              ]),
+          )
+        )
+        const spoolSystemDefinitions = toDefinitionMap(spoolDefs)
+        const filamentSystemDefinitions = toDefinitionMap(filamentDefs)
 
-        // Attempt to get actual spool values
-        const spoolCustom: Record<string, string> = {}
-        const filamentCustom: Record<string, string> = {}
         const sd = apiSpoolData ?? await fetchSpoolApiData()
-        if (sd) {
-          if (sd.custom_fields) {
-            for (const [k, v] of Object.entries(sd.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) spoolCustom[k] = String(v)
-            }
-          }
-          if (sd.filament?.custom_fields) {
-            for (const [k, v] of Object.entries(sd.filament.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) filamentCustom[k] = String(v)
-            }
-          }
-        }
+        if (!sd) return
 
         // Populate extraFields and rebuild UI.
-        const sortedDefs = [...allDefs].sort((a, b) => (
-          (a.target_type === 'spool' ? 0 : 1) - (b.target_type === 'spool' ? 0 : 1)
-        ))
+        const fallbackFields = [
+          ...buildEntityExtraFieldsForPrint(
+            sd.custom_fields,
+            sd.custom_field_definitions,
+            spoolSystemDefinitions,
+            true,
+          ).map(field => ({ ...field, source: 'spool' })),
+          ...buildEntityExtraFieldsForPrint(
+            sd.filament?.custom_fields,
+            sd.filament?.custom_field_definitions,
+            filamentSystemDefinitions,
+            true,
+          ).map(field => ({ ...field, source: 'filament' })),
+        ].filter(field => !isBuiltInLabelField(field.source, field.key, field.label))
+        if (fallbackFields.length === 0) return
 
-        for (const def of sortedDefs) {
-          const valueMap = def.target_type === 'spool' ? spoolCustom : filamentCustom
+        for (const field of fallbackFields) {
           const ef = {
-            key: `${def.target_type}.${def.key}`,
-            label: def.label,
-            value: valueMap[def.key] ?? '',
-            source: def.target_type,
+            key: `${field.source}.${field.key}`,
+            label: field.label,
+            value: field.value,
+            rawValue: field.rawValue,
+            fieldType: field.fieldType,
+            source: field.source,
           }
           extraFields.push(ef)
           addExtraFieldCheckbox(ef)

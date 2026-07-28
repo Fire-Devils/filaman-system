@@ -56,6 +56,19 @@ async def _create_location(
     return location
 
 
+async def _create_driver_managed_location(
+    db_session,
+    name: str = "AMS 1 · Slot 1",
+    managed_by: str = "bambuddy_plugin",
+) -> Location:
+    """A slot location as a printer driver plugin would create it."""
+    location = Location(name=name, custom_fields={"managed_by": managed_by})
+    db_session.add(location)
+    await db_session.commit()
+    await db_session.refresh(location)
+    return location
+
+
 async def _create_spool(
     db_session,
     filament_id: int,
@@ -240,6 +253,81 @@ class TestSpoolCRUD:
         assert data["spool_outer_diameter_mm"] == 210.0
         assert data["spool_width_mm"] == 70.0
         assert data["spool_material"] == "Cardboard"
+        assert "custom_field_definitions" not in data
+
+    @pytest.mark.asyncio
+    async def test_create_spool_with_specific_field_definition(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        definition = {
+            "storage_humidity": {
+                "label": "Storage humidity",
+                "field_type": "range",
+                "config": {"unit": "%", "decimal_places": 0},
+            }
+        }
+
+        response = await client.post(
+            "/api/v1/spools",
+            json={
+                "filament_id": filament.id,
+                "custom_fields": {"storage_humidity": {"min": 10, "max": 20}},
+                "custom_field_definitions": definition,
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["custom_fields"]["storage_humidity"] == {"min": 10, "max": 20}
+        assert data["custom_field_definitions"] == definition
+
+        legacy_patch_response = await client.patch(
+            f"/api/v1/spools/{data['id']}",
+            json={"custom_fields": {"storage_humidity": {"min": 15, "max": 25}}},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert legacy_patch_response.status_code == 200
+        assert legacy_patch_response.json()["custom_fields"]["storage_humidity"] == {
+            "min": 15,
+            "max": 25,
+        }
+        assert legacy_patch_response.json()["custom_field_definitions"] == definition
+
+        clear_response = await client.patch(
+            f"/api/v1/spools/{data['id']}",
+            json={"custom_field_definitions": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert clear_response.status_code == 200
+        assert "custom_field_definitions" not in clear_response.json()
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_spool_specific_field_config(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+
+        response = await client.post(
+            "/api/v1/spools",
+            json={
+                "filament_id": filament.id,
+                "custom_field_definitions": {
+                    "notes": {
+                        "field_type": "textarea",
+                        "config": {"unit": "kg"},
+                    }
+                },
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_spool_invalid_filament(self, auth_client):
@@ -964,3 +1052,111 @@ class TestDeviceMeasurement:
 
         await db_session.refresh(spool)
         assert spool.remaining_weight_g == 400.0
+
+
+class TestDriverManagedLocations:
+    """AMS/slot locations belong to a printer driver plugin.
+
+    Plugins mark them via custom_fields ({"managed_by": "<key>_plugin"}); the
+    marker is read in exactly one place, Location.is_driver_managed.
+    """
+
+    @pytest.mark.parametrize(
+        "custom_fields,expected",
+        [
+            (None, False),
+            ({}, False),
+            ({"managed_by": None}, False),
+            ({"managed_by": "manual"}, False),
+            ({"managed_by": "bambuddy"}, False),
+            ({"managed_by": "bambuddy_plugin"}, True),
+            ({"managed_by": "moonraker_plugin"}, True),
+        ],
+    )
+    def test_is_driver_managed_marker(self, custom_fields, expected):
+        assert (
+            Location(name="AMS 1", custom_fields=custom_fields).is_driver_managed
+            is expected
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_spool_rejects_driver_managed_location(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        location = await _create_driver_managed_location(db_session)
+
+        response = await client.post(
+            "/api/v1/spools",
+            json={"filament_id": filament.id, "location_id": location.id},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail["code"] == "driver_managed_location"
+        assert detail["location_id"] == location.id
+
+    @pytest.mark.asyncio
+    async def test_bulk_create_spools_rejects_driver_managed_location(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        location = await _create_driver_managed_location(db_session)
+
+        response = await client.post(
+            "/api/v1/spools/bulk",
+            json={
+                "filament_id": filament.id,
+                "quantity": 3,
+                "location_id": location.id,
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "driver_managed_location"
+
+        remaining = await db_session.execute(select(Spool))
+        assert remaining.scalars().all() == []
+
+    @pytest.mark.asyncio
+    async def test_create_spool_accepts_regular_location(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        location = await _create_location(db_session, name="Shelf A")
+
+        response = await client.post(
+            "/api/v1/spools",
+            json={"filament_id": filament.id, "location_id": location.id},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["location_id"] == location.id
+
+    @pytest.mark.asyncio
+    async def test_update_spool_may_claim_driver_managed_location(
+        self, auth_client, db_session
+    ):
+        """The update path stays open — drivers assign and release slots there."""
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+        location = await _create_driver_managed_location(db_session)
+
+        response = await client.patch(
+            f"/api/v1/spools/{spool.id}",
+            json={"location_id": location.id},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["location_id"] == location.id

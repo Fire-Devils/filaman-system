@@ -77,6 +77,13 @@ export function getStaticPaths() {
     writeStorageValue,
   } from '../../../lib/label-print-page'
   import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import {
+    FILAMENT_LABEL_PRESETS_KEY,
+    hydrateLabelPresetStorage,
+    SPOOL_LABEL_PRESETS_KEY,
+  } from '../../../lib/label-preset-storage'
+  import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
+  import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
 
   function applyPrintSidebarCollapse() {
     const page = document.getElementById('fm-page')
@@ -146,7 +153,7 @@ export function getStaticPaths() {
   const LABEL_SETTINGS_KEY = 'filaman-filament-label-settings'
   const LABEL_SETTINGS_VERSION = 2
   const ACTIVE_TAB_KEY = 'filaman-filament-label-active-tab'
-  const DESIGNER_PRESETS_KEY = 'filaman-filament-label-presets-v1'
+  const DESIGNER_PRESETS_KEY = FILAMENT_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
 
   // SpoolData for the template parser — filament fields map directly
@@ -199,6 +206,7 @@ export function getStaticPaths() {
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
   const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+  await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(syncOutputPreview)
 
   // --- Tab switching ---
@@ -275,7 +283,7 @@ export function getStaticPaths() {
     return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'filament', ef.key, ef.label))
   }
 
-  const designerEditor = initLabelDesignerEditor({
+  const designerEditor = await initLabelDesignerEditor({
     extraFields: getDesignerExtraFields(),
     entityType: 'filament',
     getFilamentColorHex: () => labelData.hex_code,
@@ -287,7 +295,7 @@ export function getStaticPaths() {
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Filament',
-    crossPresetsKey: 'filaman-spool-label-presets-v1',
+    crossPresetsKey: SPOOL_LABEL_PRESETS_KEY,
     ownPresetsLabel: translate('filaments.dsPresetsOwnGroup', 'Filament presets'),
     crossPresetsLabel: translate('filaments.dsPresetsCrossGroupSpool', 'Spool presets'),
   })
@@ -636,23 +644,29 @@ export function getStaticPaths() {
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           fetch(`/api/v1/filaments/${id}`, { credentials: 'include' }),
         ])
-        const allDefs: {key: string, label: string}[] = (Array.isArray(defs) ? defs : (defs.items || []))
-          .filter((def: {key: string, label: string}) => !isBuiltInLabelField('filament', def.key, def.label))
+        const systemDefinitions = Object.fromEntries(
+          (Array.isArray(defs) ? defs : (defs.items || []))
+            .map((definition: SystemExtraFieldDef) => [
+              definition.key,
+              { ...definition, field_type: definition.field_type || 'text' },
+            ]),
+        ) as Record<string, SystemExtraFieldDef>
 
-        const filamentCustom: Record<string, string> = {}
+        let customPrintFields: ReturnType<typeof buildEntityExtraFieldsForPrint> = []
         if (filRes.ok) {
           const fd = await filRes.json()
-          if (fd.custom_fields) {
-            for (const [k, v] of Object.entries(fd.custom_fields as Record<string, unknown>)) {
-              if (v !== null && v !== undefined) filamentCustom[k] = String(v)
-            }
-          }
           mergeMissingFilamentLabelData(labelData, buildFilamentLabelDataFromApi(fd, id))
+          customPrintFields = buildEntityExtraFieldsForPrint(
+            fd.custom_fields,
+            fd.custom_field_definitions,
+            systemDefinitions,
+            true,
+          ).filter(field => !isBuiltInLabelField('filament', field.key, field.label))
         }
 
         const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
 
-        if (standardFilamentFields.length === 0 && allDefs.length === 0) return
+        if (standardFilamentFields.length === 0 && customPrintFields.length === 0) return
 
         const scopeAttr = (() => {
           const existing = document.querySelector('.fm-checkbox-group')
@@ -660,7 +674,14 @@ export function getStaticPaths() {
           return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
         })()
 
-        function makeEfCheckbox(ef: {key: string, label: string, value: string, source?: string}) {
+        function makeEfCheckbox(ef: {
+          key: string
+          label: string
+          value: string
+          rawValue?: unknown
+          fieldType?: string
+          source?: string
+        }) {
           extraFields.push({ ...ef, source: ef.source ?? 'filament' })
           const lbl = document.createElement('label')
           lbl.className = 'fm-checkbox-group'
@@ -686,11 +707,13 @@ export function getStaticPaths() {
           makeEfCheckbox(sfd)
         }
 
-        for (const def of allDefs) {
+        for (const field of customPrintFields) {
           makeEfCheckbox({
-            key: `filament.${def.key}`,
-            label: def.label,
-            value: filamentCustom[def.key] ?? '',
+            key: `filament.${field.key}`,
+            label: field.label,
+            value: field.value,
+            rawValue: field.rawValue,
+            fieldType: field.fieldType,
             source: 'filament',
           })
         }

@@ -15,6 +15,7 @@ from app.models.base import Base, TimestampMixin, TZDateTime
 
 if TYPE_CHECKING:
     from app.models.filament import FilamentRating
+    from app.models.label_preset import LabelPreset
     from app.models.rbac import Permission, Role
     from app.models.spool import SpoolEvent
 
@@ -61,6 +62,9 @@ class User(Base, TimestampMixin):
     spool_events: Mapped[list["SpoolEvent"]] = relationship(back_populates="user")
     filament_ratings: Mapped[list["FilamentRating"]] = relationship(
         back_populates="user"
+    )
+    label_presets: Mapped[list["LabelPreset"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 

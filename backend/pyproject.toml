@@ -10,7 +10,8 @@ dependencies = [
     "gunicorn>=21.0.0",
     "sqlalchemy[asyncio]>=2.0.25",
     "alembic>=1.13.0",
-    "pydantic>=2.5.0",
+    # >=2.12 required for Field(exclude_if=...), used by the extra-field schemas
+    "pydantic>=2.12.0",
     "pydantic-settings>=2.1.0",
     "python-jose[cryptography]>=3.3.0",
     "passlib[argon2]>=1.7.4",

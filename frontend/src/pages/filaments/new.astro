@@ -310,11 +310,15 @@ import Layout from '../../layouts/Layout.astro'
       <!-- Custom Fields -->
       <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <label class="fm-label" style="margin: 0;" data-i18n="common.extraFields">Extra Fields (JSON)</label>
+          <label class="fm-label" style="margin: 0;" data-i18n="filaments.specificExtraFields">Filament-specific extra fields</label>
           <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
             + <span data-i18n="common.add">Add</span>
           </button>
         </div>
+        <p style="margin: -4px 0 12px; color: var(--text-muted); font-size: 0.82rem;">
+          <span data-i18n="filaments.specificExtraFieldsHelp">These typed fields apply only to this filament.</span>
+          <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="filaments.manageSystemExtraFields">Create/Manage cross-filament System Extra Fields here</a>
+        </p>
         <div id="custom-fields-container" style="display: grid; gap: 8px;">
           <!-- Dynamic fields go here -->
         </div>
@@ -344,8 +348,14 @@ import Layout from '../../layouts/Layout.astro'
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { escapeHtml, renderFieldInput } from '../../lib/extra-fields'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
+    import {
+      collectExtraFieldPayload,
+      createEntityExtraFieldEditor,
+      getExtraFieldValue,
+    } from '../../lib/entity-extra-fields'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
     await initI18n()
 
@@ -392,77 +402,12 @@ import Layout from '../../layouts/Layout.astro'
     const newColorHex = document.getElementById('new-color-hex') as HTMLInputElement
     const newColorName = document.getElementById('new-color-name') as HTMLInputElement
 
-    // Custom Fields
     const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLDivElement
     const btnAddField = document.getElementById('btn-add-field') as HTMLButtonElement
-
-    // ── Custom Fields Logic ──
-    let customFields: Array<{ key: string, value: string }> = []
-
-    function unflattenObject(data: Record<string, any>) {
-      const result: any = {}
-      for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          const keys = key.split('.')
-          let current = result
-          for (let i = 0; i < keys.length; i++) {
-            const k = keys[i]
-            if (i === keys.length - 1) {
-              const val = data[key]
-              const num = Number(val)
-              current[k] = !isNaN(num) && val.trim() !== '' ? num : val
-            } else {
-              current[k] = current[k] || {}
-              current = current[k]
-            }
-          }
-        }
-      }
-      return result
-    }
-
-    function renderCustomFields() {
-      customFieldsContainer.innerHTML = ''
-      customFields.forEach((field, index) => {
-        const row = document.createElement('div')
-        row.style.display = 'grid'
-        row.style.gridTemplateColumns = '1fr 1fr auto'
-        row.style.gap = '8px'
-        row.style.alignItems = 'center'
-        
-        row.innerHTML = `
-          <input type="text" placeholder="Key" class="fm-input custom-field-key" data-index="${index}" value="${field.key}" />
-          <input type="text" placeholder="Value" class="fm-input custom-field-value" data-index="${index}" value="${field.value}" />
-          <button type="button" class="fm-btn fm-btn-danger custom-field-remove" data-index="${index}" style="padding: 6px 10px;">&times;</button>
-        `
-        customFieldsContainer.appendChild(row)
-      })
-
-      // Wire up inputs to update state
-      document.querySelectorAll('.custom-field-key').forEach((input: any) => {
-        input.addEventListener('input', (e: any) => {
-          customFields[parseInt(e.target.dataset.index)].key = e.target.value
-        })
-      })
-      document.querySelectorAll('.custom-field-value').forEach((input: any) => {
-        input.addEventListener('input', (e: any) => {
-          customFields[parseInt(e.target.dataset.index)].value = e.target.value
-        })
-      })
-      
-      // Wire up remove buttons
-      document.querySelectorAll('.custom-field-remove').forEach((btn: any) => {
-        btn.addEventListener('click', (e: any) => {
-          const index = parseInt(e.target.closest('button').dataset.index)
-          customFields.splice(index, 1)
-          renderCustomFields()
-        })
-      })
-    }
-
-    btnAddField.addEventListener('click', () => {
-      customFields.push({ key: '', value: '' })
-      renderCustomFields()
+    const entityExtraFields = createEntityExtraFieldEditor({
+      container: customFieldsContainer,
+      addButton: btnAddField,
+      emptyText: t('filaments.noSpecificExtraFields'),
     })
 
     // ── FilamentDB Lookup (manufacturer-based) ──
@@ -840,18 +785,29 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     async function loadSystemFields() {
-      try {
-        const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
-        if (!response.ok) throw new Error('Failed to fetch system fields')
-        systemFields = await response.json()
-        renderSystemFields()
-      } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load system fields:', error)
-      }
+      const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
+      if (!response.ok) throw new Error(t('common.systemFieldsUnavailable'))
+      systemFields = await response.json()
+      entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
+      renderSystemFields()
     }
 
-    function renderSystemFields() {
+    function flattenObject(obj: any, prefix = '', res: any = {}) {
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          const val = obj[key]
+          const newKey = prefix ? `${prefix}.${key}` : key
+          if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            flattenObject(val, newKey, res)
+          } else {
+            res[newKey] = val
+          }
+        }
+      }
+      return res
+    }
+
+    function renderSystemFields(flat: Record<string, any> = {}, raw?: Record<string, any>) {
       const container = document.getElementById('system-fields-container') as HTMLDivElement
       const grid = document.getElementById('system-fields-grid') as HTMLDivElement
       if (!systemFields || systemFields.length === 0) {
@@ -861,36 +817,14 @@ import Layout from '../../layouts/Layout.astro'
       container.style.display = 'block'
       grid.innerHTML = ''
       
-      systemFields.forEach(field => {
-        const defaultVal = field.default_value || ''
+      systemFields.forEach((field: any) => {
         const div = document.createElement('div')
-        let inputHtml = ''
-
-        switch (field.field_type) {
-          case 'number':
-            inputHtml = `<input type="number" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" step="any" />`
-            break
-          case 'dropdown': {
-            const opts = (field.options || []).map((opt: string) => {
-              const selected = opt === defaultVal ? ' selected' : ''
-              return `<option value="${opt}"${selected}>${opt}</option>`
-            }).join('')
-            inputHtml = `<select class="fm-select system-field-input" data-key="${field.key}" data-type="${field.field_type}"><option value="">\u2014</option>${opts}</select>`
-            break
-          }
-          case 'checkbox': {
-            const checked = defaultVal === 'true' ? ' checked' : ''
-            inputHtml = `<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" class="system-field-input" data-key="${field.key}" data-type="${field.field_type}"${checked} /> ${field.label}</label>`
-            break
-          }
-          default:
-            inputHtml = `<input type="text" class="fm-input system-field-input" data-key="${field.key}" data-type="${field.field_type}" value="${defaultVal}" />`
-        }
-
+        const rawValue = raw ? getExtraFieldValue(raw, field.key) : null
+        const inputHtml = renderFieldInput(field, rawValue, flat)
         if (field.field_type === 'checkbox') {
           div.innerHTML = inputHtml
         } else {
-          div.innerHTML = `<label class="fm-label">${field.label}</label>${inputHtml}`
+          div.innerHTML = `<label class="fm-label">${escapeHtml(field.label)}</label>${inputHtml}`
         }
         grid.appendChild(div)
       })
@@ -1009,7 +943,9 @@ import Layout from '../../layouts/Layout.astro'
         btnAddNewColor.parentElement!.classList.remove('hidden')
       } catch (error: any) {
         if (isAbortError(error)) return
-        await (window as any).__fmAlert?.(error.message) || alert(error.message)
+        const dialog = (window as any).__fmAlert
+        if (dialog) await dialog(error.message)
+        else alert(error.message)
       } finally {
         btnSaveNewColor.disabled = false
       }
@@ -1098,34 +1034,13 @@ import Layout from '../../layouts/Layout.astro'
       const shopUrl = formData.get('shop_url')
       if (shopUrl) data.shop_url = shopUrl
 
-      // System Fields + Custom Fields
-      const fieldsObj: Record<string, any> = {}
-
-      // Collect System Fields
-      document.querySelectorAll('.system-field-input').forEach((el: any) => {
-        const key = el.dataset.key
-        const type = el.dataset.type
-        if (!key) return
-        if (type === 'checkbox') {
-          fieldsObj[key] = el.checked ? 'true' : 'false'
-        } else {
-          const value = el.value.trim()
-          if (value) fieldsObj[key] = value
-        }
-      })
-
-      // Collect Custom Fields
-      if (customFields.length > 0) {
-        customFields.forEach(f => {
-          if (f.key.trim()) {
-            fieldsObj[f.key.trim()] = f.value
-          }
-        })
-      }
-
-      if (Object.keys(fieldsObj).length > 0) {
-        data.custom_fields = unflattenObject(fieldsObj)
-      }
+      // System fields and filament-specific fields share value storage, but
+      // filament-specific type metadata is stored separately.
+      const systemGrid = document.getElementById('system-fields-grid') as HTMLDivElement
+      const extraFieldPayload = collectExtraFieldPayload(systemGrid, entityExtraFields)
+      if (!extraFieldPayload) return
+      data.custom_fields = extraFieldPayload.customFields
+      data.custom_field_definitions = extraFieldPayload.customFieldDefinitions
 
       errorMessage.classList.add('hidden')
       submitBtn.disabled = true
@@ -1260,18 +1175,23 @@ import Layout from '../../layouts/Layout.astro'
           const shopInput = document.getElementById('shop_url') as HTMLInputElement
           if (dup.shop_url) shopInput.value = dup.shop_url
 
-          // Custom Fields
+          // Custom Fields (non-system) + System Fields
           if (dup.custom_fields && typeof dup.custom_fields === 'object') {
-            const entries = Object.entries(dup.custom_fields)
-            if (entries.length > 0) {
-              customFields = entries.map(([key, value]) => ({ key, value: String(value) }))
-              renderCustomFields()
-            }
+            // Prefill system fields from duplicate
+            const dupFlat = flattenObject(dup.custom_fields)
+            renderSystemFields(dupFlat, dup.custom_fields)
           }
+          entityExtraFields.setData(dup.custom_fields, dup.custom_field_definitions)
         } catch (e) {
           console.error('Failed to apply duplicate filament data:', e)
         }
       }
+    }).catch(error => {
+      if (isAbortError(error)) return
+      console.error('Failed to load System Extra Fields:', error)
+      errorMessage.textContent = t('common.systemFieldsUnavailable')
+      errorMessage.classList.remove('hidden')
+      submitBtn.disabled = true
     })
   </script>
 </Layout>

@@ -241,7 +241,7 @@ async def _search_with_fuzzy_fallback(
 @router.get("/manufacturers")
 async def search_manufacturers(
     _principal: PrincipalDep,
-    search: str | None = Query(None, min_length=2),
+    search: str | None = Query(None, min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -255,7 +255,7 @@ async def search_manufacturers(
 @router.get("/filaments")
 async def search_filaments(
     _principal: PrincipalDep,
-    search: str | None = Query(None, min_length=2),
+    search: str | None = Query(None, min_length=1),
     manufacturer_id: int | None = Query(None),
     manufacturer_name: str | None = Query(
         None,
@@ -312,7 +312,7 @@ async def search_filaments(
 @router.get("/spool-profiles")
 async def search_spool_profiles(
     _principal: PrincipalDep,
-    search: str | None = Query(None, min_length=2),
+    search: str | None = Query(None, min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
