@@ -301,6 +301,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       getExtraFieldValue,
     } from '../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../lib/cache'
+    import { assignableLocations } from '../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
     await initI18n()
@@ -592,12 +593,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
         
         if (locationsData) {
           const select = document.getElementById('location_id') as HTMLSelectElement
-          locationsData.items.forEach((l: any) => {
-            // AMS/slot locations are driver-managed — only set via scan+place assign.
-            const managedBy = l.custom_fields?.managed_by
-            if (typeof managedBy === 'string' && managedBy.endsWith('_plugin')) {
-              return
-            }
+          // AMS/slot locations are driver-managed — only set via scan+place assign.
+          assignableLocations(locationsData.items as any[]).forEach((l: any) => {
             const option = document.createElement('option')
             option.value = l.id
             option.textContent = l.name

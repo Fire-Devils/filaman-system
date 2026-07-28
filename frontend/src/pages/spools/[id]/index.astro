@@ -184,6 +184,7 @@ const { id } = Astro.params
       renderUnregisteredExtraFieldRows,
     } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
+    import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     import { isBuiltInLabelField } from '../../../lib/label-extra-fields'
@@ -1037,7 +1038,7 @@ const { id } = Astro.params
               <label class="fm-label">${t('spools.newLocation')}</label>
               <select id="field-location" class="fm-select">
                 <option value="">${t('spools.noLocation')}</option>
-                ${locations.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
+                ${assignableLocations(locations).map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
               </select>
             </div>
             <div>

@@ -298,6 +298,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       getExtraFieldValue,
     } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
+    import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
     await initI18n()
@@ -516,7 +517,9 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
         const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         const select = document.getElementById('location_id') as HTMLSelectElement
         allLocations = data.items
-        allLocations.forEach((l: any) => {
+        // AMS/slot locations are driver-managed and cannot be picked by hand.
+        // prefillForm re-adds the one this spool currently sits in.
+        assignableLocations(allLocations).forEach((l: any) => {
           const option = document.createElement('option')
           option.value = String(l.id)
           option.textContent = l.name
@@ -558,6 +561,20 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       })
     }
 
+    function ensureLocationOption(locationId: number) {
+      // A spool assigned by a printer driver sits in a slot location that the
+      // picker hides. Without its option the select would fall back to "none"
+      // and saving the form would silently move the spool out of its slot.
+      const select = document.getElementById('location_id') as HTMLSelectElement
+      if (select.querySelector(`option[value="${locationId}"]`)) return
+      const current = allLocations.find((l: any) => l.id === locationId)
+      if (!current) return
+      const option = document.createElement('option')
+      option.value = String(locationId)
+      option.textContent = current.name
+      select.appendChild(option)
+    }
+
     function prefillForm(s: any) {
       (document.getElementById('filament_id') as HTMLInputElement).value = String(s.filament_id)
 
@@ -592,7 +609,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       ;(document.getElementById('external_id') as HTMLInputElement).value = s.external_id || ''
 
       if (s.location_id) {
-        (document.getElementById('location_id') as HTMLInputElement).value = String(s.location_id)
+        ensureLocationOption(s.location_id)
+        ;(document.getElementById('location_id') as HTMLInputElement).value = String(s.location_id)
       }
 
       ;(document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = s.spool_outer_diameter_mm != null ? String(s.spool_outer_diameter_mm) : ''
