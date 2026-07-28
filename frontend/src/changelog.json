@@ -1,6 +1,26 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Benutzerdefinierte Felder lassen sich jetzt einzeln pro Spule und pro Filament typisieren – unabhängig von den systemweiten Feldern. Ein Datensatz kann damit eigene Zusatzfelder mit Feldtyp, Auswahloptionen und Einheit führen, die in Detail-, Bearbeitungs- und Druckansichten passend dargestellt werden. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "AMS-/Slot-Standorte, die von einem Drucker-Plugin verwaltet werden, lassen sich nicht mehr von Hand belegen. Sie werden in der Standortauswahl beim Anlegen, Bearbeiten, Duplizieren und beim Standortwechsel (auch als Massenaktion) nicht mehr angeboten, und das Anlegen einer Spule auf einem solchen Standort wird jetzt mit einer verständlichen Meldung abgelehnt statt den Standort stillschweigend zu verwerfen. Zugewiesen wird ein Slot weiterhin ausschließlich vom Drucker-Plugin, sobald es die Spule dort erkennt. Steht eine Spule bereits in einem Slot, bleibt dieser in der Bearbeitungsansicht sichtbar und geht beim Speichern nicht verloren." },
+          { "type": "fix", "text": "Beim Duplizieren einer Spule wurden Standort, Status, Restgewicht, RFID-Kennung und Zeitstempel mitkopiert. Übernommen werden jetzt nur noch die Produkt- und Maßangaben; das Restgewicht wird aus Brutto- minus Leergewicht neu berechnet." },
+          { "type": "fix", "text": "Ein pro Druckermodell gesetztes Profil verschwand nach dem Speichern aus dem Eingabefeld und tauchte erst nach dem Neuladen der Seite wieder auf. Der gespeicherte Name bleibt jetzt sofort stehen." },
+          { "type": "fix", "text": "Ein systemweites Zusatzfeld kann nicht mehr angelegt oder umgestellt werden, wenn vorhandene Datensätze dazu unpassende Werte oder eine eigene, abweichende Feldtyp-Definition führen. Statt die Werte stillschweigend unbrauchbar zu machen, nennt die Fehlermeldung jetzt die Anzahl und Beispiel-Datensätze." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Custom fields can now be typed per individual spool and per filament, independently of the system-wide fields. A record can carry its own extra fields with field type, options, and unit, rendered accordingly in the detail, edit, and print views. (Contributed by akira69)" },
+          { "type": "fix", "text": "AMS/slot locations owned by a printer plugin can no longer be assigned by hand. They are no longer offered in the location pickers when creating, editing, duplicating, or moving a spool (including the bulk action), and creating a spool in such a location is now rejected with a clear message instead of silently dropping the location. A slot is still only claimed by the printer plugin once it detects the spool there. If a spool already sits in a slot, that slot stays visible in the edit view and is not lost on save." },
+          { "type": "fix", "text": "Duplicating a spool also copied its location, status, remaining weight, RFID tag, and timestamps. Only product and dimension data is carried over now; the remaining weight is recalculated from gross minus empty weight." },
+          { "type": "fix", "text": "A profile set for a specific printer model disappeared from the input field after saving and only came back after a page reload. The saved name now stays in place immediately." },
+          { "type": "fix", "text": "A system-wide extra field can no longer be created or retyped while existing records hold incompatible values or carry their own conflicting field-type definition. Instead of silently rendering those values unusable, the error now reports how many records are affected and lists examples." }
+        ]
+      }
+    },
+    {
       "version": "1.2.34",
       "date": "",
       "changes": {
