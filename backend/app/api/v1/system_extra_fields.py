@@ -65,7 +65,12 @@ async def _find_incompatible_existing_values(
     options: list[str] | None,
     config: dict | None,
 ) -> tuple[int, list[int]]:
-    """Find retained record values that cannot safely use a definition.
+    """Find records that cannot safely use a definition.
+
+    A record blocks the definition when its retained value has an unusable
+    shape, or when it carries a record-local definition for the same (or an
+    overlapping) path that declares a different type — the system-wide
+    definition would otherwise silently contradict the record-local one.
 
     The Spoolman import and repair services intentionally create definitions
     internally, alongside their previewed and approved value conversion in the
@@ -75,18 +80,19 @@ async def _find_incompatible_existing_values(
     if model is None:
         return 0, []
 
-    result = await db.stream(select(model.id, model.custom_fields))
+    result = await db.stream(
+        select(model.id, model.custom_fields, model.custom_field_definitions)
+    )
     incompatible_count = 0
     sample_record_ids: list[int] = []
-    async for record_id, custom_fields in result:
+    async for record_id, custom_fields, definitions in result:
         path_state, value = resolve_custom_field_value(custom_fields, key)
-        if path_state == "missing":
-            continue
-        if path_state == "value" and is_existing_value_compatible(
-            value,
-            field_type,
-            options,
-            config,
+        value_blocks = path_state != "missing" and not (
+            path_state == "value"
+            and is_existing_value_compatible(value, field_type, options, config)
+        )
+        if not value_blocks and not _local_definition_conflicts(
+            definitions, key, field_type
         ):
             continue
         incompatible_count += 1
@@ -96,12 +102,29 @@ async def _find_incompatible_existing_values(
     return incompatible_count, sample_record_ids
 
 
+def _local_definition_conflicts(
+    definitions: dict | None,
+    key: str,
+    field_type: str,
+) -> bool:
+    """True when a record-local definition contradicts the system-wide one."""
+    if not isinstance(definitions, dict):
+        return False
+    for local_key, definition in definitions.items():
+        if not _field_paths_overlap(local_key, key):
+            continue
+        if local_key != key:
+            # Nested overlap: the two definitions describe incompatible shapes
+            # for the same branch of custom_fields.
+            return True
+        local_type = (definition or {}).get("field_type", "text")
+        if local_type != field_type:
+            return True
+    return False
+
+
 def _field_paths_overlap(left: str, right: str) -> bool:
-    return (
-        left == right
-        or left.startswith(f"{right}.")
-        or right.startswith(f"{left}.")
-    )
+    return left == right or left.startswith(f"{right}.") or right.startswith(f"{left}.")
 
 
 def _raise_incompatible_values(
@@ -119,10 +142,10 @@ def _raise_incompatible_values(
         detail={
             "code": "incompatible_existing_values",
             "message": (
-                f"Cannot define {target_type}.{key}: "
-                f"{incompatible_count} existing record value(s) are incompatible "
-                f"with field type {field_type!r}. Reuse a compatible definition, "
-                "convert those values, or clear them first."
+                f"Cannot define {target_type}.{key}: {incompatible_count} existing "
+                f"record(s) are incompatible with field type {field_type!r} — their "
+                "retained value or their record-local definition conflicts. Reuse a "
+                "compatible definition, convert those values, or clear them first."
             ),
             "target_type": target_type,
             "key": key,
@@ -259,12 +282,17 @@ async def update_system_extra_field(
     effective_options = update_dict.get("options", field.options)
     effective_config = update_dict.get("config", field.config)
     try:
-        validate_field_type_config(effective_field_type, effective_options, effective_config)
+        validate_field_type_config(
+            effective_field_type, effective_options, effective_config
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if {"field_type", "options", "config"}.intersection(update_dict):
-        incompatible_count, sample_record_ids = await _find_incompatible_existing_values(
+        (
+            incompatible_count,
+            sample_record_ids,
+        ) = await _find_incompatible_existing_values(
             db,
             target_type=field.target_type,
             key=field.key,

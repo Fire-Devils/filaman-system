@@ -1037,3 +1037,109 @@ class TestGetReturnsConfigField:
         match = next((f for f in resp.json() if f["key"] == "no_cfg"), None)
         assert match is not None
         assert "config" not in match
+
+
+class TestRecordLocalDefinitionConflicts:
+    """A system-wide field must not silently contradict a record-local one."""
+
+    async def _filament_with_local_definition(
+        self, db_session, definitions, values=None
+    ):
+        manufacturer = Manufacturer(name="Local Definition Manufacturer")
+        filament = Filament(
+            manufacturer=manufacturer,
+            designation="Local Definition Filament",
+            material_type="PLA",
+            diameter_mm=1.75,
+            custom_fields=values,
+            custom_field_definitions=definitions,
+        )
+        db_session.add(filament)
+        await db_session.commit()
+        await db_session.refresh(filament)
+        return filament
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_conflicting_local_field_type(
+        self, auth_client, db_session
+    ):
+        client, csrf = auth_client
+        filament = await self._filament_with_local_definition(
+            db_session,
+            {"inspection": {"field_type": "checkbox"}},
+        )
+
+        response = await _create_field(
+            client,
+            csrf,
+            key="inspection",
+            label="Inspection",
+            field_type="number",
+        )
+
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["code"] == "incompatible_existing_values"
+        assert detail["sample_record_ids"] == [filament.id]
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_local_definition_on_nested_path(
+        self, auth_client, db_session
+    ):
+        client, csrf = auth_client
+        filament = await self._filament_with_local_definition(
+            db_session,
+            {"quality.score": {"field_type": "number"}},
+        )
+
+        response = await _create_field(
+            client,
+            csrf,
+            key="quality",
+            label="Quality",
+            field_type="text",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["sample_record_ids"] == [filament.id]
+
+    @pytest.mark.asyncio
+    async def test_create_allows_matching_local_field_type(
+        self, auth_client, db_session
+    ):
+        client, csrf = auth_client
+        await self._filament_with_local_definition(
+            db_session,
+            {"inspection": {"field_type": "checkbox"}},
+            values={"inspection": True},
+        )
+
+        response = await _create_field(
+            client,
+            csrf,
+            key="inspection",
+            label="Inspection",
+            field_type="checkbox",
+        )
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_create_ignores_unrelated_local_definitions(
+        self, auth_client, db_session
+    ):
+        client, csrf = auth_client
+        await self._filament_with_local_definition(
+            db_session,
+            {"storage_humidity": {"field_type": "range"}},
+        )
+
+        response = await _create_field(
+            client,
+            csrf,
+            key="inspection",
+            label="Inspection",
+            field_type="number",
+        )
+
+        assert response.status_code == 200

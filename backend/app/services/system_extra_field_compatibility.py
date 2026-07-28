@@ -71,7 +71,9 @@ def is_existing_value_compatible(
         if not isinstance(value, dict) or set(value) - {"min", "max"}:
             return False
         return all(
-            endpoint is None or endpoint == "" or _number_within_bounds(endpoint, config)
+            endpoint is None
+            or endpoint == ""
+            or _number_within_bounds(endpoint, config)
             for endpoint in value.values()
         )
 
@@ -84,8 +86,7 @@ def is_existing_value_compatible(
         if not isinstance(value, list):
             return False
         return all(
-            not isinstance(item, list | dict)
-            and (not options or str(item) in options)
+            not isinstance(item, list | dict) and (not options or str(item) in options)
             for item in value
         )
 
@@ -137,8 +138,10 @@ def _number_within_bounds(
     minimum = (config or {}).get("min_bound")
     maximum = (config or {}).get("max_bound")
     return not (
-        minimum is not None and number < minimum
-        or maximum is not None and number > maximum
+        minimum is not None
+        and number < minimum
+        or maximum is not None
+        and number > maximum
     )
 
 

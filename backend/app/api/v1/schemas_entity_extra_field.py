@@ -40,7 +40,7 @@ def validate_definition_keys(
         validate_custom_field_path(key)
     keys = list(definitions)
     for index, key in enumerate(keys):
-        for other in keys[index + 1:]:
+        for other in keys[index + 1 :]:
             if (
                 key == other
                 or key.startswith(f"{other}.")
