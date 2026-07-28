@@ -5,7 +5,7 @@ and include_in_api columns to system_extra_fields.  All new columns
 have defaults so existing rows are unaffected.
 
 Revision ID: f1e2d3c4b5a6
-Revises: c9f2a1e4b7d3
+Revises: d7e4a1c9b2f6
 Create Date: 2026-05-17
 
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f1e2d3c4b5a6"
-down_revision: str | Sequence[str] | None = "c9f2a1e4b7d3"
+down_revision: str | Sequence[str] | None = "d7e4a1c9b2f6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

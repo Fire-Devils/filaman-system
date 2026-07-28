@@ -87,7 +87,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     hydrateLabelPresetStorage,
     SPOOL_LABEL_PRESETS_KEY,
   } from '../../lib/label-preset-storage'
-  import { type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import { renderFieldPlainText, type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
     buildSystemExtraFieldDefinitionMap,
     definitionForFlattenedExtraField,

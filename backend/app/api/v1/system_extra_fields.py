@@ -214,6 +214,7 @@ async def get_system_extra_fields(
     "",
     response_model=SystemExtraFieldResponse,
     dependencies=[RequirePermission("admin:system")],
+)
 async def create_system_extra_field(
     field: SystemExtraFieldCreate,
     db: AsyncSession = Depends(get_db),

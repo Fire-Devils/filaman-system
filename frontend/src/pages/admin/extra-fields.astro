@@ -9,7 +9,13 @@ import Layout from '../../layouts/Layout.astro'
 
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
     <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.extraFieldsTitle">System Extra Fields</h1>
-    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="admin.addField">Add Field</button>
+    <button
+      id="btn-new"
+      class="fm-btn fm-btn-primary"
+      data-i18n="admin.addField"
+    >
+      Add Field
+    </button>
   </div>
 
   <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="admin.extraFieldsHint">
@@ -26,18 +32,196 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="admin.fieldType">Type</th>
           <th data-i18n="admin.defaultValue">Default Value</th>
           <th data-i18n="admin.source">Source</th>
+          <th data-i18n="admin.referencedIn">Referenced In</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="fields-table">
         <tr>
-          <td colspan="7" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="8" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
   </div>
 
+  <!-- Formula Fields Section -->
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 40px; margin-bottom: 16px;">
+    <div>
+      <h2 style="font-size: 1.3rem; font-weight: 600; margin: 0;">Formula Fields</h2>
+      <p style="color: var(--text-muted); margin: 4px 0 0 0; font-size: 0.875rem;">
+        Computed values derived from entity data via <a href="https://jsonlogic.com/" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">JSON Logic</a> expressions. Never stored — evaluated at read time.
+      </p>
+    </div>
+    <button id="btn-new-formula" class="fm-btn fm-btn-primary">Add Formula</button>
+  </div>
+
+  <div class="fm-card" style="padding: 0;">
+    <table class="fm-table">
+      <thead style="background: var(--bg-soft);">
+        <tr>
+          <th data-i18n="admin.targetType">Target Type</th>
+          <th data-i18n="admin.keyJson">Key</th>
+          <th data-i18n="admin.displayLabel">Label</th>
+          <th>Formula</th>
+          <th>Surfaces</th>
+          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="formula-fields-table">
+        <tr>
+          <td colspan="6" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <style>
+    /* Compact overrides scoped to the formula modal */
+    #formula-modal-form input.fm-input,
+    #formula-modal-form select.fm-select {
+      height: 34px;
+      padding: 5px 10px;
+      font-size: 0.85rem;
+    }
+    #formula-modal-form select.fm-select {
+      padding-right: 36px;
+    }
+    #formula-modal-form .fm-label {
+      font-size: 0.78rem;
+      margin-bottom: 3px;
+    }
+    /* Prevent flex from shrinking form children — ensures overflow-y:auto scrolls */
+    #formula-modal-form > * {
+      flex-shrink: 0;
+    }
+  </style>
+
+  <!-- Formula field modal (V2: wide two-panel layout with CodeMirror) -->
+  <div id="formula-modal-container" class="fm-modal-overlay">
+    <div class="fm-card" style="width:90vw; max-width:900px; margin:0 1rem; padding:0; max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
+
+      <!-- Header -->
+      <div style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+        <h3 id="formula-modal-title" style="font-size:1.1rem; font-weight:600; margin:0;">Add Formula Field</h3>
+        <button id="formula-modal-close" type="button" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1.1rem; line-height:1; padding:2px 6px;">✕</button>
+      </div>
+
+      <!-- Two-panel body -->
+      <div style="display:flex; flex:1; min-height:0;">
+
+        <!-- Left: form -->
+        <form id="formula-modal-form" style="flex:1; min-height:0; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:8px; min-width:0;">
+          <input type="hidden" id="formula-field-id" />
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div>
+              <label for="formula-field-target" class="fm-label">Target Type *</label>
+              <select id="formula-field-target" required class="fm-select">
+                <option value="spool">Spool</option>
+                <option value="filament">Filament</option>
+              </select>
+            </div>
+            <div>
+              <label for="formula-field-key" class="fm-label">Key *</label>
+              <input type="text" id="formula-field-key" required class="fm-input" placeholder="e.g. weight_per_meter" pattern="[a-zA-Z0-9_]+" title="Only letters, numbers, and underscores" />
+            </div>
+          </div>
+
+          <div>
+            <label for="formula-field-label" class="fm-label">Display Label *</label>
+            <input type="text" id="formula-field-label" required class="fm-input" placeholder="e.g. Weight per Meter (g/m)" />
+          </div>
+
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <label class="fm-label" style="margin:0;">JSON Logic Expression *</label>
+              <button type="button" id="btn-format-json" class="fm-btn fm-btn-outline" style="padding:2px 8px; font-size:0.78rem;">Format JSON</button>
+            </div>
+            <div id="formula-json-editor" style="border:1px solid var(--border); border-radius:6px; overflow:hidden; min-height:120px;"></div>
+            <small style="color:var(--text-muted); font-size:0.75rem; margin-top:3px; display:block;">
+              Valid <a href="https://jsonlogic.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">JSON Logic</a> expression. Click a chip below or in the operators panel to copy a snippet.
+            </small>
+          </div>
+
+          <!-- Field References (collapsible) -->
+          <div style="border:1px solid var(--border); border-radius:5px; overflow:hidden;">
+            <div id="btn-toggle-field-refs" role="button" tabindex="0" style="display:flex; justify-content:space-between; align-items:center; padding:5px 8px; background:var(--bg-soft); border-bottom:1px solid var(--border); cursor:pointer; user-select:none;">
+              <span style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted);">Field References</span>
+              <span id="field-refs-chevron" style="font-size:0.65rem; color:var(--text-muted);">&#9660;</span>
+            </div>
+            <div id="field-refs-body" style="padding:6px 8px 4px;">
+              <input type="text" id="ref-search" class="fm-input" placeholder="Search fields…" style="height:28px; padding:3px 8px; font-size:0.78rem; margin-bottom:5px;" />
+              <div id="field-reference-list"></div>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <label class="fm-label" style="margin:0;">Preview</label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="display:flex; align-items:center; gap:4px; font-size:0.75rem; color:var(--text-muted); cursor:pointer;">
+                  <input type="checkbox" id="formula-auto-scaffold" checked style="width:13px; height:13px;" />
+                  Auto-fill context
+                </label>
+                <button type="button" id="btn-preview" class="fm-btn fm-btn-outline" style="padding:2px 8px; font-size:0.78rem;">Run Preview</button>
+              </div>
+            </div>
+            <textarea id="formula-preview-context" class="fm-input" rows="5" placeholder='{"remaining_weight_g": 800, "filament": {"raw_material_weight_g": 1000}}' style="resize:none; font-family:monospace; font-size:0.72rem; min-height:80px; padding:5px 8px; overflow:hidden;"></textarea>
+            <div id="formula-preview-result" style="margin-top:4px; padding:5px 10px; background:var(--bg-soft); border-radius:4px; font-family:monospace; font-size:0.75rem; display:none;"></div>
+          </div>
+
+          <div>
+            <label class="fm-label">Display Surfaces</label>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 8px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="formula-show-detail" checked style="width:13px; height:13px; flex-shrink:0;" />
+                <span style="font-size:0.82rem;">Show in detail view</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="formula-show-template" style="width:13px; height:13px; flex-shrink:0;" />
+                <span style="font-size:0.82rem;">Show in label template</span>
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" id="formula-include-api" style="width:13px; height:13px; flex-shrink:0;" />
+                <span style="font-size:0.82rem;">Include in API response</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="formula-modal-error" class="fm-alert-error hidden"></div>
+          <div style="display:flex; gap:8px; padding-top:2px;">
+            <button type="submit" id="formula-modal-submit" class="fm-btn fm-btn-primary">Save</button>
+            <button type="button" id="formula-modal-cancel" class="fm-btn fm-btn-outline">Cancel</button>
+          </div>
+        </form>
+
+        <!-- Vertical divider (always fills full panel height) -->
+        <div style="width:1px; background:var(--border); flex-shrink:0; align-self:stretch;"></div>
+
+        <!-- Right: reference panel -->
+        <div id="formula-ref-panel" style="width:290px; flex-shrink:0; min-height:0; display:flex; flex-direction:column; transition:width 0.15s ease; overflow:hidden;">
+          <div style="padding:8px 12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:var(--bg-soft);">
+            <span id="ref-panel-title" style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); white-space:nowrap; overflow:hidden;">Reference Aids</span>
+            <button id="btn-collapse-ref" type="button" style="background:none; border:none; cursor:pointer; color:var(--text-muted); padding:2px 5px; font-size:0.78rem; flex-shrink:0; margin-left:6px;" title="Collapse panel">◀</button>
+          </div>
+          <div id="ref-panel-body" style="flex:1; min-height:0; padding:8px 10px; display:flex; flex-direction:column; overflow-y:auto;">
+            <div style="margin-bottom:10px;">
+              <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:6px; padding-bottom:3px; border-bottom:1px solid var(--border);">Operators &amp; Helpers</div>
+              <div id="operator-categories" style="display:flex; flex-direction:column; gap:6px;"></div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Copy toast notification -->
+  <div id="copy-toast" style="position:fixed; bottom:20px; right:20px; background:var(--bg-card, #1e2030); border:1px solid var(--border); border-radius:6px; padding:8px 16px; font-size:0.8rem; color:var(--text); box-shadow:0 4px 12px rgba(0,0,0,.3); opacity:0; transition:opacity 0.2s ease; pointer-events:none; z-index:9999;">Copied to clipboard</div>
+
   <script>
+    import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import {
       createExtraFieldDefinitionDialog,
@@ -48,8 +232,9 @@ import Layout from '../../layouts/Layout.astro'
       escapeHtml,
       formatExtraFieldDefaultValue,
     } from '../../lib/extra-fields'
-    import { initI18n, t } from '../../lib/i18n'
-
+    import { scaffoldFormulaPreviewContext } from '../../lib/formula-preview-context'
+    import { EditorView, basicSetup } from 'codemirror'
+    import { json as jsonLang } from '@codemirror/lang-json'
     await initI18n()
 
     interface SystemExtraFieldRecord {
@@ -68,11 +253,10 @@ import Layout from '../../layouts/Layout.astro'
         max_length?: number | null
       } | null
       source: string | null
-    }
-
-    type ExtraFieldAdminWindow = Window & {
-      __fmAlert: (message: string) => Promise<boolean>
-      __fmConfirm: (message: string) => Promise<boolean>
+      formula?: Record<string, unknown> | null
+      show_in_detail?: boolean
+      show_in_template?: boolean
+      include_in_api?: boolean
     }
 
     let fields: SystemExtraFieldRecord[] = []
@@ -88,24 +272,11 @@ import Layout from '../../layouts/Layout.astro'
       'url',
       'textarea',
     ])
-
     const fieldDialog = createExtraFieldDefinitionDialog({ mode: 'system' })
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
-    }
-
-    function fieldTypeLabel(fieldType: string): string {
-      const normalized = fieldType === 'float' ? 'number' : fieldType
-      const translated = t(`admin.fieldType_${normalized}`)
-      return translated === `admin.fieldType_${normalized}`
-        ? normalized || t('admin.fieldType_text')
-        : translated
-    }
-
-    function targetTypeLabel(targetType: SystemExtraFieldRecord['target_type']): string {
-      return t(`admin.targetType_${targetType}`)
     }
 
     function draftFromField(
@@ -127,7 +298,9 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
-    function configFromResult(result: ExtraFieldDefinitionDialogResult): Record<string, unknown> | null {
+    function configFromResult(
+      result: ExtraFieldDefinitionDialogResult,
+    ): Record<string, unknown> | null {
       const config: Record<string, unknown> = {}
       if (['number', 'range'].includes(result.fieldType)) {
         if (result.unit.trim()) config.unit = result.unit.trim()
@@ -144,7 +317,6 @@ import Layout from '../../layouts/Layout.astro'
       result: ExtraFieldDefinitionDialogResult,
       existing?: SystemExtraFieldRecord,
     ): Promise<void> {
-      const isEdit = Boolean(existing)
       const body: Record<string, unknown> = {
         label: result.label.trim(),
         default_value: result.defaultValue,
@@ -171,7 +343,7 @@ import Layout from '../../layouts/Layout.astro'
           ? `/api/v1/system-extra-fields/${existing.id}`
           : '/api/v1/system-extra-fields',
         {
-          method: isEdit ? 'PUT' : 'POST',
+          method: existing ? 'PUT' : 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-CSRF-Token': getCsrfToken(),
@@ -190,12 +362,10 @@ import Layout from '../../layouts/Layout.astro'
             type: fieldTypeLabel(data.detail.field_type),
           }))
         }
-        throw new Error(
-          data.detail?.message
-          || data.detail
-          || data.message
-          || (isEdit ? 'Failed to update field' : 'Failed to create field'),
-        )
+        throw new Error(apiErrorMessage(
+          data,
+          existing ? 'Failed to update field' : 'Failed to create field',
+        ))
       }
       await loadData()
     }
@@ -218,48 +388,181 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    function renderFields(): void {
+    async function loadData() {
+      try {
+        const res = await fetch('/api/v1/system-extra-fields', { credentials: 'include', signal: getAbortSignal() })
+        if (!res.ok) throw new Error('Failed to fetch fields')
+        fields = await res.json()
+        renderFields()
+        renderFormulaFields()
+      } catch (error) {
+        if (isAbortError(error)) return
+        console.error('Failed to load data:', error)
+      }
+    }
+
+    function apiErrorMessage(data: unknown, fallback: string): string {
+      if (!data || typeof data !== 'object') return fallback
+      const payload = data as { detail?: unknown; message?: unknown }
+      if (typeof payload.detail === 'string') return payload.detail
+      if (Array.isArray(payload.detail)) {
+        const messages = payload.detail
+          .map(item => item && typeof item === 'object' && 'msg' in item ? String(item.msg) : '')
+          .filter(Boolean)
+        if (messages.length > 0) return messages.join('; ')
+      }
+      if (payload.detail && typeof payload.detail === 'object' && 'message' in payload.detail) {
+        return String((payload.detail as { message: unknown }).message)
+      }
+      return typeof payload.message === 'string' ? payload.message : fallback
+    }
+
+    function fieldTypeLabel(fieldType: string): string {
+      const normalized = fieldType === 'float' ? 'number' : fieldType
+      const translated = t(`admin.fieldType_${normalized}`)
+      return translated === `admin.fieldType_${normalized}`
+        ? normalized || t('admin.fieldType_text')
+        : translated
+    }
+
+    function renderFields() {
       const tbody = document.getElementById('fields-table')!
-      if (fields.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">${escapeHtml(t('admin.noFieldsDefined'))}</td></tr>`
+      const regularFields = fields.filter(f => !f.formula)
+      const formulaFields = fields.filter(f => !!f.formula)
+
+      // Build reference count map: key → count of formula fields referencing it
+      const refCounts: Record<string, number> = {}
+      formulaFields.forEach(ff => {
+        const formulaStr = JSON.stringify(ff.formula)
+        regularFields.forEach(rf => {
+          if (formulaStr.includes(`"${rf.key}"`)) {
+            refCounts[rf.key] = (refCounts[rf.key] || 0) + 1
+          }
+        })
+      })
+
+      if (regularFields.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">${t('admin.noFieldsDefined')}</td></tr>`
         return
       }
 
-      tbody.innerHTML = fields
-        .map(field => {
-          const isPluginManaged = Boolean(field.source)
-          const actions = isPluginManaged
-            ? `<span title="${escapeHtml(t('admin.pluginManagedField'))}: ${escapeHtml(field.source)}" style="color:var(--text-muted);cursor:help">🔒</span>`
-            : `<button data-id="${field.id}" class="btn-edit" style="color:var(--accent);background:none;border:none;cursor:pointer;margin-right:8px">${escapeHtml(t('common.edit'))}</button><button data-id="${field.id}" class="btn-delete" style="color:var(--error-text);background:none;border:none;cursor:pointer">${escapeHtml(t('common.delete'))}</button>`
-          const optionsInfo =
-            ['dropdown', 'multiselect'].includes(field.field_type) && field.options
-              ? ` <span title="${escapeHtml(field.options.join('\n'))}" style="color:var(--text-muted);cursor:help;font-size:0.8rem">(${field.options.length})</span>`
-              : ''
-          return `
-            <tr style="${isPluginManaged ? 'background:var(--bg-soft);opacity:0.85' : ''}">
-              <td><span class="fm-pill">${escapeHtml(targetTypeLabel(field.target_type))}</span></td>
-              <td style="font-family:monospace;color:var(--accent-2)">${escapeHtml(field.key)}</td>
-              <td>${escapeHtml(field.label)}</td>
-              <td><span class="fm-pill">${escapeHtml(fieldTypeLabel(field.field_type))}</span>${optionsInfo}</td>
-              <td style="color:var(--text-muted)">${escapeHtml(formatExtraFieldDefaultValue(field))}</td>
-              <td style="color:var(--text-muted)">${field.source ? escapeHtml(field.source) : '—'}</td>
-              <td style="text-align:right">${actions}</td>
-            </tr>`
-        })
-        .join('')
+      tbody.innerHTML = regularFields.map(f => {
+        const isPluginManaged = !!f.source
+        const refCount = refCounts[f.key] || 0
+        const deleteDisabled = refCount > 0
+        let actionsCell: string
+        if (isPluginManaged) {
+          actionsCell = `<span title="${t('admin.pluginManagedField') || 'Managed by plugin'}: ${escapeHtml(f.source)}" style="color: var(--text-muted); cursor: help;">🔒</span>`
+        } else if (deleteDisabled) {
+          actionsCell = `<button data-id="${f.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button><button disabled title="Referenced by formula fields — remove those first" style="color: var(--text-muted); background: none; border: none; cursor: not-allowed; opacity: 0.5;">${t('common.delete')}</button>`
+        } else {
+          actionsCell = `<button data-id="${f.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button><button data-id="${f.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>`
+        }
 
-      tbody.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach(button => {
-        button.addEventListener('click', () => {
-          const field = fields.find(item => item.id === Number(button.dataset.id))
+        const optionsInfo = (f.field_type === 'dropdown' || f.field_type === 'multiselect') && f.options
+          ? ` <span title="${escapeHtml(f.options.join('\n'))}" style="color: var(--text-muted); cursor: help; font-size: 0.8rem;">(${f.options.length})</span>`
+          : ''
+
+        const rowStyle = isPluginManaged ? 'background: var(--bg-soft); opacity: 0.85;' : ''
+        const refCell = refCount > 0
+          ? `<span title="${refCount} formula field(s) reference this key" style="color: var(--accent); font-size: 0.8rem;">ƒ×${refCount}</span>`
+          : '<span style="color: var(--text-muted);">—</span>'
+
+        return `
+        <tr style="${rowStyle}">
+          <td><span class="fm-pill" style="text-transform: capitalize;">${escapeHtml(f.target_type)}</span></td>
+          <td style="font-family: monospace; color: var(--accent-2);">${escapeHtml(f.key)}</td>
+          <td>${escapeHtml(f.label)}</td>
+          <td><span class="fm-pill">${fieldTypeLabel(f.field_type)}</span>${optionsInfo}</td>
+          <td style="color: var(--text-muted);">${escapeHtml(formatExtraFieldDefaultValue(f))}</td>
+          <td style="color: var(--text-muted);">${f.source ? escapeHtml(f.source) : '-'}</td>
+          <td style="text-align: center;">${refCell}</td>
+          <td style="text-align: right;">${actionsCell}</td>
+        </tr>`
+      }).join('')
+
+      document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          const field = fields.find(f => f.id === id)
           if (field) openEditDialog(field)
         })
       })
-      tbody.querySelectorAll<HTMLButtonElement>('.btn-delete').forEach(button => {
-        button.addEventListener('click', async () => {
-          const dialogWindow = window as unknown as ExtraFieldAdminWindow
-          if (!(await dialogWindow.__fmConfirm(t('admin.deleteFieldConfirm')))) return
+
+      document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          if (!(await (window as any).__fmConfirm(t('admin.deleteFieldConfirm') || "Delete field?"))) return
+
           try {
-            const response = await fetch(`/api/v1/system-extra-fields/${button.dataset.id}`, {
+            const response = await fetch(`/api/v1/system-extra-fields/${id}`, {
+              method: 'DELETE',
+              headers: { 'X-CSRF-Token': getCsrfToken() },
+              credentials: 'include',
+              signal: getAbortSignal(),
+            })
+
+            if (!response.ok) {
+              const data = await response.json()
+              throw new Error(apiErrorMessage(data, 'Failed to delete field'))
+            }
+            loadData()
+          } catch (err: any) {
+            if (isAbortError(err)) return
+            await (window as any).__fmAlert(err.message || t('admin.failedDeleteField') || "Failed to delete field")
+          }
+        })
+      })
+    }
+
+    function surfaceBadges(f: any): string {
+      const badges: string[] = []
+      if (f.show_in_detail) badges.push('<span style="font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; background: var(--bg-soft); border: 1px solid var(--border);">Detail</span>')
+      if (f.show_in_template) badges.push('<span style="font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; background: var(--bg-soft); border: 1px solid var(--border);">Template</span>')
+      if (f.include_in_api) badges.push('<span style="font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; background: var(--bg-soft); border: 1px solid var(--border);">API</span>')
+      return badges.join(' ') || '<span style="color: var(--text-muted); font-size: 0.8rem;">none</span>'
+    }
+
+    function renderFormulaFields() {
+      const tbody = document.getElementById('formula-fields-table')!
+      const formulaFields = fields.filter(f => !!f.formula)
+
+      if (formulaFields.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No formula fields defined yet.</td></tr>`
+        return
+      }
+
+      tbody.innerHTML = formulaFields.map(f => {
+        const formulaPreview = JSON.stringify(f.formula)
+        const truncated = formulaPreview.length > 60 ? formulaPreview.slice(0, 60) + '…' : formulaPreview
+        return `
+        <tr>
+          <td><span class="fm-pill" style="text-transform: capitalize;">${escapeHtml(f.target_type)}</span></td>
+          <td style="font-family: monospace; color: var(--accent-2);">ƒ ${escapeHtml(f.key)}</td>
+          <td>${escapeHtml(f.label)}</td>
+          <td style="font-family: monospace; font-size: 0.78rem; color: var(--text-muted);" title="${escapeHtml(formulaPreview)}">${escapeHtml(truncated)}</td>
+          <td style="white-space: nowrap;">${surfaceBadges(f)}</td>
+          <td style="text-align: right;">
+            <button data-id="${f.id}" class="btn-edit-formula" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button>
+            <button data-id="${f.id}" class="btn-delete-formula" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
+          </td>
+        </tr>`
+      }).join('')
+
+      document.querySelectorAll('.btn-edit-formula').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          const field = fields.find(f => f.id === id)
+          if (field) openFormulaModal(field)
+        })
+      })
+
+      document.querySelectorAll('.btn-delete-formula').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
+          if (!(await (window as any).__fmConfirm("Delete this formula field?"))) return
+          try {
+            const response = await fetch(`/api/v1/system-extra-fields/${id}`, {
               method: 'DELETE',
               headers: { 'X-CSRF-Token': getCsrfToken() },
               credentials: 'include',
@@ -267,48 +570,629 @@ import Layout from '../../layouts/Layout.astro'
             })
             if (!response.ok) {
               const data = await response.json()
-              void dialogWindow.__fmAlert(
-                data.detail || t('admin.failedDeleteField'),
-              )
-              return
+              throw new Error(apiErrorMessage(data, 'Failed to delete'))
             }
-            await loadData()
-          } catch (error) {
-            if (!isAbortError(error)) {
-              void dialogWindow.__fmAlert(t('common.networkError'))
-            }
+            loadData()
+          } catch (err: any) {
+            if (isAbortError(err)) return
+            await (window as any).__fmAlert(err.message || "Failed to delete formula field")
           }
         })
       })
     }
 
-    async function loadData(): Promise<void> {
-      try {
-        const response = await fetch('/api/v1/system-extra-fields', {
-          credentials: 'include',
-          signal: getAbortSignal(),
-        })
-        if (!response.ok) throw new Error('Failed to fetch fields')
-        fields = await response.json()
-        renderFields()
-      } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load data:', error)
-        const tbody = document.getElementById('fields-table')!
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="7" style="text-align:center;color:var(--error-text)">
-              ${escapeHtml(t('admin.failedLoadFields'))}
-              <button type="button" class="fm-btn" id="retry-fields" style="margin-left:8px">${escapeHtml(t('common.retry'))}</button>
-            </td>
-          </tr>`
-        document.getElementById('retry-fields')?.addEventListener('click', () => {
-          void loadData()
-        })
+    // -- Formula field modal (V2) --
+
+    // === CodeMirror editor ===
+    let formulaEditorView: EditorView | null = null
+    let autoScaffoldTimer: ReturnType<typeof setTimeout> | null = null
+
+    function getFormulaJson(): string {
+      return formulaEditorView?.state.doc.toString().trim() ?? ''
+    }
+
+    function setFormulaJson(val: string) {
+      if (!formulaEditorView) return
+      formulaEditorView.dispatch({
+        changes: { from: 0, to: formulaEditorView.state.doc.length, insert: val },
+      })
+    }
+
+    function ensureFormulaEditor() {
+      if (formulaEditorView) return
+      formulaEditorView = new EditorView({
+        doc: '',
+        extensions: [
+          basicSetup,
+          jsonLang(),
+          EditorView.theme({
+            '&': { fontSize: '0.9rem' },
+            '.cm-scroller': {
+              fontFamily: 'ui-monospace, "Cascadia Code", "Fira Code", Menlo, Monaco, Consolas, monospace',
+              minHeight: '150px',
+            },
+            '.cm-focused': { outline: 'none' },
+            '.cm-editor': { borderRadius: '0' },
+          }),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) scheduleAutoScaffold()
+          }),
+          EditorView.domEventHandlers({
+            paste(event, view) {
+              const text = event.clipboardData?.getData('text/plain') ?? ''
+              if (!text.trim()) return false
+              try {
+                const formatted = JSON.stringify(JSON.parse(text), null, 2)
+                event.preventDefault()
+                view.dispatch(view.state.replaceSelection(formatted))
+                return true
+              } catch {
+                return false
+              }
+            }
+          }),
+        ],
+        parent: document.getElementById('formula-json-editor')!,
+      })
+    }
+
+    // === Preview context textarea auto-resize ===
+    function autoResizePreviewContext() {
+      const el = document.getElementById('formula-preview-context') as HTMLTextAreaElement
+      if (!el) return
+      el.style.height = 'auto'
+      el.style.height = el.scrollHeight + 'px'
+    }
+    document.getElementById('formula-preview-context')?.addEventListener('input', autoResizePreviewContext)
+
+    // === Auto-scaffold sample context ===
+    const SCAFFOLD_PLACEHOLDERS: Record<string, unknown> = {
+      // Spool fields
+      remaining_weight_g: 225.0,
+      initial_total_weight_g: 1000.0,
+      empty_spool_weight_g: 250.0,
+      purchase_price: 24.99,
+      spool_outer_diameter_mm: 200,
+      spool_width_mm: 56,
+      spool_material: 'cardboard',
+      low_weight_threshold_g: 50,
+      lot_number: 'A2024001',
+      id: 1,
+      filament_id: 1,
+      rfid_uid: null,
+      external_id: null,
+      status_id: 1,
+      location_id: null,
+      purchase_date: '2024-01-15T10:00:00+00:00',
+      stocked_in_at: '2024-01-15T10:00:00+00:00',
+      last_used_at: '2024-06-01T08:30:00+00:00',
+      // Filament nested under spool
+      'filament.raw_material_weight_g': 750.0,
+      'filament.density_g_cm3': 1.24,
+      'filament.diameter_mm': 1.75,
+      'filament.material_type': 'PLA',
+      'filament.designation': 'PLA Basic',
+      'filament.manufacturer_color_name': 'Fire Engine Red',
+      'filament.price': 24.99,
+      'filament.default_spool_weight_g': 1000.0,
+      'filament.color_mode': 'solid',
+      'filament.color_hex': '#FF3B30',
+      'filament.finish_type': 'matte',
+      'filament.shop_url': null,
+      'filament.multi_color_style': null,
+      'filament.manufacturer.name': 'Bambu Lab',
+      'filament.manufacturer.url': 'https://bambulab.com',
+      'filament.manufacturer.id': 1,
+      // Filament as target
+      designation: 'PLA Basic',
+      material_type: 'PLA',
+      material_subgroup: null,
+      diameter_mm: 1.75,
+      raw_material_weight_g: 750.0,
+      default_spool_weight_g: 1000.0,
+      density_g_cm3: 1.24,
+      price: 24.99,
+      color_mode: 'solid',
+      color_hex: '#FF3B30',
+      manufacturer_color_name: 'Fire Engine Red',
+      finish_type: 'matte',
+      shop_url: null,
+      multi_color_style: null,
+      'manufacturer.name': 'Bambu Lab',
+      'manufacturer.url': 'https://bambulab.com',
+      'manufacturer.id': 1,
+    }
+
+    function extractVarPaths(expr: unknown): string[] {
+      if (!expr || typeof expr !== 'object') return []
+      const paths: string[] = []
+      const obj = expr as Record<string, unknown>
+      if ('var' in obj) {
+        const p = obj.var
+        if (typeof p === 'string' && p) paths.push(p)
+        return paths
+      }
+      for (const val of Object.values(obj)) {
+        if (Array.isArray(val)) {
+          for (const item of val) paths.push(...extractVarPaths(item))
+        } else {
+          paths.push(...extractVarPaths(val))
+        }
+      }
+      return paths
+    }
+
+    function scheduleAutoScaffold() {
+      if (autoScaffoldTimer) clearTimeout(autoScaffoldTimer)
+      autoScaffoldTimer = setTimeout(applyAutoScaffold, 400)
+    }
+
+    function applyAutoScaffold() {
+      const autoEl = document.getElementById('formula-auto-scaffold') as HTMLInputElement
+      if (!autoEl?.checked) return
+      const raw = getFormulaJson()
+      if (!raw) return
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { return }
+      const paths = [...new Set(extractVarPaths(parsed))]
+      if (paths.length === 0) return
+      const contextEl = document.getElementById('formula-preview-context') as HTMLTextAreaElement
+      let context: Record<string, unknown> = {}
+      if (contextEl.value.trim()) {
+        try { context = JSON.parse(contextEl.value) } catch { /* keep empty */ }
+      }
+      const changed = scaffoldFormulaPreviewContext(context, paths, SCAFFOLD_PLACEHOLDERS)
+      if (changed) {
+        contextEl.value = JSON.stringify(context, null, 2)
+        autoResizePreviewContext()
       }
     }
 
+    // === Clipboard + toast ===
+    function showCopyToast() {
+      const toast = document.getElementById('copy-toast')!
+      toast.style.opacity = '1'
+      setTimeout(() => { toast.style.opacity = '0' }, 1500)
+    }
+
+    async function copySnippet(text: string) {
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        Object.assign(ta.style, { position: 'fixed', top: '-9999px', left: '-9999px' })
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      showCopyToast()
+    }
+
+    // === Operator categories ===
+    const OPERATOR_CATEGORIES = [
+      { label: 'Logical / Conditional', tokens: [
+        { name: 'if', snippet: '{"if":[{"var":"condition"},"then_value","else_value"]}' },
+        { name: 'and', snippet: '{"and":[{"var":"a"},{"var":"b"}]}' },
+        { name: 'or', snippet: '{"or":[{"var":"a"},{"var":"b"}]}' },
+        { name: '!', snippet: '{"!":[{"var":"value"}]}' },
+      ]},
+      { label: 'Comparison', tokens: [
+        { name: '==', snippet: '{"==":[{"var":"a"},{"var":"b"}]}' },
+        { name: '!=', snippet: '{"!=":[{"var":"a"},{"var":"b"}]}' },
+        { name: '<', snippet: '{"<":[{"var":"a"},{"var":"b"}]}' },
+        { name: '<=', snippet: '{"<=":[{"var":"a"},{"var":"b"}]}' },
+        { name: '>', snippet: '{">":[{"var":"a"},{"var":"b"}]}' },
+        { name: '>=', snippet: '{">=":[{"var":"a"},{"var":"b"}]}' },
+      ]},
+      { label: 'Math', tokens: [
+        { name: '+', snippet: '{"+":[{"var":"a"},{"var":"b"}]}' },
+        { name: '-', snippet: '{"-":[{"var":"a"},{"var":"b"}]}' },
+        { name: '*', snippet: '{"*":[{"var":"a"},{"var":"b"}]}' },
+        { name: '/', snippet: '{"/":[{"var":"a"},{"var":"b"}]}' },
+        { name: '%', snippet: '{"%":[{"var":"a"},{"var":"b"}]}' },
+        { name: 'floor', snippet: '{"floor":[{"var":"value"}]}' },
+        { name: 'abs', snippet: '{"abs":[{"var":"value"}]}' },
+        { name: 'min', snippet: '{"min":[{"var":"a"},{"var":"b"}]}' },
+        { name: 'max', snippet: '{"max":[{"var":"a"},{"var":"b"}]}' },
+        { name: 'round', snippet: '{"round":[{"var":"value"}]}' },
+        { name: 'coalesce', snippet: '{"coalesce":[{"var":"a"},{"var":"b"}]}' },
+      ]},
+      { label: 'Text', tokens: [
+        { name: 'cat', snippet: '{"cat":[{"var":"a"},{"var":"b"}]}' },
+        { name: 'upper', snippet: '{"upper":[{"var":"text"}]}' },
+        { name: 'lower', snippet: '{"lower":[{"var":"text"}]}' },
+        { name: 'trim', snippet: '{"trim":[{"var":"text"}]}' },
+        { name: 'length', snippet: '{"length":[{"var":"text"}]}' },
+        { name: 'left', snippet: '{"left":[{"var":"text"},5]}' },
+        { name: 'right', snippet: '{"right":[{"var":"text"},5]}' },
+      ]},
+      { label: 'Date / Time', tokens: [
+        { name: 'year', snippet: '{"year":[{"var":"date_field"}]}' },
+        { name: 'month', snippet: '{"month":[{"var":"date_field"}]}' },
+        { name: 'day', snippet: '{"day":[{"var":"date_field"}]}' },
+        { name: 'hour', snippet: '{"hour":[{"var":"date_field"}]}' },
+        { name: 'minute', snippet: '{"minute":[{"var":"date_field"}]}' },
+        { name: 'second', snippet: '{"second":[{"var":"date_field"}]}' },
+        { name: 'timestamp', snippet: '{"timestamp":[{"var":"date_field"}]}' },
+        { name: 'date_only', snippet: '{"date_only":[{"var":"date_field"}]}' },
+        { name: 'time_only', snippet: '{"time_only":[{"var":"date_field"}]}' },
+      ]},
+      { label: 'Dynamic', tokens: [
+        { name: 'today', snippet: '{"today":[]}' },
+      ]},
+      { label: 'Date Diff', tokens: [
+        { name: 'days_between', snippet: '{"days_between":[{"var":"start_date"},{"var":"end_date"}]}' },
+        { name: 'hours_between', snippet: '{"hours_between":[{"var":"start_date"},{"var":"end_date"}]}' },
+      ]},
+      { label: 'Color', tokens: [
+        { name: 'hue_from_hex', snippet: '{"hue_from_hex":[{"var":"color_hex"}]}' },
+      ]},
+    ]
+
+    function renderOperatorCategories() {
+      const container = document.getElementById('operator-categories')!
+      container.innerHTML = OPERATOR_CATEGORIES.map(cat => {
+        const chips = cat.tokens.map(tok => {
+          const esc = tok.snippet.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          return `<button type="button" class="op-chip" data-snippet="${esc}" style="font-size:0.76rem; padding:1px 6px; border:1px solid var(--border); border-radius:3px; background:var(--bg-soft); cursor:pointer; font-family:monospace; color:var(--text); white-space:nowrap;" title="Copy snippet">${escapeHtml(tok.name)}</button>`
+        }).join('')
+        return `<div><div style="font-size:0.66rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:3px;">${escapeHtml(cat.label)}</div><div style="display:flex; flex-wrap:wrap; gap:3px;">${chips}</div></div>`
+      }).join('')
+      container.querySelectorAll<HTMLButtonElement>('.op-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const raw = btn.getAttribute('data-snippet')!
+          copySnippet(raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'))
+        })
+      })
+    }
+
+    // === Field references ===
+    const SPOOL_REFS = [
+      { group: 'Spool', items: [
+        { key: 'remaining_weight_g', label: 'Remaining weight (g)' },
+        { key: 'initial_total_weight_g', label: 'Initial total weight (g)' },
+        { key: 'empty_spool_weight_g', label: 'Empty spool weight (g)' },
+        { key: 'purchase_price', label: 'Purchase price' },
+        { key: 'id', label: 'Spool ID' },
+        { key: 'lot_number', label: 'Lot number' },
+        { key: 'spool_outer_diameter_mm', label: 'Outer diameter (mm)' },
+        { key: 'spool_width_mm', label: 'Width (mm)' },
+        { key: 'spool_material', label: 'Spool material' },
+        { key: 'low_weight_threshold_g', label: 'Low weight threshold (g)' },
+        { key: 'rfid_uid', label: 'RFID UID' },
+        { key: 'external_id', label: 'External ID' },
+        { key: 'status_id', label: 'Status ID' },
+        { key: 'location_id', label: 'Location ID' },
+        { key: 'purchase_date', label: 'Purchase date (ISO)' },
+        { key: 'stocked_in_at', label: 'Stocked in (ISO)' },
+        { key: 'last_used_at', label: 'Last used (ISO)' },
+      ]},
+      { group: 'Filament (nested)', items: [
+        { key: 'filament.raw_material_weight_g', label: 'Weight (g)' },
+        { key: 'filament.density_g_cm3', label: 'Density (g/cm³)' },
+        { key: 'filament.diameter_mm', label: 'Diameter (mm)' },
+        { key: 'filament.material_type', label: 'Material type' },
+        { key: 'filament.designation', label: 'Designation' },
+        { key: 'filament.price', label: 'Price' },
+        { key: 'filament.default_spool_weight_g', label: 'Default spool weight (g)' },
+        { key: 'filament.color_mode', label: 'Color mode' },
+        { key: 'filament.color_hex', label: 'Primary color hex' },
+        { key: 'filament.manufacturer_color_name', label: 'Color name' },
+        { key: 'filament.finish_type', label: 'Finish type' },
+        { key: 'filament.shop_url', label: 'Shop URL' },
+        { key: 'filament.multi_color_style', label: 'Multi-color style' },
+      ]},
+      { group: 'Manufacturer (nested)', items: [
+        { key: 'filament.manufacturer.name', label: 'Name' },
+        { key: 'filament.manufacturer.url', label: 'URL' },
+        { key: 'filament.manufacturer.id', label: 'ID' },
+      ]},
+    ]
+
+    const FILAMENT_REFS = [
+      { group: 'Filament', items: [
+        { key: 'raw_material_weight_g', label: 'Weight (g)' },
+        { key: 'density_g_cm3', label: 'Density (g/cm³)' },
+        { key: 'diameter_mm', label: 'Diameter (mm)' },
+        { key: 'material_type', label: 'Material type' },
+        { key: 'material_subgroup', label: 'Material subgroup' },
+        { key: 'designation', label: 'Designation' },
+        { key: 'default_spool_weight_g', label: 'Default spool weight (g)' },
+        { key: 'price', label: 'Price' },
+        { key: 'color_mode', label: 'Color mode' },
+        { key: 'color_hex', label: 'Primary color hex' },
+        { key: 'manufacturer_color_name', label: 'Color name' },
+        { key: 'finish_type', label: 'Finish type' },
+        { key: 'shop_url', label: 'Shop URL' },
+        { key: 'multi_color_style', label: 'Multi-color style' },
+        { key: 'spool_outer_diameter_mm', label: 'Spool outer diam. (mm)' },
+        { key: 'spool_width_mm', label: 'Spool width (mm)' },
+        { key: 'spool_material', label: 'Spool material' },
+        { key: 'id', label: 'Filament ID' },
+      ]},
+      { group: 'Manufacturer', items: [
+        { key: 'manufacturer.name', label: 'Name' },
+        { key: 'manufacturer.url', label: 'URL' },
+        { key: 'manufacturer.id', label: 'ID' },
+      ]},
+    ]
+
+    function renderFieldReferences(targetType: string, query: string = '') {
+      const container = document.getElementById('field-reference-list')!
+      const baseRefs = targetType === 'spool' ? SPOOL_REFS : FILAMENT_REFS
+      const q = query.toLowerCase().trim()
+      const extraFields = fields.filter(f => f.target_type === targetType && !f.formula)
+      const extraItems = extraFields.map(f => ({ key: `custom_fields.${f.key}`, label: f.key }))
+      const allGroups = [
+        ...baseRefs,
+        ...(extraItems.length > 0 ? [{ group: 'Extra Fields', items: extraItems }] : []),
+      ]
+      const html = allGroups.map(group => {
+        const items = q ? group.items.filter(item => item.key.toLowerCase().includes(q)) : group.items
+        if (items.length === 0) return ''
+        const chips = items.map(item => {
+          const varSnippet = `{"var":"${item.key}"}`
+          const escSnippet = varSnippet.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+          return `<button type="button" class="ref-chip" data-var="${escSnippet}" style="font-size:0.76rem; padding:1px 6px; border:1px solid var(--border); border-radius:3px; background:var(--bg-soft); cursor:pointer; font-family:monospace; color:var(--accent); white-space:nowrap;" title="Copy ${escapeHtml(varSnippet)}">${escapeHtml(item.key)}</button>`
+        }).join('')
+        return `<div style="margin-bottom:5px;"><div style="font-size:0.64rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); margin-bottom:3px;">${escapeHtml(group.group)}</div><div style="display:flex; flex-wrap:wrap; gap:3px;">${chips}</div></div>`
+      }).join('')
+      container.innerHTML = html
+      container.querySelectorAll<HTMLButtonElement>('.ref-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const raw = btn.getAttribute('data-var')!
+          copySnippet(raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&'))
+        })
+      })
+    }
+
+    // === Collapse panel ===
+    const REF_PANEL_KEY = 'filaman_formula_ref_panel_collapsed'
+
+    function applyRefPanelState(collapsed: boolean) {
+      const panel = document.getElementById('formula-ref-panel')!
+      const body = document.getElementById('ref-panel-body')!
+      const title = document.getElementById('ref-panel-title')!
+      const btn = document.getElementById('btn-collapse-ref')!
+      if (collapsed) {
+        panel.style.width = '32px'
+        body.style.display = 'none'
+        title.style.display = 'none'
+        btn.textContent = '▶'
+        btn.title = 'Expand reference panel'
+      } else {
+        panel.style.width = '290px'
+        body.style.display = ''
+        title.style.display = ''
+        btn.textContent = '◀'
+        btn.title = 'Collapse reference panel'
+      }
+    }
+
+    document.getElementById('btn-collapse-ref')?.addEventListener('click', () => {
+      const isCollapsed = localStorage.getItem(REF_PANEL_KEY) === 'true'
+      const next = !isCollapsed
+      localStorage.setItem(REF_PANEL_KEY, String(next))
+      applyRefPanelState(next)
+    })
+
+    // Apply saved state
+    applyRefPanelState(localStorage.getItem(REF_PANEL_KEY) === 'true')
+
+    // === Modal open / close ===
+    function openFormulaModal(field?: any) {
+      const container = document.getElementById('formula-modal-container')!
+      const error = document.getElementById('formula-modal-error')!
+      const previewResult = document.getElementById('formula-preview-result')!
+      const previewContext = document.getElementById('formula-preview-context') as HTMLTextAreaElement
+
+      error.classList.add('hidden')
+      previewResult.style.display = 'none'
+      previewContext.value = ''
+      autoResizePreviewContext()
+
+      if (field) {
+        ;(document.getElementById('formula-field-id') as HTMLInputElement).value = field.id.toString()
+        ;(document.getElementById('formula-field-target') as HTMLSelectElement).value = field.target_type
+        ;(document.getElementById('formula-field-target') as HTMLSelectElement).disabled = true
+        ;(document.getElementById('formula-field-key') as HTMLInputElement).value = field.key
+        ;(document.getElementById('formula-field-key') as HTMLInputElement).disabled = true
+        ;(document.getElementById('formula-field-label') as HTMLInputElement).value = field.label
+        ;(document.getElementById('formula-show-detail') as HTMLInputElement).checked = field.show_in_detail ?? true
+        ;(document.getElementById('formula-show-template') as HTMLInputElement).checked = field.show_in_template ?? false
+        ;(document.getElementById('formula-include-api') as HTMLInputElement).checked = field.include_in_api ?? false
+        ;(document.getElementById('formula-modal-title') as HTMLElement).textContent = 'Edit Formula Field'
+      } else {
+        ;(document.getElementById('formula-field-id') as HTMLInputElement).value = ''
+        ;(document.getElementById('formula-field-target') as HTMLSelectElement).disabled = false
+        ;(document.getElementById('formula-field-target') as HTMLSelectElement).value = 'spool'
+        ;(document.getElementById('formula-field-key') as HTMLInputElement).value = ''
+        ;(document.getElementById('formula-field-key') as HTMLInputElement).disabled = false
+        ;(document.getElementById('formula-field-label') as HTMLInputElement).value = ''
+        ;(document.getElementById('formula-show-detail') as HTMLInputElement).checked = true
+        ;(document.getElementById('formula-show-template') as HTMLInputElement).checked = false
+        ;(document.getElementById('formula-include-api') as HTMLInputElement).checked = false
+        ;(document.getElementById('formula-modal-title') as HTMLElement).textContent = 'Add Formula Field'
+      }
+
+      // Auto-collapse ref panel on narrow screens
+      if (window.innerWidth < 680) {
+        applyRefPanelState(true)
+      }
+
+      container.classList.add('open')
+
+      // Initialize CodeMirror on first open (must be visible for layout)
+      ensureFormulaEditor()
+      setFormulaJson(field ? JSON.stringify(field.formula, null, 2) : '')
+
+      const target = (document.getElementById('formula-field-target') as HTMLSelectElement).value
+      renderOperatorCategories()
+      renderFieldReferences(target)
+    }
+
+    function closeFormulaModal() {
+      document.getElementById('formula-modal-container')!.classList.remove('open')
+    }
+
+    document.getElementById('btn-new-formula')?.addEventListener('click', () => openFormulaModal())
+    document.getElementById('formula-modal-cancel')?.addEventListener('click', closeFormulaModal)
+    document.getElementById('formula-modal-close')?.addEventListener('click', closeFormulaModal)
+    document.getElementById('formula-modal-container')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeFormulaModal()
+    })
+
+    // Update refs when target changes
+    document.getElementById('formula-field-target')?.addEventListener('change', (e) => {
+      const q = (document.getElementById('ref-search') as HTMLInputElement)?.value ?? ''
+      renderFieldReferences((e.target as HTMLSelectElement).value, q)
+    })
+
+    // Field ref search
+    document.getElementById('ref-search')?.addEventListener('input', (e) => {
+      const target = (document.getElementById('formula-field-target') as HTMLSelectElement).value
+      renderFieldReferences(target, (e.target as HTMLInputElement).value)
+    })
+
+    // Field references collapse toggle
+    const FIELD_REFS_KEY = 'filaman_formula_field_refs_collapsed'
+    function applyFieldRefsState(collapsed: boolean) {
+      const body = document.getElementById('field-refs-body')!
+      const chevron = document.getElementById('field-refs-chevron')!
+      body.style.display = collapsed ? 'none' : ''
+      chevron.innerHTML = collapsed ? '&#9654;' : '&#9660;'
+    }
+    document.getElementById('btn-toggle-field-refs')?.addEventListener('click', () => {
+      const next = localStorage.getItem(FIELD_REFS_KEY) !== 'true'
+      localStorage.setItem(FIELD_REFS_KEY, String(next))
+      applyFieldRefsState(next)
+    })
+    applyFieldRefsState(localStorage.getItem(FIELD_REFS_KEY) === 'true')
+
+    // Format JSON
+    document.getElementById('btn-format-json')?.addEventListener('click', () => {
+      const raw = getFormulaJson()
+      try {
+        setFormulaJson(JSON.stringify(JSON.parse(raw), null, 2))
+      } catch { /* leave as-is on invalid JSON */ }
+    })
+
+    // Preview
+    document.getElementById('btn-preview')?.addEventListener('click', async () => {
+      const formulaRaw = getFormulaJson()
+      const contextRaw = (document.getElementById('formula-preview-context') as HTMLTextAreaElement).value.trim()
+      const previewDiv = document.getElementById('formula-preview-result')!
+
+      let formula: any
+      let context: any = {}
+      try {
+        formula = JSON.parse(formulaRaw)
+      } catch {
+        previewDiv.textContent = '✗ Invalid JSON in formula'
+        previewDiv.style.color = 'var(--error-text)'
+        previewDiv.style.display = 'block'
+        return
+      }
+      if (contextRaw) {
+        try { context = JSON.parse(contextRaw) } catch {
+          previewDiv.textContent = '✗ Invalid JSON in sample context'
+          previewDiv.style.color = 'var(--error-text)'
+          previewDiv.style.display = 'block'
+          return
+        }
+      }
+
+      try {
+        const res = await fetch('/api/v1/system-extra-fields/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify({ formula, context }),
+          signal: getAbortSignal(),
+        })
+        const data = await res.json()
+        if (data.error) {
+          previewDiv.textContent = `✗ Error: ${data.error}`
+          previewDiv.style.color = 'var(--error-text)'
+        } else {
+          previewDiv.textContent = `✓ Result: ${JSON.stringify(data.result)}`
+          previewDiv.style.color = 'var(--success-text, var(--accent))'
+        }
+        previewDiv.style.display = 'block'
+      } catch (err: any) {
+        if (isAbortError(err)) return
+        previewDiv.textContent = `✗ Request failed: ${err.message}`
+        previewDiv.style.color = 'var(--error-text)'
+        previewDiv.style.display = 'block'
+      }
+    })
+
+    // Form submit
+    document.getElementById('formula-modal-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+
+      const editId = (document.getElementById('formula-field-id') as HTMLInputElement).value
+      const isEdit = !!editId
+
+      let formula: any
+      try {
+        formula = JSON.parse(getFormulaJson())
+      } catch {
+        const error = document.getElementById('formula-modal-error') as HTMLDivElement
+        error.textContent = 'Formula is not valid JSON'
+        error.classList.remove('hidden')
+        return
+      }
+
+      const body: Record<string, any> = {
+        formula,
+        field_type: 'formula',
+        label: (document.getElementById('formula-field-label') as HTMLInputElement).value,
+        show_in_detail: (document.getElementById('formula-show-detail') as HTMLInputElement).checked,
+        show_in_template: (document.getElementById('formula-show-template') as HTMLInputElement).checked,
+        include_in_api: (document.getElementById('formula-include-api') as HTMLInputElement).checked,
+      }
+      if (!isEdit) {
+        body.target_type = (document.getElementById('formula-field-target') as HTMLSelectElement).value
+        body.key = (document.getElementById('formula-field-key') as HTMLInputElement).value
+      }
+
+      const error = document.getElementById('formula-modal-error') as HTMLDivElement
+      const submitBtn = document.getElementById('formula-modal-submit') as HTMLButtonElement
+      error.classList.add('hidden')
+      submitBtn.disabled = true
+      submitBtn.textContent = t('common.saving')
+
+      try {
+        const url = isEdit
+          ? `/api/v1/system-extra-fields/${editId}`
+          : '/api/v1/system-extra-fields'
+        const response = await fetch(url, {
+          method: isEdit ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify(body),
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(apiErrorMessage(data, 'Failed to save formula field'))
+        }
+        closeFormulaModal()
+        loadData()
+      } catch (err: any) {
+        if (isAbortError(err)) return
+        error.textContent = err.message
+        error.classList.remove('hidden')
+      } finally {
+        submitBtn.disabled = false
+        submitBtn.textContent = t('common.save')
+      }
+    })
+
     document.getElementById('btn-new')?.addEventListener('click', openCreateDialog)
-    await loadData()
+    loadData()
   </script>
 </Layout>

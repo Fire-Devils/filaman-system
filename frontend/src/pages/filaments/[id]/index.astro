@@ -93,7 +93,11 @@ const { id } = Astro.params
   <script is:inline src="/vendor/chart.min.js"></script>
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
+    import {
+      escapeHtml as escapeExtraFieldHtml,
+      renderFieldDisplay,
+      renderUnknownFieldPlainText,
+    } from '../../../lib/extra-fields'
     import {
       getExtraFieldValue,
       renderEntityExtraFieldRows,
