@@ -1,4 +1,5 @@
 ---
+import ColorEditorFields from '../../components/ColorEditorFields.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
@@ -38,48 +39,11 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
+    <div class="fm-card" style="width: 100%; max-width: 40rem; margin: 0 1rem; padding: 24px;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="colors.addColor">Add Color</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
         <input type="hidden" id="color-id" />
-        <div>
-          <label for="color-name" class="fm-label">
-            <span data-i18n="colors.name">Name</span> *
-          </label>
-          <input
-            type="text"
-            id="color-name"
-            required
-            class="fm-input"
-          />
-        </div>
-        <div>
-          <label for="color-hex" class="fm-label" data-i18n="colors.hexCode">
-            Hex Code
-          </label>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <input
-              type="color"
-              id="color-picker"
-              style="width: 42px; height: 42px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: none;"
-            />
-            <input
-              type="text"
-              id="color-hex"
-              required
-              pattern="^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
-              class="fm-input"
-              placeholder="#000000"
-              style="flex: 1;"
-            />
-          </div>
-          <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-            <label for="color-alpha" class="fm-label" data-i18n="filaments.colorOpacity" style="margin: 0; min-width: 54px;">Opacity</label>
-            <input type="range" id="color-alpha" min="0" max="100" value="100" style="flex: 1;" />
-            <span id="color-alpha-value" style="min-width: 44px; text-align: right; color: var(--text-muted);">100%</span>
-          </div>
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 0;" data-i18n="filaments.colorHexSupport">Supports both #RRGGBB and #RRGGBBAA.</p>
-        </div>
+        <ColorEditorFields idPrefix="color" />
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
           <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
@@ -97,7 +61,7 @@ import Layout from '../../layouts/Layout.astro'
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { fetchAllPages } from '../../lib/api'
-    import { bindAlphaColorControls, normalizeHexCode, toCssColor } from '../../lib/colors'
+    import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
     await initI18n()
 
     let colors: any[] = []
@@ -141,7 +105,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
-              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${toCssColor(c.hex_code, c.hex_code)}; border: 1px solid var(--border);"></span>
+              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 1px solid var(--border);"></span>
               <span style="font-weight: 500;">${c.name}</span>
             </div>
           </td>
@@ -244,13 +208,21 @@ import Layout from '../../layouts/Layout.astro'
     // Sync picker, opacity slider, and hex input
     const hexInput = document.getElementById('color-hex') as HTMLInputElement
     const picker = document.getElementById('color-picker') as HTMLInputElement
+    const alphaEnabled = document.getElementById('color-alpha-enabled') as HTMLInputElement
+    const alphaOptions = document.getElementById('color-alpha-options') as HTMLDivElement
+    const alphaPreview = document.getElementById('color-alpha-preview') as HTMLSpanElement
     const alphaInput = document.getElementById('color-alpha') as HTMLInputElement
-    const alphaValue = document.getElementById('color-alpha-value') as HTMLSpanElement
+    const alphaValue = document.getElementById('color-alpha-value') as HTMLInputElement
+    const alphaHex = document.getElementById('color-alpha-hex') as HTMLInputElement
     const colorControls = bindAlphaColorControls({
       picker,
       hexInput,
+      alphaEnabled,
+      alphaOptions,
+      alphaPreview,
       alphaInput,
-      alphaValue,
+      alphaValueInput: alphaValue,
+      alphaHexInput: alphaHex,
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {

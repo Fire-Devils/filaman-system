@@ -304,7 +304,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     import { assignableLocations } from '../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
-    import { toCssColor } from '../../lib/colors'
+    import { toColorSwatchBackground } from '../../lib/colors'
     await initI18n()
 
     const filamentDbActive = await checkFilamentDbActive()
@@ -407,7 +407,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       return f.colors.map((fc: any) => {
         const c = fc.color
         if (!c) return ''
-        return `<span title="${fc.display_name_override || c.name || ''}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${toCssColor(c.hex_code, c.hex_code)};outline:0.5px solid #fff;flex-shrink:0;margin-right:8px;vertical-align:-1px;"></span>`
+        return `<span title="${fc.display_name_override || c.name || ''}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${toColorSwatchBackground(c.hex_code)};outline:0.5px solid #fff;flex-shrink:0;margin-right:8px;vertical-align:-1px;"></span>`
       }).join('')
     }
 

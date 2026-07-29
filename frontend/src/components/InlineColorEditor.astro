@@ -1,0 +1,40 @@
+---
+import ColorEditorFields from './ColorEditorFields.astro'
+---
+
+<div id="new-color-toggle" style="margin-top: 8px;">
+  <button
+    type="button"
+    id="btn-add-new-color"
+    class="fm-btn fm-btn-outline"
+    style="font-size: 0.8rem; padding: 6px 14px;"
+  >
+    + <span data-i18n="filaments.addNewColor">Add New Color</span>
+  </button>
+</div>
+
+<div id="new-color-form" class="fm-inline-color-form hidden">
+  <h3 class="fm-inline-color-heading" data-i18n="colors.addColor">Add Color</h3>
+  <ColorEditorFields idPrefix="new-color" defaultHex="#FF0000" />
+
+  <div class="fm-inline-color-actions">
+    <button
+      type="button"
+      id="btn-save-new-color"
+      class="fm-btn fm-btn-primary"
+      style="font-size: 0.8rem; padding: 8px 14px;"
+      data-i18n="common.save"
+    >
+      Save
+    </button>
+    <button
+      type="button"
+      id="btn-cancel-new-color"
+      class="fm-btn fm-btn-outline"
+      style="font-size: 0.8rem; padding: 8px 14px;"
+      data-i18n="common.cancel"
+    >
+      Cancel
+    </button>
+  </div>
+</div>

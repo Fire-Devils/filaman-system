@@ -1,7 +1,14 @@
+from unittest.mock import AsyncMock
+
 import pytest
-from app.models.filament import Color, Filament, FilamentColor, Manufacturer
-from app.services.spoolman_import_service import ImportResult, SpoolmanImportService
 from sqlalchemy import select
+
+from app.models.filament import Color, Filament, FilamentColor, Manufacturer
+from app.services.spoolman_import_service import (
+    ImportPreview,
+    ImportResult,
+    SpoolmanImportService,
+)
 
 
 class TestSpoolmanImportColorSupport:
@@ -73,6 +80,34 @@ class TestSpoolmanImportColorSupport:
 
         result = ImportResult()
         service = SpoolmanImportService(db_session)
+        candidates = await service.analyze_transparency_repairs(
+            [
+                {
+                    "id": 207,
+                    "color_hex": "3CD8100C",
+                    "multi_color_hexes": "112233",
+                }
+            ]
+        )
+        assert [
+            (
+                candidate.filament_id,
+                candidate.position,
+                candidate.current_hex,
+                candidate.target_hex,
+            )
+            for candidate in candidates
+        ] == [(filament.id, 1, "#D8100C", "#D8100C3C")]
+
+        color_map = await service._import_colors(
+            [{"name": "#D8100C3C", "hex_code": "#D8100C3C"}],
+            result,
+        )
+        await service._apply_transparency_repairs(
+            candidates,
+            color_map,
+            result,
+        )
         filament_map = await service._import_filaments(
             [
                 {
@@ -135,6 +170,10 @@ class TestSpoolmanImportColorSupport:
 
         result = ImportResult()
         service = SpoolmanImportService(db_session)
+        candidates = await service.analyze_transparency_repairs(
+            [{"id": 208, "color_hex": "445566"}]
+        )
+        assert candidates == []
         await service._import_filaments(
             [{"id": 208, "color_hex": "445566"}],
             {},
@@ -144,3 +183,72 @@ class TestSpoolmanImportColorSupport:
 
         assert assignment.color_id == existing_color.id
         assert result.color_assignments_repaired == 0
+
+    @pytest.mark.asyncio
+    async def test_repair_transparency_changes_only_linked_color_assignments(
+        self, db_session
+    ):
+        manufacturer = Manufacturer(name="Repair-only vendor")
+        opaque_color = Color(name="Legacy RGB", hex_code="#D8100C")
+        unrelated_color = Color(name="Unrelated", hex_code="#112233")
+        db_session.add_all([manufacturer, opaque_color, unrelated_color])
+        await db_session.flush()
+
+        filament = Filament(
+            manufacturer_id=manufacturer.id,
+            designation="Previously imported",
+            material_type="PLA",
+            diameter_mm=1.75,
+            custom_fields={"spoolman_id": 207, "keep": "unchanged"},
+        )
+        unrelated_filament = Filament(
+            manufacturer_id=manufacturer.id,
+            designation="Manual filament",
+            material_type="PETG",
+            diameter_mm=1.75,
+        )
+        db_session.add_all([filament, unrelated_filament])
+        await db_session.flush()
+        linked_assignment = FilamentColor(
+            filament_id=filament.id,
+            color_id=opaque_color.id,
+            position=1,
+        )
+        unrelated_assignment = FilamentColor(
+            filament_id=unrelated_filament.id,
+            color_id=unrelated_color.id,
+            position=1,
+        )
+        db_session.add_all([linked_assignment, unrelated_assignment])
+        await db_session.flush()
+
+        service = SpoolmanImportService(db_session)
+        service.preview = AsyncMock(
+            return_value=ImportPreview(
+                vendors=[{"id": 99, "name": "Must not import"}],
+                filaments=[{"id": 207, "color_hex": "3CD8100C"}],
+                spools=[{"id": 88}],
+                locations=[{"id": 77, "name": "Must not import"}],
+                colors=[{"name": "#D8100C3C", "hex_code": "#D8100C3C"}],
+            )
+        )
+
+        result = await service.repair_transparency("http://spoolman.test")
+        repaired_color = (
+            await db_session.execute(
+                select(Color).where(Color.hex_code == "#D8100C3C")
+            )
+        ).scalar_one()
+
+        assert linked_assignment.color_id == repaired_color.id
+        assert unrelated_assignment.color_id == unrelated_color.id
+        assert filament.custom_fields == {
+            "spoolman_id": 207,
+            "keep": "unchanged",
+        }
+        assert result.color_assignments_repaired == 1
+        assert result.colors_created == 1
+        assert result.manufacturers_created == 0
+        assert result.locations_created == 0
+        assert result.filaments_created == 0
+        assert result.spools_created == 0

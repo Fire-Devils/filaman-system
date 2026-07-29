@@ -922,7 +922,9 @@ async def spoolman_preview(
     """Vorschau der zu importierenden Daten."""
     service = SpoolmanImportService(db)
     try:
-        preview = await service.preview(body.url)
+        preview, candidate_count = (
+            await service.preview_with_transparency_repairs(body.url)
+        )
         return JSONResponse(
             {
                 "summary": preview.summary,
@@ -931,6 +933,7 @@ async def spoolman_preview(
                 "spools": preview.spools,
                 "locations": preview.locations,
                 "colors": preview.colors,
+                "transparency_repair_candidates": candidate_count,
             }
         )
     except SpoolmanImportError as e:
@@ -991,6 +994,26 @@ async def spoolman_execute(
                     "type": type(e).__name__,
                 }
             },
+        )
+
+
+@router.post(
+    "/spoolman-import/repair-transparency",
+    response_model=SpoolmanImportResultResponse,
+)
+async def spoolman_repair_transparency(
+    body: SpoolmanUrlRequest,
+    db: DBSession,
+    principal=RequirePermission("admin:plugins_manage"),
+):
+    """Repair linked transparency assignments without running a full import."""
+    service = SpoolmanImportService(db)
+    try:
+        return await service.repair_transparency(body.url)
+    except SpoolmanImportError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": e.code, "message": str(e)},
         )
 
 

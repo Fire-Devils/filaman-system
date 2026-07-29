@@ -186,6 +186,7 @@ const { id } = Astro.params
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
     import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
+    import { toColorSwatchBackground } from '../../../lib/colors'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     import { isBuiltInLabelField } from '../../../lib/label-extra-fields'
     await initI18n()
@@ -374,7 +375,7 @@ const { id } = Astro.params
           })()}">
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.filament')}</div>
             <div style="display: flex; align-items: center; gap: 10px;">
-              ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map((fc: any) => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${fc.color?.hex_code || 'var(--border)'}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
+              ${(spool.filament?.colors && spool.filament.colors.length > 0) ? spool.filament.colors.map((fc: any) => `<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${toColorSwatchBackground(fc.color?.hex_code, 'var(--border)')}; border: 2px solid var(--border); flex-shrink: 0;"></span>`).join('') : '<span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-soft); border: 2px solid var(--border); flex-shrink: 0;"></span>'}
               <div style="min-width: 0;">
                 <div style="font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.designation || '-'}</div>
                 <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${spool.filament?.manufacturer?.name || '-'} · ${spool.filament?.material_type || '-'}</div>

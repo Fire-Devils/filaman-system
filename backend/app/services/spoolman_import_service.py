@@ -68,6 +68,17 @@ class ImportResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class TransparencyRepairCandidate:
+    """One source-backed alpha assignment that differs from local storage."""
+
+    filament_id: int
+    spoolman_id: str
+    position: int
+    target_hex: str
+    current_hex: str | None
+
+
 class SpoolmanImportService:
     """Service fuer den Import aus einer Spoolman-Instanz."""
 
@@ -330,6 +341,9 @@ class SpoolmanImportService:
         """Vollstaendigen Import aus Spoolman ausfuehren."""
         result = ImportResult()
         preview = await self.preview(base_url)
+        repair_candidates = await self.analyze_transparency_repairs(
+            preview.filaments
+        )
 
         # 1. Spool-Status-Mapping laden
         status_map = await self._load_status_map()
@@ -342,6 +356,11 @@ class SpoolmanImportService:
 
         # 4. Colors importieren
         color_map = await self._import_colors(preview.colors, result)
+        await self._apply_transparency_repairs(
+            repair_candidates,
+            color_map,
+            result,
+        )
 
         # 5. Filaments importieren
         filament_map = await self._import_filaments(
@@ -366,9 +385,146 @@ class SpoolmanImportService:
 
         return result
 
+    async def preview_with_transparency_repairs(
+        self, base_url: str
+    ) -> tuple[ImportPreview, int]:
+        """Load the normal preview plus source-backed transparency repair count."""
+        preview = await self.preview(base_url)
+        candidates = await self.analyze_transparency_repairs(preview.filaments)
+        return preview, len(candidates)
+
+    async def repair_transparency(self, base_url: str) -> ImportResult:
+        """Repair only linked Spoolman alpha assignments and required colors."""
+        result = ImportResult()
+        preview = await self.preview(base_url)
+        candidates = await self.analyze_transparency_repairs(preview.filaments)
+
+        repair_colors = [
+            {"name": target_hex, "hex_code": target_hex}
+            for target_hex in sorted(
+                {candidate.target_hex for candidate in candidates}
+            )
+        ]
+        color_map = await self._import_colors(repair_colors, result)
+        await self._apply_transparency_repairs(candidates, color_map, result)
+        await self.db.commit()
+        return result
+
     # ------------------------------------------------------------------ #
     #  Hilfs-Methoden fuer den Import
     # ------------------------------------------------------------------ #
+
+    async def analyze_transparency_repairs(
+        self,
+        filaments: list[dict[str, Any]],
+    ) -> list[TransparencyRepairCandidate]:
+        """Find linked existing assignments that differ from Spoolman alpha."""
+        local_filaments = await self.db.execute(
+            select(Filament.id, Filament.custom_fields)
+        )
+        local_by_spoolman_id = {
+            str(custom_fields["spoolman_id"]): filament_id
+            for filament_id, custom_fields in local_filaments.all()
+            if isinstance(custom_fields, dict)
+            and custom_fields.get("spoolman_id") is not None
+        }
+        if not local_by_spoolman_id:
+            return []
+
+        linked_ids = set(local_by_spoolman_id.values())
+        assignment_rows = await self.db.execute(
+            select(
+                FilamentColor.filament_id,
+                FilamentColor.position,
+                Color.hex_code,
+            )
+            .join(Color, Color.id == FilamentColor.color_id)
+            .where(FilamentColor.filament_id.in_(linked_ids))
+        )
+        current_by_position = {
+            (filament_id, position): hex_code.upper()
+            for filament_id, position, hex_code in assignment_rows.all()
+        }
+
+        candidates: list[TransparencyRepairCandidate] = []
+        for filament in filaments:
+            if not isinstance(filament, dict) or filament.get("id") is None:
+                continue
+
+            spoolman_id = str(filament["id"])
+            filament_id = local_by_spoolman_id.get(spoolman_id)
+            if filament_id is None:
+                continue
+
+            for position, target_hex in enumerate(
+                self._filament_hex_codes(filament),
+                start=1,
+            ):
+                if len(target_hex) != 9:
+                    continue
+
+                current_hex = current_by_position.get(
+                    (filament_id, position)
+                )
+                if current_hex == target_hex.upper():
+                    continue
+
+                candidates.append(
+                    TransparencyRepairCandidate(
+                        filament_id=filament_id,
+                        spoolman_id=spoolman_id,
+                        position=position,
+                        target_hex=target_hex,
+                        current_hex=current_hex,
+                    )
+                )
+
+        return candidates
+
+    async def _apply_transparency_repairs(
+        self,
+        candidates: list[TransparencyRepairCandidate],
+        color_map: dict[str, int],
+        result: ImportResult,
+    ) -> None:
+        """Apply analyzed repairs without changing unrelated imported data."""
+        if not candidates:
+            return
+
+        linked_ids = {candidate.filament_id for candidate in candidates}
+        assignment_result = await self.db.execute(
+            select(FilamentColor).where(
+                FilamentColor.filament_id.in_(linked_ids)
+            )
+        )
+        assignments = {
+            (assignment.filament_id, assignment.position): assignment
+            for assignment in assignment_result.scalars().all()
+        }
+
+        for candidate in candidates:
+            target_color_id = color_map.get(candidate.target_hex.lower())
+            if target_color_id is None:
+                result.warnings.append(
+                    "Transparenzfarbe "
+                    f"{candidate.target_hex} für Spoolman-Filament "
+                    f"#{candidate.spoolman_id} konnte nicht aufgelöst werden"
+                )
+                continue
+
+            key = (candidate.filament_id, candidate.position)
+            assignment = assignments.get(key)
+            if assignment is None:
+                assignment = FilamentColor(
+                    filament_id=candidate.filament_id,
+                    color_id=target_color_id,
+                    position=candidate.position,
+                )
+                self.db.add(assignment)
+                assignments[key] = assignment
+            else:
+                assignment.color_id = target_color_id
+            result.color_assignments_repaired += 1
 
     async def _load_status_map(self) -> dict[str, int]:
         """Spool-Status-Mapping laden (key -> id)."""
@@ -577,12 +733,6 @@ class SpoolmanImportService:
                 )
                 existing_fil = existing_fil_res.scalar_one_or_none()
                 if existing_fil:
-                    await self._repair_existing_filament_alpha_colors(
-                        existing_fil.id,
-                        fil_data,
-                        color_map,
-                        result,
-                    )
                     fil_map[spoolman_id] = existing_fil.id
                     result.filaments_skipped += 1
                     continue
@@ -727,54 +877,6 @@ class SpoolmanImportService:
                         position=position,
                     )
                 )
-
-    async def _repair_existing_filament_alpha_colors(
-        self,
-        filament_id: int,
-        fil_data: dict[str, Any],
-        color_map: dict[str, int],
-        result: ImportResult,
-    ) -> None:
-        """Refresh source-backed alpha positions on an existing Spoolman import."""
-        alpha_targets = {
-            position: color_map.get(color_hex.lower())
-            for position, color_hex in enumerate(
-                self._filament_hex_codes(fil_data),
-                start=1,
-            )
-            if len(color_hex) == 9
-        }
-        alpha_targets = {
-            position: color_id
-            for position, color_id in alpha_targets.items()
-            if color_id is not None
-        }
-        if not alpha_targets:
-            return
-
-        existing_result = await self.db.execute(
-            select(FilamentColor).where(FilamentColor.filament_id == filament_id)
-        )
-        existing_by_position = {
-            assignment.position: assignment
-            for assignment in existing_result.scalars().all()
-        }
-
-        for position, target_color_id in alpha_targets.items():
-            assignment = existing_by_position.get(position)
-            if assignment is None:
-                self.db.add(
-                    FilamentColor(
-                        filament_id=filament_id,
-                        color_id=target_color_id,
-                        position=position,
-                    )
-                )
-            elif assignment.color_id == target_color_id:
-                continue
-            else:
-                assignment.color_id = target_color_id
-            result.color_assignments_repaired += 1
 
     async def _import_spools(
         self,

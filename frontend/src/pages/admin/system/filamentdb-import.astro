@@ -99,6 +99,7 @@ import Layout from '../../../layouts/Layout.astro'
     import { t, initI18n } from '../../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
+    import { toColorSwatchBackground } from '../../../lib/colors'
     await initI18n()
 
     // Check if plugin is active — redirect to system page if disabled
@@ -648,7 +649,7 @@ import Layout from '../../../layouts/Layout.astro'
       }
       if (cols.length === 0) return ''
       return cols.map(c =>
-        `<span style="display: inline-block; width: 14px; height: 14px; border-radius: 3px; background: ${escapeHtml(c.hex)}; border: 1px solid var(--border);"></span>`
+        `<span style="display: inline-block; width: 14px; height: 14px; border-radius: 3px; background: ${toColorSwatchBackground(c.hex)}; border: 1px solid var(--border);"></span>`
       ).join('')
     }
 

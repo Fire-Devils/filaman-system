@@ -44,7 +44,16 @@ import Layout from '../../../layouts/Layout.astro'
       <span data-i18n="spoolman.stepImport">Import</span>
     </h2>
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="spoolman.importDesc">Start the import. Existing data will not be overwritten.</p>
-    <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="spoolman.startImport">Start Import</button>
+    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+      <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="spoolman.startImport">Start Import</button>
+      <button id="btn-repair-transparency" class="fm-btn fm-btn-outline hidden">Fix transparency hex</button>
+    </div>
+    <div id="transparency-repair-note" class="hidden" style="margin-top: 12px; padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--accent-2);">
+      <strong id="transparency-repair-count" style="color: var(--accent);"></strong>
+      <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.85rem;" data-i18n="spoolman.repairTransparencyDesc">
+        Repairs only existing filament color assignments linked by spoolman_id to the connected Spoolman data. No manufacturers, locations, filaments, spools, or unrelated fields are imported.
+      </p>
+    </div>
     <div id="import-progress" style="margin-top: 16px; display: none;">
       <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
         <div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
@@ -57,11 +66,12 @@ import Layout from '../../../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
-    import { toCssColor } from '../../../lib/colors'
+    import { toColorSwatchBackground } from '../../../lib/colors'
     await initI18n()
 
     let connectedUrl = ''
     let previewData: any = null
+    let transparencyRepairCandidates = 0
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -84,6 +94,27 @@ import Layout from '../../../layouts/Layout.astro'
       const el = document.getElementById(id)!
       el.style.opacity = '0.5'
       el.style.pointerEvents = 'none'
+    }
+
+    function updateTransparencyRepairAction(count: number) {
+      transparencyRepairCandidates = Math.max(0, Number(count) || 0)
+      const button = document.getElementById('btn-repair-transparency') as HTMLButtonElement
+      const note = document.getElementById('transparency-repair-note')!
+      const countLabel = document.getElementById('transparency-repair-count')!
+      const hasCandidates = transparencyRepairCandidates > 0
+
+      button.classList.toggle('hidden', !hasCandidates)
+      note.classList.toggle('hidden', !hasCandidates)
+      if (!hasCandidates) return
+
+      button.textContent = t('spoolman.repairTransparency').replace(
+        '{count}',
+        String(transparencyRepairCandidates)
+      )
+      countLabel.textContent = t('spoolman.repairTransparencyAvailable').replace(
+        '{count}',
+        String(transparencyRepairCandidates)
+      )
     }
 
     // ----------------------------------------------------------------
@@ -127,6 +158,8 @@ import Layout from '../../../layouts/Layout.astro'
 
         const data = await response.json()
         connectedUrl = url
+        previewData = null
+        updateTransparencyRepairAction(0)
 
         resultDiv.innerHTML = `
           <div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--accent-2); color: var(--text);">
@@ -147,6 +180,7 @@ import Layout from '../../../layouts/Layout.astro'
         `
         disableStep('step-preview')
         disableStep('step-import')
+        updateTransparencyRepairAction(0)
       } finally {
         btn.disabled = false
         btn.textContent = t('spoolman.testConnection')
@@ -183,6 +217,9 @@ import Layout from '../../../layouts/Layout.astro'
         }
 
         previewData = await response.json()
+        updateTransparencyRepairAction(
+          previewData.transparency_repair_candidates
+        )
         resultDiv.style.display = 'block'
 
         const s = previewData.summary
@@ -236,6 +273,7 @@ import Layout from '../../../layouts/Layout.astro'
           </div>
         `
         disableStep('step-import')
+        updateTransparencyRepairAction(0)
       } finally {
         btn.disabled = false
         btn.textContent = t('spoolman.loadPreview')
@@ -267,7 +305,7 @@ import Layout from '../../../layouts/Layout.astro'
       const rows = filaments.slice(0, 20).map(f => {
         const vendor = f.vendor?.name || '-'
         const colorSwatch = f.color_hex
-          ? `<span style="display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: ${toCssColor(f.color_hex, `#${f.color_hex}`)}; border: 1px solid var(--border); vertical-align: middle; margin-right: 6px;"></span>`
+          ? `<span style="display: inline-block; width: 16px; height: 16px; border-radius: 3px; background: ${toColorSwatchBackground(f.color_hex)}; border: 1px solid var(--border); vertical-align: middle; margin-right: 6px;"></span>`
           : ''
         return `
           <tr>
@@ -320,27 +358,56 @@ import Layout from '../../../layouts/Layout.astro'
     //  Step 3: Import
     // ----------------------------------------------------------------
 
-    document.getElementById('btn-import')?.addEventListener('click', async () => {
+    interface ImportAction {
+      button: HTMLButtonElement
+      confirmKey: string
+      endpoint: string
+      pendingKey: string
+      completeKey: string
+      failedKey: string
+      restoreButton: () => void
+      renderResult: (result: SpoolmanImportResult) => string
+    }
+
+    interface SpoolmanImportResult {
+      manufacturers_created: number
+      manufacturers_skipped: number
+      locations_created: number
+      locations_skipped: number
+      colors_created: number
+      colors_skipped: number
+      color_assignments_repaired: number
+      filaments_created: number
+      filaments_skipped: number
+      spools_created: number
+      spools_skipped: number
+      errors: string[]
+      warnings: string[]
+    }
+
+    async function runImportAction(action: ImportAction) {
       const resultDiv = document.getElementById('import-result')!
       const progressDiv = document.getElementById('import-progress')!
       const progressBar = document.getElementById('import-bar') as HTMLElement
       const statusText = document.getElementById('import-status')!
-      const btn = document.getElementById('btn-import') as HTMLButtonElement
 
-      // Bestaetigung
-      if (!(await (window as any).__fmConfirm(t('spoolman.confirmImport'), { title: t('spoolman.startImport'), okLabel: t('spoolman.startImport'), isDanger: false }))) return
+      if (!(await (window as any).__fmConfirm(t(action.confirmKey), {
+        title: action.button.textContent || t(action.pendingKey),
+        okLabel: action.button.textContent || t(action.pendingKey),
+        isDanger: false,
+      }))) return
 
-      btn.disabled = true
-      btn.textContent = t('spoolman.importing')
+      action.button.disabled = true
+      action.button.textContent = t(action.pendingKey)
       progressDiv.style.display = 'block'
       progressBar.style.width = '20%'
       resultDiv.style.display = 'none'
 
       try {
         progressBar.style.width = '50%'
-        statusText.textContent = t('spoolman.importing')
+        statusText.textContent = t(action.pendingKey)
 
-        const response = await fetch('/api/v1/admin/system/spoolman-import/execute', {
+        const response = await fetch(action.endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -355,33 +422,95 @@ import Layout from '../../../layouts/Layout.astro'
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}))
-          throw new Error(data.detail?.message || t('spoolman.importFailed'))
+          throw new Error(data.detail?.message || t(action.failedKey))
         }
 
         const result = await response.json()
         progressBar.style.width = '100%'
-        statusText.textContent = t('spoolman.importComplete')
+        statusText.textContent = t(action.completeKey)
 
         resultDiv.style.display = 'block'
-        resultDiv.innerHTML = renderImportResult(result)
+        resultDiv.innerHTML = action.renderResult(result)
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isAbortError(err)) return
+        const message = err instanceof Error ? err.message : String(err)
         progressDiv.style.display = 'none'
         resultDiv.style.display = 'block'
         resultDiv.innerHTML = `
           <div style="padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
-            <strong>${escapeHtml(t('spoolman.importFailed'))}</strong><br>
-            ${escapeHtml(err.message)}
+            <strong>${escapeHtml(t(action.failedKey))}</strong><br>
+            ${escapeHtml(message)}
           </div>
         `
       } finally {
-        btn.disabled = false
-        btn.textContent = t('spoolman.startImport')
+        action.button.disabled = false
+        action.restoreButton()
       }
+    }
+
+    document.getElementById('btn-import')?.addEventListener('click', async () => {
+      const button = document.getElementById('btn-import') as HTMLButtonElement
+      await runImportAction({
+        button,
+        confirmKey: 'spoolman.confirmImport',
+        endpoint: '/api/v1/admin/system/spoolman-import/execute',
+        pendingKey: 'spoolman.importing',
+        completeKey: 'spoolman.importComplete',
+        failedKey: 'spoolman.importFailed',
+        restoreButton: () => {
+          button.textContent = t('spoolman.startImport')
+        },
+        renderResult: (result) => {
+          updateTransparencyRepairAction(0)
+          return renderImportResult(result)
+        },
+      })
     })
 
-    function renderImportResult(r: any): string {
+    document.getElementById('btn-repair-transparency')?.addEventListener('click', async () => {
+      const button = document.getElementById('btn-repair-transparency') as HTMLButtonElement
+      await runImportAction({
+        button,
+        confirmKey: 'spoolman.confirmRepairTransparency',
+        endpoint: '/api/v1/admin/system/spoolman-import/repair-transparency',
+        pendingKey: 'spoolman.repairingTransparency',
+        completeKey: 'spoolman.repairTransparencyComplete',
+        failedKey: 'spoolman.repairTransparencyFailed',
+        restoreButton: () => {
+          updateTransparencyRepairAction(transparencyRepairCandidates)
+        },
+        renderResult: (result) => {
+          updateTransparencyRepairAction(0)
+          return renderTransparencyRepairResult(result)
+        },
+      })
+    })
+
+    function renderTransparencyRepairResult(result: SpoolmanImportResult): string {
+      const repaired = Number(result.color_assignments_repaired) || 0
+      return `
+        <div style="padding: 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--accent-2);">
+          <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 8px;">${escapeHtml(t('spoolman.repairTransparencyResults'))}</h3>
+          <p style="margin: 0; color: var(--accent-2);">
+            ${escapeHtml(
+              repaired > 0
+                ? t('spoolman.colorAssignmentsRepaired').replace('{count}', String(repaired))
+                : t('spoolman.repairTransparencyNoChanges')
+            )}
+          </p>
+          <p style="margin: 6px 0 0; color: var(--text-muted); font-size: 0.85rem;">
+            ${escapeHtml(
+              t('spoolman.repairTransparencyColors')
+                .replace('{created}', String(result.colors_created || 0))
+                .replace('{reused}', String(result.colors_skipped || 0))
+            )}
+          </p>
+        </div>
+      `
+    }
+
+    function renderImportResult(r: SpoolmanImportResult): string {
       const hasErrors = r.errors && r.errors.length > 0
       const hasWarnings = r.warnings && r.warnings.length > 0
 
