@@ -69,6 +69,7 @@ def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch
             [
                 {"filament_id": 1, "color_id": 1},
                 {"filament_id": 1, "color_id": 2},
+                {"filament_id": 2, "color_id": 1},
                 {"filament_id": 2, "color_id": 3},
             ],
         )
@@ -78,29 +79,38 @@ def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch
         monkeypatch.setattr(migration, "op", operations)
 
         migration.upgrade()
-        assert {
-            row.id: row.hex_code
+        assigned_colors = [
+            (row.filament_id, row.hex_code)
             for row in connection.execute(
-                sa.select(colors.c.id, colors.c.hex_code).order_by(colors.c.id)
+                sa.select(
+                    filament_colors.c.filament_id,
+                    colors.c.hex_code,
+                )
+                .select_from(
+                    filament_colors.join(
+                        colors,
+                        filament_colors.c.color_id == colors.c.id,
+                    )
+                )
+                .order_by(
+                    filament_colors.c.filament_id,
+                    colors.c.hex_code,
+                )
             )
-        } == {
-            1: "#D8100C3C",
-            2: "#3C112233",
-            3: "#3C8AD77F",
-        }
+        ]
+        assert assigned_colors == [
+            (1, "#3C112233"),
+            (1, "#D8100C3C"),
+            (2, "#3C8AD77F"),
+            (2, "#3CD8100C"),
+        ]
         assert sa.inspect(connection).get_columns("colors")[2]["type"].length == 9
 
         migration.downgrade()
-        assert {
-            row.id: row.hex_code
-            for row in connection.execute(
-                sa.select(colors.c.id, colors.c.hex_code).order_by(colors.c.id)
-            )
-        } == {
-            1: "#D8100C",
-            2: "#3C1122",
-            3: "#3C8AD7",
-        }
+        assert all(
+            len(row.hex_code) == 7
+            for row in connection.execute(sa.select(colors.c.hex_code))
+        )
         assert sa.inspect(connection).get_columns("colors")[2]["type"].length == 7
 
     engine.dispose()

@@ -29,6 +29,7 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
   const picker = requiredElement<HTMLInputElement>('new-color-picker')
   const hexInput = requiredElement<HTMLInputElement>('new-color-hex')
   const nameInput = requiredElement<HTMLInputElement>('new-color-name')
+  const editorInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input'))
 
   const colorControls = bindAlphaColorControls({
     picker,
@@ -46,9 +47,15 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
     toggle.classList.remove('hidden')
     nameInput.value = ''
     colorControls.reset()
+    editorInputs.forEach((input) => {
+      input.disabled = true
+    })
   }
 
   addButton.addEventListener('click', () => {
+    editorInputs.forEach((input) => {
+      input.disabled = false
+    })
     form.classList.remove('hidden')
     toggle.classList.add('hidden')
     colorControls.syncFromHex()

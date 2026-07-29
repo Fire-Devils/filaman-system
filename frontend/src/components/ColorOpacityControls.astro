@@ -1,9 +1,10 @@
 ---
 interface Props {
   idPrefix: string
+  disabled?: boolean
 }
 
-const { idPrefix } = Astro.props
+const { idPrefix, disabled = false } = Astro.props
 const enabledId = `${idPrefix}-alpha-enabled`
 const optionsId = `${idPrefix}-alpha-options`
 const sliderId = `${idPrefix}-alpha`
@@ -16,7 +17,7 @@ const previewId = `${idPrefix}-alpha-preview`
   for={enabledId}
   class="fm-label fm-opacity-toggle"
 >
-  <input type="checkbox" id={enabledId} style="accent-color: var(--accent);" />
+  <input type="checkbox" id={enabledId} disabled={disabled} style="accent-color: var(--accent);" />
   <span data-i18n="filaments.colorOpacityEnabled">Opacity</span>
 </label>
 <div id={optionsId} class="fm-opacity-options hidden">
@@ -43,6 +44,7 @@ const previewId = `${idPrefix}-alpha-preview`
         min="0"
         max="100"
         value="100"
+        disabled={disabled}
       />
       <div class="fm-opacity-slider-endpoints" aria-hidden="true">
         <span>#00</span>
@@ -62,6 +64,7 @@ const previewId = `${idPrefix}-alpha-preview`
         step="1"
         value="100"
         inputmode="numeric"
+        disabled={disabled}
         class="fm-input fm-opacity-value-input"
       />
       <span aria-hidden="true">%</span>
@@ -75,6 +78,7 @@ const previewId = `${idPrefix}-alpha-preview`
         maxlength="2"
         pattern="[0-9a-fA-F]{2}"
         inputmode="text"
+        disabled={disabled}
         class="fm-input fm-opacity-value-input"
       />
       <span data-i18n="filaments.colorOpacityHexByte">Hex(AA)</span>

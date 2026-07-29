@@ -95,7 +95,7 @@ class ColorUpdate(BaseModel):
     @classmethod
     def validate_hex_code(cls, value: str | None) -> str | None:
         if value is None:
-            return None
+            raise ValueError("hex_code cannot be null")
         return normalize_hex_color_if_valid(value)
 
 

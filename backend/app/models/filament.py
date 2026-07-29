@@ -54,7 +54,9 @@ class Color(Base, TimestampMixin):
     )
 
     @validates("hex_code")
-    def _validate_hex_code(self, key: str, value: str) -> str:
+    def _validate_hex_code(self, key: str, value: str | None) -> str:
+        if value is None:
+            raise ValueError("hex_code cannot be null")
         return normalize_hex_color_if_valid(value)
 
 

@@ -72,6 +72,8 @@ import Layout from '../../../layouts/Layout.astro'
     let connectedUrl = ''
     let previewData: any = null
     let transparencyRepairCandidates = 0
+    let transparencyRepairPlanDigest = ''
+    let importActionRunning = false
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -96,8 +98,10 @@ import Layout from '../../../layouts/Layout.astro'
       el.style.pointerEvents = 'none'
     }
 
-    function updateTransparencyRepairAction(count: number) {
+    function updateTransparencyRepairAction(count: number, planDigest = '') {
       transparencyRepairCandidates = Math.max(0, Number(count) || 0)
+      transparencyRepairPlanDigest =
+        transparencyRepairCandidates > 0 ? String(planDigest) : ''
       const button = document.getElementById('btn-repair-transparency') as HTMLButtonElement
       const note = document.getElementById('transparency-repair-note')!
       const countLabel = document.getElementById('transparency-repair-count')!
@@ -207,7 +211,10 @@ import Layout from '../../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
-          body: JSON.stringify({ url: connectedUrl }),
+          body: JSON.stringify({
+            url: connectedUrl,
+            include_transparency_repairs: true,
+          }),
           signal: getAbortSignal(),
         })
 
@@ -218,7 +225,8 @@ import Layout from '../../../layouts/Layout.astro'
 
         previewData = await response.json()
         updateTransparencyRepairAction(
-          previewData.transparency_repair_candidates
+          previewData.transparency_repair_candidates,
+          previewData.transparency_repair_plan_digest
         )
         resultDiv.style.display = 'block'
 
@@ -367,6 +375,7 @@ import Layout from '../../../layouts/Layout.astro'
       failedKey: string
       restoreButton: () => void
       renderResult: (result: SpoolmanImportResult) => string
+      requestBody: () => Record<string, string>
     }
 
     interface SpoolmanImportResult {
@@ -376,7 +385,7 @@ import Layout from '../../../layouts/Layout.astro'
       locations_skipped: number
       colors_created: number
       colors_skipped: number
-      color_assignments_repaired: number
+      color_assignments_repaired?: number
       filaments_created: number
       filaments_skipped: number
       spools_created: number
@@ -386,6 +395,7 @@ import Layout from '../../../layouts/Layout.astro'
     }
 
     async function runImportAction(action: ImportAction) {
+      if (importActionRunning) return
       const resultDiv = document.getElementById('import-result')!
       const progressDiv = document.getElementById('import-progress')!
       const progressBar = document.getElementById('import-bar') as HTMLElement
@@ -396,8 +406,13 @@ import Layout from '../../../layouts/Layout.astro'
         okLabel: action.button.textContent || t(action.pendingKey),
         isDanger: false,
       }))) return
+      if (importActionRunning) return
 
-      action.button.disabled = true
+      importActionRunning = true
+      const importButton = document.getElementById('btn-import') as HTMLButtonElement
+      const repairButton = document.getElementById('btn-repair-transparency') as HTMLButtonElement
+      importButton.disabled = true
+      repairButton.disabled = true
       action.button.textContent = t(action.pendingKey)
       progressDiv.style.display = 'block'
       progressBar.style.width = '20%'
@@ -414,7 +429,7 @@ import Layout from '../../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken(),
           },
           credentials: 'include',
-          body: JSON.stringify({ url: connectedUrl }),
+          body: JSON.stringify(action.requestBody()),
           signal: getAbortSignal(),
         })
 
@@ -422,6 +437,9 @@ import Layout from '../../../layouts/Layout.astro'
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}))
+          if (data.detail?.code === 'repair_plan_changed') {
+            updateTransparencyRepairAction(0)
+          }
           throw new Error(data.detail?.message || t(action.failedKey))
         }
 
@@ -444,7 +462,9 @@ import Layout from '../../../layouts/Layout.astro'
           </div>
         `
       } finally {
-        action.button.disabled = false
+        importActionRunning = false
+        importButton.disabled = false
+        repairButton.disabled = transparencyRepairCandidates === 0
         action.restoreButton()
       }
     }
@@ -458,6 +478,7 @@ import Layout from '../../../layouts/Layout.astro'
         pendingKey: 'spoolman.importing',
         completeKey: 'spoolman.importComplete',
         failedKey: 'spoolman.importFailed',
+        requestBody: () => ({ url: connectedUrl }),
         restoreButton: () => {
           button.textContent = t('spoolman.startImport')
         },
@@ -477,8 +498,15 @@ import Layout from '../../../layouts/Layout.astro'
         pendingKey: 'spoolman.repairingTransparency',
         completeKey: 'spoolman.repairTransparencyComplete',
         failedKey: 'spoolman.repairTransparencyFailed',
+        requestBody: () => ({
+          url: connectedUrl,
+          plan_digest: transparencyRepairPlanDigest,
+        }),
         restoreButton: () => {
-          updateTransparencyRepairAction(transparencyRepairCandidates)
+          updateTransparencyRepairAction(
+            transparencyRepairCandidates,
+            transparencyRepairPlanDigest
+          )
         },
         renderResult: (result) => {
           updateTransparencyRepairAction(0)
@@ -524,11 +552,6 @@ import Layout from '../../../layouts/Layout.astro'
             ${resultCard(t('filaments.title'), r.filaments_created, r.filaments_skipped)}
             ${resultCard(t('spools.title'), r.spools_created, r.spools_skipped)}
           </div>
-          ${r.color_assignments_repaired > 0 ? `
-            <p style="margin: 12px 0 0; color: var(--accent-2);">
-              ${escapeHtml(t('spoolman.colorAssignmentsRepaired').replace('{count}', String(r.color_assignments_repaired)))}
-            </p>
-          ` : ''}
       `
 
       if (hasWarnings) {

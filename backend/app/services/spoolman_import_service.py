@@ -1,5 +1,8 @@
 """Spoolman-Import-Service: Daten aus einer Spoolman-Instanz importieren."""
 
+import hashlib
+import hmac
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -319,19 +322,41 @@ class SpoolmanImportService:
 
     def _filament_hex_codes(self, filament: dict[str, Any]) -> list[str]:
         """Return normalized primary and multi-color values in display order."""
-        values: list[Any] = []
-        if filament.get("color_hex"):
-            values.append(filament["color_hex"])
-
-        multi = filament.get("multi_color_hexes")
-        if multi:
-            values.extend(multi if isinstance(multi, list) else str(multi).split(","))
-
         return [
             normalized
-            for value in values
-            if (normalized := self._normalize_hex_code(value)) is not None
+            for _, normalized in self._filament_color_positions(filament)
         ]
+
+    def _filament_hex_positions(
+        self,
+        values: list[Any],
+    ) -> list[tuple[int, str]]:
+        """Normalize colors without compacting invalid source positions."""
+        normalized_values: list[tuple[int, str]] = []
+        for position, value in enumerate(values, start=1):
+            normalized = self._normalize_hex_code(value)
+            if normalized is not None:
+                normalized_values.append((position, normalized))
+        return normalized_values
+
+    def _filament_color_positions(
+        self,
+        filament: dict[str, Any],
+    ) -> list[tuple[int, str]]:
+        """Return ordered colors for both full-list and secondary-list APIs."""
+        primary = self._normalize_hex_code(filament.get("color_hex"))
+        multi = filament.get("multi_color_hexes")
+        if multi:
+            values = multi if isinstance(multi, list) else str(multi).split(",")
+            positions = self._filament_hex_positions(values)
+            first_multi = self._normalize_hex_code(values[0]) if values else None
+            if primary is not None and first_multi != primary:
+                return [(1, primary)] + [
+                    (position + 1, normalized)
+                    for position, normalized in positions
+                ]
+            return positions
+        return [(1, primary)] if primary is not None else []
 
     # ------------------------------------------------------------------ #
     #  Import ausfuehren
@@ -387,17 +412,31 @@ class SpoolmanImportService:
 
     async def preview_with_transparency_repairs(
         self, base_url: str
-    ) -> tuple[ImportPreview, int]:
+    ) -> tuple[ImportPreview, int, str]:
         """Load the normal preview plus source-backed transparency repair count."""
         preview = await self.preview(base_url)
         candidates = await self.analyze_transparency_repairs(preview.filaments)
-        return preview, len(candidates)
+        return (
+            preview,
+            len(candidates),
+            self.transparency_repair_plan_digest(candidates),
+        )
 
-    async def repair_transparency(self, base_url: str) -> ImportResult:
+    async def repair_transparency(
+        self,
+        base_url: str,
+        expected_plan_digest: str,
+    ) -> ImportResult:
         """Repair only linked Spoolman alpha assignments and required colors."""
         result = ImportResult()
         preview = await self.preview(base_url)
         candidates = await self.analyze_transparency_repairs(preview.filaments)
+        actual_plan_digest = self.transparency_repair_plan_digest(candidates)
+        if not hmac.compare_digest(actual_plan_digest, expected_plan_digest.lower()):
+            raise SpoolmanImportError(
+                "Transparency repair data changed after preview; load a new preview",
+                "repair_plan_changed",
+            )
 
         repair_colors = [
             {"name": target_hex, "hex_code": target_hex}
@@ -409,6 +448,35 @@ class SpoolmanImportService:
         await self._apply_transparency_repairs(candidates, color_map, result)
         await self.db.commit()
         return result
+
+    @staticmethod
+    def transparency_repair_plan_digest(
+        candidates: list[TransparencyRepairCandidate],
+    ) -> str:
+        """Bind execution to the exact candidate set shown by preview."""
+        plan = sorted(
+            (
+                {
+                    "filament_id": candidate.filament_id,
+                    "spoolman_id": candidate.spoolman_id,
+                    "position": candidate.position,
+                    "current_hex": candidate.current_hex,
+                    "target_hex": candidate.target_hex,
+                }
+                for candidate in candidates
+            ),
+            key=lambda item: (
+                item["filament_id"],
+                item["position"],
+                item["spoolman_id"],
+            ),
+        )
+        payload = json.dumps(
+            plan,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(payload).hexdigest()
 
     # ------------------------------------------------------------------ #
     #  Hilfs-Methoden fuer den Import
@@ -456,17 +524,18 @@ class SpoolmanImportService:
             if filament_id is None:
                 continue
 
-            for position, target_hex in enumerate(
-                self._filament_hex_codes(filament),
-                start=1,
-            ):
+            for position, target_hex in self._filament_color_positions(filament):
                 if len(target_hex) != 9:
                     continue
 
                 current_hex = current_by_position.get(
                     (filament_id, position)
                 )
-                if current_hex == target_hex.upper():
+                if (
+                    current_hex is None
+                    or len(current_hex) != 7
+                    or current_hex != target_hex[:7].upper()
+                ):
                     continue
 
                 candidates.append(
@@ -493,13 +562,16 @@ class SpoolmanImportService:
 
         linked_ids = {candidate.filament_id for candidate in candidates}
         assignment_result = await self.db.execute(
-            select(FilamentColor).where(
-                FilamentColor.filament_id.in_(linked_ids)
-            )
+            select(FilamentColor, Color.hex_code)
+            .join(Color, Color.id == FilamentColor.color_id)
+            .where(FilamentColor.filament_id.in_(linked_ids))
         )
         assignments = {
-            (assignment.filament_id, assignment.position): assignment
-            for assignment in assignment_result.scalars().all()
+            (assignment.filament_id, assignment.position): (
+                assignment,
+                current_hex.upper(),
+            )
+            for assignment, current_hex in assignment_result.all()
         }
 
         for candidate in candidates:
@@ -513,17 +585,17 @@ class SpoolmanImportService:
                 continue
 
             key = (candidate.filament_id, candidate.position)
-            assignment = assignments.get(key)
-            if assignment is None:
-                assignment = FilamentColor(
-                    filament_id=candidate.filament_id,
-                    color_id=target_color_id,
-                    position=candidate.position,
+            current = assignments.get(key)
+            if current is None or current[1] != candidate.current_hex:
+                result.warnings.append(
+                    "Transparenzzuordnung für Spoolman-Filament "
+                    f"#{candidate.spoolman_id} Position {candidate.position} "
+                    "hat sich seit der Vorschau geändert"
                 )
-                self.db.add(assignment)
-                assignments[key] = assignment
-            else:
-                assignment.color_id = target_color_id
+                continue
+
+            assignment, _ = current
+            assignment.color_id = target_color_id
             result.color_assignments_repaired += 1
 
     async def _load_status_map(self) -> dict[str, int]:

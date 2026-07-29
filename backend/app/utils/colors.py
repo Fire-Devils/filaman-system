@@ -70,7 +70,7 @@ def visible_rgb_hex_or_legacy(value: Any) -> str:
 
 
 def normalize_hex_color_if_valid(value: Any) -> str:
-    """Canonicalize valid hex while preserving legacy API-compatible values."""
+    """Normalize valid colors while preserving shipped legacy string inputs."""
     try:
         return normalize_hex_color(value)
     except ValueError:

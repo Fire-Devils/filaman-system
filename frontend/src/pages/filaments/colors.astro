@@ -62,6 +62,7 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { fetchAllPages } from '../../lib/api'
     import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
+    import { escapeHtml } from '../../lib/extra-fields'
     await initI18n()
 
     let colors: any[] = []
@@ -106,26 +107,26 @@ import Layout from '../../layouts/Layout.astro'
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
               <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 1px solid var(--border);"></span>
-              <span style="font-weight: 500;">${c.name}</span>
+              <span style="font-weight: 500;">${escapeHtml(c.name)}</span>
             </div>
           </td>
-          <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${c.hex_code.toUpperCase()}</td>
+          <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${escapeHtml(String(c.hex_code).toUpperCase())}</td>
           <td style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">
             ${t('colors.usedIn', { count: c.usage_count })}
           </td>
           <td style="padding: 12px; text-align: right;">
             <button 
-              data-id="${c.id}" 
-              data-name="${c.name}" 
-              data-hex="${c.hex_code}" 
+              data-id="${escapeHtml(String(c.id))}"
+              data-name="${escapeHtml(c.name)}"
+              data-hex="${escapeHtml(c.hex_code)}"
               class="btn-edit" 
               style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;"
             >
               ${t('common.edit')}
             </button>
             <button 
-              data-id="${c.id}" 
-              data-usage="${c.usage_count}"
+              data-id="${escapeHtml(String(c.id))}"
+              data-usage="${escapeHtml(String(c.usage_count))}"
               class="btn-delete" 
               style="color: ${c.usage_count > 0 ? 'var(--text-muted)' : 'var(--error-text)'}; background: none; border: none; cursor: ${c.usage_count > 0 ? 'not-allowed' : 'pointer'};"
               ${c.usage_count > 0 ? `title="${t('colors.inUseWarning')}"` : ''}
