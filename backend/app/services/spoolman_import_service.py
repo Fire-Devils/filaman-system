@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.models.location import Location
 from app.models.spool import Spool, SpoolStatus
+from app.utils.colors import normalize_spoolmandb_hex_color
 from app.utils.db import json_extract_cast_string
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class ImportResult:
     locations_skipped: int = 0
     colors_created: int = 0
     colors_skipped: int = 0
+    color_assignments_repaired: int = 0
     filaments_created: int = 0
     filaments_skipped: int = 0
     spools_created: int = 0
@@ -76,6 +78,13 @@ class SpoolmanImportService:
     def dialect(self):
         """Get the database dialect for JSON operations."""
         return self.db.bind.dialect
+
+    @staticmethod
+    def _normalize_hex_code(value: Any) -> str | None:
+        try:
+            return normalize_spoolmandb_hex_color(value)
+        except ValueError:
+            return None
 
     # ------------------------------------------------------------------ #
     #  Verbindungstest
@@ -290,29 +299,28 @@ class SpoolmanImportService:
         colors: list[dict[str, str]] = []
 
         for fil in filaments:
-            color_hex = fil.get("color_hex")
-            if color_hex:
-                hex_code = f"#{color_hex.lstrip('#')}"
-                if hex_code.lower() not in seen:
-                    seen.add(hex_code.lower())
-                    # Farbname: Spoolman hat keinen separaten Farbnamen,
-                    # wir nutzen den Hex-Code als Fallback
-                    name = hex_code.upper()
-                    colors.append({"name": name, "hex_code": hex_code})
-
-            # Multi-Color
-            multi = fil.get("multi_color_hexes")
-            if multi:
-                hex_list = multi if isinstance(multi, list) else str(multi).split(",")
-                for h in hex_list:
-                    h = h.strip()
-                    if h:
-                        hex_code = f"#{h.lstrip('#')}"
-                        if hex_code.lower() not in seen:
-                            seen.add(hex_code.lower())
-                            colors.append({"name": hex_code.upper(), "hex_code": hex_code})
+            for normalized in self._filament_hex_codes(fil):
+                if normalized.lower() not in seen:
+                    seen.add(normalized.lower())
+                    colors.append({"name": normalized, "hex_code": normalized})
 
         return colors
+
+    def _filament_hex_codes(self, filament: dict[str, Any]) -> list[str]:
+        """Return normalized primary and multi-color values in display order."""
+        values: list[Any] = []
+        if filament.get("color_hex"):
+            values.append(filament["color_hex"])
+
+        multi = filament.get("multi_color_hexes")
+        if multi:
+            values.extend(multi if isinstance(multi, list) else str(multi).split(","))
+
+        return [
+            normalized
+            for value in values
+            if (normalized := self._normalize_hex_code(value)) is not None
+        ]
 
     # ------------------------------------------------------------------ #
     #  Import ausfuehren
@@ -521,20 +529,24 @@ class SpoolmanImportService:
             if not isinstance(color_data, dict):
                 continue
 
-            hex_code = color_data["hex_code"].lower()
-            if hex_code in color_map:
+            normalized_hex = self._normalize_hex_code(color_data.get("hex_code"))
+            if not normalized_hex:
+                continue
+
+            hex_key = normalized_hex.lower()
+            if hex_key in color_map:
                 result.colors_skipped += 1
                 continue
 
-            name = color_data.get("name", hex_code.upper())
+            name = color_data.get("name", normalized_hex)
             new_color = Color(
                 name=name,
-                hex_code=hex_code,
+                hex_code=normalized_hex,
             )
             self.db.add(new_color)
             await self.db.flush()
 
-            color_map[hex_code] = new_color.id
+            color_map[hex_key] = new_color.id
             result.colors_created += 1
 
         return color_map
@@ -565,6 +577,12 @@ class SpoolmanImportService:
                 )
                 existing_fil = existing_fil_res.scalar_one_or_none()
                 if existing_fil:
+                    await self._repair_existing_filament_alpha_colors(
+                        existing_fil.id,
+                        fil_data,
+                        color_map,
+                        result,
+                    )
                     fil_map[spoolman_id] = existing_fil.id
                     result.filaments_skipped += 1
                     continue
@@ -696,39 +714,67 @@ class SpoolmanImportService:
         color_map: dict[str, int],
     ) -> None:
         """Farb-Zuordnungen fuer ein Filament erstellen."""
-        position = 1
-
-        # Hauptfarbe
-        color_hex = fil_data.get("color_hex")
-        if color_hex:
-            hex_key = f"#{color_hex.lstrip('#')}".lower()
-            color_id = color_map.get(hex_key)
+        for position, color_hex in enumerate(
+            self._filament_hex_codes(fil_data),
+            start=1,
+        ):
+            color_id = color_map.get(color_hex.lower())
             if color_id:
-                fc = FilamentColor(
-                    filament_id=filament_id,
-                    color_id=color_id,
-                    position=position,
+                self.db.add(
+                    FilamentColor(
+                        filament_id=filament_id,
+                        color_id=color_id,
+                        position=position,
+                    )
                 )
-                self.db.add(fc)
-                position += 1
 
-        # Multi-Color
-        multi = fil_data.get("multi_color_hexes")
-        if multi:
-            hex_list = multi if isinstance(multi, list) else str(multi).split(",")
-            for h in hex_list:
-                h = h.strip()
-                if h:
-                    hex_key = f"#{h.lstrip('#')}".lower()
-                    color_id = color_map.get(hex_key)
-                    if color_id:
-                        fc = FilamentColor(
-                            filament_id=filament_id,
-                            color_id=color_id,
-                            position=position,
-                        )
-                        self.db.add(fc)
-                        position += 1
+    async def _repair_existing_filament_alpha_colors(
+        self,
+        filament_id: int,
+        fil_data: dict[str, Any],
+        color_map: dict[str, int],
+        result: ImportResult,
+    ) -> None:
+        """Refresh source-backed alpha positions on an existing Spoolman import."""
+        alpha_targets = {
+            position: color_map.get(color_hex.lower())
+            for position, color_hex in enumerate(
+                self._filament_hex_codes(fil_data),
+                start=1,
+            )
+            if len(color_hex) == 9
+        }
+        alpha_targets = {
+            position: color_id
+            for position, color_id in alpha_targets.items()
+            if color_id is not None
+        }
+        if not alpha_targets:
+            return
+
+        existing_result = await self.db.execute(
+            select(FilamentColor).where(FilamentColor.filament_id == filament_id)
+        )
+        existing_by_position = {
+            assignment.position: assignment
+            for assignment in existing_result.scalars().all()
+        }
+
+        for position, target_color_id in alpha_targets.items():
+            assignment = existing_by_position.get(position)
+            if assignment is None:
+                self.db.add(
+                    FilamentColor(
+                        filament_id=filament_id,
+                        color_id=target_color_id,
+                        position=position,
+                    )
+                )
+            elif assignment.color_id == target_color_id:
+                continue
+            else:
+                assignment.color_id = target_color_id
+            result.color_assignments_repaired += 1
 
     async def _import_spools(
         self,

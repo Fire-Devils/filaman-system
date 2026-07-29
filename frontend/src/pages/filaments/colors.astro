@@ -67,12 +67,18 @@ import Layout from '../../layouts/Layout.astro'
               type="text"
               id="color-hex"
               required
-              pattern="^#[0-9a-fA-F]{6}$"
+              pattern="^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
               class="fm-input"
               placeholder="#000000"
               style="flex: 1;"
             />
           </div>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+            <label for="color-alpha" class="fm-label" data-i18n="filaments.colorOpacity" style="margin: 0; min-width: 54px;">Opacity</label>
+            <input type="range" id="color-alpha" min="0" max="100" value="100" style="flex: 1;" />
+            <span id="color-alpha-value" style="min-width: 44px; text-align: right; color: var(--text-muted);">100%</span>
+          </div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 6px 0 0;" data-i18n="filaments.colorHexSupport">Supports both #RRGGBB and #RRGGBBAA.</p>
         </div>
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
@@ -91,6 +97,7 @@ import Layout from '../../layouts/Layout.astro'
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { fetchAllPages } from '../../lib/api'
+    import { bindAlphaColorControls, normalizeHexCode, toCssColor } from '../../lib/colors'
     await initI18n()
 
     let colors: any[] = []
@@ -134,7 +141,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
-              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${c.hex_code}; border: 1px solid var(--border);"></span>
+              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${toCssColor(c.hex_code, c.hex_code)}; border: 1px solid var(--border);"></span>
               <span style="font-weight: 500;">${c.name}</span>
             </div>
           </td>
@@ -215,15 +222,12 @@ import Layout from '../../layouts/Layout.astro'
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('color-id') as HTMLInputElement
       const nameInput = document.getElementById('color-name') as HTMLInputElement
-      const hexInput = document.getElementById('color-hex') as HTMLInputElement
-      const picker = document.getElementById('color-picker') as HTMLInputElement
       const error = document.getElementById('modal-error')!
       
       title.textContent = id ? t('colors.editColor') : t('colors.addColor')
       idInput.value = id ? String(id) : ''
       nameInput.value = name
-      hexInput.value = hex
-      picker.value = hex
+      colorControls.reset(normalizeHexCode(hex) || '#000000')
       error.classList.add('hidden')
       
       container.classList.add('open')
@@ -237,19 +241,16 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     
-    // Sync picker and hex input
+    // Sync picker, opacity slider, and hex input
     const hexInput = document.getElementById('color-hex') as HTMLInputElement
     const picker = document.getElementById('color-picker') as HTMLInputElement
-    
-    hexInput.addEventListener('input', (e) => {
-      const val = (e.target as HTMLInputElement).value
-      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-        picker.value = val
-      }
-    })
-    
-    picker.addEventListener('input', (e) => {
-      hexInput.value = (e.target as HTMLInputElement).value
+    const alphaInput = document.getElementById('color-alpha') as HTMLInputElement
+    const alphaValue = document.getElementById('color-alpha-value') as HTMLSpanElement
+    const colorControls = bindAlphaColorControls({
+      picker,
+      hexInput,
+      alphaInput,
+      alphaValue,
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
@@ -257,7 +258,7 @@ import Layout from '../../layouts/Layout.astro'
       
       const id = (document.getElementById('color-id') as HTMLInputElement).value
       const name = (document.getElementById('color-name') as HTMLInputElement).value
-      const hex_code = (document.getElementById('color-hex') as HTMLInputElement).value
+      const hex_code = normalizeHexCode((document.getElementById('color-hex') as HTMLInputElement).value)
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       

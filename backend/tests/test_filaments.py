@@ -263,6 +263,34 @@ class TestColorCRUD:
         assert data["hex_code"] == "#00FF00"
 
     @pytest.mark.asyncio
+    async def test_create_color_normalizes_alpha_hex(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/colors",
+            json={"name": "Clear", "hex_code": "00ffffff"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Clear"
+        assert data["hex_code"] == "#00FFFFFF"
+
+    @pytest.mark.asyncio
+    async def test_create_color_preserves_legacy_non_hex_value(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/colors",
+            json={"name": "Legacy", "hex_code": "legacy"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["hex_code"] == "legacy"
+
+    @pytest.mark.asyncio
     async def test_get_color(self, auth_client, db_session):
         client, _ = auth_client
 

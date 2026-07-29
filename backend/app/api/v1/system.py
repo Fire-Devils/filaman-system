@@ -881,6 +881,7 @@ class SpoolmanImportResultResponse(BaseModel):
     locations_skipped: int
     colors_created: int
     colors_skipped: int
+    color_assignments_repaired: int
     filaments_created: int
     filaments_skipped: int
     spools_created: int

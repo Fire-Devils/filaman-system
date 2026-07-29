@@ -1,11 +1,12 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from app.api.v1.schemas_entity_extra_field import (
     EntityExtraFieldDefinitions,
     optional_entity_definitions_field,
 )
+from app.utils.colors import normalize_hex_color_if_valid
 
 # mypy does not support decorators stacked above @property.
 # pydantic still supports this usage at runtime.
@@ -79,11 +80,23 @@ class ColorCreate(BaseModel):
     hex_code: str
     custom_fields: dict[str, Any] | None = None
 
+    @field_validator("hex_code")
+    @classmethod
+    def validate_hex_code(cls, value: str) -> str:
+        return normalize_hex_color_if_valid(value)
+
 
 class ColorUpdate(BaseModel):
     name: str | None = None
     hex_code: str | None = None
     custom_fields: dict[str, Any] | None = None
+
+    @field_validator("hex_code")
+    @classmethod
+    def validate_hex_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_hex_color_if_valid(value)
 
 
 class ColorResponse(BaseModel):

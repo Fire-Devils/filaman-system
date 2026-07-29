@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
+from app.utils.colors import visible_rgb_hex_or_legacy
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> di
         )
         raw_hex = fc_result.scalar_one_or_none()
         if raw_hex:
-            color_hex = raw_hex.replace("#", "")[:6].upper()
+            color_hex = visible_rgb_hex_or_legacy(raw_hex).replace("#", "")
 
     # Hersteller
     brand = "Generic"
@@ -543,7 +544,7 @@ async def weigh_spool(
         )
         hex_code = fc_result.scalar_one_or_none()
         if hex_code:
-            base_color = hex_code.replace("#", "")[:6]
+            base_color = visible_rgb_hex_or_legacy(hex_code).replace("#", "")
     # Record Measurement
     principal = Principal(auth_type="device", device_id=device.id, scopes=device.scopes)
     
