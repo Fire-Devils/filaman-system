@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Filamentfarben unterstützen jetzt Transparenz: Der Farb-Hexcode kann als #RRGGBBAA gespeichert werden, mit einem eigenen Deckkraft-Regler und einer Live-Vorschau im Farbeditor. Ist keine Deckkraft gesetzt, bleibt die Farbe wie bisher als #RRGGBB gespeichert. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Beim Spoolman-Import können bestehende, per spoolman_id verknüpfte Filament-Farbzuordnungen gezielt auf ihre Transparenz repariert werden, ohne sonstige importierte Daten zu verändern. Das Ergebnis zeigt an, wie viele Zuordnungen repariert und wie viele RGBA-Farben dafür neu erstellt bzw. wiederverwendet wurden." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Filament colors now support transparency: the color hex code can be stored as #RRGGBBAA, with its own opacity slider and a live preview in the color editor. When no opacity is set, the color is still stored as #RRGGBB as before. (Contributed by akira69)" },
+          { "type": "feature", "text": "During Spoolman import, existing filament color assignments linked via spoolman_id can be selectively repaired for transparency without touching other imported data. The result reports how many assignments were repaired and how many RGBA colors were created or reused for it." }
+        ]
+      }
+    },
+    {
       "version": "1.2.35",
       "date": "",
       "changes": {
