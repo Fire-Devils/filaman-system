@@ -148,6 +148,7 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
+    import { toColorSwatchBackground } from '../../lib/colors'
     await initI18n()
 
     let currentPage = 1
@@ -525,7 +526,7 @@ import Layout from '../../layouts/Layout.astro'
       return colors.map(fc => {
         const c = fc.color
         if (!c) return ''
-        return `<span title="${fc.display_name_override || c.name}" style="display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle; margin-right: 2px;"></span>`
+        return `<span title="${fc.display_name_override || c.name}" style="display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 2px solid var(--border); vertical-align: middle; margin-right: 2px;"></span>`
       }).join('')
     }
 

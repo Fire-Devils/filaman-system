@@ -11,9 +11,10 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.models.base import Base, TimestampMixin, TZDateTime
+from app.utils.colors import normalize_hex_color_if_valid
 
 
 class Manufacturer(Base, TimestampMixin):
@@ -43,7 +44,7 @@ class Color(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    hex_code: Mapped[str] = mapped_column(String(7), nullable=False)
+    hex_code: Mapped[str] = mapped_column(String(9), nullable=False)
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     __table_args__ = (UniqueConstraint("name", "hex_code", name="uq_colors_name_hex"),)
@@ -51,6 +52,12 @@ class Color(Base, TimestampMixin):
     filament_colors: Mapped[list["FilamentColor"]] = relationship(
         back_populates="color"
     )
+
+    @validates("hex_code")
+    def _validate_hex_code(self, key: str, value: str | None) -> str:
+        if value is None:
+            raise ValueError("hex_code cannot be null")
+        return normalize_hex_color_if_valid(value)
 
 
 class Filament(Base, TimestampMixin):

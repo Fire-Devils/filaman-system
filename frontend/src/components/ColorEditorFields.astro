@@ -1,0 +1,51 @@
+---
+import ColorOpacityControls from './ColorOpacityControls.astro'
+
+interface Props {
+  idPrefix: string
+  defaultHex?: string
+  disabled?: boolean
+}
+
+const { idPrefix, defaultHex = '#000000', disabled = false } = Astro.props
+const nameId = `${idPrefix}-name`
+const pickerId = `${idPrefix}-picker`
+const hexId = `${idPrefix}-hex`
+---
+
+<div class="fm-color-editor-fields">
+  <div>
+    <label for={nameId} class="fm-label" data-i18n="filaments.colorNameLabel">Name *</label>
+    <input
+      type="text"
+      id={nameId}
+      required
+      disabled={disabled}
+      placeholder="e.g. Red"
+      data-i18n-placeholder="filaments.colorNamePlaceholder"
+      class="fm-input"
+    />
+  </div>
+
+  <div class="fm-color-editor-value-row">
+    <div class="fm-color-editor-picker">
+      <label for={pickerId} class="fm-label" data-i18n="filaments.colorPickerLabel">Color</label>
+      <input type="color" id={pickerId} value={defaultHex} disabled={disabled} />
+    </div>
+    <div class="fm-color-editor-hex">
+      <label for={hexId} class="fm-label" data-i18n="colors.hexCode">Hex Code</label>
+      <input
+        type="text"
+        id={hexId}
+        value={defaultHex}
+        required
+        disabled={disabled}
+        pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        placeholder={defaultHex}
+        class="fm-input"
+      />
+    </div>
+  </div>
+
+  <ColorOpacityControls idPrefix={idPrefix} disabled={disabled} />
+</div>

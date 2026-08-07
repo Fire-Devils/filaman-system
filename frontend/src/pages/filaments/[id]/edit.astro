@@ -1,4 +1,5 @@
 ---
+import InlineColorEditor from '../../../components/InlineColorEditor.astro'
 import Layout from '../../../layouts/Layout.astro'
 
 export function getStaticPaths() {
@@ -174,26 +175,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
           <div id="color-grid" class="fm-color-grid" style="max-height: 160px; overflow-y: auto; padding: 8px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);">
             <p style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="common.loading">Loading...</p>
           </div>
-          <!-- Inline new color form -->
-          <div id="new-color-toggle" style="margin-top: 8px;">
-            <button type="button" id="btn-add-new-color" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 6px 14px;">
-              + <span data-i18n="filaments.addNewColor">Add New Color</span>
-            </button>
-          </div>
-          <div id="new-color-form" class="fm-inline-color-form hidden">
-            <div>
-              <label class="fm-label" data-i18n="filaments.colorPickerLabel">Color</label>
-              <input type="color" id="new-color-hex" value="#FF0000" style="width: 44px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-soft); cursor: pointer;" />
-            </div>
-            <div>
-              <label class="fm-label" data-i18n="filaments.colorNameLabel">Name *</label>
-              <input type="text" id="new-color-name" placeholder="e.g. Red" data-i18n-placeholder="filaments.colorNamePlaceholder" class="fm-input" />
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-save-new-color" class="fm-btn fm-btn-primary" style="font-size: 0.8rem; padding: 8px 14px;" data-i18n="common.save">Save</button>
-              <button type="button" id="btn-cancel-new-color" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 8px 14px;" data-i18n="common.cancel">Cancel</button>
-            </div>
-          </div>
+          <InlineColorEditor />
         </div>
         
         <!-- Manufacturer Color Name -->
@@ -377,6 +359,8 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     import { cachedFetchAllPages, cachedFetch, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../../lib/filamentdb-lookup'
+    import { toColorSwatchBackground } from '../../../lib/colors'
+    import { bindInlineColorEditor } from '../../../lib/inline-color-editor'
     await initI18n()
 
     const filamentDbActive = await checkFilamentDbActive()
@@ -446,12 +430,17 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
     const selectedColorsContainer = document.getElementById('selected-colors') as HTMLDivElement
     const colorHint = document.getElementById('color-hint') as HTMLParagraphElement
     const multiColorOptions = document.getElementById('multi-color-options') as HTMLDivElement
-    const newColorForm = document.getElementById('new-color-form') as HTMLDivElement
-    const btnAddNewColor = document.getElementById('btn-add-new-color') as HTMLButtonElement
-    const btnSaveNewColor = document.getElementById('btn-save-new-color') as HTMLButtonElement
-    const btnCancelNewColor = document.getElementById('btn-cancel-new-color') as HTMLButtonElement
-    const newColorHex = document.getElementById('new-color-hex') as HTMLInputElement
-    const newColorName = document.getElementById('new-color-name') as HTMLInputElement
+    bindInlineColorEditor({
+      getAbortSignal,
+      getCsrfToken,
+      isAbortError,
+      translate: t,
+      onCreated: (newColor) => {
+        allColors.push(newColor)
+        invalidateCachePrefix(CACHE_KEYS.COLORS)
+        toggleColor(newColor.id)
+      },
+    })
     
     // Custom Fields
     const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLDivElement
@@ -630,7 +619,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
           renderItem: (item: any) => {
             const mat = item.material?.key || ''
             const colors = (item.colors || [])
-              .map((c: any) => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${c.hex_code};border:1px solid var(--border);vertical-align:middle;"></span>`)
+              .map((c: any) => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${toColorSwatchBackground(c.hex_code)};border:1px solid var(--border);vertical-align:middle;"></span>`)
               .join(' ')
             const weight = item.nominal_weight_g ? ` · ${item.nominal_weight_g}g` : ''
             const hasSpool = !!item.spool_profile
@@ -869,7 +858,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         const swatch = document.createElement('button')
         swatch.type = 'button'
         swatch.className = `fm-color-swatch ${isSelected ? 'selected' : ''}`
-        swatch.style.backgroundColor = c.hex_code
+        swatch.style.background = toColorSwatchBackground(c.hex_code)
         swatch.title = `${c.name} (${c.hex_code})`
         swatch.addEventListener('click', () => toggleColor(c.id))
         colorGrid.appendChild(swatch)
@@ -905,7 +894,7 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         const entry = document.createElement('div')
         entry.className = 'fm-color-entry'
         entry.innerHTML = `
-          <span class="fm-color-swatch-lg" style="background-color: ${color.hex_code};"></span>
+          <span class="fm-color-swatch-lg" style="background: ${toColorSwatchBackground(color.hex_code)};"></span>
           <span style="font-size: 0.85rem; color: var(--text);">${color.name}</span>
           <span style="font-size: 0.75rem; color: var(--text-muted);">${color.hex_code}</span>
           ${getColorMode() === 'multi' ? `<span style="font-size: 0.75rem; color: var(--text-muted);">#${idx + 1}</span>` : ''}
@@ -924,59 +913,6 @@ const backHref = id === 'detail' ? '/filaments' : `/filaments/${id}`
         })
       })
     }
-
-    // ── New color form ──
-    btnAddNewColor.addEventListener('click', () => {
-      newColorForm.classList.remove('hidden')
-      btnAddNewColor.parentElement!.classList.add('hidden')
-      newColorName.focus()
-    })
-
-    btnCancelNewColor.addEventListener('click', () => {
-      newColorForm.classList.add('hidden')
-      btnAddNewColor.parentElement!.classList.remove('hidden')
-      newColorName.value = ''
-    })
-
-    btnSaveNewColor.addEventListener('click', async () => {
-      const name = newColorName.value.trim()
-      const hex = newColorHex.value
-      if (!name) { newColorName.focus(); return }
-
-      btnSaveNewColor.disabled = true
-      try {
-        const response = await fetch('/api/v1/colors', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': getCsrfToken(),
-          },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ name, hex_code: hex }),
-        })
-        if (!response.ok) {
-          const err = await response.json()
-          throw new Error(err.detail?.message || t('filaments.failedCreateColor'))
-        }
-        const newColor = await response.json()
-        allColors.push(newColor)
-        invalidateCachePrefix(CACHE_KEYS.COLORS)
-        // Auto-select the new color
-        toggleColor(newColor.id)
-        // Reset form
-        newColorName.value = ''
-        newColorForm.classList.add('hidden')
-        btnAddNewColor.parentElement!.classList.remove('hidden')
-      } catch (error: any) {
-        if (isAbortError(error)) return
-        const dialog = (window as any).__fmAlert
-        if (dialog) await dialog(error.message)
-        else alert(error.message)
-      } finally {
-        btnSaveNewColor.disabled = false
-      }
-    })
 
     // ── CSRF ──
     function getCsrfToken(): string {

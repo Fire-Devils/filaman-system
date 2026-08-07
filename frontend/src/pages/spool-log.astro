@@ -47,6 +47,7 @@ import Layout from '../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
+    import { toColorSwatchBackground } from '../lib/colors'
 
     await initI18n()
 
@@ -135,7 +136,7 @@ import Layout from '../layouts/Layout.astro'
         const hex = normalizeHexColor(c.hex_code)
         if (!hex) return ''
         const title = escapeHtml(c.name || '')
-        return `<span title="${title}" style="display: inline-block; width: 18px; height: 18px; border-radius: 50%; background-color: ${hex}; border: 2px solid var(--border); vertical-align: middle; margin-right: 6px;"></span>`
+        return `<span title="${title}" style="display: inline-block; width: 18px; height: 18px; border-radius: 50%; background: ${toColorSwatchBackground(hex)}; border: 2px solid var(--border); vertical-align: middle; margin-right: 6px;"></span>`
       }).join('')
     }
 

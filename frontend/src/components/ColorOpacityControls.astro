@@ -1,0 +1,92 @@
+---
+interface Props {
+  idPrefix: string
+  disabled?: boolean
+}
+
+const { idPrefix, disabled = false } = Astro.props
+const enabledId = `${idPrefix}-alpha-enabled`
+const optionsId = `${idPrefix}-alpha-options`
+const sliderId = `${idPrefix}-alpha`
+const valueId = `${idPrefix}-alpha-value`
+const hexId = `${idPrefix}-alpha-hex`
+const previewId = `${idPrefix}-alpha-preview`
+---
+
+<label
+  for={enabledId}
+  class="fm-label fm-opacity-toggle"
+>
+  <input type="checkbox" id={enabledId} disabled={disabled} style="accent-color: var(--accent);" />
+  <span data-i18n="filaments.colorOpacityEnabled">Opacity</span>
+</label>
+<div id={optionsId} class="fm-opacity-options hidden">
+  <div class="fm-opacity-control-row">
+    <label class="fm-opacity-preview">
+      <span data-i18n="filaments.colorOpacityPreview">Preview</span>
+      <span
+        id={previewId}
+        aria-hidden="true"
+      ></span>
+    </label>
+
+    <div class="fm-opacity-slider">
+      <div class="fm-opacity-slider-endpoints" aria-hidden="true">
+        <span>0%</span>
+        <span>100%</span>
+      </div>
+      <label for={sliderId} class="fm-visually-hidden" data-i18n="filaments.colorOpacityPercentLabel">
+        Opacity percentage
+      </label>
+      <input
+        type="range"
+        id={sliderId}
+        min="0"
+        max="100"
+        value="100"
+        disabled={disabled}
+      />
+      <div class="fm-opacity-slider-endpoints" aria-hidden="true">
+        <span>#00</span>
+        <span>#FF</span>
+      </div>
+    </div>
+
+    <div class="fm-opacity-values">
+      <label for={valueId} class="fm-visually-hidden" data-i18n="filaments.colorOpacityPercentLabel">
+        Opacity percentage
+      </label>
+      <input
+        type="number"
+        id={valueId}
+        min="0"
+        max="100"
+        step="1"
+        value="100"
+        inputmode="numeric"
+        disabled={disabled}
+        class="fm-input fm-opacity-value-input"
+      />
+      <span aria-hidden="true">%</span>
+      <label for={hexId} class="fm-visually-hidden" data-i18n="filaments.colorOpacityHexLabel">
+        Opacity hex value
+      </label>
+      <input
+        type="text"
+        id={hexId}
+        value="FF"
+        maxlength="2"
+        pattern="[0-9a-fA-F]{2}"
+        inputmode="text"
+        disabled={disabled}
+        class="fm-input fm-opacity-value-input"
+      />
+      <span data-i18n="filaments.colorOpacityHexByte">Hex(AA)</span>
+    </div>
+  </div>
+  <p class="fm-opacity-note" data-i18n="filaments.colorOpacityHint">
+    Opacity Enabled: Color Hex will be stored as #RRGGBBAA (#AA defines opacity)
+    <br />
+    Disable opacity to store color hex as #RRGGBB only
+  </p>
+</div>

@@ -25,6 +25,7 @@ from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
 from app.plugins.base import BaseDriver
 from app.core.event_bus import event_bus
 from app.services.plugin_service import PLUGINS_DIR as USER_PLUGINS_DIR
+from app.utils.colors import visible_rgb_hex_or_legacy
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,9 @@ class PluginManager:
             if filament.filament_colors:
                 first_color = filament.filament_colors[0].color
                 if first_color and first_color.hex_code:
-                    meta["tray_color"] = first_color.hex_code.replace("#", "")[:6]
+                    meta["tray_color"] = visible_rgb_hex_or_legacy(
+                        first_color.hex_code
+                    ).replace("#", "")
         return meta
 
     async def _handle_slots_update(

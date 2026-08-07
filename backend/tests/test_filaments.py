@@ -1,7 +1,6 @@
 import pytest
-from sqlalchemy import select
-
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
+from sqlalchemy import select
 
 
 async def _create_manufacturer(db_session, name: str = "Test Manufacturer", **kwargs) -> Manufacturer:
@@ -261,6 +260,51 @@ class TestColorCRUD:
         data = response.json()
         assert data["name"] == "Green"
         assert data["hex_code"] == "#00FF00"
+
+    @pytest.mark.asyncio
+    async def test_create_color_normalizes_alpha_hex(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/colors",
+            json={"name": "Clear", "hex_code": "00ffffff"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Clear"
+        assert data["hex_code"] == "#00FFFFFF"
+
+    @pytest.mark.asyncio
+    async def test_create_color_preserves_legacy_non_hex_value(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/colors",
+            json={"name": "Legacy", "hex_code": "legacy"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["hex_code"] == "legacy"
+
+    @pytest.mark.asyncio
+    async def test_update_color_rejects_explicit_null(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        color = await _create_color(db_session, name="Strict", hex_code="#123456")
+
+        response = await client.patch(
+            f"/api/v1/colors/{color.id}",
+            json={"hex_code": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+        await db_session.refresh(color)
+        assert color.hex_code == "#123456"
 
     @pytest.mark.asyncio
     async def test_get_color(self, auth_client, db_session):

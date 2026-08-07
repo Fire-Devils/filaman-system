@@ -100,6 +100,7 @@ const { id } = Astro.params
       renderUnregisteredExtraFieldRows,
     } from '../../../lib/entity-extra-fields'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
+    import { toColorSwatchBackground } from '../../../lib/colors'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
@@ -202,7 +203,7 @@ const { id } = Astro.params
         if (!c) return ''
         const label = fc.display_name_override || c.name
         return `<span style="display: inline-flex; align-items: center; gap: 6px; margin-right: 10px;">
-          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${c.hex_code}; border: 2px solid var(--border); vertical-align: middle;"></span>
+          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 2px solid var(--border); vertical-align: middle;"></span>
           <span>${label}</span>
         </span>`
       }).join('')

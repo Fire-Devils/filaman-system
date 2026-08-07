@@ -1,4 +1,5 @@
 ---
+import ColorEditorFields from '../../components/ColorEditorFields.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
@@ -38,42 +39,11 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
+    <div class="fm-card" style="width: 100%; max-width: 40rem; margin: 0 1rem; padding: 24px;">
       <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="colors.addColor">Add Color</h3>
       <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
         <input type="hidden" id="color-id" />
-        <div>
-          <label for="color-name" class="fm-label">
-            <span data-i18n="colors.name">Name</span> *
-          </label>
-          <input
-            type="text"
-            id="color-name"
-            required
-            class="fm-input"
-          />
-        </div>
-        <div>
-          <label for="color-hex" class="fm-label" data-i18n="colors.hexCode">
-            Hex Code
-          </label>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <input
-              type="color"
-              id="color-picker"
-              style="width: 42px; height: 42px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; background: none;"
-            />
-            <input
-              type="text"
-              id="color-hex"
-              required
-              pattern="^#[0-9a-fA-F]{6}$"
-              class="fm-input"
-              placeholder="#000000"
-              style="flex: 1;"
-            />
-          </div>
-        </div>
+        <ColorEditorFields idPrefix="color" />
         <div id="modal-error" class="fm-alert-error hidden"></div>
         <div style="display: flex; gap: 12px;">
           <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
@@ -91,6 +61,8 @@ import Layout from '../../layouts/Layout.astro'
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { fetchAllPages } from '../../lib/api'
+    import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
+    import { escapeHtml } from '../../lib/extra-fields'
     await initI18n()
 
     let colors: any[] = []
@@ -134,27 +106,27 @@ import Layout from '../../layouts/Layout.astro'
         <tr>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
-              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${c.hex_code}; border: 1px solid var(--border);"></span>
-              <span style="font-weight: 500;">${c.name}</span>
+              <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 1px solid var(--border);"></span>
+              <span style="font-weight: 500;">${escapeHtml(c.name)}</span>
             </div>
           </td>
-          <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${c.hex_code.toUpperCase()}</td>
+          <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${escapeHtml(String(c.hex_code).toUpperCase())}</td>
           <td style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">
             ${t('colors.usedIn', { count: c.usage_count })}
           </td>
           <td style="padding: 12px; text-align: right;">
             <button 
-              data-id="${c.id}" 
-              data-name="${c.name}" 
-              data-hex="${c.hex_code}" 
+              data-id="${escapeHtml(String(c.id))}"
+              data-name="${escapeHtml(c.name)}"
+              data-hex="${escapeHtml(c.hex_code)}"
               class="btn-edit" 
               style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;"
             >
               ${t('common.edit')}
             </button>
             <button 
-              data-id="${c.id}" 
-              data-usage="${c.usage_count}"
+              data-id="${escapeHtml(String(c.id))}"
+              data-usage="${escapeHtml(String(c.usage_count))}"
               class="btn-delete" 
               style="color: ${c.usage_count > 0 ? 'var(--text-muted)' : 'var(--error-text)'}; background: none; border: none; cursor: ${c.usage_count > 0 ? 'not-allowed' : 'pointer'};"
               ${c.usage_count > 0 ? `title="${t('colors.inUseWarning')}"` : ''}
@@ -215,15 +187,12 @@ import Layout from '../../layouts/Layout.astro'
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('color-id') as HTMLInputElement
       const nameInput = document.getElementById('color-name') as HTMLInputElement
-      const hexInput = document.getElementById('color-hex') as HTMLInputElement
-      const picker = document.getElementById('color-picker') as HTMLInputElement
       const error = document.getElementById('modal-error')!
       
       title.textContent = id ? t('colors.editColor') : t('colors.addColor')
       idInput.value = id ? String(id) : ''
       nameInput.value = name
-      hexInput.value = hex
-      picker.value = hex
+      colorControls.reset(normalizeHexCode(hex) || '#000000')
       error.classList.add('hidden')
       
       container.classList.add('open')
@@ -237,19 +206,24 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     
-    // Sync picker and hex input
+    // Sync picker, opacity slider, and hex input
     const hexInput = document.getElementById('color-hex') as HTMLInputElement
     const picker = document.getElementById('color-picker') as HTMLInputElement
-    
-    hexInput.addEventListener('input', (e) => {
-      const val = (e.target as HTMLInputElement).value
-      if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-        picker.value = val
-      }
-    })
-    
-    picker.addEventListener('input', (e) => {
-      hexInput.value = (e.target as HTMLInputElement).value
+    const alphaEnabled = document.getElementById('color-alpha-enabled') as HTMLInputElement
+    const alphaOptions = document.getElementById('color-alpha-options') as HTMLDivElement
+    const alphaPreview = document.getElementById('color-alpha-preview') as HTMLSpanElement
+    const alphaInput = document.getElementById('color-alpha') as HTMLInputElement
+    const alphaValue = document.getElementById('color-alpha-value') as HTMLInputElement
+    const alphaHex = document.getElementById('color-alpha-hex') as HTMLInputElement
+    const colorControls = bindAlphaColorControls({
+      picker,
+      hexInput,
+      alphaEnabled,
+      alphaOptions,
+      alphaPreview,
+      alphaInput,
+      alphaValueInput: alphaValue,
+      alphaHexInput: alphaHex,
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
@@ -257,7 +231,7 @@ import Layout from '../../layouts/Layout.astro'
       
       const id = (document.getElementById('color-id') as HTMLInputElement).value
       const name = (document.getElementById('color-name') as HTMLInputElement).value
-      const hex_code = (document.getElementById('color-hex') as HTMLInputElement).value
+      const hex_code = normalizeHexCode((document.getElementById('color-hex') as HTMLInputElement).value)
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
