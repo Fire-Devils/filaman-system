@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Ein per Docker-Neustart unterbrochener Migrationslauf konnte beim erneuten Upgrade-Versuch mit \"table _alembic_tmp_colors already exists\" fehlschlagen. Die Migration bereinigt jetzt eine eventuell zurückgebliebene Arbeitstabelle, bevor sie erneut ausgeführt wird." }
+        ],
+        "en": [
+          { "type": "fix", "text": "An upgrade run interrupted by a Docker restart could fail on retry with \"table _alembic_tmp_colors already exists\". The migration now cleans up any leftover work table before running again." }
+        ]
+      }
+    },
+    {
       "version": "1.2.36",
       "date": "",
       "changes": {

@@ -28,6 +28,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # A previous interrupted run (e.g. container restarted mid-migration)
+    # may have left this SQLite batch-mode work table behind.
+    op.execute(sa.text("DROP TABLE IF EXISTS _alembic_tmp_colors"))
     with op.batch_alter_table("colors", schema=None) as batch_op:
         batch_op.alter_column(
             "hex_code",
@@ -157,6 +160,9 @@ def downgrade() -> None:
             "WHERE length(hex_code) > 7"
         )
     )
+    # A previous interrupted run (e.g. container restarted mid-migration)
+    # may have left this SQLite batch-mode work table behind.
+    op.execute(sa.text("DROP TABLE IF EXISTS _alembic_tmp_colors"))
     with op.batch_alter_table("colors", schema=None) as batch_op:
         batch_op.alter_column(
             "hex_code",
