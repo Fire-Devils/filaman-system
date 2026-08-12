@@ -8,6 +8,7 @@ Create Date: 2026-04-07 16:20:00.000000
 
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from alembic import op
@@ -49,6 +50,8 @@ def _repair_imported_spoolman_colors() -> None:
         sa.column("id", sa.Integer),
         sa.column("name", sa.String),
         sa.column("hex_code", sa.String),
+        sa.column("created_at", sa.DateTime),
+        sa.column("updated_at", sa.DateTime),
     )
     filaments = sa.table(
         "filaments",
@@ -118,10 +121,13 @@ def _repair_imported_spoolman_colors() -> None:
                 )
             ).scalar_one_or_none()
         if replacement_id is None:
+            now = datetime.now(UTC)
             connection.execute(
                 colors.insert().values(
                     name=color_name,
                     hex_code=replacement,
+                    created_at=now,
+                    updated_at=now,
                 )
             )
             replacement_id = connection.execute(

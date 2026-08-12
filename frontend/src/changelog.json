@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Die Migration für Farbtransparenz konnte beim Reparieren Spoolman-importierter Filamentfarben mit \"NOT NULL constraint failed: colors.created_at\" abbrechen, weil neu angelegte Farben ohne Zeitstempel eingefügt wurden. Die Migration setzt jetzt Erstellungs- und Änderungszeitpunkt korrekt." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The color transparency migration could fail with \"NOT NULL constraint failed: colors.created_at\" while repairing Spoolman-imported filament colors, because newly created colors were inserted without timestamps. The migration now sets the created/updated timestamps correctly." }
+        ]
+      }
+    },
+    {
       "version": "1.2.37",
       "date": "",
       "changes": {
