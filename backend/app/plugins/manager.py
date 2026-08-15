@@ -297,13 +297,24 @@ class PluginManager:
                     printer_slots = slot_result.scalars().all()
 
                     active_slot: PrinterSlot | None = None
-                    for slot in printer_slots:
-                        slot_index = (slot.custom_fields or {}).get("slot_index")
-                        if slot_index == "0-0":
-                            active_slot = slot
-                            break
-                    if active_slot is None and printer_slots:
-                        active_slot = printer_slots[0]
+                    if len(printer_slots) > 1:
+                        # A printer-wide active spool means "loaded in the toolhead"
+                        # and cannot name a slot, so on AMS/MMU printers stamping it
+                        # into 0-0 would overwrite that slot's real assignment.
+                        # Callers passing an empty slot list (driver_health refresh,
+                        # driver startup) reach here on every poll.
+                        logger.debug(
+                            f"Skipping active-spool fallback for printer {printer_id}: "
+                            f"{len(printer_slots)} slots, active spool names none of them"
+                        )
+                    else:
+                        for slot in printer_slots:
+                            slot_index = (slot.custom_fields or {}).get("slot_index")
+                            if slot_index == "0-0":
+                                active_slot = slot
+                                break
+                        if active_slot is None and printer_slots:
+                            active_slot = printer_slots[0]
 
                     if active_slot is not None:
                         assignment = active_slot.assignment
