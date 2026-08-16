@@ -26,6 +26,7 @@ from app.core.cache import response_cache
 from app.core.config import settings
 from app.core.seeds import BUILTIN_PLUGINS, DEPRECATED_PLUGINS
 from app.core.shared_health import shared_health_store
+from app.core.worker_reload import request_worker_reload
 from app.models import (
     AppSettings,
     Color,
@@ -546,6 +547,10 @@ async def install_from_registry(
         from app.api.v1.router import mount_plugin_router_on_app
 
         mount_plugin_router_on_app(request.app, plugin.plugin_key)
+        # mount_plugin_router_on_app() only patches the current worker's
+        # routes — reload all Gunicorn workers so the route is consistently
+        # available regardless of which worker handles the next request.
+        request_worker_reload()
 
     # Caches invalidieren (Plugin-Status hat sich geaendert)
     _invalidate_version_cache()
@@ -653,6 +658,10 @@ async def install_plugin(
         from app.api.v1.router import mount_plugin_router_on_app
 
         mount_plugin_router_on_app(request.app, plugin.plugin_key)
+        # mount_plugin_router_on_app() only patches the current worker's
+        # routes — reload all Gunicorn workers so the route is consistently
+        # available regardless of which worker handles the next request.
+        request_worker_reload()
 
     # Caches invalidieren (Plugin-Status hat sich geaendert)
     _invalidate_version_cache()
@@ -739,6 +748,13 @@ async def uninstall_plugin(
                 "message": str(e),
             },
         )
+
+    # Fuer Import-/Integration-Plugins bleibt der Router sonst in jedem Worker
+    # gemountet, der ihn zuvor dynamisch geladen hat — Worker-Reload erzwingt
+    # den konsistenten Kaltstart-Pfad (Plugin-Verzeichnis ist bereits geloescht,
+    # also wird die Route ueberall entfernt).
+    if plugin_info and plugin_info.plugin_type in ("import", "integration"):
+        request_worker_reload()
 
     # Caches invalidieren (Plugin entfernt)
     _invalidate_version_cache()
