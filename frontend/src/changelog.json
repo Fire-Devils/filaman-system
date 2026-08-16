@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Nach der Installation, Aktualisierung oder Deinstallation eines Import-/Integration-Plugins (z. B. der Spoolman-API) war die betroffene Route je nach Backend-Prozess nur zufällig erreichbar – identische Anfragen lieferten abwechselnd 200 und 404, bis der Container neu gestartet wurde. Das Backend gleicht die Routen jetzt automatisch über alle Backend-Prozesse ab, sodass sie nach jeder Plugin-Änderung sofort und konsistent verfügbar sind." }
+        ],
+        "en": [
+          { "type": "fix", "text": "After installing, updating, or removing an import/integration plugin (e.g. the Spoolman API), the affected route was only reachable on some backend processes, causing identical requests to randomly return 200 or 404 until the container was restarted. The backend now automatically synchronizes routes across all backend processes, making them immediately and consistently available after every plugin change." }
+        ]
+      }
+    },
+    {
       "version": "1.2.39",
       "date": "",
       "changes": {
