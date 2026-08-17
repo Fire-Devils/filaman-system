@@ -819,7 +819,14 @@ class PluginManager:
         if driver_key == "bambulab":
             RENAME_KEYS["bambu_idx"] = "bambu_tray_idx"  # spoolman-specific rename
 
-        KEEP_IN_CUSTOM_FIELDS: set[str] = set()  # Nothing kept
+        KEEP_IN_CUSTOM_FIELDS: set[str] = {
+            # Bambuddy profile metadata — not printer calibration params.
+            "bambu_profile_base_name",
+            "bambu_profiles_by_model",
+            "bambu_slicer_filament",
+            "bambu_slicer_filament_name",
+            "bambu_color_name",
+        }
 
         async with async_session_maker() as db:
             # Find all active printers for this driver
