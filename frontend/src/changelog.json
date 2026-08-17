@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Bei mehreren aktiven Druckern flackerte der Verbindungsstatus eines Druckers zwischen \"verbunden\" und \"getrennt\", während ein anderer stabil blieb. Ursache war der geteilte Health-Status zwischen den Backend-Prozessen: Eine Statusabfrage für einen Drucker löschte dabei versehentlich die zuletzt bekannten Daten aller anderen Drucker. Statusaktualisierungen werden jetzt zusammengeführt statt sich gegenseitig zu überschreiben." }
+        ],
+        "en": [
+          { "type": "fix", "text": "With multiple active printers, one printer's connection status could flap between \"connected\" and \"disconnected\" while another stayed stable. This was caused by the health status shared between backend processes: a status check for one printer would inadvertently wipe out the last known data for all other printers. Status updates are now merged instead of overwriting each other." }
+        ]
+      }
+    },
+    {
       "version": "1.2.40",
       "date": "",
       "changes": {
