@@ -114,3 +114,46 @@ def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch
         assert sa.inspect(connection).get_columns("colors")[2]["type"].length == 7
 
     engine.dispose()
+
+
+def test_upgrade_survives_leftover_batch_temp_table(tmp_path):
+    """An interrupted previous run can leave `_alembic_tmp_colors` behind."""
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    metadata = sa.MetaData()
+    colors = sa.Table(
+        "colors",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("name", sa.String(100), nullable=False),
+        sa.Column("hex_code", sa.String(7), nullable=False),
+    )
+    filaments = sa.Table(
+        "filaments",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("custom_fields", sa.JSON, nullable=True),
+    )
+    filament_colors = sa.Table(
+        "filament_colors",
+        metadata,
+        sa.Column("filament_id", sa.Integer, nullable=False),
+        sa.Column("color_id", sa.Integer, nullable=False),
+    )
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            colors.insert(), [{"id": 1, "name": "Basic White", "hex_code": "#FFFFFF"}]
+        )
+        connection.execute(
+            sa.text("CREATE TABLE _alembic_tmp_colors (id INTEGER)")
+        )
+
+        migration = load_migration_module()
+        operations = Operations(MigrationContext.configure(connection))
+        migration.op = operations
+
+        migration.upgrade()
+        assert sa.inspect(connection).get_columns("colors")[2]["type"].length == 9
+
+    engine.dispose()

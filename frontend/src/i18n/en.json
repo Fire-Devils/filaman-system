@@ -629,6 +629,7 @@
     "configuration": "Configuration",
     "editConfig": "Edit Configuration",
     "noConfig": "No configuration set",
+    "configReadOnly": "Shown read-only and kept unchanged when saving",
     "configSaved": "Configuration saved",
     "failedLoad": "Failed to load printers",
     "failedSave": "Failed to save printer",

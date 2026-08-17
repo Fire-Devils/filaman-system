@@ -630,6 +630,7 @@
     "configuration": "Konfiguration",
     "editConfig": "Konfiguration bearbeiten",
     "noConfig": "Keine Konfiguration hinterlegt",
+    "configReadOnly": "Wird hier nur angezeigt und beim Speichern unverändert übernommen",
     "configSaved": "Konfiguration gespeichert",
     "failedLoad": "Drucker konnten nicht geladen werden",
     "failedSave": "Drucker konnte nicht gespeichert werden",

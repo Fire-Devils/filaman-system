@@ -81,17 +81,35 @@ class SharedHealthStore:
     # -- public API -----------------------------------------------------
 
     def publish(self, health: dict[int, dict[str, Any]]) -> None:
-        """Write health data for all printers into shared memory.
+        """Merge health data for one or more printers into shared memory.
 
-        Should only be called by the primary worker.  Keys are printer
-        IDs (ints), values are health dicts (``{"running": …, …}``).
+        Callers may pass a full snapshot (all printers) or just the
+        printer(s) they have fresh data for — existing entries for other
+        printers are preserved rather than being wiped out.
         """
         shm = self._ensure_shm(create=True)
         if shm is None:
             return
 
-        # Convert int keys to strings for JSON
-        payload = json.dumps({str(k): v for k, v in health.items()}).encode()
+        current = self._read_raw(shm) or {}
+        current.update({str(k): v for k, v in health.items()})
+        self._write(shm, current)
+
+    def _read_raw(self, shm: shared_memory.SharedMemory) -> dict[str, Any] | None:
+        """Read the raw (string-keyed) payload, ignoring staleness."""
+        try:
+            buf = shm.buf
+            (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
+            if length == 0 or length > _SHM_SIZE - _HEADER_SIZE - _TS_SIZE:
+                return None
+            payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
+            return json.loads(payload_bytes)
+        except Exception:
+            logger.debug("SharedHealthStore: failed to read raw payload", exc_info=True)
+            return None
+
+    def _write(self, shm: shared_memory.SharedMemory, payload_dict: dict[str, Any]) -> None:
+        payload = json.dumps(payload_dict).encode()
         ts = time.time()
 
         total = _HEADER_SIZE + len(payload) + _TS_SIZE
@@ -167,11 +185,15 @@ class SharedHealthStore:
 
     def clear(self, printer_id: int) -> None:
         """Remove a printer from shared health (e.g. after stop)."""
-        current = self.read_all()
+        shm = self._ensure_shm(create=False)
+        if shm is None:
+            return
+        current = self._read_raw(shm)
         if current is None:
             return
-        current.pop(printer_id, None)
-        self.publish(current)
+        if current.pop(str(printer_id), None) is None:
+            return
+        self._write(shm, current)
 
     def cleanup(self) -> None:
         """Close and unlink the shared-memory block.

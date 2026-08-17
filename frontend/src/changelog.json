@@ -1,6 +1,68 @@
 {
   "versions": [
     {
+      "version": "1.2.41",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Bei mehreren aktiven Druckern flackerte der Verbindungsstatus eines Druckers zwischen \"verbunden\" und \"getrennt\", während ein anderer stabil blieb. Ursache war der geteilte Health-Status zwischen den Backend-Prozessen: Eine Statusabfrage für einen Drucker löschte dabei versehentlich die zuletzt bekannten Daten aller anderen Drucker. Statusaktualisierungen werden jetzt zusammengeführt statt sich gegenseitig zu überschreiben." }
+        ],
+        "en": [
+          { "type": "fix", "text": "With multiple active printers, one printer's connection status could flap between \"connected\" and \"disconnected\" while another stayed stable. This was caused by the health status shared between backend processes: a status check for one printer would inadvertently wipe out the last known data for all other printers. Status updates are now merged instead of overwriting each other." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.40",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Nach der Installation, Aktualisierung oder Deinstallation eines Import-/Integration-Plugins (z. B. der Spoolman-API) war die betroffene Route je nach Backend-Prozess nur zufällig erreichbar – identische Anfragen lieferten abwechselnd 200 und 404, bis der Container neu gestartet wurde. Das Backend gleicht die Routen jetzt automatisch über alle Backend-Prozesse ab, sodass sie nach jeder Plugin-Änderung sofort und konsistent verfügbar sind." }
+        ],
+        "en": [
+          { "type": "fix", "text": "After installing, updating, or removing an import/integration plugin (e.g. the Spoolman API), the affected route was only reachable on some backend processes, causing identical requests to randomly return 200 or 404 until the container was restarted. The backend now automatically synchronizes routes across all backend processes, making them immediately and consistently available after every plugin change." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.39",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Bei Druckern mit mehreren Slots (AMS/MMU) wurde die aktuell geladene Spule fortlaufend in den ersten Slot geschrieben und überschrieb dessen echte Zuordnung, sodass dieselbe Spule in zwei Slots erschien. Ausgelöst wurde das durch die regelmäßige Statusabfrage der Druckerseite. Die druckerweite \"aktive Spule\" wird jetzt nur noch bei Druckern mit einem einzigen Slot übernommen, wo sie den Slot eindeutig benennt." },
+          { "type": "fix", "text": "Im Formular für die Treiber-Konfiguration wurden Einstellungen mit Listen- oder Objektwerten als \"[object Object]\" angezeigt und beim Speichern durch genau diesen Text ersetzt — die Einstellung ging verloren, auch wenn nur ein anderes Feld geändert wurde. Solche Werte werden jetzt lesbar dargestellt und beim Speichern unverändert übernommen. Ja/Nein-Einstellungen erscheinen jetzt als Auswahlkästchen statt als Textfeld." }
+        ],
+        "en": [
+          { "type": "fix", "text": "On printers with multiple slots (AMS/MMU), the currently loaded spool was continuously written into the first slot, overwriting its real assignment so that the same spool appeared in two slots. The printer page's periodic status refresh triggered this. The printer-wide \"active spool\" is now only applied on single-slot printers, where it unambiguously identifies the slot." },
+          { "type": "fix", "text": "In the driver configuration form, settings holding list or object values were shown as \"[object Object]\" and replaced by that very text on save — the setting was lost even when only an unrelated field was edited. Such values are now displayed readably and carried through the save unchanged. Boolean settings now render as a checkbox instead of a text field." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.38",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Die Migration für Farbtransparenz konnte beim Reparieren Spoolman-importierter Filamentfarben mit \"NOT NULL constraint failed: colors.created_at\" abbrechen, weil neu angelegte Farben ohne Zeitstempel eingefügt wurden. Die Migration setzt jetzt Erstellungs- und Änderungszeitpunkt korrekt." }
+        ],
+        "en": [
+          { "type": "fix", "text": "The color transparency migration could fail with \"NOT NULL constraint failed: colors.created_at\" while repairing Spoolman-imported filament colors, because newly created colors were inserted without timestamps. The migration now sets the created/updated timestamps correctly." }
+        ]
+      }
+    },
+    {
+      "version": "1.2.37",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Ein per Docker-Neustart unterbrochener Migrationslauf konnte beim erneuten Upgrade-Versuch mit \"table _alembic_tmp_colors already exists\" fehlschlagen. Die Migration bereinigt jetzt eine eventuell zurückgebliebene Arbeitstabelle, bevor sie erneut ausgeführt wird." }
+        ],
+        "en": [
+          { "type": "fix", "text": "An upgrade run interrupted by a Docker restart could fail on retry with \"table _alembic_tmp_colors already exists\". The migration now cleans up any leftover work table before running again." }
+        ]
+      }
+    },
+    {
       "version": "1.2.36",
       "date": "",
       "changes": {

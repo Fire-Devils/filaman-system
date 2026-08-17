@@ -22,6 +22,7 @@ const { id } = Astro.params
   <script>
     import { t, initI18n, getLang } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -94,16 +95,18 @@ const { id } = Astro.params
 
       const props = pluginSchema.properties as Record<string, any>
       let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">'
-      
+
       for (const [key, prop] of Object.entries(props)) {
         const value = config[key]
         if (value === undefined || value === null) continue
         const label = escapeHtml((prop as any).title || key)
         const isSecret = key.toLowerCase().includes('code') || key.toLowerCase().includes('password') || key.toLowerCase().includes('secret') || key.toLowerCase().includes('token')
-        let displayValue = isSecret ? '••••••••' : escapeHtml(String(value))
-        // Enum: Display-Name statt interner Wert anzeigen
         const p = prop as any
-        if (p.enum && Array.isArray(p.enum) && p.enumNames) {
+        let displayValue = isSecret ? '••••••••' : escapeHtml(String(value))
+        if (!isSecret && isStructuredProp(p, value)) {
+          displayValue = `<pre style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto;">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`
+        } else if (p.enum && Array.isArray(p.enum) && p.enumNames) {
+          // Enum: Display-Name statt interner Wert anzeigen
           const idx = p.enum.indexOf(value)
           if (idx >= 0 && p.enumNames[idx]) displayValue = escapeHtml(String(p.enumNames[idx]))
         }
@@ -113,7 +116,7 @@ const { id } = Astro.params
             <div style="font-size: 1rem; font-weight: 500; margin-top: 2px;">${displayValue}</div>
           </div>`
       }
-      
+
       html += '</div>'
       return html
     }
@@ -129,13 +132,23 @@ const { id } = Astro.params
       for (const [key, prop] of Object.entries(props)) {
         const p = prop as any
         const isRequired = required.includes(key)
-        const value = config[key] ?? p.default ?? ''
+        const rawValue = config[key] ?? p.default
+        // '' keeps the text/select/number branches rendering an empty field;
+        // structured props use rawValue so an absent value stays null, not "".
+        const value = rawValue ?? ''
         const label = escapeHtml(p.title || key) + (isRequired ? ' *' : '')
-        
+
         html += `<div>`
         html += `<label class="fm-label" for="config-${key}">${label}</label>`
 
-        if (p.enum && Array.isArray(p.enum)) {
+        if (isStructuredProp(p, rawValue)) {
+          // No name attribute: the save loop must not find an element for this key.
+          html += `<pre class="fm-input" id="config-${key}" style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto; background: var(--bg-muted, transparent);">${escapeHtml(JSON.stringify(rawValue ?? null, null, 2))}</pre>`
+          html += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${t('printers.configReadOnly')}</div>`
+        } else if (p.type === 'boolean') {
+          const checked = value === true || value === 'true' ? ' checked' : ''
+          html += `<input class="fm-checkbox" id="config-${key}" name="${key}" type="checkbox"${checked}>`
+        } else if (p.enum && Array.isArray(p.enum)) {
           const enumNames: string[] = p.enumNames || p.enum
           const options = p.enum.map((val: string, i: number) => {
             const selected = String(val) === String(value) ? ' selected' : ''
@@ -700,18 +713,25 @@ const { id } = Astro.params
       document.getElementById('config-form')?.addEventListener('submit', async (e) => {
         e.preventDefault()
         const form = e.target as HTMLFormElement
-        const driver_config: Record<string, any> = {}
         const props = pluginSchema.properties as Record<string, any>
+        const currentConfig = printer.driver_config || {}
 
+        const edited: Record<string, any> = {}
         for (const [key, prop] of Object.entries(props)) {
+          const p = prop as any
           const el = form.elements.namedItem(key) as HTMLInputElement
           if (!el) continue
-          if ((prop as any).type === 'integer' || (prop as any).type === 'number') {
-            driver_config[key] = el.value ? Number(el.value) : null
+          if (p.type === 'boolean') {
+            edited[key] = el.checked
+          } else if (p.type === 'integer' || p.type === 'number') {
+            edited[key] = el.value ? Number(el.value) : null
           } else {
-            driver_config[key] = el.value || null
+            edited[key] = el.value || null
           }
         }
+        // Structured properties have no input; buildDriverConfigPayload takes
+        // them from the stored config so the save cannot drop them.
+        const driver_config = buildDriverConfigPayload(props, currentConfig, edited)
 
         try {
           const response = await fetch(`/api/v1/printers/${id}`, {

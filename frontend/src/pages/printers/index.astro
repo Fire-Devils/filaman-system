@@ -87,11 +87,19 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
     await initI18n()
 
     let printers: any[] = []
     let allPlugins: any[] = []
-    
+    /**
+     * The config the modal was opened with, and the schema it was rendered from.
+     * Both are needed on save: structured properties have no input element, so
+     * their stored value has to be carried through explicitly.
+     */
+    let editingConfigSchema: Record<string, any> | null = null
+    let editingConfigValues: Record<string, any> = {}
+
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
@@ -298,16 +306,27 @@ import Layout from '../../layouts/Layout.astro'
       const configContainer = document.getElementById('config-fields')!
       const configInputs = configContainer.querySelectorAll('input, select, textarea')
       let driver_config: Record<string, any> | undefined = undefined
-      if (configInputs.length > 0) {
-        driver_config = {}
+      // No schema means no driver config to send — leave the field out entirely
+      // rather than submitting an empty object that would clear what is stored.
+      if (editingConfigSchema && Object.keys(editingConfigSchema).length > 0) {
+        const edited: Record<string, any> = {}
         configInputs.forEach((el: any) => {
           const key = el.name
-          if (el.type === 'number') {
-            driver_config![key] = el.value ? Number(el.value) : null
+          if (el.type === 'checkbox') {
+            edited[key] = el.checked
+          } else if (el.type === 'number') {
+            edited[key] = el.value ? Number(el.value) : null
           } else {
-            driver_config![key] = el.value || null
+            edited[key] = el.value || null
           }
         })
+        // Structured properties have no input; their stored value is carried
+        // over here, because the backend replaces driver_config wholesale.
+        driver_config = buildDriverConfigPayload(
+          editingConfigSchema,
+          editingConfigValues,
+          edited
+        )
       }
       const data: any = { name, driver_key }
       if (driver_config) data.driver_config = driver_config
@@ -365,12 +384,15 @@ import Layout from '../../layouts/Layout.astro'
     function renderConfigFields(driverKey: string, existingConfig?: Record<string, any>) {
       const container = document.getElementById('config-fields')!
       container.innerHTML = ''
+      editingConfigSchema = null
+      editingConfigValues = existingConfig || {}
       if (!driverKey) return
-      
+
       const plugin = allPlugins.find((p: any) => p.driver_key === driverKey)
       if (!plugin?.config_schema?.properties) return
-      
+
       const schema = plugin.config_schema
+      editingConfigSchema = schema.properties
       const required: string[] = schema.required || []
       
       for (const [key, prop] of Object.entries(schema.properties) as [string, any][]) {
@@ -382,15 +404,49 @@ import Layout from '../../layouts/Layout.astro'
         label.textContent = (prop.title || key) + (required.includes(key) ? ' *' : '')
         div.appendChild(label)
         
+        const currentValue = existingConfig ? existingConfig[key] : undefined
+
+        if (isStructuredProp(prop, currentValue ?? prop.default)) {
+          // Read-only: no input element, so the save loop cannot clobber it.
+          const pre = document.createElement('pre')
+          pre.className = 'fm-input'
+          pre.style.cssText = 'margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto;'
+          pre.textContent = JSON.stringify(currentValue ?? prop.default ?? null, null, 2)
+          div.appendChild(pre)
+
+          const note = document.createElement('div')
+          note.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
+          note.textContent = t('printers.configReadOnly')
+          div.appendChild(note)
+
+          if (prop.description) {
+            const hint = document.createElement('div')
+            hint.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
+            hint.textContent = prop.description
+            div.appendChild(hint)
+          }
+
+          container.appendChild(div)
+          continue
+        }
+
         // Bestimme den vorausgewählten Wert
         let selectedValue = ''
-        if (existingConfig && existingConfig[key] !== undefined && existingConfig[key] !== null) {
-          selectedValue = String(existingConfig[key])
+        if (currentValue !== undefined && currentValue !== null) {
+          selectedValue = String(currentValue)
         } else if (prop.default !== undefined) {
           selectedValue = String(prop.default)
         }
-        
-        if (prop.enum && Array.isArray(prop.enum)) {
+
+        if (prop.type === 'boolean') {
+          const input = document.createElement('input')
+          input.id = `config-${key}`
+          input.name = key
+          input.className = 'fm-checkbox'
+          input.type = 'checkbox'
+          input.checked = currentValue === true || (currentValue === undefined && prop.default === true)
+          div.appendChild(input)
+        } else if (prop.enum && Array.isArray(prop.enum)) {
           // Enum → <select> Dropdown
           const select = document.createElement('select')
           select.id = `config-${key}`
