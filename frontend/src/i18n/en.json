@@ -739,6 +739,8 @@
     "profilePickerStatusUsingDefaultHint": "Matches the default profile above unless you override for this model",
     "profilePickerStatusNoProfileSelected": "No profile selected",
     "profilePickerStatusNoProfileSelectedHint": "Search and choose a profile from the list",
+    "profilePickerWaitingToSyncName": "Waiting to sync name…",
+    "profilePickerWaitingToSyncNameHint": "A slicer preset is stored. The readable name appears when the cloud catalog is available.",
     "profilePickerPartialCoverage": "Partial coverage",
     "profilePickerPartialCoverageMissing": "No cloud variant on: {models} — create in Bambu Studio or override below",
     "profilePickerPartialCoverageGeneric": "Some models need a cloud preset for this profile",
