@@ -40,6 +40,7 @@ export type InitPerModelPickerOptions = {
 
 type SelectionVisual =
   | 'empty'
+  | 'pending'
   | 'draft'
   | 'saving'
   | 'valid'
@@ -299,6 +300,15 @@ function visualMeta(
         iconColor: 'var(--text-muted)',
         label: ptr(t, 'profilePickerStatusUsingDefault'),
         hint: ptr(t, 'profilePickerStatusUsingDefaultHint'),
+      }
+    case 'pending':
+      return {
+        border: 'var(--border, #444)',
+        bg: 'transparent',
+        icon: '…',
+        iconColor: 'var(--text-muted)',
+        label: ptr(t, 'profilePickerWaitingToSyncName'),
+        hint: ptr(t, 'profilePickerWaitingToSyncNameHint'),
       }
     case 'empty':
     default:
@@ -561,6 +571,7 @@ async function fetchProfileCoverage(
   opts: InitPerModelPickerOptions
 ): Promise<{
   default_base_name?: string
+  pending_display_name?: boolean
   profiles_by_model?: Record<string, any>
   coverage?: Record<string, ProfileCoverage>
 }> {
@@ -711,9 +722,10 @@ type DefaultVisual = SelectionVisual | 'partial'
 function defaultProfileVisual(
   defaultBase: string,
   models: ConnectedModel[],
-  coverage: Record<string, ProfileCoverage>
+  coverage: Record<string, ProfileCoverage>,
+  pendingDisplayName = false
 ): DefaultVisual {
-  if (!defaultBase) return 'empty'
+  if (!defaultBase) return pendingDisplayName ? 'pending' : 'empty'
   const statuses = models.map((m) => coverageStatus(coverage[m.model]))
   const okish = statuses.filter((s) => s === 'ok' || s === 'fallback').length
   if (okish === models.length) {
@@ -751,7 +763,7 @@ function defaultVisualMeta(
           : ptr(t, 'profilePickerPartialCoverageGeneric'),
     }
   }
-  if (visual === 'valid' || visual === 'fallback' || visual === 'invalid') {
+  if (visual === 'valid' || visual === 'fallback' || visual === 'invalid' || visual === 'pending') {
     return visualMeta(visual, undefined, false, t)
   }
   return visualMeta('empty', undefined, false, t)
@@ -1023,14 +1035,24 @@ function renderDefaultCombo(
   models: ConnectedModel[],
   coverage: Record<string, ProfileCoverage>,
   placeholder: string,
-  t: TranslateFn
+  t: TranslateFn,
+  pendingDisplayName = false
 ): string {
-  const visual = defaultProfileVisual(defaultBase, models, coverage)
+  const visual = defaultProfileVisual(
+    defaultBase,
+    models,
+    coverage,
+    pendingDisplayName
+  )
   const meta = defaultVisualMeta(visual, models, coverage, t)
+  const inputPlaceholder =
+    pendingDisplayName && !defaultBase
+      ? ptr(t, 'profilePickerWaitingToSyncName')
+      : placeholder
   const inner = `<div class="cloud-combo default-profile-combo" data-model="default" style="position:relative;">
     <input type="hidden" class="slicer-profile-base" value="${escapeHtml(defaultBase)}" />
     <input type="text" class="fm-input cloud-combo-search" autocomplete="off" spellcheck="false"
-      placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultBase)}" style="width:100%; margin:0;" />
+      placeholder="${escapeHtml(inputPlaceholder)}" value="${escapeHtml(defaultBase)}" style="width:100%; margin:0;" />
     <div class="cloud-combo-list" style="display:none; position:absolute; z-index:50; left:0; right:0; max-height:260px; overflow-y:auto; background:var(--surface, #1e1e1e); border:1px solid var(--border, #444); border-radius:6px; margin-top:2px; box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>
   </div>${renderDefaultCoverageStrip(models, defaultBase, coverage, t)}`
   return renderPickerShell(inner, visual === 'partial' ? 'fallback' : visual, meta, t, undefined, defaultBase, '')
@@ -1043,20 +1065,28 @@ function updateDefaultComboVisual(
   models: ConnectedModel[],
   coverage: Record<string, ProfileCoverage>,
   t: TranslateFn,
-  mode: 'committed' | 'draft' | 'saving' = 'committed'
+  mode: 'committed' | 'draft' | 'saving' = 'committed',
+  pendingDisplayName = false
 ) {
   const shell = mount.querySelector('.profile-picker-shell') as HTMLElement | null
   const hidden = mount.querySelector('.slicer-profile-base') as HTMLInputElement | null
   const search = mount.querySelector('.cloud-combo-search') as HTMLInputElement | null
   if (!shell || !hidden) return
 
+  const pending =
+    pendingDisplayName || mount.dataset.pendingName === '1'
   let visual: DefaultVisual
   if (mode === 'saving') {
     visual = 'saving'
   } else if (mode === 'draft' && search && search.value.trim() !== hidden.value) {
     visual = 'draft'
   } else {
-    visual = defaultProfileVisual(hidden.value, models, coverage)
+    visual = defaultProfileVisual(
+      hidden.value,
+      models,
+      coverage,
+      pending && !hidden.value
+    )
   }
   const meta = defaultVisualMeta(visual, models, coverage, t)
   applyShellState(
@@ -1068,6 +1098,9 @@ function updateDefaultComboVisual(
     hidden.value,
     ''
   )
+  if (search && pending && !hidden.value) {
+    search.placeholder = ptr(t, 'profilePickerWaitingToSyncName')
+  }
   const strip = mount.querySelector('.default-coverage-strip')
   if (strip) {
     strip.outerHTML = renderDefaultCoverageStrip(models, hidden.value, coverage, t)
@@ -1259,11 +1292,13 @@ export async function initPerModelProfilePicker(
     let profilesByModel: Record<string, { base_name?: string; source?: string }> = {}
     let coverage: Record<string, ProfileCoverage> = {}
     let defaultBaseName = ''
+    let pendingDisplayName = false
     try {
       const cov = await fetchProfileCoverage(rep, coverageParams, opts)
       profilesByModel = cov?.profiles_by_model || {}
       coverage = cov?.coverage || {}
       defaultBaseName = cov?.default_base_name || ''
+      pendingDisplayName = !!cov?.pending_display_name
     } catch (e) {
       if (!opts.isAbortError(e)) {
         console.warn('Profile coverage load failed:', e)
@@ -1309,7 +1344,8 @@ export async function initPerModelProfilePicker(
           models,
           coverage,
           t,
-          'committed'
+          'committed',
+          pendingDisplayName
         )
       }
     }
@@ -1388,6 +1424,8 @@ export async function initPerModelProfilePicker(
         profilesByModel = cov?.profiles_by_model || profilesByModel
         coverage = cov?.coverage || coverage
         defaultBaseName = cov?.default_base_name || defaultBaseName
+        pendingDisplayName = !!cov?.pending_display_name
+        if (defaultMount) defaultMount.dataset.pendingName = pendingDisplayName ? '1' : ''
       } catch (e) {
         if (!opts.isAbortError(e)) console.warn('Coverage reload failed:', e)
       }
@@ -1420,6 +1458,8 @@ export async function initPerModelProfilePicker(
       profilesByModel = result?.profiles_by_model || profilesByModel
       coverage = result?.coverage || coverage
       defaultBaseName = result?.default_base_name || result?.base_name || baseName
+      pendingDisplayName = false
+      if (defaultMount) defaultMount.dataset.pendingName = ''
       await reloadCoverage()
       refreshModelRowsFromDefault()
       refreshAll()
@@ -1499,7 +1539,8 @@ export async function initPerModelProfilePicker(
     picker.appendChild(defaultSection)
 
     await loadAllDefaultPresets()
-    if (defaultPresets.length === 0) {
+    const searchPlaceholder = opts.t('printers.searchProfile') || 'Search profile…'
+    if (defaultPresets.length === 0 && !pendingDisplayName) {
       defaultMount.innerHTML = `<p style="margin:0;font-size:0.85rem;color:var(--text-muted);line-height:1.45;">${escapeHtml(ptr(t, 'profilePickerNoPresets'))}</p>`
     } else {
       defaultMount.innerHTML = renderDefaultCombo(
@@ -1507,9 +1548,11 @@ export async function initPerModelProfilePicker(
         defaultBaseName,
         models,
         coverage,
-        opts.t('printers.searchProfile') || 'Search profile…',
-        t
+        searchPlaceholder,
+        t,
+        pendingDisplayName
       )
+      defaultMount.dataset.pendingName = pendingDisplayName ? '1' : ''
       wireDefaultCombo(
         defaultMount,
         defaultPresets,
