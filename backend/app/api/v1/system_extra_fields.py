@@ -13,22 +13,16 @@ from app.api.v1.schemas_system_extra_field import (
 )
 from app.core.cache import response_cache
 from app.core.database import get_db
-from app.models import Filament, Spool
 from app.models.system_extra_field import SystemExtraField
 from app.services.system_extra_field_compatibility import (
-    is_existing_value_compatible,
-    resolve_custom_field_value,
+    find_incompatible_existing_values,
+    find_overlapping_definition,
 )
 
 router = APIRouter()
 
 # Cache TTL in seconds (5 minutes - extra fields rarely change)
 _EXTRA_FIELDS_CACHE_TTL = 300
-_TARGET_MODELS = {
-    "filament": Filament,
-    "spool": Spool,
-}
-_INCOMPATIBLE_VALUE_SAMPLE_SIZE = 5
 _PLUGIN_MANAGED_FIELD_ERRORS = {
     "edit": (
         "Cannot edit plugin-managed field (source: {source}). "
@@ -54,77 +48,6 @@ def _invalidate_extra_fields_cache(
         response_cache.delete(f"extra_fields:{target_type}:all")
     # Always invalidate the "all" queries
     response_cache.delete("extra_fields:all:all")
-
-
-async def _find_incompatible_existing_values(
-    db: AsyncSession,
-    *,
-    target_type: str,
-    key: str,
-    field_type: str,
-    options: list[str] | None,
-    config: dict | None,
-) -> tuple[int, list[int]]:
-    """Find records that cannot safely use a definition.
-
-    A record blocks the definition when its retained value has an unusable
-    shape, or when it carries a record-local definition for the same (or an
-    overlapping) path that declares a different type — the system-wide
-    definition would otherwise silently contradict the record-local one.
-
-    The Spoolman import and repair services intentionally create definitions
-    internally, alongside their previewed and approved value conversion in the
-    same transaction.
-    """
-    model = _TARGET_MODELS.get(target_type)
-    if model is None:
-        return 0, []
-
-    result = await db.stream(
-        select(model.id, model.custom_fields, model.custom_field_definitions)
-    )
-    incompatible_count = 0
-    sample_record_ids: list[int] = []
-    async for record_id, custom_fields, definitions in result:
-        path_state, value = resolve_custom_field_value(custom_fields, key)
-        value_blocks = path_state != "missing" and not (
-            path_state == "value"
-            and is_existing_value_compatible(value, field_type, options, config)
-        )
-        if not value_blocks and not _local_definition_conflicts(
-            definitions, key, field_type
-        ):
-            continue
-        incompatible_count += 1
-        if len(sample_record_ids) < _INCOMPATIBLE_VALUE_SAMPLE_SIZE:
-            sample_record_ids.append(record_id)
-
-    return incompatible_count, sample_record_ids
-
-
-def _local_definition_conflicts(
-    definitions: dict | None,
-    key: str,
-    field_type: str,
-) -> bool:
-    """True when a record-local definition contradicts the system-wide one."""
-    if not isinstance(definitions, dict):
-        return False
-    for local_key, definition in definitions.items():
-        if not _field_paths_overlap(local_key, key):
-            continue
-        if local_key != key:
-            # Nested overlap: the two definitions describe incompatible shapes
-            # for the same branch of custom_fields.
-            return True
-        local_type = (definition or {}).get("field_type", "text")
-        if local_type != field_type:
-            return True
-    return False
-
-
-def _field_paths_overlap(left: str, right: str) -> bool:
-    return left == right or left.startswith(f"{right}.") or right.startswith(f"{left}.")
 
 
 def _raise_incompatible_values(
@@ -215,13 +138,10 @@ async def create_system_extra_field(
         SystemExtraField.target_type == field.target_type,
     )
     existing = await db.execute(query)
-    overlapping = next(
-        (
-            item
-            for item in existing.scalars()
-            if _field_paths_overlap(item.key, field.key)
-        ),
-        None,
+    overlapping = find_overlapping_definition(
+        existing.scalars(),
+        field.target_type,
+        field.key,
     )
     if overlapping:
         if overlapping.key == field.key:
@@ -236,7 +156,7 @@ async def create_system_extra_field(
             detail=detail,
         )
 
-    incompatible_count, sample_record_ids = await _find_incompatible_existing_values(
+    incompatible_count, sample_record_ids = await find_incompatible_existing_values(
         db,
         target_type=field.target_type,
         key=field.key,
@@ -283,16 +203,15 @@ async def update_system_extra_field(
     effective_config = update_dict.get("config", field.config)
     try:
         validate_field_type_config(
-            effective_field_type, effective_options, effective_config
+            effective_field_type,
+            effective_options,
+            effective_config,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if {"field_type", "options", "config"}.intersection(update_dict):
-        (
-            incompatible_count,
-            sample_record_ids,
-        ) = await _find_incompatible_existing_values(
+        incompatible_count, sample_record_ids = await find_incompatible_existing_values(
             db,
             target_type=field.target_type,
             key=field.key,
