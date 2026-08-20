@@ -2,6 +2,9 @@
 
 import { afterEach, expect, it, vi } from "vitest";
 
+import en from "../i18n/en.json";
+import de from "../i18n/de.json";
+
 import {
   initSpoolmanImportController,
   renderExtraFieldPreview,
@@ -18,6 +21,19 @@ import {
 
 afterEach(() => {
   document.body.innerHTML = "";
+});
+
+it("uses functional import-default copy instead of a step reference", () => {
+  expect(en.spoolman.extraFieldActionStep3Default).toBe("Use import default");
+  expect(en.spoolman.extraFieldOverrideHint).toBe(
+    "Per-field choices override the default storage option selected for this import.",
+  );
+  expect(de.spoolman.extraFieldActionStep3Default).toBe(
+    "Importstandard verwenden",
+  );
+  expect(de.spoolman.extraFieldOverrideHint).toBe(
+    "Die Auswahl pro Feld überschreibt die für diesen Import gewählte Standardspeicherung.",
+  );
 });
 
 it("renders preview fields and sends explicit import choices", async () => {
