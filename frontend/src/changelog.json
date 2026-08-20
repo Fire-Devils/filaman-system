@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Beim Spoolman-Import kann jetzt gewählt werden, wie Spoolman-Extra-Felder gespeichert werden: als wiederverwendbare System-Extra-Felder, als filament- oder spulenspezifische typisierte Felder, unverändert unter den Rohwerten oder im bisherigen bereinigten Format. Jedes Feld kann in der Vorschau einzeln vom globalen Import-Standard abweichen. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Ein neuer Reparatur-Editor kann bereits früher importierte Spoolman-Extra-Felder nachträglich in System- oder feldspezifische typisierte Felder umwandeln — inklusive Text-, Zahlen-, Bereichs-, Auswahl-, Mehrfachauswahl-, Kontrollkästchen-, Datums- und URL-Feldern, mit bearbeitbaren Einheiten/Optionen und einer serverseitigen Umwandlungsvorschau. Bestehende native Werte werden dabei nie überschrieben, und nicht eindeutig zuordenbare Werte bleiben unangetastet erhalten. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "The Spoolman import now lets you choose how Spoolman extra fields are stored: as reusable System Extra Fields, as filament- or spool-specific typed fields, preserved unchanged under the raw values, or in the previous cleaned format. Each field can individually override the global import default in the preview. (Contributed by akira69)" },
+          { "type": "feature", "text": "A new repair editor can convert previously imported Spoolman extra fields into System or record-specific typed fields after the fact — including text, number, range, dropdown, multiselect, checkbox, date, and URL fields, with editable units/choices and a server-generated conversion preview. Existing native values are never overwritten, and values that cannot be safely matched are left untouched. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "1.2.41",
       "date": "",
       "changes": {
