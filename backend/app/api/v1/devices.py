@@ -493,17 +493,33 @@ async def weigh_spool(
     # Drivers only live on the primary Gunicorn worker. Proxy the whole request
     # there so auto-assign can reach them; the primary handles measurement too.
     if device.auto_assign_enabled and not _is_primary_worker():
-        try:
-            from app.api.v1.printers import _proxy_to_primary
-            payload = await _proxy_to_primary(
-                request,
-                method="POST",
-                path="/api/v1/devices/scale/weight",
-                json_body=data.model_dump(),
+        from app.api.v1.printers import _PRIMARY_PROXY_HEADER, _proxy_to_primary
+
+        hop = int(request.headers.get(_PRIMARY_PROXY_HEADER, "0") or "0")
+        if hop > 0:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "primary_worker_required",
+                    "message": "Auto-assign requires the primary worker; retrying.",
+                },
             )
-            return WeighResponse.model_validate(payload)
-        except Exception as e:
-            logger.warning(f"Auto-assign primary-proxy failed, running locally: {e}")
+
+        payload = await _proxy_to_primary(
+            request,
+            method="POST",
+            path="/api/v1/devices/scale/weight",
+            json_body=data.model_dump(),
+        )
+        if not isinstance(payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "primary_proxy_failed",
+                    "message": "Primary worker did not return a valid weigh response.",
+                },
+            )
+        return WeighResponse.model_validate(payload)
 
     service = SpoolService(db)
 

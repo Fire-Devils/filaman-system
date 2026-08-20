@@ -1,6 +1,7 @@
 import logging
 import inspect
 import contextlib
+import os
 from typing import Any
 
 import httpx
@@ -30,6 +31,14 @@ router = APIRouter(prefix="/printers", tags=["printers"])
 _PRIMARY_PROXY_HEADER = "x-filaman-primary-hop"
 _PRIMARY_PROXY_MAX_HOPS = 12
 _PRIMARY_PROXY_RETRIES = 8
+_DEFAULT_GUNICORN_URL = os.environ.get("FILAMAN_GUNICORN_URL", "http://127.0.0.1:8001")
+
+
+def _primary_proxy_url(path: str) -> str:
+    base = _DEFAULT_GUNICORN_URL.rstrip("/")
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base}{path}"
 
 # Changing one of these restarts the printer's driver, and drivers live on the
 # primary worker only.  A request touching them has to be handled there.
@@ -88,14 +97,14 @@ async def _proxy_to_primary(
             },
         )
 
-    target = request.url.replace(path=path, query="")
-    # Route through same service endpoint and rely on retry loop to
-    # eventually hit the primary worker.
-    url = str(target)
+    target = _primary_proxy_url(path)
+    # Hit Gunicorn on loopback (not request.url / public Host) and rely on the
+    # retry loop to eventually reach the primary worker.
+    url = target
     headers = _forward_headers(request, hop)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for _ in range(_PRIMARY_PROXY_RETRIES):
+    for _ in range(_PRIMARY_PROXY_RETRIES):
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.request(
                 method,
                 url,
