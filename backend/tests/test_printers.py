@@ -3,7 +3,15 @@ from sqlalchemy import event
 from sqlalchemy.orm.attributes import set_committed_value
 from unittest.mock import AsyncMock, patch
 
+from app.api.v1.printers import _primary_proxy_url
 from app.models import Location, Printer, PrinterSlot
+
+
+class TestPrimaryProxyUrl:
+    def test_primary_proxy_url_uses_loopback(self):
+        assert _primary_proxy_url("/api/v1/devices/scale/weight") == (
+            "http://127.0.0.1:8001/api/v1/devices/scale/weight"
+        )
 
 
 @pytest.fixture(autouse=True)
