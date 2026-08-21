@@ -229,9 +229,20 @@ class TestSchemaValidation:
         with pytest.raises(ValidationError, match="target_type"):
             SystemExtraFieldCreate(**self._base(target_type=target_type))
 
-    @pytest.mark.parametrize("key", ["safe..field", "__proto__", "a.constructor.b"])
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "safe..field",
+            "__proto__",
+            "a.constructor.b",
+            "spoolman_extra",
+            "spoolman_id",
+            "spoolman_external_id",
+            "filamentdb_id",
+        ],
+    )
     def test_create_rejects_unsafe_field_path(self, key):
-        with pytest.raises(ValidationError, match="path segments"):
+        with pytest.raises(ValidationError, match="custom-field"):
             SystemExtraFieldCreate(**self._base(key=key))
 
 

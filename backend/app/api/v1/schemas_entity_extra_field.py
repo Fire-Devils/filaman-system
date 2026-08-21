@@ -2,10 +2,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
-from app.api.v1.schemas_system_extra_field import (
-    validate_custom_field_path,
-    validate_field_type_config,
-)
+from app.api.v1.schemas_system_extra_field import validate_field_type_config
+from app.services.custom_field_identity import validate_custom_field_path
 
 
 class EntityExtraFieldDefinition(BaseModel):

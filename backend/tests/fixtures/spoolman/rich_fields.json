@@ -1,0 +1,67 @@
+{
+  "info": {"version": "0.25.0"},
+  "vendor": [
+    {"id": 1, "name": "Acme Filament", "extra": {"account": "\"vendor-a\""}}
+  ],
+  "location": [
+    {"id": 30, "name": "Rack A"}
+  ],
+  "filament": [
+    {
+      "id": 10,
+      "name": "PLA Red",
+      "vendor": {"id": 1, "name": "Acme Filament"},
+      "material": "PLA",
+      "diameter": 1.75,
+      "weight": 1000,
+      "spool_weight": 200,
+      "color_hex": "FF0000",
+      "extra": {"bed": "[55,65]", "extruder": "[200,220]"}
+    },
+    {
+      "id": 11,
+      "name": "PETG Clear",
+      "vendor": {"id": 1, "name": "Acme Filament"},
+      "material": "PETG",
+      "diameter": 1.75,
+      "weight": 1000,
+      "spool_weight": 220,
+      "color_hex": "FFFFFF80"
+    }
+  ],
+  "spool": [
+    {
+      "id": 20,
+      "filament": {"id": 10, "price": 24.0},
+      "remaining_weight": 800,
+      "used_weight": 200,
+      "spool_weight": 200,
+      "archived": false,
+      "location": {"id": 30, "name": "Rack A"},
+      "extra": {"tag": "\"rack-a\"", "dry": "\"2026-07-20T10:30:00Z\""}
+    },
+    {
+      "id": 21,
+      "filament": {"id": 11, "price": 29.0},
+      "remaining_weight": 1000,
+      "used_weight": 0,
+      "spool_weight": 220,
+      "archived": false,
+      "location": {"id": 30, "name": "Rack A"},
+      "extra": {"tag": "\"rack-b\"", "dry": "\"invalid-date\""}
+    }
+  ],
+  "field_definitions": {
+    "vendor": [
+      {"key": "account", "name": "Account", "field_type": "text", "order": 0}
+    ],
+    "filament": [
+      {"key": "bed", "name": "Bed", "field_type": "integer_range", "unit": "°C", "order": 0},
+      {"key": "extruder", "name": "Extruder", "field_type": "integer_range", "unit": "°C", "order": 1}
+    ],
+    "spool": [
+      {"key": "tag", "name": "Tag", "field_type": "text", "order": 0},
+      {"key": "dry", "name": "Dry", "field_type": "datetime", "order": 1}
+    ]
+  }
+}

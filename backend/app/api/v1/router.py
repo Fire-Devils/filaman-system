@@ -1,13 +1,21 @@
 from fastapi import APIRouter
 
 from app.api.v1.admin import router as admin_router
+from app.api.v1.app_settings_admin import public_router as app_settings_public_router
+from app.api.v1.app_settings_admin import router as app_settings_admin_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.devices import router as devices_router
+from app.api.v1.events import router as events_router
+from app.api.v1.filamentdb_proxy import router as filamentdb_router
 from app.api.v1.filaments import router, router_colors, router_filaments
+from app.api.v1.label_presets import router as label_presets_router
 from app.api.v1.me import router as me_router
 from app.api.v1.me_api_keys import router as me_api_keys_router
-from app.api.v1.label_presets import router as label_presets_router
+from app.api.v1.oidc_admin import public_router as oidc_public_router
+from app.api.v1.oidc_admin import router as oidc_admin_router
+from app.api.v1.printer_params import router_filament_params, router_spool_params
 from app.api.v1.printers import router as printers_router
+from app.api.v1.spoolman import router as spoolman_router
 from app.api.v1.spools import (
     router_locations,
     router_spool_measurements,
@@ -16,13 +24,6 @@ from app.api.v1.spools import (
 from app.api.v1.system import public_router as plugin_public_router
 from app.api.v1.system import router as system_router
 from app.api.v1.system_extra_fields import router as system_extra_fields_router
-from app.api.v1.printer_params import router_filament_params, router_spool_params
-from app.api.v1.events import router as events_router
-from app.api.v1.oidc_admin import public_router as oidc_public_router
-from app.api.v1.oidc_admin import router as oidc_admin_router
-from app.api.v1.app_settings_admin import router as app_settings_admin_router
-from app.api.v1.app_settings_admin import public_router as app_settings_public_router
-from app.api.v1.filamentdb_proxy import router as filamentdb_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -40,6 +41,7 @@ api_router.include_router(printers_router)
 api_router.include_router(admin_router)
 api_router.include_router(devices_router)
 api_router.include_router(system_router)
+api_router.include_router(spoolman_router)
 api_router.include_router(plugin_public_router)
 api_router.include_router(
     system_extra_fields_router,

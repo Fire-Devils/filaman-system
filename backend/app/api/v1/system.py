@@ -1,6 +1,5 @@
-"""Admin-Endpoints fuer System, Plugin-Management, Spoolman-Import und Killswitch."""
+"""Admin-Endpoints fuer System, Plugin-Management und Killswitch."""
 
-import asyncio
 import importlib
 import logging
 import os
@@ -8,8 +7,6 @@ import re
 import shutil
 import sys
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,7 +14,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import DateTime, delete, select, text
 from sqlalchemy.inspection import inspect as sa_inspect
 
@@ -70,31 +67,8 @@ from app.services.filamentdb_import_service import (
     FilamentDBImportService,
 )
 from app.services.plugin_service import PluginInstallError, PluginInstallService
-from app.services.spoolman_import_service import (
-    SpoolmanImportError,
-    SpoolmanImportService,
-)
 
 logger = logging.getLogger(__name__)
-_spoolman_mutation_lock = asyncio.Lock()
-
-
-@asynccontextmanager
-async def _exclusive_spoolman_mutation() -> AsyncIterator[None]:
-    """Reject overlapping Spoolman mutations and always release the lock."""
-    if _spoolman_mutation_lock.locked():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "spoolman_import_in_progress",
-                "message": "Another Spoolman import operation is already running",
-            },
-        )
-    await _spoolman_mutation_lock.acquire()
-    try:
-        yield
-    finally:
-        _spoolman_mutation_lock.release()
 
 
 router = APIRouter(prefix="/admin/system", tags=["admin-system"])
@@ -887,207 +861,6 @@ async def get_plugin(
         )
 
     return plugin
-
-
-# ------------------------------------------------------------------ #
-#  Spoolman Import Endpoints
-# ------------------------------------------------------------------ #
-
-
-class SpoolmanUrlRequest(BaseModel):
-    url: str
-
-
-class SpoolmanTransparencyRepairRequest(SpoolmanUrlRequest):
-    plan_digest: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-
-
-class SpoolmanPreviewRequest(SpoolmanUrlRequest):
-    include_transparency_repairs: bool = False
-
-
-class SpoolmanConnectionResponse(BaseModel):
-    status: str
-    url: str
-    info: dict[str, Any]
-
-
-class SpoolmanPreviewResponse(BaseModel):
-    summary: dict[str, int]
-    vendors: list[dict[str, Any]]
-    filaments: list[dict[str, Any]]
-    spools: list[dict[str, Any]]
-    locations: list[dict[str, Any]]
-    colors: list[dict[str, str]]
-
-
-class SpoolmanImportResultResponse(BaseModel):
-    manufacturers_created: int
-    manufacturers_skipped: int
-    locations_created: int
-    locations_skipped: int
-    colors_created: int
-    colors_skipped: int
-    filaments_created: int
-    filaments_skipped: int
-    spools_created: int
-    spools_skipped: int
-    errors: list[str]
-    warnings: list[str]
-
-
-class SpoolmanTransparencyRepairResultResponse(SpoolmanImportResultResponse):
-    color_assignments_repaired: int
-
-
-@router.post(
-    "/spoolman-import/test-connection",
-    response_model=SpoolmanConnectionResponse,
-)
-async def spoolman_test_connection(
-    body: SpoolmanUrlRequest,
-    db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
-):
-    """Verbindung zu Spoolman-Instanz testen."""
-    service = SpoolmanImportService(db)
-    try:
-        result = await service.test_connection(body.url)
-        return result
-    except SpoolmanImportError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": e.code, "message": str(e)},
-        )
-
-
-@router.post(
-    "/spoolman-import/preview",
-)
-async def spoolman_preview(
-    body: SpoolmanPreviewRequest,
-    db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
-):
-    """Vorschau der zu importierenden Daten."""
-    service = SpoolmanImportService(db)
-    try:
-        candidate_count: int | None = None
-        plan_digest: str | None = None
-        if body.include_transparency_repairs:
-            preview, candidate_count, plan_digest = (
-                await service.preview_with_transparency_repairs(body.url)
-            )
-        else:
-            preview = await service.preview(body.url)
-
-        response: dict[str, Any] = {
-            "summary": preview.summary,
-            "vendors": preview.vendors,
-            "filaments": preview.filaments,
-            "spools": preview.spools,
-            "locations": preview.locations,
-            "colors": preview.colors,
-        }
-        if body.include_transparency_repairs:
-            response.update(
-                {
-                    "transparency_repair_candidates": candidate_count,
-                    "transparency_repair_plan_digest": plan_digest,
-                }
-            )
-        return JSONResponse(response)
-    except SpoolmanImportError as e:
-        logger.warning(f"Spoolman Import Error: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"detail": {"code": e.code, "message": str(e)}},
-        )
-    except Exception as e:
-        import traceback
-
-        tb = traceback.format_exc()
-        logger.exception(f"Unexpected error in Spoolman preview: {tb}")
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "detail": {
-                    "code": "internal_error",
-                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
-                    "type": type(e).__name__,
-                }
-            },
-        )
-
-
-@router.post(
-    "/spoolman-import/execute",
-    response_model=SpoolmanImportResultResponse,
-)
-async def spoolman_execute(
-    body: SpoolmanUrlRequest,
-    db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
-):
-    """Spoolman-Import ausfuehren."""
-    async with _exclusive_spoolman_mutation():
-        service = SpoolmanImportService(db)
-        try:
-            result = await service.execute(body.url)
-            return result
-        except SpoolmanImportError as e:
-            logger.warning(f"Spoolman Import Execution Error: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"code": e.code, "message": str(e)},
-            )
-        except Exception as e:
-            import traceback
-
-            tb = traceback.format_exc()
-            logger.exception(f"Unexpected error in Spoolman import execution: {tb}")
-            # Return JSONResponse for 500 errors to give more details
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={
-                    "detail": {
-                        "code": "internal_error",
-                        "message": (
-                            f"Unerwarteter Fehler beim Import: {e!s}\n\n"
-                            f"Traceback:\n{tb}"
-                        ),
-                        "type": type(e).__name__,
-                    }
-                },
-            )
-
-
-@router.post(
-    "/spoolman-import/repair-transparency",
-    response_model=SpoolmanTransparencyRepairResultResponse,
-)
-async def spoolman_repair_transparency(
-    body: SpoolmanTransparencyRepairRequest,
-    db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
-):
-    """Repair linked transparency assignments without running a full import."""
-    async with _exclusive_spoolman_mutation():
-        service = SpoolmanImportService(db)
-        try:
-            return await service.repair_transparency(
-                body.url,
-                body.plan_digest,
-            )
-        except SpoolmanImportError as e:
-            raise HTTPException(
-                status_code=(
-                    status.HTTP_409_CONFLICT
-                    if e.code == "repair_plan_changed"
-                    else status.HTTP_422_UNPROCESSABLE_ENTITY
-                ),
-                detail={"code": e.code, "message": str(e)},
-            )
 
 
 # ------------------------------------------------------------------ #

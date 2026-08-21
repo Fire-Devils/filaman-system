@@ -44,6 +44,10 @@ def test_entity_extra_field_rejects_unsupported_type(field_type):
         "__proto__.polluted",
         "constructor.prototype.polluted",
         "safe..field",
+        "spoolman_extra",
+        "spoolman_id",
+        "spoolman_external_id",
+        "filamentdb_id",
     ],
 )
 def test_entity_extra_field_rejects_unsafe_definition_key(key):
