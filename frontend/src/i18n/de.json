@@ -1513,5 +1513,9 @@
     "printHelpIntro": "F\u00fcr kleine Etiketten 100 % Skalierung und die exakt passende Papiergr\u00f6\u00dfe verwenden.",
     "printHelpBrave": "Brave: Wenn die Ausgabe leer, versetzt oder abgeschnitten ist, PDF exportieren oder eine etwas kleinere passende Labelgr\u00f6\u00dfe verwenden.",
     "printHelpFirefox": "Firefox: Wenn der Systemdialog ein leeres Blatt hinzuf\u00fcgt, den Firefox-Druckdialog verwenden oder PDF exportieren."
+  },
+  "pluginPage": {
+    "frameTitle": "Plugin-Seite",
+    "notFound": "Diese Plugin-Seite ist nicht verf\u00fcgbar."
   }
 }

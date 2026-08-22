@@ -1,0 +1,72 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<Layout title="FilaMan - Plugin">
+  <iframe
+    id="plugin-frame"
+    data-i18n-title="pluginPage.frameTitle"
+    title="Plugin page"
+    style="display: block; width: 100%; height: calc(100vh - 64px); border: none; border-radius: 12px; background: transparent;"
+  ></iframe>
+
+  <p id="plugin-missing" style="display: none; color: var(--text-muted);" data-i18n="pluginPage.notFound">
+    This plugin page is not available.
+  </p>
+</Layout>
+
+<script>
+  /* Plugin pages are served by the backend as plain HTML, outside this shell:
+     the navigation links straight at page_url and serve_plugin_page() answers
+     with the plugin's page.html. Opening one therefore replaces the whole
+     window and the navigation is gone for as long as it stays open. This route
+     keeps the shell and puts the plugin page inside it.
+
+     The frontend is built statically, so the plugin cannot come out of the
+     route itself. It arrives as ?p=<slug> and is checked before it is used. */
+  const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
+  const PLUGIN_PAGE_PREFIX = '/plugin-page/'
+
+  const frame = document.getElementById('plugin-frame') as HTMLIFrameElement
+  const missing = document.getElementById('plugin-missing')!
+  const slug = new URLSearchParams(window.location.search).get('p') || ''
+
+  /* A plugin page is somebody else's HTML, and it links back into FilaMan with
+     a plain <a href="/...">, which inside a frame would render the application
+     inside itself. The frame is same-origin, so such a click can be handed to
+     the top window, where a page of this frontend belongs. A link that stays
+     inside the plugin keeps working in the frame, and an external link or one
+     that names its own target is left alone. */
+  function keepFilaManLinksOutOfTheFrame(embedded: Document): void {
+    embedded.addEventListener('click', (event) => {
+      const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target) return
+
+      const target = new URL(anchor.href, embedded.baseURI)
+      if (target.origin !== window.location.origin) return
+      if (target.pathname.startsWith(PLUGIN_PAGE_PREFIX)) return
+
+      event.preventDefault()
+      window.location.href = target.href
+    })
+  }
+
+  if (SLUG_PATTERN.test(slug)) {
+    frame.addEventListener('load', () => {
+      try {
+        const embedded = frame.contentDocument
+        if (!embedded) return
+        // The plugin page names itself, and the tab should say so rather than
+        // reading "Plugin" for every one of them.
+        if (embedded.title) document.title = embedded.title
+        keepFilaManLinksOutOfTheFrame(embedded)
+      } catch {
+        /* A page that cannot be read keeps the shell's title and its links. */
+      }
+    })
+    frame.src = `${PLUGIN_PAGE_PREFIX}${slug}`
+  } else {
+    frame.style.display = 'none'
+    missing.style.display = 'block'
+  }
+</script>
