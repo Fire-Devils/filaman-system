@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Wenn eine Treiber-Aktion (z. B. \"Spule einer Ace-/AMS-Tray zuweisen\", Drucker-Treiber starten/stoppen) an einen anderen Backend-Prozess weitergeleitet werden musste und dessen Antwort nicht als JSON gelesen werden konnte, führte das zu einem unbehandelten 500-Fehler ohne Fehlermeldung. Solche Fälle liefern jetzt einen strukturierten Fehler statt eines rohen Absturzes." }
+        ],
+        "en": [
+          { "type": "fix", "text": "When a driver action (e.g. \"assign a spool to an Ace/AMS tray\", starting/stopping a printer driver) had to be forwarded to another backend process and its response couldn't be read as JSON, this caused an unhandled 500 error with no error body. Such cases now return a structured error instead of a raw crash." }
+        ]
+      }
+    },
+    {
       "version": "1.2.43",
       "date": "",
       "changes": {

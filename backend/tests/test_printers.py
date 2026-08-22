@@ -226,3 +226,74 @@ class TestPrinterSlots:
 
         assert response.status_code == 200
         assert response.json() == []
+
+
+class _FakeProxyResponse:
+    """Mimics an httpx.Response whose body cannot be decoded as JSON."""
+
+    def __init__(self, status_code: int = 200):
+        self.status_code = status_code
+        self.text = ""
+
+    def json(self):
+        raise ValueError("not valid JSON")
+
+
+class _FakeProxyClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def request(self, *args, **kwargs):
+        return _FakeProxyResponse()
+
+
+class TestDriverActionProxy:
+    """Regression coverage for GH issue #133: a non-primary worker proxying a
+    driver/action call to the primary must surface a structured error instead
+    of crashing with an unhandled pydantic ValidationError when the primary's
+    response body can't be decoded as JSON."""
+
+    @pytest.mark.asyncio
+    async def test_driver_action_invalid_proxy_response_returns_structured_502(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        printer = await _create_printer(db_session)
+
+        with (
+            patch("app.api.v1.printers._is_primary_worker", return_value=False),
+            patch("app.api.v1.printers.httpx.AsyncClient", _FakeProxyClient),
+        ):
+            response = await client.post(
+                f"/api/v1/printers/{printer.id}/driver/action",
+                json={"action": "send_filament_to_tray", "params": {}},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 502
+        assert response.json()["detail"]["code"] == "primary_proxy_invalid_response"
+
+    @pytest.mark.asyncio
+    async def test_start_driver_invalid_proxy_response_returns_structured_502(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        printer = await _create_printer(db_session)
+
+        with (
+            patch("app.api.v1.printers._is_primary_worker", return_value=False),
+            patch("app.api.v1.printers.httpx.AsyncClient", _FakeProxyClient),
+        ):
+            response = await client.post(
+                f"/api/v1/printers/{printer.id}/driver/start",
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 502
+        assert response.json()["detail"]["code"] == "primary_proxy_invalid_response"

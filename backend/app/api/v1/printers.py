@@ -120,6 +120,19 @@ async def _proxy_to_primary(
                     },
                 )
 
+            if payload is None:
+                # response.json() above swallows decode errors, so a successful
+                # status code can still leave payload unset (empty/non-JSON body).
+                # Surface that as a structured error instead of letting callers
+                # crash on model_validate(None).
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail={
+                        "code": "primary_proxy_invalid_response",
+                        "message": "Primary worker returned an invalid response",
+                    },
+                )
+
             return payload
 
     raise HTTPException(
