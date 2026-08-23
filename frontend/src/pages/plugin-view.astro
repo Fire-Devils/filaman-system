@@ -7,6 +7,7 @@ import Layout from '../layouts/Layout.astro'
     id="plugin-frame"
     data-i18n-title="pluginPage.frameTitle"
     title="Plugin page"
+    sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
     style="display: block; width: 100%; height: calc(100vh - 64px); border: none; border-radius: 12px; background: transparent;"
   ></iframe>
 
@@ -16,6 +17,8 @@ import Layout from '../layouts/Layout.astro'
 </Layout>
 
 <script>
+  import { PLUGIN_PAGE_PREFIX, isValidPluginSlug } from '../lib/plugin-nav'
+
   /* Plugin pages are served by the backend as plain HTML, outside this shell:
      the navigation links straight at page_url and serve_plugin_page() answers
      with the plugin's page.html. Opening one therefore replaces the whole
@@ -24,8 +27,6 @@ import Layout from '../layouts/Layout.astro'
 
      The frontend is built statically, so the plugin cannot come out of the
      route itself. It arrives as ?p=<slug> and is checked before it is used. */
-  const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
-  const PLUGIN_PAGE_PREFIX = '/plugin-page/'
 
   const frame = document.getElementById('plugin-frame') as HTMLIFrameElement
   const missing = document.getElementById('plugin-missing')!
@@ -51,7 +52,7 @@ import Layout from '../layouts/Layout.astro'
     })
   }
 
-  if (SLUG_PATTERN.test(slug)) {
+  if (isValidPluginSlug(slug)) {
     frame.addEventListener('load', () => {
       try {
         const embedded = frame.contentDocument

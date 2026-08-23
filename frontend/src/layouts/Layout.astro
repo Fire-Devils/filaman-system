@@ -180,6 +180,7 @@ const { title } = Astro.props
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
       import { getAbortSignal } from '../lib/abort'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
+      import { navHrefFor } from '../lib/plugin-nav'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
@@ -355,18 +356,6 @@ const { title } = Astro.props
 
       /* ── Plugin navigation ───────────────────────────────────── */
       const pluginNav = document.getElementById('plugin-nav')!
-
-      // A page the backend serves replaces this whole window, navigation
-      // included, so it is opened through /plugin-view, which keeps the shell
-      // around it. A plugin that points at a page of this frontend, like the
-      // built-in imports, keeps its own link.
-      const BACKEND_PAGE_PREFIX = '/plugin-page/'
-
-      function navHrefFor(pageUrl: string): string {
-        if (!pageUrl.startsWith(BACKEND_PAGE_PREFIX)) return pageUrl
-        const slug = pageUrl.slice(BACKEND_PAGE_PREFIX.length)
-        return `/plugin-view?p=${encodeURIComponent(slug)}`
-      }
 
       async function loadPluginNav() {
         try {
