@@ -5,10 +5,10 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Beim Öffnen einer Plugin-Seite (z. B. über die Seitenleiste oder unter Admin > Plugins) bleibt jetzt die Navigations-Sidebar sichtbar, statt dass die Plugin-Seite das gesamte Fenster ersetzt und die Navigation verschwindet. Plugin-Seiten laufen dabei jetzt zusätzlich in einer Sandbox, sodass sie das übergeordnete Fenster nicht mehr übernehmen können." }
+          { "type": "feature", "text": "Beim Öffnen einer Plugin-Seite (z. B. über die Seitenleiste oder unter Admin > Plugins) bleibt jetzt die Navigations-Sidebar sichtbar, statt dass die Plugin-Seite das gesamte Fenster ersetzt und die Navigation verschwindet. Plugin-Seiten laufen dabei jetzt zusätzlich in einer Sandbox, sodass sie das übergeordnete Fenster nicht mehr übernehmen können. (Beigetragen von Niko11111)" }
         ],
         "en": [
-          { "type": "feature", "text": "Opening a plugin page (e.g. from the sidebar or from Admin > Plugins) now keeps the app's navigation sidebar visible instead of the plugin page replacing the whole window and losing the navigation. Plugin pages are also now sandboxed, so they can no longer take over the top-level window." }
+          { "type": "feature", "text": "Opening a plugin page (e.g. from the sidebar or from Admin > Plugins) now keeps the app's navigation sidebar visible instead of the plugin page replacing the whole window and losing the navigation. Plugin pages are also now sandboxed, so they can no longer take over the top-level window. (Contributed by Niko11111)" }
         ]
       }
     },
