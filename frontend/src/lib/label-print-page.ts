@@ -14,11 +14,19 @@ import {
   downloadLabelFiles,
   type LabelDownloadFile,
 } from './label-file-export'
+import {
+  cleanupLabelBrowserPrint,
+  createLabelBrowserPrintJob,
+  printLabelBrowserJob,
+  type LabelBrowserPrintJob,
+} from './label-browser-print'
+import type { LabelSheetControls } from './label-sheet'
 
 export { LABEL_EXPORT_DPI, LABEL_EXPORT_PIXEL_RATIO } from './label-export'
 
+export const LABEL_PRINT_PDF_MODE_KEY = 'filaman-label-print-pdf-v1'
+
 export interface PdfOutputActionsOptions {
-  printButton: HTMLButtonElement
   pdfButton: HTMLButtonElement
   createPdf: () => Promise<LabelPdfDocument | null>
   getFilename: () => string
@@ -46,6 +54,7 @@ function createLabelOutputCoordinator(
       let originalStates: Array<{
         button: HTMLButtonElement
         disabled: boolean
+        ariaDisabled: string | null
         text: string | null
       }> | null = null
 
@@ -54,6 +63,7 @@ function createLabelOutputCoordinator(
         originalStates = buttons.map(button => ({
           button,
           disabled: button.disabled,
+          ariaDisabled: button.getAttribute('aria-disabled'),
           text: button.textContent,
         }))
         buttons.forEach(button => {
@@ -62,8 +72,16 @@ function createLabelOutputCoordinator(
         })
         await action()
       } finally {
-        originalStates?.forEach(({ button, disabled, text }) => {
-          button.disabled = disabled
+        originalStates?.forEach(({
+          button,
+          disabled,
+          ariaDisabled,
+          text,
+        }) => {
+          const currentAriaDisabled = button.getAttribute('aria-disabled')
+          button.disabled = currentAriaDisabled === ariaDisabled
+            ? disabled
+            : currentAriaDisabled === 'true'
           button.textContent = text
         })
         operationRunning = false
@@ -103,10 +121,7 @@ export function bindPdfOutputActions(
   options: PdfOutputActionsOptions,
 ) {
   const coordinator = options.coordinator ??
-    createLabelOutputCoordinator([
-      options.printButton,
-      options.pdfButton,
-    ])
+    createLabelOutputCoordinator([options.pdfButton])
 
   const execute = async (
     target: 'download' | 'print',
@@ -196,11 +211,50 @@ export function bindPdfOutputActions(
   options.pdfButton.addEventListener('click', () => {
     void download()
   })
-  options.printButton.addEventListener('click', () => {
-    void print()
-  })
 
   return { download, print }
+}
+
+interface SelectablePrintActionOptions {
+  printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
+  coordinator: LabelOutputCoordinator
+  createBrowserPrintJob: () => Promise<LabelBrowserPrintJob>
+  printPdf: () => Promise<void>
+  getTranslation: (key: string, fallback: string) => string
+}
+
+function bindSelectablePrintAction(
+  options: SelectablePrintActionOptions,
+) {
+  const getPdfMode = bindPrintPdfPreference(options.printPdfCheckbox)
+  options.printButton.addEventListener('click', () => {
+    if (getPdfMode()) {
+      void options.printPdf()
+      return
+    }
+
+    void options.coordinator.run(
+      options.getTranslation(
+        'labelPrint.preparingBrowserPrint',
+        'Preparing browser print…',
+      ),
+      async () => {
+        try {
+          await printLabelBrowserJob(
+            await options.createBrowserPrintJob(),
+          )
+        } catch (error) {
+          cleanupLabelBrowserPrint()
+          window.alert(options.getTranslation(
+            'labelPrint.browserPrintFailed',
+            'Browser printing failed.',
+          ))
+          console.error('Failed to prepare browser label print:', error)
+        }
+      },
+    )
+  })
 }
 
 const STORAGE_SOFT_LIMIT_BYTES = 4_500_000
@@ -233,6 +287,17 @@ export function writeStorageValue(key: string, value: string) {
   } catch {
     // Print preview still works when storage is blocked.
   }
+}
+
+export function bindPrintPdfPreference(checkbox: HTMLInputElement) {
+  checkbox.checked = readStorageValue(LABEL_PRINT_PDF_MODE_KEY) === 'true'
+  checkbox.addEventListener('change', () => {
+    writeStorageValue(
+      LABEL_PRINT_PDF_MODE_KEY,
+      String(checkbox.checked),
+    )
+  })
+  return () => checkbox.checked
 }
 
 export function removeStorageValue(key: string) {
@@ -516,6 +581,26 @@ export type LabelPdfFactoryOverride = (
   defaultCreate: () => Promise<LabelPdfDocument | null>,
 ) => Promise<LabelPdfDocument | null>
 
+interface BrowserPrintBinding {
+  previewRoot: HTMLElement
+  sheetControls: LabelSheetControls
+  getIndividualPages?: () => HTMLElement[]
+}
+
+function buildBrowserPrintJob(
+  binding: BrowserPrintBinding,
+  individualPages: HTMLElement[],
+  individualDimensions: { widthMm: number; heightMm: number },
+) {
+  return createLabelBrowserPrintJob({
+    outputMode: binding.sheetControls.getOutputMode(),
+    previewRoot: binding.previewRoot,
+    individualPages,
+    individualDimensions,
+    sheetSettings: binding.sheetControls.getSettings(),
+  })
+}
+
 async function collectCapturedFiles<T>(
   entities: T[],
   capture: (entity: T) => Promise<string>,
@@ -523,13 +608,21 @@ async function collectCapturedFiles<T>(
   skipCaptureErrors: boolean,
 ) {
   const files: LabelDownloadFile[] = []
+  const canSkipCaptureError = skipCaptureErrors && entities.length > 1
+  let firstCaptureError: unknown
   for (const entity of entities) {
+    let pngDataUrl: string
     try {
-      const pngDataUrl = await capture(entity)
-      files.push(build(entity, pngDataUrl))
+      pngDataUrl = await capture(entity)
     } catch (error) {
-      if (!skipCaptureErrors) throw error
+      if (!canSkipCaptureError) throw error
+      firstCaptureError ??= error
+      continue
     }
+    files.push(build(entity, pngDataUrl))
+  }
+  if (files.length === 0 && firstCaptureError) {
+    throw firstCaptureError
   }
   return files
 }
@@ -569,6 +662,7 @@ interface BatchLabelExportOptions<T> {
   entities: () => T[]
   activeTab: () => PrintDesignerTab
   printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
   pngButton: HTMLButtonElement
   amlButton: HTMLButtonElement
   pdfButton: HTMLButtonElement
@@ -580,6 +674,9 @@ interface BatchLabelExportOptions<T> {
   zipName: () => string
   zipEntryName: (entity: T) => string
   pdfName: () => string
+  browserPrint: BrowserPrintBinding & {
+    getIndividualPages: () => HTMLElement[]
+  }
   createPdf?: LabelPdfFactoryOverride
   skipCaptureErrorsInZip?: boolean
   skipCaptureErrorsInPdf?: boolean
@@ -613,7 +710,9 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
           ),
           options.skipCaptureErrorsInZip ?? false,
         )
-        await downloadLabelFiles(files, options.zipName())
+        await downloadLabelFiles(files, options.zipName(), {
+          forceArchive: entities.length > 1,
+        })
       } catch (error) {
         alert(options.getTranslation('labelPrint.pngExportFailed', 'PNG export failed.'))
         console.error(error)
@@ -649,6 +748,7 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
         await downloadLabelFiles(
           files,
           amlArchiveNameFromPngArchive(options.zipName()),
+          { forceArchive: entities.length > 1 },
         )
       } catch (error) {
         alert(options.getTranslation(
@@ -696,18 +796,33 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
       : defaultCreate()
   }
 
-  bindPdfOutputActions({
-    printButton: options.printButton,
+  const pdfActions = bindPdfOutputActions({
     pdfButton: options.pdfButton,
     createPdf,
     getFilename: options.pdfName,
     getTranslation: options.getTranslation,
     coordinator,
   })
+  bindSelectablePrintAction({
+    printButton: options.printButton,
+    printPdfCheckbox: options.printPdfCheckbox,
+    coordinator,
+    createBrowserPrintJob: async () => {
+      await options.renderAll(options.activeTab())
+      return buildBrowserPrintJob(
+        options.browserPrint,
+        options.browserPrint.getIndividualPages(),
+        options.getPdfDimensions(),
+      )
+    },
+    printPdf: pdfActions.print,
+    getTranslation: options.getTranslation,
+  })
 }
 
 interface SingleLabelExportOptions {
   printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
   exportPngBtn: HTMLButtonElement
   exportAmlBtn: HTMLButtonElement
   exportPdfBtn: HTMLButtonElement
@@ -718,6 +833,7 @@ interface SingleLabelExportOptions {
   pdfName?: () => string
   getDimensions: () => { widthMm: number; heightMm: number }
   refreshPreview: () => Promise<void>
+  browserPrint: BrowserPrintBinding
   captureLabel?: () => Promise<string>
   createPdf?: LabelPdfFactoryOverride
 }
@@ -795,8 +911,7 @@ export function bindSingleLabelExport(options: SingleLabelExportOptions) {
       : defaultCreate()
   }
 
-  bindPdfOutputActions({
-    printButton: options.printButton,
+  const pdfActions = bindPdfOutputActions({
     pdfButton: options.exportPdfBtn,
     createPdf,
     getFilename:
@@ -804,5 +919,20 @@ export function bindSingleLabelExport(options: SingleLabelExportOptions) {
       (() => `${options.buildBaseName()}.pdf`),
     getTranslation: options.getTranslation,
     coordinator,
+  })
+  bindSelectablePrintAction({
+    printButton: options.printButton,
+    printPdfCheckbox: options.printPdfCheckbox,
+    coordinator,
+    createBrowserPrintJob: async () => {
+      await options.refreshPreview()
+      return buildBrowserPrintJob(
+        options.browserPrint,
+        [options.labelElement],
+        options.getDimensions(),
+      )
+    },
+    printPdf: pdfActions.print,
+    getTranslation: options.getTranslation,
   })
 }

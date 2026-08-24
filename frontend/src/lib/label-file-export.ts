@@ -8,6 +8,10 @@ export interface LabelDownloadFile {
   zipBase64?: boolean
 }
 
+export interface LabelDownloadOptions {
+  forceArchive?: boolean
+}
+
 function scheduleObjectUrlCleanup(url: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
@@ -42,10 +46,11 @@ function uniqueArchiveName(
 export async function downloadLabelFiles(
   files: LabelDownloadFile[],
   archiveName: string,
+  options: LabelDownloadOptions = {},
 ) {
   if (files.length === 0) return
 
-  if (files.length === 1) {
+  if (files.length === 1 && !options.forceArchive) {
     const [file] = files
     if (file.directUrl) {
       downloadDataUrl(file.directUrl, file.name)

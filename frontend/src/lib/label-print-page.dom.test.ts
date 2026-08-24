@@ -11,12 +11,22 @@ import {
 import JSZip from 'jszip'
 
 import {
+  LABEL_PRINT_PDF_MODE_KEY,
   bindBatchLabelExport,
   bindPdfOutputActions,
+  bindPrintPdfPreference,
   bindSingleLabelExport,
   releasePrintPdfUrls,
 } from './label-print-page'
 import type { LabelPdfDocument } from './label-export'
+import {
+  syncLabelSheetIndividualExportState,
+  type LabelSheetControls,
+} from './label-sheet'
+import {
+  cleanupLabelBrowserPrint,
+  printLabelBrowserJob,
+} from './label-browser-print'
 
 vi.mock('./label-export', async importOriginal => {
   const actual = await importOriginal<typeof import('./label-export')>()
@@ -25,6 +35,18 @@ vi.mock('./label-export', async importOriginal => {
     createLabelPagesPdf: vi.fn(async () => null),
   }
 })
+
+vi.mock('./label-browser-print', () => ({
+  cleanupLabelBrowserPrint: vi.fn(),
+  createLabelBrowserPrintJob: vi.fn(source => ({
+    kind: source.outputMode,
+    widthMm: source.individualDimensions.widthMm,
+    heightMm: source.individualDimensions.heightMm,
+    pages: source.individualPages,
+    printGrid: false,
+  })),
+  printLabelBrowserJob: vi.fn(async () => window.print()),
+}))
 
 function makePdfDocument() {
   return {
@@ -50,6 +72,23 @@ function makePopup() {
   }
 }
 
+function makeBrowserPrintBinding(
+  page = document.querySelector<HTMLElement>('#label') ?? document.body,
+) {
+  const sheetControls = {
+    getOutputMode: () => 'individual',
+    getSettings: () => (
+      {} as ReturnType<LabelSheetControls['getSettings']>
+    ),
+    setOutputMode: () => undefined,
+  } as LabelSheetControls
+  return {
+    previewRoot: document.body,
+    sheetControls,
+    getIndividualPages: () => [page],
+  }
+}
+
 function bindDeferredCapture(
   kind: 'single-label' | 'batch',
   captureLabel: () => Promise<string>,
@@ -58,25 +97,31 @@ function bindDeferredCapture(
   const pngButton = document.querySelector<HTMLButtonElement>('#png')!
   const amlButton = document.querySelector<HTMLButtonElement>('#aml')!
   const pdfButton = document.querySelector<HTMLButtonElement>('#pdf')!
+  const printPdfCheckbox =
+    document.querySelector<HTMLInputElement>('#pdf-mode')!
+  const labelElement = document.querySelector<HTMLElement>('#label')!
 
   if (kind === 'single-label') {
     bindSingleLabelExport({
       printButton,
+      printPdfCheckbox,
       exportPngBtn: pngButton,
       exportAmlBtn: amlButton,
       exportPdfBtn: pdfButton,
-      labelElement: document.querySelector('#label')!,
+      labelElement,
       getTranslation: (_key, fallback) => fallback,
       buildBaseName: () => 'single-label',
       getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
       refreshPreview: vi.fn(async () => undefined),
       captureLabel,
+      browserPrint: makeBrowserPrintBinding(labelElement),
     })
   } else {
     bindBatchLabelExport({
       entities: () => [{ id: 1 }],
       activeTab: () => 'print',
       printButton,
+      printPdfCheckbox,
       pngButton,
       amlButton,
       pdfButton,
@@ -88,16 +133,29 @@ function bindDeferredCapture(
       zipName: () => 'labels.zip',
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(labelElement),
     })
   }
 
-  return { printButton, pngButton, amlButton, pdfButton }
+  return {
+    printButton,
+    printPdfCheckbox,
+    pngButton,
+    amlButton,
+    pdfButton,
+  }
 }
 
 beforeEach(() => {
+  vi.mocked(printLabelBrowserJob)
+    .mockImplementation(async () => window.print())
+  vi.mocked(cleanupLabelBrowserPrint).mockClear()
+  localStorage.clear()
   document.body.innerHTML = `
     <button id="print">Print</button>
     <button id="pdf">Export PDF</button>
+    <input id="pdf-mode" type="checkbox">
+    <div id="label"></div>
   `
   Object.defineProperty(window, 'print', {
     configurable: true,
@@ -118,12 +176,38 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('print PDF preference', () => {
+  it('defaults to unchecked and persists changes', () => {
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+
+    const getPdfMode = bindPrintPdfPreference(checkbox)
+
+    expect(checkbox.checked).toBe(false)
+    expect(getPdfMode()).toBe(false)
+    checkbox.checked = true
+    checkbox.dispatchEvent(new Event('change'))
+    expect(localStorage.getItem(LABEL_PRINT_PDF_MODE_KEY)).toBe('true')
+    expect(getPdfMode()).toBe(true)
+  })
+
+  it('restores an enabled compatibility preference', () => {
+    localStorage.setItem(LABEL_PRINT_PDF_MODE_KEY, 'true')
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+
+    const getPdfMode = bindPrintPdfPreference(checkbox)
+
+    expect(checkbox.checked).toBe(true)
+    expect(getPdfMode()).toBe(true)
+  })
+})
+
 describe('PDF output destination routing', () => {
   it('keeps Export PDF on pdf.save()', async () => {
     const pdf = makePdfDocument()
     const open = vi.spyOn(window, 'open')
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(async () => pdf),
       getFilename: () => 'label.pdf',
@@ -149,7 +233,6 @@ describe('PDF output destination routing', () => {
       },
     )
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(() => pendingPdf),
       getFilename: () => 'label.pdf',
@@ -185,7 +268,6 @@ describe('PDF output destination routing', () => {
       value: execCommand,
     })
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(async () => pdf),
       getFilename: () => 'label.pdf',
@@ -206,7 +288,6 @@ describe('PDF output destination routing', () => {
       .mockImplementation(() => undefined)
     const createPdf = vi.fn(async () => pdf)
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf,
       getFilename: () => 'label.pdf',
@@ -231,7 +312,6 @@ describe('PDF output destination routing', () => {
       .mockImplementation(() => undefined)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(async () => {
         throw new Error('capture failed')
@@ -258,7 +338,6 @@ describe('PDF output destination routing', () => {
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => undefined)
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(async () => null),
       getFilename: () => 'label.pdf',
@@ -285,7 +364,6 @@ describe('PDF output destination routing', () => {
       .mockImplementation(() => undefined)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(async () => pdf),
       getFilename: () => 'label.pdf',
@@ -312,7 +390,6 @@ describe('PDF output destination routing', () => {
     const { popup } = makePopup()
     vi.spyOn(window, 'open').mockReturnValue(popup)
     const actions = bindPdfOutputActions({
-      printButton: document.querySelector('#print')!,
       pdfButton: document.querySelector('#pdf')!,
       createPdf: vi.fn(async () => pdf),
       getFilename: () => 'label.pdf',
@@ -330,6 +407,67 @@ describe('PDF output destination routing', () => {
 
 describe('single and batch PDF factory reuse', () => {
   it.each(['single-label', 'batch'] as const)(
+    'uses normal browser printing by default for %s output',
+    async kind => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      const windowPrint = vi.spyOn(window, 'print')
+        .mockImplementation(() => undefined)
+      const open = vi.spyOn(window, 'open')
+      const captureLabel = vi.fn(
+        async () => 'data:image/png;base64,bGFiZWw=',
+      )
+
+      const { printButton } = bindDeferredCapture(kind, captureLabel)
+      printButton.click()
+
+      await vi.waitFor(() => expect(windowPrint).toHaveBeenCalledOnce())
+      expect(printLabelBrowserJob).toHaveBeenCalledOnce()
+      expect(captureLabel).not.toHaveBeenCalled()
+      expect(open).not.toHaveBeenCalled()
+    },
+  )
+
+  it('reports browser-print preparation failure without falling back to PDF', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
+      <div id="label"></div>
+    `
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.mocked(printLabelBrowserJob).mockRejectedValueOnce(
+      new Error('print failed'),
+    )
+    const open = vi.spyOn(window, 'open')
+    const { printButton, pngButton, amlButton, pdfButton } =
+      bindDeferredCapture(
+        'single-label',
+        vi.fn(async () => 'data:image/png;base64,bGFiZWw='),
+      )
+
+    printButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Browser printing failed.')
+    })
+    expect(cleanupLabelBrowserPrint).toHaveBeenCalledOnce()
+    expect(open).not.toHaveBeenCalled()
+    expect([printButton, pngButton, amlButton, pdfButton]
+      .every(button => !button.disabled)).toBe(true)
+  })
+
+  it.each(['single-label', 'batch'] as const)(
     'prevents a competing %s action from starting a second capture',
     async kind => {
       document.body.innerHTML = `
@@ -337,6 +475,7 @@ describe('single and batch PDF factory reuse', () => {
         <button id="png">Export PNG</button>
         <button id="aml">Export AML</button>
         <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
         <div id="label"></div>
       `
       let resolveCapture!: (value: string) => void
@@ -377,12 +516,77 @@ describe('single and batch PDF factory reuse', () => {
     },
   )
 
+  it.each([
+    {
+      initialMode: 'individual',
+      finalMode: 'sheet',
+      actionButtonId: 'png',
+    },
+    {
+      initialMode: 'sheet',
+      finalMode: 'individual',
+      actionButtonId: 'pdf',
+    },
+  ] as const)(
+    'preserves $finalMode export state when output mode changes from $initialMode during an operation',
+    async ({ initialMode, finalMode, actionButtonId }) => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      let mode: 'individual' | 'sheet' = initialMode
+      const sheetControls = {
+        getOutputMode: () => mode,
+      } as LabelSheetControls
+      const pngButton = document.querySelector<HTMLButtonElement>('#png')!
+      const amlButton = document.querySelector<HTMLButtonElement>('#aml')!
+      const syncExportState = () => syncLabelSheetIndividualExportState(
+        sheetControls,
+        [pngButton, amlButton],
+        (_key, fallback) => fallback,
+      )
+      syncExportState()
+
+      let resolveCapture!: (value: string) => void
+      const captureLabel = vi.fn(() => new Promise<string>(resolve => {
+        resolveCapture = resolve
+      }))
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+      const { printButton, pdfButton } = bindDeferredCapture(
+        'single-label',
+        captureLabel,
+      )
+
+      document.querySelector<HTMLButtonElement>(`#${actionButtonId}`)!.click()
+      await vi.waitFor(() => expect(captureLabel).toHaveBeenCalledOnce())
+
+      mode = finalMode
+      syncExportState()
+      resolveCapture('data:image/png;base64,bGFiZWw=')
+
+      await vi.waitFor(() => {
+        expect(pdfButton.textContent).toBe('Export PDF')
+      })
+      const finalSheetMode = finalMode === 'sheet'
+      expect(pngButton.disabled).toBe(finalSheetMode)
+      expect(amlButton.disabled).toBe(finalSheetMode)
+      expect(printButton.disabled).toBe(false)
+      expect(pdfButton.disabled).toBe(false)
+    },
+  )
+
   it('runs batch PNG export from the supplied button', async () => {
     document.body.innerHTML = `
       <button id="print">Print</button>
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
     `
     const downloads: Array<{ filename: string; href: string }> = []
     vi.spyOn(HTMLAnchorElement.prototype, 'click')
@@ -397,6 +601,7 @@ describe('single and batch PDF factory reuse', () => {
       entities: () => [{ id: 1 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
       pngButton: document.querySelector('#png')!,
       amlButton: document.querySelector('#aml')!,
       pdfButton: document.querySelector('#pdf')!,
@@ -410,6 +615,7 @@ describe('single and batch PDF factory reuse', () => {
       zipName: () => 'labels.zip',
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
     })
 
     document.querySelector<HTMLButtonElement>('#png')!.click()
@@ -428,6 +634,7 @@ describe('single and batch PDF factory reuse', () => {
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
     `
     let amlBlob: Blob | undefined
     vi.mocked(URL.createObjectURL).mockImplementation(value => {
@@ -447,6 +654,7 @@ describe('single and batch PDF factory reuse', () => {
       entities: () => [{ id: 1 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
       pngButton: document.querySelector('#png')!,
       amlButton: document.querySelector('#aml')!,
       pdfButton: document.querySelector('#pdf')!,
@@ -458,6 +666,7 @@ describe('single and batch PDF factory reuse', () => {
       zipName: () => 'labels.zip',
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
     })
 
     document.querySelector<HTMLButtonElement>('#aml')!.click()
@@ -481,6 +690,7 @@ describe('single and batch PDF factory reuse', () => {
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
     `
     let archiveBlob: Blob | undefined
     vi.mocked(URL.createObjectURL).mockImplementation(value => {
@@ -497,6 +707,7 @@ describe('single and batch PDF factory reuse', () => {
       entities: () => [{ id: 1 }, { id: 2 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
       pngButton: document.querySelector('#png')!,
       amlButton: document.querySelector('#aml')!,
       pdfButton: document.querySelector('#pdf')!,
@@ -510,6 +721,7 @@ describe('single and batch PDF factory reuse', () => {
       zipName: () => 'labels.zip',
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
     })
 
     document.querySelector<HTMLButtonElement>('#aml')!.click()
@@ -529,6 +741,7 @@ describe('single and batch PDF factory reuse', () => {
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
       <div id="label"></div>
     `
     let amlBlob: Blob | undefined
@@ -545,6 +758,7 @@ describe('single and batch PDF factory reuse', () => {
 
     bindSingleLabelExport({
       printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
       exportPngBtn: document.querySelector('#png')!,
       exportAmlBtn: document.querySelector('#aml')!,
       exportPdfBtn: document.querySelector('#pdf')!,
@@ -554,6 +768,7 @@ describe('single and batch PDF factory reuse', () => {
       getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
       refreshPreview,
       captureLabel,
+      browserPrint: makeBrowserPrintBinding(),
     })
 
     document.querySelector<HTMLButtonElement>('#aml')!.click()
@@ -572,6 +787,7 @@ describe('single and batch PDF factory reuse', () => {
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
       <div id="label"></div>
     `
     const alert = vi.spyOn(window, 'alert')
@@ -594,12 +810,120 @@ describe('single and batch PDF factory reuse', () => {
     ].every(button => !button.disabled)).toBe(true)
   })
 
+  it.each([
+    { format: 'PNG', buttonId: 'png', entities: [{ id: 1 }] },
+    { format: 'PNG', buttonId: 'png', entities: [{ id: 1 }, { id: 2 }] },
+    { format: 'AML', buttonId: 'aml', entities: [{ id: 1 }] },
+    { format: 'AML', buttonId: 'aml', entities: [{ id: 1 }, { id: 2 }] },
+  ])(
+    'reports $format export failure when every one of $entities.length batch capture(s) fails',
+    async ({ format, buttonId, entities }) => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+      `
+      const alert = vi.spyOn(window, 'alert')
+        .mockImplementation(() => undefined)
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+
+      bindBatchLabelExport({
+        entities: () => entities,
+        activeTab: () => 'print',
+        printButton: document.querySelector('#print')!,
+        printPdfCheckbox: document.querySelector('#pdf-mode')!,
+        pngButton: document.querySelector('#png')!,
+        amlButton: document.querySelector('#aml')!,
+        pdfButton: document.querySelector('#pdf')!,
+        getTranslation: (_key, fallback) => fallback,
+        renderAll: vi.fn(async () => undefined),
+        captureLabel: vi.fn(async () => {
+          throw new Error('capture failed')
+        }),
+        getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+        singlePngName: entity => `label-${entity.id}.png`,
+        zipName: () => 'labels.zip',
+        zipEntryName: entity => `label-${entity.id}.png`,
+        pdfName: () => 'batch-labels.pdf',
+        browserPrint: makeBrowserPrintBinding(),
+        skipCaptureErrorsInZip: true,
+      })
+
+      document.querySelector<HTMLButtonElement>(`#${buttonId}`)!.click()
+
+      await vi.waitFor(() => {
+        expect(alert).toHaveBeenCalledWith(`${format} export failed.`)
+      })
+      expect(download).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { format: 'PNG', buttonId: 'png', archiveName: 'labels.zip', entryName: 'label-2.png' },
+    { format: 'AML', buttonId: 'aml', archiveName: 'labels-aml.zip', entryName: 'label-2.aml' },
+  ])(
+    'keeps a partial $format batch export in its ZIP',
+    async ({ buttonId, archiveName, entryName }) => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+      `
+      let archiveBlob: Blob | undefined
+      vi.mocked(URL.createObjectURL).mockImplementation(value => {
+        archiveBlob = value as Blob
+        return 'blob:partial-label-zip'
+      })
+      const downloads: string[] = []
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(function(this: HTMLAnchorElement) {
+          downloads.push(this.download)
+        })
+
+      bindBatchLabelExport({
+        entities: () => [{ id: 1 }, { id: 2 }],
+        activeTab: () => 'print',
+        printButton: document.querySelector('#print')!,
+        printPdfCheckbox: document.querySelector('#pdf-mode')!,
+        pngButton: document.querySelector('#png')!,
+        amlButton: document.querySelector('#aml')!,
+        pdfButton: document.querySelector('#pdf')!,
+        getTranslation: (_key, fallback) => fallback,
+        renderAll: vi.fn(async () => undefined),
+        captureLabel: vi.fn(async entity => {
+          if (entity.id === 1) throw new Error('capture failed')
+          return 'data:image/png;base64,c3Vydml2b3I='
+        }),
+        getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+        singlePngName: entity => `label-${entity.id}.png`,
+        zipName: () => 'labels.zip',
+        zipEntryName: entity => `label-${entity.id}.png`,
+        pdfName: () => 'batch-labels.pdf',
+        browserPrint: makeBrowserPrintBinding(),
+        skipCaptureErrorsInZip: true,
+      })
+
+      document.querySelector<HTMLButtonElement>(`#${buttonId}`)!.click()
+
+      await vi.waitFor(() => expect(downloads).toEqual([archiveName]))
+      const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+      expect(Object.keys(zip.files)).toEqual([entryName])
+    },
+  )
+
   it('passes the same single-label pages to Export PDF and Print', async () => {
     document.body.innerHTML = `
       <button id="print">Print</button>
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
       <div id="label"></div>
     `
     const firstPdf = makePdfDocument()
@@ -614,6 +938,7 @@ describe('single and batch PDF factory reuse', () => {
 
     bindSingleLabelExport({
       printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
       exportPngBtn: document.querySelector('#png')!,
       exportAmlBtn: document.querySelector('#aml')!,
       exportPdfBtn: document.querySelector('#pdf')!,
@@ -626,6 +951,7 @@ describe('single and batch PDF factory reuse', () => {
       captureLabel: vi.fn(
         async () => 'data:image/png;base64,single',
       ),
+      browserPrint: makeBrowserPrintBinding(label),
       createPdf: async (pages, defaultCreate) => {
         expect(pages).toEqual([
           {
@@ -646,6 +972,7 @@ describe('single and batch PDF factory reuse', () => {
       )
     })
 
+    document.querySelector<HTMLInputElement>('#pdf-mode')!.checked = true
     document.querySelector<HTMLButtonElement>('#print')!.click()
     await vi.waitFor(() => {
       expect(secondPdf.output).toHaveBeenCalledWith('blob')
@@ -660,6 +987,7 @@ describe('single and batch PDF factory reuse', () => {
       <button id="png">Export PNG</button>
       <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
+      <input id="pdf-mode" type="checkbox">
     `
     const firstPdf = makePdfDocument()
     const secondPdf = makePdfDocument()
@@ -671,6 +999,7 @@ describe('single and batch PDF factory reuse', () => {
       entities: () => [{ id: 1 }, { id: 2 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
+      printPdfCheckbox: document.querySelector('#pdf-mode')!,
       pngButton: document.querySelector('#png')!,
       amlButton: document.querySelector('#aml')!,
       pdfButton: document.querySelector('#pdf')!,
@@ -687,6 +1016,7 @@ describe('single and batch PDF factory reuse', () => {
       zipName: () => 'labels.zip',
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
+      browserPrint: makeBrowserPrintBinding(),
       createPdf: async (pages, defaultCreate) => {
         builtPages.push(structuredClone(pages))
         await defaultCreate()
@@ -701,6 +1031,7 @@ describe('single and batch PDF factory reuse', () => {
       )
     })
 
+    document.querySelector<HTMLInputElement>('#pdf-mode')!.checked = true
     document.querySelector<HTMLButtonElement>('#print')!.click()
     await vi.waitFor(() => {
       expect(secondPdf.output).toHaveBeenCalledWith('blob')

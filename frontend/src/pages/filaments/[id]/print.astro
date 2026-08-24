@@ -45,7 +45,7 @@ export function getStaticPaths() {
     loadDesignerSettingsFromStorage,
     renderDesignerLabel,
   } from '../../../lib/label-designer'
-  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, createLabelSheetPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../../lib/label-sheet'
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, createLabelSheetPdf, syncLabelSheetIndividualExportState, syncLabelSheetPreview } from '../../../lib/label-sheet'
   import {
     buildStandardLabelDataFromFlat,
     getStandardLabelDimensions,
@@ -201,7 +201,9 @@ export function getStaticPaths() {
   const printBtn =
     document.getElementById('btn-print') as HTMLButtonElement
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
+  const exportAmlBtn = document.getElementById('btn-export-aml') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
+  const printPdfCheckbox = document.getElementById('check-print-pdf') as HTMLInputElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
   const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
   await hydrateLabelPresetStorage()
@@ -256,7 +258,11 @@ export function getStaticPaths() {
       labelDimensions: getActiveLabelDimensions(),
     })
     if (sheetControls.getOutputMode() === 'sheet') applyLabelSheetPreviewZoom(previewRoot, _previewZoom)
-    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => (window as Window & { __t?: (key: string) => string }).__t?.(key) || fallback)
+    syncLabelSheetIndividualExportState(
+      sheetControls,
+      [exportPngBtn, exportAmlBtn],
+      (key, fallback) => (window as Window & { __t?: (key: string) => string }).__t?.(key) || fallback,
+    )
   }
 
   const tabControls = bindPrintDesignerTabs({
@@ -465,6 +471,7 @@ export function getStaticPaths() {
   backBtn.href = `/filaments/${id}`
   document.getElementById('label-back')!.textContent = translate('filaments.backToFilament', 'Back to Filament')
   exportPngBtn.textContent = translate('labelPrint.btnExportPng', 'Export PNG')
+  exportAmlBtn.textContent = translate('labelPrint.btnExportAml', 'Export AML')
   exportPdfBtn.textContent = translate('labelPrint.btnExportPdf', 'Export PDF')
   document.getElementById('btn-print')!.textContent = translate('common.print', 'Print')
   document.getElementById('btn-reset')!.textContent = translate('spools.resetDefaults', 'Defaults')
@@ -569,22 +576,20 @@ export function getStaticPaths() {
 
   bindSingleLabelExport({
     printButton: printBtn,
+    printPdfCheckbox,
     exportPngBtn,
+    exportAmlBtn,
     exportPdfBtn,
     labelElement: labelPreview,
     pixelRatio: LABEL_EXPORT_PIXEL_RATIO,
     getTranslation: translate,
     buildBaseName: buildExportBaseName,
-    getDimensions: () => activePreviewTab === 'designer'
-      ? getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
-        presetsKey: DESIGNER_PRESETS_KEY,
-        settingsKey: DESIGNER_SETTINGS_KEY,
-      }))
-      : getStandardLabelDimensions(getStandardSettings()),
+    getDimensions: getActiveLabelDimensions,
     refreshPreview: async () => {
       if (activePreviewTab === 'designer') await updateDesignerPreview()
       else await updatePreview()
     },
+    browserPrint: { previewRoot, sheetControls },
     pdfName: () =>
       sheetControls.getOutputMode() === 'sheet'
         ? `${buildExportBaseName()}-sheet.pdf`

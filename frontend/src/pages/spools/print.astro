@@ -43,7 +43,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 </Layout>
 
 <script>
-  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, createLabelSheetPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, createLabelSheetPdf, syncLabelSheetIndividualExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
   import { initLabelDesignerEditor } from '../../lib/label-designer-editor'
   import {
     buildDesignerExtraFieldsFromApiSpool,
@@ -133,7 +133,9 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const printBtn =
     document.getElementById('btn-print') as HTMLButtonElement
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
+  const exportAmlBtn = document.getElementById('btn-export-aml') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
+  const printPdfCheckbox = document.getElementById('check-print-pdf') as HTMLInputElement
   const previewContainer = document.getElementById('preview-container') as HTMLElement
   await hydrateLabelPresetStorage()
   const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
@@ -535,7 +537,11 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       labelDimensions: getActiveLabelDimensions(),
     })
     applyCurrentPreviewZoom()
-    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => t(key) || fallback)
+    syncLabelSheetIndividualExportState(
+      sheetControls,
+      [exportPngBtn, exportAmlBtn],
+      (key, fallback) => t(key) || fallback,
+    )
     updateLabelCount()
   }
 
@@ -719,12 +725,19 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     entities: () => spools,
     activeTab: () => activePreviewTab,
     printButton: printBtn,
+    printPdfCheckbox,
     pngButton: exportPngBtn,
+    amlButton: exportAmlBtn,
     pdfButton: exportPdfBtn,
     getTranslation: (key, fallback) => t(key) || fallback,
     renderAll,
     captureLabel,
     getPdfDimensions: getActiveLabelDimensions,
+    browserPrint: {
+      previewRoot: previewContainer,
+      sheetControls,
+      getIndividualPages: getLabelSourceElements,
+    },
     singlePngName: labelAdapter.singlePngName,
     zipName: labelAdapter.zipName,
     zipEntryName: labelAdapter.zipEntryName,

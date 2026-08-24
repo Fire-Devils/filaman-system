@@ -107,6 +107,31 @@ describe('downloadLabelFiles', () => {
     expect(await zip.file('two.aml')!.async('text')).toBe('<two/>')
   })
 
+  it('keeps a surviving batch file in an archive when requested', async () => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:partial-zip'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+
+    await downloadLabelFiles([{
+      name: 'survivor.png',
+      contents: 'cG5n',
+      directUrl: 'data:image/png;base64,cG5n',
+      zipBase64: true,
+      mimeType: 'image/png',
+    }], 'labels.zip', { forceArchive: true })
+
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(downloads).toEqual(['labels.zip'])
+    expect(Object.keys(zip.files)).toEqual(['survivor.png'])
+  })
+
   it('suffixes duplicate archive entry names deterministically', async () => {
     let archiveBlob: Blob | undefined
     vi.mocked(URL.createObjectURL).mockImplementation(value => {

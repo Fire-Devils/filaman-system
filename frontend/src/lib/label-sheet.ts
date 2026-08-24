@@ -817,30 +817,36 @@ export function applyLabelSheetPreviewZoom(previewRoot: HTMLElement, zoomPercent
   })
 }
 
-export function syncLabelSheetPngExportState(
+export function syncLabelSheetIndividualExportState(
   controls: LabelSheetControls,
-  button: HTMLButtonElement,
+  buttons: HTMLButtonElement[],
   getTranslation: (key: string, fallback: string) => string,
 ) {
   const isSheetMode = controls.getOutputMode() === 'sheet'
-  const unavailableText = getTranslation('labelPrint.pngUnavailableInSheetMode', 'PNG export not available in label paper mode')
+  const unavailableText = getTranslation(
+    'labelPrint.individualExportsUnavailableInSheetMode',
+    'Individual PNG and AML exports are not available in label paper mode',
+  )
 
-  if (!('labelSheetOriginalTitle' in button.dataset)) {
-    button.dataset.labelSheetOriginalTitle = button.getAttribute('title') ?? ''
-  }
+  buttons.forEach(button => {
+    if (!('labelSheetOriginalTitle' in button.dataset)) {
+      button.dataset.labelSheetOriginalTitle =
+        button.getAttribute('title') ?? ''
+    }
 
-  button.disabled = isSheetMode
-  button.classList.toggle('is-disabled', isSheetMode)
+    button.disabled = isSheetMode
+    button.classList.toggle('is-disabled', isSheetMode)
 
-  if (isSheetMode) {
-    button.setAttribute('aria-disabled', 'true')
-    button.setAttribute('title', unavailableText)
-  } else {
-    button.removeAttribute('aria-disabled')
-    const originalTitle = button.dataset.labelSheetOriginalTitle || ''
-    if (originalTitle) button.setAttribute('title', originalTitle)
-    else button.removeAttribute('title')
-  }
+    if (isSheetMode) {
+      button.setAttribute('aria-disabled', 'true')
+      button.setAttribute('title', unavailableText)
+    } else {
+      button.removeAttribute('aria-disabled')
+      const originalTitle = button.dataset.labelSheetOriginalTitle || ''
+      if (originalTitle) button.setAttribute('title', originalTitle)
+      else button.removeAttribute('title')
+    }
+  })
 }
 
 export function updateLabelSheetPreviewStyle(
