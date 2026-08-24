@@ -8,6 +8,7 @@ import {
   it,
   vi,
 } from 'vitest'
+import JSZip from 'jszip'
 
 import {
   bindBatchLabelExport,
@@ -55,12 +56,14 @@ function bindDeferredCapture(
 ) {
   const printButton = document.querySelector<HTMLButtonElement>('#print')!
   const pngButton = document.querySelector<HTMLButtonElement>('#png')!
+  const amlButton = document.querySelector<HTMLButtonElement>('#aml')!
   const pdfButton = document.querySelector<HTMLButtonElement>('#pdf')!
 
   if (kind === 'single-label') {
     bindSingleLabelExport({
       printButton,
       exportPngBtn: pngButton,
+      exportAmlBtn: amlButton,
       exportPdfBtn: pdfButton,
       labelElement: document.querySelector('#label')!,
       getTranslation: (_key, fallback) => fallback,
@@ -75,6 +78,7 @@ function bindDeferredCapture(
       activeTab: () => 'print',
       printButton,
       pngButton,
+      amlButton,
       pdfButton,
       getTranslation: (_key, fallback) => fallback,
       renderAll: vi.fn(async () => undefined),
@@ -87,7 +91,7 @@ function bindDeferredCapture(
     })
   }
 
-  return { printButton, pngButton, pdfButton }
+  return { printButton, pngButton, amlButton, pdfButton }
 }
 
 beforeEach(() => {
@@ -331,6 +335,7 @@ describe('single and batch PDF factory reuse', () => {
       document.body.innerHTML = `
         <button id="print">Print</button>
         <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
         <button id="pdf">Export PDF</button>
         <div id="label"></div>
       `
@@ -344,9 +349,9 @@ describe('single and batch PDF factory reuse', () => {
       vi.spyOn(HTMLAnchorElement.prototype, 'click')
         .mockImplementation(() => undefined)
 
-      const { printButton, pngButton, pdfButton } =
+      const { printButton, pngButton, amlButton, pdfButton } =
         bindDeferredCapture(kind, captureLabel)
-      const buttons = [printButton, pngButton, pdfButton]
+      const buttons = [printButton, pngButton, amlButton, pdfButton]
       pngButton.click()
       await vi.waitFor(() => {
         expect(captureLabel).toHaveBeenCalledOnce()
@@ -366,6 +371,7 @@ describe('single and batch PDF factory reuse', () => {
       expect(buttons.map(button => button.textContent)).toEqual([
         'Print',
         'Export PNG',
+        'Export AML',
         'Export PDF',
       ])
     },
@@ -375,6 +381,7 @@ describe('single and batch PDF factory reuse', () => {
     document.body.innerHTML = `
       <button id="print">Print</button>
       <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
     `
     const downloads: Array<{ filename: string; href: string }> = []
@@ -391,6 +398,7 @@ describe('single and batch PDF factory reuse', () => {
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
       pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
       pdfButton: document.querySelector('#pdf')!,
       getTranslation: (_key, fallback) => fallback,
       renderAll: vi.fn(async () => undefined),
@@ -414,10 +422,183 @@ describe('single and batch PDF factory reuse', () => {
     })
   })
 
+  it('downloads one batch AML file built from the captured PNG', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+    `
+    let amlBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      amlBlob = value as Blob
+      return 'blob:label-aml'
+    })
+    const downloads: Array<{ filename: string; href: string }> = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push({ filename: this.download, href: this.href })
+      })
+    const captureLabel = vi.fn(
+      async () => 'data:image/png;base64,bGFiZWw=',
+    )
+
+    bindBatchLabelExport({
+      entities: () => [{ id: 1 }],
+      activeTab: () => 'print',
+      printButton: document.querySelector('#print')!,
+      pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
+      pdfButton: document.querySelector('#pdf')!,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel,
+      getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+    })
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => {
+      expect(downloads).toEqual([{
+        filename: 'label-1.aml',
+        href: 'blob:label-aml',
+      }])
+    })
+    const aml = await amlBlob!.text()
+    expect(aml).toContain('<labelWidth>48.000</labelWidth>')
+    expect(aml).toContain('<labelHeight>30.000</labelHeight>')
+    expect(aml).toContain('<content>bGFiZWw=</content>')
+    expect(captureLabel).toHaveBeenCalledOnce()
+  })
+
+  it('packages multiple batch AML labels using PNG-equivalent names', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+    `
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:label-aml-zip'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+
+    bindBatchLabelExport({
+      entities: () => [{ id: 1 }, { id: 2 }],
+      activeTab: () => 'print',
+      printButton: document.querySelector('#print')!,
+      pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
+      pdfButton: document.querySelector('#pdf')!,
+      getTranslation: (_key, fallback) => fallback,
+      renderAll: vi.fn(async () => undefined),
+      captureLabel: vi.fn(async entity =>
+        `data:image/png;base64,${entity.id === 1 ? 'b25l' : 'dHdv'}`,
+      ),
+      getPdfDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+      singlePngName: entity => `label-${entity.id}.png`,
+      zipName: () => 'labels.zip',
+      zipEntryName: entity => `label-${entity.id}.png`,
+      pdfName: () => 'batch-labels.pdf',
+    })
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => {
+      expect(downloads).toEqual(['labels-aml.zip'])
+    })
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(Object.keys(zip.files)).toEqual(['label-1.aml', 'label-2.aml'])
+    expect(await zip.file('label-2.aml')!.async('text'))
+      .toContain('<content>dHdv</content>')
+  })
+
+  it('downloads one AML file from the shared single-label capture', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <div id="label"></div>
+    `
+    let amlBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      amlBlob = value as Blob
+      return 'blob:single-label-aml'
+    })
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const refreshPreview = vi.fn(async () => undefined)
+    const captureLabel = vi.fn(
+      async () => 'data:image/png;base64,c2luZ2xl',
+    )
+
+    bindSingleLabelExport({
+      printButton: document.querySelector('#print')!,
+      exportPngBtn: document.querySelector('#png')!,
+      exportAmlBtn: document.querySelector('#aml')!,
+      exportPdfBtn: document.querySelector('#pdf')!,
+      labelElement: document.querySelector('#label')!,
+      getTranslation: (_key, fallback) => fallback,
+      buildBaseName: () => 'single-label',
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      refreshPreview,
+      captureLabel,
+    })
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => expect(download).toHaveBeenCalledOnce())
+    expect(refreshPreview).toHaveBeenCalledOnce()
+    expect(captureLabel).toHaveBeenCalledOnce()
+    expect(await amlBlob!.text()).toContain(
+      '<content>c2luZ2xl</content>',
+    )
+  })
+
+  it('reports AML capture failures and restores every output control', async () => {
+    document.body.innerHTML = `
+      <button id="print">Print</button>
+      <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
+      <button id="pdf">Export PDF</button>
+      <div id="label"></div>
+    `
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    bindDeferredCapture(
+      'single-label',
+      vi.fn(async () => {
+        throw new Error('capture failed')
+      }),
+    )
+
+    document.querySelector<HTMLButtonElement>('#aml')!.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('AML export failed.')
+    })
+    expect([
+      ...document.querySelectorAll<HTMLButtonElement>('button'),
+    ].every(button => !button.disabled)).toBe(true)
+  })
+
   it('passes the same single-label pages to Export PDF and Print', async () => {
     document.body.innerHTML = `
       <button id="print">Print</button>
       <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
       <div id="label"></div>
     `
@@ -434,6 +615,7 @@ describe('single and batch PDF factory reuse', () => {
     bindSingleLabelExport({
       printButton: document.querySelector('#print')!,
       exportPngBtn: document.querySelector('#png')!,
+      exportAmlBtn: document.querySelector('#aml')!,
       exportPdfBtn: document.querySelector('#pdf')!,
       labelElement: label,
       getTranslation: (_key, fallback) => fallback,
@@ -476,6 +658,7 @@ describe('single and batch PDF factory reuse', () => {
     document.body.innerHTML = `
       <button id="print">Print</button>
       <button id="png">Export PNG</button>
+      <button id="aml">Export AML</button>
       <button id="pdf">Export PDF</button>
     `
     const firstPdf = makePdfDocument()
@@ -489,6 +672,7 @@ describe('single and batch PDF factory reuse', () => {
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
       pngButton: document.querySelector('#png')!,
+      amlButton: document.querySelector('#aml')!,
       pdfButton: document.querySelector('#pdf')!,
       getTranslation: (_key, fallback) => fallback,
       renderAll: vi.fn(async () => undefined),

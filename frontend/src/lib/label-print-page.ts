@@ -2,10 +2,18 @@ import {
   LABEL_EXPORT_PIXEL_RATIO,
   captureLabelElement,
   createLabelPagesPdf,
-  downloadDataUrl,
   type LabelPdfDocument,
   type LabelPdfPage,
 } from './label-export'
+import {
+  amlArchiveNameFromPngArchive,
+  amlFilenameFromPng,
+  buildLabelAml,
+} from './label-aml'
+import {
+  downloadLabelFiles,
+  type LabelDownloadFile,
+} from './label-file-export'
 
 export { LABEL_EXPORT_DPI, LABEL_EXPORT_PIXEL_RATIO } from './label-export'
 
@@ -508,11 +516,61 @@ export type LabelPdfFactoryOverride = (
   defaultCreate: () => Promise<LabelPdfDocument | null>,
 ) => Promise<LabelPdfDocument | null>
 
+async function collectCapturedFiles<T>(
+  entities: T[],
+  capture: (entity: T) => Promise<string>,
+  build: (entity: T, pngDataUrl: string) => LabelDownloadFile,
+  skipCaptureErrors: boolean,
+) {
+  const files: LabelDownloadFile[] = []
+  for (const entity of entities) {
+    try {
+      const pngDataUrl = await capture(entity)
+      files.push(build(entity, pngDataUrl))
+    } catch (error) {
+      if (!skipCaptureErrors) throw error
+    }
+  }
+  return files
+}
+
+function buildPngDownloadFile(
+  name: string,
+  pngDataUrl: string,
+): LabelDownloadFile {
+  return {
+    name,
+    contents: pngDataUrl.split(',')[1] ?? '',
+    mimeType: 'image/png',
+    directUrl: pngDataUrl,
+    zipBase64: true,
+  }
+}
+
+function buildAmlDownloadFile(
+  pngName: string,
+  pngDataUrl: string,
+  dimensions: { widthMm: number; heightMm: number },
+): LabelDownloadFile {
+  const name = amlFilenameFromPng(pngName)
+  return {
+    name,
+    contents: buildLabelAml({
+      name: name.replace(/\.aml$/i, ''),
+      widthMm: dimensions.widthMm,
+      heightMm: dimensions.heightMm,
+      pngDataUrl,
+    }),
+    mimeType: 'application/xml',
+  }
+}
+
 interface BatchLabelExportOptions<T> {
   entities: () => T[]
   activeTab: () => PrintDesignerTab
   printButton: HTMLButtonElement
   pngButton: HTMLButtonElement
+  amlButton: HTMLButtonElement
   pdfButton: HTMLButtonElement
   getTranslation: (key: string, fallback: string) => string
   renderAll: (tab: PrintDesignerTab) => Promise<void>
@@ -532,6 +590,7 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
   const coordinator = createLabelOutputCoordinator([
     options.printButton,
     options.pngButton,
+    options.amlButton,
     options.pdfButton,
   ])
 
@@ -543,25 +602,18 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
     await coordinator.run(exportingText(), async () => {
       try {
         await options.renderAll(options.activeTab())
-        if (entities.length === 1) {
-          downloadDataUrl(await options.captureLabel(entities[0]), options.singlePngName(entities[0]))
-          return
-        }
-
-        const JSZip = (await import('jszip')).default
-        const zip = new JSZip()
-        for (const entity of entities) {
-          try {
-            const dataUrl = await options.captureLabel(entity)
-            zip.file(options.zipEntryName(entity), dataUrl.split(',')[1], { base64: true })
-          } catch (error) {
-            if (!options.skipCaptureErrorsInZip) throw error
-          }
-        }
-
-        const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }))
-        downloadDataUrl(url, options.zipName())
-        setTimeout(() => URL.revokeObjectURL(url), 60000)
+        const files = await collectCapturedFiles(
+          entities,
+          options.captureLabel,
+          (entity, pngDataUrl) => buildPngDownloadFile(
+            entities.length === 1
+              ? options.singlePngName(entity)
+              : options.zipEntryName(entity),
+            pngDataUrl,
+          ),
+          options.skipCaptureErrorsInZip ?? false,
+        )
+        await downloadLabelFiles(files, options.zipName())
       } catch (error) {
         alert(options.getTranslation('labelPrint.pngExportFailed', 'PNG export failed.'))
         console.error(error)
@@ -571,6 +623,45 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
 
   options.pngButton.addEventListener('click', () => {
     void exportPng()
+  })
+
+  const exportAml = async () => {
+    if (options.amlButton.getAttribute('aria-disabled') === 'true') return
+    const entities = options.entities()
+    if (entities.length === 0) return
+
+    await coordinator.run(exportingText(), async () => {
+      try {
+        await options.renderAll(options.activeTab())
+        const dimensions = options.getPdfDimensions()
+        const files = await collectCapturedFiles(
+          entities,
+          options.captureLabel,
+          (entity, pngDataUrl) => buildAmlDownloadFile(
+            entities.length === 1
+              ? options.singlePngName(entity)
+              : options.zipEntryName(entity),
+            pngDataUrl,
+            dimensions,
+          ),
+          options.skipCaptureErrorsInZip ?? false,
+        )
+        await downloadLabelFiles(
+          files,
+          amlArchiveNameFromPngArchive(options.zipName()),
+        )
+      } catch (error) {
+        alert(options.getTranslation(
+          'labelPrint.amlExportFailed',
+          'AML export failed.',
+        ))
+        console.error('Failed to export label AML:', error)
+      }
+    })
+  }
+
+  options.amlButton.addEventListener('click', () => {
+    void exportAml()
   })
 
   const collectPdfPages = async (): Promise<LabelPdfPage[]> => {
@@ -618,6 +709,7 @@ export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
 interface SingleLabelExportOptions {
   printButton: HTMLButtonElement
   exportPngBtn: HTMLButtonElement
+  exportAmlBtn: HTMLButtonElement
   exportPdfBtn: HTMLButtonElement
   labelElement: HTMLElement
   pixelRatio?: number
@@ -635,6 +727,7 @@ export function bindSingleLabelExport(options: SingleLabelExportOptions) {
   const coordinator = createLabelOutputCoordinator([
     options.printButton,
     options.exportPngBtn,
+    options.exportAmlBtn,
     options.exportPdfBtn,
   ])
   const captureActiveLabelPng = async () => {
@@ -650,10 +743,39 @@ export function bindSingleLabelExport(options: SingleLabelExportOptions) {
     if (options.exportPngBtn.getAttribute('aria-disabled') === 'true') return
     void coordinator.run(exportingText(), async () => {
       try {
-        downloadDataUrl(await captureActiveLabelPng(), `${options.buildBaseName()}.png`)
+        const name = `${options.buildBaseName()}.png`
+        const pngDataUrl = await captureActiveLabelPng()
+        await downloadLabelFiles(
+          [buildPngDownloadFile(name, pngDataUrl)],
+          `${options.buildBaseName()}.zip`,
+        )
       } catch (error) {
         alert(options.getTranslation('labelPrint.pngExportFailed', 'PNG export failed.'))
         console.error('Failed to export label PNG:', error)
+      }
+    })
+  })
+
+  options.exportAmlBtn.addEventListener('click', () => {
+    if (options.exportAmlBtn.getAttribute('aria-disabled') === 'true') return
+    void coordinator.run(exportingText(), async () => {
+      try {
+        const baseName = options.buildBaseName()
+        const pngDataUrl = await captureActiveLabelPng()
+        await downloadLabelFiles(
+          [buildAmlDownloadFile(
+            `${baseName}.png`,
+            pngDataUrl,
+            options.getDimensions(),
+          )],
+          `${baseName}-aml.zip`,
+        )
+      } catch (error) {
+        alert(options.getTranslation(
+          'labelPrint.amlExportFailed',
+          'AML export failed.',
+        ))
+        console.error('Failed to export label AML:', error)
       }
     })
   })
