@@ -5,13 +5,14 @@ import {
   renderTemplateText,
   type SpoolData,
 } from './label-template'
-import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
-import { type SystemExtraFieldDef } from './extra-fields'
-import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
+import {
+  buildDesignerExtraFieldsFromApiSpool,
+  buildSpoolLabelDataFromApi,
+  type SpoolExtraFieldDefinitionMap,
+} from './spool-label-data'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 import {
   EMPTY_SPOOL_LABEL_LOOKUPS,
-  resolveSpoolLabelRelations,
   type SpoolLabelLookups,
 } from './spool-label-lookups'
 
@@ -354,28 +355,7 @@ export interface DesignerFlatLabelData {
   extraFields?: DesignerExtraField[]
 }
 
-type ExtraFieldDefinitionMap = Partial<Record<LabelExtraFieldSource, Record<string, SystemExtraFieldDef>>>
-
-function getApiFilamentColors(filament: any): any[] {
-  const list = Array.isArray(filament?.filament_colors)
-    ? filament.filament_colors
-    : filament?.colors
-  return Array.isArray(list) ? list : []
-}
-
-function getFilamentColorNames(filament: any): string {
-  return getApiFilamentColors(filament)
-    .map(color => color?.display_name_override || color?.color?.name)
-    .filter(Boolean)
-    .join(', ')
-}
-
-function getFilamentColorHexes(filament: any): string {
-  return getApiFilamentColors(filament)
-    .map(color => color?.color?.hex_code)
-    .filter(Boolean)
-    .join(', ')
-}
+type ExtraFieldDefinitionMap = SpoolExtraFieldDefinitionMap
 
 export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolData {
   const extra: Record<string, string> = {}
@@ -444,81 +424,18 @@ export function buildSpoolDataFromApiSpool(
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
   fieldDefs?: ExtraFieldDefinitionMap,
 ): SpoolData {
-  const fil = spool?.filament ?? {}
-  const relations = resolveSpoolLabelRelations(spool, lookups)
-  const firstColor = getFirstFilamentColor(fil)
-  const color = firstColor?.display_name_override
-    || fil.manufacturer_color_name
-    || firstColor?.color?.name
-    || ''
-  const hex = firstColor?.color?.hex_code || ''
+  const data = buildSpoolLabelDataFromApi(spool, lookups)
   const formatDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
   return buildSpoolDataFromFlatLabel({
-    id: spool?.id ?? '',
-    // Filament profile
-    filament_id: fil.id,
-    designation: fil.designation,
-    manufacturer: fil.manufacturer?.name,
-    manufacturer_id: fil.manufacturer_id ?? fil.manufacturer?.id,
-    type: fil.material_type,
-    subtype: fil.material_subgroup,
-    color,
-    colors: getFilamentColorNames(fil),
-    hex_code: hex,
-    color_hexes: getFilamentColorHexes(fil),
-    color_mode: fil.color_mode,
-    multi_color_style: fil.multi_color_style,
-    extruder_temp: fil.settings_extruder_temp ?? fil.custom_fields?.extruder_temp,
-    bed_temp: fil.settings_bed_temp ?? fil.custom_fields?.bed_temp,
-    raw_material_weight_g: fil.raw_material_weight_g ?? fil.weight,
-    weight: fil.raw_material_weight_g ?? fil.weight,
-    diameter: fil.diameter_mm,
-    finish: fil.finish_type,
-    density: fil.density_g_cm3,
-    price: fil.price,
-    manufacturer_color_name: fil.manufacturer_color_name,
-    default_spool_weight_g: fil.default_spool_weight_g,
-    spool_outer_diameter_mm: fil.spool_outer_diameter_mm,
-    spool_width_mm: fil.spool_width_mm,
-    spool_material: fil.spool_material,
-    shop_url: fil.shop_url,
-    // Spool model fields
-    lot_number: spool?.lot_number,
-    external_id: spool?.external_id,
-    rfid_uid: spool?.rfid_uid,
-    location: relations.location,
-    status: relations.status,
-    purchase_date: formatDate(spool?.purchase_date),
-    purchase_price: spool?.purchase_price,
-    remaining_weight_g: spool?.remaining_weight_g,
-    initial_total_weight_g: spool?.initial_total_weight_g,
-    empty_spool_weight_g: spool?.empty_spool_weight_g,
-    low_weight_threshold_g: spool?.low_weight_threshold_g,
-    stocked_in_at: formatDate(spool?.stocked_in_at),
-    last_used_at: formatDate(spool?.last_used_at),
+    ...data,
+    purchase_date: formatDate(data.purchase_date),
+    stocked_in_at: formatDate(data.stocked_in_at),
+    last_used_at: formatDate(data.last_used_at),
     extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),
   })
 }
 
-export function buildDesignerExtraFieldsFromApiSpool(
-  spool: any,
-  fieldDefs?: ExtraFieldDefinitionMap,
-): DesignerExtraField[] {
-  return [
-    ...buildDesignerExtraFields(
-      spool?.custom_fields,
-      spool?.custom_field_definitions,
-      fieldDefs?.spool,
-      'spool',
-    ),
-    ...buildDesignerExtraFields(
-      spool?.filament?.custom_fields,
-      spool?.filament?.custom_field_definitions,
-      fieldDefs?.filament,
-      'filament',
-    ),
-  ]
-}
+export { buildDesignerExtraFieldsFromApiSpool } from './spool-label-data'
 
 export function getManufacturerIdFromApiSpool(spool: any): number | null {
   const value = spool?.filament?.manufacturer?.id
@@ -526,31 +443,7 @@ export function getManufacturerIdFromApiSpool(spool: any): number | null {
   return Number.isFinite(id) && id > 0 ? id : null
 }
 
-export function getFirstFilamentColor(filament: any): any {
-  const colorLists = [filament?.filament_colors, filament?.colors]
-  for (const list of colorLists) {
-    if (Array.isArray(list) && list.length > 0) return list[0] ?? {}
-  }
-  return {}
-}
-
-function buildDesignerExtraFields(
-  values: Record<string, unknown> | null | undefined,
-  entityDefinitions: Record<string, unknown> | null | undefined,
-  systemDefinitions: Record<string, SystemExtraFieldDef> | undefined,
-  source: LabelExtraFieldSource,
-): DesignerExtraField[] {
-  return buildEntityExtraFieldsForPrint(values, entityDefinitions, systemDefinitions)
-    .filter(field => !isBuiltInLabelField(source, field.key, field.label))
-    .map(field => ({
-      key: `${source}.${field.key}`,
-      label: field.label,
-      value: field.value,
-      rawValue: field.rawValue,
-      fieldType: field.fieldType,
-      source,
-    }))
-}
+export { getFirstFilamentColor } from './label-entity-data'
 
 function toStringValue(value: unknown): string {
   return value === undefined || value === null ? '' : String(value)

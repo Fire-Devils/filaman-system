@@ -10,6 +10,7 @@ import {
   createSpoolLabelLookups,
   resolveSpoolLabelRelations,
 } from './spool-label-lookups'
+import { buildSpoolLabelDataFromApi } from './spool-label-data'
 import { formatDateDisplay, formatDateTimeDisplay } from './extra-fields'
 
 const apiSpool = {
@@ -85,9 +86,13 @@ const lookups = createSpoolLabelLookups(
 describe('spool label token contract', () => {
   it('renders every advertised filament and spool token from the API wire shape', () => {
     const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
+    const canonical = buildSpoolLabelDataFromApi(apiSpool, lookups)
 
     expect(data.location).toBe('Rack A')
     expect(data.status).toBe('Opened')
+    expect(data['filament.name']).toBe(canonical.designation)
+    expect(data['filament.color']).toBe(canonical.color)
+    expect(data.remaining_weight_g).toBe(canonical.remaining_weight_g)
 
     for (const { token } of [...FILAMENT_TOKENS, ...SPOOL_TOKENS]) {
       const rendered = renderTemplateText(token, data)

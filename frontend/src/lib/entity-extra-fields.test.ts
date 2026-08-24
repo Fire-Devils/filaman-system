@@ -17,7 +17,7 @@ import {
   buildDesignerExtraFieldsFromFilament,
   buildFilamentExtraFieldsForPrint,
 } from './filament-label-data'
-import { buildDesignerExtraFieldsFromApiSpool } from './label-designer'
+import { buildDesignerExtraFieldsFromApiSpool } from './spool-label-data'
 
 const dryingTemperatureFilament = {
   custom_fields: { drying: { temperature: 55 } },

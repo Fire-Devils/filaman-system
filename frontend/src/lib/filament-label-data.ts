@@ -2,6 +2,15 @@
 import { isBuiltInLabelField } from './label-extra-fields'
 import { type SystemExtraFieldDef } from './extra-fields'
 import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
+import {
+  firstLabelValue,
+  getFilamentColorHexes,
+  getFilamentColorNames,
+  getFirstFilamentColor,
+  toLabelString,
+} from './label-entity-data'
+
+export { getFirstFilamentColor } from './label-entity-data'
 
 export interface FilamentLabelData {
   id: string
@@ -78,41 +87,8 @@ const LABEL_PARAM_MAP: { dataKey: keyof FilamentLabelData; param: string }[] = [
   { dataKey: 'multi_color_style', param: 'multi_color_style' },
 ]
 
-function toLabelString(value: unknown): string {
-  return value === undefined || value === null ? '' : String(value)
-}
-
 function hasDisplayValue(value: unknown): boolean {
   return toLabelString(value) !== ''
-}
-
-export function getFirstFilamentColor(filament: any): any {
-  const colorLists = [filament?.filament_colors, filament?.colors]
-  for (const list of colorLists) {
-    if (Array.isArray(list) && list.length > 0) return list[0] ?? {}
-  }
-  return {}
-}
-
-function getFilamentColors(filament: any): any[] {
-  const list = Array.isArray(filament?.filament_colors)
-    ? filament.filament_colors
-    : filament?.colors
-  return Array.isArray(list) ? list : []
-}
-
-function getFilamentColorNames(filament: any): string {
-  return getFilamentColors(filament)
-    .map(color => color?.display_name_override || color?.color?.name)
-    .filter(Boolean)
-    .join(', ')
-}
-
-function getFilamentColorHexes(filament: any): string {
-  return getFilamentColors(filament)
-    .map(color => color?.color?.hex_code)
-    .filter(Boolean)
-    .join(', ')
 }
 
 export function buildFilamentLabelDataFromParams(id: string, params: URLSearchParams): FilamentLabelData {
@@ -153,10 +129,11 @@ export function buildFilamentLabelDataFromParams(id: string, params: URLSearchPa
 
 export function buildFilamentLabelDataFromApi(filament: any, fallbackId: string | number = ''): FilamentLabelData {
   const firstColor = getFirstFilamentColor(filament)
-  const color = firstColor?.display_name_override
-    || filament?.manufacturer_color_name
-    || firstColor?.color?.name
-    || ''
+  const color = firstLabelValue(
+    firstColor?.display_name_override,
+    filament?.manufacturer_color_name,
+    firstColor?.color?.name,
+  )
   return {
     id: toLabelString(filament?.id ?? fallbackId),
     designation: toLabelString(filament?.designation),
