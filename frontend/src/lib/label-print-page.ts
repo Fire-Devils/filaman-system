@@ -20,8 +20,14 @@ import {
   printLabelBrowserJob,
   type LabelBrowserPrintJob,
 } from './label-browser-print'
-import type { LabelSheetControls } from './label-sheet'
+import {
+  applyLabelSheetPreviewZoom,
+  syncLabelSheetIndividualExportState,
+  syncLabelSheetPreview,
+  type LabelSheetControls,
+} from './label-sheet'
 import { bindFixedPreviewToolbar } from './label-preview-dom'
+import { type StandardLabelSettings } from './label-standard'
 
 export { LABEL_EXPORT_DPI, LABEL_EXPORT_PIXEL_RATIO } from './label-export'
 
@@ -45,6 +51,7 @@ interface LabelOutputCoordinator {
 
 function createLabelOutputCoordinator(
   buttons: HTMLButtonElement[],
+  getLockControls: () => Array<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement> = () => [],
 ): LabelOutputCoordinator {
   let operationRunning = false
 
@@ -58,6 +65,10 @@ function createLabelOutputCoordinator(
         ariaDisabled: string | null
         text: string | null
       }> | null = null
+      let lockedStates: Array<{
+        control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+        disabled: boolean
+      }> = []
 
       try {
         if (prepare && !prepare()) return
@@ -71,8 +82,18 @@ function createLabelOutputCoordinator(
           button.disabled = true
           button.textContent = progressText
         })
+        const outputButtons = new Set(buttons)
+        lockedStates = getLockControls()
+          .filter(control => !outputButtons.has(control as HTMLButtonElement))
+          .map(control => ({ control, disabled: control.disabled }))
+        lockedStates.forEach(({ control }) => {
+          control.disabled = true
+        })
         await action()
       } finally {
+        lockedStates.forEach(({ control, disabled }) => {
+          control.disabled = disabled
+        })
         originalStates?.forEach(({
           button,
           disabled,
@@ -290,6 +311,34 @@ export function writeStorageValue(key: string, value: string) {
   }
 }
 
+function requireElement<T extends Element>(
+  root: ParentNode,
+  id: string,
+  constructor: new (...args: never[]) => T,
+): T {
+  const element = root.querySelector(`#${id}`)
+  if (!(element instanceof constructor)) {
+    throw new Error(`Missing label print control: #${id}`)
+  }
+  return element
+}
+
+export function bindPrintPageSidebarCollapse() {
+  const applyCollapse = () => {
+    const page = document.getElementById('fm-page')
+    if (!page || window.innerWidth >= 1100) return
+    document.documentElement.classList.add('sidebar-collapsed')
+    page.classList.add('collapsed')
+    if (window.innerWidth > 768) {
+      writeStorageValue('sidebar-collapsed', 'true')
+    }
+  }
+
+  applyCollapse()
+  window.addEventListener('resize', applyCollapse, { passive: true })
+  return () => window.removeEventListener('resize', applyCollapse)
+}
+
 export function bindPrintPdfPreference(checkbox: HTMLInputElement) {
   checkbox.checked = readStorageValue(LABEL_PRINT_PDF_MODE_KEY) === 'true'
   checkbox.addEventListener('change', () => {
@@ -316,6 +365,33 @@ export function parseJsonOrNull<T = unknown>(raw: string | null): T | null {
   } catch {
     return null
   }
+}
+
+export function readVersionedLabelSettings<T extends object>(
+  storageKey: string,
+  minimumVersion: number,
+): T | null {
+  const raw = readStorageValue(storageKey)
+  if (!raw) return null
+
+  let settings: unknown
+  try {
+    settings = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  const version = Number((settings as { _v?: unknown } | null)?._v ?? 0)
+  if (
+    !settings ||
+    typeof settings !== 'object' ||
+    Array.isArray(settings) ||
+    !Number.isFinite(version) ||
+    version < minimumVersion
+  ) {
+    writeStorageValue(storageKey, '')
+    return null
+  }
+  return settings as T
 }
 
 function clampNumber(value: number, min: number, max: number, fallback: number) {
@@ -395,6 +471,253 @@ export function bindPreviewZoomControls(options: PreviewZoomControlsOptions) {
   sync()
 
   return { getZoom, applyZoom, sync }
+}
+
+export interface BindLabelPreviewZoomOptions {
+  storageKey: string
+  previewRoot: HTMLElement
+  min?: number
+  max?: number
+  settingsVersion?: number
+  readStoredZoom?(): number | null
+  writeStoredZoom?(value: number): void
+  onChange(): void
+  getTranslation?(key: string, fallback: string): string
+}
+
+export interface LabelPreviewZoomBinding {
+  getZoom(): number
+  applyZoom(value: number): void
+  sync(): void
+}
+
+export function bindLabelPreviewZoom(
+  options: BindLabelPreviewZoomOptions,
+): LabelPreviewZoomBinding {
+  const root = options.previewRoot.closest('.preview-container') ?? document
+  const slider = requireElement(root, 'preview-zoom-slider', HTMLInputElement)
+  const binding = bindPreviewZoomControls({
+    zoomInput: slider,
+    slider,
+    label: requireElement(root, 'preview-zoom-label', HTMLElement),
+    zoomOutBtn: requireElement(root, 'preview-zoom-out', HTMLElement),
+    zoomInBtn: requireElement(root, 'preview-zoom-in', HTMLElement),
+    zoomResetBtn: requireElement(root, 'preview-zoom-reset', HTMLElement),
+    min: options.min,
+    max: options.max,
+    getTranslation: options.getTranslation,
+    onChange: () => {
+      const zoom = binding.getZoom()
+      if (options.writeStoredZoom) options.writeStoredZoom(zoom)
+      else if (options.settingsVersion !== undefined) {
+        const settings = parseJsonOrNull<Record<string, unknown>>(
+          readStorageValue(options.storageKey),
+        ) ?? {}
+        writeStorageValue(options.storageKey, JSON.stringify({ ...settings, zoom: String(zoom) }))
+      } else writeStorageValue(options.storageKey, String(zoom))
+      options.onChange()
+    },
+  })
+  const storedZoom = options.readStoredZoom
+    ? options.readStoredZoom()
+    : options.settingsVersion !== undefined
+      ? Number(readVersionedLabelSettings<{ zoom?: unknown }>(
+          options.storageKey,
+          options.settingsVersion,
+        )?.zoom)
+      : Number(readStorageValue(options.storageKey))
+  const min = options.min ?? 25
+  const max = options.max ?? 300
+  if (storedZoom != null && storedZoom >= min && storedZoom <= max) {
+    binding.applyZoom(storedZoom)
+  }
+  return binding
+}
+
+export interface LabelSettingsControls {
+  width: HTMLInputElement
+  height: HTMLInputElement
+  fontSize: HTMLInputElement
+  qrSize: HTMLInputElement
+  showLogo: HTMLInputElement
+  showQr: HTMLInputElement
+  showId: HTMLInputElement
+  showManufacturer: HTMLInputElement
+  showMaterial: HTMLInputElement
+  showColor: HTMLInputElement
+  showColorSwatch: HTMLInputElement
+  showColorHex: HTMLInputElement
+}
+
+const LABEL_SETTING_INPUTS = [
+  ['width', 'width', 'widthMm', 20, 200, 60, 0, 1],
+  ['height', 'height', 'heightMm', 10, 120, 40, 0, 1],
+  ['fontSize', 'fontSize', 'fontScale', 50, 200, 100, 0, 100],
+  ['qrSize', 'qrSize', 'qrSizeMm', 8, 40, 18, 1, 1],
+] as const
+
+const LABEL_SETTING_CHECKBOXES = [
+  ['showLogo', 'showLogo', 'showLogo'],
+  ['showQR', 'showQr', 'showQR'],
+  ['showID', 'showId', 'showID'],
+  ['showMfr', 'showManufacturer', 'showManufacturer'],
+  ['showMat', 'showMaterial', 'showMaterial'],
+  ['showColor', 'showColor', 'showColor'],
+  ['showColorSwatch', 'showColorSwatch', 'showColorSwatch'],
+  ['showColorHex', 'showColorHex', 'showColorHex'],
+] as const
+
+type LabelSettingsStateKey =
+  | typeof LABEL_SETTING_INPUTS[number][0]
+  | typeof LABEL_SETTING_CHECKBOXES[number][0]
+export type LabelSettingsState = Partial<Record<LabelSettingsStateKey, unknown>>
+  & { extraFields?: unknown }
+type LabelExtraFieldControls = Record<string, HTMLInputElement>
+
+export function getLabelSettingsControls(
+  root: ParentNode = document,
+): LabelSettingsControls {
+  return {
+    width: requireElement(root, 'input-width', HTMLInputElement),
+    height: requireElement(root, 'input-height', HTMLInputElement),
+    fontSize: requireElement(root, 'input-font-size', HTMLInputElement),
+    qrSize: requireElement(root, 'input-qr-size', HTMLInputElement),
+    showLogo: requireElement(root, 'check-logo', HTMLInputElement),
+    showQr: requireElement(root, 'check-qr', HTMLInputElement),
+    showId: requireElement(root, 'check-id', HTMLInputElement),
+    showManufacturer: requireElement(root, 'check-mfr', HTMLInputElement),
+    showMaterial: requireElement(root, 'check-mat', HTMLInputElement),
+    showColor: requireElement(root, 'check-color', HTMLInputElement),
+    showColorSwatch: requireElement(root, 'check-color-swatch', HTMLInputElement),
+    showColorHex: requireElement(root, 'check-color-hex', HTMLInputElement),
+  }
+}
+
+export function captureLabelSettings(
+  controls: LabelSettingsControls,
+  extraFields?: LabelExtraFieldControls,
+): LabelSettingsState {
+  const settings = Object.fromEntries([
+    ...LABEL_SETTING_INPUTS.map(([setting, control]) => [setting, controls[control].value]),
+    ...LABEL_SETTING_CHECKBOXES.map(([setting, control]) => [setting, controls[control].checked]),
+  ]) as LabelSettingsState
+  if (extraFields) settings.extraFields = Object.fromEntries(
+    Object.entries(extraFields).map(([key, checkbox]) => [key, checkbox.checked]),
+  )
+  return settings
+}
+
+export function restoreLabelSettings(
+  controls: LabelSettingsControls,
+  settings: LabelSettingsState,
+  extraFields?: LabelExtraFieldControls,
+  options: { requireInputValues?: boolean } = {},
+) {
+  for (const [setting, control] of LABEL_SETTING_INPUTS) {
+    const value = settings[setting]
+    if (value !== undefined && (!options.requireInputValues || Boolean(value))) {
+      controls[control].value = String(value)
+    }
+  }
+  for (const [setting, control] of LABEL_SETTING_CHECKBOXES) {
+    const value = settings[setting]
+    if (value !== undefined) controls[control].checked = Boolean(value)
+  }
+  if (extraFields && settings.extraFields && typeof settings.extraFields === 'object') {
+    Object.entries(settings.extraFields as Record<string, boolean>).forEach(([key, checked]) => {
+      if (extraFields[key]) extraFields[key].checked = checked
+    })
+  }
+}
+
+export function resetLabelSettings(
+  controls: LabelSettingsControls,
+  extraFields?: LabelExtraFieldControls,
+) {
+  LABEL_SETTING_INPUTS.forEach(([, control, , , , fallback]) => {
+    controls[control].value = String(fallback)
+  })
+  LABEL_SETTING_CHECKBOXES.forEach(([, control]) => {
+    controls[control].checked = true
+  })
+  Object.values(extraFields ?? {}).forEach(checkbox => { checkbox.checked = false })
+}
+
+export function appendLabelSettingsCheckbox(options: {
+  container: HTMLElement
+  id?: string
+  label: string
+  checked: boolean
+  onChange(): void
+}) {
+  const row = document.createElement('label')
+  const checkbox = document.createElement('input')
+  const label = document.createElement('span')
+  const scopeName = Array.from(
+    document.querySelector('.fm-checkbox-group')?.attributes ?? [],
+  ).find(attribute => attribute.name.startsWith('data-astro-cid-'))?.name
+  row.className = 'fm-checkbox-group'
+  checkbox.type = 'checkbox'
+  if (options.id) checkbox.id = options.id
+  checkbox.checked = options.checked
+  label.textContent = options.label
+  if (scopeName) [row, checkbox, label].forEach(element => element.setAttribute(scopeName, ''))
+  row.append(checkbox, label)
+  options.container.appendChild(row)
+  checkbox.addEventListener('change', options.onChange)
+  return checkbox
+}
+
+export function getStandardLabelSettings(
+  controls: LabelSettingsControls,
+  options: { normalizeInputs?: boolean; integerFontScale?: boolean } = {},
+): StandardLabelSettings {
+  const read = (
+    input: HTMLInputElement,
+    min: number,
+    max: number,
+    fallback: number,
+    decimals: number,
+    integer = false,
+  ) => options.normalizeInputs
+    ? clampInputValue(input, min, max, fallback, decimals)
+    : clampNumber(integer ? parseInt(input.value) : Number(input.value), min, max, fallback)
+  return {
+    ...Object.fromEntries(LABEL_SETTING_INPUTS.map(([
+      setting, control, output, min, max, fallback, decimals, scale,
+    ]) => [output, read(
+      controls[control], min, max, fallback, decimals,
+      options.integerFontScale && setting === 'fontSize',
+    ) / scale])),
+    ...Object.fromEntries(LABEL_SETTING_CHECKBOXES.map(([, control, output]) => (
+      [output, controls[control].checked]
+    ))),
+  } as unknown as StandardLabelSettings
+}
+
+export interface BindLabelSettingsEventsOptions {
+  controls: LabelSettingsControls
+  resetButton?: HTMLElement | null
+  onChange(): void
+  onReset(): void
+}
+
+export function bindLabelSettingsEvents(
+  options: BindLabelSettingsEventsOptions,
+) {
+  const inputs = Object.values(options.controls)
+  const liveInputs = inputs.filter(input =>
+    input.type === 'range' || input.type === 'number',
+  )
+  inputs.forEach(input => input.addEventListener('change', options.onChange))
+  liveInputs.forEach(input => input.addEventListener('input', options.onChange))
+  options.resetButton?.addEventListener('click', options.onReset)
+
+  return () => {
+    inputs.forEach(input => input.removeEventListener('change', options.onChange))
+    liveInputs.forEach(input => input.removeEventListener('input', options.onChange))
+    options.resetButton?.removeEventListener('click', options.onReset)
+  }
 }
 
 export function applyBatchLabelPreviewZoom(previewRoot: HTMLElement, zoomPercent: number) {
@@ -479,7 +802,6 @@ export interface LabelPrintEntityAdapter<T, TStandardData = unknown, TDesignerDa
   getLogoManufacturerId: (entity: T) => number | null
   buildStandardData: (entity: T) => TStandardData
   buildDesignerData: (entity: T) => TDesignerData
-  singlePngName: (entity: T) => string
   zipName: () => string
   zipEntryName: (entity: T) => string
   pdfName: () => string
@@ -633,6 +955,55 @@ export interface LabelOutputControls {
   pdfButton: HTMLButtonElement
 }
 
+export function getLabelOutputControls(
+  root: ParentNode = document,
+): LabelOutputControls {
+  return {
+    printButton: requireElement(root, 'btn-print', HTMLButtonElement),
+    printPdfCheckbox: requireElement(root, 'check-print-pdf', HTMLInputElement),
+    pngButton: requireElement(root, 'btn-export-png', HTMLButtonElement),
+    amlButton: requireElement(root, 'btn-export-aml', HTMLButtonElement),
+    pdfButton: requireElement(root, 'btn-export-pdf', HTMLButtonElement),
+  }
+}
+
+export interface BindLabelOutputPreviewOptions {
+  previewRoot: HTMLElement
+  sheetControls: LabelSheetControls
+  outputControls: LabelOutputControls
+  getSourceElements(): HTMLElement[]
+  getDimensions(): { widthMm: number; heightMm: number }
+  getZoom(): number
+  applyIndividualZoom(zoom: number): void
+}
+
+export function bindLabelOutputPreview(
+  options: BindLabelOutputPreviewOptions,
+) {
+  return () => {
+    const sourceElements = options.getSourceElements()
+    syncLabelSheetPreview({
+      controls: options.sheetControls,
+      previewRoot: options.previewRoot,
+      sourceElements,
+      labelDimensions: options.getDimensions(),
+    })
+    const zoom = options.getZoom()
+    if (options.sheetControls.getOutputMode() === 'sheet') {
+      applyLabelSheetPreviewZoom(options.previewRoot, zoom)
+    } else {
+      options.applyIndividualZoom(zoom)
+    }
+    syncLabelSheetIndividualExportState(
+      options.sheetControls,
+      [options.outputControls.pngButton, options.outputControls.amlButton],
+      (key, fallback) =>
+        (window as Window & { __t?: (key: string) => string }).__t?.(key) ||
+        fallback,
+    )
+  }
+}
+
 export interface LabelOutputCollection<T> {
   getItems(): T[]
   prepare(): Promise<void>
@@ -658,12 +1029,20 @@ export interface BindLabelOutputsOptions<T> {
 export function bindLabelOutputs<T>(options: BindLabelOutputsOptions<T>) {
   const { controls, collection, getTranslation } = options
   const exportingText = () => getTranslation('labelPrint.exporting', 'Exporting...')
-  const coordinator = createLabelOutputCoordinator([
-    controls.printButton,
-    controls.pngButton,
-    controls.amlButton,
-    controls.pdfButton,
-  ])
+  const coordinator = createLabelOutputCoordinator(
+    [
+      controls.printButton,
+      controls.pngButton,
+      controls.amlButton,
+      controls.pdfButton,
+    ],
+    () => Array.from(document.querySelectorAll<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+    >(
+      '.print-sidebar button, .print-sidebar input, .print-sidebar select, ' +
+      '.print-sidebar textarea, .preview-zoom-bar button, .preview-zoom-bar input',
+    )),
+  )
 
   const exportFiles = async (kind: 'png' | 'aml') => {
     const button = kind === 'png' ? controls.pngButton : controls.amlButton
@@ -762,110 +1141,5 @@ export function bindLabelOutputs<T>(options: BindLabelOutputsOptions<T>) {
     },
     printPdf: pdfActions.print,
     getTranslation,
-  })
-}
-
-interface BatchLabelExportOptions<T> {
-  entities: () => T[]
-  activeTab: () => PrintDesignerTab
-  printButton: HTMLButtonElement
-  printPdfCheckbox: HTMLInputElement
-  pngButton: HTMLButtonElement
-  amlButton: HTMLButtonElement
-  pdfButton: HTMLButtonElement
-  getTranslation: (key: string, fallback: string) => string
-  renderAll: (tab: PrintDesignerTab) => Promise<void>
-  captureLabel: (entity: T) => Promise<string>
-  getPdfDimensions: () => { widthMm: number; heightMm: number }
-  singlePngName: (entity: T) => string
-  zipName: () => string
-  zipEntryName: (entity: T) => string
-  pdfName: () => string
-  browserPrint: BrowserPrintBinding & {
-    getIndividualPages: () => HTMLElement[]
-  }
-  createPdf?: LabelPdfFactoryOverride
-  skipCaptureErrorsInZip?: boolean
-  skipCaptureErrorsInPdf?: boolean
-}
-
-export function bindBatchLabelExport<T>(options: BatchLabelExportOptions<T>) {
-  bindLabelOutputs({
-    controls: {
-      printButton: options.printButton,
-      printPdfCheckbox: options.printPdfCheckbox,
-      pngButton: options.pngButton,
-      amlButton: options.amlButton,
-      pdfButton: options.pdfButton,
-    },
-    collection: {
-      getItems: options.entities,
-      prepare: () => options.renderAll(options.activeTab()),
-      capture: options.captureLabel,
-      getDimensions: options.getPdfDimensions,
-      browserPrint: options.browserPrint,
-      pngName: (entity, _index, total) => total === 1
-        ? options.singlePngName(entity)
-        : options.zipEntryName(entity),
-      pngArchiveName: options.zipName,
-      pdfName: options.pdfName,
-      allowPartialPng: options.skipCaptureErrorsInZip ?? false,
-      allowPartialPdf: options.skipCaptureErrorsInPdf ?? false,
-    },
-    getTranslation: options.getTranslation,
-    createPdf: options.createPdf,
-  })
-}
-
-interface SingleLabelExportOptions {
-  printButton: HTMLButtonElement
-  printPdfCheckbox: HTMLInputElement
-  exportPngBtn: HTMLButtonElement
-  exportAmlBtn: HTMLButtonElement
-  exportPdfBtn: HTMLButtonElement
-  labelElement: HTMLElement
-  pixelRatio?: number
-  getTranslation: (key: string, fallback: string) => string
-  buildBaseName: () => string
-  pdfName?: () => string
-  getDimensions: () => { widthMm: number; heightMm: number }
-  refreshPreview: () => Promise<void>
-  browserPrint: BrowserPrintBinding
-  captureLabel?: () => Promise<string>
-  createPdf?: LabelPdfFactoryOverride
-}
-
-export function bindSingleLabelExport(options: SingleLabelExportOptions) {
-  bindLabelOutputs({
-    controls: {
-      printButton: options.printButton,
-      printPdfCheckbox: options.printPdfCheckbox,
-      pngButton: options.exportPngBtn,
-      amlButton: options.exportAmlBtn,
-      pdfButton: options.exportPdfBtn,
-    },
-    collection: {
-      getItems: () => [options.labelElement],
-      prepare: options.refreshPreview,
-      capture: async labelElement => {
-        if (options.captureLabel) return options.captureLabel()
-        return captureLabelElement(labelElement, {
-          pixelRatio: options.pixelRatio ?? LABEL_EXPORT_PIXEL_RATIO,
-          resetTransform: true,
-        })
-      },
-      getDimensions: options.getDimensions,
-      browserPrint: {
-        ...options.browserPrint,
-        getIndividualPages: () => [options.labelElement],
-      },
-      pngName: () => `${options.buildBaseName()}.png`,
-      pngArchiveName: () => `${options.buildBaseName()}.zip`,
-      pdfName: options.pdfName ?? (() => `${options.buildBaseName()}.pdf`),
-      allowPartialPng: false,
-      allowPartialPdf: false,
-    },
-    getTranslation: options.getTranslation,
-    createPdf: options.createPdf,
   })
 }

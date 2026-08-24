@@ -15,6 +15,7 @@ import {
   EMPTY_SPOOL_LABEL_LOOKUPS,
   type SpoolLabelLookups,
 } from './spool-label-lookups'
+import { formatDateDisplay } from './extra-fields'
 
 export const DESIGNER_KEY = 'filaman-label-designer-v1'
 export const DESIGNER_SCHEMA_VERSION = 1
@@ -419,18 +420,25 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
   }
 }
 
+export function buildSpoolDesignerDataFromLabelData(
+  data: DesignerFlatLabelData,
+): SpoolData {
+  return buildSpoolDataFromFlatLabel({
+    ...data,
+    purchase_date: formatDateDisplay(data.purchase_date),
+    stocked_in_at: formatDateDisplay(data.stocked_in_at),
+    last_used_at: formatDateDisplay(data.last_used_at),
+  })
+}
+
 export function buildSpoolDataFromApiSpool(
   spool: any,
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
   fieldDefs?: ExtraFieldDefinitionMap,
 ): SpoolData {
   const data = buildSpoolLabelDataFromApi(spool, lookups)
-  const formatDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
-  return buildSpoolDataFromFlatLabel({
+  return buildSpoolDesignerDataFromLabelData({
     ...data,
-    purchase_date: formatDate(data.purchase_date),
-    stocked_in_at: formatDate(data.stocked_in_at),
-    last_used_at: formatDate(data.last_used_at),
     extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),
   })
 }

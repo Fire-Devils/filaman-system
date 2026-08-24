@@ -12,12 +12,23 @@ import JSZip from 'jszip'
 
 import {
   LABEL_PRINT_PDF_MODE_KEY,
-  bindBatchLabelExport,
+  appendLabelSettingsCheckbox,
+  bindLabelOutputPreview,
   bindLabelOutputs,
+  bindLabelPreviewZoom,
+  bindLabelSettingsEvents,
   bindPdfOutputActions,
+  bindPrintPageSidebarCollapse,
   bindPrintPdfPreference,
-  bindSingleLabelExport,
+  captureLabelSettings,
+  getLabelOutputControls,
+  getLabelSettingsControls,
+  getStandardLabelSettings,
+  readVersionedLabelSettings,
   releasePrintPdfUrls,
+  resetLabelSettings,
+  restoreLabelSettings,
+  type LabelPdfFactoryOverride,
 } from './label-print-page'
 import type { LabelPdfDocument, LabelPdfPage } from './label-export'
 import {
@@ -90,6 +101,131 @@ function makeBrowserPrintBinding(
   }
 }
 
+function bindSingleCollectionOutputs(options: {
+  printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
+  exportPngBtn: HTMLButtonElement
+  exportAmlBtn: HTMLButtonElement
+  exportPdfBtn: HTMLButtonElement
+  labelElement: HTMLElement
+  getTranslation(key: string, fallback: string): string
+  buildBaseName(): string
+  pdfName?(): string
+  getDimensions(): { widthMm: number; heightMm: number }
+  refreshPreview(): Promise<void>
+  captureLabel(): Promise<string>
+  browserPrint: ReturnType<typeof makeBrowserPrintBinding>
+  createPdf?: LabelPdfFactoryOverride
+}) {
+  bindLabelOutputs({
+    controls: {
+      printButton: options.printButton,
+      printPdfCheckbox: options.printPdfCheckbox,
+      pngButton: options.exportPngBtn,
+      amlButton: options.exportAmlBtn,
+      pdfButton: options.exportPdfBtn,
+    },
+    collection: {
+      getItems: () => [options.labelElement],
+      prepare: options.refreshPreview,
+      capture: options.captureLabel,
+      getDimensions: options.getDimensions,
+      browserPrint: {
+        ...options.browserPrint,
+        getIndividualPages: () => [options.labelElement],
+      },
+      pngName: () => `${options.buildBaseName()}.png`,
+      pngArchiveName: () => `${options.buildBaseName()}.zip`,
+      pdfName: options.pdfName ?? (() => `${options.buildBaseName()}.pdf`),
+      allowPartialPng: false,
+      allowPartialPdf: false,
+    },
+    getTranslation: options.getTranslation,
+    createPdf: options.createPdf,
+  })
+}
+
+function bindBatchCollectionOutputs<T>(options: {
+  entities(): T[]
+  activeTab(): 'print' | 'designer'
+  printButton: HTMLButtonElement
+  printPdfCheckbox: HTMLInputElement
+  pngButton: HTMLButtonElement
+  amlButton: HTMLButtonElement
+  pdfButton: HTMLButtonElement
+  getTranslation(key: string, fallback: string): string
+  renderAll(tab: 'print' | 'designer'): Promise<void>
+  captureLabel(entity: T): Promise<string>
+  getPdfDimensions(): { widthMm: number; heightMm: number }
+  singlePngName(entity: T): string
+  zipName(): string
+  zipEntryName(entity: T): string
+  pdfName(): string
+  browserPrint: ReturnType<typeof makeBrowserPrintBinding>
+  createPdf?: LabelPdfFactoryOverride
+  skipCaptureErrorsInZip?: boolean
+  skipCaptureErrorsInPdf?: boolean
+}) {
+  bindLabelOutputs({
+    controls: {
+      printButton: options.printButton,
+      printPdfCheckbox: options.printPdfCheckbox,
+      pngButton: options.pngButton,
+      amlButton: options.amlButton,
+      pdfButton: options.pdfButton,
+    },
+    collection: {
+      getItems: options.entities,
+      prepare: () => options.renderAll(options.activeTab()),
+      capture: options.captureLabel,
+      getDimensions: options.getPdfDimensions,
+      browserPrint: options.browserPrint,
+      pngName: (entity, _index, total) => total === 1
+        ? options.singlePngName(entity)
+        : options.zipEntryName(entity),
+      pngArchiveName: options.zipName,
+      pdfName: options.pdfName,
+      allowPartialPng: options.skipCaptureErrorsInZip ?? false,
+      allowPartialPdf: options.skipCaptureErrorsInPdf ?? false,
+    },
+    getTranslation: options.getTranslation,
+    createPdf: options.createPdf,
+  })
+}
+
+function renderPrintPageControls() {
+  document.body.innerHTML = `
+    <div id="fm-page"></div>
+    <main class="preview-container">
+      <button id="preview-zoom-out">Zoom out</button>
+      <input id="preview-zoom-slider" type="range" min="50" max="300" step="5" value="100">
+      <button id="preview-zoom-in">Zoom in</button>
+      <span id="preview-zoom-label">100%</span>
+      <button id="preview-zoom-reset">Reset zoom</button>
+      <div class="preview-scroll-area">
+        <div id="label-preview"></div>
+      </div>
+    </main>
+    <input id="input-width" type="number">
+    <input id="input-height" type="number">
+    <input id="input-font-size" type="range">
+    <input id="input-qr-size" type="number">
+    <input id="check-logo" type="checkbox">
+    <input id="check-qr" type="checkbox">
+    <input id="check-id" type="checkbox">
+    <input id="check-mfr" type="checkbox">
+    <input id="check-mat" type="checkbox">
+    <input id="check-color" type="checkbox">
+    <input id="check-color-swatch" type="checkbox">
+    <input id="check-color-hex" type="checkbox">
+    <button id="btn-print">Print</button>
+    <input id="check-print-pdf" type="checkbox">
+    <button id="btn-export-png">PNG</button>
+    <button id="btn-export-aml">AML</button>
+    <button id="btn-export-pdf">PDF</button>
+  `
+}
+
 function bindDeferredCapture(
   kind: 'single-label' | 'batch',
   captureLabel: () => Promise<string>,
@@ -103,7 +239,7 @@ function bindDeferredCapture(
   const labelElement = document.querySelector<HTMLElement>('#label')!
 
   if (kind === 'single-label') {
-    bindSingleLabelExport({
+    bindSingleCollectionOutputs({
       printButton,
       printPdfCheckbox,
       exportPngBtn: pngButton,
@@ -118,7 +254,7 @@ function bindDeferredCapture(
       browserPrint: makeBrowserPrintBinding(labelElement),
     })
   } else {
-    bindBatchLabelExport({
+    bindBatchCollectionOutputs({
       entities: () => [{ id: 1 }],
       activeTab: () => 'print',
       printButton,
@@ -241,6 +377,443 @@ beforeEach(() => {
 afterEach(() => {
   releasePrintPdfUrls()
   vi.restoreAllMocks()
+})
+
+describe('shared print-page controls', () => {
+  it('returns the existing output and label-setting controls', () => {
+    renderPrintPageControls()
+
+    const output = getLabelOutputControls()
+    const settings = getLabelSettingsControls()
+
+    expect(output).toEqual({
+      printButton: document.querySelector('#btn-print'),
+      printPdfCheckbox: document.querySelector('#check-print-pdf'),
+      pngButton: document.querySelector('#btn-export-png'),
+      amlButton: document.querySelector('#btn-export-aml'),
+      pdfButton: document.querySelector('#btn-export-pdf'),
+    })
+    expect(settings).toEqual({
+      width: document.querySelector('#input-width'),
+      height: document.querySelector('#input-height'),
+      fontSize: document.querySelector('#input-font-size'),
+      qrSize: document.querySelector('#input-qr-size'),
+      showLogo: document.querySelector('#check-logo'),
+      showQr: document.querySelector('#check-qr'),
+      showId: document.querySelector('#check-id'),
+      showManufacturer: document.querySelector('#check-mfr'),
+      showMaterial: document.querySelector('#check-mat'),
+      showColor: document.querySelector('#check-color'),
+      showColorSwatch: document.querySelector('#check-color-swatch'),
+      showColorHex: document.querySelector('#check-color-hex'),
+    })
+  })
+
+  it('reports the id of a missing required control', () => {
+    renderPrintPageControls()
+    document.querySelector('#btn-export-aml')?.remove()
+
+    expect(() => getLabelOutputControls()).toThrow(
+      'Missing label print control: #btn-export-aml',
+    )
+  })
+
+  it('collapses the application sidebar at the current print-page breakpoint', () => {
+    renderPrintPageControls()
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    })
+
+    const cleanup = bindPrintPageSidebarCollapse()
+
+    expect(document.documentElement.classList.contains('sidebar-collapsed'))
+      .toBe(true)
+    expect(document.querySelector('#fm-page')?.classList.contains('collapsed'))
+      .toBe(true)
+    expect(localStorage.getItem('sidebar-collapsed')).toBe('true')
+
+    cleanup()
+  })
+})
+
+describe('shared single-label print-page behavior', () => {
+  it('restores and persists preview zoom through the existing zoom controls', () => {
+    renderPrintPageControls()
+    localStorage.setItem('test-label-zoom', '135')
+    const onChange = vi.fn()
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+
+    const zoom = bindLabelPreviewZoom({
+      storageKey: 'test-label-zoom',
+      previewRoot,
+      min: 50,
+      onChange,
+      getTranslation: (_key, fallback) => fallback,
+    })
+
+    expect(zoom.getZoom()).toBe(135)
+    expect(document.querySelector('#preview-zoom-slider'))
+      .toHaveProperty('value', '135')
+    expect(document.querySelector('#preview-zoom-label')?.textContent)
+      .toBe('135%')
+    expect(onChange).toHaveBeenCalledOnce()
+
+    document.querySelector<HTMLButtonElement>('#preview-zoom-in')?.click()
+
+    expect(zoom.getZoom()).toBe(145)
+    expect(localStorage.getItem('test-label-zoom')).toBe('145')
+    expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('supports route-owned preview zoom storage without replacing its settings payload', () => {
+    renderPrintPageControls()
+    localStorage.setItem('batch-label-settings', JSON.stringify({
+      width: '60',
+      zoom: '135',
+    }))
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+
+    const zoom = bindLabelPreviewZoom({
+      storageKey: 'batch-label-settings',
+      previewRoot,
+      min: 50,
+      readStoredZoom: () => Number(JSON.parse(
+        localStorage.getItem('batch-label-settings')!,
+      ).zoom),
+      writeStoredZoom: value => {
+        const settings = JSON.parse(
+          localStorage.getItem('batch-label-settings')!,
+        )
+        settings.zoom = String(value)
+        localStorage.setItem('batch-label-settings', JSON.stringify(settings))
+      },
+      onChange: () => undefined,
+    })
+
+    expect(zoom.getZoom()).toBe(135)
+    document.querySelector<HTMLButtonElement>('#preview-zoom-in')?.click()
+    expect(JSON.parse(localStorage.getItem('batch-label-settings')!))
+      .toEqual({ width: '60', zoom: '145' })
+  })
+
+  it('stores preview zoom inside an existing versioned settings payload', () => {
+    renderPrintPageControls()
+    const storageKey = 'batch-settings'
+    localStorage.setItem(storageKey, JSON.stringify({
+      _v: 2,
+      zoom: '135',
+      extraFields: { density: true },
+    }))
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+    const bindNestedZoom = bindLabelPreviewZoom as unknown as (
+      options: Parameters<typeof bindLabelPreviewZoom>[0] & { settingsVersion: number },
+    ) => ReturnType<typeof bindLabelPreviewZoom>
+
+    const zoom = bindNestedZoom({
+      storageKey,
+      settingsVersion: 2,
+      previewRoot,
+      onChange: () => undefined,
+    })
+    expect(zoom.getZoom()).toBe(135)
+
+    const slider = document.querySelector<HTMLInputElement>('#preview-zoom-slider')!
+    slider.value = '145'
+    slider.dispatchEvent(new Event('input'))
+
+    expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({
+      _v: 2,
+      zoom: '145',
+      extraFields: { density: true },
+    })
+  })
+
+  it('rejects stale versioned zoom before current settings can persist it', () => {
+    renderPrintPageControls()
+    const storageKey = 'versioned-batch-label-settings'
+    localStorage.setItem(storageKey, JSON.stringify({
+      _v: 1,
+      width: '72',
+      zoom: '135',
+    }))
+    const settings = readVersionedLabelSettings<{ zoom?: string }>(
+      storageKey,
+      2,
+    )
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+
+    const zoom = bindLabelPreviewZoom({
+      storageKey,
+      previewRoot,
+      min: 50,
+      readStoredZoom: () => settings?.zoom === undefined
+        ? null
+        : Number(settings.zoom),
+      writeStoredZoom: () => undefined,
+      onChange: () => undefined,
+    })
+
+    expect(zoom.getZoom()).toBe(100)
+    expect(localStorage.getItem(storageKey)).toBe('')
+
+    localStorage.setItem(storageKey, JSON.stringify({
+      _v: 2,
+      zoom: String(zoom.getZoom()),
+    }))
+    expect(JSON.parse(localStorage.getItem(storageKey)!))
+      .toEqual({ _v: 2, zoom: '100' })
+  })
+
+  it.each([
+    JSON.stringify({ _v: 'invalid', zoom: '135' }),
+    JSON.stringify(['not', 'settings']),
+    JSON.stringify('not settings'),
+  ])('rejects malformed versioned settings payload %s', raw => {
+    localStorage.setItem('malformed-label-settings', raw)
+
+    expect(readVersionedLabelSettings('malformed-label-settings', 2)).toBeNull()
+    expect(localStorage.getItem('malformed-label-settings')).toBe('')
+  })
+
+  it('binds setting changes, live numeric input, reset, and cleanup', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    const onChange = vi.fn()
+    const onReset = vi.fn()
+    const resetButton = document.createElement('button')
+    const cleanup = bindLabelSettingsEvents({
+      controls,
+      resetButton,
+      onChange,
+      onReset,
+    })
+
+    controls.showLogo.dispatchEvent(new Event('change'))
+    controls.width.dispatchEvent(new Event('input'))
+    resetButton.click()
+
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onReset).toHaveBeenCalledOnce()
+
+    cleanup()
+    controls.width.dispatchEvent(new Event('change'))
+    resetButton.click()
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onReset).toHaveBeenCalledOnce()
+  })
+
+  it('captures and restores standard label control values', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '72'
+    controls.height.value = '36'
+    controls.fontSize.value = '80'
+    controls.qrSize.value = '16.5'
+    controls.showLogo.checked = false
+    controls.showQr.checked = true
+    controls.showId.checked = false
+    controls.showManufacturer.checked = true
+    controls.showMaterial.checked = false
+    controls.showColor.checked = true
+    controls.showColorSwatch.checked = false
+    controls.showColorHex.checked = true
+    const density = document.createElement('input')
+    density.type = 'checkbox'
+    density.checked = true
+    const extraFields = { density }
+    const settings = captureLabelSettings(controls, extraFields)
+    controls.width.value = '20'
+    controls.showLogo.checked = true
+    density.checked = false
+    restoreLabelSettings(controls, settings, extraFields)
+
+    expect(settings).toEqual({
+      width: '72',
+      height: '36',
+      fontSize: '80',
+      qrSize: '16.5',
+      showLogo: false,
+      showQR: true,
+      showID: false,
+      showMfr: true,
+      showMat: false,
+      showColor: true,
+      showColorSwatch: false,
+      showColorHex: true,
+      extraFields: { density: true },
+    })
+    expect(controls.width.value).toBe('72')
+    expect(controls.showLogo.checked).toBe(false)
+    expect(density.checked).toBe(true)
+  })
+
+  it('keeps batch input defaults when a stored value is empty', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '60'
+    restoreLabelSettings(
+      controls,
+      { width: '' },
+      undefined,
+      { requireInputValues: true },
+    )
+
+    expect(controls.width.value).toBe('60')
+  })
+
+  it('derives standard renderer settings and normalizes single-route inputs', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '500'
+    controls.height.value = '36'
+    controls.fontSize.value = '80'
+    controls.qrSize.value = '16.5'
+    controls.showLogo.checked = false
+    controls.showQr.checked = true
+    controls.showId.checked = false
+    controls.showManufacturer.checked = true
+    controls.showMaterial.checked = false
+    controls.showColor.checked = true
+    controls.showColorSwatch.checked = false
+    controls.showColorHex.checked = true
+    expect(getStandardLabelSettings(controls, { normalizeInputs: true })).toEqual({
+      widthMm: 200,
+      heightMm: 36,
+      fontScale: 0.8,
+      qrSizeMm: 16.5,
+      showLogo: false,
+      showQR: true,
+      showID: false,
+      showManufacturer: true,
+      showMaterial: false,
+      showColor: true,
+      showColorSwatch: false,
+      showColorHex: true,
+    })
+    expect(controls.width.value).toBe('200')
+  })
+
+  it('resets all standard label controls to their shared defaults', () => {
+    renderPrintPageControls()
+    const controls = getLabelSettingsControls()
+    controls.width.value = '72'
+    controls.height.value = '36'
+    controls.fontSize.value = '80'
+    controls.qrSize.value = '16.5'
+    Object.values(controls).forEach(control => {
+      if (control.type === 'checkbox') control.checked = false
+    })
+    const density = document.createElement('input')
+    density.type = 'checkbox'
+    density.checked = true
+    resetLabelSettings(controls, { density })
+
+    expect({
+      width: controls.width.value,
+      height: controls.height.value,
+      fontSize: controls.fontSize.value,
+      qrSize: controls.qrSize.value,
+      extraFieldChecked: density.checked,
+      checked: Object.values(controls)
+        .filter(control => control.type === 'checkbox')
+        .every(control => control.checked),
+    }).toEqual({
+      width: '60',
+      height: '40',
+      fontSize: '100',
+      qrSize: '18',
+      extraFieldChecked: false,
+      checked: true,
+    })
+  })
+
+  it('appends a scoped settings checkbox and wires its change behavior', () => {
+    document.body.innerHTML = `
+      <label class="fm-checkbox-group" data-astro-cid-print></label>
+      <div id="extra-fields"></div>
+    `
+    const container = document.querySelector<HTMLElement>('#extra-fields')!
+    const onChange = vi.fn()
+    const checkbox = appendLabelSettingsCheckbox({
+      container,
+      id: 'check-density',
+      label: 'Density',
+      checked: true,
+      onChange,
+    })
+    checkbox.dispatchEvent(new Event('change'))
+
+    expect(container.innerHTML).toBe(
+      '<label class="fm-checkbox-group" data-astro-cid-print=""><input type="checkbox" id="check-density" data-astro-cid-print=""><span data-astro-cid-print="">Density</span></label>',
+    )
+    expect(checkbox.checked).toBe(true)
+    expect(onChange).toHaveBeenCalledOnce()
+  })
+
+  it('switches between individual zoom and label-paper preview behavior', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+    const label = document.querySelector<HTMLElement>('#label-preview')!
+    const outputControls = getLabelOutputControls()
+    let outputMode: 'individual' | 'sheet' = 'individual'
+    const sheetControls = {
+      getOutputMode: () => outputMode,
+      getSettings: () => ({
+        paperSize: 'a4',
+        customWidthMm: 210,
+        customHeightMm: 297,
+        rows: 1,
+        columns: 1,
+        marginTopMm: 0,
+        marginRightMm: 0,
+        marginBottomMm: 0,
+        marginLeftMm: 0,
+        gapHorizontalMm: 0,
+        gapVerticalMm: 0,
+        skipCells: 0,
+        copies: 1,
+        showGrid: false,
+        printGrid: false,
+        fitToCell: false,
+      }),
+      setOutputMode: mode => {
+        outputMode = mode
+      },
+    } satisfies LabelSheetControls
+    const applyIndividualZoom = vi.fn()
+    const sync = bindLabelOutputPreview({
+      previewRoot,
+      sheetControls,
+      outputControls,
+      getSourceElements: () => [label],
+      getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
+      getZoom: () => 125,
+      applyIndividualZoom,
+    })
+
+    sync()
+    expect(applyIndividualZoom).toHaveBeenCalledWith(125)
+    expect(outputControls.pngButton.disabled).toBe(false)
+
+    outputMode = 'sheet'
+    sync()
+    expect(previewRoot.classList.contains('is-label-sheet-mode')).toBe(true)
+    expect(previewRoot.querySelector<HTMLElement>('.label-sheet-page')?.style.transform)
+      .toBe('scale(1.25)')
+    expect(outputControls.pngButton.disabled).toBe(true)
+    expect(outputControls.amlButton.disabled).toBe(true)
+  })
 })
 
 describe('print PDF preference', () => {
@@ -501,6 +1074,46 @@ describe('single and batch PDF factory reuse', () => {
     },
   )
 
+  it('locks preview-mutating controls until an output operation completes', async () => {
+    let finishPrepare!: () => void
+    const pendingPrepare = new Promise<void>(resolve => {
+      finishPrepare = resolve
+    })
+    const { controls, capture } = bindCollectionOutputs([1], {
+      prepare: vi.fn(() => pendingPrepare),
+    })
+    document.body.insertAdjacentHTML('beforeend', `
+      <aside class="print-sidebar">
+        <button id="tab-designer">Designer</button>
+        <select id="output-mode"><option>Individual</option></select>
+        <textarea id="designer-template"></textarea>
+      </aside>
+      <div class="preview-zoom-bar">
+        <button id="zoom-in">Zoom in</button>
+        <input id="zoom-slider" type="range">
+      </div>
+    `)
+    const mutationControls = [
+      '#tab-designer',
+      '#output-mode',
+      '#designer-template',
+      '#zoom-in',
+      '#zoom-slider',
+    ].map(selector => document.querySelector<HTMLElement & { disabled: boolean }>(selector)!)
+
+    controls.pngButton.click()
+    await Promise.resolve()
+
+    expect(mutationControls.every(control => control.disabled)).toBe(true)
+    expect(capture).not.toHaveBeenCalled()
+
+    finishPrepare()
+    await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce())
+    await vi.waitFor(() => {
+      expect(mutationControls.every(control => !control.disabled)).toBe(true)
+    })
+  })
+
   it('reports browser-print preparation failure without falling back to PDF', async () => {
     document.body.innerHTML = `
       <button id="print">Print</button>
@@ -664,7 +1277,7 @@ describe('single and batch PDF factory reuse', () => {
         })
       })
 
-    bindBatchLabelExport({
+    bindBatchCollectionOutputs({
       entities: () => [{ id: 1 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
@@ -717,7 +1330,7 @@ describe('single and batch PDF factory reuse', () => {
       async () => 'data:image/png;base64,bGFiZWw=',
     )
 
-    bindBatchLabelExport({
+    bindBatchCollectionOutputs({
       entities: () => [{ id: 1 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
@@ -770,7 +1383,7 @@ describe('single and batch PDF factory reuse', () => {
         downloads.push(this.download)
       })
 
-    bindBatchLabelExport({
+    bindBatchCollectionOutputs({
       entities: () => [{ id: 1 }, { id: 2 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,
@@ -823,7 +1436,7 @@ describe('single and batch PDF factory reuse', () => {
       async () => 'data:image/png;base64,c2luZ2xl',
     )
 
-    bindSingleLabelExport({
+    bindSingleCollectionOutputs({
       printButton: document.querySelector('#print')!,
       printPdfCheckbox: document.querySelector('#pdf-mode')!,
       exportPngBtn: document.querySelector('#png')!,
@@ -898,7 +1511,7 @@ describe('single and batch PDF factory reuse', () => {
       const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
         .mockImplementation(() => undefined)
 
-      bindBatchLabelExport({
+      bindBatchCollectionOutputs({
         entities: () => entities,
         activeTab: () => 'print',
         printButton: document.querySelector('#print')!,
@@ -953,7 +1566,7 @@ describe('single and batch PDF factory reuse', () => {
           downloads.push(this.download)
         })
 
-      bindBatchLabelExport({
+      bindBatchCollectionOutputs({
         entities: () => [{ id: 1 }, { id: 2 }],
         activeTab: () => 'print',
         printButton: document.querySelector('#print')!,
@@ -1003,7 +1616,7 @@ describe('single and batch PDF factory reuse', () => {
     const popup = makePopup()
     vi.spyOn(window, 'open').mockReturnValue(popup.popup)
 
-    bindSingleLabelExport({
+    bindSingleCollectionOutputs({
       printButton: document.querySelector('#print')!,
       printPdfCheckbox: document.querySelector('#pdf-mode')!,
       exportPngBtn: document.querySelector('#png')!,
@@ -1062,7 +1675,7 @@ describe('single and batch PDF factory reuse', () => {
     const popup = makePopup()
     vi.spyOn(window, 'open').mockReturnValue(popup.popup)
 
-    bindBatchLabelExport({
+    bindBatchCollectionOutputs({
       entities: () => [{ id: 1 }, { id: 2 }],
       activeTab: () => 'print',
       printButton: document.querySelector('#print')!,

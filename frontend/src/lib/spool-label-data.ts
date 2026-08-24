@@ -130,6 +130,10 @@ export function buildSpoolLabelDataFromApi(
   const filamentRecord = filament && typeof filament === 'object'
     ? filament as Record<string, unknown>
     : {}
+  const manufacturer = filamentRecord.manufacturer
+  const manufacturerRecord = manufacturer && typeof manufacturer === 'object'
+    ? manufacturer as Record<string, unknown>
+    : {}
   const filamentData = buildFilamentLabelDataFromApi(filament, '')
   const relations = resolveSpoolLabelRelations(record, lookups)
 
@@ -137,7 +141,9 @@ export function buildSpoolLabelDataFromApi(
     ...emptySpoolLabelData(firstLabelValue(record.id, fallbackId)),
     ...filamentData,
     id: firstLabelValue(record.id, fallbackId),
-    filament_id: toLabelString(filamentRecord.id),
+    filament_id: firstLabelValue(record.filament_id, filamentRecord.id),
+    type: firstLabelValue(filamentRecord.material_type, filamentRecord.type),
+    mfr_id: firstLabelValue(manufacturerRecord.id, filamentRecord.manufacturer_id),
     extruder_temp: toLabelString(
       filamentRecord.settings_extruder_temp
         ?? (filamentRecord.custom_fields as Record<string, unknown> | undefined)?.extruder_temp,
@@ -159,6 +165,21 @@ export function buildSpoolLabelDataFromApi(
     low_weight_threshold_g: toLabelString(record.low_weight_threshold_g),
     stocked_in_at: toLabelString(record.stocked_in_at),
     last_used_at: toLabelString(record.last_used_at),
+    spool_outer_diameter_mm: firstLabelValue(
+      record.spool_outer_diameter_mm,
+      filamentRecord.spool_outer_diameter_mm,
+      manufacturerRecord.spool_outer_diameter_mm,
+    ),
+    spool_width_mm: firstLabelValue(
+      record.spool_width_mm,
+      filamentRecord.spool_width_mm,
+      manufacturerRecord.spool_width_mm,
+    ),
+    spool_material: firstLabelValue(
+      record.spool_material,
+      filamentRecord.spool_material,
+      manufacturerRecord.spool_material,
+    ),
   }
 }
 

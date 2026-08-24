@@ -1,6 +1,7 @@
 export interface FixedPreviewToolbarBinding {
   sync(): void
   restore(): void
+  destroy(): void
 }
 
 export interface FixedPreviewToolbarOptions {
@@ -46,6 +47,8 @@ export function bindFixedPreviewToolbar(
   }
 
   let isActive = options.isActive ?? (() => true)
+  let frameId: number | null = null
+  let destroyed = false
   const sync = () => {
     if (!isActive()) return
     const toolbar = getPreviewToolbar(options.previewRoot)
@@ -65,14 +68,29 @@ export function bindFixedPreviewToolbar(
     toolbar.style.removeProperty('transform')
   }
   const scheduleSync = () => {
-    if (pendingToolbarSyncs.has(options.previewRoot)) return
+    if (destroyed || pendingToolbarSyncs.has(options.previewRoot)) return
     pendingToolbarSyncs.add(options.previewRoot)
-    window.requestAnimationFrame(() => {
+    frameId = window.requestAnimationFrame(() => {
+      frameId = null
       pendingToolbarSyncs.delete(options.previewRoot)
       sync()
     })
   }
-  const binding = { sync, restore }
+  const destroy = () => {
+    if (destroyed) return
+    destroyed = true
+    options.previewRoot.removeEventListener('scroll', scheduleSync)
+    window.removeEventListener('resize', scheduleSync)
+    window.removeEventListener('pagehide', destroy)
+    if (frameId !== null) window.cancelAnimationFrame(frameId)
+    frameId = null
+    pendingToolbarSyncs.delete(options.previewRoot)
+    restore()
+    if (fixedPreviewToolbars.get(options.previewRoot)?.binding === binding) {
+      fixedPreviewToolbars.delete(options.previewRoot)
+    }
+  }
+  const binding = { sync, restore, destroy }
 
   fixedPreviewToolbars.set(options.previewRoot, {
     binding,
@@ -82,6 +100,7 @@ export function bindFixedPreviewToolbar(
   })
   options.previewRoot.addEventListener('scroll', scheduleSync, { passive: true })
   window.addEventListener('resize', scheduleSync, { passive: true })
+  window.addEventListener('pagehide', destroy, { once: true })
   sync()
 
   return binding

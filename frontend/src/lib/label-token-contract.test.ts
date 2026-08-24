@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildSpoolDesignerDataFromLabelData,
   FILAMENT_TOKENS,
   SPOOL_TOKENS,
   buildSpoolDataFromApiSpool,
@@ -138,6 +139,18 @@ describe('spool label token contract', () => {
       .toBe(formatDateDisplay(raw))
     expect(renderTemplateText('{Certified: {extra.spool.certified_at|date}}', data))
       .toBe(`Certified: ${formatDateDisplay(raw)}`)
+  })
+
+  it('uses the same date-only spool values for single and batch Designer labels', () => {
+    const canonical = buildSpoolLabelDataFromApi(apiSpool, lookups)
+    const single = buildSpoolDesignerDataFromLabelData(canonical)
+    const batch = buildSpoolDataFromApiSpool(apiSpool, lookups)
+
+    for (const key of ['purchase_date', 'stocked_in_at', 'last_used_at'] as const) {
+      expect(single[key]).toBe(formatDateDisplay(canonical[key]))
+      expect(batch[key]).toBe(single[key])
+      expect(single[key]).not.toContain(':')
+    }
   })
 
   it('preserves literal Extra Field keys ending in the date modifier suffix', () => {

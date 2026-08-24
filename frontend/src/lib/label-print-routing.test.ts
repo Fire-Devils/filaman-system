@@ -11,19 +11,14 @@ import {
   type LabelSheetSettings,
 } from './label-sheet'
 
-const printPageSources = [
-  '../pages/spools/[id]/print.astro',
-  '../pages/spools/print.astro',
-  '../pages/filaments/[id]/print.astro',
-  '../pages/filaments/print.astro',
-].map(path => readFileSync(
-  fileURLToPath(new URL(path, import.meta.url)),
-  'utf8',
-))
-
 const printActionFooterPath = '../components/PrintActionFooter.astro'
+const labelDesignerEditorPath = '../components/LabelDesignerEditor.astro'
 const printActionFooterSource = readFileSync(
   fileURLToPath(new URL(printActionFooterPath, import.meta.url)),
+  'utf8',
+)
+const labelDesignerEditorSource = readFileSync(
+  fileURLToPath(new URL(labelDesignerEditorPath, import.meta.url)),
   'utf8',
 )
 
@@ -146,11 +141,12 @@ describe('selectable print guidance translations', () => {
       ).toBeTruthy()
       expect(messages.labelPrint.printHelpIntro).toBeTruthy()
       expect(messages.labelPrint.printHelpScale).toBeTruthy()
-      expect(messages.labelPrint.printHelpSystemDialog).toBeTruthy()
-      expect(messages.labelPrint.printHelpPdfFallback).toBeTruthy()
-      expect(
-        messages.labelPrint.printHelpDownloadSetting,
-      ).toBeTruthy()
+      expect(messages.labelPrint.printHelpBrowserSystemDialog).toBeTruthy()
+      expect(messages.labelPrint.printHelpPdfFallbackPrefix).toBeTruthy()
+      expect(messages.labelPrint.printHelpPdfFallbackSuffix).toBeTruthy()
+      expect(messages.labelPrint.printHelpPdfOpenOnly).toBeTruthy()
+      expect(messages.labelPrint.printHelpPdfSystemDialog).toBeTruthy()
+      expect(messages.labelPrint.printHelpPdfDownloadSetting).toBeTruthy()
       expect(messages.labelPrint.printHelpViewer).toBeUndefined()
       expect(messages.labelPrint.printHelpBrave).toBeUndefined()
       expect(messages.labelPrint.printHelpFirefox).toBeUndefined()
@@ -159,6 +155,12 @@ describe('selectable print guidance translations', () => {
 })
 
 describe('print guidance layout', () => {
+  it('emphasizes the temporary PDF option as a selectable control', () => {
+    expect(printActionFooterSource).toMatch(
+      /<em class="print-help-selection" data-i18n="labelPrint\.createTemporaryPdf">/,
+    )
+  })
+
   it('keeps the wider help popup inside narrow viewports', () => {
     expect(printActionFooterSource).toMatch(
       /@media \(max-width: 640px\)[\s\S]*?\.print-help-content\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1000;[\s\S]*?left:\s*calc\(var\(--sidebar-collapsed-width\) \+ 16px\);[\s\S]*?right:\s*16px;[\s\S]*?width:\s*auto;/,
@@ -166,19 +168,34 @@ describe('print guidance layout', () => {
   })
 })
 
-describe('print page output routing', () => {
-  it('wires every print page through the shared output APIs', () => {
-    for (const source of printPageSources) {
-      expect(source).toContain('PrintActionFooter')
-      expect(source).toContain("getElementById('btn-export-aml')")
-      expect(source).toContain("getElementById('check-print-pdf')")
-      expect(source).toContain('browserPrint:')
-      expect(source).not.toContain('createLabelBrowserPrintJob')
-      expect(source).toContain('syncLabelSheetIndividualExportState')
-      expect(source).not.toContain('window.print(')
-      expect(source).not.toContain('document.execCommand(')
-      expect(source).not.toContain('filamanPrint')
-      expect(source).not.toContain('buildLabelAml')
+describe('label designer template fields', () => {
+  it('keeps multiline formats at least five lines tall', () => {
+    expect(labelDesignerEditorSource).toMatch(
+      /id="ds-info-tpl"[^>]*class="[^"]*ds-tpl-multiline[^"]*"/,
+    )
+    expect(labelDesignerEditorSource).toMatch(
+      /id="ds-info2-tpl"[^>]*class="[^"]*ds-tpl-multiline[^"]*"/,
+    )
+    expect(labelDesignerEditorSource).toMatch(
+      /\.fm-input\.ds-tpl-multiline\s*\{[^}]*min-height:\s*7rem;/,
+    )
+  })
+
+  it('uses compact code styling for every template input', () => {
+    for (const id of [
+      'ds-title-tpl',
+      'ds-title2-tpl',
+      'ds-qr-url-tpl',
+      'ds-info-tpl',
+      'ds-info2-tpl',
+    ]) {
+      expect(labelDesignerEditorSource).toMatch(
+        new RegExp(`id="${id}"[^>]*class="[^"]*ds-tpl-input[^"]*"`),
+      )
     }
+
+    expect(labelDesignerEditorSource).toMatch(
+      /\.fm-input\.ds-tpl-input\s*\{[^}]*font-family:[^;}]*monospace;[^}]*font-size:\s*0\.75rem;/,
+    )
   })
 })

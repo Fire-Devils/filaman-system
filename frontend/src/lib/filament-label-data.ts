@@ -173,6 +173,16 @@ export function mergeMissingFilamentLabelData(target: FilamentLabelData, source:
   }
 }
 
+export function buildCanonicalFilamentLabelData(
+  filament: unknown,
+  queryFallback: FilamentLabelData,
+  fallbackId: string | number = '',
+): FilamentLabelData {
+  const canonical = buildFilamentLabelDataFromApi(filament, fallbackId)
+  mergeMissingFilamentLabelData(canonical, queryFallback)
+  return canonical
+}
+
 export function buildFilamentPrintSearchParams(filament: any): URLSearchParams {
   const data = buildFilamentLabelDataFromApi(filament)
   const params = new URLSearchParams()

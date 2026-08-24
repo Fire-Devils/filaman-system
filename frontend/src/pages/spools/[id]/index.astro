@@ -189,6 +189,7 @@ const { id } = Astro.params
     import { toColorSwatchBackground } from '../../../lib/colors'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     import { isBuiltInLabelField } from '../../../lib/label-extra-fields'
+    import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -544,7 +545,7 @@ const { id } = Astro.params
           source: 'filament',
         })
       }
-      sessionStorage.setItem('filaman-label-extra-fields', JSON.stringify(efForPrint))
+      writeScopedLabelFields('filaman-label-extra-fields', spool.id, efForPrint)
 
       const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
       if (printBtn) printBtn.href = printUrl

@@ -1,0 +1,97 @@
+---
+import Layout from '../layouts/Layout.astro'
+import BatchLabelPrintStyles from './BatchLabelPrintStyles.astro'
+import LabelDesignerEditor from './LabelDesignerEditor.astro'
+import LabelPrintBaseStyles from './LabelPrintBaseStyles.astro'
+import LabelSheetOutputSettings from './LabelSheetOutputSettings.astro'
+import PrintActionFooter from './PrintActionFooter.astro'
+import PrintSidebar from './PrintSidebar.astro'
+import PreviewZoomBar from './PreviewZoomBar.astro'
+import SingleLabelPrintStyles from './SingleLabelPrintStyles.astro'
+import StandardLabelSettingsPanel from './StandardLabelSettingsPanel.astro'
+
+interface Props {
+  title: string
+  variant: 'single' | 'batch'
+  backHref?: string
+  backLabel: string
+  backLabelId: string
+  backI18n?: string
+  idLabelI18n: string
+  idFallback: string
+  includeSpoolFields?: boolean
+  extraFieldsMode?: 'single' | 'batch'
+  printLabel?: string
+  resetLabel?: string
+  printI18n?: string
+  resetI18n?: string
+}
+
+const {
+  title,
+  variant,
+  backHref,
+  backLabel,
+  backLabelId,
+  backI18n,
+  idLabelI18n,
+  idFallback,
+  includeSpoolFields = false,
+  extraFieldsMode = 'single',
+  printLabel,
+  resetLabel,
+  printI18n,
+  resetI18n,
+} = Astro.props
+---
+
+<Layout title={title}>
+  <LabelPrintBaseStyles />
+  {variant === 'single'
+    ? <SingleLabelPrintStyles />
+    : <BatchLabelPrintStyles />}
+
+  <div class="print-page">
+    <PrintSidebar
+      backHref={backHref}
+      backLabel={backLabel}
+      backLabelId={backLabelId}
+      backI18n={backI18n}
+      standardI18n="labelPrint.standardLabel"
+      designerI18n="spools.labelDesigner"
+    >
+      <StandardLabelSettingsPanel
+        idLabelI18n={idLabelI18n}
+        idFallback={idFallback}
+        includeSpoolFields={includeSpoolFields}
+        extraFieldsMode={extraFieldsMode}
+      />
+
+      <LabelDesignerEditor />
+      <LabelSheetOutputSettings />
+
+      <PrintActionFooter
+        slot="footer"
+        printButtonId="btn-print"
+        printLabel={printLabel}
+        resetLabel={resetLabel}
+        printI18n={printI18n}
+        resetI18n={resetI18n}
+      />
+    </PrintSidebar>
+
+    {variant === 'single' ? (
+      <main class="preview-container">
+        <PreviewZoomBar min="50" resetClass="preview-zoom-reset" />
+        <div class="preview-scroll-area">
+          <slot name="preview" />
+        </div>
+      </main>
+    ) : (
+      <main class="preview-container" id="preview-container">
+        <PreviewZoomBar />
+        <slot name="preview" />
+      </main>
+    )}
+  </div>
+</Layout>

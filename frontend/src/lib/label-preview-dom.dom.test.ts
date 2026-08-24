@@ -6,6 +6,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest'
 
 import {
@@ -14,6 +15,7 @@ import {
 } from './label-preview-dom'
 
 beforeEach(() => {
+  window.dispatchEvent(new Event('pagehide'))
   document.body.innerHTML = ''
 })
 
@@ -88,5 +90,31 @@ describe('bindFixedPreviewToolbar', () => {
     bindFixedPreviewToolbar({ previewRoot })
 
     expect(toolbar.style.position).toBe('fixed')
+  })
+
+  it('destroys listeners and pending animation work, then permits a fresh binding', () => {
+    const previewRoot = document.createElement('section')
+    const toolbar = document.createElement('div')
+    toolbar.className = 'preview-zoom-bar'
+    previewRoot.appendChild(toolbar)
+    document.body.appendChild(previewRoot)
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame')
+      .mockReturnValue(19)
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame')
+
+    const binding = bindFixedPreviewToolbar({ previewRoot })
+    window.dispatchEvent(new Event('resize'))
+    binding.destroy()
+
+    expect(cancelFrame).toHaveBeenCalledWith(19)
+    expect(toolbar.style.position).toBe('')
+
+    requestFrame.mockClear()
+    window.dispatchEvent(new Event('resize'))
+    expect(requestFrame).not.toHaveBeenCalled()
+
+    const replacement = bindFixedPreviewToolbar({ previewRoot })
+    expect(replacement).not.toBe(binding)
+    replacement.destroy()
   })
 })

@@ -74,17 +74,161 @@ describe('spool label data normalization', () => {
     })
   })
 
-  it('keeps non-empty query fallback values when API data is merged into it', () => {
+  it('does not replace normalized API fields with query fallbacks', () => {
     const fallback = buildSpoolLabelDataFromParams('7', new URLSearchParams([
       ['designation', 'Query designation'],
       ['remaining_wt', '999'],
+      ['lot', 'Query lot'],
     ]))
+    const canonical = buildSpoolLabelDataFromApi(apiSpool, lookups)
 
-    mergeMissingSpoolLabelData(fallback, buildSpoolLabelDataFromApi(apiSpool, lookups))
+    mergeMissingSpoolLabelData(canonical, fallback)
 
-    expect(fallback.designation).toBe('Query designation')
-    expect(fallback.remaining_weight_g).toBe('999')
-    expect(fallback.color).toBe('Ocean')
+    expect(canonical.designation).toBe('Midnight Blue')
+    expect(canonical.remaining_weight_g).toBe('734')
+    expect(canonical.lot_number).toBe('LOT-42')
+    expect(canonical.color).toBe('Ocean')
+  })
+
+  it('uses a query fallback when the normalized API field is missing', () => {
+    const fallback = buildSpoolLabelDataFromParams('7', new URLSearchParams([
+      ['lot', 'Query lot'],
+      ['spool_outer_dia', '185'],
+      ['spool_width', '58'],
+      ['spool_material', 'Query plastic'],
+    ]))
+    const canonical = buildSpoolLabelDataFromApi({
+      ...apiSpool,
+      lot_number: null,
+      filament: {
+        ...apiSpool.filament,
+        spool_outer_diameter_mm: null,
+        spool_width_mm: null,
+        spool_material: null,
+        manufacturer: {
+          ...apiSpool.filament.manufacturer,
+          spool_outer_diameter_mm: null,
+          spool_width_mm: null,
+          spool_material: null,
+        },
+      },
+    }, lookups)
+
+    mergeMissingSpoolLabelData(canonical, fallback)
+
+    expect(canonical).toMatchObject({
+      lot_number: 'Query lot',
+      spool_outer_diameter_mm: '185',
+      spool_width_mm: '58',
+      spool_material: 'Query plastic',
+    })
+  })
+
+  it('prefers per-spool geometry and material over filament and manufacturer defaults', () => {
+    const spool = {
+      ...apiSpool,
+      spool_outer_diameter_mm: 210,
+      spool_width_mm: 72,
+      spool_material: 'Reusable ABS',
+      filament: {
+        ...apiSpool.filament,
+        spool_outer_diameter_mm: 200,
+        spool_width_mm: 65,
+        spool_material: 'Cardboard',
+        manufacturer: {
+          ...apiSpool.filament.manufacturer,
+          spool_outer_diameter_mm: 190,
+          spool_width_mm: 60,
+          spool_material: 'Plastic',
+        },
+      },
+    }
+
+    expect(buildSpoolLabelDataFromApi(spool, lookups)).toMatchObject({
+      spool_outer_diameter_mm: '210',
+      spool_width_mm: '72',
+      spool_material: 'Reusable ABS',
+    })
+  })
+
+  it('uses manufacturer geometry and material defaults when spool and filament values are absent', () => {
+    const spool = {
+      ...apiSpool,
+      filament: {
+        ...apiSpool.filament,
+        spool_outer_diameter_mm: null,
+        spool_width_mm: null,
+        spool_material: null,
+        manufacturer: {
+          ...apiSpool.filament.manufacturer,
+          spool_outer_diameter_mm: 190,
+          spool_width_mm: 60,
+          spool_material: 'Plastic',
+        },
+      },
+    }
+
+    expect(buildSpoolLabelDataFromApi(spool, lookups)).toMatchObject({
+      spool_outer_diameter_mm: '190',
+      spool_width_mm: '60',
+      spool_material: 'Plastic',
+    })
+  })
+
+  it('prefers filament geometry and material over manufacturer defaults', () => {
+    const spool = {
+      ...apiSpool,
+      filament: {
+        ...apiSpool.filament,
+        spool_outer_diameter_mm: 200,
+        spool_width_mm: 65,
+        spool_material: 'Cardboard',
+        manufacturer: {
+          ...apiSpool.filament.manufacturer,
+          spool_outer_diameter_mm: 190,
+          spool_width_mm: 60,
+          spool_material: 'Plastic',
+        },
+      },
+    }
+
+    expect(buildSpoolLabelDataFromApi(spool, lookups)).toMatchObject({
+      spool_outer_diameter_mm: '200',
+      spool_width_mm: '65',
+      spool_material: 'Cardboard',
+    })
+  })
+
+  it('accepts a top-level filament id when the nested filament omits it', () => {
+    const spool = {
+      ...apiSpool,
+      filament_id: 41,
+      filament: {
+        ...apiSpool.filament,
+        id: null,
+      },
+    }
+
+    expect(buildSpoolLabelDataFromApi(spool, lookups).filament_id).toBe('41')
+  })
+
+  it('accepts filament.type and uses manufacturer_id as the logo-manufacturer fallback', () => {
+    const spool = {
+      ...apiSpool,
+      filament: {
+        ...apiSpool.filament,
+        material_type: null,
+        type: 'PETG',
+        manufacturer_id: 23,
+        manufacturer: { name: 'Fallback Materials' },
+      },
+    }
+
+    expect(buildSpoolLabelDataFromApi(spool, lookups)).toMatchObject({
+      type: 'PETG',
+      manufacturer_id: '23',
+      mfr_id: '23',
+    })
   })
 
   it('normalizes nullish API fields to empty strings', () => {

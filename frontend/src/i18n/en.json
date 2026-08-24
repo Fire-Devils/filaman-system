@@ -1517,11 +1517,14 @@
     "preparingPrintPdf": "Preparing print PDF…",
     "printPopupBlocked": "Allow pop-ups to open the print PDF.",
     "printPdfFailed": "Print PDF generation failed.",
-    "printHelpIntro": "Normal browser printing is used by default.",
+    "printHelpIntro": "Normal browser printing is used by default. It does not create or save a PDF.",
     "printHelpScale": "Select the exact paper size and print at 100% or Actual size.",
-    "printHelpSystemDialog": "Use the OS or system print dialog for printer-specific paper size, orientation, rotation, and alignment.",
-    "printHelpPdfFallback": "For blank, clipped, offset, or wrong-size output, enable Create temporary PDF for printing.",
-    "printHelpDownloadSetting": "FilaMan does not save the Print PDF, but your browser’s download-PDF setting may."
+    "printHelpBrowserSystemDialog": "Use the OS or system print dialog to set printer-specific paper size, orientation, rotation, and alignment.",
+    "printHelpPdfFallbackPrefix": "If browser printing is blank, clipped, offset, rotated, or the wrong size, enable",
+    "printHelpPdfFallbackSuffix": ".",
+    "printHelpPdfOpenOnly": "FilaMan opens the temporary PDF only for printing and does not save it.",
+    "printHelpPdfSystemDialog": "Even in temporary-PDF mode, you may need the OS or system print dialog for consistent, repeatable results.",
+    "printHelpPdfDownloadSetting": "Depending on your browser’s PDF-download setting, it may still download a copy."
   },
   "pluginPage": {
     "frameTitle": "Plugin page",

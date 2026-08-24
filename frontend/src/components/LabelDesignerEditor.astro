@@ -291,7 +291,7 @@ const templateInputAttributes = {
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info-tpl">Information Format</label><button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C" {...templateInputAttributes}></textarea>
+        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input ds-tpl-multiline" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C" {...templateInputAttributes}></textarea>
         <div class="ds-token-area" id="ds-info-token-area"></div>
       </div>
       <div class="ds-secondary-toggle" id="ds-info2-toggle"><label class="fm-checkbox-group ds-secondary-check"><input type="checkbox" id="ds-info2-show"><span id="dsl-info2-show">Side Column</span></label></div>
@@ -320,7 +320,7 @@ const templateInputAttributes = {
         </div>
         <div>
           <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info2-tpl">Side Column Format</label><button class="ds-syntax-btn" id="ds-info2-syntax-btn" type="button" title="Template syntax help">?</button></div>
-          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}" {...templateInputAttributes}></textarea>
+          <textarea id="ds-info2-tpl" class="fm-input ds-tpl-input ds-tpl-multiline" rows="5" placeholder="{filament.raw_material_weight_g}g&#10;{filament.color_hex}" {...templateInputAttributes}></textarea>
           <div class="ds-token-area" id="ds-info2-token-area"></div>
         </div>
       </div>
@@ -435,8 +435,9 @@ const templateInputAttributes = {
     outline: none;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
   }
-  .ds-tpl-input { font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.8rem; height: auto; resize: vertical; }
-  .ds-tpl-input::placeholder { color: var(--text-muted); opacity: 0.38; }
+  .fm-input.ds-tpl-input { font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.75rem; line-height: 1.4; height: auto; resize: vertical; }
+  .fm-input.ds-tpl-input::placeholder { color: var(--text-muted); opacity: 0.38; }
+  .fm-input.ds-tpl-multiline { min-height: 7rem; }
   .ds-tpl-textarea { min-height: 42px; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
   .ds-secondary-toggle { display: block; width: 100%; position: relative; z-index: 1; }
   .ds-secondary-toggle.ds-secondary-open { margin-bottom: -12px; }

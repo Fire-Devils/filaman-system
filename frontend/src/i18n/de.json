@@ -1518,11 +1518,14 @@
     "preparingPrintPdf": "Druck-PDF wird vorbereitet…",
     "printPopupBlocked": "Pop-ups zulassen, damit das Druck-PDF geöffnet werden kann.",
     "printPdfFailed": "Das Druck-PDF konnte nicht erstellt werden.",
-    "printHelpIntro": "Standardmäßig wird die normale Druckfunktion des Browsers verwendet.",
+    "printHelpIntro": "Standardmäßig wird die normale Druckfunktion des Browsers verwendet. Dabei wird keine PDF-Datei erstellt oder gespeichert.",
     "printHelpScale": "Exaktes Papierformat wählen und mit 100 % bzw. in tatsächlicher Größe drucken.",
-    "printHelpSystemDialog": "Für druckerspezifisches Papierformat, Ausrichtung, Drehung und Positionierung den Druckdialog des Betriebssystems verwenden.",
-    "printHelpPdfFallback": "Bei leerer, abgeschnittener, verschobener oder in falscher Größe gedruckter Ausgabe „Temporäres PDF zum Drucken erstellen“ aktivieren.",
-    "printHelpDownloadSetting": "FilaMan speichert das Druck-PDF nicht; je nach Browser-Einstellung zum Herunterladen von PDFs kann es jedoch heruntergeladen werden."
+    "printHelpBrowserSystemDialog": "Den Druckdialog des Betriebssystems verwenden, um druckerspezifisches Papierformat, Ausrichtung, Drehung und Positionierung einzustellen.",
+    "printHelpPdfFallbackPrefix": "Wenn der Browserdruck leer, abgeschnitten, verschoben, gedreht oder in falscher Größe ausgegeben wird,",
+    "printHelpPdfFallbackSuffix": " aktivieren.",
+    "printHelpPdfOpenOnly": "FilaMan öffnet die temporäre PDF nur zum Drucken und speichert sie nicht.",
+    "printHelpPdfSystemDialog": "Auch im temporären PDF-Modus kann der Druckdialog des Betriebssystems für zuverlässige, wiederholbare Ergebnisse nötig sein.",
+    "printHelpPdfDownloadSetting": "Je nach PDF-Download-Einstellung des Browsers kann dennoch eine Kopie heruntergeladen werden."
   },
   "pluginPage": {
     "frameTitle": "Plugin-Seite",
