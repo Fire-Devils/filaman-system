@@ -73,8 +73,7 @@ export function getStaticPaths() {
     loadDesignerSettingsFromStorage,
     renderDesignerLabel,
   } from '../../../lib/label-designer'
-  import { captureLabelElement } from '../../../lib/label-export'
-  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../../lib/label-sheet'
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, createLabelSheetPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../../lib/label-sheet'
   import {
     buildStandardLabelDataFromFlat,
     getStandardLabelDimensions,
@@ -88,7 +87,6 @@ export function getStaticPaths() {
     bindSingleLabelExport,
     buildLabelExportBaseName,
     clampInputValue,
-    installPrintFunction,
     parseJsonOrNull,
     readPrintDesignerTab,
     readStorageValue,
@@ -127,8 +125,6 @@ export function getStaticPaths() {
   }
   applyPrintSidebarCollapse()
   window.addEventListener('resize', applyPrintSidebarCollapse, { passive: true })
-
-  installPrintFunction()
 
   type TranslationWindow = Window & { __t?: (key: string) => string }
   type SavedLabelSettings = {
@@ -438,6 +434,8 @@ export function getStaticPaths() {
   const checkColor = document.getElementById('check-color') as HTMLInputElement
   const checkColorSwatch = document.getElementById('check-color-swatch') as HTMLInputElement
   const checkColorHex = document.getElementById('check-color-hex') as HTMLInputElement
+  const printBtn =
+    document.getElementById('btn-print') as HTMLButtonElement
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const labelPreview = document.getElementById('label-preview') as HTMLElement
@@ -862,6 +860,7 @@ export function getStaticPaths() {
   }
 
   bindSingleLabelExport({
+    printButton: printBtn,
     exportPngBtn,
     exportPdfBtn,
     labelElement: labelPreview,
@@ -878,24 +877,17 @@ export function getStaticPaths() {
       if (activePreviewTab === 'designer') await updateDesignerPreview()
       else await updatePreview()
     },
-    exportPdf: async (defaultExport) => {
-      if (sheetControls.getOutputMode() !== 'sheet') {
-        await defaultExport()
-        return
-      }
-      if (activePreviewTab === 'designer') await updateDesignerPreview()
-      else await updatePreview()
-      const dimensions = getActiveLabelDimensions()
-      await saveLabelSheetPagesAsPdf(
-        [{
-          dataUrl: await captureLabelElement(labelPreview, { pixelRatio: LABEL_EXPORT_PIXEL_RATIO, resetTransform: true }),
-          widthMm: dimensions.widthMm,
-          heightMm: dimensions.heightMm,
-        }],
-        `${buildExportBaseName()}-sheet.pdf`,
-        sheetControls.getSettings(),
-      )
-    },
+    pdfName: () =>
+      sheetControls.getOutputMode() === 'sheet'
+        ? `${buildExportBaseName()}-sheet.pdf`
+        : `${buildExportBaseName()}.pdf`,
+    createPdf: (pages, defaultCreate) =>
+      sheetControls.getOutputMode() === 'sheet'
+        ? createLabelSheetPdf(
+            pages,
+            sheetControls.getSettings(),
+          )
+        : defaultCreate(),
   })
 
   document.getElementById('btn-reset')?.addEventListener('click', () => {

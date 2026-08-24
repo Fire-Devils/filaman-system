@@ -82,28 +82,4 @@
     color: black !important; white-space: nowrap; line-height: 1;
   }
 
-  @media print {
-    html, body { margin: 0 !important; padding: 0 !important; background: white !important; }
-    .fm-sidebar, #fm-confirm-overlay, .fm-sidebar-backdrop { display: none !important; }
-    .fm-page { display: block !important; background: white !important; }
-    .fm-page > main { padding: 0 !important; margin: 0 !important; background: white !important; }
-    .print-sidebar, .label-count, .preview-zoom-bar { display: none !important; }
-    .print-page { margin: 0 !important; height: auto !important; display: block !important; }
-    .preview-container { padding: 0 !important; margin: 0 !important; display: block !important; background: white !important; gap: 0 !important; align-items: stretch !important; }
-    .label-wrapper { break-after: page !important; page-break-after: always !important; display: flex !important; justify-content: center !important; }
-    .label-wrapper:last-child { break-after: avoid !important; page-break-after: avoid !important; }
-    .label-preview { zoom: 1 !important; }
-    .label-preview {
-      box-shadow: none !important; border: none !important; border-radius: 0 !important;
-      display: flex !important; flex-direction: column !important;
-      background: white !important; color: black !important;
-      margin: 0 !important; padding: 2mm !important; overflow: hidden !important;
-      break-inside: avoid !important;
-      -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    .label-preview * { color: black !important; }
-    .label-color-swatch { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    .label-qr img, .label-logo { display: block !important; }
-    .label-preview::before { display: block !important; }
-  }
 </style>

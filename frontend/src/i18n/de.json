@@ -1510,12 +1510,16 @@
     "pngExportFailed": "PNG-Export fehlgeschlagen. Bitte prüfen, ob alle Label-Bilder und Logos korrekt geladen wurden.",
     "pdfExportFailed": "PDF-Export fehlgeschlagen. Bitte prüfen, ob alle Label-Bilder und Logos korrekt geladen wurden.",
     "printHelpTitle": "Druckprobleme?",
-    "printHelpIntro": "F\u00fcr kleine Etiketten 100 % Skalierung und die exakt passende Papiergr\u00f6\u00dfe verwenden.",
-    "printHelpBrave": "Brave: Wenn die Ausgabe leer, versetzt oder abgeschnitten ist, PDF exportieren oder eine etwas kleinere passende Labelgr\u00f6\u00dfe verwenden.",
-    "printHelpFirefox": "Firefox: Wenn der Systemdialog ein leeres Blatt hinzuf\u00fcgt, den Firefox-Druckdialog verwenden oder PDF exportieren."
+    "preparingPrintPdf": "Druck-PDF wird vorbereitet…",
+    "printPopupBlocked": "Pop-ups zulassen, damit das Druck-PDF geöffnet werden kann.",
+    "printPdfFailed": "Das Druck-PDF konnte nicht erstellt werden.",
+    "printHelpIntro": "Drucken öffnet ein temporäres PDF in exakter Größe.",
+    "printHelpViewer": "Im PDF-Viewer „Tatsächliche Größe“ oder 100 % verwenden.",
+    "printHelpSystemDialog": "Für druckerspezifisches Papierformat, Ausrichtung, Drehung und Positionierung im Browser „Über Systemdialog drucken“ wählen.",
+    "printHelpDownloadSetting": "FilaMan speichert beim Drucken keine Datei. Ein Browser, der PDFs immer herunterlädt, kann sie dennoch herunterladen."
   },
   "pluginPage": {
     "frameTitle": "Plugin-Seite",
-    "notFound": "Diese Plugin-Seite ist nicht verf\u00fcgbar."
+    "notFound": "Diese Plugin-Seite ist nicht verfügbar."
   }
 }

@@ -18,6 +18,8 @@ const {
   exportPdfI18n = 'labelPrint.btnExportPdf',
   printButtonId,
 } = Astro.props
+
+const resolvedPrintButtonId = printButtonId ?? 'btn-print'
 ---
 
 <div class="action-buttons">
@@ -25,7 +27,14 @@ const {
     <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPngI18n}>Export PNG</button>
     <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPdfI18n}>Export PDF</button>
   </div>
-  <button id={printButtonId} class="fm-btn fm-btn-primary" type="button" onclick="filamanPrint()" data-i18n={printI18n}>{printLabel}</button>
+  <button
+    id={resolvedPrintButtonId}
+    class="fm-btn fm-btn-primary"
+    type="button"
+    data-i18n={printI18n}
+  >
+    {printLabel}
+  </button>
   <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
 
   <div class="print-help">
@@ -33,11 +42,26 @@ const {
       <span class="print-help-icon" aria-hidden="true">i</span>
       <span data-i18n="labelPrint.printHelpTitle">Printing issues?</span>
     </button>
-    <div class="print-help-content" id="print-help-content" role="tooltip">
-      <p data-i18n="labelPrint.printHelpIntro">Use 100% scale and a matching paper size for small labels.</p>
+    <div
+      class="print-help-content"
+      id="print-help-content"
+      role="tooltip"
+    >
+      <p data-i18n="labelPrint.printHelpIntro">
+        Print opens a temporary exact-size PDF.
+      </p>
       <ul>
-        <li data-i18n="labelPrint.printHelpBrave">Brave: if output is blank or offset, use the system dialog or Export PDF.</li>
-        <li data-i18n="labelPrint.printHelpFirefox">Firefox: if the top is clipped, turn off headers and footers.</li>
+        <li data-i18n="labelPrint.printHelpViewer">
+          In the PDF viewer, choose Actual size or 100%.
+        </li>
+        <li data-i18n="labelPrint.printHelpSystemDialog">
+          For printer-specific paper size, orientation, rotation, and alignment,
+          use the browser’s Print using system dialog option.
+        </li>
+        <li data-i18n="labelPrint.printHelpDownloadSetting">
+          FilaMan does not save the Print PDF. A browser configured
+          to download PDFs may still download it.
+        </li>
       </ul>
     </div>
   </div>
@@ -95,7 +119,7 @@ const {
     bottom: calc(100% + 8px);
     left: 0;
     display: none;
-    width: 272px;
+    width: min(360px, calc(100vw - 32px));
     box-sizing: border-box;
     padding: 10px 12px;
     border: 1px solid var(--border);

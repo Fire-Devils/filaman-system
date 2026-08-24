@@ -1509,9 +1509,13 @@
     "pngExportFailed": "PNG export failed. Please check that all label images and logos loaded correctly.",
     "pdfExportFailed": "PDF export failed. Please check that all label images and logos loaded correctly.",
     "printHelpTitle": "Printing issues?",
-    "printHelpIntro": "For small labels, use 100% scale and the exact matching paper size.",
-    "printHelpBrave": "Brave: if output is blank, offset, or clipped, use Export PDF or a slightly smaller matching label size.",
-    "printHelpFirefox": "Firefox: if the system dialog adds a blank page, use Firefox's print dialog or Export PDF."
+    "preparingPrintPdf": "Preparing print PDF…",
+    "printPopupBlocked": "Allow pop-ups to open the print PDF.",
+    "printPdfFailed": "Print PDF generation failed.",
+    "printHelpIntro": "Print opens a temporary exact-size PDF.",
+    "printHelpViewer": "In the PDF viewer, choose Actual size or 100%.",
+    "printHelpSystemDialog": "For printer-specific paper size, orientation, rotation, and alignment, use the browser’s Print using system dialog option.",
+    "printHelpDownloadSetting": "FilaMan does not save the Print PDF. A browser configured to download PDFs may still download it."
   },
   "pluginPage": {
     "frameTitle": "Plugin page",

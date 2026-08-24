@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 import { LABEL_EXPORT_DPI } from './label-export'
-import { updateLabelPrintPageStyle } from './label-print-style'
 import {
   buildFilamentSwatchBackground,
   getFilamentSwatchColors,
@@ -55,8 +54,6 @@ export interface RenderStandardLabelOptions {
   settings: StandardLabelSettings
   logoUrl?: string | null
   isStale?: () => boolean
-  updatePageStyle?: boolean
-  pageStyleId?: string
 }
 
 function toStringValue(value: unknown) {
@@ -169,10 +166,6 @@ export function buildStandardLabelDataFromApiSpool(spool: any, extraFields: Stan
     multiColorStyle: filament.multi_color_style,
     extraFields,
   })
-}
-
-export function updateStandardLabelPageStyle(widthMm: number, heightMm: number, pageStyleId = 'page-style') {
-  updateLabelPrintPageStyle({ widthMm, heightMm, styleId: pageStyleId })
 }
 
 export async function renderStandardLabel(options: RenderStandardLabelOptions) {
@@ -305,7 +298,4 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     }
   }
 
-  if (options.updatePageStyle !== false) {
-    updateStandardLabelPageStyle(widthMm, heightMm, options.pageStyleId)
-  }
 }

@@ -43,7 +43,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
 </Layout>
 
 <script>
-  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
+  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, createLabelSheetPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
   import { initLabelDesignerEditor } from '../../lib/label-designer-editor'
   import {
     buildDesignerExtraFieldsFromApiSpool,
@@ -72,7 +72,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     makeBatchLabelHtml,
     bindPrintDesignerTabs,
     bindPreviewZoomControls,
-    installPrintFunction,
     prefetchEntityLogos,
     readPrintDesignerTab,
     readStorageValue,
@@ -106,8 +105,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   } from '../../lib/entity-extra-fields'
   import { t, initI18n } from '../../lib/i18n'
 
-  installPrintFunction()
-
   const SETTINGS_KEY = 'filaman-label-settings'
   const DESIGNER_PRESETS_KEY = SPOOL_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-spool-label-designer-v1'
@@ -133,6 +130,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const tabPanelPrint = document.getElementById('tab-panel-print') as HTMLElement
   const tabPanelDesigner = document.getElementById('tab-panel-designer') as HTMLElement
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
+  const printBtn =
+    document.getElementById('btn-print') as HTMLButtonElement
   const exportPngBtn = document.getElementById('btn-export-png') as HTMLButtonElement
   const exportPdfBtn = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const previewContainer = document.getElementById('preview-container') as HTMLElement
@@ -719,6 +718,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   bindBatchLabelExport({
     entities: () => spools,
     activeTab: () => activePreviewTab,
+    printButton: printBtn,
     pngButton: exportPngBtn,
     pdfButton: exportPdfBtn,
     getTranslation: (key, fallback) => t(key) || fallback,
@@ -728,14 +728,17 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     singlePngName: labelAdapter.singlePngName,
     zipName: labelAdapter.zipName,
     zipEntryName: labelAdapter.zipEntryName,
-    pdfName: labelAdapter.pdfName,
-    exportPdf: async (pages, defaultExport) => {
-      if (sheetControls.getOutputMode() === 'sheet') {
-        await saveLabelSheetPagesAsPdf(pages, datedExportName('label-sheet', 'pdf'), sheetControls.getSettings())
-      } else {
-        await defaultExport()
-      }
-    },
+    pdfName: () =>
+      sheetControls.getOutputMode() === 'sheet'
+        ? datedExportName('label-sheet', 'pdf')
+        : labelAdapter.pdfName(),
+    createPdf: (pages, defaultCreate) =>
+      sheetControls.getOutputMode() === 'sheet'
+        ? createLabelSheetPdf(
+            pages,
+            sheetControls.getSettings(),
+          )
+        : defaultCreate(),
   })
 
   // ── Spool model field checkboxes ─────────────────────────────────────────

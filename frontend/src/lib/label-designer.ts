@@ -8,7 +8,6 @@ import {
 import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
 import { type SystemExtraFieldDef } from './extra-fields'
 import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
-import { updateLabelPrintPageStyle } from './label-print-style'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 import {
   EMPTY_SPOOL_LABEL_LOOKUPS,
@@ -638,8 +637,6 @@ export interface RenderDesignerLabelOptions {
   logoUrl?: string | null
   previewBorder?: boolean
   isStale?: () => boolean
-  updatePageStyle?: boolean
-  pageStyleId?: string
   /** Entity path used for QR URL generation. Defaults to 'spools'. */
   entityPath?: string
 }
@@ -883,11 +880,4 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     mainRow.appendChild(qrWrap)
   }
 
-  if (options.updatePageStyle !== false) {
-    updateDesignerPageStyle(w, h, options.pageStyleId)
-  }
-}
-
-export function updateDesignerPageStyle(widthMm: number, heightMm: number, styleId = 'page-style') {
-  updateLabelPrintPageStyle({ widthMm, heightMm, styleId })
 }

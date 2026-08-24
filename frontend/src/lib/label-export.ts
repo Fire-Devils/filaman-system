@@ -17,6 +17,11 @@ export interface LabelPdfPage {
   heightMm: number
 }
 
+export interface LabelPdfDocument {
+  save(filename: string): void
+  output(type: 'blob'): Blob
+}
+
 export function downloadDataUrl(dataUrl: string, filename: string) {
   const link = document.createElement('a')
   link.download = filename
@@ -51,6 +56,34 @@ function hidePreviewChromeForCapture(element: HTMLElement) {
   }
 }
 
+function waitForCaptureFrame() {
+  return new Promise<void>(resolve => {
+    const timeout = window.setTimeout(resolve, 250)
+
+    window.requestAnimationFrame(() => {
+      window.clearTimeout(timeout)
+      resolve()
+    })
+  })
+}
+
+async function withCaptureTimerFrames<T>(capture: () => Promise<T>) {
+  const requestAnimationFrame = globalThis.requestAnimationFrame
+  const cancelAnimationFrame = globalThis.cancelAnimationFrame
+  globalThis.requestAnimationFrame = callback => window.setTimeout(
+    () => callback(performance.now()),
+    0,
+  )
+  globalThis.cancelAnimationFrame = frame => window.clearTimeout(frame)
+
+  try {
+    return await capture()
+  } finally {
+    globalThis.requestAnimationFrame = requestAnimationFrame
+    globalThis.cancelAnimationFrame = cancelAnimationFrame
+  }
+}
+
 export async function captureLabelElement(element: HTMLElement, options: LabelCaptureOptions = {}) {
   const previousZoom = element.style.zoom
   const previousTransform = element.style.transform
@@ -69,9 +102,9 @@ export async function captureLabelElement(element: HTMLElement, options: LabelCa
     if (document.fonts?.ready) {
       await document.fonts.ready
     }
-    await new Promise(resolve => requestAnimationFrame(resolve))
+    await waitForCaptureFrame()
 
-    return await toPng(element, {
+    return await withCaptureTimerFrames(() => toPng(element, {
       pixelRatio: options.pixelRatio ?? LABEL_EXPORT_PIXEL_RATIO,
       backgroundColor: '#ffffff',
       // Manufacturer logos can be object URLs; cache-busting would make blob: URLs invalid.
@@ -89,7 +122,7 @@ export async function captureLabelElement(element: HTMLElement, options: LabelCa
 
         return true
       },
-    })
+    }))
   } finally {
     restorePreviewChrome()
     if (options.resetZoom) {
@@ -102,8 +135,10 @@ export async function captureLabelElement(element: HTMLElement, options: LabelCa
   }
 }
 
-export async function saveLabelPagesAsPdf(pages: LabelPdfPage[], filename: string) {
-  if (pages.length === 0) return
+export async function createLabelPagesPdf(
+  pages: LabelPdfPage[],
+): Promise<LabelPdfDocument | null> {
+  if (pages.length === 0) return null
 
   const { jsPDF } = await import('jspdf')
   const first = pages[0]
@@ -121,5 +156,5 @@ export async function saveLabelPagesAsPdf(pages: LabelPdfPage[], filename: strin
     pdf.addImage(page.dataUrl, 'PNG', 0, 0, page.widthMm, page.heightMm, alias, 'FAST')
   })
 
-  pdf.save(filename)
+  return pdf
 }
