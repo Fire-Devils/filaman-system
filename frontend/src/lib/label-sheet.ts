@@ -3,6 +3,10 @@ import type {
   LabelPdfPage,
 } from './label-export'
 import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
+import {
+  bindFixedPreviewToolbar,
+  stripElementIds,
+} from './label-preview-dom'
 
 export const LABEL_SHEET_SETTINGS_KEY = 'filaman-label-sheet-settings-v1'
 export const LABEL_SHEET_PRESETS_KEY = 'filaman-label-sheet-presets-v1'
@@ -91,7 +95,6 @@ const LARGE_JOB_LABEL_LIMIT = 500
 const LARGE_JOB_PAGE_LIMIT = 50
 const originalPositions = new WeakMap<HTMLElement, { parent: Node; nextSibling: Node | null }>()
 const confirmedLargeJobs = new Set<string>()
-const fixedToolbarPreviewRoots = new WeakSet<HTMLElement>()
 
 const DEFAULT_SETTINGS: LabelSheetSettings = {
   paperSize: 'a4',
@@ -627,11 +630,6 @@ function expandedIndexes(count: number, settings: LabelSheetSettings) {
   return indexes
 }
 
-function removeElementIds(element: Element) {
-  element.removeAttribute('id')
-  element.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'))
-}
-
 function getSourceLabel(source: HTMLElement): HTMLElement | null {
   if (source.classList.contains('label-preview')) return source
   return source.querySelector<HTMLElement>('.label-preview')
@@ -647,42 +645,16 @@ function ensureSourceBin(previewRoot: HTMLElement) {
   return bin
 }
 
-function getPreviewToolbar(previewRoot: HTMLElement) {
-  const toolbar = previewRoot.querySelector('.preview-zoom-bar')
-  return toolbar instanceof HTMLElement ? toolbar : null
-}
-
-function syncFixedPreviewToolbar(previewRoot: HTMLElement) {
-  const toolbar = getPreviewToolbar(previewRoot)
-  if (!toolbar) return
-  if (!previewRoot.classList.contains(SHEET_MODE_CLASS)) return
-  const rect = previewRoot.getBoundingClientRect()
-  toolbar.style.position = 'fixed'
-  toolbar.style.top = `${rect.top}px`
-  toolbar.style.left = `${rect.left + rect.width / 2}px`
-  toolbar.style.transform = 'translateX(-50%)'
-}
-
-function bindFixedPreviewToolbar(previewRoot: HTMLElement) {
-  syncFixedPreviewToolbar(previewRoot)
-  if (fixedToolbarPreviewRoots.has(previewRoot)) return
-  fixedToolbarPreviewRoots.add(previewRoot)
-  previewRoot.addEventListener('scroll', () => syncFixedPreviewToolbar(previewRoot), { passive: true })
-  window.addEventListener('resize', () => syncFixedPreviewToolbar(previewRoot), { passive: true })
-}
-
-function restorePreviewToolbar(previewRoot: HTMLElement) {
-  const toolbar = getPreviewToolbar(previewRoot)
-  if (!toolbar) return
-  toolbar.style.removeProperty('position')
-  toolbar.style.removeProperty('top')
-  toolbar.style.removeProperty('left')
-  toolbar.style.removeProperty('transform')
+function getFixedPreviewToolbarBinding(previewRoot: HTMLElement) {
+  return bindFixedPreviewToolbar({
+    previewRoot,
+    isActive: () => previewRoot.classList.contains(SHEET_MODE_CLASS),
+  })
 }
 
 export function restoreIndividualLabelPreview(previewRoot: HTMLElement, sourceElements: HTMLElement[]) {
   previewRoot.classList.remove(SHEET_MODE_CLASS)
-  restorePreviewToolbar(previewRoot)
+  getFixedPreviewToolbarBinding(previewRoot).restore()
   previewRoot.querySelectorAll(`.${SHEET_PAGE_FRAME_CLASS}`).forEach(frame => frame.remove())
   previewRoot.querySelectorAll('.label-sheet-page').forEach(page => page.remove())
   sourceElements.forEach(source => {
@@ -704,7 +676,7 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
   previewRoot.classList.add(SHEET_MODE_CLASS)
   const layout = getLabelSheetLayout(settings)
   const sourceBin = ensureSourceBin(previewRoot)
-  bindFixedPreviewToolbar(previewRoot)
+  getFixedPreviewToolbarBinding(previewRoot)
   previewRoot.querySelectorAll(`.${SHEET_PAGE_FRAME_CLASS}`).forEach(frame => frame.remove())
   previewRoot.querySelectorAll('.label-sheet-page').forEach(page => page.remove())
 
@@ -769,7 +741,7 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
     const sourceLabel = getSourceLabel(source)
     if (sourceLabel) {
       const clone = sourceLabel.cloneNode(true) as HTMLElement
-      removeElementIds(clone)
+      stripElementIds(clone)
       clone.style.zoom = '1'
       clone.style.transform = 'none'
       clone.style.transformOrigin = 'unset'

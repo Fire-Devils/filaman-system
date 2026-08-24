@@ -5,6 +5,10 @@ import type {
   LabelOutputMode,
   LabelSheetSettings,
 } from './label-sheet'
+import {
+  resetPreviewSurface,
+  stripElementIds,
+} from './label-preview-dom'
 
 const PRINT_HOST_ID = 'filaman-label-print-host'
 const PRINT_STYLE_ID = 'filaman-label-print-style'
@@ -80,22 +84,6 @@ export function createLabelBrowserPrintJob(
   }
   assertValidJob(job)
   return job
-}
-
-function removeElementIds(root: HTMLElement) {
-  root.removeAttribute('id')
-  root.querySelectorAll('[id]').forEach(element => {
-    element.removeAttribute('id')
-  })
-}
-
-function resetPreviewSurface(element: HTMLElement) {
-  element.style.zoom = '1'
-  element.style.transform = 'none'
-  element.style.transformOrigin = 'unset'
-  element.style.boxShadow = 'none'
-  element.style.border = 'none'
-  element.style.borderRadius = '0'
 }
 
 function normalizePrintClone(
@@ -230,7 +218,7 @@ function createPrintHost(job: LabelBrowserPrintJob) {
     page.className = 'filaman-print-page'
     page.classList.toggle('filaman-print-grid', job.printGrid)
     const clone = sourcePage.cloneNode(true) as HTMLElement
-    removeElementIds(clone)
+    stripElementIds(clone)
     normalizePrintClone(clone, job.kind, job.printGrid)
     page.appendChild(clone)
     host.appendChild(page)

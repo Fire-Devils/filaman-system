@@ -13,12 +13,13 @@ import JSZip from 'jszip'
 import {
   LABEL_PRINT_PDF_MODE_KEY,
   bindBatchLabelExport,
+  bindLabelOutputs,
   bindPdfOutputActions,
   bindPrintPdfPreference,
   bindSingleLabelExport,
   releasePrintPdfUrls,
 } from './label-print-page'
-import type { LabelPdfDocument } from './label-export'
+import type { LabelPdfDocument, LabelPdfPage } from './label-export'
 import {
   syncLabelSheetIndividualExportState,
   type LabelSheetControls,
@@ -144,6 +145,72 @@ function bindDeferredCapture(
     amlButton,
     pdfButton,
   }
+}
+
+function bindCollectionOutputs(
+  items: number[],
+  options: {
+    allowPartialPng?: boolean
+    allowPartialPdf?: boolean
+    capture?: (item: number) => Promise<string>
+    createPdf?: (pages: LabelPdfPage[]) => Promise<LabelPdfDocument | null>
+    getIndividualPages?: () => HTMLElement[]
+    getTranslation?: (key: string, fallback: string) => string
+    prepare?: () => Promise<void>
+    pngName?: (item: number, index: number, total: number) => string
+  } = {},
+) {
+  document.body.innerHTML = `
+    <button id="print">Print</button>
+    <button id="png">Export PNG</button>
+    <button id="aml">Export AML</button>
+    <button id="pdf">Export PDF</button>
+    <input id="pdf-mode" type="checkbox">
+  `
+  const controls = {
+    printButton: document.querySelector<HTMLButtonElement>('#print')!,
+    printPdfCheckbox:
+      document.querySelector<HTMLInputElement>('#pdf-mode')!,
+    pngButton: document.querySelector<HTMLButtonElement>('#png')!,
+    amlButton: document.querySelector<HTMLButtonElement>('#aml')!,
+    pdfButton: document.querySelector<HTMLButtonElement>('#pdf')!,
+  }
+  const sheetControls = {
+    getOutputMode: () => 'individual',
+    getSettings: () => (
+      {} as ReturnType<LabelSheetControls['getSettings']>
+    ),
+  } as LabelSheetControls
+  const capture = options.capture ?? vi.fn(async item =>
+    `data:image/png;base64,aXRlbS0${item}`,
+  )
+  const prepare = options.prepare ?? vi.fn(async () => undefined)
+  const pages = options.getIndividualPages ?? (() => [document.body])
+
+  bindLabelOutputs({
+    controls,
+    collection: {
+      getItems: () => items,
+      prepare,
+      capture,
+      getDimensions: () => ({ widthMm: 48, heightMm: 30 }),
+      browserPrint: {
+        previewRoot: document.body,
+        sheetControls,
+        getIndividualPages: pages,
+      },
+      pngName: options.pngName ?? (item => `label-${item}.png`),
+      pngArchiveName: () => 'labels.zip',
+      pdfName: () => 'labels.pdf',
+      allowPartialPng: options.allowPartialPng ?? false,
+      allowPartialPdf: options.allowPartialPdf ?? false,
+    },
+    getTranslation: options.getTranslation ?? ((key, fallback) =>
+      key === 'labelPrint.pngExportFailed' ? 'Translated PNG failure.' : fallback),
+    createPdf: options.createPdf,
+  })
+
+  return { controls, capture, prepare }
 }
 
 beforeEach(() => {
@@ -1039,5 +1106,269 @@ describe('single and batch PDF factory reuse', () => {
 
     expect(builtPages).toHaveLength(2)
     expect(builtPages[0]).toEqual(builtPages[1])
+  })
+})
+
+describe('collection output binding', () => {
+  it('downloads one PNG and AML directly', async () => {
+    const clicks: Array<{ name: string; href: string }> = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        clicks.push({ name: this.download, href: this.href })
+      })
+    vi.mocked(URL.createObjectURL).mockReturnValue('blob:label-aml')
+    const { controls } = bindCollectionOutputs([1])
+
+    controls.pngButton.click()
+    await vi.waitFor(() => {
+      expect(clicks).toEqual([{
+        name: 'label-1.png',
+        href: 'data:image/png;base64,aXRlbS01',
+      }])
+    })
+
+    controls.amlButton.click()
+    await vi.waitFor(() => {
+      expect(clicks).toEqual([
+        {
+          name: 'label-1.png',
+          href: 'data:image/png;base64,aXRlbS01',
+        },
+        { name: 'label-1.aml', href: 'blob:label-aml' },
+      ])
+    })
+  })
+
+  it.each([
+    { action: 'pngButton', archiveName: 'labels.zip' },
+    { action: 'amlButton', archiveName: 'labels-aml.zip' },
+  ] as const)('archives two $action outputs', async ({ action, archiveName }) => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:label-archive'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+    const { controls } = bindCollectionOutputs([1, 2])
+
+    controls[action].click()
+
+    await vi.waitFor(() => expect(downloads).toEqual([archiveName]))
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    const extension = action === 'pngButton' ? 'png' : 'aml'
+    expect(Object.keys(zip.files)).toEqual([
+      `label-1.${extension}`,
+      `label-2.${extension}`,
+    ])
+  })
+
+  it('uses collection indexes for duplicate item archive names', async () => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:duplicate-item-archive'
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 1], {
+      pngName: (_item, index) => `label-${index + 1}.png`,
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => expect(archiveBlob).toBeDefined())
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(Object.keys(zip.files)).toEqual(['label-1.png', 'label-2.png'])
+  })
+
+  it('archives a surviving PNG when partial collection capture is allowed', async () => {
+    let archiveBlob: Blob | undefined
+    vi.mocked(URL.createObjectURL).mockImplementation(value => {
+      archiveBlob = value as Blob
+      return 'blob:partial-label-archive'
+    })
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function(this: HTMLAnchorElement) {
+        downloads.push(this.download)
+      })
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPng: true,
+      capture: async item => {
+        if (item === 1) throw new Error('capture failed')
+        return 'data:image/png;base64,c3Vydml2b3I='
+      },
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => expect(downloads).toEqual(['labels.zip']))
+    const zip = await JSZip.loadAsync(await archiveBlob!.arrayBuffer())
+    expect(Object.keys(zip.files)).toEqual(['label-2.png'])
+  })
+
+  it('reports the translated PNG failure when every capture fails', async () => {
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPng: true,
+      capture: async () => {
+        throw new Error('capture failed')
+      },
+    })
+
+    controls.pngButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Translated PNG failure.')
+    })
+    expect(download).not.toHaveBeenCalled()
+  })
+
+  it('creates PDF pages in collection order', async () => {
+    const pdf = makePdfDocument()
+    const capturedPages: LabelPdfPage[][] = []
+    const { controls } = bindCollectionOutputs([2, 1], {
+      createPdf: async pages => {
+        capturedPages.push(pages)
+        return pdf
+      },
+    })
+
+    controls.pdfButton.click()
+
+    await vi.waitFor(() => expect(pdf.save).toHaveBeenCalledWith('labels.pdf'))
+    expect(capturedPages).toEqual([[
+      {
+        dataUrl: 'data:image/png;base64,aXRlbS02',
+        widthMm: 48,
+        heightMm: 30,
+      },
+      {
+        dataUrl: 'data:image/png;base64,aXRlbS01',
+        widthMm: 48,
+        heightMm: 30,
+      },
+    ]])
+  })
+
+  it('reports a translated PDF export failure when every partial batch capture fails', async () => {
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const open = vi.spyOn(window, 'open')
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPdf: true,
+      capture: async () => {
+        throw new Error('capture failed')
+      },
+      getTranslation: (key, fallback) =>
+        key === 'labelPrint.pdfExportFailed'
+          ? 'Translated PDF export failure.'
+          : fallback,
+    })
+
+    controls.pdfButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Translated PDF export failure.')
+    })
+    expect(download).not.toHaveBeenCalled()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('reports a translated temporary-PDF failure and closes its tab when every partial batch capture fails', async () => {
+    const { popup, close, replace } = makePopup()
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const alert = vi.spyOn(window, 'alert')
+      .mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPdf: true,
+      capture: async () => {
+        throw new Error('capture failed')
+      },
+      getTranslation: (key, fallback) =>
+        key === 'labelPrint.printPdfFailed'
+          ? 'Translated temporary-PDF failure.'
+          : fallback,
+    })
+    controls.printPdfCheckbox.checked = true
+
+    controls.printButton.click()
+
+    await vi.waitFor(() => {
+      expect(alert).toHaveBeenCalledWith('Translated temporary-PDF failure.')
+    })
+    expect(close).toHaveBeenCalledOnce()
+    expect(replace).not.toHaveBeenCalled()
+    expect(download).not.toHaveBeenCalled()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('gets individual browser-print pages after preparing the collection', async () => {
+    const calls: string[] = []
+    const page = document.createElement('article')
+    const { controls } = bindCollectionOutputs([1], {
+      prepare: async () => {
+        calls.push('prepare')
+      },
+      getIndividualPages: () => {
+        calls.push('pages')
+        return [page]
+      },
+    })
+
+    controls.printButton.click()
+
+    await vi.waitFor(() => expect(printLabelBrowserJob).toHaveBeenCalledOnce())
+    expect(calls).toEqual(['prepare', 'pages'])
+    expect(vi.mocked(printLabelBrowserJob).mock.calls[0]?.[0].pages)
+      .toEqual([page])
+  })
+
+  it('uses the shared PDF action when temporary-PDF printing is checked', async () => {
+    const pdf = makePdfDocument()
+    const { popup } = makePopup()
+    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const { controls } = bindCollectionOutputs([1], {
+      createPdf: async () => pdf,
+    })
+    controls.printPdfCheckbox.checked = true
+
+    controls.printButton.click()
+
+    await vi.waitFor(() => expect(pdf.output).toHaveBeenCalledWith('blob'))
+    expect(printLabelBrowserJob).not.toHaveBeenCalled()
+  })
+
+  it('preserves a live aria-disabled change when the coordinator releases controls', async () => {
+    let resolveCapture!: (value: string) => void
+    const { controls } = bindCollectionOutputs([1], {
+      capture: () => new Promise(resolve => {
+        resolveCapture = resolve
+      }),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined)
+
+    controls.pngButton.click()
+    await vi.waitFor(() => expect(controls.pngButton.disabled).toBe(true))
+    controls.pngButton.setAttribute('aria-disabled', 'true')
+    resolveCapture('data:image/png;base64,aXRlbS01')
+
+    await vi.waitFor(() => expect(controls.pngButton.disabled).toBe(true))
   })
 })
