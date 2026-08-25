@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSpoolLabelDataFromApi,
   buildSpoolLabelDataFromParams,
+  buildSpoolPrintSearchParams,
+  buildSpoolStandardModelFields,
   mergeMissingSpoolLabelData,
 } from './spool-label-data'
 import { buildSpoolDataFromApiSpool } from './label-designer'
@@ -21,9 +23,11 @@ const apiSpool = {
   remaining_weight_g: 734,
   initial_total_weight_g: 1000,
   empty_spool_weight_g: 250,
+  spool_core_weight_g: 45,
   low_weight_threshold_g: 100,
   stocked_in_at: '2026-01-03',
   last_used_at: '2026-01-04',
+  created_at: '2026-01-01T12:34:56Z',
   filament: {
     id: 11,
     designation: 'Midnight Blue',
@@ -71,7 +75,23 @@ describe('spool label data normalization', () => {
       status: 'Opened',
       lot_number: 'LOT-42',
       remaining_weight_g: '734',
+      spool_core_weight_g: '45',
+      created_at: '2026-01-01T12:34:56Z',
     })
+  })
+
+  it('shares the canonical spool field inventory with print URLs and Standard Labels', () => {
+    const data = buildSpoolLabelDataFromApi(apiSpool, lookups)
+    const params = buildSpoolPrintSearchParams(apiSpool, lookups)
+    const standardFields = buildSpoolStandardModelFields(data)
+
+    expect(params.get('spool_core_weight_g')).toBe('45')
+    expect(params.get('created_at')).toBe('2026-01-01T12:34:56Z')
+    expect(standardFields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'spool_core_weight_g', value: '45' }),
+      expect.objectContaining({ key: 'stocked_in_at' }),
+      expect.objectContaining({ key: 'created_at' }),
+    ]))
   })
 
   it('does not replace normalized API fields with query fallbacks', () => {

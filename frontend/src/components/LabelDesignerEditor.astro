@@ -291,7 +291,7 @@ const templateInputAttributes = {
       </div>
       <div>
         <div class="ds-tpl-label-row"><label class="fm-label" id="dsl-info-tpl">Information Format</label><button class="ds-syntax-btn" id="ds-info-syntax-btn" type="button" title="Template syntax help">?</button></div>
-        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input ds-tpl-multiline" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Ext: {filament.extruder_temp}C&#10;Bed: {filament.bed_temp}C" {...templateInputAttributes}></textarea>
+        <textarea id="ds-info-tpl" class="fm-input ds-tpl-input ds-tpl-multiline" rows="7" placeholder="{filament.type}&#10;{filament.color}&#10;Diameter: {filament.diameter} mm" {...templateInputAttributes}></textarea>
         <div class="ds-token-area" id="ds-info-token-area"></div>
       </div>
       <div class="ds-secondary-toggle" id="ds-info2-toggle"><label class="fm-checkbox-group ds-secondary-check"><input type="checkbox" id="ds-info2-show"><span id="dsl-info2-show">Side Column</span></label></div>
@@ -468,6 +468,9 @@ const templateInputAttributes = {
   .ds-token-chip:hover { background: var(--accent); color: var(--btn-primary-text); }
   .ds-tokens-group-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0 -6px 4px; padding: 4px 6px 3px; opacity: 0.7; border-bottom: 1px solid var(--border); }
   .ds-tokens-empty { font-size: 0.6rem; color: var(--text-muted); font-family: 'Courier New', monospace; opacity: 0.55; font-weight: 400; letter-spacing: 0.02em; }
+  .ds-batch-custom-fields-note { display: block; flex-basis: 100%; margin-top: 2px; }
+  .ds-custom-fields-toggle { border: none; background: none; color: var(--text-muted); cursor: pointer; font-family: 'Courier New', monospace; font-size: 0.6rem; padding: 2px 4px; text-decoration: underline; text-underline-offset: 2px; }
+  .ds-custom-fields-toggle:hover { color: var(--text); }
   .ds-tokens-group-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 -6px 4px; padding: 4px 6px 3px; border-bottom: 1px solid var(--border); }
   .ds-tokens-group-header .ds-tokens-group-label { margin: 0; padding: 0; border-bottom: none; }
   .ds-modifier-chips { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin-left: auto; }

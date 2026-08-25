@@ -61,7 +61,12 @@ export function getStaticPaths() {
     type LabelSettingsState,
     type PrintDesignerTab,
   } from '../../../lib/label-print-page'
-  import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import {
+    dedupeLabelExtraFields,
+    isBuiltInLabelField,
+    scopeLabelExtraField,
+    type LabelExtraFieldValue,
+  } from '../../../lib/label-extra-fields'
   import {
     FILAMENT_LABEL_PRESETS_KEY,
     hydrateLabelPresetStorage,
@@ -100,33 +105,20 @@ export function getStaticPaths() {
   }
 
 
-  type SingleSpoolExtraField = {
-    key: string
-    label: string
-    value: string
-    rawValue?: unknown
-    fieldType?: string
-    source?: string
-  }
+  type SingleSpoolExtraField = LabelExtraFieldValue & { value: string }
   let extraFields: SingleSpoolExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<SingleSpoolExtraField>('filaman-label-extra-fields', id)
-      if (Array.isArray(parsed)) {
-        const seenExtraFields = new Set<string>()
-        extraFields = parsed.filter((item) => (
-          item &&
-          typeof item.key === 'string' &&
-          typeof item.label === 'string' &&
-          typeof item.value === 'string'
-        )).filter((item) => {
+    if (Array.isArray(parsed)) {
+      extraFields = dedupeLabelExtraFields(
+        parsed.filter((item) => {
+          if (!item || typeof item.key !== 'string' || typeof item.label !== 'string' || typeof item.value !== 'string') return false
           const source = item.source === 'filament' ? 'filament' : 'spool'
-          if (item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label)) return false
-          const identity = `${source}:${normalizeLabelFieldName(item.label || item.key)}`
-          if (seenExtraFields.has(identity)) return false
-          seenExtraFields.add(identity)
-          return true
-        })
-      }
+          return !(item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label))
+        }),
+        'spool',
+      )
+    }
   } catch { /* ignore */ }
 
   // Flat SpoolData object consumed by the template parser (Phase 3)
@@ -170,9 +162,11 @@ export function getStaticPaths() {
       remaining_weight_g: labelData.remaining_weight_g,
       initial_total_weight_g: labelData.initial_total_weight_g,
       empty_spool_weight_g: labelData.empty_spool_weight_g,
+      spool_core_weight_g: labelData.spool_core_weight_g,
       low_weight_threshold_g: labelData.low_weight_threshold_g,
       stocked_in_at: labelData.stocked_in_at,
       last_used_at: labelData.last_used_at,
+      created_at: labelData.created_at,
       extraFields,
     })
   }
@@ -640,27 +634,19 @@ export function getStaticPaths() {
             sd.custom_field_definitions,
             spoolSystemDefinitions,
             true,
-          ).map(field => ({ ...field, source: 'spool' })),
+          ).map(field => scopeLabelExtraField(field, 'spool')),
           ...buildEntityExtraFieldsForPrint(
             sd.filament?.custom_fields,
             sd.filament?.custom_field_definitions,
             filamentSystemDefinitions,
             true,
-          ).map(field => ({ ...field, source: 'filament' })),
+          ).map(field => scopeLabelExtraField(field, 'filament')),
         ].filter(field => !isBuiltInLabelField(field.source, field.key, field.label))
         if (fallbackFields.length === 0) return
 
         for (const field of fallbackFields) {
-          const ef = {
-            key: `${field.source}.${field.key}`,
-            label: field.label,
-            value: field.value,
-            rawValue: field.rawValue,
-            fieldType: field.fieldType,
-            source: field.source,
-          }
-          extraFields.push(ef)
-          addExtraFieldCheckbox(ef)
+          extraFields.push(field)
+          addExtraFieldCheckbox(field)
         }
 
         // Rebuild token areas in the designer so extra-field chips appear.

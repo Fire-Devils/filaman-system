@@ -17,6 +17,10 @@ import {
   getReadableTextColorForColors,
   getFilamentSwatchColors,
 } from './label-template'
+import {
+  appendLabelExtraFieldCatalogGroup,
+  buildLabelExtraFieldCatalogGroups,
+} from './label-extra-fields'
 import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 
 const PRESETS_KEY = 'filaman-label-presets-v1'
@@ -47,6 +51,8 @@ export interface LabelDesignerEditorOptions {
   extraFields?: DesignerExtraField[]
   /** Controls which token groups appear in the picker. 'spool' adds the Spool group. Defaults to 'spool'. */
   entityType?: 'spool' | 'filament'
+  /** Batch catalogs expose centrally configured System Extra Fields only. */
+  batchMode?: boolean
   getFilamentColorHex?: () => string | null | undefined
   getFilamentColorHexes?: () => string | null | undefined
   getFilamentMultiColorStyle?: () => string | null | undefined
@@ -986,28 +992,17 @@ export async function initLabelDesignerEditor(options: LabelDesignerEditorOption
       body.appendChild(spoolGroup)
     }
 
-    const extGroup = document.createElement('div')
-    const extLbl = document.createElement('div')
-    const extChips = document.createElement('div')
-    extLbl.className = 'ds-tokens-group-label'
-    extLbl.textContent = translate(`${entityLabel.toLowerCase()}s.extraFieldsLabel`, `${entityLabel} Extra Fields`)
-    extChips.className = 'ds-token-hints'
-    if (extraFields.length > 0) {
-      for (const ef of extraFields) {
-        if (!ef?.key) continue
-        const tok = `{extra.${ef.key}}`
-        const label = ef.label && ef.label !== ef.key ? ef.label : ef.key
-        extChips.appendChild(makeChip(tok, label))
-      }
-    } else {
-      const empty = document.createElement('span')
-      empty.className = 'ds-tokens-empty'
-      empty.textContent = translate(`${entityLabel.toLowerCase()}s.dsNoCustomFields`, `No custom fields for this ${entityLabel.toLowerCase()}`)
-      extChips.appendChild(empty)
+    const extraFieldGroups = buildLabelExtraFieldCatalogGroups(extraFields, {
+      entityType: options.entityType ?? 'spool',
+      batchMode: options.batchMode ?? false,
+    })
+    for (const group of extraFieldGroups) {
+      appendLabelExtraFieldCatalogGroup(body, group, {
+        batchMode: options.batchMode ?? false,
+        makeChip,
+        translate,
+      })
     }
-    extGroup.appendChild(extLbl)
-    extGroup.appendChild(extChips)
-    body.appendChild(extGroup)
 
     toggle.addEventListener('click', () => {
       const open = body.style.display === 'none'
@@ -1041,10 +1036,10 @@ export async function initLabelDesignerEditor(options: LabelDesignerEditorOption
       <table>
         <tr><td>{token}</td><td>${translate('spools.dsSyntaxTokenDesc', 'Insert token value; chips show short labels, and the <code>filament.</code> prefix is added automatically when clicked.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxTokenEg', 'e.g. type inserts {filament.type}, which prints TPU')}</span></td></tr>
         <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-date">${DATE_MODIFIER_ICON}</span>{token|date}</td><td>${translate('spools.dsSyntaxDateDesc', 'Print only the localized date from a date or datetime token.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxDateEg', 'e.g. {extra.filament.certified_at|date} prints 7/25/26')}</span></td></tr>
-        <tr><td>{text{token}text}</td><td>${translate('spools.dsSyntaxWrapDesc', 'Wrap token with literal text; the whole wrapper is hidden if the token is empty.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxWrapEg', 'e.g. {Ext: {filament.extruder_temp}C} prints Ext: 210C, or nothing when temp is unset')}</span></td></tr>
+        <tr><td>{text{token}text}</td><td>${translate('spools.dsSyntaxWrapDesc', 'Wrap token with literal text; the whole wrapper is hidden if the token is empty.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxWrapEg', 'e.g. {Diameter: {filament.diameter} mm} prints the complete line, or nothing when diameter is unset')}</span></td></tr>
         <tr><td>{filament.color_hex}</td><td>${translate('spools.dsSyntaxColorHexDesc', 'Stored filament color hex. Standard colors print as <code>#RRGGBB</code>; transparent colors print as <code>#RRGGBBAA</code> only when alpha is stored.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxColorHexEg', 'e.g. #2A5BE8 or #2A5BE880')}</span></td></tr>
         <tr><td>{color_swatch[1]}</td><td>${translate('spools.dsSyntaxSwatchDesc', 'Inline color swatch from <code>filament.color_hex</code>; the bracket number sets swatch width in character units. If the color has alpha, the swatch uses the visible RGB portion.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSwatchEgPrefix', 'e.g.')} <span style="display:inline-block;width:1ch;height:0.82em;background:#2A5BE8;border:1px solid rgba(0,0,0,0.28);border-radius:0.14em;vertical-align:baseline;margin:0 0.2ch;"></span> ${translate('spools.dsSyntaxSwatchEgSuffix', 'Blue; [10] is wider')}</span></td></tr>
-        <tr><td>[size=120%]text[/size]</td><td>${translate('spools.dsSyntaxSizeDesc', 'Inline relative text size in percent; works with literal text, field values, and swatches.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSizeEg', 'e.g. [size=140%]{filament.extruder_temp}[/size]C')}</span></td></tr>
+        <tr><td>[size=120%]text[/size]</td><td>${translate('spools.dsSyntaxSizeDesc', 'Inline relative text size in percent; works with literal text, field values, and swatches.')}<br><span class="ds-popover-eg">${translate('spools.dsSyntaxSizeEg', 'e.g. [size=140%]{filament.type}[/size]')}</span></td></tr>
         <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-bold">B</span>**text**</td><td><strong>${translate('spools.dsModifierBold', 'Bold')}</strong></td></tr>
         <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-italic">I</span>*text*</td><td><em>${translate('spools.dsModifierItalic', 'Italic')}</em></td></tr>
         <tr><td><span class="ds-syntax-modifier-icon ds-syntax-modifier-underline">U</span>__text__</td><td><u>${translate('spools.dsModifierUnderline', 'Underline')}</u></td></tr>
@@ -1438,7 +1433,7 @@ export async function initLabelDesignerEditor(options: LabelDesignerEditorOption
           marginMm: 0,
           hAlign: 'left',
           vAlign: 'top',
-          template: 'ID: #{id}\nStocked: {stocked_in_at}\nSpool Weight: {empty_spool_weight_g} g\nExt Temp: {filament.extruder_temp}°C\nBed Temp: {filament.bed_temp}°C',
+          template: 'ID: #{id}\nStocked: {stocked_in_at|date}\nSpool Weight: {empty_spool_weight_g} g\nDiameter: {filament.diameter} mm',
         },
         info2: { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
       },

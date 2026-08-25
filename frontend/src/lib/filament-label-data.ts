@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { isBuiltInLabelField } from './label-extra-fields'
+import {
+  isBuiltInLabelField,
+  scopeLabelExtraField,
+  type LabelExtraFieldValue,
+} from './label-extra-fields'
 import { type SystemExtraFieldDef } from './extra-fields'
 import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 import {
@@ -42,13 +46,9 @@ export interface FilamentLabelData {
   multi_color_style: string
 }
 
-export interface FilamentExtraField {
-  key: string
+export interface FilamentExtraField extends LabelExtraFieldValue {
   label: string
   value: string
-  rawValue?: unknown
-  fieldType?: string
-  source?: string
 }
 
 type FilamentExtraFieldDefinition = {
@@ -127,6 +127,19 @@ export function buildFilamentLabelDataFromParams(id: string, params: URLSearchPa
   return data
 }
 
+function getLegacyTemperatureValue(
+  filament: any,
+  field: 'extruder_temp' | 'bed_temp',
+): string {
+  const settingsField = `settings_${field}`
+  const customFields = filament?.custom_fields as Record<string, unknown> | undefined
+  return toLabelString(
+    filament?.[settingsField]
+      ?? customFields?.[field]
+      ?? customFields?.[settingsField],
+  )
+}
+
 export function buildFilamentLabelDataFromApi(filament: any, fallbackId: string | number = ''): FilamentLabelData {
   const firstColor = getFirstFilamentColor(filament)
   const color = firstLabelValue(
@@ -146,8 +159,8 @@ export function buildFilamentLabelDataFromApi(filament: any, fallbackId: string 
     subtype: toLabelString(filament?.material_subgroup),
     mfr_id: toLabelString(filament?.manufacturer?.id),
     hex_code: toLabelString(firstColor?.color?.hex_code),
-    extruder_temp: toLabelString(filament?.settings_extruder_temp),
-    bed_temp: toLabelString(filament?.settings_bed_temp),
+    extruder_temp: getLegacyTemperatureValue(filament, 'extruder_temp'),
+    bed_temp: getLegacyTemperatureValue(filament, 'bed_temp'),
     raw_material_weight_g: toLabelString(filament?.raw_material_weight_g ?? filament?.weight),
     weight: toLabelString(filament?.raw_material_weight_g ?? filament?.weight),
     diameter: toLabelString(filament?.diameter_mm),
@@ -195,8 +208,6 @@ export function buildFilamentPrintSearchParams(filament: any): URLSearchParams {
 // Standard labels are intentionally reduced to common, high-signal fields.
 // The advanced designer still receives the full filament data for token use.
 export const REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS: FilamentExtraFieldDefinition[] = [
-  { key: 'filament.extruder_temp', label: 'Extruder Temp (°C)', dataKey: 'extruder_temp', valueFromApi: f => toLabelString(f?.settings_extruder_temp) },
-  { key: 'filament.bed_temp',      label: 'Bed Temp (°C)',      dataKey: 'bed_temp',      valueFromApi: f => toLabelString(f?.settings_bed_temp) },
   { key: 'filament.diameter',      label: 'Diameter (mm)',      dataKey: 'diameter',      valueFromApi: f => toLabelString(f?.diameter_mm) },
   { key: 'filament.density',       label: 'Density (g/cm³)',    dataKey: 'density',       valueFromApi: f => toLabelString(f?.density_g_cm3) },
   { key: 'filament.weight',        label: 'Weight (g)',         dataKey: 'weight',        valueFromApi: f => toLabelString(f?.raw_material_weight_g ?? f?.weight) },
@@ -219,17 +230,11 @@ export function buildFilamentExtraFieldsForPrint(
     filament?.custom_fields,
     filament?.custom_field_definitions,
     systemFieldMap as Record<string, SystemExtraFieldDef>,
+    true,
   )
   for (const field of customFields) {
     if (isBuiltInLabelField('filament', field.key, field.label)) continue
-    fields.push({
-      key: `filament.${field.key}`,
-      label: field.label,
-      value: field.value,
-      rawValue: field.rawValue,
-      fieldType: field.fieldType,
-      source: 'filament',
-    })
+    fields.push(scopeLabelExtraField(field, 'filament'))
   }
   return fields
 }
@@ -244,14 +249,5 @@ export function buildDesignerExtraFieldsFromFilament(
     systemFieldMap as Record<string, SystemExtraFieldDef>,
   )
     .filter(field => !isBuiltInLabelField('filament', field.key, field.label))
-    .map(field => {
-      return {
-        key: `filament.${field.key}`,
-        label: field.label,
-        value: field.value,
-        rawValue: field.rawValue,
-        fieldType: field.fieldType,
-        source: 'filament',
-      }
-    })
+    .map(field => scopeLabelExtraField(field, 'filament'))
 }

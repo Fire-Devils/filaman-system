@@ -232,6 +232,7 @@ describe('entity extra field helpers', () => {
         value: '55 °C',
         rawValue: 55,
         fieldType: 'number',
+        origin: 'custom',
       },
       {
         key: 'drying.note',
@@ -239,6 +240,7 @@ describe('entity extra field helpers', () => {
         value: 'Keep sealed',
         rawValue: 'Keep sealed',
         fieldType: undefined,
+        origin: 'custom',
       },
     ])
   })
@@ -329,6 +331,34 @@ describe('entity extra field helpers', () => {
         rawValue: undefined,
         fieldType: 'number',
       },
+    ])
+  })
+
+  it('identifies System and record-local fields for separate print catalogs', () => {
+    const fields = buildEntityExtraFieldsForPrint(
+      {
+        certified_at: '2026-07-25',
+        storage: { humidity: 45 },
+      },
+      {
+        certified_at: {
+          label: 'Certified at',
+          field_type: 'date',
+        },
+      },
+      {
+        'storage.humidity': {
+          id: 2,
+          key: 'storage.humidity',
+          label: 'System humidity',
+          field_type: 'number',
+        },
+      },
+    )
+
+    expect(fields.map(field => [field.key, field.origin])).toEqual([
+      ['certified_at', 'custom'],
+      ['storage.humidity', 'system'],
     ])
   })
 
@@ -440,6 +470,29 @@ describe('entity extra field helpers', () => {
 })
 
 describe('record-local fields in label designer', () => {
+  it('exposes legacy-named temperatures in the correct Extra Fields catalog', () => {
+    const fields = buildDesignerExtraFieldsFromFilament(
+      {
+        custom_fields: { extruder_temp: 215, bed_temp: 60 },
+        custom_field_definitions: {
+          bed_temp: { label: 'Bed temperature', field_type: 'number' },
+        },
+      },
+      {
+        extruder_temp: {
+          key: 'extruder_temp',
+          label: 'Extruder temperature',
+          field_type: 'number',
+        },
+      },
+    )
+
+    expect(fields.map(field => [field.key, field.origin]).sort()).toEqual([
+      ['filament.bed_temp', 'custom'],
+      ['filament.extruder_temp', 'system'],
+    ])
+  })
+
   it('uses a dotted filament field label and unit', () => {
     const fields = buildDesignerExtraFieldsFromFilament(dryingTemperatureFilament)
 
@@ -451,6 +504,31 @@ describe('record-local fields in label designer', () => {
         rawValue: 55,
         fieldType: 'number',
         source: 'filament',
+        origin: 'custom',
+      },
+    ])
+  })
+
+  it('preserves System ownership in designer fields', () => {
+    const fields = buildDesignerExtraFieldsFromFilament(
+      {
+        custom_fields: { drying_temperature: 55 },
+      },
+      {
+        drying_temperature: {
+          id: 4,
+          key: 'drying_temperature',
+          label: 'Drying temperature',
+          field_type: 'number',
+        },
+      },
+    )
+
+    expect(fields).toMatchObject([
+      {
+        key: 'filament.drying_temperature',
+        source: 'filament',
+        origin: 'system',
       },
     ])
   })
@@ -516,5 +594,29 @@ describe('record-local fields in label designer', () => {
       fieldType: 'datetime',
       source: 'filament',
     })
+  })
+
+  it('keeps configured unset System fields in the single-filament print handoff', () => {
+    const fields = buildFilamentExtraFieldsForPrint(
+      { custom_fields: {} },
+      {
+        drying_temperature: {
+          id: 7,
+          key: 'drying_temperature',
+          label: 'Drying temperature',
+          field_type: 'number',
+        },
+      },
+    )
+
+    expect(fields).toMatchObject([
+      {
+        key: 'filament.drying_temperature',
+        label: 'Drying temperature',
+        value: '',
+        source: 'filament',
+        origin: 'system',
+      },
+    ])
   })
 })

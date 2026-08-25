@@ -188,7 +188,16 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { toColorSwatchBackground } from '../../../lib/colors'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
-    import { isBuiltInLabelField } from '../../../lib/label-extra-fields'
+    import {
+      isBuiltInLabelField,
+      scopeLabelExtraField,
+      type LabelExtraFieldValue,
+    } from '../../../lib/label-extra-fields'
+    import {
+      buildSpoolLabelDataFromApi,
+      buildSpoolPrintSearchParams,
+      buildSpoolStandardModelFields,
+    } from '../../../lib/spool-label-data'
     import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
 
@@ -426,90 +435,17 @@ const { id } = Astro.params
         ` : ''}
       `
       
-      const fmtDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
-      const filamentWeight = spool.filament?.raw_material_weight_g ?? spool.filament?.weight ?? ''
-      const filamentColors = Array.isArray(spool.filament?.colors) ? spool.filament.colors : []
-      const filamentColorNames = filamentColors.map((entry: any) => entry?.display_name_override || entry?.color?.name).filter(Boolean).join(', ')
-      const filamentColorHexes = filamentColors.map((entry: any) => entry?.color?.hex_code).filter(Boolean).join(', ')
-      const printParams = new URLSearchParams()
-      const setPrintParam = (key: string, value: unknown) => {
-        printParams.set(key, value === undefined || value === null ? '' : String(value))
-      }
-      for (const [key, value] of [
-        ['filament_id', spool.filament?.id],
-        ['designation', spool.filament?.designation],
-        ['mfr', spool.filament?.manufacturer?.name],
-        ['manufacturer_id', spool.filament?.manufacturer_id ?? spool.filament?.manufacturer?.id],
-        ['type', spool.filament?.material_type],
-        ['subtype', spool.filament?.material_subgroup],
-        ['color', spool.filament?.manufacturer_color_name || spool.filament?.colors?.[0]?.color?.name],
-        ['colors', filamentColorNames],
-        ['mfr_id', spool.filament?.manufacturer?.id],
-        ['hex_code', spool.filament?.colors?.[0]?.color?.hex_code],
-        ['color_hexes', filamentColorHexes],
-        ['color_mode', spool.filament?.color_mode],
-        ['multi_color_style', spool.filament?.multi_color_style],
-        ['extruder_temp', spool.filament?.settings_extruder_temp],
-        ['bed_temp', spool.filament?.settings_bed_temp],
-        ['raw_material_weight_g', filamentWeight],
-        ['weight', filamentWeight],
-        ['diameter', spool.filament?.diameter_mm],
-        ['finish', spool.filament?.finish_type],
-        ['density', spool.filament?.density_g_cm3],
-        ['price', spool.filament?.price],
-        ['color_name', spool.filament?.manufacturer_color_name],
-        ['default_spool_wt', spool.filament?.default_spool_weight_g],
-        ['spool_outer_dia', spool.filament?.spool_outer_diameter_mm],
-        ['spool_width', spool.filament?.spool_width_mm],
-        ['spool_material', spool.filament?.spool_material],
-        ['shop_url', spool.filament?.shop_url],
-        ['lot', spool.lot_number],
-        ['ext_id', spool.external_id],
-        ['rfid', spool.rfid_uid],
-        ['location', spool.location?.label || spool.location?.name],
-        ['status', spool.status?.label],
-        ['purchase_date', fmtDate(spool.purchase_date)],
-        ['purchase_price', spool.purchase_price],
-        ['remaining_wt', spool.remaining_weight_g],
-        ['initial_wt', spool.initial_total_weight_g],
-        ['empty_spool_wt', spool.empty_spool_weight_g],
-        ['low_wt', spool.low_weight_threshold_g],
-        ['stocked_in', fmtDate(spool.stocked_in_at)],
-        ['last_used', fmtDate(spool.last_used_at)],
-      ] as [string, unknown][]) {
-        setPrintParam(key, value)
-      }
+      const printParams = buildSpoolPrintSearchParams(spool)
       const printUrl = `/spools/${spool.id}/print?${printParams.toString()}`
 
       // Store extra fields for label printing (spool + filament).
       // Iterate ALL system-defined fields so they appear in the designer even when
       // the spool hasn't had a value set for a field yet.
-      const efForPrint: {
-        key: string
-        label: string
-        value: string
-        rawValue?: unknown
-        fieldType?: string
-        source: string
-      }[] = []
+      const efForPrint: LabelExtraFieldValue[] = []
 
       // ── Spool model fields (always included so they appear as label checkboxes) ──
-      const spoolModelFields: [string, string, unknown][] = [
-        ['lot_number',             'Lot Number',             spool.lot_number],
-        ['external_id',            'External ID',            spool.external_id],
-        ['rfid_uid',               'RFID UID',               spool.rfid_uid],
-        ['location',               'Location',               spool.location?.label ?? spool.location?.name],
-        ['status',                 'Status',                 spool.status?.label],
-        ['purchase_date',          'Purchase Date',          fmtDate(spool.purchase_date)],
-        ['purchase_price',         'Purchase Price',         spool.purchase_price],
-        ['remaining_weight_g',     'Remaining Weight (g)',   spool.remaining_weight_g],
-        ['initial_total_weight_g', 'Initial Weight (g)',     spool.initial_total_weight_g],
-        ['empty_spool_weight_g',   'Empty Spool Weight (g)', spool.empty_spool_weight_g],
-        ['low_weight_threshold_g', 'Low Weight Threshold (g)',spool.low_weight_threshold_g],
-        ['stocked_in_at',          'Stocked In',             fmtDate(spool.stocked_in_at)],
-        ['last_used_at',           'Last Used',              fmtDate(spool.last_used_at)],
-      ]
-      for (const [key, label, value] of spoolModelFields) {
+      const spoolModelFields = buildSpoolStandardModelFields(buildSpoolLabelDataFromApi(spool))
+      for (const { key, label, value } of spoolModelFields) {
         efForPrint.push({ key, label, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
       }
 
@@ -520,14 +456,7 @@ const { id } = Astro.params
         true,
       )) {
         if (isBuiltInLabelField('spool', field.key, field.label)) continue
-        efForPrint.push({
-          key: `spool.${field.key}`,
-          label: field.label,
-          value: field.value,
-          rawValue: field.rawValue,
-          fieldType: field.fieldType,
-          source: 'spool',
-        })
+        efForPrint.push(scopeLabelExtraField(field, 'spool'))
       }
       for (const field of buildEntityExtraFieldsForPrint(
         spool.filament?.custom_fields,
@@ -536,14 +465,7 @@ const { id } = Astro.params
         true,
       )) {
         if (isBuiltInLabelField('filament', field.key, field.label)) continue
-        efForPrint.push({
-          key: `filament.${field.key}`,
-          label: field.label,
-          value: field.value,
-          rawValue: field.rawValue,
-          fieldType: field.fieldType,
-          source: 'filament',
-        })
+        efForPrint.push(scopeLabelExtraField(field, 'filament'))
       }
       writeScopedLabelFields('filaman-label-extra-fields', spool.id, efForPrint)
 

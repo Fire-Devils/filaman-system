@@ -66,6 +66,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   import {
     buildDesignerExtraFieldsFromApiSpool,
     buildSpoolLabelDataFromApi,
+    buildSpoolStandardModelFields,
+    SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
   } from '../../lib/spool-label-data'
   import { isBuiltInLabelField } from '../../lib/label-extra-fields'
   import {
@@ -81,9 +83,6 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   import { type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
     buildSystemExtraFieldDefinitionMap,
-    definitionForFlattenedExtraField,
-    extraFieldPathOverlaps,
-    flattenExtraFieldValues,
     getExtraFieldValue,
     normalizeEntityExtraFieldDefinitions,
     renderRecordExtraField,
@@ -234,13 +233,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         value: '',
         fieldType: def.field_type,
         source: def.target_type,
+        origin: 'system',
       })
-    }
-    for (const spool of spools) {
-      for (const field of buildDesignerExtraFieldsFromApiSpool(spool, getExtraFieldDefinitionMaps())) {
-        if (!field?.key || fields.has(field.key)) continue
-        fields.set(field.key, field)
-      }
     }
     return Array.from(fields.values())
   }
@@ -270,26 +264,10 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     )
 
     // ── Spool model field checkboxes (shown when checked in sidebar) ──────
-    const fmtDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
-    const modelFields: [string, string, unknown][] = [
-      ['lot_number',             'Lot Number',              data.lot_number],
-      ['external_id',            'External ID',             data.external_id],
-      ['rfid_uid',               'RFID UID',                data.rfid_uid],
-      ['location',               'Location',                data.location],
-      ['status',                 'Status',                  data.status],
-      ['purchase_date',          'Purchase Date',           fmtDate(data.purchase_date)],
-      ['purchase_price',         'Purchase Price',          data.purchase_price],
-      ['remaining_weight_g',     'Remaining Weight (g)',    data.remaining_weight_g],
-      ['initial_total_weight_g', 'Initial Weight (g)',      data.initial_total_weight_g],
-      ['empty_spool_weight_g',   'Empty Spool Weight (g)',  data.empty_spool_weight_g],
-      ['low_weight_threshold_g', 'Low Weight Threshold (g)',data.low_weight_threshold_g],
-      ['stocked_in_at',          'Stocked In',              fmtDate(data.stocked_in_at)],
-      ['last_used_at',           'Last Used',               fmtDate(data.last_used_at)],
-    ]
-    for (const [key, label, rawVal] of modelFields) {
+    for (const { key, label, value } of buildSpoolStandardModelFields(data)) {
       const cb = efCheckMap[`model:${key}`]
       if (!cb?.checked) continue
-      const val = rawVal !== undefined && rawVal !== null ? String(rawVal) : ''
+      const val = value !== undefined && value !== null ? String(value) : ''
       if (val) result.push({ key, label, value: val })
     }
 
@@ -474,32 +452,6 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
       systemFieldKeys.clear()
       allDefs.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))
-      const knownKeys = new Set(systemFieldKeys)
-      const entityDefs = spools.flatMap(spool => {
-        const spoolEntityDefs = normalizeEntityExtraFieldDefinitions(spool.custom_field_definitions)
-        const filamentEntityDefs = normalizeEntityExtraFieldDefinitions(
-          spool.filament?.custom_field_definitions,
-        )
-        return [
-          ...flattenExtraFieldValues(spool.custom_fields, spoolEntityDefs)
-            .map(field => ({
-              ...definitionForFlattenedExtraField(field),
-              target_type: 'spool' as const,
-            })),
-          ...flattenExtraFieldValues(spool.filament?.custom_fields, filamentEntityDefs)
-            .map(field => ({
-              ...definitionForFlattenedExtraField(field),
-              target_type: 'filament' as const,
-            })),
-        ]
-      }).filter(def =>
-        !extraFieldPathOverlaps(efMapKey(def.target_type, def.key), knownKeys) &&
-        !isBuiltInLabelField(def.target_type, def.key, def.label),
-      )
-      const uniqueEntityDefs = Array.from(
-        new Map(entityDefs.map(def => [efMapKey(def.target_type, def.key), def])).values(),
-      )
-      allDefs.push(...uniqueEntityDefs)
       if (allDefs.length === 0) return
 
       efDefs = allDefs
@@ -521,8 +473,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
       function getExtraFieldGroupTitle(source: string) {
         return source === 'filament'
-          ? (t('filaments.extraFieldsLabel') || 'Filament Extra Fields')
-          : (t('spools.extraFieldsLabel') || 'Spool Extra Fields')
+          ? (t('filaments.dsSystemExtraFieldsLabel') || 'Filament System Extra Fields')
+          : (t('spools.dsSystemExtraFieldsLabel') || 'Spool System Extra Fields')
       }
 
       function getExtraFieldGroup(source?: string) {
@@ -582,10 +534,6 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   // ── Init ──────────────────────────────────────────────────────────────────
 
   await initI18n()
-  function tFallback(key: string, fallback: string): string {
-    const value = t(key)
-    return value && value !== key ? value : fallback
-  }
   const previewZoom = bindLabelPreviewZoom({
     storageKey: SETTINGS_KEY,
     settingsVersion: 0,
@@ -610,6 +558,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   const designerEditor = await initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
+    batchMode: true,
     getFilamentColorHex: () => getBatchFilamentColorData()?.hex || '',
     getFilamentColorHexes: () => getBatchFilamentColorData()?.colorHexes || '',
     getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multiColorStyle || '',
@@ -674,22 +623,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     const savedState = (() => {
       try { return JSON.parse(readStorageValue('filaman-spool-model-field-checks') || 'null') } catch { return null }
     })() as Record<string, boolean> | null
-    const modelFieldDefs: [string, string][] = [
-      ['lot_number',             tFallback('labelPrint.fieldLotNumber', 'Lot Number')],
-      ['external_id',            tFallback('labelPrint.fieldExternalId', 'External ID')],
-      ['rfid_uid',               tFallback('labelPrint.fieldRfidUid', 'RFID UID')],
-      ['location',               tFallback('labelPrint.fieldLocation', 'Location')],
-      ['status',                 tFallback('labelPrint.fieldStatus', 'Status')],
-      ['purchase_date',          tFallback('labelPrint.fieldPurchaseDate', 'Purchase Date')],
-      ['purchase_price',         tFallback('labelPrint.fieldPurchasePrice', 'Purchase Price')],
-      ['remaining_weight_g',     tFallback('labelPrint.fieldRemainingWt', 'Remaining Weight (g)')],
-      ['initial_total_weight_g', tFallback('labelPrint.fieldInitialWt', 'Initial Weight (g)')],
-      ['empty_spool_weight_g',   tFallback('labelPrint.fieldEmptySpoolWt', 'Empty Spool Weight (g)')],
-      ['low_weight_threshold_g', tFallback('labelPrint.fieldLowWeightThreshold', 'Low Weight Threshold (g)')],
-      ['stocked_in_at',          tFallback('labelPrint.fieldStockedIn', 'Stocked In')],
-      ['last_used_at',           tFallback('labelPrint.fieldLastUsed', 'Last Used')],
-    ]
-    for (const [key, label] of modelFieldDefs) {
+    const modelFieldDefs = SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key, label }) => ({ key, label }))
+    for (const { key, label } of modelFieldDefs) {
       efCheckMap[`model:${key}`] = appendLabelSettingsCheckbox({
         container,
         label,
@@ -697,7 +632,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         onChange: () => {
           try {
             const state: Record<string, boolean> = {}
-            for (const [k] of modelFieldDefs) { const c = efCheckMap[`model:${k}`]; if (c) state[k] = c.checked }
+            for (const { key: k } of modelFieldDefs) { const c = efCheckMap[`model:${k}`]; if (c) state[k] = c.checked }
             writeStorageValue('filaman-spool-model-field-checks', JSON.stringify(state))
           } catch {}
           queueRenderAll()

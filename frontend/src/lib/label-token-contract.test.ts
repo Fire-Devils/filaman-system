@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildSpoolDesignerDataFromLabelData,
+  DESIGNER_DEFAULTS,
   FILAMENT_TOKENS,
   SPOOL_TOKENS,
   buildSpoolDataFromApiSpool,
 } from './label-designer'
+import { REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS } from './filament-label-data'
 import { renderTemplateText } from './label-template'
 import {
   createSpoolLabelLookups,
@@ -29,6 +31,7 @@ const apiSpool = {
   remaining_weight_g: 712,
   initial_total_weight_g: 1250,
   empty_spool_weight_g: 250,
+  spool_core_weight_g: 42,
   low_weight_threshold_g: 100,
   custom_fields: {
     storage_note: 'Keep dry',
@@ -60,8 +63,8 @@ const apiSpool = {
     spool_material: 'Cardboard',
     shop_url: 'https://example.test/galaxy-pla',
     custom_fields: {
-      extruder_temp: 215,
-      bed_temp: 60,
+      settings_extruder_temp: 215,
+      settings_bed_temp: 60,
     },
     manufacturer: {
       id: 5,
@@ -77,6 +80,7 @@ const apiSpool = {
       },
     ],
   },
+  created_at: '2026-01-01T12:34:56Z',
 }
 
 const lookups = createSpoolLabelLookups(
@@ -85,6 +89,29 @@ const lookups = createSpoolLabelLookups(
 )
 
 describe('spool label token contract', () => {
+  it('advertises only backed built-in tokens while keeping complete spool timestamps and weights', () => {
+    const filamentTokens = FILAMENT_TOKENS.map(({ token }) => token)
+    const spoolTokens = SPOOL_TOKENS.map(({ token }) => token)
+    const standardKeys = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS.map(({ key }) => key)
+
+    expect(filamentTokens).not.toContain('{filament.extruder_temp}')
+    expect(filamentTokens).not.toContain('{filament.bed_temp}')
+    expect(standardKeys).not.toContain('filament.extruder_temp')
+    expect(standardKeys).not.toContain('filament.bed_temp')
+    expect(DESIGNER_DEFAULTS.info.template).not.toMatch(/extruder_temp|bed_temp/)
+
+    expect(spoolTokens).toContain('{spool_core_weight_g}')
+    expect(spoolTokens).toContain('{stocked_in_at}')
+    expect(spoolTokens).toContain('{created_at}')
+  })
+
+  it('continues resolving legacy temperature tokens in saved templates', () => {
+    const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
+
+    expect(renderTemplateText('{filament.extruder_temp}', data)).toBe('215')
+    expect(renderTemplateText('{filament.bed_temp}', data)).toBe('60')
+  })
+
   it('renders every advertised filament and spool token from the API wire shape', () => {
     const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
     const canonical = buildSpoolLabelDataFromApi(apiSpool, lookups)
@@ -141,15 +168,19 @@ describe('spool label token contract', () => {
       .toBe(`Certified: ${formatDateDisplay(raw)}`)
   })
 
-  it('uses the same date-only spool values for single and batch Designer labels', () => {
+  it('keeps timestamp precision while allowing the date-only modifier', () => {
     const canonical = buildSpoolLabelDataFromApi(apiSpool, lookups)
     const single = buildSpoolDesignerDataFromLabelData(canonical)
     const batch = buildSpoolDataFromApiSpool(apiSpool, lookups)
 
-    for (const key of ['purchase_date', 'stocked_in_at', 'last_used_at'] as const) {
-      expect(single[key]).toBe(formatDateDisplay(canonical[key]))
+    expect(single.purchase_date).toBe(formatDateDisplay(canonical.purchase_date))
+    expect(batch.purchase_date).toBe(single.purchase_date)
+
+    for (const key of ['stocked_in_at', 'last_used_at', 'created_at'] as const) {
+      expect(single[key]).toBe(canonical[key])
       expect(batch[key]).toBe(single[key])
-      expect(single[key]).not.toContain(':')
+      expect(single[key]).toContain(':')
+      expect(renderTemplateText(`{${key}|date}`, single)).toBe(formatDateDisplay(canonical[key]))
     }
   })
 

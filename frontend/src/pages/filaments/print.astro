@@ -75,9 +75,6 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   import { type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
     buildSystemExtraFieldDefinitionMap,
-    definitionForFlattenedExtraField,
-    extraFieldPathOverlaps,
-    flattenExtraFieldValues,
     getExtraFieldValue,
     normalizeEntityExtraFieldDefinitions,
     renderRecordExtraField,
@@ -218,13 +215,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         value: '',
         fieldType: def.field_type,
         source: 'filament',
+        origin: 'system',
       })
-    }
-    for (const filament of filaments) {
-      for (const field of buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap())) {
-        if (!field?.key || fields.has(field.key)) continue
-        fields.set(field.key, field)
-      }
     }
     return Array.from(fields.values())
   }
@@ -420,20 +412,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
       systemFieldKeys.clear()
       customDefs.forEach(def => systemFieldKeys.add(def.key))
-      const knownKeys = new Set([...standardDefs, ...customDefs].map(def => def.key))
-      const entityDefs = filaments.flatMap(filament => {
-        const definitions = normalizeEntityExtraFieldDefinitions(filament.custom_field_definitions)
-        return flattenExtraFieldValues(filament.custom_fields, definitions)
-          .map(definitionForFlattenedExtraField)
-      }).filter(def =>
-        !extraFieldPathOverlaps(def.key, knownKeys) &&
-        !isBuiltInLabelField('filament', def.key, def.label),
-      )
-      const uniqueEntityDefs = Array.from(new Map(entityDefs.map(def => [def.key, def])).values())
-
-      // Keep the Standard Label tab compact: reduced standard fields first,
-      // then system and record-local custom fields.
-      efDefs = [...standardDefs, ...customDefs, ...uniqueEntityDefs]
+      // Batch selectors are centrally governed: built-ins first, then System Extra Fields.
+      efDefs = [...standardDefs, ...customDefs]
       if (efDefs.length === 0) return
 
       const titleEl = document.getElementById('ef-section-title')!
@@ -455,15 +435,15 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
       addFieldRows(standardDefs, container)
 
-      if (customDefs.length + uniqueEntityDefs.length > 0) {
+      if (customDefs.length > 0) {
         const customTitle = document.createElement('h3')
-        customTitle.textContent = t('filaments.extraFieldsLabel') || 'Filament Extra Fields'
+        customTitle.textContent = t('filaments.dsSystemExtraFieldsLabel') || 'Filament System Extra Fields'
         const customContainer = document.createElement('div')
         customContainer.className = container.className
         customContainer.style.removeProperty('display')
         container.insertAdjacentElement('afterend', customTitle)
         customTitle.insertAdjacentElement('afterend', customContainer)
-        addFieldRows([...customDefs, ...uniqueEntityDefs], customContainer)
+        addFieldRows(customDefs, customContainer)
       }
     } catch {}
   }
@@ -497,6 +477,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   const designerEditor = await initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
+    batchMode: true,
     getFilamentColorHex: () => getBatchFilamentColorData()?.hex_code || '',
     getFilamentColorHexes: () => getBatchFilamentColorData()?.color_hexes || '',
     getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multi_color_style || '',

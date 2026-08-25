@@ -65,7 +65,11 @@ export function getStaticPaths() {
     type LabelSettingsState,
     type PrintDesignerTab,
   } from '../../../lib/label-print-page'
-  import { isBuiltInLabelField, normalizeLabelFieldName } from '../../../lib/label-extra-fields'
+  import {
+    dedupeLabelExtraFields,
+    isBuiltInLabelField,
+    scopeLabelExtraField,
+  } from '../../../lib/label-extra-fields'
   import {
     FILAMENT_LABEL_PRESETS_KEY,
     hydrateLabelPresetStorage,
@@ -91,21 +95,17 @@ export function getStaticPaths() {
   let extraFields: FilamentExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<FilamentExtraField>('filaman-filament-label-extra-fields', id)
-      if (Array.isArray(parsed)) {
-        const seenExtraFields = new Set<string>()
-        extraFields = parsed.filter((item) => (
+    if (Array.isArray(parsed)) {
+      extraFields = dedupeLabelExtraFields(
+        parsed.filter((item) => (
           item &&
           typeof item.key === 'string' &&
           typeof item.label === 'string' &&
           typeof item.value === 'string'
-        )).filter((item) => {
-          const source = item.source === 'spool' ? 'spool' : 'filament'
-          const identity = `${source}:${normalizeLabelFieldName(item.label || item.key)}`
-          if (seenExtraFields.has(identity)) return false
-          seenExtraFields.add(identity)
-          return true
-        })
-      }
+        )),
+        'filament',
+      )
+    }
   } catch { /* ignore */ }
 
   const LABEL_SETTINGS_KEY = 'filaman-filament-label-settings'
@@ -497,14 +497,7 @@ export function getStaticPaths() {
       const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
 
       if (standardFilamentFields.length > 0 || customPrintFields.length > 0) {
-        function makeEfCheckbox(ef: {
-          key: string
-          label: string
-          value: string
-          rawValue?: unknown
-          fieldType?: string
-          source?: string
-        }) {
+        function makeEfCheckbox(ef: FilamentExtraField) {
           extraFields.push({ ...ef, source: ef.source ?? 'filament' })
           const cb = appendLabelSettingsCheckbox({
             container: extraFieldsCheckboxes,
@@ -521,14 +514,7 @@ export function getStaticPaths() {
         }
 
         for (const field of customPrintFields) {
-          makeEfCheckbox({
-            key: `filament.${field.key}`,
-            label: field.label,
-            value: field.value,
-            rawValue: field.rawValue,
-            fieldType: field.fieldType,
-            source: 'filament',
-          })
+          makeEfCheckbox(scopeLabelExtraField(field, 'filament'))
         }
 
         extraFieldsTitle.style.display = ''
