@@ -1512,5 +1512,9 @@
     "printHelpIntro": "For small labels, use 100% scale and the exact matching paper size.",
     "printHelpBrave": "Brave: if output is blank, offset, or clipped, use Export PDF or a slightly smaller matching label size.",
     "printHelpFirefox": "Firefox: if the system dialog adds a blank page, use Firefox's print dialog or Export PDF."
+  },
+  "pluginPage": {
+    "frameTitle": "Plugin page",
+    "notFound": "This plugin page is not available."
   }
 }

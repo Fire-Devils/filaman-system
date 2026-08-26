@@ -8,6 +8,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1125,7 +1126,7 @@ class SpoolmanImportService:
                     default_spool_weight_g=spool_weight,
                     density_g_cm3=fil_data.get("density"),
                     price=fil_data.get("price"),
-                    shop_url=self._clean(fil_data.get("article_number")),
+                    shop_url=self._shop_url(fil_data.get("article_number")),
                     manufacturer_color_name=self._clean(fil_data.get("color_hex")),
                     color_mode=color_mode,
                     multi_color_style=multi_color_style,
@@ -1404,6 +1405,27 @@ class SpoolmanImportService:
         self.db.add(new_mfr)
         await self.db.flush()
         return new_mfr.id
+
+    @classmethod
+    def _shop_url(cls, value: Any) -> str | None:
+        """Keep a bare article number out of the shop URL column.
+
+        Spoolman has no URL field on a filament. Its `article_number` documents
+        itself as "Vendor article number, e.g. EAN, QR code", so importing that
+        value into `shop_url` stores something that is not a link: the filament
+        form renders the field as <input type="url"> and refuses to save such a
+        record, and any code that fills an empty shop_url later finds the field
+        occupied. Some users do keep a real link there, so a value that parses
+        as one is still imported; everything else stays where it belongs, in
+        custom_fields["article_number"].
+        """
+        cleaned = cls._clean(value)
+        if not cleaned:
+            return None
+        parsed = urlparse(cleaned)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            return cleaned
+        return None
 
     @staticmethod
     def _clean(value: Any) -> str | None:

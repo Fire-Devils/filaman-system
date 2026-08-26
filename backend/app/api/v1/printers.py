@@ -40,6 +40,10 @@ def _primary_proxy_url(path: str) -> str:
         path = f"/{path}"
     return f"{base}{path}"
 
+# Changing one of these restarts the printer's driver, and drivers live on the
+# primary worker only.  A request touching them has to be handled there.
+_DRIVER_LIFECYCLE_FIELDS = frozenset({"driver_key", "driver_config", "is_active"})
+
 
 def _is_primary_worker() -> bool:
     """Resolve primary worker state lazily to avoid import cycles."""
@@ -245,6 +249,7 @@ async def list_printers(
 @router.post("", response_model=PrinterResponse, status_code=status.HTTP_201_CREATED)
 async def create_printer(
     data: PrinterCreate,
+    request: Request,
     db: DBSession,
     principal=RequirePermission("printers:create"),
 ):
@@ -263,13 +268,17 @@ async def create_printer(
     await db.commit()
     await db.refresh(printer)
 
-    # Auto-start driver if printer is active (default)
+    # Auto-start driver if printer is active (default).  Only the primary worker
+    # holds drivers, so anywhere else the start has to be handed over.
     if printer.is_active and printer.driver_key:
-        started = await plugin_manager.start_printer(printer)
-        if not started:
-            logger.warning(
-                f"Driver {printer.driver_key} could not be started for new printer {printer.id}"
-            )
+        if not _is_primary_worker():
+            await _driver_lifecycle_via_primary(request, printer.id, "start")
+        else:
+            started = await plugin_manager.start_printer(printer)
+            if not started:
+                logger.warning(
+                    f"Driver {printer.driver_key} could not be started for new printer {printer.id}"
+                )
 
     return printer
 
@@ -388,9 +397,24 @@ async def get_printer(
 async def update_printer(
     printer_id: int,
     data: PrinterUpdate,
+    request: Request,
     db: DBSession,
     principal=RequirePermission("printers:update"),
 ):
+    updates = data.model_dump(exclude_unset=True)
+
+    # The driver restart below is the point of such a change, so the whole
+    # request goes to the worker that can actually perform it, before anything
+    # is written.  That keeps exactly one worker applying the update.
+    if (_DRIVER_LIFECYCLE_FIELDS & updates.keys()) and not _is_primary_worker():
+        payload = await _proxy_to_primary(
+            request,
+            method="PATCH",
+            path=f"/api/v1/printers/{printer_id}",
+            json_body=data.model_dump(exclude_unset=True, mode="json"),
+        )
+        return PrinterResponse.model_validate(payload)
+
     result = await db.execute(
         select(Printer).where(Printer.id == printer_id, Printer.deleted_at.is_(None))
     )
@@ -402,7 +426,6 @@ async def update_printer(
             detail={"code": "not_found", "message": "Printer not found"},
         )
 
-    updates = data.model_dump(exclude_unset=True)
     driver_changed = "driver_key" in updates or "driver_config" in updates
     active_changed = (
         "is_active" in updates and updates["is_active"] != printer.is_active
@@ -432,6 +455,7 @@ async def update_printer(
 @router.delete("/{printer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_printer(
     printer_id: int,
+    request: Request,
     db: DBSession,
     principal=RequirePermission("printers:delete"),
     delete_params: bool = Query(
@@ -453,8 +477,12 @@ async def delete_printer(
             detail={"code": "not_found", "message": "Printer not found"},
         )
 
-    # Stop driver before soft-delete
-    await plugin_manager.stop_printer(printer_id)
+    # Stop driver before soft-delete.  Only the primary worker holds drivers, so
+    # anywhere else the stop has to be handed over.
+    if not _is_primary_worker():
+        await _driver_lifecycle_via_primary(request, printer_id, "stop")
+    else:
+        await plugin_manager.stop_printer(printer_id)
 
     # Optionally hard-delete calibration data
     if delete_params:
@@ -643,6 +671,28 @@ async def pick_bambuddy_driver(db: DBSession) -> tuple[int, Any]:
             "message": "No Bambuddy driver is running",
         },
     )
+
+
+async def _driver_lifecycle_via_primary(
+    request: Request, printer_id: int, action: str
+) -> None:
+    """Ask the primary worker to start or stop a driver, best effort.
+
+    Drivers live on the primary worker, so a request served anywhere else cannot
+    reach them.  The caller has already committed its own database work, and
+    failing to reach the primary must not undo that, so this only logs.
+    """
+    try:
+        await _proxy_to_primary(
+            request,
+            method="POST",
+            path=f"/api/v1/printers/{printer_id}/driver/{action}",
+        )
+    except Exception as exc:
+        logger.warning(
+            f"Could not {action} the driver for printer {printer_id} on the "
+            f"primary worker: {exc}"
+        )
 
 
 async def _invoke_driver_method(driver: Any, method_name: str, **kwargs: Any) -> Any:
@@ -994,10 +1044,20 @@ async def reconnect_all_printers(
 @router.get("/{printer_id}/driver/debug")
 async def driver_debug_log(
     printer_id: int,
+    request: Request,
     since: str | None = Query(None),
     db: DBSession = None,
     principal: PrincipalDep = None,
 ):
+    # The debug log lives inside the driver instance, so only the primary worker
+    # can answer.  Query parameters travel with the forwarded request.
+    if not _is_primary_worker():
+        return await _proxy_to_primary(
+            request,
+            method="GET",
+            path=f"/api/v1/printers/{printer_id}/driver/debug",
+        )
+
     driver = plugin_manager.drivers.get(printer_id)
     if not driver:
         raise HTTPException(

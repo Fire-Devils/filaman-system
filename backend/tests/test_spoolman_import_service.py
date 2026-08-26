@@ -1335,3 +1335,36 @@ async def test_import_entities_without_extra_objects(db_session):
     spool = await db_session.scalar(select(Spool))
     assert filament.custom_field_definitions is None
     assert spool.custom_field_definitions is None
+
+
+class TestSpoolmanImportShopUrl:
+    """Spoolman has no URL field, so article_number must not become one."""
+
+    @pytest.mark.parametrize(
+        "article_number",
+        ["33300", "PM70820", "EAN 4260469530012", "  12104  "],
+    )
+    def test_article_numbers_do_not_become_shop_urls(self, article_number):
+        service = SpoolmanImportService(None)
+        assert service._shop_url(article_number) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "https://eu.store.bambulab.com/de/products/petg-hf",
+            "http://shop.example.com/filament?id=7",
+        ],
+    )
+    def test_a_real_link_is_still_imported(self, value):
+        service = SpoolmanImportService(None)
+        assert service._shop_url(value) == value
+
+    @pytest.mark.parametrize("value", [None, "", "   ", 12104])
+    def test_empty_and_non_string_values_stay_empty(self, value):
+        service = SpoolmanImportService(None)
+        assert service._shop_url(value) is None
+
+    def test_a_scheme_we_cannot_link_to_is_rejected(self):
+        service = SpoolmanImportService(None)
+        assert service._shop_url("javascript:alert(1)") is None
+        assert service._shop_url("file:///etc/passwd") is None
