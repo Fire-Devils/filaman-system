@@ -48,6 +48,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     appendLabelSettingsCheckbox,
     captureLabelSettings,
     captureBatchLabel,
+    createPreviewRenderCoordinator,
     findBatchLabelElement,
     getCachedEntityLogoUrl,
     getLabelOutputControls,
@@ -117,6 +118,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   const logoCache: Record<number, string | null> = {}
   let activePreviewTab: PrintDesignerTab = readPrintDesignerTab('filaman-label-active-tab')
   let renderVersion = 0
+  const previewRenders = createPreviewRenderCoordinator()
 
   // Extra field definitions for filaments only. The Standard Label tab is
   // reduced to common fields; Label Designer still receives all fields.
@@ -354,7 +356,11 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     })
   }
 
-  async function renderAll(tab: 'print' | 'designer' = activePreviewTab) {
+  function renderAll(tab: 'print' | 'designer' = activePreviewTab) {
+    return previewRenders.run(() => renderAllNow(tab))
+  }
+
+  async function renderAllNow(tab: 'print' | 'designer') {
     const token = ++renderVersion
     const isStale = () => token !== renderVersion || activePreviewTab !== tab
     const CHUNK = 6
@@ -509,7 +515,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     controls: outputControls,
     collection: {
       getItems: () => filaments,
-      prepare: () => renderAll(activePreviewTab),
+      prepare: () => previewRenders.settle(),
       capture: captureLabel,
       getDimensions: getActiveLabelDimensions,
       browserPrint: {

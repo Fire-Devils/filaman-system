@@ -1,39 +1,39 @@
 <style is:global>
-  .print-page {
+  .print-page-single {
     overflow-x: auto;
     overflow-y: hidden;
   }
 
-  .print-sidebar { transition: width 0.2s ease; }
-  .print-sidebar.sidebar-wide { width: 530px; }
-  .back-link { transition: opacity var(--transition); }
+  .print-page-single .print-sidebar { transition: width 0.2s ease; }
+  .print-page-single .print-sidebar.sidebar-wide { width: 530px; }
+  .print-page-single .back-link { transition: opacity var(--transition); }
 
-  .fm-input {
+  .print-page-single .fm-input {
     font-family: var(--font-sans);
     transition: border-color var(--transition), box-shadow var(--transition);
   }
 
-  .fm-input:focus {
+  .print-page-single .fm-input:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--focus-ring);
   }
 
-  .fm-checkbox-group { transition: background var(--transition); }
+  .print-page-single .fm-checkbox-group { transition: background var(--transition); }
 
-  .fm-checkbox-group input {
+  .print-page-single .fm-checkbox-group input {
     width: 18px;
     height: 18px;
     accent-color: var(--accent);
     cursor: pointer;
   }
 
-  .fm-btn {
+  .print-page-single .fm-btn {
     letter-spacing: 0.2px;
     transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
   }
 
-  .preview-container {
+  .print-page-single .preview-container {
     flex: 1;
     min-width: 320px;
     display: flex;
@@ -42,14 +42,14 @@
     background: var(--bg-soft);
   }
 
-  .preview-zoom-bar {
+  .print-page-single .preview-zoom-bar {
     padding: 8px 20px 6px;
     background: var(--bg-elevated);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
 
-  .preview-zoom-btn {
+  .print-page-single .preview-zoom-btn {
     width: 26px;
     height: 26px;
     border-radius: 6px;
@@ -61,26 +61,26 @@
     transition: background var(--transition), border-color var(--transition);
   }
 
-  .preview-zoom-btn:hover {
+  .print-page-single .preview-zoom-btn:hover {
     background: var(--accent);
     color: var(--btn-primary-text);
   }
 
-  .preview-zoom-reset { font-size: 0.85rem; }
+  .print-page-single .preview-zoom-reset { font-size: 0.85rem; }
 
-  .preview-zoom-slider {
+  .print-page-single .preview-zoom-slider {
     flex: 1;
     max-width: 160px;
     cursor: pointer;
   }
 
-  .preview-zoom-label {
+  .print-page-single .preview-zoom-label {
     font-size: 0.75rem;
     min-width: 38px;
     font-variant-numeric: tabular-nums;
   }
 
-  .preview-scroll-area {
+  .print-page-single .preview-scroll-area {
     flex: 1;
     display: flex;
     align-items: safe center;
@@ -89,7 +89,7 @@
     overflow: auto;
   }
 
-  .label-preview {
+  .print-page-single .label-preview {
     box-shadow: var(--shadow-lg);
     border: 1px dashed #ccc;
   }

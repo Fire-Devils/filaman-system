@@ -54,9 +54,15 @@ export function bindFixedPreviewToolbar(
     const toolbar = getPreviewToolbar(options.previewRoot)
     if (!toolbar) return
     const rect = options.previewRoot.getBoundingClientRect()
+    const right = rect.right ?? rect.left + rect.width
+    const visibleLeft = Math.max(0, rect.left)
+    const visibleRight = Math.min(window.innerWidth, right)
+    const center = visibleRight > visibleLeft
+      ? visibleLeft + (visibleRight - visibleLeft) / 2
+      : rect.left + rect.width / 2
     toolbar.style.position = 'fixed'
     toolbar.style.top = `${rect.top}px`
-    toolbar.style.left = `${rect.left + rect.width / 2}px`
+    toolbar.style.left = `${center}px`
     toolbar.style.transform = 'translateX(-50%)'
   }
   const restore = () => {

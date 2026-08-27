@@ -27,6 +27,10 @@ import {
   type LabelSheetControls,
 } from './label-sheet'
 import { bindFixedPreviewToolbar } from './label-preview-dom'
+import {
+  bindTemporaryPdfPreview,
+  type TemporaryPdfPreviewController,
+} from './label-pdf-preview'
 import { type StandardLabelSettings } from './label-standard'
 
 export { LABEL_EXPORT_DPI, LABEL_EXPORT_PIXEL_RATIO } from './label-export'
@@ -35,18 +39,40 @@ export const LABEL_PRINT_PDF_MODE_KEY = 'filaman-label-print-pdf-v1'
 
 export interface PdfOutputActionsOptions {
   pdfButton: HTMLButtonElement
+  printButton: HTMLButtonElement
   createPdf: () => Promise<LabelPdfDocument | null>
   getFilename: () => string
   getTranslation: (key: string, fallback: string) => string
+  getPdfPreview: () => TemporaryPdfPreviewController
   coordinator?: LabelOutputCoordinator
 }
 
 interface LabelOutputCoordinator {
   run(
-    progressText: string,
     action: () => Promise<void>,
     prepare?: () => boolean,
   ): Promise<void>
+}
+
+export function createPreviewRenderCoordinator() {
+  const pendingRenders = new Set<Promise<void>>()
+
+  return {
+    run(render: () => Promise<void>) {
+      const pending = Promise.resolve().then(render)
+      pendingRenders.add(pending)
+      pending.then(
+        () => pendingRenders.delete(pending),
+        () => pendingRenders.delete(pending),
+      )
+      return pending
+    },
+    async settle() {
+      while (pendingRenders.size > 0) {
+        await Promise.all(pendingRenders)
+      }
+    },
+  }
 }
 
 function createLabelOutputCoordinator(
@@ -56,87 +82,32 @@ function createLabelOutputCoordinator(
   let operationRunning = false
 
   return {
-    async run(progressText, action, prepare) {
+    async run(action, prepare) {
       if (operationRunning) return
       operationRunning = true
-      let originalStates: Array<{
-        button: HTMLButtonElement
-        disabled: boolean
-        ariaDisabled: string | null
-        text: string | null
-      }> | null = null
       let lockedStates: Array<{
         control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
-        disabled: boolean
+        inert: boolean
       }> = []
 
       try {
         if (prepare && !prepare()) return
-        originalStates = buttons.map(button => ({
-          button,
-          disabled: button.disabled,
-          ariaDisabled: button.getAttribute('aria-disabled'),
-          text: button.textContent,
-        }))
-        buttons.forEach(button => {
-          button.disabled = true
-          button.textContent = progressText
-        })
         const outputButtons = new Set(buttons)
         lockedStates = getLockControls()
           .filter(control => !outputButtons.has(control as HTMLButtonElement))
-          .map(control => ({ control, disabled: control.disabled }))
+          .map(control => ({ control, inert: control.hasAttribute('inert') }))
         lockedStates.forEach(({ control }) => {
-          control.disabled = true
+          control.setAttribute('inert', '')
         })
         await action()
       } finally {
-        lockedStates.forEach(({ control, disabled }) => {
-          control.disabled = disabled
-        })
-        originalStates?.forEach(({
-          button,
-          disabled,
-          ariaDisabled,
-          text,
-        }) => {
-          const currentAriaDisabled = button.getAttribute('aria-disabled')
-          button.disabled = currentAriaDisabled === ariaDisabled
-            ? disabled
-            : currentAriaDisabled === 'true'
-          button.textContent = text
+        lockedStates.forEach(({ control, inert }) => {
+          if (!inert) control.removeAttribute('inert')
         })
         operationRunning = false
       }
     },
   }
-}
-
-const activePrintPdfUrls = new Set<string>()
-let printPdfCleanupBound = false
-
-function bindPrintPdfCleanup() {
-  if (printPdfCleanupBound) return
-  printPdfCleanupBound = true
-  window.addEventListener('pagehide', releasePrintPdfUrls)
-}
-
-export function releasePrintPdfUrls() {
-  activePrintPdfUrls.forEach(url => URL.revokeObjectURL(url))
-  activePrintPdfUrls.clear()
-}
-
-function showPreparingPrintPdf(
-  popup: Window,
-  message: string,
-) {
-  popup.document.title = message
-  popup.document.body.replaceChildren()
-  popup.document.body.style.cssText =
-    'font-family:system-ui,sans-serif;padding:2rem;color:#222'
-  const status = popup.document.createElement('p')
-  status.textContent = message
-  popup.document.body.appendChild(status)
 }
 
 export function bindPdfOutputActions(
@@ -148,83 +119,40 @@ export function bindPdfOutputActions(
   const execute = async (
     target: 'download' | 'print',
   ): Promise<void> => {
-    let popup: Window | null = null
-    const progressText = options.getTranslation(
-      target === 'print'
-        ? 'labelPrint.preparingPrintPdf'
-        : 'labelPrint.exporting',
-      target === 'print'
-        ? 'Preparing print PDF…'
-        : 'Exporting...',
-    )
+    await coordinator.run(async () => {
+      try {
+        const pdf = await options.createPdf()
+        if (!pdf) return
 
-    await coordinator.run(
-      progressText,
-      async () => {
-        let blobUrl: string | null = null
-        try {
-          const pdf = await options.createPdf()
-          if (!pdf) {
-            popup?.close()
-            return
-          }
-
-          if (target === 'download') {
-            pdf.save(options.getFilename())
-            return
-          }
-
-          blobUrl = URL.createObjectURL(pdf.output('blob'))
-          activePrintPdfUrls.add(blobUrl)
-          bindPrintPdfCleanup()
-          popup!.location.replace(blobUrl)
-        } catch (error) {
-          if (blobUrl) {
-            activePrintPdfUrls.delete(blobUrl)
-            URL.revokeObjectURL(blobUrl)
-          }
-          popup?.close()
-          window.alert(
-            options.getTranslation(
-              target === 'print'
-                ? 'labelPrint.printPdfFailed'
-                : 'labelPrint.pdfExportFailed',
-              target === 'print'
-                ? 'Print PDF generation failed.'
-                : 'PDF export failed.',
-            ),
-          )
-          console.error(
-            target === 'print'
-              ? 'Failed to create print PDF:'
-              : 'Failed to export label PDF:',
-            error,
-          )
+        if (target === 'download') {
+          pdf.save(options.getFilename())
+          return
         }
-      },
-      target === 'print'
-        ? () => {
-            popup = window.open('', '_blank')
-            if (!popup) {
-              window.alert(
-                options.getTranslation(
-                  'labelPrint.printPopupBlocked',
-                  'Allow pop-ups to open the print PDF.',
-                ),
-              )
-              return false
-            }
-            showPreparingPrintPdf(
-              popup,
-              options.getTranslation(
-                'labelPrint.preparingPrintPdf',
-                'Preparing print PDF…',
-              ),
-            )
-            return true
-          }
-        : undefined,
-    )
+
+        options.getPdfPreview().show({
+          blob: pdf.output('blob'),
+          filename: options.getFilename(),
+          returnFocus: options.printButton,
+        })
+      } catch (error) {
+        window.alert(
+          options.getTranslation(
+            target === 'print'
+              ? 'labelPrint.printPdfFailed'
+              : 'labelPrint.pdfExportFailed',
+            target === 'print'
+              ? 'Print PDF generation failed.'
+              : 'PDF export failed.',
+          ),
+        )
+        console.error(
+          target === 'print'
+            ? 'Failed to create print PDF:'
+            : 'Failed to export label PDF:',
+          error,
+        )
+      }
+    })
   }
 
   const download = () => execute('download')
@@ -257,10 +185,6 @@ function bindSelectablePrintAction(
     }
 
     void options.coordinator.run(
-      options.getTranslation(
-        'labelPrint.preparingBrowserPrint',
-        'Preparing browser print…',
-      ),
       async () => {
         try {
           await printLabelBrowserJob(
@@ -1024,11 +948,16 @@ export interface BindLabelOutputsOptions<T> {
   collection: LabelOutputCollection<T>
   getTranslation(key: string, fallback: string): string
   createPdf?: LabelPdfFactoryOverride
+  pdfPreview?: TemporaryPdfPreviewController
 }
 
 export function bindLabelOutputs<T>(options: BindLabelOutputsOptions<T>) {
   const { controls, collection, getTranslation } = options
-  const exportingText = () => getTranslation('labelPrint.exporting', 'Exporting...')
+  let pdfPreview = options.pdfPreview
+  const getPdfPreview = () => {
+    pdfPreview ??= bindTemporaryPdfPreview({ root: document, getTranslation })
+    return pdfPreview
+  }
   const coordinator = createLabelOutputCoordinator(
     [
       controls.printButton,
@@ -1050,7 +979,7 @@ export function bindLabelOutputs<T>(options: BindLabelOutputsOptions<T>) {
     const items = collection.getItems()
     if (items.length === 0) return
 
-    await coordinator.run(exportingText(), async () => {
+    await coordinator.run(async () => {
       try {
         await collection.prepare()
         const dimensions = kind === 'aml' ? collection.getDimensions() : null
@@ -1122,9 +1051,11 @@ export function bindLabelOutputs<T>(options: BindLabelOutputsOptions<T>) {
 
   const pdfActions = bindPdfOutputActions({
     pdfButton: controls.pdfButton,
+    printButton: controls.printButton,
     createPdf,
     getFilename: collection.pdfName,
     getTranslation,
+    getPdfPreview,
     coordinator,
   })
   bindSelectablePrintAction({

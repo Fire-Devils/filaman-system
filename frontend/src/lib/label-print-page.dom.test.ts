@@ -21,16 +21,20 @@ import {
   bindPrintPageSidebarCollapse,
   bindPrintPdfPreference,
   captureLabelSettings,
+  createPreviewRenderCoordinator,
   getLabelOutputControls,
   getLabelSettingsControls,
   getStandardLabelSettings,
   readVersionedLabelSettings,
-  releasePrintPdfUrls,
   resetLabelSettings,
   restoreLabelSettings,
   type LabelPdfFactoryOverride,
 } from './label-print-page'
 import type { LabelPdfDocument, LabelPdfPage } from './label-export'
+import {
+  bindTemporaryPdfPreview,
+  type TemporaryPdfPreviewController,
+} from './label-pdf-preview'
 import {
   syncLabelSheetIndividualExportState,
   type LabelSheetControls,
@@ -60,28 +64,78 @@ vi.mock('./label-browser-print', () => ({
   printLabelBrowserJob: vi.fn(async () => window.print()),
 }))
 
+describe('createPreviewRenderCoordinator', () => {
+  it('settles the latest preview without starting another render', async () => {
+    const coordinator = createPreviewRenderCoordinator()
+    const render = vi.fn(async () => undefined)
+
+    await coordinator.run(render)
+    await coordinator.settle()
+
+    expect(render).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a replacement render that starts while settling', async () => {
+    const coordinator = createPreviewRenderCoordinator()
+    let finishFirst!: () => void
+    let finishSecond!: () => void
+    const first = coordinator.run(() => new Promise<void>(resolve => {
+      finishFirst = resolve
+    }))
+    const settled = coordinator.settle()
+    const second = coordinator.run(() => new Promise<void>(resolve => {
+      finishSecond = resolve
+    }))
+    await Promise.resolve()
+
+    finishFirst()
+    await first
+    let didSettle = false
+    void settled.then(() => { didSettle = true })
+    await Promise.resolve()
+    expect(didSettle).toBe(false)
+
+    finishSecond()
+    await second
+    await settled
+  })
+})
+
 function makePdfDocument() {
   return {
     save: vi.fn(),
+    autoPrint: vi.fn(function(this: LabelPdfDocument) {
+      return this
+    }),
     output: vi.fn(
       () => new Blob(['pdf'], { type: 'application/pdf' }),
     ),
-  } satisfies LabelPdfDocument
+  } satisfies LabelPdfDocument & {
+    autoPrint: ReturnType<typeof vi.fn>
+  }
 }
 
-function makePopup() {
-  const popupDocument = document.implementation.createHTMLDocument('')
-  const replace = vi.fn()
-  const close = vi.fn()
+function makePdfPreview() {
   return {
-    popup: {
-      document: popupDocument,
-      location: { replace },
-      close,
-    } as unknown as Window,
-    replace,
-    close,
-  }
+    show: vi.fn(),
+    hide: vi.fn(),
+    dispose: vi.fn(),
+  } satisfies TemporaryPdfPreviewController
+}
+
+function temporaryPdfPreviewMarkup() {
+  return `
+    <main class="preview-container">
+      <div class="preview-scroll-area"><div class="label-preview">PETG</div></div>
+      <section id="temporary-pdf-preview" hidden tabindex="-1">
+        <button id="temporary-pdf-back">Back</button>
+        <button id="temporary-pdf-open">Open</button>
+        <a id="temporary-pdf-download">Download</a>
+        <div id="temporary-pdf-content"></div>
+        <div id="temporary-pdf-unsupported" hidden>Unsupported</div>
+      </section>
+    </main>
+  `
 }
 
 function makeBrowserPrintBinding(
@@ -116,6 +170,7 @@ function bindSingleCollectionOutputs(options: {
   captureLabel(): Promise<string>
   browserPrint: ReturnType<typeof makeBrowserPrintBinding>
   createPdf?: LabelPdfFactoryOverride
+  pdfPreview?: TemporaryPdfPreviewController
 }) {
   bindLabelOutputs({
     controls: {
@@ -142,6 +197,7 @@ function bindSingleCollectionOutputs(options: {
     },
     getTranslation: options.getTranslation,
     createPdf: options.createPdf,
+    pdfPreview: options.pdfPreview,
   })
 }
 
@@ -163,6 +219,7 @@ function bindBatchCollectionOutputs<T>(options: {
   pdfName(): string
   browserPrint: ReturnType<typeof makeBrowserPrintBinding>
   createPdf?: LabelPdfFactoryOverride
+  pdfPreview?: TemporaryPdfPreviewController
   skipCaptureErrorsInZip?: boolean
   skipCaptureErrorsInPdf?: boolean
 }) {
@@ -190,6 +247,7 @@ function bindBatchCollectionOutputs<T>(options: {
     },
     getTranslation: options.getTranslation,
     createPdf: options.createPdf,
+    pdfPreview: options.pdfPreview,
   })
 }
 
@@ -229,6 +287,10 @@ function renderPrintPageControls() {
 function bindDeferredCapture(
   kind: 'single-label' | 'batch',
   captureLabel: () => Promise<string>,
+  options: {
+    createPdf?: LabelPdfFactoryOverride
+    pdfPreview?: TemporaryPdfPreviewController
+  } = {},
 ) {
   const printButton = document.querySelector<HTMLButtonElement>('#print')!
   const pngButton = document.querySelector<HTMLButtonElement>('#png')!
@@ -252,6 +314,8 @@ function bindDeferredCapture(
       refreshPreview: vi.fn(async () => undefined),
       captureLabel,
       browserPrint: makeBrowserPrintBinding(labelElement),
+      createPdf: options.createPdf,
+      pdfPreview: options.pdfPreview,
     })
   } else {
     bindBatchCollectionOutputs({
@@ -271,6 +335,8 @@ function bindDeferredCapture(
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
       browserPrint: makeBrowserPrintBinding(labelElement),
+      createPdf: options.createPdf,
+      pdfPreview: options.pdfPreview,
     })
   }
 
@@ -292,8 +358,10 @@ function bindCollectionOutputs(
     createPdf?: (pages: LabelPdfPage[]) => Promise<LabelPdfDocument | null>
     getIndividualPages?: () => HTMLElement[]
     getTranslation?: (key: string, fallback: string) => string
+    pdfPreview?: TemporaryPdfPreviewController
     prepare?: () => Promise<void>
     pngName?: (item: number, index: number, total: number) => string
+    withPdfPreview?: boolean
   } = {},
 ) {
   document.body.innerHTML = `
@@ -302,6 +370,7 @@ function bindCollectionOutputs(
     <button id="aml">Export AML</button>
     <button id="pdf">Export PDF</button>
     <input id="pdf-mode" type="checkbox">
+    ${options.withPdfPreview ? temporaryPdfPreviewMarkup() : ''}
   `
   const controls = {
     printButton: document.querySelector<HTMLButtonElement>('#print')!,
@@ -344,6 +413,7 @@ function bindCollectionOutputs(
     getTranslation: options.getTranslation ?? ((key, fallback) =>
       key === 'labelPrint.pngExportFailed' ? 'Translated PNG failure.' : fallback),
     createPdf: options.createPdf,
+    pdfPreview: options.pdfPreview,
   })
 
   return { controls, capture, prepare }
@@ -375,7 +445,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  releasePrintPdfUrls()
   vi.restoreAllMocks()
 })
 
@@ -844,61 +913,55 @@ describe('print PDF preference', () => {
 })
 
 describe('PDF output destination routing', () => {
-  it('keeps Export PDF on pdf.save()', async () => {
+  it('shows the PDF inline without embedding an unsupported auto-print action', async () => {
     const pdf = makePdfDocument()
+    const pdfPreview = makePdfPreview()
     const open = vi.spyOn(window, 'open')
+    const printButton = document.querySelector<HTMLButtonElement>('#print')!
     const actions = bindPdfOutputActions({
       pdfButton: document.querySelector('#pdf')!,
+      printButton,
       createPdf: vi.fn(async () => pdf),
       getFilename: () => 'label.pdf',
       getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
+    })
+
+    await actions.print()
+
+    expect(pdf.autoPrint).not.toHaveBeenCalled()
+    expect(pdf.output).toHaveBeenCalledWith('blob')
+    expect(pdfPreview.show).toHaveBeenCalledWith({
+      blob: expect.any(Blob),
+      filename: 'label.pdf',
+      returnFocus: printButton,
+    })
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('keeps Export PDF free of auto-print and preview side effects', async () => {
+    const pdf = makePdfDocument()
+    const pdfPreview = makePdfPreview()
+    const actions = bindPdfOutputActions({
+      pdfButton: document.querySelector('#pdf')!,
+      printButton: document.querySelector('#print')!,
+      createPdf: vi.fn(async () => pdf),
+      getFilename: () => 'label.pdf',
+      getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
     })
 
     await actions.download()
 
     expect(pdf.save).toHaveBeenCalledWith('label.pdf')
+    expect(pdf.autoPrint).not.toHaveBeenCalled()
     expect(pdf.output).not.toHaveBeenCalled()
-    expect(open).not.toHaveBeenCalled()
-    expect(URL.createObjectURL).not.toHaveBeenCalled()
-  })
-
-  it('opens the tab before asynchronous PDF creation resolves', async () => {
-    const pdf = makePdfDocument()
-    const { popup, replace } = makePopup()
-    const open = vi.spyOn(window, 'open').mockReturnValue(popup)
-    let resolvePdf!: (value: LabelPdfDocument) => void
-    const pendingPdf = new Promise<LabelPdfDocument>(
-      resolve => {
-        resolvePdf = resolve
-      },
-    )
-    const actions = bindPdfOutputActions({
-      pdfButton: document.querySelector('#pdf')!,
-      createPdf: vi.fn(() => pendingPdf),
-      getFilename: () => 'label.pdf',
-      getTranslation: (_key, fallback) => fallback,
-    })
-
-    const printPromise = actions.print()
-
-    expect(open).toHaveBeenCalledWith('', '_blank')
-    expect(replace).not.toHaveBeenCalled()
-
-    resolvePdf(pdf)
-    await printPromise
-
-    expect(pdf.save).not.toHaveBeenCalled()
-    expect(pdf.output).toHaveBeenCalledWith('blob')
-    expect(URL.createObjectURL).toHaveBeenCalledOnce()
-    expect(replace).toHaveBeenCalledWith(
-      'blob:filaman-print-pdf',
-    )
+    expect(pdfPreview.show).not.toHaveBeenCalled()
   })
 
   it('does not use either browser HTML print API', async () => {
     const pdf = makePdfDocument()
-    const { popup } = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const pdfPreview = makePdfPreview()
     const windowPrint = vi
       .spyOn(window, 'print')
       .mockImplementation(() => undefined)
@@ -909,9 +972,11 @@ describe('PDF output destination routing', () => {
     })
     const actions = bindPdfOutputActions({
       pdfButton: document.querySelector('#pdf')!,
+      printButton: document.querySelector('#print')!,
       createPdf: vi.fn(async () => pdf),
       getFilename: () => 'label.pdf',
       getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
     })
 
     await actions.print()
@@ -920,129 +985,83 @@ describe('PDF output destination routing', () => {
     expect(execCommand).not.toHaveBeenCalled()
   })
 
-  it('reports a blocked PDF viewer without downloading', async () => {
-    const pdf = makePdfDocument()
-    vi.spyOn(window, 'open').mockReturnValue(null)
+  it('does nothing when PDF creation returns null', async () => {
+    const pdfPreview = makePdfPreview()
     const alert = vi
       .spyOn(window, 'alert')
       .mockImplementation(() => undefined)
-    const createPdf = vi.fn(async () => pdf)
     const actions = bindPdfOutputActions({
       pdfButton: document.querySelector('#pdf')!,
-      createPdf,
-      getFilename: () => 'label.pdf',
-      getTranslation: (_key, fallback) => fallback,
-    })
-
-    await actions.print()
-
-    expect(alert).toHaveBeenCalledWith(
-      'Allow pop-ups to open the print PDF.',
-    )
-    expect(createPdf).not.toHaveBeenCalled()
-    expect(pdf.save).not.toHaveBeenCalled()
-    expect(pdf.output).not.toHaveBeenCalled()
-  })
-
-  it('closes the temporary tab when PDF creation fails', async () => {
-    const { popup, close } = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup)
-    const alert = vi
-      .spyOn(window, 'alert')
-      .mockImplementation(() => undefined)
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const actions = bindPdfOutputActions({
-      pdfButton: document.querySelector('#pdf')!,
-      createPdf: vi.fn(async () => {
-        throw new Error('capture failed')
-      }),
-      getFilename: () => 'label.pdf',
-      getTranslation: (_key, fallback) => fallback,
-    })
-
-    await actions.print()
-
-    expect(close).toHaveBeenCalledOnce()
-    expect(alert).toHaveBeenCalledWith(
-      'Print PDF generation failed.',
-    )
-  })
-
-  it('closes a cancelled Print popup without producing output or an alert', async () => {
-    const { popup, close } = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup)
-    const alert = vi
-      .spyOn(window, 'alert')
-      .mockImplementation(() => undefined)
-    const download = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(() => undefined)
-    const actions = bindPdfOutputActions({
-      pdfButton: document.querySelector('#pdf')!,
+      printButton: document.querySelector('#print')!,
       createPdf: vi.fn(async () => null),
       getFilename: () => 'label.pdf',
       getTranslation: (_key, fallback) => fallback,
+      getPdfPreview: () => pdfPreview,
     })
 
     await actions.print()
 
-    expect(close).toHaveBeenCalledOnce()
-    expect(URL.createObjectURL).not.toHaveBeenCalled()
-    expect(download).not.toHaveBeenCalled()
+    expect(pdfPreview.show).not.toHaveBeenCalled()
     expect(alert).not.toHaveBeenCalled()
   })
 
-  it('immediately revokes a Blob URL when viewer navigation fails', async () => {
-    const pdf = makePdfDocument()
-    const { popup, close, replace } = makePopup()
-    replace.mockImplementation(() => {
-      throw new Error('navigation failed')
-    })
-    vi.spyOn(window, 'open').mockReturnValue(popup)
-    const alert = vi
-      .spyOn(window, 'alert')
-      .mockImplementation(() => undefined)
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    const actions = bindPdfOutputActions({
-      pdfButton: document.querySelector('#pdf')!,
-      createPdf: vi.fn(async () => pdf),
-      getFilename: () => 'label.pdf',
-      getTranslation: (_key, fallback) => fallback,
-    })
+  it.each(['capture', 'output', 'show'] as const)(
+    'keeps the live surface intact when %s fails',
+    async failure => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="pdf">Export PDF</button>
+        ${temporaryPdfPreviewMarkup()}
+      `
+      const pdf = makePdfDocument()
+      const pdfPreview = bindTemporaryPdfPreview({
+        root: document,
+        getTranslation: (_key, fallback) => fallback,
+        inlinePdfSupport: 'supported',
+      })
+      const liveSurface = document.querySelector<HTMLElement>(
+        '.preview-scroll-area',
+      )!
+      const previewSurface = document.querySelector<HTMLElement>(
+        '#temporary-pdf-preview',
+      )!
+      const alert = vi
+        .spyOn(window, 'alert')
+        .mockImplementation(() => undefined)
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      if (failure === 'output') {
+        pdf.output.mockImplementation(() => {
+          throw new Error('output failed')
+        })
+      }
+      if (failure === 'show') {
+        vi.mocked(URL.createObjectURL).mockImplementationOnce(() => {
+          throw new Error('show failed')
+        })
+      }
+      const actions = bindPdfOutputActions({
+        pdfButton: document.querySelector('#pdf')!,
+        printButton: document.querySelector('#print')!,
+        createPdf: vi.fn(async () => {
+          if (failure === 'capture') throw new Error('capture failed')
+          return pdf
+        }),
+        getFilename: () => 'label.pdf',
+        getTranslation: (_key, fallback) => fallback,
+        getPdfPreview: () => pdfPreview,
+      })
 
-    await actions.print()
+      await actions.print()
 
-    expect(close).toHaveBeenCalledOnce()
-    expect(alert).toHaveBeenCalledWith(
-      'Print PDF generation failed.',
-    )
-    expect(URL.revokeObjectURL).toHaveBeenCalledOnce()
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith(
-      'blob:filaman-print-pdf',
-    )
-
-    releasePrintPdfUrls()
-    expect(URL.revokeObjectURL).toHaveBeenCalledOnce()
-  })
-
-  it('revokes generated Blob URLs when the source page is released', async () => {
-    const pdf = makePdfDocument()
-    const { popup } = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup)
-    const actions = bindPdfOutputActions({
-      pdfButton: document.querySelector('#pdf')!,
-      createPdf: vi.fn(async () => pdf),
-      getFilename: () => 'label.pdf',
-      getTranslation: (_key, fallback) => fallback,
-    })
-
-    await actions.print()
-    releasePrintPdfUrls()
-
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith(
-      'blob:filaman-print-pdf',
-    )
-  })
+      expect(alert).toHaveBeenCalledWith(
+        'Print PDF generation failed.',
+      )
+      expect(liveSurface.textContent).toContain('PETG')
+      expect(liveSurface.inert).toBe(false)
+      expect(liveSurface.hasAttribute('aria-hidden')).toBe(false)
+      expect(previewSurface.hidden).toBe(true)
+    },
+  )
 })
 
 describe('single and batch PDF factory reuse', () => {
@@ -1063,18 +1082,55 @@ describe('single and batch PDF factory reuse', () => {
       const captureLabel = vi.fn(
         async () => 'data:image/png;base64,bGFiZWw=',
       )
+      const pdf = makePdfDocument()
+      const pdfPreview = makePdfPreview()
 
-      const { printButton } = bindDeferredCapture(kind, captureLabel)
+      const { printButton } = bindDeferredCapture(kind, captureLabel, {
+        createPdf: async () => pdf,
+        pdfPreview,
+      })
       printButton.click()
 
       await vi.waitFor(() => expect(windowPrint).toHaveBeenCalledOnce())
       expect(printLabelBrowserJob).toHaveBeenCalledOnce()
       expect(captureLabel).not.toHaveBeenCalled()
+      expect(pdf.autoPrint).not.toHaveBeenCalled()
+      expect(pdfPreview.show).not.toHaveBeenCalled()
       expect(open).not.toHaveBeenCalled()
     },
   )
 
-  it('locks preview-mutating controls until an output operation completes', async () => {
+  it.each(['single-label', 'batch'] as const)(
+    'routes checked %s Print through its injected PDF preview once',
+    async kind => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      const pdf = makePdfDocument()
+      const pdfPreview = makePdfPreview()
+      const { printButton, printPdfCheckbox } = bindDeferredCapture(
+        kind,
+        vi.fn(async () => 'data:image/png;base64,bGFiZWw='),
+        {
+          createPdf: async () => pdf,
+          pdfPreview,
+        },
+      )
+      printPdfCheckbox.checked = true
+
+      printButton.click()
+
+      await vi.waitFor(() => expect(pdfPreview.show).toHaveBeenCalledOnce())
+      expect(printLabelBrowserJob).not.toHaveBeenCalled()
+    },
+  )
+
+  it('locks preview mutations without changing controls to their disabled appearance', async () => {
     let finishPrepare!: () => void
     const pendingPrepare = new Promise<void>(resolve => {
       finishPrepare = resolve
@@ -1104,13 +1160,16 @@ describe('single and batch PDF factory reuse', () => {
     controls.pngButton.click()
     await Promise.resolve()
 
-    expect(mutationControls.every(control => control.disabled)).toBe(true)
+    expect(mutationControls.every(control => !control.disabled)).toBe(true)
+    expect(mutationControls.every(control => control.hasAttribute('inert'))).toBe(true)
+    expect(controls.pngButton.disabled).toBe(false)
     expect(capture).not.toHaveBeenCalled()
 
     finishPrepare()
     await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce())
     await vi.waitFor(() => {
       expect(mutationControls.every(control => !control.disabled)).toBe(true)
+      expect(mutationControls.every(control => !control.hasAttribute('inert'))).toBe(true)
     })
   })
 
@@ -1163,8 +1222,6 @@ describe('single and batch PDF factory reuse', () => {
         resolveCapture = resolve
       })
       const captureLabel = vi.fn(() => pendingCapture)
-      const popup = makePopup()
-      vi.spyOn(window, 'open').mockReturnValue(popup.popup)
       vi.spyOn(HTMLAnchorElement.prototype, 'click')
         .mockImplementation(() => undefined)
 
@@ -1181,7 +1238,7 @@ describe('single and batch PDF factory reuse', () => {
       await Promise.resolve()
 
       expect(captureLabel).toHaveBeenCalledOnce()
-      expect(buttons.every(button => button.disabled)).toBe(true)
+      expect(buttons.every(button => !button.disabled)).toBe(true)
 
       resolveCapture(`data:image/png;base64,${kind}`)
       await vi.waitFor(() => {
@@ -1193,6 +1250,51 @@ describe('single and batch PDF factory reuse', () => {
         'Export AML',
         'Export PDF',
       ])
+    },
+  )
+
+  it.each(['png', 'aml', 'pdf'] as const)(
+    'keeps output button labels stable during %s export',
+    async action => {
+      document.body.innerHTML = `
+        <button id="print">Print</button>
+        <button id="png">Export PNG</button>
+        <button id="aml">Export AML</button>
+        <button id="pdf">Export PDF</button>
+        <input id="pdf-mode" type="checkbox">
+        <div id="label"></div>
+      `
+      let resolveCapture!: (value: string) => void
+      const pendingCapture = new Promise<string>(resolve => {
+        resolveCapture = resolve
+      })
+      const captureLabel = vi.fn(() => pendingCapture)
+      vi.spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined)
+
+      const { printButton, pngButton, amlButton, pdfButton } =
+        bindDeferredCapture('single-label', captureLabel)
+      const buttons = [printButton, pngButton, amlButton, pdfButton]
+      const actionButton = { png: pngButton, aml: amlButton, pdf: pdfButton }[
+        action
+      ]
+
+      actionButton.click()
+      await vi.waitFor(() => {
+        expect(captureLabel).toHaveBeenCalledOnce()
+      })
+
+      expect(buttons.map(button => button.textContent)).toEqual([
+        'Print',
+        'Export PNG',
+        'Export AML',
+        'Export PDF',
+      ])
+
+      resolveCapture(`data:image/png;base64,${action}`)
+      await vi.waitFor(() => {
+        expect(buttons.every(button => !button.disabled)).toBe(true)
+      })
     },
   )
 
@@ -1250,7 +1352,8 @@ describe('single and batch PDF factory reuse', () => {
       resolveCapture('data:image/png;base64,bGFiZWw=')
 
       await vi.waitFor(() => {
-        expect(pdfButton.textContent).toBe('Export PDF')
+        expect(printButton.disabled).toBe(false)
+        expect(pdfButton.disabled).toBe(false)
       })
       const finalSheetMode = finalMode === 'sheet'
       expect(pngButton.disabled).toBe(finalSheetMode)
@@ -1613,8 +1716,7 @@ describe('single and batch PDF factory reuse', () => {
       .mockResolvedValueOnce(firstPdf)
       .mockResolvedValueOnce(secondPdf)
     const label = document.querySelector('#label') as HTMLElement
-    const popup = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup.popup)
+    const pdfPreview = makePdfPreview()
 
     bindSingleCollectionOutputs({
       printButton: document.querySelector('#print')!,
@@ -1632,6 +1734,7 @@ describe('single and batch PDF factory reuse', () => {
         async () => 'data:image/png;base64,single',
       ),
       browserPrint: makeBrowserPrintBinding(label),
+      pdfPreview,
       createPdf: async (pages, defaultCreate) => {
         expect(pages).toEqual([
           {
@@ -1672,8 +1775,7 @@ describe('single and batch PDF factory reuse', () => {
     const firstPdf = makePdfDocument()
     const secondPdf = makePdfDocument()
     const builtPages: unknown[] = []
-    const popup = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup.popup)
+    const pdfPreview = makePdfPreview()
 
     bindBatchCollectionOutputs({
       entities: () => [{ id: 1 }, { id: 2 }],
@@ -1697,6 +1799,7 @@ describe('single and batch PDF factory reuse', () => {
       zipEntryName: entity => `label-${entity.id}.png`,
       pdfName: () => 'batch-labels.pdf',
       browserPrint: makeBrowserPrintBinding(),
+      pdfPreview,
       createPdf: async (pages, defaultCreate) => {
         builtPages.push(structuredClone(pages))
         await defaultCreate()
@@ -1900,9 +2003,8 @@ describe('collection output binding', () => {
     expect(open).not.toHaveBeenCalled()
   })
 
-  it('reports a translated temporary-PDF failure and closes its tab when every partial batch capture fails', async () => {
-    const { popup, close, replace } = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup)
+  it('reports a translated temporary-PDF failure without replacing the live surface when every partial batch capture fails', async () => {
+    const pdfPreview = makePdfPreview()
     const alert = vi.spyOn(window, 'alert')
       .mockImplementation(() => undefined)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -1917,6 +2019,7 @@ describe('collection output binding', () => {
         key === 'labelPrint.printPdfFailed'
           ? 'Translated temporary-PDF failure.'
           : fallback,
+      pdfPreview,
     })
     controls.printPdfCheckbox.checked = true
 
@@ -1925,8 +2028,7 @@ describe('collection output binding', () => {
     await vi.waitFor(() => {
       expect(alert).toHaveBeenCalledWith('Translated temporary-PDF failure.')
     })
-    expect(close).toHaveBeenCalledOnce()
-    expect(replace).not.toHaveBeenCalled()
+    expect(pdfPreview.show).not.toHaveBeenCalled()
     expect(download).not.toHaveBeenCalled()
     expect(URL.createObjectURL).not.toHaveBeenCalled()
   })
@@ -1952,18 +2054,37 @@ describe('collection output binding', () => {
       .toEqual([page])
   })
 
-  it('uses the shared PDF action when temporary-PDF printing is checked', async () => {
+  it('shows checked Print in the real inline preview while preserving the live label', async () => {
     const pdf = makePdfDocument()
-    const { popup } = makePopup()
-    vi.spyOn(window, 'open').mockReturnValue(popup)
+    const open = vi.spyOn(window, 'open')
     const { controls } = bindCollectionOutputs([1], {
       createPdf: async () => pdf,
+      withPdfPreview: true,
     })
     controls.printPdfCheckbox.checked = true
 
     controls.printButton.click()
 
-    await vi.waitFor(() => expect(pdf.output).toHaveBeenCalledWith('blob'))
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>('#temporary-pdf-preview')!.hidden)
+        .toBe(false)
+    })
+
+    const object = document.querySelector<HTMLObjectElement>(
+      '#temporary-pdf-content object',
+    )!
+    const liveSurface = document.querySelector<HTMLElement>(
+      '.preview-scroll-area',
+    )!
+    expect(pdf.autoPrint).not.toHaveBeenCalled()
+    expect(object.type).toBe('application/pdf')
+    expect(object.data).toBe('blob:filaman-print-pdf')
+    expect(liveSurface.textContent).toContain('PETG')
+    expect(liveSurface.inert).toBe(true)
+    expect(liveSurface.getAttribute('aria-hidden')).toBe('true')
+    expect(document.querySelector('.preview-container')?.classList)
+      .toContain('is-temporary-pdf-preview-active')
+    expect(open).not.toHaveBeenCalled()
     expect(printLabelBrowserJob).not.toHaveBeenCalled()
   })
 
@@ -1978,8 +2099,9 @@ describe('collection output binding', () => {
       .mockImplementation(() => undefined)
 
     controls.pngButton.click()
-    await vi.waitFor(() => expect(controls.pngButton.disabled).toBe(true))
+    await vi.waitFor(() => expect(resolveCapture).toBeTypeOf('function'))
     controls.pngButton.setAttribute('aria-disabled', 'true')
+    controls.pngButton.disabled = true
     resolveCapture('data:image/png;base64,aXRlbS01')
 
     await vi.waitFor(() => expect(controls.pngButton.disabled).toBe(true))

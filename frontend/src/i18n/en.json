@@ -1524,7 +1524,11 @@
     "preparingBrowserPrint": "Preparing browser print…",
     "browserPrintFailed": "Browser printing failed.",
     "printHelpTitle": "Printing issues?",
-    "preparingPrintPdf": "Preparing print PDF…",
+    "temporaryPdfPreviewTitle": "Temporary print PDF preview",
+    "backToLabelPreview": "Back to label preview",
+    "openPdfForPrinting": "Open PDF for printing",
+    "downloadPdf": "Download PDF",
+    "inlinePdfUnsupported": "This browser cannot display the temporary PDF in the preview. Open or download the PDF to print it.",
     "printPopupBlocked": "Allow pop-ups to open the print PDF.",
     "printPdfFailed": "Print PDF generation failed.",
     "printHelpIntro": "Normal browser printing is used by default. It does not create or save a PDF.",
@@ -1532,9 +1536,9 @@
     "printHelpBrowserSystemDialog": "Use the OS or system print dialog to set printer-specific paper size, orientation, rotation, and alignment.",
     "printHelpPdfFallbackPrefix": "If browser printing is blank, clipped, offset, rotated, or the wrong size, enable",
     "printHelpPdfFallbackSuffix": ".",
-    "printHelpPdfOpenOnly": "FilaMan opens the temporary PDF only for printing and does not save it.",
+    "printHelpPdfOpenOnly": "FilaMan displays the temporary PDF in the preview pane for printing and does not save it.",
     "printHelpPdfSystemDialog": "Even in temporary-PDF mode, you may need the OS or system print dialog for consistent, repeatable results.",
-    "printHelpPdfDownloadSetting": "Depending on your browser’s PDF-download setting, it may still download a copy."
+    "printHelpPdfDownloadSetting": "If your browser cannot display PDFs in the preview, use Open PDF for printing or Download PDF."
   },
   "pluginPage": {
     "frameTitle": "Plugin page",

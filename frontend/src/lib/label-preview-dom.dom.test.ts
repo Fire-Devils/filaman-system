@@ -20,6 +20,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
 
@@ -61,6 +62,23 @@ describe('bindFixedPreviewToolbar', () => {
     expect(toolbar.style.top).toBe('')
     expect(toolbar.style.left).toBe('')
     expect(toolbar.style.transform).toBe('')
+  })
+
+  it('centers the toolbar within the visible part of a clipped preview', () => {
+    const previewRoot = document.createElement('section')
+    const toolbar = document.createElement('div')
+    toolbar.className = 'preview-zoom-bar'
+    previewRoot.appendChild(toolbar)
+    document.body.appendChild(previewRoot)
+    vi.stubGlobal('innerWidth', 800)
+    Object.defineProperty(previewRoot, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 20, left: 700, right: 1100, width: 400 }),
+    })
+
+    bindFixedPreviewToolbar({ previewRoot })
+
+    expect(toolbar.style.left).toBe('750px')
   })
 
   it('leaves the toolbar untouched when its caller is inactive', () => {

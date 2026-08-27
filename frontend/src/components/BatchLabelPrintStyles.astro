@@ -1,10 +1,10 @@
 <style is:global>
-  .print-page { overflow: hidden; }
-  .preview-container { flex: 1; overflow: auto; padding: 40px; background: var(--bg-soft); display: flex; flex-direction: column; align-items: center; gap: 24px; }
-  .preview-container.is-label-sheet-mode { align-items: flex-start; }
-  .label-count { color: var(--text-muted); font-size: 0.85rem; }
-  .preview-container.is-label-sheet-mode .label-count { align-self: flex-start; left: 50%; position: sticky; transform: translateX(-50%); }
-  .preview-zoom-bar {
+  .print-page-batch { overflow: hidden; }
+  .print-page-batch .preview-container { flex: 1; overflow: auto; padding: 40px; background: var(--bg-soft); display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .print-page-batch .preview-container.is-label-sheet-mode { align-items: flex-start; }
+  .print-page-batch .label-count { color: var(--text-muted); font-size: 0.85rem; }
+  .print-page-batch .preview-container.is-label-sheet-mode .label-count { align-self: flex-start; left: 50%; position: sticky; transform: translateX(-50%); }
+  .print-page-batch .preview-zoom-bar {
     position: sticky; top: 0; left: 50%; z-index: 10;
     align-self: center;
     transform: translateX(-50%);
@@ -13,21 +13,21 @@
     background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
     box-shadow: 0 8px 24px rgba(0,0,0,0.12); backdrop-filter: blur(10px);
   }
-  .preview-container.is-label-sheet-mode .preview-zoom-bar { align-self: flex-start; }
-  .preview-zoom-btn { width: 28px; height: 28px; border-radius: var(--radius-sm); font: inherit; line-height: 1; }
-  .preview-zoom-btn:hover { color: var(--accent); }
-  .preview-zoom-slider { width: 150px; }
-  .preview-zoom-label { min-width: 44px; font-size: 0.8rem; font-weight: 600; }
-  .label-preview {
+  .print-page-batch .preview-container.is-label-sheet-mode .preview-zoom-bar { align-self: flex-start; }
+  .print-page-batch .preview-zoom-btn { width: 28px; height: 28px; border-radius: var(--radius-sm); font: inherit; line-height: 1; }
+  .print-page-batch .preview-zoom-btn:hover { color: var(--accent); }
+  .print-page-batch .preview-zoom-slider { width: 150px; }
+  .print-page-batch .preview-zoom-label { min-width: 44px; font-size: 0.8rem; font-weight: 600; }
+  .print-page-batch .label-preview {
     background: white !important;
     box-shadow: 0 4px 24px rgba(0,0,0,0.18);
     color: black !important;
   }
-  .label-mfr-text,
-  .label-designation,
-  .label-color-name,
-  .label-hex-code,
-  .label-spool-id,
-  .label-id-corner { color: black !important; }
+  .print-page-batch .label-mfr-text,
+  .print-page-batch .label-designation,
+  .print-page-batch .label-color-name,
+  .print-page-batch .label-hex-code,
+  .print-page-batch .label-spool-id,
+  .print-page-batch .label-id-corner { color: black !important; }
 
 </style>

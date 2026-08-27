@@ -1525,7 +1525,11 @@
     "preparingBrowserPrint": "Browserdruck wird vorbereitet…",
     "browserPrintFailed": "Browserdruck fehlgeschlagen.",
     "printHelpTitle": "Druckprobleme?",
-    "preparingPrintPdf": "Druck-PDF wird vorbereitet…",
+    "temporaryPdfPreviewTitle": "Vorschau der temporären Druck-PDF",
+    "backToLabelPreview": "Zurück zur Labelvorschau",
+    "openPdfForPrinting": "PDF zum Drucken öffnen",
+    "downloadPdf": "PDF herunterladen",
+    "inlinePdfUnsupported": "Dieser Browser kann die temporäre PDF nicht in der Vorschau anzeigen. Öffnen oder laden Sie die PDF herunter, um sie zu drucken.",
     "printPopupBlocked": "Pop-ups zulassen, damit das Druck-PDF geöffnet werden kann.",
     "printPdfFailed": "Das Druck-PDF konnte nicht erstellt werden.",
     "printHelpIntro": "Standardmäßig wird die normale Druckfunktion des Browsers verwendet. Dabei wird keine PDF-Datei erstellt oder gespeichert.",
@@ -1533,9 +1537,9 @@
     "printHelpBrowserSystemDialog": "Den Druckdialog des Betriebssystems verwenden, um druckerspezifisches Papierformat, Ausrichtung, Drehung und Positionierung einzustellen.",
     "printHelpPdfFallbackPrefix": "Wenn der Browserdruck leer, abgeschnitten, verschoben, gedreht oder in falscher Größe ausgegeben wird,",
     "printHelpPdfFallbackSuffix": " aktivieren.",
-    "printHelpPdfOpenOnly": "FilaMan öffnet die temporäre PDF nur zum Drucken und speichert sie nicht.",
+    "printHelpPdfOpenOnly": "FilaMan zeigt die temporäre PDF zum Drucken im Vorschaufenster an und speichert sie nicht.",
     "printHelpPdfSystemDialog": "Auch im temporären PDF-Modus kann der Druckdialog des Betriebssystems für zuverlässige, wiederholbare Ergebnisse nötig sein.",
-    "printHelpPdfDownloadSetting": "Je nach PDF-Download-Einstellung des Browsers kann dennoch eine Kopie heruntergeladen werden."
+    "printHelpPdfDownloadSetting": "Wenn der Browser PDFs nicht in der Vorschau anzeigen kann, verwenden Sie ‚PDF zum Drucken öffnen‘ oder ‚PDF herunterladen‘."
   },
   "pluginPage": {
     "frameTitle": "Plugin-Seite",

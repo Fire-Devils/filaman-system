@@ -9,6 +9,7 @@ import PrintSidebar from './PrintSidebar.astro'
 import PreviewZoomBar from './PreviewZoomBar.astro'
 import SingleLabelPrintStyles from './SingleLabelPrintStyles.astro'
 import StandardLabelSettingsPanel from './StandardLabelSettingsPanel.astro'
+import TemporaryPdfPreview from './TemporaryPdfPreview.astro'
 
 interface Props {
   title: string
@@ -51,7 +52,7 @@ const {
     ? <SingleLabelPrintStyles />
     : <BatchLabelPrintStyles />}
 
-  <div class="print-page">
+  <div class={`print-page print-page-${variant}`}>
     <PrintSidebar
       backHref={backHref}
       backLabel={backLabel}
@@ -86,11 +87,13 @@ const {
         <div class="preview-scroll-area">
           <slot name="preview" />
         </div>
+        <TemporaryPdfPreview />
       </main>
     ) : (
       <main class="preview-container" id="preview-container">
         <PreviewZoomBar />
         <slot name="preview" />
+        <TemporaryPdfPreview />
       </main>
     )}
   </div>

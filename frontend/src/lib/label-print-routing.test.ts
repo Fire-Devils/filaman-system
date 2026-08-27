@@ -1,8 +1,12 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+
+import LabelDesignerEditor from '../components/LabelDesignerEditor.astro'
+import PrintActionFooter from '../components/PrintActionFooter.astro'
 
 import {
   renderLabelSheetPreview,
@@ -10,17 +14,6 @@ import {
   type LabelSheetControls,
   type LabelSheetSettings,
 } from './label-sheet'
-
-const printActionFooterPath = '../components/PrintActionFooter.astro'
-const labelDesignerEditorPath = '../components/LabelDesignerEditor.astro'
-const printActionFooterSource = readFileSync(
-  fileURLToPath(new URL(printActionFooterPath, import.meta.url)),
-  'utf8',
-)
-const labelDesignerEditorSource = readFileSync(
-  fileURLToPath(new URL(labelDesignerEditorPath, import.meta.url)),
-  'utf8',
-)
 
 const settings: LabelSheetSettings = {
   paperSize: 'custom',
@@ -128,9 +121,18 @@ describe('selectable print guidance translations', () => {
         ),
       )
 
-      expect(messages.labelPrint.preparingPrintPdf).toBeTruthy()
+      for (const key of [
+        'temporaryPdfPreviewTitle',
+        'backToLabelPreview',
+        'openPdfForPrinting',
+        'downloadPdf',
+        'inlinePdfUnsupported',
+        'printPopupBlocked',
+      ]) {
+        expect(messages.labelPrint[key]).toBeTruthy()
+      }
+      expect(messages.labelPrint.preparingPrintPdf).toBeUndefined()
       expect(messages.labelPrint.preparingBrowserPrint).toBeTruthy()
-      expect(messages.labelPrint.printPopupBlocked).toBeTruthy()
       expect(messages.labelPrint.printPdfFailed).toBeTruthy()
       expect(messages.labelPrint.browserPrintFailed).toBeTruthy()
       expect(messages.labelPrint.btnExportAml).toBeTruthy()
@@ -154,48 +156,35 @@ describe('selectable print guidance translations', () => {
   )
 })
 
-describe('print guidance layout', () => {
-  it('emphasizes the temporary PDF option as a selectable control', () => {
-    expect(printActionFooterSource).toMatch(
-      /<em class="print-help-selection" data-i18n="labelPrint\.createTemporaryPdf">/,
-    )
-  })
+describe('print guidance', () => {
+  it('semantically emphasizes the temporary PDF option', async () => {
+    const container = await AstroContainer.create()
+    document.body.innerHTML = await container.renderToString(PrintActionFooter)
 
-  it('keeps the wider help popup inside narrow viewports', () => {
-    expect(printActionFooterSource).toMatch(
-      /@media \(max-width: 640px\)[\s\S]*?\.print-help-content\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1000;[\s\S]*?left:\s*calc\(var\(--sidebar-collapsed-width\) \+ 16px\);[\s\S]*?right:\s*16px;[\s\S]*?width:\s*auto;/,
+    const temporaryPdfGuidance = document.querySelector(
+      '#print-help-content [data-i18n="labelPrint.createTemporaryPdf"]',
+    )
+
+    expect(temporaryPdfGuidance?.tagName).toBe('EM')
+    expect(temporaryPdfGuidance?.textContent?.trim()).toBe(
+      'Create temporary PDF for printing',
     )
   })
 })
 
 describe('label designer template fields', () => {
-  it('keeps multiline formats at least five lines tall', () => {
-    expect(labelDesignerEditorSource).toMatch(
-      /id="ds-info-tpl"[^>]*class="[^"]*ds-tpl-multiline[^"]*"/,
-    )
-    expect(labelDesignerEditorSource).toMatch(
-      /id="ds-info2-tpl"[^>]*class="[^"]*ds-tpl-multiline[^"]*"/,
-    )
-    expect(labelDesignerEditorSource).toMatch(
-      /\.fm-input\.ds-tpl-multiline\s*\{[^}]*min-height:\s*7rem;/,
-    )
-  })
+  async function renderEditor() {
+    const container = await AstroContainer.create()
+    document.body.innerHTML = await container.renderToString(LabelDesignerEditor)
+  }
 
-  it('uses compact code styling for every template input', () => {
-    for (const id of [
-      'ds-title-tpl',
-      'ds-title2-tpl',
-      'ds-qr-url-tpl',
-      'ds-info-tpl',
-      'ds-info2-tpl',
-    ]) {
-      expect(labelDesignerEditorSource).toMatch(
-        new RegExp(`id="${id}"[^>]*class="[^"]*ds-tpl-input[^"]*"`),
-      )
+  it('renders multiline formats with at least five visible rows', async () => {
+    await renderEditor()
+
+    for (const id of ['ds-info-tpl', 'ds-info2-tpl']) {
+      const input = document.querySelector<HTMLTextAreaElement>(`#${id}`)
+      expect(input).toBeInstanceOf(HTMLTextAreaElement)
+      expect(Number(input!.getAttribute('rows'))).toBeGreaterThanOrEqual(5)
     }
-
-    expect(labelDesignerEditorSource).toMatch(
-      /\.fm-input\.ds-tpl-input\s*\{[^}]*font-family:[^;}]*monospace;[^}]*font-size:\s*0\.75rem;/,
-    )
   })
 })

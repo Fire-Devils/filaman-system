@@ -48,6 +48,7 @@ export function getStaticPaths() {
     appendLabelSettingsCheckbox,
     buildLabelExportBaseName,
     captureLabelSettings,
+    createPreviewRenderCoordinator,
     getLabelOutputControls,
     getLabelSettingsControls,
     getStandardLabelSettings,
@@ -196,6 +197,7 @@ export function getStaticPaths() {
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
   let activePreviewTab: PrintDesignerTab = readPrintDesignerTab(ACTIVE_TAB_KEY)
   let previewRenderVersion = 0
+  const previewRenders = createPreviewRenderCoordinator()
 
   function beginPreviewRender(tab: 'print' | 'designer') {
     activePreviewTab = tab
@@ -471,7 +473,12 @@ export function getStaticPaths() {
     })
   }
 
-  async function updatePreview(isStale = () => false) {
+  function updatePreview(isStale = () => false) {
+    if (activePreviewTab !== 'print') return Promise.resolve()
+    return previewRenders.run(() => renderStandardPreview(isStale))
+  }
+
+  async function renderStandardPreview(isStale = () => false) {
     if (activePreviewTab !== 'print') return
     if (isStale() || activePreviewTab !== 'print') return
 
@@ -500,7 +507,12 @@ export function getStaticPaths() {
 
   // ─── Designer preview ─────────────────────────────────────────────────────
 
-  async function updateDesignerPreview(isStale = () => false) {
+  function updateDesignerPreview(isStale = () => false) {
+    if (activePreviewTab !== 'designer') return Promise.resolve()
+    return previewRenders.run(() => renderDesignerPreview(isStale))
+  }
+
+  async function renderDesignerPreview(isStale = () => false) {
     if (activePreviewTab !== 'designer') return
     if (isStale() || activePreviewTab !== 'designer') return
 
@@ -536,10 +548,7 @@ export function getStaticPaths() {
     controls: outputControls,
     collection: {
       getItems: () => [labelPreview],
-      prepare: async () => {
-        if (activePreviewTab === 'designer') await updateDesignerPreview()
-        else await updatePreview()
-      },
+      prepare: () => previewRenders.settle(),
       capture: labelElement => captureLabelElement(labelElement, {
         pixelRatio: LABEL_EXPORT_PIXEL_RATIO,
         resetTransform: true,
