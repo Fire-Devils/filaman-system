@@ -391,8 +391,67 @@ class TestWeighSpool:
         await db_session.refresh(spool)
         assert spool.remaining_weight_g == 250.0
 
+    @pytest.mark.asyncio
+    async def test_weigh_spool_auto_assign_proxies_to_primary(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        await _create_device(db_session, device_code="ABC123", auto_assign_enabled=True)
+        token, _ = await _register_device(client, "ABC123", csrf_token)
 
-class TestLocateSpool:
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id, default_spool_weight_g=250.0)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id, empty_spool_weight_g=None)
+
+        proxied = {
+            "remaining_weight_g": 250.0,
+            "spool_id": spool.id,
+            "filament_name": "Test PLA",
+        }
+
+        with patch("app.api.v1.devices._is_primary_worker", return_value=False), patch(
+            "app.api.v1.printers._proxy_to_primary",
+            new=AsyncMock(return_value=proxied),
+        ) as mock_proxy:
+            response = await client.post(
+                "/api/v1/devices/scale/weight",
+                json={"spool_id": spool.id, "measured_weight_g": 500.0},
+                headers={
+                    **_device_headers(token),
+                    "X-CSRF-Token": csrf_token,
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json() == proxied
+        mock_proxy.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_weigh_spool_auto_assign_rejects_proxied_hop_on_secondary(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        await _create_device(db_session, device_code="ABC123", auto_assign_enabled=True)
+        token, _ = await _register_device(client, "ABC123", csrf_token)
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+
+        with patch("app.api.v1.devices._is_primary_worker", return_value=False):
+            response = await client.post(
+                "/api/v1/devices/scale/weight",
+                json={"spool_id": spool.id, "measured_weight_g": 500.0},
+                headers={
+                    **_device_headers(token),
+                    "X-CSRF-Token": csrf_token,
+                    "x-filaman-primary-hop": "1",
+                },
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "primary_worker_required"
+
     @pytest.mark.asyncio
     async def test_locate_spool_success(self, auth_client, db_session):
         client, csrf_token = auth_client
