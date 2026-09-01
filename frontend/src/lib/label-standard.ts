@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 import { LABEL_EXPORT_DPI } from './label-export'
-import { updateLabelPrintPageStyle } from './label-print-style'
 import {
   buildFilamentSwatchBackground,
   getFilamentSwatchColors,
 } from './label-template'
+import { buildSpoolLabelDataFromApi } from './spool-label-data'
 
 const MM_PER_INCH = 25.4
 const MIN_QR_PIXEL_SIZE = 256
@@ -55,8 +55,6 @@ export interface RenderStandardLabelOptions {
   settings: StandardLabelSettings
   logoUrl?: string | null
   isStale?: () => boolean
-  updatePageStyle?: boolean
-  pageStyleId?: string
 }
 
 function toStringValue(value: unknown) {
@@ -140,39 +138,19 @@ export function buildStandardLabelDataFromFlat(data: {
   }
 }
 
-function getApiFilamentColors(filament: any): any[] {
-  const list = Array.isArray(filament?.filament_colors)
-    ? filament.filament_colors
-    : filament?.colors
-  return Array.isArray(list) ? list : []
-}
-
-function getFilamentColorHexes(filament: any): string {
-  return getApiFilamentColors(filament)
-    .map(color => color?.color?.hex_code)
-    .filter(Boolean)
-    .join(', ')
-}
-
 export function buildStandardLabelDataFromApiSpool(spool: any, extraFields: StandardExtraField[] = []): StandardLabelData {
-  const filament = spool?.filament ?? {}
-  const colorLists = [filament?.filament_colors, filament?.colors]
-  const firstColor = colorLists.find(list => Array.isArray(list) && list.length > 0)?.[0] ?? {}
+  const data = buildSpoolLabelDataFromApi(spool)
   return buildStandardLabelDataFromFlat({
-    id: spool?.id ?? '',
-    designation: filament.designation,
-    manufacturer: filament.manufacturer?.name,
-    material: filament.material_type,
-    colorName: firstColor?.display_name_override || filament.manufacturer_color_name || firstColor?.color?.name,
-    hexCode: firstColor?.color?.hex_code,
-    colorHexes: getFilamentColorHexes(filament),
-    multiColorStyle: filament.multi_color_style,
+    id: data.id,
+    designation: data.designation,
+    manufacturer: data.manufacturer,
+    material: data.type,
+    colorName: data.color,
+    hexCode: data.hex_code,
+    colorHexes: data.color_hexes,
+    multiColorStyle: data.multi_color_style,
     extraFields,
   })
-}
-
-export function updateStandardLabelPageStyle(widthMm: number, heightMm: number, pageStyleId = 'page-style') {
-  updateLabelPrintPageStyle({ widthMm, heightMm, styleId: pageStyleId })
 }
 
 export async function renderStandardLabel(options: RenderStandardLabelOptions) {
@@ -305,7 +283,4 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     }
   }
 
-  if (options.updatePageStyle !== false) {
-    updateStandardLabelPageStyle(widthMm, heightMm, options.pageStyleId)
-  }
 }

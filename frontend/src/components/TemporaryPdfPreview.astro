@@ -1,0 +1,106 @@
+<section
+  id="temporary-pdf-preview"
+  class="temporary-pdf-preview"
+  hidden
+  tabindex="-1"
+  aria-label="Temporary print PDF preview"
+  data-i18n-aria-label="labelPrint.temporaryPdfPreviewTitle"
+>
+  <div class="temporary-pdf-toolbar">
+    <button
+      id="temporary-pdf-back"
+      class="fm-btn fm-btn-outline temporary-pdf-action"
+      type="button"
+      aria-label="Back to label preview"
+      data-i18n-aria-label="labelPrint.backToLabelPreview"
+      title="Back to label preview"
+      data-i18n-title="labelPrint.backToLabelPreview"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6" /></svg>
+      <span data-i18n="labelPrint.backToLabelPreview">Back to label preview</span>
+    </button>
+    <button
+      id="temporary-pdf-open"
+      class="fm-btn fm-btn-primary temporary-pdf-action temporary-pdf-icon-action"
+      type="button"
+      aria-label="Open PDF for printing"
+      data-i18n-aria-label="labelPrint.openPdfForPrinting"
+      title="Open PDF for printing"
+      data-i18n-title="labelPrint.openPdfForPrinting"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
+    </button>
+    <a
+      id="temporary-pdf-download"
+      class="fm-btn fm-btn-outline temporary-pdf-action temporary-pdf-icon-action"
+      aria-label="Download PDF"
+      data-i18n-aria-label="labelPrint.downloadPdf"
+      title="Download PDF"
+      data-i18n-title="labelPrint.downloadPdf"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+    </a>
+  </div>
+  <div id="temporary-pdf-content" class="temporary-pdf-content"></div>
+  <div
+    id="temporary-pdf-unsupported"
+    class="temporary-pdf-unsupported"
+    hidden
+    data-i18n="labelPrint.inlinePdfUnsupported"
+  >This browser cannot display the temporary PDF in the preview. Open or download the PDF to print it.</div>
+</section>
+
+<style is:global>
+  .preview-container { position: relative; }
+  .preview-container.is-temporary-pdf-preview-active { overflow: hidden !important; }
+  .preview-container.is-temporary-pdf-preview-active > :not(.temporary-pdf-preview) {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .temporary-pdf-preview {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-soft);
+  }
+  .temporary-pdf-preview[hidden] { display: none !important; }
+  .temporary-pdf-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 4px 6px;
+  }
+  .temporary-pdf-toolbar .temporary-pdf-action {
+    min-width: 42px;
+    min-height: 42px;
+    padding: 4px 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    line-height: 1;
+    flex: 0 0 auto;
+  }
+  .temporary-pdf-toolbar .temporary-pdf-icon-action {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+  }
+  .temporary-pdf-toolbar svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: 0 0 auto;
+  }
+  .temporary-pdf-content { flex: 1; min-height: 0; }
+  .temporary-pdf-content object { width: 100%; height: 100%; border: 0; }
+</style>

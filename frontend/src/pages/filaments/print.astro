@@ -1,52 +1,28 @@
 ---
-import Layout from '../../layouts/Layout.astro'
-import LabelDesignerEditor from '../../components/LabelDesignerEditor.astro'
-import LabelSheetOutputSettings from '../../components/LabelSheetOutputSettings.astro'
-import PrintActionFooter from '../../components/PrintActionFooter.astro'
-import PrintSidebar from '../../components/PrintSidebar.astro'
-import PreviewZoomBar from '../../components/PreviewZoomBar.astro'
-import StandardLabelSettingsPanel from '../../components/StandardLabelSettingsPanel.astro'
-import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
+import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 ---
 
-<Layout title="FilaMan - Print Filament Labels">
-  <BatchLabelPrintStyles />
-
-  <div class="print-page">
-    <PrintSidebar
-      backHref="/filaments"
-      backLabel="Back to Filaments"
-      backLabelId="btn-back-label"
-      backI18n="filaments.backToFilaments"
-      standardI18n="labelPrint.standardLabel"
-      designerI18n="spools.labelDesigner"
-    >
-      <StandardLabelSettingsPanel
-        idLabelI18n="filaments.showFilamentId"
-        idFallback="Filament ID"
-        extraFieldsMode="batch"
-      />
-
-      <LabelDesignerEditor />
-
-      <LabelSheetOutputSettings />
-
-      <PrintActionFooter slot="footer" printI18n="labelPrint.btnPrint" resetI18n="labelPrint.btnReset" />
-    </PrintSidebar>
-
-    <main class="preview-container" id="preview-container">
-      <PreviewZoomBar />
-      <div class="label-count" id="label-count"></div>
-    </main>
-  </div>
-</Layout>
+<LabelPrintPageShell
+  title="FilaMan - Print Filament Labels"
+  variant="batch"
+  backHref="/filaments"
+  backLabel="Back to Filaments"
+  backLabelId="btn-back-label"
+  backI18n="filaments.backToFilaments"
+  idLabelI18n="filaments.showFilamentId"
+  idFallback="Filament ID"
+  extraFieldsMode="batch"
+  printI18n="labelPrint.btnPrint"
+  resetI18n="labelPrint.btnReset"
+>
+  <div slot="preview" class="label-count" id="label-count"></div>
+</LabelPrintPageShell>
 
 <script>
-  import { applyLabelSheetPreviewZoom, bindLabelSheetControls, saveLabelSheetPagesAsPdf, syncLabelSheetPngExportState, syncLabelSheetPreview } from '../../lib/label-sheet'
+  import { bindLabelSheetControls, createLabelSheetPdf } from '../../lib/label-sheet'
   import { initLabelDesignerEditor } from '../../lib/label-designer-editor'
   import {
     buildSpoolDataFromFlatLabel,
-    clampNumber,
     getDesignerLabelDimensions,
     loadDesignerSettingsFromStorage,
     renderDesignerLabel,
@@ -56,7 +32,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     buildStandardLabelDataFromFlat,
     buildStandardLabelHtml,
     renderStandardLabel,
-    type StandardLabelSettings,
   } from '../../lib/label-standard'
   import {
     REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS,
@@ -65,18 +40,29 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   } from '../../lib/filament-label-data'
   import {
     applyBatchLabelPreviewZoom,
-    bindBatchLabelExport,
+    bindLabelOutputPreview,
+    bindLabelOutputs,
+    bindLabelPreviewZoom,
+    bindLabelSettingsEvents,
+    bindPrintPageSidebarCollapse,
+    appendLabelSettingsCheckbox,
+    captureLabelSettings,
     captureBatchLabel,
+    createPreviewRenderCoordinator,
     findBatchLabelElement,
     getCachedEntityLogoUrl,
+    getLabelOutputControls,
+    getLabelSettingsControls,
+    getStandardLabelSettings,
     makeBatchLabelHtml,
     bindPrintDesignerTabs,
-    bindPreviewZoomControls,
-    installPrintFunction,
     prefetchEntityLogos,
     readPrintDesignerTab,
-    readStorageValue,
+    readVersionedLabelSettings,
     removeStorageValue,
+    resetLabelSettings,
+    restoreLabelSettings,
+    type LabelSettingsState,
     type LabelPrintEntityAdapter,
     type PrintDesignerTab,
     writeStorageValue,
@@ -90,9 +76,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   import { type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
     buildSystemExtraFieldDefinitionMap,
-    definitionForFlattenedExtraField,
-    extraFieldPathOverlaps,
-    flattenExtraFieldValues,
     getExtraFieldValue,
     normalizeEntityExtraFieldDefinitions,
     renderRecordExtraField,
@@ -100,41 +83,28 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   } from '../../lib/entity-extra-fields'
   import { t, initI18n } from '../../lib/i18n'
 
-  installPrintFunction()
-
   const SETTINGS_KEY = 'filaman-filament-batch-label-settings'
   const SETTINGS_VERSION = 2
   const DESIGNER_PRESETS_KEY = FILAMENT_LABEL_PRESETS_KEY
   const DESIGNER_SETTINGS_KEY = 'filaman-filament-label-designer-v1'
 
-  const widthInput       = document.getElementById('input-width') as HTMLInputElement
-  const heightInput      = document.getElementById('input-height') as HTMLInputElement
-  const fontInput        = document.getElementById('input-font-size') as HTMLInputElement
-  const qrSizeInput      = document.getElementById('input-qr-size') as HTMLInputElement
-  const checkLogo        = document.getElementById('check-logo') as HTMLInputElement
-  const checkQR          = document.getElementById('check-qr') as HTMLInputElement
-  const checkID          = document.getElementById('check-id') as HTMLInputElement
-  const checkMfr         = document.getElementById('check-mfr') as HTMLInputElement
-  const checkMat         = document.getElementById('check-mat') as HTMLInputElement
-  const checkColor       = document.getElementById('check-color') as HTMLInputElement
-  const checkColorSwatch = document.getElementById('check-color-swatch') as HTMLInputElement
-  const checkColorHex    = document.getElementById('check-color-hex') as HTMLInputElement
-  const zoomInput        = document.createElement('input')
-  zoomInput.type = 'hidden'
-  zoomInput.value = '100'
-  const previewZoomSlider = document.getElementById('preview-zoom-slider') as HTMLInputElement | null
-  const previewZoomLabel  = document.getElementById('preview-zoom-label') as HTMLElement | null
+  bindPrintPageSidebarCollapse()
+  const settingsControls = getLabelSettingsControls()
+  const outputControls = getLabelOutputControls()
   const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
   const tabPanelPrint    = document.getElementById('tab-panel-print') as HTMLElement
   const tabPanelDesigner = document.getElementById('tab-panel-designer') as HTMLElement
   const resetBtn         = document.getElementById('btn-reset') as HTMLButtonElement | null
-  const exportPngBtn     = document.getElementById('btn-export-png') as HTMLButtonElement
-  const exportPdfBtn     = document.getElementById('btn-export-pdf') as HTMLButtonElement
   const previewContainer = document.getElementById('preview-container') as HTMLElement
   await hydrateLabelPresetStorage()
-  const sheetControls = bindLabelSheetControls(queueRenderAll, (key, fallback) => t(key) || fallback)
+  let syncOutputPreview: () => void = () => undefined
+  const sheetControls = bindLabelSheetControls(
+    () => syncOutputPreview(),
+    (key, fallback) => t(key) || fallback,
+  )
 
   type ExtraFieldDef = SystemExtraFieldDef
+  type FilamentBatchSettings = LabelSettingsState & { zoom?: unknown }
   type ApiObject = Record<string, unknown>
   type ApiFilament = ApiObject & {
     id?: string | number
@@ -148,7 +118,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   const logoCache: Record<number, string | null> = {}
   let activePreviewTab: PrintDesignerTab = readPrintDesignerTab('filaman-label-active-tab')
   let renderVersion = 0
-  let previewZoomFrame = 0
+  const previewRenders = createPreviewRenderCoordinator()
 
   // Extra field definitions for filaments only. The Standard Label tab is
   // reduced to common fields; Label Designer still receives all fields.
@@ -192,43 +162,25 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   }
 
   function saveSettings() {
-    const efState: Record<string, boolean> = {}
-    Object.entries(efCheckMap).forEach(([k, cb]) => { efState[k] = cb.checked })
     writeStorageValue(SETTINGS_KEY, JSON.stringify({
+      ...captureLabelSettings(settingsControls, efCheckMap),
       _v: SETTINGS_VERSION,
-      width: widthInput.value, height: heightInput.value,
-      fontSize: fontInput.value, qrSize: qrSizeInput.value,
-      showLogo: checkLogo.checked, showQR: checkQR.checked, showID: checkID.checked,
-      showMfr: checkMfr.checked, showMat: checkMat.checked,
-      showColor: checkColor.checked, showColorSwatch: checkColorSwatch.checked, showColorHex: checkColorHex.checked,
-      zoom: zoomInput.value, extraFields: efState,
+      zoom: String(previewZoom.getZoom()),
     }))
   }
 
   function loadSettings() {
-    try {
-      const s = JSON.parse(readStorageValue(SETTINGS_KEY) || 'null')
-      if (!s || (s._v ?? 0) < SETTINGS_VERSION) { writeStorageValue(SETTINGS_KEY, ''); return }
-      if (s.width) widthInput.value = s.width
-      if (s.height) heightInput.value = s.height
-      if (s.fontSize) fontInput.value = s.fontSize
-      if (s.qrSize) qrSizeInput.value = s.qrSize
-      if (s.showLogo !== undefined) checkLogo.checked = s.showLogo
-      if (s.showQR !== undefined) checkQR.checked = s.showQR
-      if (s.showID !== undefined) checkID.checked = s.showID
-      if (s.showMfr !== undefined) checkMfr.checked = s.showMfr
-      if (s.showMat !== undefined) checkMat.checked = s.showMat
-      if (s.showColor !== undefined) checkColor.checked = s.showColor
-      if (s.showColorSwatch !== undefined) checkColorSwatch.checked = s.showColorSwatch
-      if (s.showColorHex !== undefined) checkColorHex.checked = s.showColorHex
-      if (s.zoom !== undefined) zoomInput.value = s.zoom
-      if (s.extraFields) {
-        Object.entries(s.extraFields as Record<string, boolean>).forEach(([k, v]) => {
-          if (efCheckMap[k]) efCheckMap[k].checked = v
-        })
-      }
-      previewZoomControls.sync()
-    } catch {}
+    const settings = readVersionedLabelSettings<FilamentBatchSettings>(
+      SETTINGS_KEY,
+      SETTINGS_VERSION,
+    )
+    if (!settings) return
+    restoreLabelSettings(
+      settingsControls,
+      settings,
+      efCheckMap,
+      { requireInputValues: true },
+    )
   }
 
   async function loadLogo(mfrId: number): Promise<string | null> {
@@ -249,8 +201,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   }
 
   function getFilamentMfrId(filament: ApiFilament): number | null {
-    const value = filament?.manufacturer?.id
-    const id = Number(value)
+    const data = buildFilamentLabelDataFromApi(filament)
+    const id = Number(data.mfr_id || data.manufacturer_id)
     return Number.isFinite(id) && id > 0 ? id : null
   }
 
@@ -265,13 +217,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
         value: '',
         fieldType: def.field_type,
         source: 'filament',
+        origin: 'system',
       })
-    }
-    for (const filament of filaments) {
-      for (const field of buildDesignerExtraFieldsFromFilament(filament, getExtraFieldDefinitionMap())) {
-        if (!field?.key || fields.has(field.key)) continue
-        fields.set(field.key, field)
-      }
     }
     return Array.from(fields.values())
   }
@@ -309,22 +256,7 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     return result
   }
 
-  function buildStandardSettings(): StandardLabelSettings {
-    return {
-      widthMm:   clampNumber(Number(widthInput.value), 20, 200, 60),
-      heightMm:  clampNumber(Number(heightInput.value), 10, 120, 40),
-      fontScale: clampNumber(Number(fontInput.value), 50, 200, 100) / 100,
-      qrSizeMm:  clampNumber(Number(qrSizeInput.value), 8, 40, 18),
-      showLogo: checkLogo.checked,
-      showQR: checkQR.checked,
-      showID: checkID.checked,
-      showManufacturer: checkMfr.checked,
-      showMaterial: checkMat.checked,
-      showColor: checkColor.checked,
-      showColorSwatch: checkColorSwatch.checked,
-      showColorHex: checkColorHex.checked,
-    }
-  }
+  const buildStandardSettings = () => getStandardLabelSettings(settingsControls)
 
   function buildStandardDataFromFilament(filament: ApiFilament): ReturnType<typeof buildStandardLabelDataFromFlat> {
     const data = buildFilamentLabelDataFromApi(filament)
@@ -383,7 +315,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     getLogoManufacturerId: getFilamentMfrId,
     buildStandardData: buildStandardDataFromFilament,
     buildDesignerData: buildDesignerDataFromFilament,
-    singlePngName: filament => `filament-label-${filament.id}.png`,
     zipName: () => 'filament-labels.zip',
     zipEntryName: filament => `filament-label-${filament.id}.png`,
     pdfName: () => 'filament-labels.pdf',
@@ -425,7 +356,11 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     })
   }
 
-  async function renderAll(tab: 'print' | 'designer' = activePreviewTab) {
+  function renderAll(tab: 'print' | 'designer' = activePreviewTab) {
+    return previewRenders.run(() => renderAllNow(tab))
+  }
+
+  async function renderAllNow(tab: 'print' | 'designer') {
     const token = ++renderVersion
     const isStale = () => token !== renderVersion || activePreviewTab !== tab
     const CHUNK = 6
@@ -475,40 +410,6 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       : `${t('labelPrint.labelsReady', { count: String(renderedCount) })} (${filaments.length}/${ids.length})`
   }
 
-  function applyCurrentPreviewZoom() {
-    if (sheetControls.getOutputMode() === 'sheet') {
-      applyLabelSheetPreviewZoom(previewContainer, Number(zoomInput.value))
-    } else {
-      applyBatchLabelPreviewZoom(previewContainer, Number(zoomInput.value))
-    }
-  }
-
-  function schedulePreviewZoomUpdate() {
-    if (previewZoomFrame) return
-    previewZoomFrame = requestAnimationFrame(() => {
-      previewZoomFrame = 0
-      applyCurrentPreviewZoom()
-      saveSettings()
-    })
-  }
-
-  function syncOutputPreview() {
-    const sources = getLabelSourceElements()
-    syncLabelSheetPreview({
-      controls: sheetControls,
-      previewRoot: previewContainer,
-      sourceElements: sources,
-      labelDimensions: getActiveLabelDimensions(),
-    })
-    applyCurrentPreviewZoom()
-    syncLabelSheetPngExportState(sheetControls, exportPngBtn, (key, fallback) => t(key) || fallback)
-    updateLabelCount()
-  }
-
-  function handlePreviewZoomChange() {
-    schedulePreviewZoomUpdate()
-  }
-
   async function loadExtraFieldDefs() {
     try {
       const defs = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.json())
@@ -517,20 +418,8 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
       systemFieldKeys.clear()
       customDefs.forEach(def => systemFieldKeys.add(def.key))
-      const knownKeys = new Set([...standardDefs, ...customDefs].map(def => def.key))
-      const entityDefs = filaments.flatMap(filament => {
-        const definitions = normalizeEntityExtraFieldDefinitions(filament.custom_field_definitions)
-        return flattenExtraFieldValues(filament.custom_fields, definitions)
-          .map(definitionForFlattenedExtraField)
-      }).filter(def =>
-        !extraFieldPathOverlaps(def.key, knownKeys) &&
-        !isBuiltInLabelField('filament', def.key, def.label),
-      )
-      const uniqueEntityDefs = Array.from(new Map(entityDefs.map(def => [def.key, def])).values())
-
-      // Keep the Standard Label tab compact: reduced standard fields first,
-      // then system and record-local custom fields.
-      efDefs = [...standardDefs, ...customDefs, ...uniqueEntityDefs]
+      // Batch selectors are centrally governed: built-ins first, then System Extra Fields.
+      efDefs = [...standardDefs, ...customDefs]
       if (efDefs.length === 0) return
 
       const titleEl = document.getElementById('ef-section-title')!
@@ -539,38 +428,28 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
       titleEl.style.display = ''
       container.style.removeProperty('display')
 
-      const scopeAttr = (() => {
-        const existing = document.querySelector('.fm-checkbox-group')
-        if (!existing) return null
-        return Array.from(existing.attributes).find(a => a.name.startsWith('data-astro-cid-'))
-      })()
-
       const addFieldRows = (fields: ExtraFieldDef[], target: HTMLElement) => {
         for (const def of fields) {
-          const row = document.createElement('label')
-          row.className = 'fm-checkbox-group'
-          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = false
-          const span = document.createElement('span')
-          span.textContent = def.label
-          if (scopeAttr) { row.setAttribute(scopeAttr.name, ''); cb.setAttribute(scopeAttr.name, ''); span.setAttribute(scopeAttr.name, '') }
-          row.appendChild(cb); row.appendChild(span)
-          target.appendChild(row)
-          efCheckMap[efMapKey(def.key)] = cb
-          cb.addEventListener('change', queueRenderAll)
+          efCheckMap[efMapKey(def.key)] = appendLabelSettingsCheckbox({
+            container: target,
+            label: def.label,
+            checked: false,
+            onChange: queueRenderAll,
+          })
         }
       }
 
       addFieldRows(standardDefs, container)
 
-      if (customDefs.length + uniqueEntityDefs.length > 0) {
+      if (customDefs.length > 0) {
         const customTitle = document.createElement('h3')
-        customTitle.textContent = t('filaments.extraFieldsLabel') || 'Filament Extra Fields'
+        customTitle.textContent = t('filaments.dsSystemExtraFieldsLabel') || 'Filament System Extra Fields'
         const customContainer = document.createElement('div')
         customContainer.className = container.className
         customContainer.style.removeProperty('display')
         container.insertAdjacentElement('afterend', customTitle)
         customTitle.insertAdjacentElement('afterend', customContainer)
-        addFieldRows([...customDefs, ...uniqueEntityDefs], customContainer)
+        addFieldRows(customDefs, customContainer)
       }
     } catch {}
   }
@@ -580,24 +459,31 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
   }
 
   await initI18n()
-
-  const zoomOutBtn   = document.getElementById('preview-zoom-out')
-  const zoomInBtn    = document.getElementById('preview-zoom-in')
-  const zoomResetBtn = document.getElementById('preview-zoom-reset')
-  const previewZoomControls = bindPreviewZoomControls({
-    zoomInput,
-    slider: previewZoomSlider,
-    label: previewZoomLabel,
-    zoomOutBtn,
-    zoomInBtn,
-    zoomResetBtn,
+  const previewZoom = bindLabelPreviewZoom({
+    storageKey: SETTINGS_KEY,
+    settingsVersion: SETTINGS_VERSION,
+    previewRoot: previewContainer,
     getTranslation: (key, fallback) => t(key) || fallback,
-    onChange: handlePreviewZoomChange,
+    onChange: () => syncOutputPreview(),
   })
+  const syncSharedOutputPreview = bindLabelOutputPreview({
+    previewRoot: previewContainer,
+    sheetControls,
+    outputControls,
+    getSourceElements: getLabelSourceElements,
+    getDimensions: getActiveLabelDimensions,
+    getZoom: previewZoom.getZoom,
+    applyIndividualZoom: zoom => applyBatchLabelPreviewZoom(previewContainer, zoom),
+  })
+  syncOutputPreview = () => {
+    syncSharedOutputPreview()
+    updateLabelCount()
+  }
 
   const designerEditor = await initLabelDesignerEditor({
     extraFields: [],
     entityType: labelAdapter.entityType,
+    batchMode: true,
     getFilamentColorHex: () => getBatchFilamentColorData()?.hex_code || '',
     getFilamentColorHexes: () => getBatchFilamentColorData()?.color_hexes || '',
     getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multi_color_style || '',
@@ -625,28 +511,35 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     },
   })
 
-  bindBatchLabelExport({
-    entities: () => filaments,
-    activeTab: () => activePreviewTab,
-    pngButton: exportPngBtn,
-    pdfButton: exportPdfBtn,
-    getTranslation: (key, fallback) => t(key) || fallback,
-    renderAll,
-    captureLabel,
-    getPdfDimensions: getActiveLabelDimensions,
-    singlePngName: labelAdapter.singlePngName,
-    zipName: labelAdapter.zipName,
-    zipEntryName: labelAdapter.zipEntryName,
-    pdfName: labelAdapter.pdfName,
-    exportPdf: async (pages, defaultExport) => {
-      if (sheetControls.getOutputMode() === 'sheet') {
-        await saveLabelSheetPagesAsPdf(pages, 'filament-label-sheet.pdf', sheetControls.getSettings())
-      } else {
-        await defaultExport()
-      }
+  bindLabelOutputs({
+    controls: outputControls,
+    collection: {
+      getItems: () => filaments,
+      prepare: () => previewRenders.settle(),
+      capture: captureLabel,
+      getDimensions: getActiveLabelDimensions,
+      browserPrint: {
+        previewRoot: previewContainer,
+        sheetControls,
+        getIndividualPages: getLabelSourceElements,
+      },
+      pngName: filament => labelAdapter.zipEntryName(filament),
+      pngArchiveName: labelAdapter.zipName,
+      pdfName: () =>
+        sheetControls.getOutputMode() === 'sheet'
+          ? 'filament-label-sheet.pdf'
+          : labelAdapter.pdfName(),
+      allowPartialPng: true,
+      allowPartialPdf: true,
     },
-    skipCaptureErrorsInZip: true,
-    skipCaptureErrorsInPdf: true,
+    getTranslation: (key, fallback) => t(key) || fallback,
+    createPdf: (pages, defaultCreate) =>
+      sheetControls.getOutputMode() === 'sheet'
+        ? createLabelSheetPdf(
+            pages,
+            sheetControls.getSettings(),
+          )
+        : defaultCreate(),
   })
 
   const urlParams = new URLSearchParams(window.location.search)
@@ -678,39 +571,19 @@ import BatchLabelPrintStyles from '../../components/BatchLabelPrintStyles.astro'
     updateLabelCount()
 
     loadSettings()
-    previewZoomControls.sync()
     await prefetchLogos()
     tabControls.activate(activePreviewTab)
   }
 
-  ;[widthInput, heightInput, fontInput, qrSizeInput, zoomInput, checkLogo, checkQR, checkID, checkMfr, checkMat, checkColor, checkColorSwatch, checkColorHex].forEach(el => {
-    el.addEventListener('change', () => {
-      if (el === zoomInput) {
-        previewZoomControls.sync()
-        handlePreviewZoomChange()
-        return
-      }
+  bindLabelSettingsEvents({
+    controls: settingsControls,
+    resetButton: resetBtn,
+    onChange: queueRenderAll,
+    onReset: () => {
+      removeStorageValue(SETTINGS_KEY)
+      resetLabelSettings(settingsControls, efCheckMap)
+      previewZoom.applyZoom(100)
       queueRenderAll()
-    })
-    if (el.type === 'range' || el.type === 'number') {
-      el.addEventListener('input', () => {
-        if (el === zoomInput) {
-          previewZoomControls.sync()
-          handlePreviewZoomChange()
-          return
-        }
-        queueRenderAll()
-      })
-    }
-  })
-
-  resetBtn?.addEventListener('click', () => {
-    removeStorageValue(SETTINGS_KEY)
-    widthInput.value = '60'; heightInput.value = '40'; fontInput.value = '100'; qrSizeInput.value = '18'
-    zoomInput.value = '100'
-    previewZoomControls.sync()
-    checkLogo.checked = checkQR.checked = checkID.checked = checkMfr.checked = checkMat.checked = checkColor.checked = checkColorSwatch.checked = checkColorHex.checked = true
-    Object.values(efCheckMap).forEach(cb => { cb.checked = false })
-    queueRenderAll()
+    },
   })
 </script>

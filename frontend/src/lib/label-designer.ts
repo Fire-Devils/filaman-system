@@ -5,16 +5,19 @@ import {
   renderTemplateText,
   type SpoolData,
 } from './label-template'
-import { isBuiltInLabelField, type LabelExtraFieldSource } from './label-extra-fields'
-import { type SystemExtraFieldDef } from './extra-fields'
-import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
-import { updateLabelPrintPageStyle } from './label-print-style'
+import {
+  buildDesignerExtraFieldsFromApiSpool,
+  buildSpoolLabelDataFromApi,
+  SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
+  type SpoolExtraFieldDefinitionMap,
+} from './spool-label-data'
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 import {
   EMPTY_SPOOL_LABEL_LOOKUPS,
-  resolveSpoolLabelRelations,
   type SpoolLabelLookups,
 } from './spool-label-lookups'
+import { formatDateDisplay } from './extra-fields'
+import type { LabelExtraFieldValue } from './label-extra-fields'
 
 export const DESIGNER_KEY = 'filaman-label-designer-v1'
 export const DESIGNER_SCHEMA_VERSION = 1
@@ -44,7 +47,7 @@ export const DESIGNER_DEFAULTS: LabelDesignerSettings = {
   title2: { show: false, sizeMm: 3.5, marginMm: 0, fitToWidth: true, align: 'left', template: '', dividerAbove: false, dividerBelow: false },
   qr:     { show: true, mode: 'logo', sizeMm: 18, position: 'right', vAlign: 'bottom', linkMode: 'spool', urlTemplate: '' },
   info:   { show: true, sizeMm: 2.5, marginMm: 0, hAlign: 'left', vAlign: 'bottom',
-            template: '{filament.type}\n{filament.color}\nExt: {filament.extruder_temp}°C\nBed: {filament.bed_temp}°C' },
+            template: '{filament.type}\n{filament.color}\nDiameter: {filament.diameter} mm' },
   info2:  { show: false, vsep: false, sizeMm: 2.5, hAlign: 'left', vAlign: 'bottom', template: '' },
 }
 
@@ -65,8 +68,6 @@ export const FILAMENT_TOKENS: { token: string; label: string }[] = [
   { token: '{filament.color_hexes}',             label: 'color_hexes' },
   { token: '{filament.color_mode}',              label: 'color_mode' },
   { token: '{filament.multi_color_style}',       label: 'multi_color_style' },
-  { token: '{filament.extruder_temp}',           label: 'extruder_temp' },
-  { token: '{filament.bed_temp}',                label: 'bed_temp' },
   { token: '{filament.raw_material_weight_g}',   label: 'raw_material_weight_g' },
   { token: '{filament.diameter}',                label: 'diameter' },
   { token: '{filament.finish}',                  label: 'finish' },
@@ -80,21 +81,11 @@ export const FILAMENT_TOKENS: { token: string; label: string }[] = [
 ]
 
 /** Token chips shown in the Spool group — only on spool print pages. */
-export const SPOOL_TOKENS: { token: string; label: string }[] = [
-  { token: '{lot_number}',             label: 'lot_number' },
-  { token: '{external_id}',            label: 'external_id' },
-  { token: '{rfid_uid}',               label: 'rfid_uid' },
-  { token: '{location}',               label: 'location' },
-  { token: '{status}',                 label: 'status' },
-  { token: '{purchase_date}',          label: 'purchase_date' },
-  { token: '{purchase_price}',         label: 'purchase_price' },
-  { token: '{remaining_weight_g}',     label: 'remaining_weight_g' },
-  { token: '{initial_total_weight_g}', label: 'initial_weight_g' },
-  { token: '{empty_spool_weight_g}',   label: 'empty_spool_wt' },
-  { token: '{low_weight_threshold_g}', label: 'low_weight_g' },
-  { token: '{stocked_in_at}',          label: 'stocked_in_at' },
-  { token: '{last_used_at}',           label: 'last_used_at' },
-]
+export const SPOOL_TOKENS: { token: string; label: string }[] =
+  SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key, tokenLabel }) => ({
+    token: `{${key}}`,
+    label: tokenLabel,
+  }))
 
 /** @deprecated use FILAMENT_TOKENS. Kept for backwards compatibility. */
 export const DESIGNER_TOKENS = FILAMENT_TOKENS
@@ -300,14 +291,7 @@ export function buildSafeQrUrl(linkMode: 'spool'|'url', templateBase: string, en
   return `${window.location.origin}/${entityPath}/${encodeURIComponent(String(entityId))}`
 }
 
-export interface DesignerExtraField {
-  key: string
-  label?: string
-  value: unknown
-  rawValue?: unknown
-  fieldType?: string
-  source?: string
-}
+export type DesignerExtraField = LabelExtraFieldValue
 
 export interface DesignerFlatLabelData {
   id: string | number
@@ -349,34 +333,15 @@ export interface DesignerFlatLabelData {
   remaining_weight_g?: unknown
   initial_total_weight_g?: unknown
   empty_spool_weight_g?: unknown
+  spool_core_weight_g?: unknown
   low_weight_threshold_g?: unknown
   stocked_in_at?: unknown
   last_used_at?: unknown
+  created_at?: unknown
   extraFields?: DesignerExtraField[]
 }
 
-type ExtraFieldDefinitionMap = Partial<Record<LabelExtraFieldSource, Record<string, SystemExtraFieldDef>>>
-
-function getApiFilamentColors(filament: any): any[] {
-  const list = Array.isArray(filament?.filament_colors)
-    ? filament.filament_colors
-    : filament?.colors
-  return Array.isArray(list) ? list : []
-}
-
-function getFilamentColorNames(filament: any): string {
-  return getApiFilamentColors(filament)
-    .map(color => color?.display_name_override || color?.color?.name)
-    .filter(Boolean)
-    .join(', ')
-}
-
-function getFilamentColorHexes(filament: any): string {
-  return getApiFilamentColors(filament)
-    .map(color => color?.color?.hex_code)
-    .filter(Boolean)
-    .join(', ')
-}
+type ExtraFieldDefinitionMap = SpoolExtraFieldDefinitionMap
 
 export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolData {
   const extra: Record<string, string> = {}
@@ -432,12 +397,23 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     remaining_weight_g: toStringValue(data.remaining_weight_g),
     initial_total_weight_g: toStringValue(data.initial_total_weight_g),
     empty_spool_weight_g: toStringValue(data.empty_spool_weight_g),
+    spool_core_weight_g: toStringValue(data.spool_core_weight_g),
     low_weight_threshold_g: toStringValue(data.low_weight_threshold_g),
     stocked_in_at: toStringValue(data.stocked_in_at),
     last_used_at: toStringValue(data.last_used_at),
+    created_at: toStringValue(data.created_at),
     extra,
     extraRaw,
   }
+}
+
+export function buildSpoolDesignerDataFromLabelData(
+  data: DesignerFlatLabelData,
+): SpoolData {
+  return buildSpoolDataFromFlatLabel({
+    ...data,
+    purchase_date: formatDateDisplay(data.purchase_date),
+  })
 }
 
 export function buildSpoolDataFromApiSpool(
@@ -445,81 +421,14 @@ export function buildSpoolDataFromApiSpool(
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
   fieldDefs?: ExtraFieldDefinitionMap,
 ): SpoolData {
-  const fil = spool?.filament ?? {}
-  const relations = resolveSpoolLabelRelations(spool, lookups)
-  const firstColor = getFirstFilamentColor(fil)
-  const color = firstColor?.display_name_override
-    || fil.manufacturer_color_name
-    || firstColor?.color?.name
-    || ''
-  const hex = firstColor?.color?.hex_code || ''
-  const formatDate = (raw: unknown) => raw ? new Date(String(raw)).toLocaleDateString() : ''
-  return buildSpoolDataFromFlatLabel({
-    id: spool?.id ?? '',
-    // Filament profile
-    filament_id: fil.id,
-    designation: fil.designation,
-    manufacturer: fil.manufacturer?.name,
-    manufacturer_id: fil.manufacturer_id ?? fil.manufacturer?.id,
-    type: fil.material_type,
-    subtype: fil.material_subgroup,
-    color,
-    colors: getFilamentColorNames(fil),
-    hex_code: hex,
-    color_hexes: getFilamentColorHexes(fil),
-    color_mode: fil.color_mode,
-    multi_color_style: fil.multi_color_style,
-    extruder_temp: fil.settings_extruder_temp ?? fil.custom_fields?.extruder_temp,
-    bed_temp: fil.settings_bed_temp ?? fil.custom_fields?.bed_temp,
-    raw_material_weight_g: fil.raw_material_weight_g ?? fil.weight,
-    weight: fil.raw_material_weight_g ?? fil.weight,
-    diameter: fil.diameter_mm,
-    finish: fil.finish_type,
-    density: fil.density_g_cm3,
-    price: fil.price,
-    manufacturer_color_name: fil.manufacturer_color_name,
-    default_spool_weight_g: fil.default_spool_weight_g,
-    spool_outer_diameter_mm: fil.spool_outer_diameter_mm,
-    spool_width_mm: fil.spool_width_mm,
-    spool_material: fil.spool_material,
-    shop_url: fil.shop_url,
-    // Spool model fields
-    lot_number: spool?.lot_number,
-    external_id: spool?.external_id,
-    rfid_uid: spool?.rfid_uid,
-    location: relations.location,
-    status: relations.status,
-    purchase_date: formatDate(spool?.purchase_date),
-    purchase_price: spool?.purchase_price,
-    remaining_weight_g: spool?.remaining_weight_g,
-    initial_total_weight_g: spool?.initial_total_weight_g,
-    empty_spool_weight_g: spool?.empty_spool_weight_g,
-    low_weight_threshold_g: spool?.low_weight_threshold_g,
-    stocked_in_at: formatDate(spool?.stocked_in_at),
-    last_used_at: formatDate(spool?.last_used_at),
+  const data = buildSpoolLabelDataFromApi(spool, lookups)
+  return buildSpoolDesignerDataFromLabelData({
+    ...data,
     extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),
   })
 }
 
-export function buildDesignerExtraFieldsFromApiSpool(
-  spool: any,
-  fieldDefs?: ExtraFieldDefinitionMap,
-): DesignerExtraField[] {
-  return [
-    ...buildDesignerExtraFields(
-      spool?.custom_fields,
-      spool?.custom_field_definitions,
-      fieldDefs?.spool,
-      'spool',
-    ),
-    ...buildDesignerExtraFields(
-      spool?.filament?.custom_fields,
-      spool?.filament?.custom_field_definitions,
-      fieldDefs?.filament,
-      'filament',
-    ),
-  ]
-}
+export { buildDesignerExtraFieldsFromApiSpool } from './spool-label-data'
 
 export function getManufacturerIdFromApiSpool(spool: any): number | null {
   const value = spool?.filament?.manufacturer?.id
@@ -527,31 +436,7 @@ export function getManufacturerIdFromApiSpool(spool: any): number | null {
   return Number.isFinite(id) && id > 0 ? id : null
 }
 
-export function getFirstFilamentColor(filament: any): any {
-  const colorLists = [filament?.filament_colors, filament?.colors]
-  for (const list of colorLists) {
-    if (Array.isArray(list) && list.length > 0) return list[0] ?? {}
-  }
-  return {}
-}
-
-function buildDesignerExtraFields(
-  values: Record<string, unknown> | null | undefined,
-  entityDefinitions: Record<string, unknown> | null | undefined,
-  systemDefinitions: Record<string, SystemExtraFieldDef> | undefined,
-  source: LabelExtraFieldSource,
-): DesignerExtraField[] {
-  return buildEntityExtraFieldsForPrint(values, entityDefinitions, systemDefinitions)
-    .filter(field => !isBuiltInLabelField(source, field.key, field.label))
-    .map(field => ({
-      key: `${source}.${field.key}`,
-      label: field.label,
-      value: field.value,
-      rawValue: field.rawValue,
-      fieldType: field.fieldType,
-      source,
-    }))
-}
+export { getFirstFilamentColor } from './label-entity-data'
 
 function toStringValue(value: unknown): string {
   return value === undefined || value === null ? '' : String(value)
@@ -638,8 +523,6 @@ export interface RenderDesignerLabelOptions {
   logoUrl?: string | null
   previewBorder?: boolean
   isStale?: () => boolean
-  updatePageStyle?: boolean
-  pageStyleId?: string
   /** Entity path used for QR URL generation. Defaults to 'spools'. */
   entityPath?: string
 }
@@ -883,11 +766,4 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     mainRow.appendChild(qrWrap)
   }
 
-  if (options.updatePageStyle !== false) {
-    updateDesignerPageStyle(w, h, options.pageStyleId)
-  }
-}
-
-export function updateDesignerPageStyle(widthMm: number, heightMm: number, styleId = 'page-style') {
-  updateLabelPrintPageStyle({ widthMm, heightMm, styleId })
 }

@@ -109,6 +109,14 @@ export function translatePage(): void {
       el.title = t(key)
     }
   })
+
+  // Translate accessible names
+  document.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-aria-label')
+    if (key) {
+      el.setAttribute('aria-label', t(key))
+    }
+  })
 }
 
 /**
