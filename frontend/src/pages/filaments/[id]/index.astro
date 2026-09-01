@@ -105,6 +105,7 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     import { buildFilamentExtraFieldsForPrint, buildFilamentPrintSearchParams } from '../../../lib/filament-label-data'
+    import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
     await initCurrency()
 
@@ -358,7 +359,7 @@ const { id } = Astro.params
         const printParams = buildFilamentPrintSearchParams(f)
         printBtn.href = `/filaments/${f.id}/print?${printParams.toString()}`
         const efForPrint = buildFilamentExtraFieldsForPrint(f, systemFieldMap)
-        try { sessionStorage.setItem('filaman-filament-label-extra-fields', JSON.stringify(efForPrint)) } catch {}
+        writeScopedLabelFields('filaman-filament-label-extra-fields', f.id, efForPrint)
       }
 
 

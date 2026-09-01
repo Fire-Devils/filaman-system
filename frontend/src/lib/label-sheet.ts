@@ -1,5 +1,12 @@
-import type { LabelPdfPage } from './label-export'
+import type {
+  LabelPdfDocument,
+  LabelPdfPage,
+} from './label-export'
 import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
+import {
+  bindFixedPreviewToolbar,
+  stripElementIds,
+} from './label-preview-dom'
 
 export const LABEL_SHEET_SETTINGS_KEY = 'filaman-label-sheet-settings-v1'
 export const LABEL_SHEET_PRESETS_KEY = 'filaman-label-sheet-presets-v1'
@@ -82,13 +89,12 @@ export interface SyncLabelSheetPreviewOptions {
 const SOURCE_BIN_CLASS = 'label-sheet-source-bin'
 const SHEET_PAGE_FRAME_CLASS = 'label-sheet-page-frame'
 const SHEET_MODE_CLASS = 'is-label-sheet-mode'
-const PAGE_STYLE_ID = 'label-sheet-page-style'
+const SHEET_PREVIEW_STYLE_ID = 'label-sheet-preview-style'
 const CUSTOM_PRESET_ID = '__custom'
 const LARGE_JOB_LABEL_LIMIT = 500
 const LARGE_JOB_PAGE_LIMIT = 50
 const originalPositions = new WeakMap<HTMLElement, { parent: Node; nextSibling: Node | null }>()
 const confirmedLargeJobs = new Set<string>()
-const fixedToolbarPreviewRoots = new WeakSet<HTMLElement>()
 
 const DEFAULT_SETTINGS: LabelSheetSettings = {
   paperSize: 'a4',
@@ -624,11 +630,6 @@ function expandedIndexes(count: number, settings: LabelSheetSettings) {
   return indexes
 }
 
-function removeElementIds(element: Element) {
-  element.removeAttribute('id')
-  element.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'))
-}
-
 function getSourceLabel(source: HTMLElement): HTMLElement | null {
   if (source.classList.contains('label-preview')) return source
   return source.querySelector<HTMLElement>('.label-preview')
@@ -644,42 +645,16 @@ function ensureSourceBin(previewRoot: HTMLElement) {
   return bin
 }
 
-function getPreviewToolbar(previewRoot: HTMLElement) {
-  const toolbar = previewRoot.querySelector('.preview-zoom-bar')
-  return toolbar instanceof HTMLElement ? toolbar : null
-}
-
-function syncFixedPreviewToolbar(previewRoot: HTMLElement) {
-  const toolbar = getPreviewToolbar(previewRoot)
-  if (!toolbar) return
-  if (!previewRoot.classList.contains(SHEET_MODE_CLASS)) return
-  const rect = previewRoot.getBoundingClientRect()
-  toolbar.style.position = 'fixed'
-  toolbar.style.top = `${rect.top}px`
-  toolbar.style.left = `${rect.left + rect.width / 2}px`
-  toolbar.style.transform = 'translateX(-50%)'
-}
-
-function bindFixedPreviewToolbar(previewRoot: HTMLElement) {
-  syncFixedPreviewToolbar(previewRoot)
-  if (fixedToolbarPreviewRoots.has(previewRoot)) return
-  fixedToolbarPreviewRoots.add(previewRoot)
-  previewRoot.addEventListener('scroll', () => syncFixedPreviewToolbar(previewRoot), { passive: true })
-  window.addEventListener('resize', () => syncFixedPreviewToolbar(previewRoot), { passive: true })
-}
-
-function restorePreviewToolbar(previewRoot: HTMLElement) {
-  const toolbar = getPreviewToolbar(previewRoot)
-  if (!toolbar) return
-  toolbar.style.removeProperty('position')
-  toolbar.style.removeProperty('top')
-  toolbar.style.removeProperty('left')
-  toolbar.style.removeProperty('transform')
+function getFixedPreviewToolbarBinding(previewRoot: HTMLElement) {
+  return bindFixedPreviewToolbar({
+    previewRoot,
+    isActive: () => previewRoot.classList.contains(SHEET_MODE_CLASS),
+  })
 }
 
 export function restoreIndividualLabelPreview(previewRoot: HTMLElement, sourceElements: HTMLElement[]) {
   previewRoot.classList.remove(SHEET_MODE_CLASS)
-  restorePreviewToolbar(previewRoot)
+  getFixedPreviewToolbarBinding(previewRoot).restore()
   previewRoot.querySelectorAll(`.${SHEET_PAGE_FRAME_CLASS}`).forEach(frame => frame.remove())
   previewRoot.querySelectorAll('.label-sheet-page').forEach(page => page.remove())
   sourceElements.forEach(source => {
@@ -689,7 +664,7 @@ export function restoreIndividualLabelPreview(previewRoot: HTMLElement, sourceEl
     position.parent.insertBefore(source, nextSibling)
   })
   previewRoot.querySelector<HTMLElement>(`:scope > .${SOURCE_BIN_CLASS}`)?.remove()
-  clearLabelSheetPrintStyle()
+  clearLabelSheetPreviewStyle()
 }
 
 export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
@@ -701,7 +676,7 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
   previewRoot.classList.add(SHEET_MODE_CLASS)
   const layout = getLabelSheetLayout(settings)
   const sourceBin = ensureSourceBin(previewRoot)
-  bindFixedPreviewToolbar(previewRoot)
+  getFixedPreviewToolbarBinding(previewRoot)
   previewRoot.querySelectorAll(`.${SHEET_PAGE_FRAME_CLASS}`).forEach(frame => frame.remove())
   previewRoot.querySelectorAll('.label-sheet-page').forEach(page => page.remove())
 
@@ -766,7 +741,7 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
     const sourceLabel = getSourceLabel(source)
     if (sourceLabel) {
       const clone = sourceLabel.cloneNode(true) as HTMLElement
-      removeElementIds(clone)
+      stripElementIds(clone)
       clone.style.zoom = '1'
       clone.style.transform = 'none'
       clone.style.transformOrigin = 'unset'
@@ -776,7 +751,7 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
     cell.appendChild(shell)
   })
 
-  updateLabelSheetPrintStyle(settings)
+  updateLabelSheetPreviewStyle(settings)
 }
 
 export function syncLabelSheetPreview(options: SyncLabelSheetPreviewOptions) {
@@ -814,39 +789,43 @@ export function applyLabelSheetPreviewZoom(previewRoot: HTMLElement, zoomPercent
   })
 }
 
-export function syncLabelSheetPngExportState(
+export function syncLabelSheetIndividualExportState(
   controls: LabelSheetControls,
-  button: HTMLButtonElement,
+  buttons: HTMLButtonElement[],
   getTranslation: (key: string, fallback: string) => string,
 ) {
   const isSheetMode = controls.getOutputMode() === 'sheet'
-  const unavailableText = getTranslation('labelPrint.pngUnavailableInSheetMode', 'PNG export not available in label paper mode')
+  const unavailableText = getTranslation(
+    'labelPrint.individualExportsUnavailableInSheetMode',
+    'Individual PNG and AML exports are not available in label paper mode',
+  )
 
-  if (!('labelSheetOriginalTitle' in button.dataset)) {
-    button.dataset.labelSheetOriginalTitle = button.getAttribute('title') ?? ''
-  }
+  buttons.forEach(button => {
+    if (!('labelSheetOriginalTitle' in button.dataset)) {
+      button.dataset.labelSheetOriginalTitle =
+        button.getAttribute('title') ?? ''
+    }
 
-  button.disabled = isSheetMode
-  button.classList.toggle('is-disabled', isSheetMode)
+    button.disabled = isSheetMode
+    button.classList.toggle('is-disabled', isSheetMode)
 
-  if (isSheetMode) {
-    button.setAttribute('aria-disabled', 'true')
-    button.setAttribute('title', unavailableText)
-  } else {
-    button.removeAttribute('aria-disabled')
-    const originalTitle = button.dataset.labelSheetOriginalTitle || ''
-    if (originalTitle) button.setAttribute('title', originalTitle)
-    else button.removeAttribute('title')
-  }
+    if (isSheetMode) {
+      button.setAttribute('aria-disabled', 'true')
+      button.setAttribute('title', unavailableText)
+    } else {
+      button.removeAttribute('aria-disabled')
+      const originalTitle = button.dataset.labelSheetOriginalTitle || ''
+      if (originalTitle) button.setAttribute('title', originalTitle)
+      else button.removeAttribute('title')
+    }
+  })
 }
 
-export function updateLabelSheetPrintStyle(settings: LabelSheetSettings, styleId = PAGE_STYLE_ID) {
+export function updateLabelSheetPreviewStyle(
+  settings: LabelSheetSettings,
+  styleId = SHEET_PREVIEW_STYLE_ID,
+) {
   const layout = getLabelSheetLayout(settings)
-  const pageSize = settings.paperSize === 'letter'
-    ? 'letter'
-    : settings.paperSize === 'a4'
-      ? 'A4'
-      : `${layout.paperWidthMm}mm ${layout.paperHeightMm}mm`
   let styleEl = document.getElementById(styleId)
   if (!styleEl) {
     styleEl = document.createElement('style')
@@ -855,7 +834,6 @@ export function updateLabelSheetPrintStyle(settings: LabelSheetSettings, styleId
   }
 
   styleEl.innerHTML = `
-    @page { size: ${pageSize}; margin: 0; }
     .label-sheet-page {
       box-sizing: border-box;
       background: white;
@@ -865,6 +843,13 @@ export function updateLabelSheetPrintStyle(settings: LabelSheetSettings, styleId
       display: block;
       flex: 0 0 auto;
       overflow: hidden;
+      width: ${layout.paperWidthMm}mm;
+      height: ${layout.paperHeightMm}mm;
+      padding:
+        ${settings.marginTopMm}mm
+        ${settings.marginRightMm}mm
+        ${settings.marginBottomMm}mm
+        ${settings.marginLeftMm}mm;
     }
     .${SHEET_PAGE_FRAME_CLASS} {
       flex: 0 0 auto;
@@ -912,86 +897,21 @@ export function updateLabelSheetPrintStyle(settings: LabelSheetSettings, styleId
       top: 0;
       z-index: -1;
     }
-    @media print {
-      html,
-      body {
-        box-sizing: border-box !important;
-        margin: 0 !important;
-        max-width: ${layout.paperWidthMm}mm !important;
-        min-width: 0 !important;
-        overflow-x: hidden !important;
-        padding: 0 !important;
-        width: ${layout.paperWidthMm}mm !important;
-      }
-      .fm-page,
-      .fm-page > main,
-      .print-page,
-      .preview-container,
-      .preview-scroll-area {
-        box-sizing: border-box !important;
-        display: block !important;
-        margin: 0 !important;
-        max-width: ${layout.paperWidthMm}mm !important;
-        min-width: 0 !important;
-        overflow: visible !important;
-        padding: 0 !important;
-        width: ${layout.paperWidthMm}mm !important;
-      }
-      .label-sheet-page {
-        break-after: auto !important;
-        break-before: auto !important;
-        break-inside: auto !important;
-        outline: none !important;
-        height: ${layout.paperHeightMm}mm !important;
-        margin: 0 !important;
-        max-height: ${layout.paperHeightMm}mm !important;
-        max-width: ${layout.paperWidthMm}mm !important;
-        min-height: ${layout.paperHeightMm}mm !important;
-        min-width: ${layout.paperWidthMm}mm !important;
-        padding: ${settings.marginTopMm}mm ${settings.marginRightMm}mm ${settings.marginBottomMm}mm ${settings.marginLeftMm}mm !important;
-        page-break-after: auto !important;
-        page-break-before: auto !important;
-        page-break-inside: auto !important;
-        position: static !important;
-        transform: none !important;
-        width: ${layout.paperWidthMm}mm !important;
-        zoom: 1 !important;
-      }
-      .${SHEET_PAGE_FRAME_CLASS} {
-        display: contents !important;
-        height: auto !important;
-        width: auto !important;
-      }
-      .label-sheet-page:not(.label-sheet-print-grid) .label-sheet-cell-grid {
-        border: 0 !important;
-      }
-      .${SHEET_PAGE_FRAME_CLASS} + .${SHEET_PAGE_FRAME_CLASS} .label-sheet-page {
-        break-before: page !important;
-        page-break-before: always !important;
-      }
-      .label-sheet-page .label-preview {
-        box-shadow: none !important;
-        outline: none !important;
-        transform: none !important;
-        zoom: 1 !important;
-      }
-      .label-sheet-label-shell::after {
-        display: none !important;
-      }
-      .${SOURCE_BIN_CLASS} {
-        display: none !important;
-      }
-    }
   `
 }
 
-export function clearLabelSheetPrintStyle(styleId = PAGE_STYLE_ID) {
+export function clearLabelSheetPreviewStyle(
+  styleId = SHEET_PREVIEW_STYLE_ID,
+) {
   document.getElementById(styleId)?.remove()
 }
 
-export async function saveLabelSheetPagesAsPdf(labels: LabelPdfPage[], filename: string, settings: LabelSheetSettings) {
-  if (labels.length === 0) return
-  if (!confirmLargeLabelSheetJob(labels.length, settings)) return
+export async function createLabelSheetPdf(
+  labels: LabelPdfPage[],
+  settings: LabelSheetSettings,
+): Promise<LabelPdfDocument | null> {
+  if (labels.length === 0) return null
+  if (!confirmLargeLabelSheetJob(labels.length, settings)) return null
 
   const { jsPDF } = await import('jspdf')
   const layout = getLabelSheetLayout(settings)
@@ -1049,5 +969,5 @@ export async function saveLabelSheetPagesAsPdf(labels: LabelPdfPage[], filename:
     pdf.restoreGraphicsState()
   })
 
-  pdf.save(filename)
+  return pdf
 }

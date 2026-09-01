@@ -18,35 +18,139 @@ const {
   exportPdfI18n = 'labelPrint.btnExportPdf',
   printButtonId,
 } = Astro.props
+
+const resolvedPrintButtonId = printButtonId ?? 'btn-print'
 ---
 
 <div class="action-buttons">
   <div class="export-buttons">
     <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPngI18n}>Export PNG</button>
+    <button id="btn-export-aml" class="fm-btn fm-btn-outline" type="button" data-i18n="labelPrint.btnExportAml">Export AML</button>
     <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPdfI18n}>Export PDF</button>
   </div>
-  <button id={printButtonId} class="fm-btn fm-btn-primary" type="button" onclick="filamanPrint()" data-i18n={printI18n}>{printLabel}</button>
+  <button
+    id={resolvedPrintButtonId}
+    class="fm-btn fm-btn-primary"
+    type="button"
+    data-i18n={printI18n}
+  >
+    {printLabel}
+  </button>
   <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
 
-  <div class="print-help">
-    <button class="print-help-trigger" type="button" aria-describedby="print-help-content">
-      <span class="print-help-icon" aria-hidden="true">i</span>
-      <span data-i18n="labelPrint.printHelpTitle">Printing issues?</span>
-    </button>
-    <div class="print-help-content" id="print-help-content" role="tooltip">
-      <p data-i18n="labelPrint.printHelpIntro">Use 100% scale and a matching paper size for small labels.</p>
-      <ul>
-        <li data-i18n="labelPrint.printHelpBrave">Brave: if output is blank or offset, use the system dialog or Export PDF.</li>
-        <li data-i18n="labelPrint.printHelpFirefox">Firefox: if the top is clipped, turn off headers and footers.</li>
-      </ul>
+  <div class="print-help-row">
+    <div class="print-help">
+      <button class="print-help-trigger" type="button" aria-describedby="print-help-content">
+        <span class="print-help-icon" aria-hidden="true">i</span>
+        <span data-i18n="labelPrint.printHelpTitle">Printing issues?</span>
+      </button>
+      <div
+        class="print-help-content"
+        id="print-help-content"
+        role="tooltip"
+      >
+        <div class="print-help-section">
+          <p data-i18n="labelPrint.printHelpIntro">
+            Normal browser printing is used by default. It does not create or save a PDF.
+          </p>
+          <ul>
+            <li data-i18n="labelPrint.printHelpScale">
+              Select the exact paper size and print at 100% or Actual size.
+            </li>
+            <li data-i18n="labelPrint.printHelpBrowserSystemDialog">
+              Use the OS or system print dialog to set printer-specific paper size,
+              orientation, rotation, and alignment.
+            </li>
+          </ul>
+        </div>
+        <div class="print-help-section">
+          <p>
+            <span data-i18n="labelPrint.printHelpPdfFallbackPrefix">For blank, clipped, offset, or wrong-size output, enable</span>{' '}
+            <em class="print-help-selection" data-i18n="labelPrint.createTemporaryPdf">Create temporary PDF for printing</em><span data-i18n="labelPrint.printHelpPdfFallbackSuffix">.</span>
+          </p>
+          <ul>
+            <li data-i18n="labelPrint.printHelpPdfOpenOnly">
+              FilaMan opens the temporary PDF only for printing and does not save it.
+            </li>
+            <li data-i18n="labelPrint.printHelpPdfSystemDialog">
+              Even in temporary-PDF mode, you may need the OS or system print dialog
+              for consistent, repeatable results.
+            </li>
+            <li data-i18n="labelPrint.printHelpPdfDownloadSetting">
+              Depending on your browser’s PDF-download setting, it may still download a copy.
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
+    <label class="print-pdf-option" for="check-print-pdf">
+      <input id="check-print-pdf" type="checkbox" />
+      <span data-i18n="labelPrint.createTemporaryPdf">Create temporary PDF for printing</span>
+    </label>
   </div>
 </div>
 
 <style is:global>
+  .action-buttons {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 24px 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .export-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .action-buttons .fm-btn {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .export-buttons .fm-btn {
+    min-width: 0;
+    padding-inline: 10px;
+  }
+
+  .print-help-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: nowrap;
+  }
+
+  .print-pdf-option {
+    display: inline-flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.25;
+    cursor: pointer;
+  }
+
+  .print-pdf-option input {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  @media (max-width: 640px) {
+    .print-help-row { flex-wrap: wrap; }
+  }
+
   .print-help {
     position: relative;
-    align-self: flex-start;
+    flex: 0 0 auto;
     color: var(--text-muted);
     font-size: 0.75rem;
     line-height: 1.4;
@@ -95,7 +199,7 @@ const {
     bottom: calc(100% + 8px);
     left: 0;
     display: none;
-    width: 272px;
+    width: min(480px, calc(100vw - 32px));
     box-sizing: border-box;
     padding: 10px 12px;
     border: 1px solid var(--border);
@@ -118,4 +222,21 @@ const {
   }
 
   .print-help-content li + li { margin-top: 4px; }
+
+  .print-help-section + .print-help-section { margin-top: 10px; }
+
+  .print-help-selection { font-style: italic; }
+
+  @media (max-width: 640px) {
+    .print-help-content {
+      position: fixed;
+      z-index: 1000;
+      left: calc(var(--sidebar-collapsed-width) + 16px);
+      right: 16px;
+      bottom: 16px;
+      width: auto;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+    }
+  }
 </style>

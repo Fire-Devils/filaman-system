@@ -17,6 +17,7 @@ import {
   type ExtraFieldDefinitionDialogResult,
 } from './extra-field-definition-dialog'
 import { t } from './i18n'
+import type { LabelExtraFieldOrigin, LabelExtraFieldValue } from './label-extra-fields'
 
 type ExtraFieldDialogWindow = Window & {
   __fmAlert: (message: string) => Promise<boolean>
@@ -42,12 +43,11 @@ export interface FlattenedExtraFieldValue {
   definition?: SystemExtraFieldDef
 }
 
-export interface EntityExtraFieldForPrint {
-  key: string
+export interface EntityExtraFieldForPrint extends LabelExtraFieldValue {
   label: string
   value: string
   rawValue: unknown
-  fieldType?: string
+  origin: LabelExtraFieldOrigin
 }
 
 export function definitionForFlattenedExtraField(
@@ -212,6 +212,7 @@ export function buildEntityExtraFieldsForPrint(
   includeEmptyDefinitions = false,
 ): EntityExtraFieldForPrint[] {
   const definitions = mergeEntityExtraFieldDefinitions(entityDefinitions, systemDefinitions)
+  const systemKeys = Object.keys(normalizeEntityExtraFieldDefinitions(systemDefinitions))
   const sourceValues = values ?? {}
   const fields: EntityExtraFieldForPrint[] = []
   const emittedKeys = new Set<string>()
@@ -226,6 +227,9 @@ export function buildEntityExtraFieldsForPrint(
       value: renderFieldPlainText(definition, rawValue),
       rawValue,
       fieldType: definition.field_type,
+      origin: systemKeys.some(systemKey => extraFieldPathOverlaps(key, [systemKey]))
+        ? 'system'
+        : 'custom',
     })
   }
 
@@ -240,6 +244,7 @@ export function buildEntityExtraFieldsForPrint(
         : renderUnknownFieldPlainText(field.value),
       rawValue: field.value,
       fieldType: field.definition?.field_type,
+      origin: 'custom',
     })
   }
 

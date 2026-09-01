@@ -68,9 +68,11 @@ export interface SpoolData {
   remaining_weight_g?: string
   initial_total_weight_g?: string
   empty_spool_weight_g?: string
+  spool_core_weight_g?: string
   low_weight_threshold_g?: string
   stocked_in_at?: string
   last_used_at?: string
+  created_at?: string
   extra?: Record<string, string>
   /** Unformatted values used by token modifiers such as |date. */
   extraRaw?: Record<string, unknown>
