@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Die Suche auf der Spulenseite findet jetzt auch Spulen anhand ihrer ID (auch mit vorangestelltem \"#\") sowie anhand der Werte ihrer Extrafelder." }
+        ],
+        "en": [
+          { "type": "feature", "text": "The search on the spools page now also finds spools by their ID (with or without a leading \"#\") and by the values of their extra fields." }
+        ]
+      }
+    },
+    {
       "version": "1.2.45",
       "date": "",
       "changes": {

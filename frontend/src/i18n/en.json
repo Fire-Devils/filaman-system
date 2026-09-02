@@ -457,7 +457,7 @@
     "statusArchived": "Archived",
     "manufacturer": "Manufacturer",
     "material": "Material",
-    "searchPlaceholder": "Search filament, manufacturer...",
+    "searchPlaceholder": "Search ID, filament, manufacturer, extra fields...",
     "allManufacturers": "All Manufacturers",
     "allMaterials": "All Materials",
     "groupByFilament": "Group by Filament",
