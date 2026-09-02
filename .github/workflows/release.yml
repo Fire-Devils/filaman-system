@@ -1,74 +1,45 @@
-name: Build and Push Docker Image to ghcr.io
+name: Release (Docker + GitHub Release)
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v1.2.48"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
-  build-and-push:
+  release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Read version from version.txt
+      - name: Derive version from tag
         id: version
         shell: bash
         run: |
           set -eu
-          VERSION="$(cat version.txt | tr -d ' \n')"
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${REF#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Stamp changelog with new version
-        shell: bash
-        run: |
-          set -eu
-          NEW_VERSION="${{ steps.version.outputs.version }}"
-          TODAY="$(date +%Y-%m-%d)"
-          CHANGELOG="frontend/src/changelog.json"
-          if grep -q '"UNRELEASED"' "$CHANGELOG"; then
-            sed -i "s/\"version\": \"UNRELEASED\"/\"version\": \"$NEW_VERSION\"/" "$CHANGELOG"
-            sed -i "s/\"date\": \"UNRELEASED\"/\"date\": \"$TODAY\"/" "$CHANGELOG"
-            echo "Stamped changelog: UNRELEASED -> $NEW_VERSION ($TODAY)"
-          else
-            echo "No UNRELEASED entry found in changelog.json — skipping"
-          fi
-
-      - name: Create tag, stamp changelog, push to Gitea + GitHub
-        shell: bash
-        env:
-          GIT_TERMINAL_PROMPT: 0
-        run: |
-          set -eu
-          NEW_VERSION="${{ steps.version.outputs.version }}"
-
-          git config user.name "gitea-actions"
-          git config user.email "actions@local"
-
-          # Commit changelog stamp (if changed) — version.txt already correct from bump-version.sh
-          git add frontend/src/changelog.json
-          git diff --cached --quiet || git commit -m "chore: stamp changelog for $NEW_VERSION"
-          git tag "v$NEW_VERSION"
-
-          # Push to Gitea
-          git push origin HEAD:main --force
-          git push origin "v$NEW_VERSION" --force
-
-          # Push to GitHub
-          git remote remove github 2>/dev/null || true
-          git remote add github https://x-access-token:${{ secrets.GHCR_TOKEN }}@github.com/Fire-Devils/filaman-system.git
-          git push github HEAD:refs/heads/main --force
-          git push github "v$NEW_VERSION" --force
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes from git log (Conventional Commits)
         id: notes
         shell: bash
         run: |
           set -eu
-          TAG="v${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
 
           # letzten Tag finden (falls keiner existiert: erstes Commit)
           PREV_TAG="$(git tag --sort=-creatordate \
@@ -136,46 +107,15 @@ jobs:
 
           echo "notes_path=RELEASE_NOTES.md" >> "$GITHUB_OUTPUT"
 
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Create GitHub Release (API)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          TAG: v${{ steps.version.outputs.version }}
-        run: |
-          set -eu
-
-          payload="$(jq -n \
-            --arg tag "$TAG" \
-            --arg name "Release $TAG" \
-            --rawfile body "${{ steps.notes.outputs.notes_path }}" \
-            '{ tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false }')"
-
-          code="$(curl -sS -o resp.json -w "%{http_code}" \
-            -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/Fire-Devils/filaman-system/releases \
-            -d "$payload")"
-
-          if [ "$code" = "201" ]; then
-            echo "Release created."
-          elif [ "$code" = "422" ]; then
-            echo "Release already exists (422)."
-            cat resp.json
-          else
-            echo "GitHub API error HTTP $code"
-            cat resp.json
-            exit 1
-          fi
-
-      - name: Install Docker CLI
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
+      - name: Create GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body_path: ${{ steps.notes.outputs.notes_path }}
+          draft: false
+          prerelease: false
 
       - name: Generate production .env file
         run: |
@@ -197,8 +137,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -216,7 +156,28 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           tags: |
             ghcr.io/fire-devils/filaman-system:latest
-            ghcr.io/fire-devils/filaman-system:v${{ steps.version.outputs.version }}
-            ghcr.io/fire-devils/filaman-system:${{ gitea.sha }}
-          cache-from: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache
-          cache-to: type=registry,ref=ghcr.io/fire-devils/filaman-system:buildcache,mode=max
+            ghcr.io/fire-devils/filaman-system:${{ steps.version.outputs.tag }}
+            ghcr.io/fire-devils/filaman-system:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Notify Discord
+        if: success()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RELEASE_NAME: Release ${{ steps.version.outputs.tag }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ]; then
+            echo "DISCORD_WEBHOOK_URL not set — skipping Discord notification"
+            exit 0
+          fi
+          payload=$(jq -n \
+            --arg content "Neuer Release in **$REPO**: **$RELEASE_NAME** (\`$RELEASE_TAG\`) \n$RELEASE_URL" \
+            '{content: $content}')
+          curl -fsS -H "Content-Type: application/json" \
+               -d "$payload" \
+               "$DISCORD_WEBHOOK_URL"
