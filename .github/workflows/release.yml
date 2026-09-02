@@ -109,7 +109,7 @@ jobs:
 
       - name: Create GitHub Release
         id: release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Release ${{ steps.version.outputs.tag }}
@@ -130,8 +130,7 @@ jobs:
           echo "ADMIN_DISPLAY_NAME=Admin" >> .env
           echo "ADMIN_LANGUAGE=en" >> .env
           echo "ADMIN_SUPERADMIN=true" >> .env
-          echo "Generated .env file for build:"
-          cat .env
+          echo "Generated build .env ($(wc -l < .env) lines) — contents not printed"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
