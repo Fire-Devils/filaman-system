@@ -1,7 +1,15 @@
 import pytest
 from sqlalchemy import select
 
-from app.models import Filament, Location, Manufacturer, Spool, SpoolEvent, SpoolStatus
+from app.models import (
+    Filament,
+    Location,
+    Manufacturer,
+    Spool,
+    SpoolEvent,
+    SpoolStatus,
+    SystemExtraField,
+)
 
 
 async def _create_manufacturer(db_session, name: str = "Test Manufacturer") -> Manufacturer:
@@ -376,6 +384,82 @@ class TestSpoolCRUD:
         assert response.status_code == 200
         data = response.json()
         assert all(item["filament_id"] == filament_one.id for item in data["items"])
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_by_id(self, auth_client, db_session):
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(db_session, filament.id, status.id)
+        await _create_spool(db_session, filament.id, status.id)
+
+        response = await client.get(f"/api/v1/spools?search={target.id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert [item["id"] for item in data["items"]] == [target.id]
+
+        # Leading '#' is tolerated (%23 = URL-encoded '#')
+        response = await client.get(f"/api/v1/spools?search=%23{target.id}")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_by_extra_field_value(self, auth_client, db_session):
+        client, _ = auth_client
+
+        db_session.add(
+            SystemExtraField(
+                target_type="spool",
+                key="batch_code",
+                label="Batch Code",
+                field_type="text",
+            )
+        )
+        await db_session.commit()
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(
+            db_session, filament.id, status.id, custom_fields={"batch_code": "XZ-999"}
+        )
+        await _create_spool(
+            db_session, filament.id, status.id, custom_fields={"batch_code": "AA-111"}
+        )
+
+        response = await client.get("/api/v1/spools?search=XZ-999")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_extra_field_key_no_false_positive(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+
+        db_session.add(
+            SystemExtraField(
+                target_type="spool",
+                key="batch_code",
+                label="Batch Code",
+                field_type="text",
+            )
+        )
+        await db_session.commit()
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        await _create_spool(
+            db_session, filament.id, status.id, custom_fields={"batch_code": "XZ-999"}
+        )
+
+        # Searching for the field *name* must not match — only values are searched.
+        response = await client.get("/api/v1/spools?search=batch_code")
+        assert response.status_code == 200
+        assert response.json()["total"] == 0
 
     @pytest.mark.asyncio
     async def test_get_spool_with_filament(self, auth_client, db_session):

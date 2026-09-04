@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import String, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
@@ -45,6 +45,7 @@ from app.models import (
     Spool,
     SpoolEvent,
     SpoolStatus,
+    SystemExtraField,
 )
 from app.services.spool_service import SpoolService
 
@@ -305,19 +306,40 @@ async def list_spools(
         # RFID: match either slot, and also the separator-less spelling so a
         # scale searching "04EF1410C82A81" finds the stored "04:EF:14:10:C8:2A:81".
         compact_term = f"%{search.replace(':', '').replace('-', '').replace(' ', '')}%"
-        conditions.append(
-            or_(
-                Filament.designation.ilike(search_term),
-                Filament.material_type.ilike(search_term),
-                Filament.manufacturer_color_name.ilike(search_term),
-                Manufacturer.name.ilike(search_term),
-                Spool.lot_number.ilike(search_term),
-                Spool.rfid_uid.ilike(search_term),
-                Spool.rfid_uid_2.ilike(search_term),
-                func.replace(Spool.rfid_uid, ":", "").ilike(compact_term),
-                func.replace(Spool.rfid_uid_2, ":", "").ilike(compact_term),
+        or_conditions = [
+            Filament.designation.ilike(search_term),
+            Filament.material_type.ilike(search_term),
+            Filament.manufacturer_color_name.ilike(search_term),
+            Manufacturer.name.ilike(search_term),
+            Spool.lot_number.ilike(search_term),
+            Spool.rfid_uid.ilike(search_term),
+            Spool.rfid_uid_2.ilike(search_term),
+            func.replace(Spool.rfid_uid, ":", "").ilike(compact_term),
+            func.replace(Spool.rfid_uid_2, ":", "").ilike(compact_term),
+        ]
+
+        # Match on the spool ID (optionally entered with a leading '#')
+        id_search = search.strip().lstrip("#").strip()
+        if id_search.isdigit() and len(id_search) <= 18:
+            or_conditions.append(Spool.id == int(id_search))
+
+        # Match on the *values* of defined spool extra fields (custom_fields JSON).
+        # custom_fields[key].as_string() compiles to json_extract(..., '$.key')
+        # on SQLite and custom_fields ->> 'key' on Postgres, so only values are
+        # searched, not the field keys themselves.
+        ef_keys = (
+            await db.execute(
+                select(SystemExtraField.key).where(
+                    SystemExtraField.target_type == "spool"
+                )
             )
-        )
+        ).scalars().all()
+        for key in ef_keys:
+            or_conditions.append(
+                Spool.custom_fields[key].as_string().ilike(search_term)
+            )
+
+        conditions.append(or_(*or_conditions))
         needs_filament_join = True
         needs_manufacturer_join = True
 
