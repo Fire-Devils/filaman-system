@@ -28,6 +28,7 @@ class RfidChange:
 
     removed_from: list[str] = field(default_factory=list)
     replaced_uid: str | None = None
+    replaced_slot: int | None = None
     already_assigned: bool = False
 
 
@@ -165,20 +166,40 @@ class SpoolService:
         return removed
 
     async def add_rfid_uid(
-        self, spool: Spool, uid: str, *, replace_secondary: bool = False
+        self,
+        spool: Spool,
+        uid: str,
+        *,
+        replace_secondary: bool = False,
+        replace_slot: int | None = None,
     ) -> RfidChange:
         """Attach ``uid`` to the first free slot of ``spool``.
 
-        No-op when the chip is already on this spool.  When both slots are
-        taken the secondary is replaced if ``replace_secondary`` is set
-        (write-tag flow: the chip is already physically written, so refusing
-        would desync DB and chip), otherwise :class:`RfidSlotsFullError`.
+        No-op when the chip is already on this spool.  ``replace_slot`` (1 or
+        2) forces the chip into that slot, replacing whatever is there — the
+        UI offers this when both slots are full (e.g. tag 1 fell off).
+        Otherwise, when both slots are taken the secondary is replaced if
+        ``replace_secondary`` is set (write-tag flow: the chip is already
+        physically written, so refusing would desync DB and chip), else
+        :class:`RfidSlotsFullError`.
         """
         canonical = normalize_rfid_uid(uid)
         if canonical is None:
             raise ValueError("RFID UID must not be empty")
         if self.spool_has_rfid(spool, canonical):
             return RfidChange(already_assigned=True)
+        if replace_slot in (1, 2):
+            if replace_slot == 1:
+                replaced = spool.rfid_uid
+                removed = await self.set_rfid_uids(spool, rfid_uid=canonical)
+            else:
+                replaced = spool.rfid_uid_2
+                removed = await self.set_rfid_uids(spool, rfid_uid_2=canonical)
+            return RfidChange(
+                removed_from=removed,
+                replaced_uid=replaced,
+                replaced_slot=replace_slot if replaced else None,
+            )
         if spool.rfid_uid is None:
             return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid=canonical))
         if spool.rfid_uid_2 is None:
@@ -189,7 +210,7 @@ class SpoolService:
             )
         replaced = spool.rfid_uid_2
         removed = await self.set_rfid_uids(spool, rfid_uid_2=canonical)
-        return RfidChange(removed_from=removed, replaced_uid=replaced)
+        return RfidChange(removed_from=removed, replaced_uid=replaced, replaced_slot=2)
 
     async def remove_rfid_uid(self, spool: Spool, uid: str) -> bool:
         """Detach ``uid`` from whichever slot holds it. Returns False if absent."""
