@@ -37,6 +37,7 @@ from app.models import Filament, FilamentColor, Printer, PrinterSlot, PrinterSlo
 SCHEMA_VERSION = 3
 DEFAULT_EMPTY_COLOR = "#202020"
 AMS_HT_ID_BASE = 128  # Bambu numbers AMS-HT units from 128
+EXTERNAL_IDS = {254, 255}  # Bambu: external spool holder / virtual tray
 SLOTS_PER_AMS = 4
 
 
@@ -91,12 +92,17 @@ def ams_letter(ams_id: int) -> str:
 
 
 def ams_kind(ams_id: int, unit: dict[str, Any] | None = None) -> str:
+    """``ams`` (4 slots) | ``ams_ht`` (1 slot) | ``external`` (spool holder, 1 slot)."""
+    if ams_id in EXTERNAL_IDS or (unit and unit.get("is_external")):
+        return "external"
     if unit and unit.get("is_ams_ht"):
         return "ams_ht"
     return "ams_ht" if ams_id >= AMS_HT_ID_BASE else "ams"
 
 
 def ams_label(ams_id: int, kind: str) -> str:
+    if kind == "external":
+        return "External"
     if kind == "ams_ht":
         n = ams_id - AMS_HT_ID_BASE + 1 if ams_id >= AMS_HT_ID_BASE else ams_id + 1
         return f"HT{n}"
@@ -104,7 +110,7 @@ def ams_label(ams_id: int, kind: str) -> str:
 
 
 def slot_label(ams_id: int, slot: int, kind: str) -> str:
-    if kind == "ams_ht":
+    if kind in ("ams_ht", "external"):
         return ams_label(ams_id, kind)
     return f"{ams_letter(ams_id)}{slot + 1}"
 
@@ -509,7 +515,7 @@ def build_printer_display(
         unit = units_by_id[ams_id]
         kind = unit["kind"]
         slot_nos = unit.pop("_slot_nos")
-        if kind != "ams_ht":
+        if kind == "ams":
             slot_nos |= set(range(SLOTS_PER_AMS))
         elif not slot_nos:
             slot_nos = {0}

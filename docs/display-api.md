@@ -79,7 +79,7 @@ Authorization: Device 12.34.abcdef…
       "ams": [
         {
           "ams_id": 0,                // as the printer numbers it (AMS-HT start at 128)
-          "kind": "ams",              // "ams" | "ams_ht"
+          "kind": "ams",              // "ams" | "ams_ht" | "external" (spool holder, id 254/255)
           "label": "AMS A",           // "AMS A".."AMS D", "HT1".. — use it or make your own
           "temperature": 25.4, "humidity": 3,
           "drying": null,             // or { status, target_temp, time }
@@ -114,7 +114,7 @@ Rules you can rely on:
 
 - Numbers are raw. No pre-formatted strings, no thresholds — decide "low" yourself.
 - `color` is always a 7-char `#RRGGBB`. Alpha is stripped.
-- A regular AMS always lists slots 0–3, even when empty. An AMS-HT lists slot 0.
+- A regular AMS always lists slots 0–3, even when empty. An AMS-HT and the external holder list slot 0.
 - `spool_id` is set only when FilaMan has a spool assigned to that slot; a slot
   can still be non-empty (the printer sees filament) with `spool_id: null`.
 - Adding fields never bumps `schema_version`; changing a field's meaning does.
