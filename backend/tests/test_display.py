@@ -69,6 +69,7 @@ BAMBUDDY_STATUS = {
                 ],
             },
             {"id": 128, "temp": 40.0, "humidity": 1, "tray": [{"id": 0, "tray_type": "PA", "tray_color": "111111FF"}]},
+            {"id": 255, "tray": [{"id": 0}]},
         ]
     },
     "hms": [{"code": "0x0500", "msg": "Nozzle clog"}],
@@ -95,8 +96,8 @@ def test_normalize_bambuddy_status():
     assert live["temperatures"]["nozzle"] == 220 and live["temperatures"]["bed"] == 60
     assert live["active_tray"] == 1
     assert live["hms"] == [{"code": "0x0500", "message": "Nozzle clog"}]
-    assert [u["ams_id"] for u in live["ams"]] == [0, 128]
-    assert live["ams"][1]["kind"] == "ams_ht"
+    assert [u["ams_id"] for u in live["ams"]] == [0, 128, 255]
+    assert [u["kind"] for u in live["ams"]] == ["ams", "ams_ht", "external"]
     tray0 = live["ams"][0]["slots"][0]
     assert tray0["color"] == "#0000FF" and tray0["rfid"] is True and tray0["remaining_percent"] == 80
 
@@ -148,7 +149,9 @@ def test_build_merges_live_and_filaman_and_marks_backup():
     }
     out = build_printer_display(_P(), fm, BAMBUDDY_STATUS)
     assert out["connected"] is True and out["job"]["progress"] == 42
-    assert [u["label"] for u in out["ams"]] == ["AMS A", "HT1"]
+    assert [u["label"] for u in out["ams"]] == ["AMS A", "HT1", "External"]
+    ext = out["ams"][2]
+    assert ext["kind"] == "external" and [s["label"] for s in ext["slots"]] == ["External"] and ext["slots"][0]["empty"]
     a = out["ams"][0]["slots"]
     # slot 0: printer sees PETG, FilaMan has no spool -> non-empty, printer remaining
     assert a[0]["empty"] is False and a[0]["spool_id"] is None
