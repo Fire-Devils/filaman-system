@@ -12,6 +12,7 @@
     "locations": "Locations",
     "printers": "Printers",
     "spoolLog": "Spool Log",
+    "display": "Display",
     "admin": "Admin",
     "adminPanel": "Admin Panel",
     "settings": "Settings",
@@ -1163,6 +1164,19 @@
     "popupTitle": "What's New",
     "dismiss": "Got it",
     "viewAll": "All Changes"
+  },
+  "display": {
+    "title": "Display",
+    "kiosk": "Kiosk mode",
+    "rawJson": "JSON",
+    "empty": "empty",
+    "offline": "offline",
+    "nozzle": "Nozzle",
+    "bed": "Bed",
+    "backupOf": "backup of {slot}",
+    "upToDate": "updated {time}",
+    "error": "Could not load the display feed",
+    "noPrinters": "No active printers."
   },
   "spoolLog": {
     "title": "Spool Log",

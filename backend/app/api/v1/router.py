@@ -5,6 +5,7 @@ from app.api.v1.app_settings_admin import public_router as app_settings_public_r
 from app.api.v1.app_settings_admin import router as app_settings_admin_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.devices import router as devices_router
+from app.api.v1.display import router as display_router
 from app.api.v1.events import router as events_router
 from app.api.v1.filamentdb_proxy import router as filamentdb_router
 from app.api.v1.filaments import router, router_colors, router_filaments
@@ -40,6 +41,7 @@ api_router.include_router(label_presets_router)
 api_router.include_router(printers_router)
 api_router.include_router(admin_router)
 api_router.include_router(devices_router)
+api_router.include_router(display_router)
 api_router.include_router(system_router)
 api_router.include_router(spoolman_router)
 api_router.include_router(plugin_public_router)
