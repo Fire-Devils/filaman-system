@@ -202,6 +202,7 @@ import Layout from '../../layouts/Layout.astro'
           <select id="rfid-device-select" class="fm-select" style="margin-bottom: 16px;"></select>
         </div>
         <div id="rfid-warning" class="fm-alert fm-alert-warning hidden" style="margin-bottom: 16px;"></div>
+        <div id="rfid-slot-choice" class="hidden" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px;"></div>
       </div>
       <div id="rfid-status" class="fm-alert hidden" style="margin-bottom: 16px;"></div>
       <div style="display: flex; gap: 12px;">
@@ -1278,6 +1279,21 @@ import Layout from '../../layouts/Layout.astro'
       } else {
         warning.classList.add('hidden')
       }
+      const slotChoice = document.getElementById('rfid-slot-choice')!
+      if (spool && spool.rfid_uid && spool.rfid_uid_2) {
+        slotChoice.innerHTML = `
+          <div style="font-size: 0.9rem; font-weight: 600;">${t('rfid.replaceWhichTag')}</div>
+          <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+            <input type="radio" name="rfid-replace-slot" value="1"> <span>${t('rfid.replaceTagN', { n: 1, uid: spool.rfid_uid })}</span>
+          </label>
+          <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+            <input type="radio" name="rfid-replace-slot" value="2" checked> <span>${t('rfid.replaceTagN', { n: 2, uid: spool.rfid_uid_2 })}</span>
+          </label>`
+        slotChoice.classList.remove('hidden')
+      } else {
+        slotChoice.innerHTML = ''
+        slotChoice.classList.add('hidden')
+      }
 
       if (activeDevices.length === 1) {
         text.textContent = t('rfid.confirmWrite', { device: activeDevices[0].name })
@@ -1344,7 +1360,10 @@ import Layout from '../../layouts/Layout.astro'
           },
           credentials: 'include',
           signal: getAbortSignal(),
-          body: JSON.stringify({ spool_id: currentRfidSpoolId }),
+          body: JSON.stringify({
+            spool_id: currentRfidSpoolId,
+            replace_slot: Number((document.querySelector('input[name="rfid-replace-slot"]:checked') as HTMLInputElement | null)?.value) || null,
+          }),
         })
         
         const result = await response.json()

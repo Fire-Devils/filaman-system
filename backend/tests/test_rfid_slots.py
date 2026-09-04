@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -454,3 +455,67 @@ def test_migration_adds_slot_and_canonicalises_existing_uids(tmp_path):
     with engine.connect() as connection:
         columns = {c["name"] for c in sa.inspect(connection).get_columns("spools")}
         assert "rfid_uid_2" not in columns
+
+
+# ---------------------------------------------------------------------------
+# replacing a chosen slot (tag fell off) via write-tag -> rfid-result
+# ---------------------------------------------------------------------------
+
+
+class TestReplaceChosenSlot:
+    async def test_service_replace_slot_1_keeps_slot_2(self, db_session):
+        spool = await _spool_fixture(db_session, rfid_uid=CHIP_A, rfid_uid_2=CHIP_B)
+        change = await SpoolService(db_session).add_rfid_uid(spool, CHIP_C, replace_slot=1)
+        assert (change.replaced_uid, change.replaced_slot) == (CHIP_A, 1)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_C, CHIP_B)
+
+    async def test_service_replace_slot_on_empty_slot_just_fills_it(self, db_session):
+        spool = await _spool_fixture(db_session, rfid_uid=CHIP_A)
+        change = await SpoolService(db_session).add_rfid_uid(spool, CHIP_C, replace_slot=2)
+        assert change.replaced_uid is None and change.replaced_slot is None
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, CHIP_C)
+
+    async def test_write_tag_replace_slot_flows_into_rfid_result(self, auth_client, db_session):
+        client, csrf = auth_client
+        device = await _create_device(db_session, device_code="ABC123", ip_address="192.168.1.10")
+        token, device_id = await _register_device(client, "ABC123", csrf)
+        spool = await _spool_fixture(db_session, rfid_uid=CHIP_A, rfid_uid_2=CHIP_B)
+
+        # UI: "write tag, replace tag 1" (the call to the ESP32 is mocked away)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        with patch("app.api.v1.devices.httpx.AsyncClient") as mock_httpx:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_httpx.return_value = mock_client
+            response = await client.post(
+                f"/api/v1/devices/{device.id}/write-tag",
+                json={"spool_id": spool.id, "replace_slot": 1},
+                headers={"X-CSRF-Token": csrf},
+            )
+        assert response.status_code == 200, response.text
+
+        # ESP32 reports the written chip
+        response = await client.post(
+            "/api/v1/devices/rfid-result",
+            json={"success": True, "tag_uuid": CHIP_C, "spool_id": spool.id},
+            headers={**_device_headers(token), "X-CSRF-Token": csrf},
+        )
+        assert response.status_code == 200, response.text
+
+        await db_session.refresh(spool)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_C, CHIP_B)
+        status = (await client.get(f"/api/v1/devices/{device_id}/write-status")).json()
+        assert "1. Tag" in (status.get("removed_from") or "")
+
+    async def test_write_tag_rejects_invalid_slot(self, auth_client, db_session):
+        client, csrf = auth_client
+        device = await _create_device(db_session, device_code="ABC123", ip_address="192.168.1.10")
+        response = await client.post(
+            f"/api/v1/devices/{device.id}/write-tag",
+            json={"spool_id": 1, "replace_slot": 3},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert response.status_code == 422

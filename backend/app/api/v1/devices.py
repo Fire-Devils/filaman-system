@@ -280,7 +280,10 @@ async def write_rfid_tag(
     new_custom_fields = dict(device.custom_fields)
     new_custom_fields["last_write_result"] = {
         "status": "pending",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        # Consumed by /rfid-result: which slot the chip replaces when both are full.
+        "spool_id": data.spool_id,
+        "replace_slot": data.replace_slot,
     }
     device.custom_fields = new_custom_fields
     await db.commit()
@@ -385,6 +388,16 @@ async def device_rfid_result(
     service = SpoolService(db)
     removed_info: list[str] = []
 
+    # Slot chosen in the write-tag request (UI "replace tag 1/2"), if any.
+    pending = (device.custom_fields or {}).get("last_write_result") or {}
+    replace_slot = None
+    if (
+        pending.get("status") == "pending"
+        and data.spool_id
+        and pending.get("spool_id") == data.spool_id
+    ):
+        replace_slot = pending.get("replace_slot")
+
     target_spool = None
     target_location = None
     # Only a spool explicitly targeted by spool_id keeps the chip when the same
@@ -398,12 +411,16 @@ async def device_rfid_result(
         if target_spool:
             assigned_spool_id = target_spool.id
             change = await service.add_rfid_uid(
-                target_spool, data.tag_uuid, replace_secondary=True
+                target_spool,
+                data.tag_uuid,
+                replace_secondary=True,
+                replace_slot=replace_slot,
             )
             removed_info.extend(change.removed_from)
             if change.replaced_uid:
                 removed_info.append(
-                    f"Spule #{target_spool.id} (2. Tag {change.replaced_uid} ersetzt)"
+                    f"Spule #{target_spool.id} ({change.replaced_slot}. Tag "
+                    f"{change.replaced_uid} ersetzt)"
                 )
             if change.already_assigned:
                 logger.info(f"Spool {data.spool_id} already has RFID UID {data.tag_uuid}")
