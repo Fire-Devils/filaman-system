@@ -34,6 +34,9 @@ from sqlalchemy.orm import selectinload
 
 from app.models import Filament, FilamentColor, Printer, PrinterSlot, PrinterSlotAssignment, Spool
 
+_NOZZLE_MIN_KEY = "bambu_nozzle_temp_min"
+_NOZZLE_MAX_KEY = "bambu_nozzle_temp_max"
+
 SCHEMA_VERSION = 3
 DEFAULT_EMPTY_COLOR = "#202020"
 AMS_HT_ID_BASE = 128  # Bambu numbers AMS-HT units from 128
@@ -321,7 +324,33 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _spool_swatch(spool: Spool) -> dict[str, Any]:
+def _params_for_printer(params: list[Any] | None, printer_id: int) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for param in params or []:
+        if (
+            getattr(param, "printer_id", None) == printer_id
+            and param.param_key
+            and param.param_value not in (None, "")
+        ):
+            out[param.param_key] = param.param_value
+    return out
+
+
+def _nozzle_range(spool: Spool, printer_id: int) -> tuple[int | None, int | None]:
+    """Bambu nozzle range lives on per-printer params, not on Filament.
+
+    ``FilamentPrinterProfile.nozzle_temp_c`` is a single setpoint, so it cannot
+    fill ``nozzle_min`` / ``nozzle_max``. Spool-level params override filament.
+    """
+    filament = spool.filament
+    merged = {
+        **_params_for_printer(getattr(filament, "printer_params", None) if filament else None, printer_id),
+        **_params_for_printer(getattr(spool, "printer_params", None), printer_id),
+    }
+    return _as_int(merged.get(_NOZZLE_MIN_KEY)), _as_int(merged.get(_NOZZLE_MAX_KEY))
+
+
+def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
     filament = spool.filament
     manufacturer = filament.manufacturer.name if filament and filament.manufacturer else ""
     color_hex = ""
@@ -348,6 +377,7 @@ def _spool_swatch(spool: Spool) -> dict[str, Any]:
     if remaining is not None and net_initial:
         remaining_percent = max(0, min(100, int(round(remaining / net_initial * 100))))
 
+    nozzle_min, nozzle_max = _nozzle_range(spool, printer_id)
     return {
         "spool_id": spool.id,
         "filament": filament.designation if filament else "",
@@ -357,8 +387,8 @@ def _spool_swatch(spool: Spool) -> dict[str, Any]:
         "color_name": color_name,
         "remaining_grams": int(round(remaining)) if remaining is not None else None,
         "remaining_percent": remaining_percent,
-        "nozzle_min": _as_int(getattr(filament, "nozzle_temp_min", None)) if filament else None,
-        "nozzle_max": _as_int(getattr(filament, "nozzle_temp_max", None)) if filament else None,
+        "nozzle_min": nozzle_min,
+        "nozzle_max": nozzle_max,
         "rfid": bool(spool.rfid_uid or getattr(spool, "rfid_uid_2", None)),
         "last_used": spool.last_used_at.isoformat() if spool.last_used_at else None,
     }
@@ -379,6 +409,13 @@ async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int,
             .selectinload(Spool.filament)
             .selectinload(Filament.filament_colors)
             .selectinload(FilamentColor.color),
+            selectinload(PrinterSlot.assignment)
+            .selectinload(PrinterSlotAssignment.spool)
+            .selectinload(Spool.filament)
+            .selectinload(Filament.printer_params),
+            selectinload(PrinterSlot.assignment)
+            .selectinload(PrinterSlotAssignment.spool)
+            .selectinload(Spool.printer_params),
         )
         .order_by(PrinterSlot.slot_no)
     )
@@ -388,7 +425,7 @@ async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int,
         assignment = slot.assignment
         entry: dict[str, Any] = {"present": bool(assignment and assignment.present)}
         if assignment and assignment.spool:
-            entry.update(_spool_swatch(assignment.spool))
+            entry.update(_spool_swatch(assignment.spool, printer_id))
         out[key] = entry
     return out
 

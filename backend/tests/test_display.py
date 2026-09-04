@@ -1,7 +1,7 @@
 """Display API: merge of FilaMan slot assignments and optional driver live state."""
 
 from app.api.v1 import display as display_api
-from app.models import Filament, PrinterSlotAssignment
+from app.models import Filament, FilamentPrinterParam, PrinterSlotAssignment, SpoolPrinterParam
 from app.services.display_service import (
     SCHEMA_VERSION,
     build_printer_display,
@@ -202,6 +202,40 @@ class TestDisplayEndpoint:
         assert slot["manufacturer"] == "SUNLU" and slot["remaining_grams"] == 500
         assert slot["remaining_percent"] == 50 and slot["rfid"] is True
         assert slot["label"] == "A2"
+        assert slot["nozzle_min"] is None and slot["nozzle_max"] is None
+
+    async def test_nozzle_temps_come_from_printer_params(self, auth_client, db_session):
+        client, _ = auth_client
+        printer, spool = await _printer_with_spool(db_session)
+        db_session.add_all(
+            [
+                FilamentPrinterParam(
+                    filament_id=spool.filament_id,
+                    printer_id=printer.id,
+                    param_key="bambu_nozzle_temp_min",
+                    param_value="190",
+                ),
+                FilamentPrinterParam(
+                    filament_id=spool.filament_id,
+                    printer_id=printer.id,
+                    param_key="bambu_nozzle_temp_max",
+                    param_value="230",
+                ),
+                SpoolPrinterParam(
+                    spool_id=spool.id,
+                    printer_id=printer.id,
+                    param_key="bambu_nozzle_temp_max",
+                    param_value="240",
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        assert response.status_code == 200, response.text
+        slot = response.json()["printers"][0]["ams"][0]["slots"][1]
+        assert slot["nozzle_min"] == 190
+        assert slot["nozzle_max"] == 240
 
     async def test_remaining_percent_falls_back_to_filament_net_weight(self, auth_client, db_session):
         client, _ = auth_client
