@@ -1,7 +1,7 @@
 """Display API: merge of FilaMan slot assignments and optional driver live state."""
 
 from app.api.v1 import display as display_api
-from app.models import PrinterSlotAssignment
+from app.models import Filament, PrinterSlotAssignment
 from app.services.display_service import (
     SCHEMA_VERSION,
     build_printer_display,
@@ -202,6 +202,20 @@ class TestDisplayEndpoint:
         assert slot["manufacturer"] == "SUNLU" and slot["remaining_grams"] == 500
         assert slot["remaining_percent"] == 50 and slot["rfid"] is True
         assert slot["label"] == "A2"
+
+    async def test_remaining_percent_falls_back_to_filament_net_weight(self, auth_client, db_session):
+        client, _ = auth_client
+        printer, spool = await _printer_with_spool(db_session)
+        spool.initial_total_weight_g = None
+        spool.remaining_weight_g = 250.0
+        filament = await db_session.get(Filament, spool.filament_id)
+        filament.raw_material_weight_g = 1000.0
+        await db_session.commit()
+
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        assert response.status_code == 200, response.text
+        slot = response.json()["printers"][0]["ams"][0]["slots"][1]
+        assert slot["remaining_percent"] == 25 and slot["remaining_grams"] == 250
 
     async def test_etag_304_and_slots_projection(self, auth_client, db_session):
         client, _ = auth_client

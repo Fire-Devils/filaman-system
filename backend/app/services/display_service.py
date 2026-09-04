@@ -338,6 +338,10 @@ def _spool_swatch(spool: Spool) -> dict[str, Any]:
     net_initial = None
     if initial is not None and empty is not None:
         net_initial = max(initial - empty, 0)
+    if not net_initial and filament is not None:
+        # No gross weight recorded on the spool: fall back to the filament's
+        # net weight (e.g. 1000 g) so the board can still show a percentage.
+        net_initial = getattr(filament, "raw_material_weight_g", None) or None
     remaining_percent = None
     if remaining is not None and net_initial:
         remaining_percent = max(0, min(100, int(round(remaining / net_initial * 100))))
