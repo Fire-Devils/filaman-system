@@ -110,8 +110,10 @@ def ams_label(ams_id: int, kind: str) -> str:
 
 
 def slot_label(ams_id: int, slot: int, kind: str) -> str:
-    if kind in ("ams_ht", "external"):
+    if kind == "ams_ht":
         return ams_label(ams_id, kind)
+    if kind == "external":
+        return f"Ext{slot + 1}"  # dual-extruder printers report several external trays
     return f"{ams_letter(ams_id)}{slot + 1}"
 
 
