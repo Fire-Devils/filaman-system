@@ -525,6 +525,130 @@ class TestSpoolServiceConsumptionAggregation:
         assert event2.meta.get("clamped_to_zero") is True
 
 
+class TestSpoolServiceConsumptionIdempotency:
+    """Keyed consumption events must apply once and never aggregate."""
+
+    @pytest.mark.asyncio
+    async def test_same_key_is_idempotent(self, db_session):
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        event_at = datetime.now(timezone.utc)
+        key = "bambuddy:3:job-1:17:0:2"
+
+        event1, remaining1 = await service.record_consumption(
+            spool,
+            -12.4,
+            event_at,
+            source="bambuddy",
+            source_event_key=key,
+        )
+        assert remaining1 == 737.6
+        assert event1.meta["source_event_key"] == key
+        assert event1.delta_weight_g == -12.4
+
+        event2, remaining2 = await service.record_consumption(
+            spool,
+            -12.4,
+            event_at + timedelta(seconds=30),
+            source="bambuddy",
+            source_event_key=key,
+        )
+        assert event2.id == event1.id
+        assert remaining2 == 737.6
+        assert event2.delta_weight_g == -12.4
+
+        result = await db_session.execute(
+            select(SpoolEvent)
+            .where(SpoolEvent.spool_id == spool.id)
+            .where(SpoolEvent.event_type == "print_consumption")
+        )
+        assert len(result.scalars().all()) == 1
+
+    @pytest.mark.asyncio
+    async def test_different_keys_create_separate_events(self, db_session):
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        event1, remaining1 = await service.record_consumption(
+            spool,
+            -10.0,
+            base_time,
+            source="bambuddy",
+            source_event_key="run-1:a",
+        )
+        event2, remaining2 = await service.record_consumption(
+            spool,
+            -5.0,
+            base_time + timedelta(minutes=1),
+            source="bambuddy",
+            source_event_key="run-1:b",
+        )
+
+        assert event2.id != event1.id
+        assert remaining1 == 740.0
+        assert remaining2 == 735.0
+        assert event1.meta["source_event_key"] == "run-1:a"
+        assert event2.meta["source_event_key"] == "run-1:b"
+
+    @pytest.mark.asyncio
+    async def test_keyed_event_does_not_aggregate_with_unkeyed(self, db_session):
+        """Unkeyed window aggregation must not fold into a keyed event."""
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        keyed, remaining1 = await service.record_consumption(
+            spool,
+            -10.0,
+            base_time,
+            source="bambuddy",
+            source_event_key="bambuddy:job:1",
+        )
+        unkeyed, remaining2 = await service.record_consumption(
+            spool,
+            -5.0,
+            base_time + timedelta(minutes=1),
+            source="bambuddy",
+        )
+
+        assert unkeyed.id != keyed.id
+        assert remaining1 == 740.0
+        assert remaining2 == 735.0
+        assert "aggregation_count" not in (unkeyed.meta or {})
+        assert (keyed.meta or {}).get("source_event_key") == "bambuddy:job:1"
+
+    @pytest.mark.asyncio
+    async def test_blank_key_falls_back_to_aggregation(self, db_session):
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(
+            db_session, remaining_weight_g=750.0, status_key="opened"
+        )
+        base_time = datetime.now(timezone.utc)
+
+        event1, _ = await service.record_consumption(
+            spool, -10.0, base_time, source="bambuddy", source_event_key="  "
+        )
+        event2, remaining = await service.record_consumption(
+            spool,
+            -5.0,
+            base_time + timedelta(minutes=1),
+            source="bambuddy",
+            source_event_key="",
+        )
+
+        assert event2.id == event1.id
+        assert remaining == 735.0
+        assert event2.meta["aggregation_count"] == 2
+        assert "source_event_key" not in (event2.meta or {})
+
+
 class TestSpoolServiceChangeStatus:
     @pytest.mark.asyncio
     async def test_change_status(self, db_session):
