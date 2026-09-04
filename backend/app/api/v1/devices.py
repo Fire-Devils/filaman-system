@@ -4,7 +4,7 @@ import httpx
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
