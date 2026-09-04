@@ -219,6 +219,17 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             class="fm-input"
           />
         </div>
+        <div>
+          <label for="rfid_uid_2" class="fm-label" data-i18n="spools.rfidUid2">RFID UID (2nd tag)</label>
+          <input
+            type="text"
+            id="rfid_uid_2"
+            name="rfid_uid_2"
+            data-i18n-placeholder="spools.rfidUidPlaceholder"
+            placeholder="e.g. 04A2B3C4D5"
+            class="fm-input"
+          />
+        </div>
       </div>
 
       <!-- System Fields -->
@@ -688,6 +699,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             if (dup.rfid_uid) {
               (document.getElementById('rfid_uid') as HTMLInputElement).value = dup.rfid_uid
             }
+            if (dup.rfid_uid_2) {
+              (document.getElementById('rfid_uid_2') as HTMLInputElement).value = dup.rfid_uid_2
+            }
 
             // Custom Fields (non-system) + System Fields
             if (dup.custom_fields && typeof dup.custom_fields === 'object') {
@@ -832,6 +846,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       const rfidUid = formData.get('rfid_uid')
       if (rfidUid) data.rfid_uid = rfidUid
+      const rfidUid2 = formData.get('rfid_uid_2')
+      if (rfidUid2) data.rfid_uid_2 = rfidUid2
       
       const externalId = formData.get('external_id')
       if (externalId) data.external_id = externalId

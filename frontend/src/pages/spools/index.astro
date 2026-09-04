@@ -201,7 +201,7 @@ import Layout from '../../layouts/Layout.astro'
           <label for="rfid-device-select" class="fm-label" data-i18n="rfid.selectDevice">Select Device</label>
           <select id="rfid-device-select" class="fm-select" style="margin-bottom: 16px;"></select>
         </div>
-        <div id="rfid-warning" class="fm-alert fm-alert-warning hidden" style="margin-bottom: 16px;" data-i18n="rfid.tagAlreadyExistsWarning"></div>
+        <div id="rfid-warning" class="fm-alert fm-alert-warning hidden" style="margin-bottom: 16px;"></div>
       </div>
       <div id="rfid-status" class="fm-alert hidden" style="margin-bottom: 16px;"></div>
       <div style="display: flex; gap: 12px;">
@@ -619,7 +619,7 @@ import Layout from '../../layouts/Layout.astro'
       
       const fil = getFilamentForSpool(s)
       const currency = getCurrency()
-      const hasTag = !!s.rfid_uid
+      const hasTag = !!(s.rfid_uid || s.rfid_uid_2)
       const isOnline = activeDevices.length > 0
       const iconColor = hasTag ? 'color: #10b981;' : 'color: var(--text-muted);'
       const tooltip = isOnline ? t('rfid.writeTag') : t('rfid.noDeviceOnlineTooltip')
@@ -1267,9 +1267,13 @@ import Layout from '../../layouts/Layout.astro'
       
       status.classList.add('hidden')
       
-      // Check if spool already has a tag
+      // A spool has two RFID slots: a write ADDS the chip; only a third chip replaces the second.
       const spool = allSpools.find(s => s.id === spoolId)
-      if (spool && spool.rfid_uid) {
+      if (spool && spool.rfid_uid && spool.rfid_uid_2) {
+        warning.textContent = t('rfid.bothTagsExistWarning')
+        warning.classList.remove('hidden')
+      } else if (spool && spool.rfid_uid) {
+        warning.textContent = t('rfid.secondTagWillBeAdded')
         warning.classList.remove('hidden')
       } else {
         warning.classList.add('hidden')
@@ -1617,6 +1621,7 @@ import Layout from '../../layouts/Layout.astro'
       const payload: Record<string, any> = {}
       if (spool.empty_spool_weight_g != null) payload.empty_spool_weight_g = spool.empty_spool_weight_g
       if (spool.rfid_uid) payload.rfid_uid = spool.rfid_uid
+      if (spool.rfid_uid_2) payload.rfid_uid_2 = spool.rfid_uid_2
       if (spool.spool_width_mm != null) payload.spool_width_mm = spool.spool_width_mm
       if (spool.spool_outer_diameter_mm != null) payload.spool_outer_diameter_mm = spool.spool_outer_diameter_mm
       if (spool.spool_material) payload.spool_material = spool.spool_material

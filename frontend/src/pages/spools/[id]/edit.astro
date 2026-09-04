@@ -227,6 +227,17 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
               class="fm-input"
             />
           </div>
+          <div>
+            <label for="rfid_uid_2" class="fm-label" data-i18n="spools.rfidUid2">RFID UID (2nd tag)</label>
+            <input
+              type="text"
+              id="rfid_uid_2"
+              name="rfid_uid_2"
+              placeholder="e.g. 04A2B3C4D5"
+              data-i18n-placeholder="spools.rfidUidPlaceholder"
+              class="fm-input"
+            />
+          </div>
         </div>
 
         <!-- Location -->
@@ -606,6 +617,7 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
       ;(document.getElementById('lot_number') as HTMLInputElement).value = s.lot_number || ''
 
       ;(document.getElementById('rfid_uid') as HTMLInputElement).value = s.rfid_uid || ''
+      ;(document.getElementById('rfid_uid_2') as HTMLInputElement).value = s.rfid_uid_2 || ''
       ;(document.getElementById('external_id') as HTMLInputElement).value = s.external_id || ''
 
       if (s.location_id) {
@@ -684,6 +696,8 @@ const backHref = id === 'detail' ? '/spools' : `/spools/${id}`
 
       const rfidUid = (formData.get('rfid_uid') as string || '').trim()
       patchData.rfid_uid = rfidUid || null
+      const rfidUid2 = (formData.get('rfid_uid_2') as string || '').trim()
+      patchData.rfid_uid_2 = rfidUid2 || null
 
       const externalId = (formData.get('external_id') as string || '').trim()
       patchData.external_id = externalId || null

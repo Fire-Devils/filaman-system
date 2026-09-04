@@ -46,6 +46,12 @@ class Spool(Base, TimestampMixin):
     rfid_uid: Mapped[str | None] = mapped_column(
         String(100), nullable=True, unique=True, index=True
     )
+    # Second chip on the same physical spool (Bambu spools carry one per side).
+    # Always filled after rfid_uid: the service shifts it down when the primary
+    # is removed, so rfid_uid is never empty while a chip is assigned.
+    rfid_uid_2: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, unique=True, index=True
+    )
     external_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True, unique=True, index=True
     )
