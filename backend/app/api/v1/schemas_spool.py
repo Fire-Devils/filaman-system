@@ -49,6 +49,7 @@ class SpoolCreate(BaseModel):
     status_id: int | None = None
     lot_number: str | None = None
     rfid_uid: str | None = None
+    rfid_uid_2: str | None = None
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
@@ -76,6 +77,7 @@ class SpoolUpdate(BaseModel):
     status_id: int | None = None
     lot_number: str | None = None
     rfid_uid: str | None = None
+    rfid_uid_2: str | None = None
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
@@ -99,6 +101,7 @@ class SpoolResponse(BaseModel):
     status_id: int
     lot_number: str | None
     rfid_uid: str | None
+    rfid_uid_2: str | None = None
     external_id: str | None
     location_id: int | None
     purchase_date: datetime | None

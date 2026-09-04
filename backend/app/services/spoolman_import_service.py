@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.models.location import Location
+from app.core.rfid import normalize_rfid_uid
 from app.models.spool import Spool, SpoolStatus
+from app.services.spool_service import SpoolService
 from app.services.spoolman_client import SpoolmanClient
 from app.services.spoolman_contracts import (
     ImportStorageMode,
@@ -1324,12 +1326,11 @@ class SpoolmanImportService:
                     result.spools_skipped += 1
                     continue
 
-            # Pruefen ob rfid_uid schon existiert
+            # Pruefen ob rfid_uid schon existiert (in einem der beiden Slots).
+            # Import stiehlt bewusst NICHT: eine bestehende Zuordnung gewinnt.
             if rfid_uid:
-                dup_rfid = await self.db.execute(
-                    select(Spool).where(Spool.rfid_uid == rfid_uid)
-                )
-                if dup_rfid.scalar_one_or_none():
+                rfid_uid = normalize_rfid_uid(rfid_uid)
+                if await SpoolService(self.db).find_spool_by_rfid(rfid_uid):
                     result.warnings.append(
                         f"Spule Spoolman #{spoolman_id}: RFID '{rfid_uid}' existiert bereits, wird ohne RFID importiert"
                     )

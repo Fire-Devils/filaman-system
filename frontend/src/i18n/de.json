@@ -104,6 +104,8 @@
     "noDeviceOnlineTooltip": "Kein RFID-Schreibgerät online",
     "noDeviceOnline": "Kein RFID-Gerät online",
     "removedFrom": "Er wurde von {item} entfernt",
+    "secondTagWillBeAdded": "Hinweis: Diese Spule hat bereits einen RFID-Tag. Der neue Tag wird als zweiter Tag hinzugefügt (einer pro Seite).",
+    "bothTagsExistWarning": "Hinweis: Diese Spule hat bereits zwei RFID-Tags. Ein neuer Schreibvorgang ersetzt den zweiten Tag.",
     "writeTimeout": "Zeitüberschreitung beim Schreibvorgang"
   },
 
@@ -373,6 +375,7 @@
     "lowThreshold": "Schwellenwert niedriges Gewicht (g)",
     "rfidUid": "RFID UID",
     "rfidUidPlaceholder": "z.B. 04A2B3C4D5",
+    "rfidUid2": "RFID UID (2. Tag)",
     "externalId": "Externe ID",
     "externalIdPlaceholder": "z.B. MY-SPOOL-001",
     "selectFilament": "Filament wählen...",
