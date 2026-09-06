@@ -694,6 +694,117 @@ class TestFilamentCRUD:
         assert response.json()["detail"]["code"] == "validation_error"
 
     @pytest.mark.asyncio
+    async def test_resolve_from_tag_matches_color_when_available(self, auth_client, db_session):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Bambu Lab")
+        color_white = await _create_color(db_session, name="White", hex_code="#FFFFFF")
+        color_black = await _create_color(db_session, name="Black", hex_code="#000000")
+
+        filament_white = await _create_filament(
+            db_session, manufacturer.id, designation="Bambu Lab PETG Basic White", material_type="PETG"
+        )
+        db_session.add(FilamentColor(filament_id=filament_white.id, color_id=color_white.id, position=1))
+
+        filament_black = await _create_filament(
+            db_session, manufacturer.id, designation="Bambu Lab PETG Basic Black", material_type="PETG"
+        )
+        db_session.add(FilamentColor(filament_id=filament_black.id, color_id=color_black.id, position=1))
+        await db_session.commit()
+
+        # Resolve with black color hex (without #)
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "Bambu Lab",
+                "type": "PETG",
+                "color_hex": "000000",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_id"] == filament_black.id
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_falls_back_when_color_unmatched(self, auth_client, db_session):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Bambu Lab Fallback")
+        color_white = await _create_color(db_session, name="White", hex_code="#FFFFFF")
+        filament_white = await _create_filament(
+            db_session, manufacturer.id, designation="Bambu Lab PETG Basic White", material_type="PETG"
+        )
+        db_session.add(FilamentColor(filament_id=filament_white.id, color_id=color_white.id, position=1))
+        await db_session.commit()
+
+        # Tag has red color which doesn't exist in DB - should fallback to existing PETG
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "Bambu Lab Fallback",
+                "type": "PETG",
+                "color_hex": "FF0000",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_id"] == filament_white.id
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_works_without_color_for_backwards_compat(self, auth_client, db_session):
+        client, csrf_token = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="Generic Brand")
+        filament = await _create_filament(
+            db_session, manufacturer.id, designation="Generic PLA", material_type="PLA"
+        )
+        await db_session.commit()
+
+        # No color_hex provided at all
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "Generic Brand",
+                "type": "PLA",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_id"] == filament.id
+
+    @pytest.mark.asyncio
+    async def test_resolve_from_tag_creates_filament_with_color(self, auth_client, db_session):
+        client, csrf_token = auth_client
+
+        response = await client.post(
+            "/api/v1/filaments/resolve-from-tag",
+            json={
+                "brand": "NewBrand",
+                "type": "TPU",
+                "color_hex": "#00FF00",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["filament_created"] is True
+
+        # Check color relationship was created
+        fc_res = await db_session.execute(
+            select(FilamentColor).where(FilamentColor.filament_id == payload["filament_id"])
+        )
+        fc = fc_res.scalar_one_or_none()
+        assert fc is not None
+
+        color_res = await db_session.execute(select(Color).where(Color.id == fc.color_id))
+        color = color_res.scalar_one_or_none()
+        assert color is not None
+        assert color.hex_code == "#00FF00"
+
+    @pytest.mark.asyncio
     async def test_get_filament_detail(self, auth_client, db_session):
         client, _ = auth_client
 
