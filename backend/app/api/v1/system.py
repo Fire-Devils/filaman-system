@@ -285,7 +285,7 @@ class VersionCheckResponse(BaseModel):
 @router.get("/version-check", response_model=VersionCheckResponse)
 async def version_check(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PrincipalDep,
 ):
     """System-Version und Plugin-Updates pruefen (24h Cache)."""
     now = time.time()

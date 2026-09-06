@@ -141,7 +141,18 @@ const { title } = Astro.props
               </a>
             </div>
 
-            <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">{'v' + VERSION}</div>
+            <div id="sidebar-version-container" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <div id="sidebar-version-label">{'v' + VERSION}</div>
+              <a
+                id="sidebar-version-update"
+                href="/admin"
+                class="invisible"
+                style="display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; font-size: 0.65rem; font-weight: 600; color: var(--info-text, #93c5fd); background: var(--info-bg, rgba(59, 130, 246, 0.15)); border: 1px solid var(--info-border, rgba(59, 130, 246, 0.4)); border-radius: 9999px; text-decoration: none; transition: opacity var(--transition);"
+              >
+                <span class="fm-dot" style="background: #60a5fa; width: 6px; height: 6px;"></span>
+                <span id="sidebar-version-update-text">Update</span>
+              </a>
+            </div>
             <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center;">
               <a href="https://www.filaman.app" target="_blank" style="color: var(--text-muted); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
                 Made with <img src="/coffeecup.svg" width="14" height="14" style="vertical-align: middle;"> and <img src="/heart.svg" width="14" height="14" style="vertical-align: middle;"> by Manuel Weiser
@@ -337,6 +348,7 @@ const { title } = Astro.props
           }
 
           loadPluginNav()
+          checkSystemVersion(user)
 
           // Auth succeeded — reveal page content
           document.getElementById('fm-page')!.style.visibility = 'visible'
@@ -353,6 +365,52 @@ const { title } = Astro.props
       }
 
       checkAuth()
+
+      /* ── System version check ────────────────────────────────── */
+      async function checkSystemVersion(user: any) {
+        try {
+          const cachedRaw = sessionStorage.getItem('fm_version_check')
+          if (cachedRaw) {
+            try {
+              const cached = JSON.parse(cachedRaw)
+              if (cached?.ts && Date.now() - cached.ts < 30 * 60 * 1000 && cached.data) {
+                applyVersionStatus(cached.data, user)
+                return
+              }
+            } catch { /* ignore corrupted cache */ }
+          }
+
+          const resp = await fetch('/api/v1/admin/system/version-check', {
+            credentials: 'include',
+            signal: getAbortSignal(),
+          })
+          if (!resp.ok) return
+          const data = await resp.json()
+          sessionStorage.setItem('fm_version_check', JSON.stringify({ ts: Date.now(), data }))
+          applyVersionStatus(data, user)
+        } catch { /* Version check is non-critical */ }
+      }
+
+      function applyVersionStatus(data: any, user: any) {
+        if (!data?.update_available) return
+        const updateBadge = document.getElementById('sidebar-version-update') as HTMLAnchorElement | null
+        const updateText = document.getElementById('sidebar-version-update-text')
+        if (!updateBadge || !updateText) return
+
+        const isAdmin = Boolean(user?.is_superadmin || (user?.permissions || []).some((p: string) => p.startsWith('admin:')))
+        if (isAdmin) {
+          updateBadge.href = '/admin'
+        } else {
+          updateBadge.href = 'https://github.com/Fire-Devils/filaman-system/releases/latest'
+          updateBadge.target = '_blank'
+          updateBadge.rel = 'noopener noreferrer'
+        }
+
+        const label = t('nav.updateAvailable') || 'Update available'
+        updateText.textContent = data.latest_version ? `${label}: v${data.latest_version}` : label
+        updateBadge.title = `${label}: v${data.latest_version || ''}`
+        updateBadge.classList.remove('invisible')
+      }
 
       /* ── Plugin navigation ───────────────────────────────────── */
       const pluginNav = document.getElementById('plugin-nav')!
