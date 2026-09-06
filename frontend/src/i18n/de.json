@@ -17,7 +17,8 @@
     "settings": "Einstellungen",
     "logout": "Abmelden",
     "supportProject": "Unterstütze das Projekt",
-    "plugins": "Plugins"
+    "plugins": "Plugins",
+    "updateAvailable": "Update verfügbar"
   },
   "theme": {
     "default": "Standard",
