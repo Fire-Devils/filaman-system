@@ -1078,6 +1078,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       const subtype = String(tagData?.subtype || '').trim()
       if (subtype) payload.subtype = subtype
 
+      const colorHex = String(tagData?.color_hex || tagData?.color || '').trim()
+      if (colorHex) payload.color_hex = colorHex
+
       if (tagData?.min_temp != null && String(tagData.min_temp).trim() !== '') {
         payload.min_temp = tagData.min_temp
       }
@@ -1119,6 +1122,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     async function applyTagDataToForm(tagData: any) {
       const brand = (tagData.brand || '').toLowerCase().trim()
       const type  = (tagData.type  || '').toLowerCase().trim()
+      const colorHex = String(tagData?.color_hex || tagData?.color || '').trim()
       let matchedFilament: any = null
 
       if (type) {
@@ -1136,6 +1140,14 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
 
       if (type) {
+        if (!matchedFilament && colorHex) {
+          const normHex = (colorHex.startsWith('#') ? colorHex : '#' + colorHex).toLowerCase()
+          matchedFilament = filaments.find((f: any) =>
+            brand && (f.manufacturer?.name || '').toLowerCase().includes(brand) &&
+            (f.material_type || '').toLowerCase() === type &&
+            f.colors?.some((fc: any) => (fc.color?.hex_code || '').toLowerCase().startsWith(normHex.slice(0, 7)))
+          )
+        }
         if (!matchedFilament) {
           matchedFilament = filaments.find((f: any) =>
             brand && (f.manufacturer?.name || '').toLowerCase().includes(brand) &&

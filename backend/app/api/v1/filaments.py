@@ -44,6 +44,7 @@ from app.models import (
     SpoolStatus,
     SystemExtraField,
 )
+from app.utils.colors import normalize_hex_color
 
 logger = logging.getLogger(__name__)
 
@@ -666,14 +667,42 @@ async def resolve_filament_from_tag(
         await db.flush()
         manufacturer_created = True
 
-    filament_result = await db.execute(
-        select(Filament)
-        .where(Filament.manufacturer_id == manufacturer.id)
-        .where(func.upper(Filament.material_type) == material_type_raw)
-        .order_by(Filament.id.asc())
-        .limit(1)
-    )
-    filament = filament_result.scalar_one_or_none()
+    target_color_hex: str | None = None
+    if data.color_hex and str(data.color_hex).strip():
+        try:
+            target_color_hex = normalize_hex_color(data.color_hex)
+        except ValueError:
+            target_color_hex = None
+
+    filament = None
+    if target_color_hex:
+        color_query = (
+            select(Filament)
+            .join(Filament.filament_colors)
+            .join(FilamentColor.color)
+            .where(Filament.manufacturer_id == manufacturer.id)
+            .where(func.upper(Filament.material_type) == material_type_raw)
+            .where(
+                or_(
+                    func.upper(Color.hex_code) == target_color_hex,
+                    func.upper(func.substr(Color.hex_code, 1, 7)) == target_color_hex[:7],
+                )
+            )
+            .order_by(Filament.id.asc())
+            .limit(1)
+        )
+        filament_result = await db.execute(color_query)
+        filament = filament_result.scalar_one_or_none()
+
+    if filament is None:
+        filament_result = await db.execute(
+            select(Filament)
+            .where(Filament.manufacturer_id == manufacturer.id)
+            .where(func.upper(Filament.material_type) == material_type_raw)
+            .order_by(Filament.id.asc())
+            .limit(1)
+        )
+        filament = filament_result.scalar_one_or_none()
 
     filament_created = False
     filament_updated = False
@@ -696,6 +725,27 @@ async def resolve_filament_from_tag(
         db.add(filament)
         await db.flush()
         filament_created = True
+
+        if target_color_hex:
+            color_match = await db.execute(
+                select(Color).where(
+                    or_(
+                        func.upper(Color.hex_code) == target_color_hex,
+                        func.upper(func.substr(Color.hex_code, 1, 7)) == target_color_hex[:7],
+                    )
+                ).limit(1)
+            )
+            matched_color = color_match.scalar_one_or_none()
+            if matched_color is None:
+                matched_color = Color(name=target_color_hex, hex_code=target_color_hex)
+                db.add(matched_color)
+                await db.flush()
+            fc = FilamentColor(
+                filament_id=filament.id,
+                color_id=matched_color.id,
+                position=1,
+            )
+            db.add(fc)
     else:
         designation = filament.designation
 
