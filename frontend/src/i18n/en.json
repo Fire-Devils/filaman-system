@@ -104,6 +104,13 @@
     "noDeviceOnlineTooltip": "No RFID device online",
     "noDeviceOnline": "No RFID device online",
     "removedFrom": "It was removed from {item}",
+    "secondTagWillBeAdded": "Note: This spool already has an RFID tag. The new tag will be added as its second tag (one per side).",
+    "bothTagsExistWarning": "Note: This spool already has two RFID tags. A new write will replace the second tag.",
+    "replaceWhichTag": "Which tag should the new chip replace?",
+    "replaceTagN": "Replace tag {n}: {uid}",
+    "removeTag": "Remove this tag",
+    "confirmRemoveTag": "Remove RFID tag {uid} from this spool?",
+    "removeTagError": "Could not remove the RFID tag.",
     "writeTimeout": "Write operation timed out"
   },
   "login": {
@@ -372,6 +379,7 @@
     "lowThreshold": "Low Weight Threshold (g)",
     "rfidUid": "RFID UID",
     "rfidUidPlaceholder": "e.g. 04A2B3C4D5",
+    "rfidUid2": "RFID UID (2nd tag)",
     "externalId": "External ID",
     "externalIdPlaceholder": "e.g. MY-SPOOL-001",
     "selectFilament": "Select filament...",
