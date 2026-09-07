@@ -4,7 +4,7 @@ import httpx
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
@@ -482,8 +482,21 @@ async def device_rfid_result(
             spool_to_update = spool_res.scalar_one_or_none()
         
         if spool_to_update:
-            spool_to_update.remaining_weight_g = data.remaining_weight_g
-            logger.info(f"Updated spool {spool_to_update.id} remaining weight to {data.remaining_weight_g}g")
+            # Older firmware sent the gross scale reading here as "remaining".
+            # Prefer /scale/weight for tara-aware remaining + Opened + pending.
+            # Only seed remaining when the spool has none yet.
+            if spool_to_update.remaining_weight_g is None:
+                spool_to_update.remaining_weight_g = data.remaining_weight_g
+                logger.info(
+                    f"Seeded spool {spool_to_update.id} remaining weight to "
+                    f"{data.remaining_weight_g}g from rfid-result"
+                )
+            else:
+                logger.info(
+                    f"Ignoring rfid-result remaining_weight_g="
+                    f"{data.remaining_weight_g} for spool {spool_to_update.id} "
+                    f"(already {spool_to_update.remaining_weight_g}g; use scale/weight)"
+                )
         else:
             logger.warning(f"Could not find spool to update weight for tag_uuid {data.tag_uuid}, spool_id {data.spool_id}")
 
@@ -589,6 +602,7 @@ async def weigh_spool(
     # Auto-assign: if device has auto_assign_enabled, notify all running drivers.
     # Drivers only live on the primary Gunicorn worker; proxy if we're not it.
     logger.debug(f"Auto-assign check: device={device.name} (id={device.id}), auto_assign_enabled={device.auto_assign_enabled}")
+    pending_armed = False
     if device.auto_assign_enabled:
         try:
             from app.plugins.manager import plugin_manager
@@ -601,6 +615,11 @@ async def weigh_spool(
                 "material_type": filament_material_type,
                 "color": base_color,
             }
+            # Prefer the chip UID from this weigh request so pending RFID match
+            # works even when /rfid-result has not committed spools.rfid_uid yet
+            # (common right after Write Tag).
+            if data.tag_uuid:
+                base_filament_data["rfid_uid"] = data.tag_uuid
 
             timeout = device.auto_assign_timeout or 60
 
@@ -619,9 +638,18 @@ async def weigh_spool(
                         filament_data=enriched_data,
                         timeout_seconds=timeout,
                     )
+                    pending_armed = True
                     logger.info(f"Auto-assign: pending spool {spool.id} on printer {printer_id} (timeout: {timeout}s)")
                 except Exception as e:
                     logger.error(f"Auto-assign failed for printer {printer_id}: {e}")
+            if not pending_armed:
+                logger.warning(
+                    f"Auto-assign: spool {spool.id} weighed/opened on device "
+                    f"'{device.name}' but no driver armed pending "
+                    f"(drivers={list(plugin_manager.drivers.keys())}, "
+                    f"primary_worker={_is_primary_worker()}). "
+                    f"AMS insert will not auto-assign until another weigh on the primary worker."
+                )
         except Exception as e:
             logger.error(f"Auto-assign error: {e}")
     else:
