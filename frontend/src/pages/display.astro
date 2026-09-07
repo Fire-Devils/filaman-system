@@ -1,0 +1,162 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+
+<!--
+  Reference client for the Display API (docs/display-api.md).
+  Everything on this page comes from GET /api/v1/display — copy it as a
+  starting point for your own dashboard / digital swatch board.
+-->
+<Layout title="FilaMan - Display">
+  <style is:global>
+    .dp-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+    .dp-status { font-size: 0.85rem; color: var(--text-muted); }
+    .dp-printers { display: grid; gap: 24px; }
+    .dp-printer { display: grid; gap: 14px; }
+    .dp-printer-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    .dp-printer-name { font-size: 1.4rem; font-weight: 700; font-family: var(--font-serif); margin: 0; }
+    .dp-printer-meta { font-size: 0.9rem; color: var(--text-muted); display: flex; gap: 14px; flex-wrap: wrap; }
+    .dp-progress { height: 6px; border-radius: 3px; background: var(--bg-soft); overflow: hidden; width: 100%; max-width: 420px; }
+    .dp-progress > div { height: 100%; background: var(--accent); }
+    .dp-units { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .dp-unit { display: grid; gap: 10px; }
+    .dp-unit-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem; color: var(--text-muted); }
+    .dp-unit-head b { color: var(--text); font-size: 1rem; }
+    .dp-slots { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); }
+    .dp-unit.ht .dp-slots { grid-template-columns: 1fr; }
+    .dp-slot { position: relative; border-radius: 12px; padding: 12px 10px 10px; min-height: 118px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55); overflow: hidden; border: 2px solid transparent; }
+    .dp-slot.empty { background: var(--bg-soft) !important; color: var(--text-muted); text-shadow: none; border: 2px dashed var(--border); }
+    .dp-slot.active { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+    .dp-slot .lbl { position: absolute; top: 8px; left: 10px; font-size: 0.75rem; font-weight: 700; opacity: .9; }
+    .dp-slot .rfid { position: absolute; top: 8px; right: 10px; font-size: 0.7rem; opacity: .9; }
+    .dp-slot .mat { font-weight: 800; font-size: 1.05rem; line-height: 1.1; }
+    .dp-slot .sub { font-size: 0.75rem; opacity: .95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dp-slot .bar { height: 5px; border-radius: 3px; background: rgba(0,0,0,.35); margin-top: 6px; overflow: hidden; }
+    .dp-slot .bar > div { height: 100%; background: rgba(255,255,255,.9); }
+    .dp-slot .bar.low > div { background: #f59e0b; }
+    .dp-slot .bar.crit > div { background: #ef4444; }
+    .dp-alerts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .dp-alert { font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, #f59e0b 18%, transparent); }
+    .dp-alert.danger { background: color-mix(in srgb, #ef4444 18%, transparent); }
+    /* kiosk: hide chrome, fill the screen */
+    body.dp-kiosk .fm-sidebar, body.dp-kiosk .fm-sidebar-backdrop, body.dp-kiosk #sidebar-toggle { display: none !important; }
+    body.dp-kiosk main { padding: 16px !important; }
+    body.dp-kiosk .dp-toolbar h1 { display: none; }
+  </style>
+
+  <div class="dp-toolbar">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="display.title">Display</h1>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span class="dp-status" id="dp-status"></span>
+      <button id="dp-kiosk" class="fm-btn fm-btn-outline" data-i18n="display.kiosk">Kiosk mode</button>
+      <a href="/api/v1/display" target="_blank" class="fm-btn fm-btn-outline" data-i18n="display.rawJson">JSON</a>
+    </div>
+  </div>
+
+  <div id="dp-printers" class="dp-printers"></div>
+
+  <script>
+    import { t, initI18n, translatePage } from '../lib/i18n'
+    import { getAbortSignal, isAbortError } from '../lib/abort'
+
+    await initI18n()
+    translatePage()
+
+    const POLL_MS = 5000
+    const LOW = 30, CRIT = 15
+    let etag: string | null = null
+
+    const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+
+    function fmtRemaining(seconds: number | null) {
+      if (seconds == null) return ''
+      const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60)
+      return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`
+    }
+
+    function renderSlot(s: any) {
+      if (s.empty) return `<div class="dp-slot empty"><span class="lbl">${esc(s.label)}</span><div class="sub">${t('display.empty')}</div></div>`
+      const pct = s.remaining_percent
+      const barCls = pct == null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : ''
+      const sub = [s.manufacturer, s.color_name || s.filament].filter(Boolean).join(' · ')
+      const rem = pct != null ? `${pct}%` : (s.remaining_grams != null ? `${s.remaining_grams} g` : '')
+      return `
+        <div class="dp-slot ${s.active ? 'active' : ''}" style="background: ${esc(s.color)}" title="${esc(s.filament)}${s.backup_of ? ' — ' + t('display.backupOf', { slot: s.backup_of }) : ''}">
+          <span class="lbl">${esc(s.label)}</span>
+          ${s.rfid ? '<span class="rfid">RFID</span>' : ''}
+          <div class="mat">${esc(s.material || '?')}</div>
+          <div class="sub">${esc(sub)}</div>
+          ${pct != null ? `<div class="bar ${barCls}"><div style="width:${pct}%"></div></div>` : ''}
+          <div class="sub">${esc(rem)}${s.backup_of ? ` · ${t('display.backupOf', { slot: s.backup_of })}` : ''}</div>
+        </div>`
+    }
+
+    function renderUnit(u: any) {
+      const climate = [u.temperature != null ? `${Math.round(u.temperature)}°C` : '', u.humidity != null ? `${Math.round(u.humidity)}% RH` : ''].filter(Boolean).join(' · ')
+      return `
+        <div class="dp-unit ${u.kind === 'ams_ht' ? 'ht' : ''} fm-card">
+          <div class="dp-unit-head"><b>${esc(u.label)}</b><span>${esc(climate)}</span></div>
+          <div class="dp-slots">${u.slots.map(renderSlot).join('')}</div>
+        </div>`
+    }
+
+    function renderPrinter(p: any) {
+      const job = p.job || {}
+      const temps = p.temperatures || {}
+      const meta: string[] = []
+      if (p.connected === false) meta.push(t('display.offline'))
+      else if (p.state && p.state !== 'unknown') meta.push(esc(p.state))
+      if (job.name) meta.push(esc(job.name))
+      if (job.remaining_seconds != null) meta.push(fmtRemaining(job.remaining_seconds))
+      if (temps.nozzle != null) meta.push(`${t('display.nozzle')} ${temps.nozzle}${temps.nozzle_target ? '/' + temps.nozzle_target : ''}°C`)
+      if (temps.bed != null) meta.push(`${t('display.bed')} ${temps.bed}${temps.bed_target ? '/' + temps.bed_target : ''}°C`)
+      const alerts = (p.alerts || []).map((a: any) => `<span class="dp-alert ${a.severity}">${esc(a.title)}${a.detail ? ': ' + esc(a.detail) : ''}</span>`).join('')
+      return `
+        <section class="dp-printer">
+          <div class="dp-printer-head">
+            <h2 class="dp-printer-name">${esc(p.name)}</h2>
+            <div class="dp-printer-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>
+          </div>
+          ${job.progress != null ? `<div class="dp-progress"><div style="width:${job.progress}%"></div></div>` : ''}
+          ${alerts ? `<div class="dp-alerts">${alerts}</div>` : ''}
+          <div class="dp-units">${(p.ams || []).map(renderUnit).join('')}</div>
+        </section>`
+    }
+
+    async function poll() {
+      const statusEl = document.getElementById('dp-status')!
+      try {
+        const res = await fetch('/api/v1/display', {
+          credentials: 'include',
+          signal: getAbortSignal(),
+          headers: etag ? { 'If-None-Match': etag } : {},
+        })
+        if (res.status === 304) { statusEl.textContent = t('display.upToDate', { time: new Date().toLocaleTimeString() }); return }
+        if (!res.ok) throw new Error(String(res.status))
+        etag = res.headers.get('ETag')
+        const data = await res.json()
+        const root = document.getElementById('dp-printers')!
+        root.innerHTML = data.printers.length
+          ? data.printers.map(renderPrinter).join('')
+          : `<div class="fm-card" style="color: var(--text-muted);">${t('display.noPrinters')}</div>`
+        statusEl.textContent = t('display.upToDate', { time: new Date().toLocaleTimeString() })
+      } catch (e) {
+        if (isAbortError(e)) return
+        statusEl.textContent = t('display.error')
+      }
+    }
+
+    document.getElementById('dp-kiosk')?.addEventListener('click', () => {
+      document.body.classList.toggle('dp-kiosk')
+      if (document.body.classList.contains('dp-kiosk')) document.documentElement.requestFullscreen?.().catch(() => {})
+      else document.exitFullscreen?.().catch(() => {})
+    })
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) document.body.classList.remove('dp-kiosk')
+    })
+    if (new URLSearchParams(location.search).get('kiosk') === '1') document.body.classList.add('dp-kiosk')
+
+    await poll()
+    setInterval(poll, POLL_MS)
+  </script>
+</Layout>

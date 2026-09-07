@@ -43,6 +43,19 @@ class BaseDriver(ABC):
     def validate_config(self) -> None:
         pass
 
+    async def get_display_state(self) -> dict[str, Any] | None:
+        """Live printer/AMS state for the Display API (GET /api/v1/display).
+
+        Optional.  Return None (default) and the display still shows the
+        spools FilaMan has assigned to this printer's slots.  Return a dict to
+        add live tray contents, job progress, temperatures and the active
+        slot; see app.services.display_service.normalize_driver_state for
+        the accepted keys (Bambu/Bambuddy status dicts are accepted as-is).
+        Must be cheap: it is called on every poll of the display feed, so
+        return cached state rather than querying the printer.
+        """
+        return None
+
     def log_debug(self, direction: str, topic: str, payload: Any) -> None:
         """Add a message to the debug ring buffer (only when debug console is open)."""
         if not self._debug_enabled:

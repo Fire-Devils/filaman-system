@@ -12,6 +12,7 @@
     "locations": "Standorte",
     "printers": "Drucker",
     "spoolLog": "Protokoll",
+    "display": "Anzeige",
     "admin": "Admin",
     "adminPanel": "Admin-Bereich",
     "settings": "Einstellungen",
@@ -1164,6 +1165,19 @@
     "popupTitle": "Was ist neu?",
     "dismiss": "Verstanden",
     "viewAll": "Alle \u00c4nderungen"
+  },
+  "display": {
+    "title": "Anzeige",
+    "kiosk": "Kiosk-Modus",
+    "rawJson": "JSON",
+    "empty": "leer",
+    "offline": "offline",
+    "nozzle": "Düse",
+    "bed": "Bett",
+    "backupOf": "Ersatz für {slot}",
+    "upToDate": "aktualisiert {time}",
+    "error": "Anzeige-Feed konnte nicht geladen werden",
+    "noPrinters": "Keine aktiven Drucker."
   },
   "spoolLog": {
     "title": "Protokoll",

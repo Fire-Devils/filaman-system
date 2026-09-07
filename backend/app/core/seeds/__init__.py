@@ -162,6 +162,11 @@ PERMISSIONS = [
     },
     {"key": "printers:read", "description": "View printers", "category": "printers"},
     {
+        "key": "display:read",
+        "description": "Read the display feed (dashboards, swatch boards)",
+        "category": "display",
+    },
+    {
         "key": "printers:create",
         "description": "Create printers",
         "category": "printers",
@@ -252,6 +257,7 @@ VIEWER_PERMISSIONS = [
     "spools:read",
     "spool_events:read",
     "printers:read",
+    "display:read",
     "ratings:read",
     "colors:read",
 ]
@@ -261,6 +267,7 @@ USER_PERMISSIONS = [
     "manufacturers:read",
     "locations:read",
     "printers:read",
+    "display:read",
     "ratings:read",
     "spools:read",
     "spools:create",
