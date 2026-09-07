@@ -219,6 +219,17 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             class="fm-input"
           />
         </div>
+        <div>
+          <label for="rfid_uid_2" class="fm-label" data-i18n="spools.rfidUid2">RFID UID (2nd tag)</label>
+          <input
+            type="text"
+            id="rfid_uid_2"
+            name="rfid_uid_2"
+            data-i18n-placeholder="spools.rfidUidPlaceholder"
+            placeholder="e.g. 04A2B3C4D5"
+            class="fm-input"
+          />
+        </div>
       </div>
 
       <!-- System Fields -->
@@ -688,6 +699,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             if (dup.rfid_uid) {
               (document.getElementById('rfid_uid') as HTMLInputElement).value = dup.rfid_uid
             }
+            if (dup.rfid_uid_2) {
+              (document.getElementById('rfid_uid_2') as HTMLInputElement).value = dup.rfid_uid_2
+            }
 
             // Custom Fields (non-system) + System Fields
             if (dup.custom_fields && typeof dup.custom_fields === 'object') {
@@ -832,6 +846,8 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       
       const rfidUid = formData.get('rfid_uid')
       if (rfidUid) data.rfid_uid = rfidUid
+      const rfidUid2 = formData.get('rfid_uid_2')
+      if (rfidUid2) data.rfid_uid_2 = rfidUid2
       
       const externalId = formData.get('external_id')
       if (externalId) data.external_id = externalId
@@ -1078,6 +1094,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       const subtype = String(tagData?.subtype || '').trim()
       if (subtype) payload.subtype = subtype
 
+      const colorHex = String(tagData?.color_hex || tagData?.color || '').trim()
+      if (colorHex) payload.color_hex = colorHex
+
       if (tagData?.min_temp != null && String(tagData.min_temp).trim() !== '') {
         payload.min_temp = tagData.min_temp
       }
@@ -1119,6 +1138,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     async function applyTagDataToForm(tagData: any) {
       const brand = (tagData.brand || '').toLowerCase().trim()
       const type  = (tagData.type  || '').toLowerCase().trim()
+      const colorHex = String(tagData?.color_hex || tagData?.color || '').trim()
       let matchedFilament: any = null
 
       if (type) {
@@ -1136,6 +1156,14 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       }
 
       if (type) {
+        if (!matchedFilament && colorHex) {
+          const normHex = (colorHex.startsWith('#') ? colorHex : '#' + colorHex).toLowerCase()
+          matchedFilament = filaments.find((f: any) =>
+            brand && (f.manufacturer?.name || '').toLowerCase().includes(brand) &&
+            (f.material_type || '').toLowerCase() === type &&
+            f.colors?.some((fc: any) => (fc.color?.hex_code || '').toLowerCase().startsWith(normHex.slice(0, 7)))
+          )
+        }
         if (!matchedFilament) {
           matchedFilament = filaments.find((f: any) =>
             brand && (f.manufacturer?.name || '').toLowerCase().includes(brand) &&

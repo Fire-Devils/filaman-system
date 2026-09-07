@@ -1,16 +1,36 @@
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.rfid import normalize_rfid_uid, rfid_match_values, rfid_uids_equal
 from app.core.security import Principal
 from app.models import AppSettings, Filament, Location, Spool, SpoolEvent, SpoolStatus
+from app.utils.db import json_extract_cast_string
 
 # Aggregation window for consumption events (in minutes)
 # Events within this window from the same source will be aggregated
 CONSUMPTION_AGGREGATION_WINDOW_MINUTES = 5
+
+# Sentinel for "argument not supplied" in set_rfid_uids (None means "clear").
+_UNSET: Any = object()
+
+
+class RfidSlotsFullError(Exception):
+    """Both RFID slots of the spool are taken and replacing was not allowed."""
+
+
+@dataclass
+class RfidChange:
+    """Outcome of an RFID add: who lost the chip, and what this spool dropped."""
+
+    removed_from: list[str] = field(default_factory=list)
+    replaced_uid: str | None = None
+    replaced_slot: int | None = None
+    already_assigned: bool = False
 
 
 class SpoolService:
@@ -28,17 +48,193 @@ class SpoolService:
         )
         return result.scalar_one_or_none()
 
+    # ------------------------------------------------------------------
+    # RFID: two chips per spool (rfid_uid + rfid_uid_2)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rfid_filter(uid: str):
+        """SQL condition: either RFID slot of a spool holds ``uid`` (any spelling)."""
+        values = rfid_match_values(uid)
+        return or_(
+            func.upper(Spool.rfid_uid).in_(values),
+            func.upper(Spool.rfid_uid_2).in_(values),
+        )
+
+    @staticmethod
+    def _normalize_slots(spool: Spool) -> None:
+        """Keep the invariant: rfid_uid is filled before rfid_uid_2, no duplicates."""
+        if spool.rfid_uid and spool.rfid_uid_2 and rfid_uids_equal(
+            spool.rfid_uid, spool.rfid_uid_2
+        ):
+            spool.rfid_uid_2 = None
+        if spool.rfid_uid is None and spool.rfid_uid_2 is not None:
+            spool.rfid_uid, spool.rfid_uid_2 = spool.rfid_uid_2, None
+
+    @staticmethod
+    def spool_has_rfid(spool: Spool, uid: str | None) -> bool:
+        return rfid_uids_equal(spool.rfid_uid, uid) or rfid_uids_equal(
+            spool.rfid_uid_2, uid
+        )
+
+    async def find_spool_by_rfid(
+        self, uid: str | None, *, exclude_spool_id: int | None = None
+    ) -> Spool | None:
+        """Find the spool owning ``uid`` in either slot (no relationships loaded)."""
+        if not uid or not uid.strip():
+            return None
+        query = select(Spool).where(self._rfid_filter(uid))
+        if exclude_spool_id is not None:
+            query = query.where(Spool.id != exclude_spool_id)
+        result = await self.db.execute(query.limit(1))
+        return result.scalar_one_or_none()
+
+    async def release_rfid_uid(
+        self,
+        uid: str,
+        *,
+        exclude_spool_id: int | None = None,
+        exclude_location_id: int | None = None,
+    ) -> list[str]:
+        """Take ``uid`` away from every other spool slot and location identifier.
+
+        Flushes before returning so a subsequent assignment of the same UID
+        cannot trip the unique indexes.  Returns human-readable owners that
+        lost the chip (same wording the write-tag flow has always reported).
+        """
+        removed: list[str] = []
+        values = rfid_match_values(uid)
+
+        spool_query = select(Spool).where(self._rfid_filter(uid))
+        if exclude_spool_id is not None:
+            spool_query = spool_query.where(Spool.id != exclude_spool_id)
+        for other in (await self.db.execute(spool_query)).scalars().all():
+            if other.rfid_uid and other.rfid_uid.upper() in values:
+                other.rfid_uid = None
+            if other.rfid_uid_2 and other.rfid_uid_2.upper() in values:
+                other.rfid_uid_2 = None
+            self._normalize_slots(other)
+            removed.append(f"Spule #{other.id}")
+
+        loc_query = select(Location).where(func.upper(Location.identifier).in_(values))
+        if exclude_location_id is not None:
+            loc_query = loc_query.where(Location.id != exclude_location_id)
+        for loc in (await self.db.execute(loc_query)).scalars().all():
+            loc.identifier = None
+            removed.append(f"Standort '{loc.name}'")
+
+        if removed:
+            await self.db.flush()
+        return removed
+
+    async def set_rfid_uids(
+        self,
+        spool: Spool,
+        *,
+        rfid_uid: str | None = _UNSET,
+        rfid_uid_2: str | None = _UNSET,
+    ) -> list[str]:
+        """Set one or both RFID slots to the given values (None clears a slot).
+
+        Values are normalised, duplicates collapsed, and the primary slot is
+        back-filled from the secondary so ``rfid_uid`` is never empty while a
+        chip exists.  Any UID new to this spool is stolen from other owners.
+        Returns the list of previous owners.  Flushes, does not commit.
+        """
+        primary = (
+            spool.rfid_uid if rfid_uid is _UNSET else normalize_rfid_uid(rfid_uid)
+        )
+        secondary = (
+            spool.rfid_uid_2
+            if rfid_uid_2 is _UNSET
+            else normalize_rfid_uid(rfid_uid_2)
+        )
+        if primary and secondary and rfid_uids_equal(primary, secondary):
+            secondary = None
+        if primary is None and secondary is not None:
+            primary, secondary = secondary, None
+
+        removed: list[str] = []
+        for new_uid in (primary, secondary):
+            if new_uid and not self.spool_has_rfid(spool, new_uid):
+                removed.extend(
+                    await self.release_rfid_uid(new_uid, exclude_spool_id=spool.id)
+                )
+
+        spool.rfid_uid = primary
+        spool.rfid_uid_2 = secondary
+        await self.db.flush()
+        return removed
+
+    async def add_rfid_uid(
+        self,
+        spool: Spool,
+        uid: str,
+        *,
+        replace_secondary: bool = False,
+        replace_slot: int | None = None,
+    ) -> RfidChange:
+        """Attach ``uid`` to the first free slot of ``spool``.
+
+        No-op when the chip is already on this spool.  ``replace_slot`` (1 or
+        2) forces the chip into that slot, replacing whatever is there — the
+        UI offers this when both slots are full (e.g. tag 1 fell off).
+        Otherwise, when both slots are taken the secondary is replaced if
+        ``replace_secondary`` is set (write-tag flow: the chip is already
+        physically written, so refusing would desync DB and chip), else
+        :class:`RfidSlotsFullError`.
+        """
+        canonical = normalize_rfid_uid(uid)
+        if canonical is None:
+            raise ValueError("RFID UID must not be empty")
+        if self.spool_has_rfid(spool, canonical):
+            return RfidChange(already_assigned=True)
+        if replace_slot in (1, 2):
+            if replace_slot == 1:
+                replaced = spool.rfid_uid
+                removed = await self.set_rfid_uids(spool, rfid_uid=canonical)
+            else:
+                replaced = spool.rfid_uid_2
+                removed = await self.set_rfid_uids(spool, rfid_uid_2=canonical)
+            return RfidChange(
+                removed_from=removed,
+                replaced_uid=replaced,
+                replaced_slot=replace_slot if replaced else None,
+            )
+        if spool.rfid_uid is None:
+            return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid=canonical))
+        if spool.rfid_uid_2 is None:
+            return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid_2=canonical))
+        if not replace_secondary:
+            raise RfidSlotsFullError(
+                f"Spool #{spool.id} already has two RFID tags; remove one first"
+            )
+        replaced = spool.rfid_uid_2
+        removed = await self.set_rfid_uids(spool, rfid_uid_2=canonical)
+        return RfidChange(removed_from=removed, replaced_uid=replaced, replaced_slot=2)
+
+    async def remove_rfid_uid(self, spool: Spool, uid: str) -> bool:
+        """Detach ``uid`` from whichever slot holds it. Returns False if absent."""
+        if rfid_uids_equal(spool.rfid_uid, uid):
+            await self.set_rfid_uids(spool, rfid_uid=None)
+            return True
+        if rfid_uids_equal(spool.rfid_uid_2, uid):
+            await self.set_rfid_uids(spool, rfid_uid_2=None)
+            return True
+        return False
+
     async def get_spool_by_identifier(
         self, rfid_uid: str | None, external_id: str | None
     ) -> Spool | None:
-        if rfid_uid:
+        if rfid_uid and rfid_uid.strip():
             result = await self.db.execute(
                 select(Spool)
-                .where(func.lower(Spool.rfid_uid) == rfid_uid.lower())
+                .where(self._rfid_filter(rfid_uid))
                 .options(
                     selectinload(Spool.filament).selectinload(Filament.manufacturer),
                     selectinload(Spool.status),
                 )
+                .limit(1)
             )
             spool = result.scalar_one_or_none()
             if spool:
@@ -89,6 +285,32 @@ class SpoolService:
         )
         return result.scalar_one_or_none()
 
+    @property
+    def _dialect(self) -> Any:
+        bind = self.db.bind
+        return bind.dialect if bind is not None else None
+
+    async def _get_consumption_by_source_event_key(
+        self,
+        spool_id: int,
+        source_event_key: str,
+    ) -> SpoolEvent | None:
+        """Return the print_consumption event already tagged with this key, if any."""
+        result = await self.db.execute(
+            select(SpoolEvent)
+            .where(
+                SpoolEvent.spool_id == spool_id,
+                SpoolEvent.event_type == "print_consumption",
+                json_extract_cast_string(
+                    SpoolEvent.meta, "$.source_event_key", self._dialect
+                )
+                == source_event_key,
+            )
+            .order_by(SpoolEvent.event_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def _get_aggregatable_consumption_event(
         self,
         spool_id: int,
@@ -101,6 +323,7 @@ class SpoolService:
         Returns the most recent print_consumption event for this spool if:
         - It's from the same source
         - It's within the aggregation window (5 minutes)
+        - It is not an idempotent keyed event (those must stay single-shot)
 
         Otherwise returns None (a new event should be created).
         """
@@ -115,6 +338,11 @@ class SpoolService:
                 SpoolEvent.event_type == "print_consumption",
                 SpoolEvent.source == source,
                 SpoolEvent.event_at >= window_start,
+                # Keyed events are idempotent one-shots; never fold other
+                # consumptions into them (or vice versa via a later lookup).
+                json_extract_cast_string(
+                    SpoolEvent.meta, "$.source_event_key", self._dialect
+                ).is_(None),
             )
             .order_by(SpoolEvent.event_at.desc())
             .limit(1)
@@ -363,9 +591,68 @@ class SpoolService:
         principal: Principal | None = None,
         source: str = "ui",
         note: str | None = None,
+        source_event_key: str | None = None,
     ) -> tuple[SpoolEvent, float | None]:
         if delta_weight_g > 0:
             delta_weight_g = -delta_weight_g
+
+        # Bambuddy (and similar drivers) tag each usage report with a stable
+        # key so WebSocket redelivery does not subtract the same grams twice.
+        # Keyed events are single-shot: never aggregate, never re-apply.
+        key = (source_event_key or "").strip() or None
+        if key is not None:
+            existing_keyed = await self._get_consumption_by_source_event_key(
+                spool.id, key
+            )
+            if existing_keyed is not None:
+                return existing_keyed, spool.remaining_weight_g
+
+            meta: dict[str, Any] = {"source_event_key": key}
+
+            if spool.remaining_weight_g is None:
+                event = await self._create_event(
+                    spool_id=spool.id,
+                    event_type="print_consumption",
+                    event_at=event_at,
+                    user_id=principal.user_id if principal else None,
+                    device_id=principal.device_id if principal else None,
+                    source=source,
+                    delta_weight_g=delta_weight_g,
+                    note=note,
+                    meta=meta,
+                )
+                await self.db.commit()
+                return event, None
+
+            remaining = spool.remaining_weight_g + delta_weight_g
+            clamped = False
+            if remaining < 0:
+                remaining = 0
+                meta["clamped_to_zero"] = True
+                clamped = True
+
+            event = await self._create_event(
+                spool_id=spool.id,
+                event_type="print_consumption",
+                event_at=event_at,
+                user_id=principal.user_id if principal else None,
+                device_id=principal.device_id if principal else None,
+                source=source,
+                delta_weight_g=delta_weight_g,
+                note=note,
+                meta=meta,
+            )
+
+            spool.remaining_weight_g = remaining
+            spool.last_used_at = event_at
+
+            await self._handle_auto_opened(spool, event_at)
+
+            if remaining == 0 and not clamped:
+                await self._handle_auto_empty(spool, remaining, event.id, event_at)
+
+            await self.db.commit()
+            return event, remaining
 
         # Check if we can aggregate with a recent event
         existing_event = await self._get_aggregatable_consumption_event(
@@ -413,7 +700,7 @@ class SpoolService:
             return existing_event, spool.remaining_weight_g
 
         # No aggregation possible - create new event
-        meta: dict[str, Any] = {}
+        meta = {}
 
         if spool.remaining_weight_g is None:
             event = await self._create_event(
