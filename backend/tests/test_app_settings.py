@@ -261,3 +261,13 @@ class TestLoginBypass:
         assert response.status_code == 401
         data = response.json()
         assert data["detail"]["code"] == "invalid_credentials"
+
+    @pytest.mark.asyncio
+    async def test_version_check_accessible_to_authenticated_user(self, auth_client):
+        """GET /api/v1/admin/system/version-check should be accessible to authenticated user."""
+        client, _ = auth_client
+        response = await client.get("/api/v1/admin/system/version-check")
+        assert response.status_code == 200
+        data = response.json()
+        assert "installed_version" in data
+        assert "update_available" in data

@@ -18,7 +18,8 @@
     "settings": "Settings",
     "logout": "Logout",
     "supportProject": "Support the project",
-    "plugins": "Plugins"
+    "plugins": "Plugins",
+    "updateAvailable": "Update available"
   },
   "theme": {
     "default": "Default",
@@ -157,6 +158,7 @@
     "confirmArchiveAll": "Do you really want to archive all spools listed here?",
     "confirmArchiveOne": "Do you want to archive this spool?",
     "archiveSuccess": "Spools successfully archived.",
+    "archiveError": "Could not archive the spools. You may not have the required permission.",
     "spool": "Spool",
     "filament": "Filament",
     "manufacturer": "Manufacturer",

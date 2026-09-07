@@ -908,12 +908,14 @@ async def permanently_delete_spool(
 async def change_statuses_bulk(
     data: BulkStatusChangeRequest,
     db: DBSession,
-    principal: PrincipalDep,
+    principal=RequirePermission("spool_events:create_status"),
 ):
-    """Change status for multiple spools (e.g. bulk archiving)."""
+    """Change status for multiple spools (e.g. bulk archiving).
+
+    Requires the same permission as the single-spool POST /{spool_id}/status:
+    what a role may not do one spool at a time it may not do in bulk either.
+    """
     service = SpoolService(db)
-    # Check permission (using a general update permission for now, or create a specific one if needed)
-    RequirePermission("spools:update")
 
     count = await service.change_statuses_bulk(
         spool_ids=data.spool_ids,

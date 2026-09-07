@@ -7,6 +7,20 @@ from app.api.deps import resolve_user_permissions
 from app.core.security import generate_token_secret, hash_password, hash_token
 from app.core.seeds import USER_PERMISSIONS
 from app.models import Device, Role, User, UserApiKey, UserRole, UserSession
+from tests.test_devices import (
+    _create_filament,
+    _create_manufacturer,
+    _create_spool,
+    _get_status,
+)
+
+
+async def _archivable_spool(db_session):
+    """A spool in status "opened" that a bulk status change can archive."""
+    manufacturer = await _create_manufacturer(db_session, name="RBAC Bulk Mfr")
+    filament = await _create_filament(db_session, manufacturer.id)
+    status = await _get_status(db_session, "opened")
+    return await _create_spool(db_session, filament.id, status.id)
 
 
 async def _create_session(client: AsyncClient, db_session, user_id: int):
@@ -181,6 +195,45 @@ class TestRoleBasedAccess:
 
         assert response.status_code == 403
         assert response.json()["detail"]["code"] == "forbidden"
+
+    @pytest.mark.asyncio
+    async def test_viewer_cannot_bulk_archive_spools(self, viewer_auth_client, db_session):
+        """Issue #143: the dashboard's "Archive All" must be as protected as
+        archiving a single spool — the bulk endpoint used to check nothing."""
+        client, csrf_token = viewer_auth_client
+        spool = await _archivable_spool(db_session)
+
+        response = await client.post(
+            "/api/v1/spools/bulk/status",
+            json={"spool_ids": [spool.id], "status": "archived"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "forbidden"
+
+        await db_session.refresh(spool)
+        archived = await _get_status(db_session, "archived")
+        assert spool.status_id != archived.id
+
+    @pytest.mark.asyncio
+    async def test_user_role_can_bulk_archive_spools(self, user_auth_client, db_session):
+        """The fix must not over-block: the user role keeps bulk archiving."""
+        client, csrf_token = user_auth_client
+        spool = await _archivable_spool(db_session)
+
+        response = await client.post(
+            "/api/v1/spools/bulk/status",
+            json={"spool_ids": [spool.id], "status": "archived"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["count"] == 1
+
+        await db_session.refresh(spool)
+        archived = await _get_status(db_session, "archived")
+        assert spool.status_id == archived.id
 
 
 class TestUnauthenticatedAccess:
