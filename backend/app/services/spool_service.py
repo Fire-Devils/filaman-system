@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.security import Principal
 from app.models import AppSettings, Filament, Location, Spool, SpoolEvent, SpoolStatus
+from app.utils.db import json_extract_cast_string
 
 # Aggregation window for consumption events (in minutes)
 # Events within this window from the same source will be aggregated
@@ -89,6 +90,32 @@ class SpoolService:
         )
         return result.scalar_one_or_none()
 
+    @property
+    def _dialect(self) -> Any:
+        bind = self.db.bind
+        return bind.dialect if bind is not None else None
+
+    async def _get_consumption_by_source_event_key(
+        self,
+        spool_id: int,
+        source_event_key: str,
+    ) -> SpoolEvent | None:
+        """Return the print_consumption event already tagged with this key, if any."""
+        result = await self.db.execute(
+            select(SpoolEvent)
+            .where(
+                SpoolEvent.spool_id == spool_id,
+                SpoolEvent.event_type == "print_consumption",
+                json_extract_cast_string(
+                    SpoolEvent.meta, "$.source_event_key", self._dialect
+                )
+                == source_event_key,
+            )
+            .order_by(SpoolEvent.event_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def _get_aggregatable_consumption_event(
         self,
         spool_id: int,
@@ -101,6 +128,7 @@ class SpoolService:
         Returns the most recent print_consumption event for this spool if:
         - It's from the same source
         - It's within the aggregation window (5 minutes)
+        - It is not an idempotent keyed event (those must stay single-shot)
 
         Otherwise returns None (a new event should be created).
         """
@@ -115,6 +143,11 @@ class SpoolService:
                 SpoolEvent.event_type == "print_consumption",
                 SpoolEvent.source == source,
                 SpoolEvent.event_at >= window_start,
+                # Keyed events are idempotent one-shots; never fold other
+                # consumptions into them (or vice versa via a later lookup).
+                json_extract_cast_string(
+                    SpoolEvent.meta, "$.source_event_key", self._dialect
+                ).is_(None),
             )
             .order_by(SpoolEvent.event_at.desc())
             .limit(1)
@@ -363,9 +396,68 @@ class SpoolService:
         principal: Principal | None = None,
         source: str = "ui",
         note: str | None = None,
+        source_event_key: str | None = None,
     ) -> tuple[SpoolEvent, float | None]:
         if delta_weight_g > 0:
             delta_weight_g = -delta_weight_g
+
+        # Bambuddy (and similar drivers) tag each usage report with a stable
+        # key so WebSocket redelivery does not subtract the same grams twice.
+        # Keyed events are single-shot: never aggregate, never re-apply.
+        key = (source_event_key or "").strip() or None
+        if key is not None:
+            existing_keyed = await self._get_consumption_by_source_event_key(
+                spool.id, key
+            )
+            if existing_keyed is not None:
+                return existing_keyed, spool.remaining_weight_g
+
+            meta: dict[str, Any] = {"source_event_key": key}
+
+            if spool.remaining_weight_g is None:
+                event = await self._create_event(
+                    spool_id=spool.id,
+                    event_type="print_consumption",
+                    event_at=event_at,
+                    user_id=principal.user_id if principal else None,
+                    device_id=principal.device_id if principal else None,
+                    source=source,
+                    delta_weight_g=delta_weight_g,
+                    note=note,
+                    meta=meta,
+                )
+                await self.db.commit()
+                return event, None
+
+            remaining = spool.remaining_weight_g + delta_weight_g
+            clamped = False
+            if remaining < 0:
+                remaining = 0
+                meta["clamped_to_zero"] = True
+                clamped = True
+
+            event = await self._create_event(
+                spool_id=spool.id,
+                event_type="print_consumption",
+                event_at=event_at,
+                user_id=principal.user_id if principal else None,
+                device_id=principal.device_id if principal else None,
+                source=source,
+                delta_weight_g=delta_weight_g,
+                note=note,
+                meta=meta,
+            )
+
+            spool.remaining_weight_g = remaining
+            spool.last_used_at = event_at
+
+            await self._handle_auto_opened(spool, event_at)
+
+            if remaining == 0 and not clamped:
+                await self._handle_auto_empty(spool, remaining, event.id, event_at)
+
+            await self.db.commit()
+            return event, remaining
 
         # Check if we can aggregate with a recent event
         existing_event = await self._get_aggregatable_consumption_event(
@@ -413,7 +505,7 @@ class SpoolService:
             return existing_event, spool.remaining_weight_g
 
         # No aggregation possible - create new event
-        meta: dict[str, Any] = {}
+        meta = {}
 
         if spool.remaining_weight_g is None:
             event = await self._create_event(
