@@ -280,7 +280,10 @@ async def write_rfid_tag(
     new_custom_fields = dict(device.custom_fields)
     new_custom_fields["last_write_result"] = {
         "status": "pending",
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        # Consumed by /rfid-result: which slot the chip replaces when both are full.
+        "spool_id": data.spool_id,
+        "replace_slot": data.replace_slot,
     }
     device.custom_fields = new_custom_fields
     await db.commit()
@@ -377,75 +380,89 @@ async def device_rfid_result(
         await db.commit()
         return RfidResultResponse(status="error", message="No tag_uuid provided")
 
-    # Duplicate check and cleanup - clear rfid_uid from ALL spools (incl. archived)
-    # to prevent UNIQUE constraint violation on spools.rfid_uid.
-    # Case-insensitive: the weigh lookup matches UIDs via lower(), so a UID stored
-    # with different casing would otherwise survive cleanup and later cause
-    # MultipleResultsFound on weigh.
-    removed_info = []
-    
-    # Check spools - all spools regardless of status
-    spool_query = (
-        select(Spool)
-        .where(func.lower(Spool.rfid_uid) == data.tag_uuid.lower())
-    )
-    if data.spool_id:
-        spool_query = spool_query.where(Spool.id != data.spool_id)
-    
-    spools_res = await db.execute(spool_query)
-    for s in spools_res.scalars().all():
-        removed_info.append(f"Spule #{s.id}")
-        s.rfid_uid = None
-        logger.info(f"Cleared duplicate RFID UID from spool {s.id}")
+    # A spool has two RFID slots. Writing a tag ADDS the chip to the first free
+    # slot (a Bambu spool carries one chip per side); the service steals the UID
+    # from any other spool/location first so the unique indexes never trip.
+    # If both slots are taken the secondary is replaced: the chip has already
+    # been written physically, so refusing here would desync DB and chip.
+    service = SpoolService(db)
+    removed_info: list[str] = []
 
-    # Check locations
-    loc_query = select(Location).where(Location.identifier == data.tag_uuid)
-    if data.location_id:
-        loc_query = loc_query.where(Location.id != data.location_id)
-    
-    locs_res = await db.execute(loc_query)
-    for l in locs_res.scalars().all():
-        removed_info.append(f"Standort '{l.name}'")
-        l.identifier = None
-        logger.info(f"Cleared duplicate identifier from location {l.id}")
+    # Slot chosen in the write-tag request (UI "replace tag 1/2"), if any.
+    pending = (device.custom_fields or {}).get("last_write_result") or {}
+    replace_slot = None
+    if (
+        pending.get("status") == "pending"
+        and data.spool_id
+        and pending.get("spool_id") == data.spool_id
+    ):
+        replace_slot = pending.get("replace_slot")
 
-    if removed_info:
-        write_result["removed_from"] = ", ".join(removed_info)
-    
-    # Determine target: spool_id OR tag_uuid (find spool by tag_uuid if no spool_id provided)
     target_spool = None
     target_location = None
-    
-    # Try to find spool by spool_id first, then by tag_uuid
+    # Only a spool explicitly targeted by spool_id keeps the chip when the same
+    # write also (re)assigns a location; a spool merely *found* by the UID is a
+    # previous owner and must lose it.
+    assigned_spool_id: int | None = None
+
     if data.spool_id:
         spool_res = await db.execute(select(Spool).where(Spool.id == data.spool_id))
         target_spool = spool_res.scalar_one_or_none()
         if target_spool:
-            target_spool.rfid_uid = data.tag_uuid
-            logger.info(f"Updated spool {data.spool_id} with RFID UID {data.tag_uuid}")
+            assigned_spool_id = target_spool.id
+            change = await service.add_rfid_uid(
+                target_spool,
+                data.tag_uuid,
+                replace_secondary=True,
+                replace_slot=replace_slot,
+            )
+            removed_info.extend(change.removed_from)
+            if change.replaced_uid:
+                removed_info.append(
+                    f"Spule #{target_spool.id} ({change.replaced_slot}. Tag "
+                    f"{change.replaced_uid} ersetzt)"
+                )
+            if change.already_assigned:
+                logger.info(f"Spool {data.spool_id} already has RFID UID {data.tag_uuid}")
+            else:
+                logger.info(
+                    f"Added RFID UID {data.tag_uuid} to spool {data.spool_id} "
+                    f"(slots now {target_spool.rfid_uid!r}, {target_spool.rfid_uid_2!r})"
+                )
         else:
             write_result["status"] = "error"
             write_result["error_message"] = "Target spool not found"
     elif data.tag_uuid:
-        # No spool_id provided, try to find spool by tag_uuid
-        spool_res = await db.execute(select(Spool).where(Spool.rfid_uid == data.tag_uuid))
-        target_spool = spool_res.scalar_one_or_none()
+        # No spool_id provided, try to find spool by tag_uuid (either slot)
+        target_spool = await service.find_spool_by_rfid(data.tag_uuid)
         if target_spool:
             logger.info(f"Found spool {target_spool.id} by tag_uuid {data.tag_uuid}")
         else:
             # Spool not found by tag_uuid - this is expected for new spools without tags
             logger.info(f"No spool found with tag_uuid {data.tag_uuid}")
-    
+
     # Handle location
     if data.location_id:
         loc_res = await db.execute(select(Location).where(Location.id == data.location_id))
         target_location = loc_res.scalar_one_or_none()
         if target_location:
+            removed_info.extend(
+                await service.release_rfid_uid(
+                    data.tag_uuid,
+                    exclude_spool_id=assigned_spool_id,
+                    exclude_location_id=target_location.id,
+                )
+            )
             target_location.identifier = data.tag_uuid
             logger.info(f"Updated location {data.location_id} with identifier {data.tag_uuid}")
         else:
             write_result["status"] = "error"
             write_result["error_message"] = "Target location not found"
+
+    for owner in removed_info:
+        logger.info(f"RFID UID {data.tag_uuid} removed from {owner}")
+    if removed_info:
+        write_result["removed_from"] = ", ".join(removed_info)
 
     # Update spool weight if provided (e.g., when writing tag to new spool)
     if data.remaining_weight_g is not None:
@@ -456,10 +473,7 @@ async def device_rfid_result(
             spool_to_update = target_spool
         elif data.tag_uuid:
             # Try to find spool by tag_uuid (might have been assigned above or already existed)
-            spool_res = await db.execute(
-                select(Spool).where(Spool.rfid_uid == data.tag_uuid)
-            )
-            spool_to_update = spool_res.scalar_one_or_none()
+            spool_to_update = await service.find_spool_by_rfid(data.tag_uuid)
         
         if not spool_to_update and data.spool_id:
             spool_res = await db.execute(
