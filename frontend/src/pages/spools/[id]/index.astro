@@ -188,6 +188,7 @@ const { id } = Astro.params
     import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { toColorSwatchBackground } from '../../../lib/colors'
+    import { formatRfidUid, initRfidDisplayFormat } from '../../../lib/format'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
     import {
       isBuiltInLabelField,
@@ -378,7 +379,7 @@ const { id } = Astro.params
             <div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.rfidUid')}</div>
             ${[[1, spool.rfid_uid], [2, spool.rfid_uid_2]].filter(([, uid]) => uid).map(([slot, uid]) => `
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 0.9rem; font-weight: 600; font-family: monospace;" title="${t('spools.rfidUid')} ${slot}">${uid}</span>
+                <span style="font-size: 0.9rem; font-weight: 600; font-family: monospace;" title="${t('spools.rfidUid')} ${slot}">${formatRfidUid(String(uid))}</span>
                 <button type="button" class="fm-btn" onclick="window.removeRfidTag(${slot}, '${uid}')" title="${t('rfid.removeTag')}"
                         style="border: none !important; background: transparent; padding: 0 4px; line-height: 1; color: var(--text-muted); cursor: pointer;">&#x2715;</button>
               </div>`).join('') || '<div style="font-size: 0.9rem; font-weight: 600; font-family: monospace;">-</div>'}
@@ -700,7 +701,7 @@ const { id } = Astro.params
     
     // Remove one RFID tag (slot 1 or 2). The backend shifts tag 2 into slot 1 when slot 1 is cleared.
     ;(window as any).removeRfidTag = async (slot: number, uid: string) => {
-      const msg = t('rfid.confirmRemoveTag', { uid })
+      const msg = t('rfid.confirmRemoveTag', { uid: formatRfidUid(uid) })
       const ok = (window as any).__fmConfirm ? await (window as any).__fmConfirm(msg) : confirm(msg)
       if (!ok) return
       const res = await fetch(`/api/v1/spools/${spool.id}`, {
@@ -748,10 +749,10 @@ const { id } = Astro.params
         slotChoice.innerHTML = `
           <div style="font-size: 0.9rem; font-weight: 600;">${t('rfid.replaceWhichTag')}</div>
           <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
-            <input type="radio" name="rfid-replace-slot" value="1"> <span>${t('rfid.replaceTagN', { n: 1, uid: spool.rfid_uid })}</span>
+            <input type="radio" name="rfid-replace-slot" value="1"> <span>${t('rfid.replaceTagN', { n: 1, uid: formatRfidUid(spool.rfid_uid) })}</span>
           </label>
           <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
-            <input type="radio" name="rfid-replace-slot" value="2" checked> <span>${t('rfid.replaceTagN', { n: 2, uid: spool.rfid_uid_2 })}</span>
+            <input type="radio" name="rfid-replace-slot" value="2" checked> <span>${t('rfid.replaceTagN', { n: 2, uid: formatRfidUid(spool.rfid_uid_2) })}</span>
           </label>`
         slotChoice.classList.remove('hidden')
       } else {
@@ -2090,6 +2091,7 @@ const { id } = Astro.params
       }
     }
 
+    await initRfidDisplayFormat()
     loadData()
   </script>
 </Layout>

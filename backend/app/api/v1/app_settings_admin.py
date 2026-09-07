@@ -16,6 +16,7 @@ class AppSettingsResponse(BaseModel):
     currency: str
     rfid_extended_data_enabled: bool
     rfid_protocol: str
+    rfid_display_colons: bool = True
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: str = "generic"
 
@@ -42,6 +43,7 @@ class AppSettingsUpdate(BaseModel):
     ) = None
     rfid_extended_data_enabled: bool | None = None
     rfid_protocol: Literal["openspool", "filaman"] | None = None
+    rfid_display_colons: bool | None = None
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: Literal["generic", "bambu"] | None = None
 
@@ -54,13 +56,20 @@ async def get_app_settings(
     result = await db.execute(select(AppSettings).where(AppSettings.id == 1))
     settings_row = result.scalar_one_or_none()
     if settings_row is None:
-        return AppSettingsResponse(login_disabled=False, currency="EUR", rfid_extended_data_enabled=False, rfid_protocol="openspool")
+        return AppSettingsResponse(
+            login_disabled=False,
+            currency="EUR",
+            rfid_extended_data_enabled=False,
+            rfid_protocol="openspool",
+            rfid_display_colons=True,
+        )
 
     return AppSettingsResponse(
         login_disabled=settings_row.login_disabled,
         currency=settings_row.currency,
         rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
         rfid_protocol=settings_row.rfid_protocol,
+        rfid_display_colons=settings_row.rfid_display_colons,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
         bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
     )
@@ -94,6 +103,7 @@ async def update_app_settings(
         currency=settings_row.currency,
         rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
         rfid_protocol=settings_row.rfid_protocol,
+        rfid_display_colons=settings_row.rfid_display_colons,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
         bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
     )
@@ -111,13 +121,20 @@ async def get_public_app_settings(db: DBSession):
     result = await db.execute(select(AppSettings).where(AppSettings.id == 1))
     settings_row = result.scalar_one_or_none()
     if settings_row is None:
-        resp = AppSettingsResponse(login_disabled=False, currency="EUR", rfid_extended_data_enabled=False, rfid_protocol="openspool")
+        resp = AppSettingsResponse(
+            login_disabled=False,
+            currency="EUR",
+            rfid_extended_data_enabled=False,
+            rfid_protocol="openspool",
+            rfid_display_colons=True,
+        )
     else:
         resp = AppSettingsResponse(
             login_disabled=settings_row.login_disabled,
             currency=settings_row.currency,
             rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
             rfid_protocol=settings_row.rfid_protocol,
+            rfid_display_colons=settings_row.rfid_display_colons,
             default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
             bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
         )

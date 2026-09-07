@@ -48,6 +48,25 @@ class TestAppSettingsAdmin:
         assert data["login_disabled"] is True
 
     @pytest.mark.asyncio
+    async def test_rfid_display_colons_roundtrip_and_public_info(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"rfid_display_colons": False},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["rfid_display_colons"] is False
+
+        admin_response = await client.get("/api/v1/admin/app-settings/")
+        assert admin_response.json()["rfid_display_colons"] is False
+
+        public_response = await client.get("/api/v1/app-settings/public-info")
+        assert public_response.status_code == 200
+        assert public_response.json()["rfid_display_colons"] is False
+
+    @pytest.mark.asyncio
     async def test_put_app_settings_updates_existing(self, auth_client):
         """PUT /admin/app-settings should update existing row."""
         client, csrf_token = auth_client

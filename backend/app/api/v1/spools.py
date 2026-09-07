@@ -303,9 +303,15 @@ async def list_spools(
 
     if search:
         search_term = f"%{search}%"
-        # RFID: match either slot, and also the separator-less spelling so a
-        # scale searching "04EF1410C82A81" finds the stored "04:EF:14:10:C8:2A:81".
+        # RFID: match either slot and ignore common hex separators, without
+        # changing the spelling stored in either column.
         compact_term = f"%{search.replace(':', '').replace('-', '').replace(' ', '')}%"
+        compact_primary = func.replace(
+            func.replace(func.replace(Spool.rfid_uid, ":", ""), "-", ""), " ", ""
+        )
+        compact_secondary = func.replace(
+            func.replace(func.replace(Spool.rfid_uid_2, ":", ""), "-", ""), " ", ""
+        )
         or_conditions = [
             Filament.designation.ilike(search_term),
             Filament.material_type.ilike(search_term),
@@ -314,8 +320,8 @@ async def list_spools(
             Spool.lot_number.ilike(search_term),
             Spool.rfid_uid.ilike(search_term),
             Spool.rfid_uid_2.ilike(search_term),
-            func.replace(Spool.rfid_uid, ":", "").ilike(compact_term),
-            func.replace(Spool.rfid_uid_2, ":", "").ilike(compact_term),
+            compact_primary.ilike(compact_term),
+            compact_secondary.ilike(compact_term),
         ]
 
         # Match on the spool ID (optionally entered with a leading '#')
@@ -475,8 +481,8 @@ async def create_spool(
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id
 
-    # RFID slots go through the service: normalised, and stolen from any
-    # other spool/location that currently holds the chip.
+    # RFID slots go through the service: stored as submitted, compared
+    # without regard to hex spelling, and stolen from any other owner.
     rfid_primary = spool_data.pop("rfid_uid", None)
     rfid_secondary = spool_data.pop("rfid_uid_2", None)
 
@@ -772,7 +778,7 @@ async def update_spool(
     update_data = data.model_dump(exclude_unset=True)
 
     # RFID slots are applied through the service after the plain fields:
-    # normalised, deduplicated, stolen from other owners, primary back-filled.
+    # stored as submitted, deduplicated, stolen from other owners, primary back-filled.
     rfid_kwargs = {
         key: update_data.pop(key)
         for key in ("rfid_uid", "rfid_uid_2")

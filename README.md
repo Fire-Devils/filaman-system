@@ -26,10 +26,25 @@ If you are using Home Assistant, there is a very convenient Add-on available:
 **[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
 This allows you to install and run the FilaMan System directly within your Home Assistant environment with just a few clicks.
 
+### 🎋 Bambuddy Integration
+Connect FilaMan to Bambu Lab printers and AMS units with the
+**[Bambuddy driver plugin](https://github.com/Fire-Devils/filaman-bambuddy-plugin)**.
+The integration keeps spool and AMS information in sync, supports automatic
+assignment after weighing and inserting a spool, and reports filament usage
+back to FilaMan.
+
+When used with Bambuddy, FilaMan can also apply your custom, Bambu
+Cloud-synced slicer profiles automatically when a spool is placed in an AMS
+slot. The correct material profile is then available in both the AMS and Bambu
+Studio, giving custom and third-party filament much the same seamless workflow
+as an official Bambu RFID spool.
+
 ## Features
 - **Spool Management:** Track remaining weight, location, and status.
+- **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
 - **Multi-User:** Role-based access control and tenant support.
 - **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
+- **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
 - **Printable Labels:** Print and export spool or filament labels with QR codes, custom label designer layouts, and label-paper sheet output.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
 - **Responsive UI:** Modern design with light, dark, and brand themes.

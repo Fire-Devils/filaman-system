@@ -6,7 +6,7 @@ from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.rfid import normalize_rfid_uid, rfid_match_values, rfid_uids_equal
+from app.core.rfid import rfid_hex_key, rfid_storage_value, rfid_uids_equal
 from app.core.security import Principal
 from app.models import AppSettings, Filament, Location, Spool, SpoolEvent, SpoolStatus
 from app.utils.db import json_extract_cast_string
@@ -53,12 +53,28 @@ class SpoolService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _rfid_filter(uid: str):
-        """SQL condition: either RFID slot of a spool holds ``uid`` (any spelling)."""
-        values = rfid_match_values(uid)
+    def _uid_filter(column, uid: str):
+        """Compare a stored UID without changing its persisted spelling."""
+        raw = uid.strip().upper()
+        conditions = [func.upper(func.trim(column)) == raw]
+        hex_key = rfid_hex_key(uid)
+        if hex_key is not None:
+            stored_hex = func.upper(
+                func.replace(
+                    func.replace(func.replace(func.trim(column), ":", ""), "-", ""),
+                    " ",
+                    "",
+                )
+            )
+            conditions.append(stored_hex == hex_key)
+        return or_(*conditions)
+
+    @classmethod
+    def _rfid_filter(cls, uid: str):
+        """SQL condition: either RFID slot holds ``uid`` in any hex spelling."""
         return or_(
-            func.upper(Spool.rfid_uid).in_(values),
-            func.upper(Spool.rfid_uid_2).in_(values),
+            cls._uid_filter(Spool.rfid_uid, uid),
+            cls._uid_filter(Spool.rfid_uid_2, uid),
         )
 
     @staticmethod
@@ -103,20 +119,18 @@ class SpoolService:
         lost the chip (same wording the write-tag flow has always reported).
         """
         removed: list[str] = []
-        values = rfid_match_values(uid)
-
         spool_query = select(Spool).where(self._rfid_filter(uid))
         if exclude_spool_id is not None:
             spool_query = spool_query.where(Spool.id != exclude_spool_id)
         for other in (await self.db.execute(spool_query)).scalars().all():
-            if other.rfid_uid and other.rfid_uid.upper() in values:
+            if rfid_uids_equal(other.rfid_uid, uid):
                 other.rfid_uid = None
-            if other.rfid_uid_2 and other.rfid_uid_2.upper() in values:
+            if rfid_uids_equal(other.rfid_uid_2, uid):
                 other.rfid_uid_2 = None
             self._normalize_slots(other)
             removed.append(f"Spule #{other.id}")
 
-        loc_query = select(Location).where(func.upper(Location.identifier).in_(values))
+        loc_query = select(Location).where(self._uid_filter(Location.identifier, uid))
         if exclude_location_id is not None:
             loc_query = loc_query.where(Location.id != exclude_location_id)
         for loc in (await self.db.execute(loc_query)).scalars().all():
@@ -136,18 +150,19 @@ class SpoolService:
     ) -> list[str]:
         """Set one or both RFID slots to the given values (None clears a slot).
 
-        Values are normalised, duplicates collapsed, and the primary slot is
-        back-filled from the secondary so ``rfid_uid`` is never empty while a
-        chip exists.  Any UID new to this spool is stolen from other owners.
-        Returns the list of previous owners.  Flushes, does not commit.
+        Submitted spelling is preserved. Values are normalised only for
+        comparison; equivalent spellings collapse as duplicates. The primary
+        slot is back-filled from the secondary so ``rfid_uid`` is never empty
+        while a chip exists. Any UID new to this spool is stolen from other
+        owners. Returns previous owners. Flushes, does not commit.
         """
         primary = (
-            spool.rfid_uid if rfid_uid is _UNSET else normalize_rfid_uid(rfid_uid)
+            spool.rfid_uid if rfid_uid is _UNSET else rfid_storage_value(rfid_uid)
         )
         secondary = (
             spool.rfid_uid_2
             if rfid_uid_2 is _UNSET
-            else normalize_rfid_uid(rfid_uid_2)
+            else rfid_storage_value(rfid_uid_2)
         )
         if primary and secondary and rfid_uids_equal(primary, secondary):
             secondary = None
@@ -184,33 +199,33 @@ class SpoolService:
         physically written, so refusing would desync DB and chip), else
         :class:`RfidSlotsFullError`.
         """
-        canonical = normalize_rfid_uid(uid)
-        if canonical is None:
+        stored_uid = rfid_storage_value(uid)
+        if stored_uid is None:
             raise ValueError("RFID UID must not be empty")
-        if self.spool_has_rfid(spool, canonical):
+        if self.spool_has_rfid(spool, stored_uid):
             return RfidChange(already_assigned=True)
         if replace_slot in (1, 2):
             if replace_slot == 1:
                 replaced = spool.rfid_uid
-                removed = await self.set_rfid_uids(spool, rfid_uid=canonical)
+                removed = await self.set_rfid_uids(spool, rfid_uid=stored_uid)
             else:
                 replaced = spool.rfid_uid_2
-                removed = await self.set_rfid_uids(spool, rfid_uid_2=canonical)
+                removed = await self.set_rfid_uids(spool, rfid_uid_2=stored_uid)
             return RfidChange(
                 removed_from=removed,
                 replaced_uid=replaced,
                 replaced_slot=replace_slot if replaced else None,
             )
         if spool.rfid_uid is None:
-            return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid=canonical))
+            return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid=stored_uid))
         if spool.rfid_uid_2 is None:
-            return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid_2=canonical))
+            return RfidChange(removed_from=await self.set_rfid_uids(spool, rfid_uid_2=stored_uid))
         if not replace_secondary:
             raise RfidSlotsFullError(
                 f"Spool #{spool.id} already has two RFID tags; remove one first"
             )
         replaced = spool.rfid_uid_2
-        removed = await self.set_rfid_uids(spool, rfid_uid_2=canonical)
+        removed = await self.set_rfid_uids(spool, rfid_uid_2=stored_uid)
         return RfidChange(removed_from=removed, replaced_uid=replaced, replaced_slot=2)
 
     async def remove_rfid_uid(self, spool: Spool, uid: str) -> bool:
