@@ -1,4 +1,5 @@
 import importlib.util
+from datetime import datetime, timezone
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -12,6 +13,9 @@ MIGRATION_PATH = (
     / "ef529a7422d8_expand_color_hex_code_to_support_alpha.py"
 )
 
+# Any value works; the migration only has to be able to write the columns.
+SEEDED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
 
 def load_migration_module():
     spec = importlib.util.spec_from_file_location(
@@ -24,8 +28,14 @@ def load_migration_module():
     return module
 
 
-def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch):
-    engine = sa.create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+def legacy_schema():
+    """The three tables as they look right before this migration runs.
+
+    Mirrors 4b9f107a3faf_initial_tables.py — including `created_at`/`updated_at`,
+    which are NOT NULL without a server default, so the migration must supply
+    them on every INSERT. Shared by both tests so the fixture cannot drift away
+    from production for one of them only.
+    """
     metadata = sa.MetaData()
     colors = sa.Table(
         "colors",
@@ -33,6 +43,10 @@ def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("hex_code", sa.String(7), nullable=False),
+        sa.Column("custom_fields", sa.JSON, nullable=True),
+        sa.Column("created_at", sa.DateTime, nullable=False),
+        sa.Column("updated_at", sa.DateTime, nullable=False),
+        sa.UniqueConstraint("name", "hex_code", name="uq_colors_name_hex"),
     )
     filaments = sa.Table(
         "filaments",
@@ -46,15 +60,39 @@ def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch
         sa.Column("filament_id", sa.Integer, nullable=False),
         sa.Column("color_id", sa.Integer, nullable=False),
     )
+    return metadata, colors, filaments, filament_colors
+
+
+def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch):
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    metadata, colors, filaments, filament_colors = legacy_schema()
 
     with engine.begin() as connection:
         metadata.create_all(connection)
         connection.execute(
             colors.insert(),
             [
-                {"id": 1, "name": "Imported legacy", "hex_code": "#3CD8100C"},
-                {"id": 2, "name": "Imported canonical", "hex_code": "#3C112233"},
-                {"id": 3, "name": "Native same bytes", "hex_code": "#3C8AD77F"},
+                {
+                    "id": 1,
+                    "name": "Imported legacy",
+                    "hex_code": "#3CD8100C",
+                    "created_at": SEEDED_AT,
+                    "updated_at": SEEDED_AT,
+                },
+                {
+                    "id": 2,
+                    "name": "Imported canonical",
+                    "hex_code": "#3C112233",
+                    "created_at": SEEDED_AT,
+                    "updated_at": SEEDED_AT,
+                },
+                {
+                    "id": 3,
+                    "name": "Native same bytes",
+                    "hex_code": "#3C8AD77F",
+                    "created_at": SEEDED_AT,
+                    "updated_at": SEEDED_AT,
+                },
             ],
         )
         connection.execute(
@@ -119,31 +157,21 @@ def test_upgrade_repairs_only_known_spoolman_import_colors(tmp_path, monkeypatch
 def test_upgrade_survives_leftover_batch_temp_table(tmp_path):
     """An interrupted previous run can leave `_alembic_tmp_colors` behind."""
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
-    metadata = sa.MetaData()
-    colors = sa.Table(
-        "colors",
-        metadata,
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("name", sa.String(100), nullable=False),
-        sa.Column("hex_code", sa.String(7), nullable=False),
-    )
-    filaments = sa.Table(
-        "filaments",
-        metadata,
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("custom_fields", sa.JSON, nullable=True),
-    )
-    filament_colors = sa.Table(
-        "filament_colors",
-        metadata,
-        sa.Column("filament_id", sa.Integer, nullable=False),
-        sa.Column("color_id", sa.Integer, nullable=False),
-    )
+    metadata, colors, _filaments, _filament_colors = legacy_schema()
 
     with engine.begin() as connection:
         metadata.create_all(connection)
         connection.execute(
-            colors.insert(), [{"id": 1, "name": "Basic White", "hex_code": "#FFFFFF"}]
+            colors.insert(),
+            [
+                {
+                    "id": 1,
+                    "name": "Basic White",
+                    "hex_code": "#FFFFFF",
+                    "created_at": SEEDED_AT,
+                    "updated_at": SEEDED_AT,
+                }
+            ],
         )
         connection.execute(
             sa.text("CREATE TABLE _alembic_tmp_colors (id INTEGER)")
