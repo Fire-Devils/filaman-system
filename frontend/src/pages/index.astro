@@ -194,10 +194,18 @@ interface PaginatedResponse<T> {
     import changelogData from '../changelog.json'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../lib/cache'
     import { getAbortSignal, isAbortError } from '../lib/abort'
+    import { getMe, hasPermission } from '../lib/auth'
 
     let allSpools: any[] = []
     let allFilaments: any[] = []
     let filamentCounts = { all: 0, active: 0, used: 0 }
+
+    // Archiving from the dashboard is a status change, same permission the
+    // backend requires on /spools/{id}/status and /spools/bulk/status.
+    let canArchive = false
+    const canArchiveReady = getMe()
+      .then(user => { canArchive = !!user && hasPermission(user, 'spool_events:create_status') })
+      .catch(() => { canArchive = false })
 
     function applyFilamentScope() {
       const scope = (localStorage.getItem('dashboard-filament-scope') || 'all') as 'all' | 'active' | 'used'
@@ -237,7 +245,9 @@ interface PaginatedResponse<T> {
     }
 
     // Modal functions
-    (window as any).openSpoolModal = function(type: 'problem') {
+    (window as any).openSpoolModal = async function(type: 'problem') {
+      await canArchiveReady
+
       const modal = document.getElementById('spool-modal') as HTMLElement
       const title = document.getElementById('modal-title') as HTMLElement
       const content = document.getElementById('modal-content') as HTMLElement
@@ -245,7 +255,7 @@ interface PaginatedResponse<T> {
       const bulkBtn = document.getElementById('btn-archive-all') as HTMLButtonElement
 
       let filteredSpools: any[] = []
-      
+
       if (type === 'problem') {
         title.textContent = t('dashboard.lowAndEmptySpools')
         filteredSpools = allSpools.filter(s => 
@@ -265,7 +275,7 @@ interface PaginatedResponse<T> {
                 <th style="padding: 8px;">ID</th>
                 <th style="padding: 8px;">${t('dashboard.filament')}</th>
                 <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
-                <th style="padding: 8px; text-align: right;">${t('common.actions')}</th>
+                ${canArchive ? `<th style="padding: 8px; text-align: right;">${t('common.actions')}</th>` : ''}
               </tr>
             </thead>
             <tbody>
@@ -274,20 +284,27 @@ interface PaginatedResponse<T> {
                   <td style="padding: 8px; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">#${s.id}</td>
                   <td style="padding: 8px; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">${getFilamentName(s.filament_id)}</td>
                   <td style="padding: 8px; text-align: right; font-family: monospace; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">${s.remaining_weight_g?.toFixed(0)}g</td>
+                  ${canArchive ? `
                   <td style="padding: 8px; text-align: right;">
                     <button class="fm-btn fm-btn-outline" style="padding: 4px 10px; font-size: 0.75rem;" onclick="archiveSpool(${s.id})">
                       ${t('dashboard.archive')}
                     </button>
-                  </td>
+                  </td>` : ''}
                 </tr>
               `).join('')}
             </tbody>
           </table>
         `
-        
-        footer.classList.remove('hidden')
-        bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
-        bulkBtn.onclick = () => archiveAll(filteredSpools.map(s => s.id))
+
+        // Without the status-change permission the backend rejects archiving,
+        // so the buttons stay hidden instead of failing on click.
+        if (canArchive) {
+          footer.classList.remove('hidden')
+          bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
+          bulkBtn.onclick = () => archiveAll(filteredSpools.map(s => s.id))
+        } else {
+          footer.classList.add('hidden')
+        }
       }
 
       modal.classList.add('open')
@@ -326,6 +343,13 @@ interface PaginatedResponse<T> {
             document.getElementById('modal-footer')!.classList.add('hidden')
           }
           loadDashboardData()
+        } else {
+          // e.g. 403 when the role lacks the status-change permission
+          await (window as any).__fmAlert?.(t('dashboard.archiveError'))
+          if (btn) {
+            btn.disabled = false
+            btn.textContent = t('dashboard.archive')
+          }
         }
       } catch (err) {
         if (isAbortError(err)) return
@@ -363,12 +387,16 @@ interface PaginatedResponse<T> {
         if (response.ok) {
           (window as any).closeSpoolModal()
           loadDashboardData()
+        } else {
+          // e.g. 403 when the role lacks the status-change permission
+          await (window as any).__fmAlert?.(t('dashboard.archiveError'))
         }
       } catch (err) {
         if (isAbortError(err)) return
         console.error('Failed bulk archive:', err)
       } finally {
         bulkBtn.disabled = false
+        bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
       }
     }
     (window as any).archiveAll = archiveAll

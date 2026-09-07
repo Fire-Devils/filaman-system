@@ -159,6 +159,7 @@
     "confirmArchiveOne": "Möchten Sie diese Spule archivieren?",
     "archiveAll": "Alle archivieren",
     "archiveSuccess": "Spulen erfolgreich archiviert.",
+    "archiveError": "Die Spulen konnten nicht archiviert werden. Möglicherweise fehlt die nötige Berechtigung.",
     "spool": "Spule",
     "filament": "Filament",
     "manufacturer": "Hersteller",
