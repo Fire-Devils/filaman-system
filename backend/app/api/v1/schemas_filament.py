@@ -168,6 +168,7 @@ class ResolveFilamentFromTagRequest(BaseModel):
     brand: str | None = None
     type: str | None = None
     subtype: str | None = None
+    color_hex: str | None = None
     min_temp: int | float | str | None = None
     max_temp: int | float | str | None = None
     diameter: float | str | None = None
