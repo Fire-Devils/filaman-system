@@ -26,10 +26,26 @@ Für Nutzer von Home Assistant gibt es ein extrem praktisches Add-on:
 **[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
 Damit lässt sich das FilaMan System mit wenigen Klicks direkt in deiner Home Assistant Umgebung installieren und betreiben.
 
+### 🎋 Bambuddy Integration
+Verbinde FilaMan über das
+**[Bambuddy Treiber-Plugin](https://github.com/Fire-Devils/filaman-bambuddy-plugin)**
+mit Bambu Lab Druckern und AMS-Einheiten.
+Die Integration hält Spulen- und AMS-Informationen synchron, unterstützt die
+automatische Zuweisung nach dem Wiegen und Einlegen einer Spule und meldet den
+Filamentverbrauch zurück an FilaMan.
+
+Zusammen mit Bambuddy kann FilaMan außerdem deine eigenen, über die Bambu Cloud
+synchronisierten Slicer-Profile automatisch anwenden, sobald eine Spule in einen
+AMS-Slot eingelegt wird. Das passende Materialprofil steht dann sowohl im AMS als
+auch in Bambu Studio bereit. Damit erhalten eigene und Drittanbieter-Filamente
+nahezu denselben nahtlosen Ablauf wie eine originale Bambu RFID-Spule.
+
 ## Features
 - **Spulen-Verwaltung:** Tracking von Restgewicht, Lagerort und Status.
+- **Zwei RFID-Tags:** Zwei RFID-Tag-UIDs pro Spule speichern, sodass eine Spule mit Tags auf beiden Seiten über jede Seite als derselbe Bestandseintrag erkannt wird.
 - **Mandantenfähigkeit:** Multi-User-Unterstützung mit Rollensystem.
 - **Drucker-Integration:** Plugin-System zur Anbindung von 3D-Druckern und AMS-Einheiten.
+- **Bambuddy Integration:** Spulenbestand und AMS-Zuweisungen synchronisieren, Filamentverbrauch erfassen und eigene Bambu Cloud Slicer-Profile automatisch anwenden.
 - **Druckbare Labels:** Spulen- und Filament-Labels mit QR-Codes, eigenem Label-Designer und Etikettenbogen-Ausgabe drucken und exportieren.
 - **Datenbank-Support:** Kompatibel mit SQLite (Standard), MySQL und PostgreSQL.
 - **Responsive UI:** Modernes Design (Hell, Dunkel und Brand-Theme).
