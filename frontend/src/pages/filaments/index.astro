@@ -95,6 +95,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr style="background: var(--bg-soft);">
           <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" /></th>
           <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
+          <th data-i18n="manufacturers.logo" class="col-logo">Logo</th>
           <th data-i18n="filaments.type" data-sort="type" class="sortable col-type">Type</th>
           <th data-i18n="filaments.designation" data-sort="designation" class="sortable col-designation">Designation</th>
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
@@ -110,7 +111,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="filaments-table">
         <tr>
-          <td colspan="13" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="14" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -557,6 +558,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" /></td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
+          <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${f.manufacturer.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${f.material_type}</td>
           <td class="col-designation" style="padding: 12px;">
             <div style="font-weight: 500;">${f.designation}</div>
@@ -762,6 +764,7 @@ import Layout from '../../layouts/Layout.astro'
         heading: t('common.columnsStandard'),
         columns: [
           { key: 'manufacturer', label: t('filaments.manufacturer') },
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'type', label: t('filaments.type') },
           { key: 'colors', label: t('filaments.colors') },
           { key: 'diameter', label: t('filaments.diameter') },
@@ -782,7 +785,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     const filPicker = initColumnPicker({
       storageKey: 'filaman-columns-filaments',
-      defaultVisible: ['manufacturer', 'type', 'colors', 'diameter', 'spools'],
+      defaultVisible: ['manufacturer', 'logo', 'type', 'colors', 'diameter', 'spools'],
       groups: filColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
