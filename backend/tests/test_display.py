@@ -257,6 +257,50 @@ def test_normalize_documented_shape():
     assert live["ams"][0]["slots"][0]["color"] == "#ABCDEF"
 
 
+def test_idle_dry_status_is_not_drying():
+    """AMS 2 Pro / HT always send dry_status=0; that is idle, not a cycle."""
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [
+                {
+                    "id": 0,
+                    "dry_status": 0,
+                    "dry_time": 0,
+                    "dry_target_temp": None,
+                    "tray": [{"id": 0, "tray_type": "PLA"}],
+                },
+                {
+                    "id": 128,
+                    "is_ams_ht": True,
+                    "dry_status": 0,
+                    "dry_time": 0,
+                    "tray": [{"id": 0, "tray_type": "PLA"}],
+                },
+            ],
+        }
+    )
+    assert all(u["drying"] is None for u in live["ams"])
+
+
+def test_active_dry_status_is_drying():
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [
+                {
+                    "id": 0,
+                    "dry_status": 2,
+                    "dry_time": 90,
+                    "dry_target_temp": 55,
+                    "tray": [{"id": 0, "tray_type": "PLA"}],
+                }
+            ],
+        }
+    )
+    assert live["ams"][0]["drying"] == {"status": 2, "target_temp": 55.0, "time": 90}
+
+
 def test_normalize_ht_tray_now_is_unit_id():
     """H2D reports AMS-HT as tray_now=128, not ams*4+slot."""
     live = normalize_driver_state({"connected": True, "tray_now": 128, "ams": []})
