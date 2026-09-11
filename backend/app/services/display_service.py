@@ -42,6 +42,9 @@ DEFAULT_EMPTY_COLOR = "#202020"
 AMS_HT_ID_BASE = 128  # Bambu numbers AMS-HT units from 128
 EXTERNAL_IDS = {254, 255}  # Bambu: external spool holder / virtual tray
 SLOTS_PER_AMS = 4
+# BambuStudio DryStatus (bits 4–7 of ams info / dry_status on AMS 2 Pro / HT).
+# 0 = off; 1–4 are an in-progress cycle. Idle units still send dry_status=0.
+_DRY_STATUS_ACTIVE = {1, 2, 3, 4}  # checking, drying, cooling, stopping
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +241,23 @@ def extract_ams_units(state: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _unit_drying(unit: dict[str, Any]) -> dict[str, Any] | None:
+    """Return drying telemetry only when a cycle is actually running.
+
+    AMS 2 Pro / HT always include ``dry_status`` / ``dry_time`` (0 when idle).
+    Treating field presence as “drying” made every unit show the badge.
+    """
+    status = _as_int(_first(unit, ("dry_status",)))
+    time_left = _as_int(_first(unit, ("dry_time", "drying_time", "remaining_drying_time")))
+    if status not in _DRY_STATUS_ACTIVE and not (time_left and time_left > 0):
+        return None
+    return {
+        "status": status,
+        "target_temp": _as_float(_first(unit, ("dry_target_temp", "drying_temp"))),
+        "time": time_left,
+    }
+
+
 def extract_trays(unit: dict[str, Any]) -> list[dict[str, Any]]:
     for key in ("slots", "trays", "tray"):
         trays = unit.get(key)
@@ -392,13 +412,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         raw_ams_id = _as_int(_first(unit, ("ams_id", "id"), 0)) or 0
         ams_id = canonicalize_slot_key(raw_ams_id, 0)[0]
         kind = ams_kind(ams_id, unit)
-        drying = None
-        if _first(unit, ("dry_status", "dry_target_temp", "dry_time")) is not None:
-            drying = {
-                "status": _first(unit, ("dry_status",)),
-                "target_temp": _as_float(_first(unit, ("dry_target_temp",))),
-                "time": _as_int(_first(unit, ("dry_time",))),
-            }
+        drying = _unit_drying(unit)
         bucket = units_by_id.get(ams_id)
         if bucket is None:
             bucket = {
