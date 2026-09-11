@@ -80,6 +80,52 @@ def _as_int(value: Any) -> int | None:
     return int(round(f)) if f is not None else None
 
 
+def _decode_active_tray(value: int | None) -> tuple[int, int] | None:
+    """Map Bambu ``tray_now`` / ``active_tray`` to ``(ams_id, slot)``.
+
+    Regular AMS uses ``ams*4+slot``. AMS-HT units are numbered 128–135, and
+    dual-nozzle printers (H2D/H2C) report that id directly when HT is
+    feeding — ``divmod(128, 4)`` would look for a phantom AMS 32.
+    254/255 mean no tray at this layer (external is encoded elsewhere).
+    """
+    if value is None or value < 0 or value >= 254:
+        return None
+    if value >= AMS_HT_ID_BASE:
+        return canonicalize_slot_key(value, 0)
+    return divmod(value, SLOTS_PER_AMS)
+
+
+def _encode_active_tray(location: tuple[int, int] | None) -> int | None:
+    if location is None:
+        return None
+    ams_id, slot_no = location
+    if ams_id in EXTERNAL_IDS:
+        return None
+    if ams_id >= AMS_HT_ID_BASE:
+        return ams_id
+    return ams_id * SLOTS_PER_AMS + slot_no
+
+
+def _pair_from_extruder_slots(raw: dict[str, Any]) -> tuple[int, int] | None:
+    """Bambuddy dual-nozzle status: ``extruder_slots[active_extruder]``."""
+    slots = raw.get("extruder_slots")
+    if not isinstance(slots, dict):
+        return None
+    active = _as_int(raw.get("active_extruder"))
+    if active is None:
+        return None
+    entry = slots.get(str(active))
+    if entry is None:
+        entry = slots.get(active)
+    if not isinstance(entry, dict) or entry.get("has_filament") is False:
+        return None
+    ams_id = _as_int(_first(entry, ("ams_id", "ams")))
+    slot_no = _as_int(_first(entry, ("slot_id", "slot", "tray_id", "tray")))
+    if ams_id is None or slot_no is None:
+        return None
+    return canonicalize_slot_key(ams_id, slot_no)
+
+
 def normalize_hex_color(value: Any, default: str = DEFAULT_EMPTY_COLOR) -> str:
     """``RRGGBB`` / ``#RRGGBB`` / ``RRGGBBAA`` -> ``#RRGGBB`` (upper-case)."""
     if not value:
@@ -268,7 +314,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         job.remaining_sec    remaining_seconds | remaining_time (minutes) | mc_remaining_time
         temperatures.*       temperatures.{nozzle,bed,chamber,*_target} | nozzle_temper ...
         speed_level          speed_level | spd_lvl
-        active_tray          active_tray | tray_now (ams*4+slot, 254/255 = none)
+        active_tray          extruder_slots[active_extruder] | active_tray | tray_now
+                             (ams*4+slot; AMS-HT 128–135 = that unit, slot 0; 254/255 = none)
         hms                  [{code, msg}] | []
         ams[]                ams_id|id, is_ams_ht, temperature|temp, humidity,
                              dry_status, dry_target_temp, dry_time,
@@ -321,8 +368,9 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
     active_tray = _as_int(_first(raw, ("active_tray", "tray_now")))
     if active_tray is None:
         active_tray = _as_int(_deep_get(raw, ("ams", "tray_now")))
-    if active_tray is not None and (active_tray < 0 or active_tray >= 254):
-        active_tray = None
+    active_tray = _encode_active_tray(
+        _pair_from_extruder_slots(raw) or _decode_active_tray(active_tray)
+    )
 
     hms_raw = raw.get("hms") or raw.get("hms_errors") or []
     hms: list[dict[str, Any]] = []
@@ -479,14 +527,13 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
     filament = spool.filament
     manufacturer = filament.manufacturer.name if filament and filament.manufacturer else ""
     color_hex = ""
-    color_name = ""
     if filament and filament.filament_colors:
         colors = sorted(filament.filament_colors, key=lambda fc: getattr(fc, "position", 0) or 0)
         if colors and colors[0].color:
             color_hex = colors[0].color.hex_code or ""
-            color_name = colors[0].color.name or ""
-    if not color_name and filament:
-        color_name = filament.manufacturer_color_name or ""
+    # AMS View shows the filament's Manufacturer Color Name, not Color.name
+    # (that field is often a hex code or a generic swatch label).
+    color_name = (filament.manufacturer_color_name or "").strip() if filament else ""
 
     remaining = spool.remaining_weight_g
     initial = spool.initial_total_weight_g
@@ -622,8 +669,9 @@ def _apply_backups(slots: list[dict[str, Any]]) -> None:
 
 def _apply_active(units: list[dict[str, Any]], active_tray: int | None) -> dict[str, Any] | None:
     """Return {ams_id, slot} of the active slot; honour tray_now over per-tray flags."""
-    if active_tray is not None:
-        ams_id, slot_no = divmod(active_tray, SLOTS_PER_AMS)
+    location = _decode_active_tray(active_tray)
+    if location is not None:
+        ams_id, slot_no = location
         for unit in units:
             for slot in unit["slots"]:
                 slot["active"] = unit["ams_id"] == ams_id and slot["slot"] == slot_no and not slot["empty"]

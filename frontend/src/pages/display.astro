@@ -227,6 +227,7 @@ import Layout from '../layouts/Layout.astro'
     .ams-unit {
       display: grid;
       gap: 12px;
+      min-width: 0;
       padding: 16px;
     }
     .ams-unit-head {
@@ -259,6 +260,7 @@ import Layout from '../layouts/Layout.astro'
     .ams-bays {
       display: grid;
       gap: 10px;
+      min-width: 0;
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .ams-unit[data-kind='ams_ht'] .ams-bays {
@@ -276,6 +278,8 @@ import Layout from '../layouts/Layout.astro'
       position: relative;
       display: grid;
       grid-template-rows: auto 1fr;
+      min-width: 0;
+      max-width: 100%;
       border-radius: var(--radius-sm);
       overflow: hidden;
       background: var(--bg-soft);
@@ -309,11 +313,14 @@ import Layout from '../layouts/Layout.astro'
     .ams-swatch {
       position: relative;
       min-height: 76px;
+      min-width: 0;
       padding: 9px 10px;
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
+      flex-wrap: wrap;
       gap: 6px;
+      overflow: hidden;
       background: var(--ams-swatch);
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
       color: var(--ams-ink);
@@ -333,12 +340,20 @@ import Layout from '../layouts/Layout.astro'
       line-height: 1;
       letter-spacing: 0.02em;
       font-variant-numeric: tabular-nums;
+      flex: 0 1 auto;
+      min-width: 0;
     }
     .ams-tag {
       font-size: 0.62rem;
       font-weight: 700;
       letter-spacing: 0.07em;
       opacity: 0.85;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     /* Lower register: every string lives here, on the app surface. */
@@ -346,13 +361,27 @@ import Layout from '../layouts/Layout.astro'
       display: flex;
       flex-direction: column;
       gap: 3px;
+      min-width: 0;
+      overflow: hidden;
       padding: 9px 10px 10px;
+    }
+    .ams-identity {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
     }
     .ams-material {
       font-size: 1rem;
       font-weight: 700;
       line-height: 1.15;
       color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .ams-bay[data-empty='1'] .ams-material {
       color: var(--text-muted);
@@ -370,6 +399,9 @@ import Layout from '../layouts/Layout.astro'
       font-weight: 700;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+      margin-left: auto;
+      text-align: right;
     }
     /* Pinned to the bottom so the bars line up across a row of bays,
        which is what makes "who is running low" scannable at a glance. */
@@ -576,7 +608,8 @@ import Layout from '../layouts/Layout.astro'
       const color = safeColor(s.color)
       const pct = s.remaining_percent
       const level = pct == null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : 'ok'
-      const desc = [s.color_name, s.manufacturer].filter(Boolean).join(' · ') || s.filament || ''
+      const colorName = s.color_name || (!s.manufacturer ? s.filament : '') || ''
+      const manufacturer = s.manufacturer || ''
       const amount = pct != null ? `${pct}%` : (s.remaining_grams != null ? `${s.remaining_grams} g` : '')
       const spoolId = Number.isFinite(Number(s.spool_id)) && Number(s.spool_id) > 0 ? Number(s.spool_id) : null
       const spoolLine = spoolId != null ? `<div class="ams-spool">#${spoolId}</div>` : ''
@@ -592,9 +625,12 @@ import Layout from '../layouts/Layout.astro'
             ${s.rfid ? `<span class="ams-tag">RFID</span>` : ''}
           </div>
           <div class="ams-facts">
-            <div class="ams-material">${esc(s.material || '—')}</div>
-            ${spoolLine}
-            ${desc ? `<div class="ams-desc">${esc(desc)}</div>` : ''}
+            <div class="ams-identity">
+              <div class="ams-material">${esc(s.material || '—')}</div>
+              ${spoolLine}
+            </div>
+            ${colorName ? `<div class="ams-desc">${esc(colorName)}</div>` : ''}
+            ${manufacturer ? `<div class="ams-desc">${esc(manufacturer)}</div>` : ''}
             ${s.active ? `<div class="ams-feeding">${t('display.feeding')}</div>` : ''}
             ${pct != null
               ? `<div class="ams-remaining">
