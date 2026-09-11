@@ -94,8 +94,30 @@ def ams_letter(ams_id: int) -> str:
     return chr(ord("A") + ams_id) if 0 <= ams_id < 26 else str(ams_id)
 
 
+def canonicalize_slot_key(ams_id: int, tray: int) -> tuple[int, int]:
+    """Map Bambu VT ids onto the FilaMan/Bambuddy external form ``255-{0|1}``.
+
+    Physical virtual trays are numbered 254 / 255. Bambuddy (and FilaMan slot
+    indexes) store both under ``ams_id=255`` with tray ``0`` / ``1``. Older
+    builds mistakenly persisted ``255-254`` / ``255-255``, which made dual-
+    extruder printers show four External bays. Always collapse to the
+    canonical pair before merging the board.
+    """
+    if ams_id == 254:
+        if tray in (1, 255):
+            return 255, 1
+        return 255, 0
+    if ams_id == 255:
+        if tray == 254:
+            return 255, 0
+        if tray == 255:
+            return 255, 1
+        return 255, tray
+    return ams_id, tray
+
+
 def ams_kind(ams_id: int, unit: dict[str, Any] | None = None) -> str:
-    """``ams`` (4 slots) | ``ams_ht`` (1 slot) | ``external`` (spool holder, 1 slot)."""
+    """``ams`` (4 slots) | ``ams_ht`` (1 slot) | ``external`` (spool holder)."""
     if ams_id in EXTERNAL_IDS or (unit and unit.get("is_external")):
         return "external"
     if unit and unit.get("is_ams_ht"):
@@ -124,16 +146,30 @@ def parse_slot_index(slot: PrinterSlot) -> tuple[int, int]:
     """(ams_id, tray) for a FilaMan printer slot.
 
     Drivers store ``custom_fields.slot_index = "<ams>-<tray>"``; without it
-    the slot number is interpreted as consecutive 4-slot AMS units.
+    the slot number is interpreted as consecutive 4-slot AMS units. External
+    VT ids are canonicalised so legacy ``255-254`` / ``255-255`` collapse.
     """
     raw = (slot.custom_fields or {}).get("slot_index")
     if isinstance(raw, str) and "-" in raw:
         a, _, t = raw.partition("-")
         try:
-            return int(a), int(t)
+            return canonicalize_slot_key(int(a), int(t))
         except ValueError:
             pass
     return slot.slot_no // SLOTS_PER_AMS, slot.slot_no % SLOTS_PER_AMS
+
+
+def _prefer_fm_entry(existing: dict[str, Any] | None, incoming: dict[str, Any]) -> dict[str, Any]:
+    """When two PrinterSlots collapse to the same key, keep the richer one."""
+    if existing is None:
+        return incoming
+    if incoming.get("spool_id") is not None and existing.get("spool_id") is None:
+        return incoming
+    if existing.get("spool_id") is not None and incoming.get("spool_id") is None:
+        return existing
+    if incoming.get("present") and not existing.get("present"):
+        return incoming
+    return existing
 
 
 # ---------------------------------------------------------------------------
@@ -253,9 +289,9 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 hms.append({"code": "", "message": str(item)})
 
     units: list[dict[str, Any]] = []
+    units_by_id: dict[int, dict[str, Any]] = {}
     for unit in extract_ams_units(raw):
-        ams_id = _as_int(_first(unit, ("ams_id", "id"), 0)) or 0
-        kind = ams_kind(ams_id, unit)
+        raw_ams_id = _as_int(_first(unit, ("ams_id", "id"), 0)) or 0
         drying = None
         if _first(unit, ("dry_status", "dry_target_temp", "dry_time")) is not None:
             drying = {
@@ -263,34 +299,91 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "target_temp": _as_float(_first(unit, ("dry_target_temp",))),
                 "time": _as_int(_first(unit, ("dry_time",))),
             }
-        slots: list[dict[str, Any]] = []
+        # Remap each tray through canonicalize_slot_key so a unit reported as
+        # ams_id=254 (or trays 254/255 under 255) folds into the External card.
         for tray in extract_trays(unit):
-            slot_no = _as_int(_first(tray, ("slot", "id", "tray_id"), 0)) or 0
-            slots.append(
-                {
-                    "slot": slot_no,
-                    "material": str(_first(tray, ("material", "tray_type", "filament_type"), "") or ""),
-                    "color": normalize_hex_color(_first(tray, ("color", "tray_color", "filament_color")), ""),
-                    "color_name": str(_first(tray, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
-                    "remaining_percent": _as_int(_first(tray, ("remaining_percent", "remain"))),
-                    "nozzle_min": _as_int(_first(tray, ("nozzle_min", "nozzle_temp_min"))),
-                    "nozzle_max": _as_int(_first(tray, ("nozzle_max", "nozzle_temp_max"))),
-                    "rfid": any(
-                        tray.get(k) not in (None, "", 0, "0", "0000000000000000")
-                        for k in ("tag_uid", "tray_uuid", "rfid_uid")
-                    ),
-                    "active": bool(_first(tray, ("active", "is_active"), False)) or tray.get("state") == 27,
-                    "has_filament": _tray_has_filament(tray),
+            raw_slot = _as_int(_first(tray, ("slot", "id", "tray_id"), 0)) or 0
+            ams_id, slot_no = canonicalize_slot_key(raw_ams_id, raw_slot)
+            kind = ams_kind(ams_id, unit)
+            bucket = units_by_id.get(ams_id)
+            if bucket is None:
+                bucket = {
+                    "ams_id": ams_id,
+                    "kind": kind,
+                    "temperature": _as_float(_first(unit, ("temperature", "temp"))),
+                    "humidity": _as_float(_first(unit, ("humidity", "humidity_raw"))),
+                    "drying": drying,
+                    "slots": {},
                 }
-            )
+                units_by_id[ams_id] = bucket
+            else:
+                if bucket["temperature"] is None:
+                    bucket["temperature"] = _as_float(_first(unit, ("temperature", "temp")))
+                if bucket["humidity"] is None:
+                    bucket["humidity"] = _as_float(_first(unit, ("humidity", "humidity_raw")))
+                if bucket["drying"] is None:
+                    bucket["drying"] = drying
+            bucket["slots"][slot_no] = {
+                "slot": slot_no,
+                "material": str(_first(tray, ("material", "tray_type", "filament_type"), "") or ""),
+                "color": normalize_hex_color(_first(tray, ("color", "tray_color", "filament_color")), ""),
+                "color_name": str(_first(tray, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
+                "remaining_percent": _as_int(_first(tray, ("remaining_percent", "remain"))),
+                "nozzle_min": _as_int(_first(tray, ("nozzle_min", "nozzle_temp_min"))),
+                "nozzle_max": _as_int(_first(tray, ("nozzle_max", "nozzle_temp_max"))),
+                "rfid": any(
+                    tray.get(k) not in (None, "", 0, "0", "0000000000000000")
+                    for k in ("tag_uid", "tray_uuid", "rfid_uid")
+                ),
+                "active": bool(_first(tray, ("active", "is_active"), False)) or tray.get("state") == 27,
+                "has_filament": _tray_has_filament(tray),
+            }
+
+    # Also fold top-level vt_tray[] (H2C dual external) when not already in ams[].
+    for vt in raw.get("vt_tray") or []:
+        if not isinstance(vt, dict):
+            continue
+        vt_id = _as_int(_first(vt, ("id", "tray_id"), 254)) or 254
+        ams_id, slot_no = canonicalize_slot_key(255, vt_id)
+        bucket = units_by_id.get(ams_id)
+        if bucket is None:
+            bucket = {
+                "ams_id": ams_id,
+                "kind": "external",
+                "temperature": None,
+                "humidity": None,
+                "drying": None,
+                "slots": {},
+            }
+            units_by_id[ams_id] = bucket
+        if slot_no in bucket["slots"]:
+            continue
+        bucket["slots"][slot_no] = {
+            "slot": slot_no,
+            "material": str(_first(vt, ("material", "tray_type", "filament_type"), "") or ""),
+            "color": normalize_hex_color(_first(vt, ("color", "tray_color", "filament_color")), ""),
+            "color_name": str(_first(vt, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
+            "remaining_percent": _as_int(_first(vt, ("remaining_percent", "remain"))),
+            "nozzle_min": _as_int(_first(vt, ("nozzle_min", "nozzle_temp_min"))),
+            "nozzle_max": _as_int(_first(vt, ("nozzle_max", "nozzle_temp_max"))),
+            "rfid": any(
+                vt.get(k) not in (None, "", 0, "0", "0000000000000000")
+                for k in ("tag_uid", "tray_uuid", "rfid_uid")
+            ),
+            "active": bool(_first(vt, ("active", "is_active"), False)) or vt.get("state") == 27,
+            "has_filament": _tray_has_filament(vt),
+        }
+
+    for ams_id in sorted(units_by_id):
+        bucket = units_by_id[ams_id]
         units.append(
             {
                 "ams_id": ams_id,
-                "kind": kind,
-                "temperature": _as_float(_first(unit, ("temperature", "temp"))),
-                "humidity": _as_float(_first(unit, ("humidity", "humidity_raw"))),
-                "drying": drying,
-                "slots": slots,
+                "kind": bucket["kind"],
+                "temperature": bucket["temperature"],
+                "humidity": bucket["humidity"],
+                "drying": bucket["drying"],
+                "slots": [bucket["slots"][n] for n in sorted(bucket["slots"])],
             }
         )
 
@@ -426,7 +519,7 @@ async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int,
         entry: dict[str, Any] = {"present": bool(assignment and assignment.present)}
         if assignment and assignment.spool:
             entry.update(_spool_swatch(assignment.spool, printer_id))
-        out[key] = entry
+        out[key] = _prefer_fm_entry(out.get(key), entry)
     return out
 
 
@@ -531,21 +624,43 @@ def build_printer_display(
 ) -> dict[str, Any]:
     live = normalize_driver_state(driver_state) if driver_state is not None else None
 
+    # Collapse legacy external VT keys before merging so a dirty FilaMan slot
+    # table (255-0 plus 255-254) cannot paint four External bays.
+    if fm_slots:
+        collapsed: dict[tuple[int, int], dict[str, Any]] = {}
+        for key, entry in fm_slots.items():
+            canon = canonicalize_slot_key(*key)
+            collapsed[canon] = _prefer_fm_entry(collapsed.get(canon), entry)
+        fm_slots = collapsed
+
     # Collect AMS units from both sources; live wins for climate, FilaMan fills spools.
     units_by_id: dict[int, dict[str, Any]] = {}
     live_slots: dict[tuple[int, int], dict[str, Any]] = {}
     if live:
         for unit in live["ams"]:
-            units_by_id[unit["ams_id"]] = {
-                "ams_id": unit["ams_id"],
-                "kind": unit["kind"],
-                "temperature": unit["temperature"],
-                "humidity": unit["humidity"],
-                "drying": unit["drying"],
-                "_slot_nos": {s["slot"] for s in unit["slots"]},
-            }
+            ams_id = canonicalize_slot_key(unit["ams_id"], 0)[0]
+            existing = units_by_id.get(ams_id)
+            if existing is None:
+                units_by_id[ams_id] = {
+                    "ams_id": ams_id,
+                    "kind": unit["kind"] if ams_id not in EXTERNAL_IDS else "external",
+                    "temperature": unit["temperature"],
+                    "humidity": unit["humidity"],
+                    "drying": unit["drying"],
+                    "_slot_nos": set(),
+                }
+                existing = units_by_id[ams_id]
+            else:
+                if existing["temperature"] is None:
+                    existing["temperature"] = unit["temperature"]
+                if existing["humidity"] is None:
+                    existing["humidity"] = unit["humidity"]
+                if existing["drying"] is None:
+                    existing["drying"] = unit["drying"]
             for s in unit["slots"]:
-                live_slots[(unit["ams_id"], s["slot"])] = s
+                slot_no = canonicalize_slot_key(unit["ams_id"], s["slot"])[1]
+                existing["_slot_nos"].add(slot_no)
+                live_slots[(ams_id, slot_no)] = {**s, "slot": slot_no}
     for (ams_id, slot_no) in fm_slots:
         unit = units_by_id.setdefault(
             ams_id,

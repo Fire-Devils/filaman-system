@@ -107,8 +107,29 @@ class PluginManager:
             )
 
     @staticmethod
+    def _canonicalize_slot_index(slot_index: str) -> str:
+        """Collapse legacy external VT keys (``255-254`` / ``255-255``) to ``255-0`` / ``255-1``."""
+        if not slot_index or "-" not in slot_index:
+            return slot_index
+        a, _, t = slot_index.partition("-")
+        try:
+            ams_id, tray = int(a), int(t)
+        except ValueError:
+            return slot_index
+        if ams_id == 254:
+            tray = 1 if tray in (1, 255) else 0
+            ams_id = 255
+        elif ams_id == 255:
+            if tray == 254:
+                tray = 0
+            elif tray == 255:
+                tray = 1
+        return f"{ams_id}-{tray}"
+
+    @staticmethod
     def _slot_index_to_no(slot_index: str) -> int:
-        """Convert driver slot_index string (e.g. '0-1', '255-254') to integer slot_no."""
+        """Convert driver slot_index string (e.g. '0-1', '255-0') to integer slot_no."""
+        slot_index = PluginManager._canonicalize_slot_index(slot_index)
         parts = slot_index.split("-", 1)
         if len(parts) == 2:
             try:
@@ -207,7 +228,9 @@ class PluginManager:
                 # Upsert slots if any
                 if slots_data:
                     for slot_data in slots_data:
-                        slot_index = slot_data.get("slot_index", "")
+                        slot_index = self._canonicalize_slot_index(
+                            slot_data.get("slot_index", "") or ""
+                        )
                         slot_no = self._slot_index_to_no(slot_index)
                         slot_name = slot_data.get("slot_name", f"Slot {slot_no}")
                         present = slot_data.get("present", False)
@@ -282,6 +305,37 @@ class PluginManager:
                                 self._parse_spool_id(slot_data["spool_id"]),
                                 meta,
                             )
+
+                    # Retire legacy external keys (255-254 / 255-255) once the
+                    # canonical 255-0 / 255-1 rows exist, so AMS View and the
+                    # printer page stop listing four External bays on H2C/H2D.
+                    all_slots = (
+                        await db.execute(
+                            select(PrinterSlot).where(
+                                PrinterSlot.printer_id == printer_id
+                            )
+                        )
+                    ).scalars().all()
+                    active_indexes = {
+                        (s.custom_fields or {}).get("slot_index")
+                        for s in all_slots
+                        if s.is_active and (s.custom_fields or {}).get("slot_index")
+                    }
+                    for slot in all_slots:
+                        raw = (slot.custom_fields or {}).get("slot_index") or ""
+                        canon = self._canonicalize_slot_index(raw)
+                        if (
+                            slot.is_active
+                            and raw
+                            and canon != raw
+                            and canon in active_indexes
+                        ):
+                            slot.is_active = False
+                            logger.info(
+                                f"Deactivated legacy external slot {raw!r} "
+                                f"on printer {printer_id} (canonical {canon})"
+                            )
+
                     await db.commit()
                     logger.info(
                         f"Updated {len(slots_data)} slots for printer {printer_id}"

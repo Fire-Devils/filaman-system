@@ -88,6 +88,35 @@ def test_normalize_hex_color():
     assert normalize_hex_color("nope") == "#202020"
 
 
+def test_canonicalize_external_vt_ids():
+    from app.services.display_service import canonicalize_slot_key
+
+    assert canonicalize_slot_key(255, 0) == (255, 0)
+    assert canonicalize_slot_key(255, 1) == (255, 1)
+    assert canonicalize_slot_key(255, 254) == (255, 0)
+    assert canonicalize_slot_key(255, 255) == (255, 1)
+    assert canonicalize_slot_key(254, 0) == (255, 0)
+    assert canonicalize_slot_key(0, 2) == (0, 2)
+
+
+def test_legacy_external_keys_collapse_to_two_bays():
+    """H2C once stored both 255-0/1 and mistaken 255-254/255 — board must show Ext1/Ext2 only."""
+    fm = {
+        (255, 0): {"present": True, "spool_id": 10, "material": "PLA", "color": "#FF0000",
+                   "color_name": "Red", "manufacturer": "X", "filament": "PLA", "remaining_percent": 40,
+                   "remaining_grams": 400, "nozzle_min": None, "nozzle_max": None, "rfid": False, "last_used": None},
+        (255, 1): {"present": False},
+        (255, 254): {"present": False},
+        (255, 255): {"present": False},
+    }
+    out = build_printer_display(_P(name="H2C"), fm, None)
+    ext = [u for u in out["ams"] if u["kind"] == "external"]
+    assert len(ext) == 1
+    assert [s["label"] for s in ext[0]["slots"]] == ["Ext1", "Ext2"]
+    assert ext[0]["slots"][0]["spool_id"] == 10
+    assert ext[0]["slots"][1]["empty"] is True
+
+
 def test_normalize_bambuddy_status():
     live = normalize_driver_state(BAMBUDDY_STATUS)
     assert live["connected"] is True
