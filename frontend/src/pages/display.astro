@@ -397,7 +397,17 @@ import Layout from '../layouts/Layout.astro'
     body.ams-kiosk .fm-sidebar,
     body.ams-kiosk .fm-sidebar-backdrop,
     body.ams-kiosk #sidebar-toggle { display: none !important; }
-    body.ams-kiosk main { padding: 20px !important; }
+    /* .fm-page is always a 2-column grid (sidebar + main). Hiding the
+       sidebar leaves main in the first track — 260px / 82px — so the
+       board looks like a squeezed strip. Collapse to one column. */
+    body.ams-kiosk .fm-page {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+    body.ams-kiosk main {
+      padding: 20px !important;
+      width: 100%;
+      min-width: 0;
+    }
     body.ams-kiosk .ams-head { margin-bottom: 18px; }
     body.ams-kiosk .ams-title,
     body.ams-kiosk .ams-subtitle { display: none; }
