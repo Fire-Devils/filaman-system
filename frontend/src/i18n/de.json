@@ -12,7 +12,7 @@
     "locations": "Standorte",
     "printers": "Drucker",
     "spoolLog": "Protokoll",
-    "display": "Anzeige",
+    "display": "AMS-Ansicht",
     "admin": "Admin",
     "adminPanel": "Admin-Bereich",
     "settings": "Einstellungen",
@@ -1177,7 +1177,11 @@
     "viewAll": "Alle \u00c4nderungen"
   },
   "display": {
-    "title": "Anzeige",
+    "title": "AMS-Ansicht",
+    "subtitle": "Live-Filament in jedem Druckerfach",
+    "feeding": "Druckt",
+    "drying": "Trocknet",
+    "slotsFilled": "{filled}/{total} belegt",
     "kiosk": "Kiosk-Modus",
     "rawJson": "JSON",
     "empty": "leer",

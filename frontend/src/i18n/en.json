@@ -12,7 +12,7 @@
     "locations": "Locations",
     "printers": "Printers",
     "spoolLog": "Spool Log",
-    "display": "Display",
+    "display": "AMS View",
     "admin": "Admin",
     "adminPanel": "Admin Panel",
     "settings": "Settings",
@@ -1176,7 +1176,11 @@
     "viewAll": "All Changes"
   },
   "display": {
-    "title": "Display",
+    "title": "AMS View",
+    "subtitle": "Live filament in every printer bay",
+    "feeding": "Printing",
+    "drying": "Drying",
+    "slotsFilled": "{filled}/{total} loaded",
     "kiosk": "Kiosk mode",
     "rawJson": "JSON",
     "empty": "empty",
