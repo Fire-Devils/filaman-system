@@ -117,6 +117,80 @@ def test_legacy_external_keys_collapse_to_two_bays():
     assert ext[0]["slots"][1]["empty"] is True
 
 
+def test_normalize_preserves_trayless_units():
+    """A thin status update must not make an already-known AMS disappear."""
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [
+                {"id": 0, "temp": 25.0, "humidity": 3, "tray": []},
+                {"id": 128, "is_ams_ht": True, "tray": []},
+            ],
+        }
+    )
+
+    assert [(u["ams_id"], u["kind"]) for u in live["ams"]] == [
+        (0, "ams"),
+        (128, "ams_ht"),
+    ]
+    assert live["ams"][0]["temperature"] == 25.0
+    assert live["ams"][0]["slots"] == []
+    assert live["ams"][1]["slots"] == []
+
+
+def test_top_level_external_data_replaces_embedded_placeholder():
+    """H2 status can contain an empty AMS entry and richer vt_tray for the same bay."""
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [{"id": 255, "tray": [{"id": 0}]}],
+            "vt_tray": [
+                {
+                    "id": 254,
+                    "tray_type": "PETG",
+                    "tray_color": "FF0000FF",
+                    "remain": 65,
+                }
+            ],
+        }
+    )
+
+    [external] = [u for u in live["ams"] if u["kind"] == "external"]
+    assert [s["slot"] for s in external["slots"]] == [0]
+    assert external["slots"][0]["has_filament"] is True
+    assert external["slots"][0]["material"] == "PETG"
+    assert external["slots"][0]["color"] == "#FF0000"
+    assert external["slots"][0]["remaining_percent"] == 65
+
+
+def test_empty_duplicate_does_not_replace_loaded_external_data():
+    """Duplicate-source ordering must not let a placeholder erase a loaded bay."""
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [
+                {
+                    "id": 255,
+                    "tray": [
+                        {
+                            "id": 0,
+                            "tray_type": "PLA",
+                            "tray_color": "0000FFFF",
+                            "remain": 80,
+                        }
+                    ],
+                }
+            ],
+            "vt_tray": [{"id": 254}],
+        }
+    )
+
+    [external] = [u for u in live["ams"] if u["kind"] == "external"]
+    assert external["slots"][0]["has_filament"] is True
+    assert external["slots"][0]["material"] == "PLA"
+    assert external["slots"][0]["remaining_percent"] == 80
+
+
 def test_normalize_bambuddy_status():
     live = normalize_driver_state(BAMBUDDY_STATUS)
     assert live["connected"] is True
