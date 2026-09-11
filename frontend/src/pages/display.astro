@@ -6,6 +6,7 @@ import Layout from '../layouts/Layout.astro'
   Reference client for the Display API (docs/display-api.md).
   Everything on this page comes from GET /api/v1/display — copy it as a
   starting point for your own dashboard / digital swatch board.
+  Optional query: ?printer={id} focuses one printer; ?kiosk=1 hides chrome.
 -->
 <Layout title="FilaMan - AMS View">
   <style is:global>
@@ -45,6 +46,21 @@ import Layout from '../layouts/Layout.astro'
       gap: 10px;
       flex-wrap: wrap;
     }
+    .ams-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ams-filter-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .ams-filter .fm-select {
+      width: auto;
+      min-width: 12rem;
+      max-width: 18rem;
+    }
     .ams-status {
       font-size: 0.78rem;
       color: var(--text-muted);
@@ -59,10 +75,15 @@ import Layout from '../layouts/Layout.astro'
     .ams-printers {
       display: grid;
       gap: 30px;
+      width: 100%;
+      min-width: 0;
+      container-type: inline-size;
+      container-name: ams-board;
     }
     .ams-printer {
       display: grid;
       gap: 16px;
+      min-width: 0;
     }
     .ams-printer-head {
       display: flex;
@@ -161,13 +182,34 @@ import Layout from '../layouts/Layout.astro'
 
     /* ── AMS units ─────────────────────────────────────────────────── */
 
-    /* Regular AMS units share one line. They are symmetric 4-bay boxes, so
-       equal columns let you compare the same bay position across units. */
+    /* Regular AMS units share one line when there is room. Four equal
+       4-bay boxes go 4-across, then 2×2 — never 3+1. The split keys off
+       this printer's content width (sidebar vs kiosk), not the viewport. */
     .ams-row-main {
       display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(0, 1fr);
       gap: 16px;
+    }
+    .ams-row-main[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+    .ams-row-main[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ams-row-main[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ams-row-main[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .ams-row-main[data-count="5"],
+    .ams-row-main[data-count="6"] {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+    .ams-row-main > .ams-unit { min-width: 0; }
+    /* 4×320px units + 3×16px gaps = 1328. Extra slack so bays stay readable. */
+    @container ams-board (max-width: 1360px) {
+      .ams-row-main[data-count="4"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @container ams-board (max-width: 640px) {
+      .ams-row-main[data-count="2"],
+      .ams-row-main[data-count="3"],
+      .ams-row-main[data-count="4"] {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     /* AMS-HT units and the external spool holder share the line below. They
@@ -411,6 +453,10 @@ import Layout from '../layouts/Layout.astro'
     body.ams-kiosk .ams-head { margin-bottom: 18px; }
     body.ams-kiosk .ams-title,
     body.ams-kiosk .ams-subtitle { display: none; }
+    body.ams-kiosk .ams-filter .fm-select {
+      min-width: 14rem;
+      height: 44px;
+    }
     body.ams-kiosk .ams-printer-name { font-size: 1.6rem; }
     body.ams-kiosk .ams-material { font-size: 1.25rem; }
     body.ams-kiosk .ams-desc { font-size: 0.85rem; }
@@ -419,7 +465,8 @@ import Layout from '../layouts/Layout.astro'
 
     /* ── Quality floor ────────────────────────────────────────────── */
 
-    .ams-actions .fm-btn:focus-visible {
+    .ams-actions .fm-btn:focus-visible,
+    .ams-filter .fm-select:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
@@ -427,17 +474,8 @@ import Layout from '../layouts/Layout.astro'
       .ams-feeding::before { animation: none; }
       .ams-bay { transition: none; }
     }
-    /* Four AMS units abreast stop being readable well before mobile. */
-    @media (max-width: 1100px) {
-      .ams-row-main {
-        grid-auto-flow: row;
-        grid-auto-columns: auto;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      }
-    }
     @media (max-width: 640px) {
       .ams-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .ams-row-main { grid-template-columns: 1fr; }
       .ams-row-aux > .ams-unit { max-width: none; }
     }
   </style>
@@ -448,9 +486,15 @@ import Layout from '../layouts/Layout.astro'
       <p class="ams-subtitle" data-i18n="display.subtitle">Live filament in every printer bay</p>
     </div>
     <div class="ams-actions">
+      <label class="ams-filter" hidden>
+        <span class="ams-filter-label" data-i18n="display.filterPrinter">Printer</span>
+        <select id="ams-printer-filter" class="fm-select" data-i18n-aria-label="display.filterPrinter">
+          <option value="all" data-i18n="display.allPrinters">All printers</option>
+        </select>
+      </label>
       <span class="ams-status" id="ams-status" role="status" aria-live="polite"></span>
       <button id="ams-kiosk" class="fm-btn fm-btn-outline" data-i18n="display.kiosk">Kiosk mode</button>
-      <a href="/api/v1/display" target="_blank" rel="noopener" class="fm-btn fm-btn-outline" data-i18n="display.rawJson">JSON</a>
+      <a id="ams-json" href="/api/v1/display" target="_blank" rel="noopener" class="fm-btn fm-btn-outline" data-i18n="display.rawJson">JSON</a>
     </div>
   </header>
 
@@ -470,6 +514,7 @@ import Layout from '../layouts/Layout.astro'
     // An unrecognised kind falls through to the main line.
     const AUX_KINDS = new Set(['ams_ht', 'external'])
     let etag: string | null = null
+    let lastPrinters: any[] = []
 
     const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 
@@ -621,7 +666,7 @@ import Layout from '../layouts/Layout.astro'
                </div>`
             : ''}
           ${alerts ? `<div class="ams-alerts">${alerts}</div>` : ''}
-          ${mainUnits.length ? `<div class="ams-row-main">${mainUnits.map(renderUnit).join('')}</div>` : ''}
+          ${mainUnits.length ? `<div class="ams-row-main" data-count="${mainUnits.length}">${mainUnits.map(renderUnit).join('')}</div>` : ''}
           ${auxUnits.length ? `<div class="ams-row-aux">${auxUnits.map(renderUnit).join('')}</div>` : ''}
         </section>`
     }
@@ -630,6 +675,73 @@ import Layout from '../layouts/Layout.astro'
       const el = document.getElementById('ams-status')!
       el.textContent = text
       el.dataset.state = state
+    }
+
+    function printerParam(): number | null {
+      const raw = new URLSearchParams(location.search).get('printer')
+      if (raw == null || raw === '' || raw === 'all') return null
+      const id = Number(raw)
+      return Number.isInteger(id) && id > 0 ? id : null
+    }
+
+    function setPrinterParam(id: number | null) {
+      const url = new URL(location.href)
+      if (id == null) url.searchParams.delete('printer')
+      else url.searchParams.set('printer', String(id))
+      history.replaceState(null, '', url)
+    }
+
+    function jsonHref(id: number | null): string {
+      return id == null ? '/api/v1/display' : `/api/v1/display/printers/${id}`
+    }
+
+    function selectedPrinters(printers: any[]): any[] {
+      const id = printerParam()
+      return id == null ? printers : printers.filter((p: any) => Number(p.id) === id)
+    }
+
+    function syncFilter(printers: any[]) {
+      const select = document.getElementById('ams-printer-filter') as HTMLSelectElement | null
+      const wrap = select?.closest('.ams-filter') as HTMLElement | null
+      const json = document.getElementById('ams-json') as HTMLAnchorElement | null
+      if (!select || !wrap) return
+
+      const current = printerParam()
+      const options = [
+        { value: 'all', label: t('display.allPrinters') },
+        ...printers.map((p: any) => ({
+          value: String(p.id),
+          label: p.connected === false ? `${p.name} (${t('display.offline')})` : String(p.name ?? p.id),
+        })),
+      ]
+      if (current != null && !printers.some((p: any) => Number(p.id) === current)) {
+        options.push({ value: String(current), label: `#${current}` })
+      }
+
+      const sig = options.map(o => `${o.value}\0${o.label}`).join('\n')
+      if (select.dataset.sig !== sig) {
+        select.dataset.sig = sig
+        select.innerHTML = options
+          .map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`)
+          .join('')
+      }
+      select.value = current == null ? 'all' : String(current)
+      wrap.hidden = printers.length < 2
+      if (json) json.href = jsonHref(current)
+    }
+
+    function renderBoard(printers: any[]) {
+      lastPrinters = printers
+      syncFilter(printers)
+      const root = document.getElementById('ams-printers')!
+      if (!printers.length) {
+        root.innerHTML = `<div class="fm-card ams-note">${t('display.noPrinters')}</div>`
+        return
+      }
+      const shown = selectedPrinters(printers)
+      root.innerHTML = shown.length
+        ? shown.map(renderPrinter).join('')
+        : `<div class="fm-card ams-note">${t('display.printerMissing')}</div>`
     }
 
     async function poll() {
@@ -644,10 +756,7 @@ import Layout from '../layouts/Layout.astro'
         if (!res.ok) throw new Error(String(res.status))
         etag = res.headers.get('ETag')
         const data = await res.json()
-        const root = document.getElementById('ams-printers')!
-        root.innerHTML = data.printers.length
-          ? data.printers.map(renderPrinter).join('')
-          : `<div class="fm-card ams-note">${t('display.noPrinters')}</div>`
+        renderBoard(data.printers || [])
         setStatus(t('display.upToDate', { time: stamp }), 'ok')
       } catch (e) {
         if (isAbortError(e)) return
@@ -655,6 +764,12 @@ import Layout from '../layouts/Layout.astro'
       }
     }
 
+    document.getElementById('ams-printer-filter')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value
+      const id = value === 'all' ? null : Number(value)
+      setPrinterParam(id != null && Number.isInteger(id) && id > 0 ? id : null)
+      renderBoard(lastPrinters)
+    })
     document.getElementById('ams-kiosk')?.addEventListener('click', () => {
       document.body.classList.toggle('ams-kiosk')
       if (document.body.classList.contains('ams-kiosk')) document.documentElement.requestFullscreen?.().catch(() => {})
