@@ -204,6 +204,56 @@ def _tray_has_filament(tray: dict[str, Any]) -> bool:
     return bool(str(_first(tray, ("material", "tray_type", "filament_type"), "") or "").strip())
 
 
+def _normalize_live_slot(tray: dict[str, Any], slot_no: int) -> dict[str, Any]:
+    """Normalize one driver tray without deciding which source should win."""
+    return {
+        "slot": slot_no,
+        "material": str(_first(tray, ("material", "tray_type", "filament_type"), "") or ""),
+        "color": normalize_hex_color(_first(tray, ("color", "tray_color", "filament_color")), ""),
+        "color_name": str(_first(tray, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
+        "remaining_percent": _as_int(_first(tray, ("remaining_percent", "remain"))),
+        "nozzle_min": _as_int(_first(tray, ("nozzle_min", "nozzle_temp_min"))),
+        "nozzle_max": _as_int(_first(tray, ("nozzle_max", "nozzle_temp_max"))),
+        "rfid": any(
+            tray.get(k) not in (None, "", 0, "0", "0000000000000000")
+            for k in ("tag_uid", "tray_uuid", "rfid_uid")
+        ),
+        "active": bool(_first(tray, ("active", "is_active"), False)) or tray.get("state") == 27,
+        "has_filament": _tray_has_filament(tray),
+    }
+
+
+def _live_slot_quality(slot: dict[str, Any]) -> tuple[int, int, int]:
+    """Rank duplicate live representations without depending on source order."""
+    details = sum(
+        value is not None and value != "" and value is not False
+        for value in (
+            slot.get("material"),
+            slot.get("color"),
+            slot.get("color_name"),
+            slot.get("remaining_percent"),
+            slot.get("nozzle_min"),
+            slot.get("nozzle_max"),
+            slot.get("rfid"),
+        )
+    )
+    return (
+        int(bool(slot.get("has_filament"))),
+        details,
+        int(bool(slot.get("active"))),
+    )
+
+
+def _prefer_live_slot(
+    existing: dict[str, Any] | None,
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep the richer duplicate tray; loaded data always beats a placeholder."""
+    if existing is None or _live_slot_quality(incoming) > _live_slot_quality(existing):
+        return incoming
+    return existing
+
+
 def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
     """Reduce whatever a driver returned to the documented live-state shape.
 
@@ -292,6 +342,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
     units_by_id: dict[int, dict[str, Any]] = {}
     for unit in extract_ams_units(raw):
         raw_ams_id = _as_int(_first(unit, ("ams_id", "id"), 0)) or 0
+        ams_id = canonicalize_slot_key(raw_ams_id, 0)[0]
+        kind = ams_kind(ams_id, unit)
         drying = None
         if _first(unit, ("dry_status", "dry_target_temp", "dry_time")) is not None:
             drying = {
@@ -299,47 +351,39 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "target_temp": _as_float(_first(unit, ("dry_target_temp",))),
                 "time": _as_int(_first(unit, ("dry_time",))),
             }
+        bucket = units_by_id.get(ams_id)
+        if bucket is None:
+            bucket = {
+                "ams_id": ams_id,
+                "kind": kind,
+                "temperature": _as_float(_first(unit, ("temperature", "temp"))),
+                "humidity": _as_float(_first(unit, ("humidity", "humidity_raw"))),
+                "drying": drying,
+                "slots": {},
+            }
+            units_by_id[ams_id] = bucket
+        else:
+            if bucket["temperature"] is None:
+                bucket["temperature"] = _as_float(_first(unit, ("temperature", "temp")))
+            if bucket["humidity"] is None:
+                bucket["humidity"] = _as_float(_first(unit, ("humidity", "humidity_raw")))
+            if bucket["drying"] is None:
+                bucket["drying"] = drying
+
         # Remap each tray through canonicalize_slot_key so a unit reported as
         # ams_id=254 (or trays 254/255 under 255) folds into the External card.
         for tray in extract_trays(unit):
             raw_slot = _as_int(_first(tray, ("slot", "id", "tray_id"), 0)) or 0
-            ams_id, slot_no = canonicalize_slot_key(raw_ams_id, raw_slot)
-            kind = ams_kind(ams_id, unit)
-            bucket = units_by_id.get(ams_id)
-            if bucket is None:
-                bucket = {
-                    "ams_id": ams_id,
-                    "kind": kind,
-                    "temperature": _as_float(_first(unit, ("temperature", "temp"))),
-                    "humidity": _as_float(_first(unit, ("humidity", "humidity_raw"))),
-                    "drying": drying,
-                    "slots": {},
-                }
-                units_by_id[ams_id] = bucket
-            else:
-                if bucket["temperature"] is None:
-                    bucket["temperature"] = _as_float(_first(unit, ("temperature", "temp")))
-                if bucket["humidity"] is None:
-                    bucket["humidity"] = _as_float(_first(unit, ("humidity", "humidity_raw")))
-                if bucket["drying"] is None:
-                    bucket["drying"] = drying
-            bucket["slots"][slot_no] = {
-                "slot": slot_no,
-                "material": str(_first(tray, ("material", "tray_type", "filament_type"), "") or ""),
-                "color": normalize_hex_color(_first(tray, ("color", "tray_color", "filament_color")), ""),
-                "color_name": str(_first(tray, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
-                "remaining_percent": _as_int(_first(tray, ("remaining_percent", "remain"))),
-                "nozzle_min": _as_int(_first(tray, ("nozzle_min", "nozzle_temp_min"))),
-                "nozzle_max": _as_int(_first(tray, ("nozzle_max", "nozzle_temp_max"))),
-                "rfid": any(
-                    tray.get(k) not in (None, "", 0, "0", "0000000000000000")
-                    for k in ("tag_uid", "tray_uuid", "rfid_uid")
-                ),
-                "active": bool(_first(tray, ("active", "is_active"), False)) or tray.get("state") == 27,
-                "has_filament": _tray_has_filament(tray),
-            }
+            _, slot_no = canonicalize_slot_key(raw_ams_id, raw_slot)
+            normalized = _normalize_live_slot(tray, slot_no)
+            bucket["slots"][slot_no] = _prefer_live_slot(
+                bucket["slots"].get(slot_no),
+                normalized,
+            )
 
-    # Also fold top-level vt_tray[] (H2C dual external) when not already in ams[].
+    # Also fold top-level vt_tray[] (H2C dual external). Some status payloads
+    # include a placeholder for the same bay under ams[], so select by content
+    # quality rather than whichever representation happened to arrive first.
     for vt in raw.get("vt_tray") or []:
         if not isinstance(vt, dict):
             continue
@@ -356,23 +400,11 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "slots": {},
             }
             units_by_id[ams_id] = bucket
-        if slot_no in bucket["slots"]:
-            continue
-        bucket["slots"][slot_no] = {
-            "slot": slot_no,
-            "material": str(_first(vt, ("material", "tray_type", "filament_type"), "") or ""),
-            "color": normalize_hex_color(_first(vt, ("color", "tray_color", "filament_color")), ""),
-            "color_name": str(_first(vt, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
-            "remaining_percent": _as_int(_first(vt, ("remaining_percent", "remain"))),
-            "nozzle_min": _as_int(_first(vt, ("nozzle_min", "nozzle_temp_min"))),
-            "nozzle_max": _as_int(_first(vt, ("nozzle_max", "nozzle_temp_max"))),
-            "rfid": any(
-                vt.get(k) not in (None, "", 0, "0", "0000000000000000")
-                for k in ("tag_uid", "tray_uuid", "rfid_uid")
-            ),
-            "active": bool(_first(vt, ("active", "is_active"), False)) or vt.get("state") == 27,
-            "has_filament": _tray_has_filament(vt),
-        }
+        normalized = _normalize_live_slot(vt, slot_no)
+        bucket["slots"][slot_no] = _prefer_live_slot(
+            bucket["slots"].get(slot_no),
+            normalized,
+        )
 
     for ams_id in sorted(units_by_id):
         bucket = units_by_id[ams_id]
