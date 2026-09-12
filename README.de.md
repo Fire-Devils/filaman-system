@@ -22,9 +22,9 @@ Um das volle Potenzial dieses Systems auszuschöpfen, empfehlen wir unser zugeh�
 Mit dieser ESP32-basierten smarten Waage samt RFID-Integration kannst du deine Spulen auflegen, das Restgewicht automatisch messen und die Daten via RFID-Tag direkt mit dieser Software synchronisieren!
 
 ### 🏠 Home Assistant Integration
-Für Nutzer von Home Assistant gibt es ein extrem praktisches Add-on:
-**[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
-Damit lässt sich das FilaMan System mit wenigen Klicks direkt in deiner Home Assistant Umgebung installieren und betreiben.
+Für Nutzer von Home Assistant gibt es ein eigenes Add-on-Repository:
+**[Fire-Devils/filaman-ha-app](https://github.com/Fire-Devils/filaman-ha-app)**
+Diese URL unter Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories hinzufügen, danach FilaMan installieren und direkt in der Home-Assistant-Umgebung betreiben.
 
 ### 🎋 Bambuddy Integration
 Verbinde FilaMan über das

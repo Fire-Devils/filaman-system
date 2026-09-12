@@ -22,9 +22,9 @@ To unlock the full potential of this system, we highly recommend our companion h
 With this ESP32-based smart scale and RFID integration, you can simply place your spools on the scale, automatically measure the remaining weight, and sync the data seamlessly with this software via RFID tags!
 
 ### 🏠 Home Assistant Integration
-If you are using Home Assistant, there is a very convenient Add-on available:
-**[ha-filaman-system](https://github.com/netscout2001/ha-filaman-system)**
-This allows you to install and run the FilaMan System directly within your Home Assistant environment with just a few clicks.
+If you are using Home Assistant, install FilaMan from our add-on repository:
+**[Fire-Devils/filaman-ha-app](https://github.com/Fire-Devils/filaman-ha-app)**
+Add that URL under Settings → Add-ons → Add-on store → ⋮ → Repositories, then install FilaMan and run it directly inside your Home Assistant environment.
 
 ### 🎋 Bambuddy Integration
 Connect FilaMan to Bambu Lab printers and AMS units with the
