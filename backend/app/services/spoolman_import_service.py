@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.models.location import Location
-from app.core.rfid import normalize_rfid_uid
+from app.core.rfid import rfid_storage_value
 from app.models.spool import Spool, SpoolStatus
 from app.services.spool_service import SpoolService
 from app.services.spoolman_client import SpoolmanClient
@@ -1302,10 +1302,6 @@ class SpoolmanImportService:
                     ],
                 )
 
-                # Normalize: pad each hex segment to 2 chars (legacy leading-zero bug)
-                if rfid_uid:
-                    rfid_uid = ":".join(s.zfill(2) for s in rfid_uid.split(":"))
-
             # external_id: Spoolman-ID als Referenz
             external_id = f"spoolman:{spoolman_id}" if spoolman_id else None
 
@@ -1329,7 +1325,11 @@ class SpoolmanImportService:
             # Pruefen ob rfid_uid schon existiert (in einem der beiden Slots).
             # Import stiehlt bewusst NICHT: eine bestehende Zuordnung gewinnt.
             if rfid_uid:
-                rfid_uid = normalize_rfid_uid(rfid_uid)
+                # Pad colon-separated hex segments (legacy Spoolman leading-zero
+                # bug). Compact values are left unchanged.
+                if ":" in rfid_uid:
+                    rfid_uid = ":".join(s.zfill(2) for s in rfid_uid.split(":"))
+                rfid_uid = rfid_storage_value(rfid_uid)
                 if await SpoolService(self.db).find_spool_by_rfid(rfid_uid):
                     result.warnings.append(
                         f"Spule Spoolman #{spoolman_id}: RFID '{rfid_uid}' existiert bereits, wird ohne RFID importiert"

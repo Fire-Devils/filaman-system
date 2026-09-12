@@ -6,54 +6,531 @@ import Layout from '../layouts/Layout.astro'
   Reference client for the Display API (docs/display-api.md).
   Everything on this page comes from GET /api/v1/display — copy it as a
   starting point for your own dashboard / digital swatch board.
+  Optional query: ?printer={id} focuses one printer; ?kiosk=1 hides chrome.
 -->
-<Layout title="FilaMan - Display">
+<Layout title="FilaMan - AMS View">
   <style is:global>
-    .dp-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-    .dp-status { font-size: 0.85rem; color: var(--text-muted); }
-    .dp-printers { display: grid; gap: 24px; }
-    .dp-printer { display: grid; gap: 14px; }
-    .dp-printer-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-    .dp-printer-name { font-size: 1.4rem; font-weight: 700; font-family: var(--font-serif); margin: 0; }
-    .dp-printer-meta { font-size: 0.9rem; color: var(--text-muted); display: flex; gap: 14px; flex-wrap: wrap; }
-    .dp-progress { height: 6px; border-radius: 3px; background: var(--bg-soft); overflow: hidden; width: 100%; max-width: 420px; }
-    .dp-progress > div { height: 100%; background: var(--accent); }
-    .dp-units { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-    .dp-unit { display: grid; gap: 10px; }
-    .dp-unit-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem; color: var(--text-muted); }
-    .dp-unit-head b { color: var(--text); font-size: 1rem; }
-    .dp-slots { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); }
-    .dp-unit.ht .dp-slots { grid-template-columns: 1fr; }
-    .dp-slot { position: relative; border-radius: 12px; padding: 12px 10px 10px; min-height: 118px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.55); overflow: hidden; border: 2px solid transparent; }
-    .dp-slot.empty { background: var(--bg-soft) !important; color: var(--text-muted); text-shadow: none; border: 2px dashed var(--border); }
-    .dp-slot.active { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
-    .dp-slot .lbl { position: absolute; top: 8px; left: 10px; font-size: 0.75rem; font-weight: 700; opacity: .9; }
-    .dp-slot .rfid { position: absolute; top: 8px; right: 10px; font-size: 0.7rem; opacity: .9; }
-    .dp-slot .mat { font-weight: 800; font-size: 1.05rem; line-height: 1.1; }
-    .dp-slot .sub { font-size: 0.75rem; opacity: .95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .dp-slot .bar { height: 5px; border-radius: 3px; background: rgba(0,0,0,.35); margin-top: 6px; overflow: hidden; }
-    .dp-slot .bar > div { height: 100%; background: rgba(255,255,255,.9); }
-    .dp-slot .bar.low > div { background: #f59e0b; }
-    .dp-slot .bar.crit > div { background: #ef4444; }
-    .dp-alerts { display: flex; gap: 8px; flex-wrap: wrap; }
-    .dp-alert { font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, #f59e0b 18%, transparent); }
-    .dp-alert.danger { background: color-mix(in srgb, #ef4444 18%, transparent); }
-    /* kiosk: hide chrome, fill the screen */
-    body.dp-kiosk .fm-sidebar, body.dp-kiosk .fm-sidebar-backdrop, body.dp-kiosk #sidebar-toggle { display: none !important; }
-    body.dp-kiosk main { padding: 16px !important; }
-    body.dp-kiosk .dp-toolbar h1 { display: none; }
+    /* ── AMS View ─────────────────────────────────────────────────────
+       The layout mirrors the hardware: printer → AMS unit → bay.
+       A bay is split into two registers. The filament colour fills the
+       upper field so it stays identifiable from across the room; every
+       piece of text sits on the app's own surface below it, which is
+       what keeps labels readable over pale filament. The one label that
+       does sit on colour picks its ink by WCAG contrast (see inkFor).
+       Classes are prefixed `ams-` because this stylesheet is global:
+       the markup is injected at runtime, so Astro cannot scope it. */
+
+    .ams-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 26px;
+    }
+    .ams-title {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .ams-subtitle {
+      margin: 5px 0 0;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .ams-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ams-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ams-filter-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .ams-filter .fm-select {
+      width: auto;
+      min-width: 12rem;
+      max-width: 18rem;
+    }
+    .ams-status {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .ams-status[data-state='error'] {
+      color: var(--error-text);
+    }
+
+    /* ── Printers ──────────────────────────────────────────────────── */
+
+    .ams-printers {
+      display: grid;
+      gap: 30px;
+      width: 100%;
+      min-width: 0;
+      container-type: inline-size;
+      container-name: ams-board;
+    }
+    .ams-printer {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+    .ams-printer-head {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .ams-printer-name {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 1.3rem;
+      font-weight: 700;
+    }
+    .ams-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+      align-self: center;
+    }
+    .ams-dot[data-off='1'] {
+      background: var(--text-muted);
+      opacity: 0.5;
+    }
+    .ams-state {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .ams-meta {
+      display: flex;
+      gap: 6px 14px;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Job progress: the percentage reads as a value, so it is tabular
+       and sits beside the track rather than inside it. */
+    .ams-job {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 560px;
+    }
+    .ams-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--bg-soft);
+      overflow: hidden;
+    }
+    .ams-track > i {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .ams-job-pct {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 3.2em;
+      text-align: right;
+    }
+
+    .ams-alerts {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .ams-alert {
+      font-size: 0.78rem;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--info-bg);
+      border: 1px solid var(--info-border);
+      color: var(--info-text);
+    }
+    .ams-alert[data-severity='warn'] {
+      background: rgba(234, 179, 8, 0.14);
+      border-color: rgba(234, 179, 8, 0.4);
+      color: var(--accent-3);
+    }
+    .ams-alert[data-severity='error'],
+    .ams-alert[data-severity='danger'] {
+      background: var(--error-bg);
+      border-color: var(--error-border);
+      color: var(--error-text);
+    }
+
+    /* ── AMS units ─────────────────────────────────────────────────── */
+
+    /* Regular AMS units share one line when there is room. Four equal
+       4-bay boxes go 4-across, then 2×2 — never 3+1. The split keys off
+       this printer's content width (sidebar vs kiosk), not the viewport. */
+    .ams-row-main {
+      display: grid;
+      gap: 16px;
+    }
+    .ams-row-main[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+    .ams-row-main[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ams-row-main[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ams-row-main[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .ams-row-main[data-count="5"],
+    .ams-row-main[data-count="6"] {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+    .ams-row-main > .ams-unit { min-width: 0; }
+    /* 4×320px units + 3×16px gaps = 1328. Extra slack so bays stay readable. */
+    @container ams-board (max-width: 1360px) {
+      .ams-row-main[data-count="4"] {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @container ams-board (max-width: 640px) {
+      .ams-row-main[data-count="2"],
+      .ams-row-main[data-count="3"],
+      .ams-row-main[data-count="4"] {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    /* AMS-HT units and the external spool holder share the line below. They
+       carry one or two trays each, so they size to content rather than
+       stretching a single bay across the page. */
+    .ams-row-aux {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .ams-row-aux > .ams-unit {
+      flex: 1 1 280px;
+      max-width: 460px;
+    }
+    .ams-unit {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      padding: 16px;
+    }
+    .ams-unit-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ams-unit-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .ams-climate {
+      display: flex;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .ams-drying {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent-3);
+    }
+
+    /* A 4-bay AMS must read as 4 across or 2x2 — never 3+1. */
+    .ams-bays {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .ams-unit[data-kind='ams_ht'] .ams-bays {
+      grid-template-columns: 1fr;
+    }
+    .ams-unit[data-kind='external'] .ams-bays {
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+
+    /* ── A bay ─────────────────────────────────────────────────────── */
+
+    .ams-bay {
+      --ams-ink: #ffffff;
+      --ams-swatch: #202020;
+      position: relative;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+      max-width: 100%;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--bg-soft);
+      border: 1px solid var(--border);
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+    .ams-bay[data-active='1'] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+    .ams-bay[data-empty='1'] {
+      border-style: dashed;
+      background: transparent;
+    }
+    a.ams-bay {
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    a.ams-bay:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-sm);
+    }
+    a.ams-bay:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    /* Upper register: the material itself. The inset hairline gives
+       white and cream filament a defined edge against the card. */
+    .ams-swatch {
+      position: relative;
+      min-height: 76px;
+      min-width: 0;
+      padding: 9px 10px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px;
+      overflow: hidden;
+      background: var(--ams-swatch);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+      color: var(--ams-ink);
+    }
+    .ams-unit[data-kind='ams_ht'] .ams-swatch {
+      min-height: 92px;
+    }
+    .ams-bay[data-empty='1'] .ams-swatch {
+      background: var(--bg-soft);
+      box-shadow: none;
+      color: var(--text-muted);
+      min-height: 62px;
+    }
+    .ams-bay-label {
+      font-size: 0.9rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+    .ams-tag {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      opacity: 0.85;
+      flex: 0 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Lower register: every string lives here, on the app surface. */
+    .ams-facts {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+      overflow: hidden;
+      padding: 9px 10px 10px;
+    }
+    .ams-identity {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .ams-material {
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ams-bay[data-empty='1'] .ams-material {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .ams-desc {
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ams-spool {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+      margin-left: auto;
+      text-align: right;
+    }
+    /* Pinned to the bottom so the bars line up across a row of bays,
+       which is what makes "who is running low" scannable at a glance. */
+    .ams-remaining {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: auto;
+      padding-top: 4px;
+    }
+    .ams-bar {
+      flex: 1;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .ams-bar > i {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .ams-bar[data-level='low'] > i {
+      background: var(--accent-3);
+    }
+    .ams-bar[data-level='crit'] > i {
+      background: #ef4444;
+    }
+    .ams-pct {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ams-feeding {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .ams-feeding::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: ams-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes ams-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.25; }
+    }
+
+    .ams-note {
+      padding: 20px;
+      color: var(--text-muted);
+    }
+
+    /* ── Kiosk ─────────────────────────────────────────────────────── */
+
+    body.ams-kiosk .fm-sidebar,
+    body.ams-kiosk .fm-sidebar-backdrop,
+    body.ams-kiosk #sidebar-toggle { display: none !important; }
+    /* .fm-page is always a 2-column grid (sidebar + main). Hiding the
+       sidebar leaves main in the first track — 260px / 82px — so the
+       board looks like a squeezed strip. Collapse to one column. */
+    body.ams-kiosk .fm-page {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+    body.ams-kiosk main {
+      padding: 20px !important;
+      width: 100%;
+      min-width: 0;
+    }
+    body.ams-kiosk .ams-head { margin-bottom: 18px; }
+    body.ams-kiosk .ams-title,
+    body.ams-kiosk .ams-subtitle { display: none; }
+    body.ams-kiosk .ams-filter .fm-select {
+      min-width: 14rem;
+      height: 44px;
+    }
+    body.ams-kiosk .ams-printer-name { font-size: 1.6rem; }
+    body.ams-kiosk .ams-material { font-size: 1.25rem; }
+    body.ams-kiosk .ams-desc { font-size: 0.85rem; }
+    body.ams-kiosk .ams-bay-label { font-size: 1.05rem; }
+    body.ams-kiosk .ams-swatch { min-height: 104px; }
+
+    /* ── Quality floor ────────────────────────────────────────────── */
+
+    .ams-actions .fm-btn:focus-visible,
+    .ams-filter .fm-select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ams-feeding::before { animation: none; }
+      .ams-bay { transition: none; }
+    }
+    @media (max-width: 640px) {
+      .ams-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ams-row-aux > .ams-unit { max-width: none; }
+    }
   </style>
 
-  <div class="dp-toolbar">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="display.title">Display</h1>
-    <div style="display: flex; gap: 10px; align-items: center;">
-      <span class="dp-status" id="dp-status"></span>
-      <button id="dp-kiosk" class="fm-btn fm-btn-outline" data-i18n="display.kiosk">Kiosk mode</button>
-      <a href="/api/v1/display" target="_blank" class="fm-btn fm-btn-outline" data-i18n="display.rawJson">JSON</a>
+  <header class="ams-head">
+    <div>
+      <h1 class="ams-title" data-i18n="display.title">AMS View</h1>
+      <p class="ams-subtitle" data-i18n="display.subtitle">Live filament in every printer bay</p>
     </div>
-  </div>
+    <div class="ams-actions">
+      <label class="ams-filter" hidden>
+        <span class="ams-filter-label" data-i18n="display.filterPrinter">Printer</span>
+        <select id="ams-printer-filter" class="fm-select" data-i18n-aria-label="display.filterPrinter">
+          <option value="all" data-i18n="display.allPrinters">All printers</option>
+        </select>
+      </label>
+      <span class="ams-status" id="ams-status" role="status" aria-live="polite"></span>
+      <button id="ams-kiosk" class="fm-btn fm-btn-outline" data-i18n="display.kiosk">Kiosk mode</button>
+      <a id="ams-json" href="/api/v1/display" target="_blank" rel="noopener" class="fm-btn fm-btn-outline" data-i18n="display.rawJson">JSON</a>
+    </div>
+  </header>
 
-  <div id="dp-printers" class="dp-printers"></div>
+  <div id="ams-printers" class="ams-printers"></div>
 
   <script>
     import { t, initI18n, translatePage } from '../lib/i18n'
@@ -64,9 +541,44 @@ import Layout from '../layouts/Layout.astro'
 
     const POLL_MS = 5000
     const LOW = 30, CRIT = 15
+    const HEX6 = /^#[0-9a-fA-F]{6}$/
+    // Units that belong on the secondary line, below the regular AMS boxes.
+    // An unrecognised kind falls through to the main line.
+    const AUX_KINDS = new Set(['ams_ht', 'external'])
     let etag: string | null = null
+    let lastPrinters: any[] = []
 
     const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+
+    /** The feed promises #RRGGBB, but this value lands in a style
+     *  attribute — validate rather than trust. */
+    function safeColor(value: any): string {
+      const raw = String(value ?? '')
+      return HEX6.test(raw) ? raw : '#202020'
+    }
+
+    /** Bar widths land in a style attribute, so keep them numeric. */
+    function pctWidth(value: any): number {
+      const n = Number(value)
+      return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0
+    }
+
+    function relativeLuminance(hex: string): number {
+      const channel = (offset: number) => {
+        const c = parseInt(hex.slice(offset, offset + 2), 16) / 255
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+      }
+      return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+    }
+
+    /** Ink with the higher WCAG contrast ratio against `hex`. This is why
+     *  a bay label stays readable on cream PLA and on black alike. */
+    function inkFor(hex: string): string {
+      const l = relativeLuminance(hex)
+      const onBlack = (l + 0.05) / 0.05
+      const onWhite = 1.05 / (l + 0.05)
+      return onBlack >= onWhite ? '#0b0f0d' : '#ffffff'
+    }
 
     function fmtRemaining(seconds: number | null) {
       if (seconds == null) return ''
@@ -74,87 +586,235 @@ import Layout from '../layouts/Layout.astro'
       return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`
     }
 
-    function renderSlot(s: any) {
-      if (s.empty) return `<div class="dp-slot empty"><span class="lbl">${esc(s.label)}</span><div class="sub">${t('display.empty')}</div></div>`
+    function bayTitle(s: any): string {
+      const parts = [s.filament, s.color_name].filter(Boolean)
+      if (s.nozzle_min != null && s.nozzle_max != null) parts.push(`${s.nozzle_min}–${s.nozzle_max}°C`)
+      if (s.remaining_grams != null) parts.push(`${s.remaining_grams} g`)
+      if (s.backup_of) parts.push(t('display.backupOf', { slot: s.backup_of }))
+      return parts.join(' · ')
+    }
+
+    function renderBay(s: any) {
+      const label = esc(s.label)
+
+      if (s.empty) {
+        return `
+          <article class="ams-bay" data-empty="1">
+            <div class="ams-swatch"><span class="ams-bay-label">${label}</span></div>
+            <div class="ams-facts"><div class="ams-material">${t('display.empty')}</div></div>
+          </article>`
+      }
+
+      const color = safeColor(s.color)
       const pct = s.remaining_percent
-      const barCls = pct == null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : ''
-      const sub = [s.manufacturer, s.color_name || s.filament].filter(Boolean).join(' · ')
-      const rem = pct != null ? `${pct}%` : (s.remaining_grams != null ? `${s.remaining_grams} g` : '')
+      const level = pct == null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : 'ok'
+      const colorName = s.color_name || (!s.manufacturer ? s.filament : '') || ''
+      const manufacturer = s.manufacturer || ''
+      const amount = pct != null ? `${pct}%` : (s.remaining_grams != null ? `${s.remaining_grams} g` : '')
+      const spoolId = Number.isFinite(Number(s.spool_id)) && Number(s.spool_id) > 0 ? Number(s.spool_id) : null
+      const spoolLine = spoolId != null ? `<div class="ams-spool">#${spoolId}</div>` : ''
+      const tag = spoolId != null ? 'a' : 'article'
+      const href = spoolId != null ? ` href="/spools/${spoolId}"` : ''
+
       return `
-        <div class="dp-slot ${s.active ? 'active' : ''}" style="background: ${esc(s.color)}" title="${esc(s.filament)}${s.backup_of ? ' — ' + t('display.backupOf', { slot: s.backup_of }) : ''}">
-          <span class="lbl">${esc(s.label)}</span>
-          ${s.rfid ? '<span class="rfid">RFID</span>' : ''}
-          <div class="mat">${esc(s.material || '?')}</div>
-          <div class="sub">${esc(sub)}</div>
-          ${pct != null ? `<div class="bar ${barCls}"><div style="width:${pct}%"></div></div>` : ''}
-          <div class="sub">${esc(rem)}${s.backup_of ? ` · ${t('display.backupOf', { slot: s.backup_of })}` : ''}</div>
-        </div>`
+        <${tag} class="ams-bay" data-active="${s.active ? '1' : '0'}"${href}
+                 style="--ams-swatch: ${color}; --ams-ink: ${inkFor(color)}"
+                 title="${esc(bayTitle(s))}">
+          <div class="ams-swatch">
+            <span class="ams-bay-label">${label}</span>
+            ${s.rfid ? `<span class="ams-tag">RFID</span>` : ''}
+          </div>
+          <div class="ams-facts">
+            <div class="ams-identity">
+              <div class="ams-material">${esc(s.material || '—')}</div>
+              ${spoolLine}
+            </div>
+            ${colorName ? `<div class="ams-desc">${esc(colorName)}</div>` : ''}
+            ${manufacturer ? `<div class="ams-desc">${esc(manufacturer)}</div>` : ''}
+            ${s.active ? `<div class="ams-feeding">${t('display.feeding')}</div>` : ''}
+            ${pct != null
+              ? `<div class="ams-remaining">
+                   <span class="ams-bar" data-level="${level}"><i style="width:${pctWidth(pct)}%"></i></span>
+                   <span class="ams-pct">${pctWidth(pct)}%</span>
+                 </div>`
+              : amount ? `<div class="ams-desc">${esc(amount)}</div>` : ''}
+          </div>
+        </${tag}>`
     }
 
     function renderUnit(u: any) {
-      const climate = [u.temperature != null ? `${Math.round(u.temperature)}°C` : '', u.humidity != null ? `${Math.round(u.humidity)}% RH` : ''].filter(Boolean).join(' · ')
+      const climate = [
+        u.temperature != null ? `${Math.round(u.temperature)}°C` : '',
+        u.humidity != null ? `${Math.round(u.humidity)}% RH` : '',
+      ].filter(Boolean)
+      const slots = u.slots || []
+      const filled = slots.filter((s: any) => !s.empty).length
+
       return `
-        <div class="dp-unit ${u.kind === 'ams_ht' ? 'ht' : ''} fm-card">
-          <div class="dp-unit-head"><b>${esc(u.label)}</b><span>${esc(climate)}</span></div>
-          <div class="dp-slots">${u.slots.map(renderSlot).join('')}</div>
-        </div>`
+        <section class="ams-unit fm-card" data-kind="${esc(u.kind)}">
+          <div class="ams-unit-head">
+            <span class="ams-unit-name">${esc(u.label)}</span>
+            <span class="ams-climate">
+              ${u.drying ? `<span class="ams-drying">${t('display.drying')}</span>` : ''}
+              ${climate.map(c => `<span>${esc(c)}</span>`).join('')}
+              <span>${t('display.slotsFilled', { filled, total: slots.length })}</span>
+            </span>
+          </div>
+          <div class="ams-bays">${slots.map(renderBay).join('')}</div>
+        </section>`
     }
 
     function renderPrinter(p: any) {
       const job = p.job || {}
       const temps = p.temperatures || {}
+      const offline = p.connected === false
+
       const meta: string[] = []
-      if (p.connected === false) meta.push(t('display.offline'))
-      else if (p.state && p.state !== 'unknown') meta.push(esc(p.state))
       if (job.name) meta.push(esc(job.name))
       if (job.remaining_seconds != null) meta.push(fmtRemaining(job.remaining_seconds))
       if (temps.nozzle != null) meta.push(`${t('display.nozzle')} ${temps.nozzle}${temps.nozzle_target ? '/' + temps.nozzle_target : ''}°C`)
       if (temps.bed != null) meta.push(`${t('display.bed')} ${temps.bed}${temps.bed_target ? '/' + temps.bed_target : ''}°C`)
-      const alerts = (p.alerts || []).map((a: any) => `<span class="dp-alert ${a.severity}">${esc(a.title)}${a.detail ? ': ' + esc(a.detail) : ''}</span>`).join('')
+
+      const state = offline
+        ? t('display.offline')
+        : (p.state && p.state !== 'unknown' ? esc(p.state) : '')
+
+      const alerts = (p.alerts || [])
+        .map((a: any) => `<span class="ams-alert" data-severity="${esc(a.severity)}">${esc(a.title)}${a.detail ? ': ' + esc(a.detail) : ''}</span>`)
+        .join('')
+
+      const units = p.ams || []
+      const mainUnits = units.filter((u: any) => !AUX_KINDS.has(u.kind))
+      const auxUnits = units.filter((u: any) => AUX_KINDS.has(u.kind))
+
       return `
-        <section class="dp-printer">
-          <div class="dp-printer-head">
-            <h2 class="dp-printer-name">${esc(p.name)}</h2>
-            <div class="dp-printer-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>
+        <section class="ams-printer">
+          <div class="ams-printer-head">
+            <span class="ams-dot" data-off="${offline ? '1' : '0'}"></span>
+            <h2 class="ams-printer-name">${esc(p.name)}</h2>
+            ${state ? `<span class="ams-state">${state}</span>` : ''}
+            ${meta.length ? `<span class="ams-meta">${meta.map(m => `<span>${m}</span>`).join('')}</span>` : ''}
           </div>
-          ${job.progress != null ? `<div class="dp-progress"><div style="width:${job.progress}%"></div></div>` : ''}
-          ${alerts ? `<div class="dp-alerts">${alerts}</div>` : ''}
-          <div class="dp-units">${(p.ams || []).map(renderUnit).join('')}</div>
+          ${job.progress != null
+            ? `<div class="ams-job">
+                 <span class="ams-track"><i style="width:${pctWidth(job.progress)}%"></i></span>
+                 <span class="ams-job-pct">${pctWidth(job.progress)}%</span>
+               </div>`
+            : ''}
+          ${alerts ? `<div class="ams-alerts">${alerts}</div>` : ''}
+          ${mainUnits.length ? `<div class="ams-row-main" data-count="${mainUnits.length}">${mainUnits.map(renderUnit).join('')}</div>` : ''}
+          ${auxUnits.length ? `<div class="ams-row-aux">${auxUnits.map(renderUnit).join('')}</div>` : ''}
         </section>`
     }
 
+    function setStatus(text: string, state: 'ok' | 'error') {
+      const el = document.getElementById('ams-status')!
+      el.textContent = text
+      el.dataset.state = state
+    }
+
+    function printerParam(): number | null {
+      const raw = new URLSearchParams(location.search).get('printer')
+      if (raw == null || raw === '' || raw === 'all') return null
+      const id = Number(raw)
+      return Number.isInteger(id) && id > 0 ? id : null
+    }
+
+    function setPrinterParam(id: number | null) {
+      const url = new URL(location.href)
+      if (id == null) url.searchParams.delete('printer')
+      else url.searchParams.set('printer', String(id))
+      history.replaceState(null, '', url)
+    }
+
+    function jsonHref(id: number | null): string {
+      return id == null ? '/api/v1/display' : `/api/v1/display/printers/${id}`
+    }
+
+    function selectedPrinters(printers: any[]): any[] {
+      const id = printerParam()
+      return id == null ? printers : printers.filter((p: any) => Number(p.id) === id)
+    }
+
+    function syncFilter(printers: any[]) {
+      const select = document.getElementById('ams-printer-filter') as HTMLSelectElement | null
+      const wrap = select?.closest('.ams-filter') as HTMLElement | null
+      const json = document.getElementById('ams-json') as HTMLAnchorElement | null
+      if (!select || !wrap) return
+
+      const current = printerParam()
+      const options = [
+        { value: 'all', label: t('display.allPrinters') },
+        ...printers.map((p: any) => ({
+          value: String(p.id),
+          label: p.connected === false ? `${p.name} (${t('display.offline')})` : String(p.name ?? p.id),
+        })),
+      ]
+      if (current != null && !printers.some((p: any) => Number(p.id) === current)) {
+        options.push({ value: String(current), label: `#${current}` })
+      }
+
+      const sig = options.map(o => `${o.value}\0${o.label}`).join('\n')
+      if (select.dataset.sig !== sig) {
+        select.dataset.sig = sig
+        select.innerHTML = options
+          .map(o => `<option value="${esc(o.value)}">${esc(o.label)}</option>`)
+          .join('')
+      }
+      select.value = current == null ? 'all' : String(current)
+      wrap.hidden = printers.length < 2
+      if (json) json.href = jsonHref(current)
+    }
+
+    function renderBoard(printers: any[]) {
+      lastPrinters = printers
+      syncFilter(printers)
+      const root = document.getElementById('ams-printers')!
+      if (!printers.length) {
+        root.innerHTML = `<div class="fm-card ams-note">${t('display.noPrinters')}</div>`
+        return
+      }
+      const shown = selectedPrinters(printers)
+      root.innerHTML = shown.length
+        ? shown.map(renderPrinter).join('')
+        : `<div class="fm-card ams-note">${t('display.printerMissing')}</div>`
+    }
+
     async function poll() {
-      const statusEl = document.getElementById('dp-status')!
       try {
         const res = await fetch('/api/v1/display', {
           credentials: 'include',
           signal: getAbortSignal(),
           headers: etag ? { 'If-None-Match': etag } : {},
         })
-        if (res.status === 304) { statusEl.textContent = t('display.upToDate', { time: new Date().toLocaleTimeString() }); return }
+        const stamp = new Date().toLocaleTimeString()
+        if (res.status === 304) { setStatus(t('display.upToDate', { time: stamp }), 'ok'); return }
         if (!res.ok) throw new Error(String(res.status))
         etag = res.headers.get('ETag')
         const data = await res.json()
-        const root = document.getElementById('dp-printers')!
-        root.innerHTML = data.printers.length
-          ? data.printers.map(renderPrinter).join('')
-          : `<div class="fm-card" style="color: var(--text-muted);">${t('display.noPrinters')}</div>`
-        statusEl.textContent = t('display.upToDate', { time: new Date().toLocaleTimeString() })
+        renderBoard(data.printers || [])
+        setStatus(t('display.upToDate', { time: stamp }), 'ok')
       } catch (e) {
         if (isAbortError(e)) return
-        statusEl.textContent = t('display.error')
+        setStatus(t('display.error'), 'error')
       }
     }
 
-    document.getElementById('dp-kiosk')?.addEventListener('click', () => {
-      document.body.classList.toggle('dp-kiosk')
-      if (document.body.classList.contains('dp-kiosk')) document.documentElement.requestFullscreen?.().catch(() => {})
+    document.getElementById('ams-printer-filter')?.addEventListener('change', (event) => {
+      const value = (event.target as HTMLSelectElement).value
+      const id = value === 'all' ? null : Number(value)
+      setPrinterParam(id != null && Number.isInteger(id) && id > 0 ? id : null)
+      renderBoard(lastPrinters)
+    })
+    document.getElementById('ams-kiosk')?.addEventListener('click', () => {
+      document.body.classList.toggle('ams-kiosk')
+      if (document.body.classList.contains('ams-kiosk')) document.documentElement.requestFullscreen?.().catch(() => {})
       else document.exitFullscreen?.().catch(() => {})
     })
     document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) document.body.classList.remove('dp-kiosk')
+      if (!document.fullscreenElement) document.body.classList.remove('ams-kiosk')
     })
-    if (new URLSearchParams(location.search).get('kiosk') === '1') document.body.classList.add('dp-kiosk')
+    if (new URLSearchParams(location.search).get('kiosk') === '1') document.body.classList.add('ams-kiosk')
 
     await poll()
     setInterval(poll, POLL_MS)

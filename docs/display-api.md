@@ -6,9 +6,10 @@ remaining amount), plus a small printer/job summary. It exists so you can build
 a wall display, an e-paper swatch panel, a tablet kiosk or a Home Assistant card
 without knowing anything about FilaMan's internals or the printer driver.
 
-FilaMan ships a reference client at `/display` (a full-screen swatch board that
-runs in any browser). Read its source in `frontend/src/pages/display.astro` —
-it is ~200 lines and uses nothing but this endpoint.
+FilaMan ships a reference client at `/display`, listed in the sidebar as
+**AMS View** (a full-screen swatch board that runs in any browser). Read its
+source in `frontend/src/pages/display.astro` — it uses nothing but this
+endpoint.
 
 ## Endpoints
 

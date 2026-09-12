@@ -10,7 +10,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import select
 
-from app.core.rfid import normalize_rfid_uid, rfid_uids_equal
+from app.core.rfid import normalize_rfid_uid, rfid_storage_value, rfid_uids_equal
 from app.models import Location, Spool
 from app.services.spool_service import RfidSlotsFullError, SpoolService
 from tests.test_devices import (
@@ -73,6 +73,12 @@ def test_rfid_uids_equal_across_spellings():
     assert not rfid_uids_equal("", "")
 
 
+def test_rfid_storage_value_preserves_submitted_spelling():
+    assert rfid_storage_value(CHIP_A_COMPACT) == CHIP_A_COMPACT
+    assert rfid_storage_value("  04-Ef-14  ") == "04-Ef-14"
+    assert rfid_storage_value("   ") is None
+
+
 # ---------------------------------------------------------------------------
 # service
 # ---------------------------------------------------------------------------
@@ -85,10 +91,10 @@ class TestRfidSlotService:
 
         change = await service.add_rfid_uid(spool, CHIP_A_COMPACT)
         assert change.removed_from == [] and not change.already_assigned
-        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, None)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A_COMPACT, None)
 
         await service.add_rfid_uid(spool, CHIP_B)
-        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, CHIP_B)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A_COMPACT, CHIP_B)
 
     async def test_add_same_chip_in_other_spelling_is_noop(self, db_session):
         spool = await _spool_fixture(db_session, rfid_uid=CHIP_A)
@@ -129,7 +135,7 @@ class TestRfidSlotService:
 
         await db_session.refresh(victim)
         assert (victim.rfid_uid, victim.rfid_uid_2) == (CHIP_B, None)
-        assert winner.rfid_uid == CHIP_A
+        assert winner.rfid_uid == CHIP_A_COMPACT
 
     async def test_add_steals_from_location(self, db_session):
         location = await _create_location(db_session, name="Shelf", identifier=CHIP_A)
@@ -172,6 +178,17 @@ class TestRfidSlotService:
         assert await service.get_spool_by_identifier(CHIP_C, None) is None
         assert await service.get_spool_by_identifier("", None) is None
 
+    async def test_identify_preserved_compact_and_hyphenated_storage(self, db_session):
+        spool = await _spool_fixture(
+            db_session,
+            rfid_uid=CHIP_A_COMPACT,
+            rfid_uid_2=CHIP_B.lower().replace(":", "-"),
+        )
+        service = SpoolService(db_session)
+
+        assert (await service.find_spool_by_rfid(CHIP_A)).id == spool.id
+        assert (await service.find_spool_by_rfid(CHIP_B)).id == spool.id
+
     async def test_identify_legacy_raw_value_written_directly(self, db_session):
         # Rows written without the service (legacy data the migration could not
         # rewrite) still resolve via the raw-spelling fallback.
@@ -192,7 +209,7 @@ class TestRfidSlotApi:
         status = await _get_status(db_session, "new")
         return filament.id, status.id
 
-    async def test_create_with_both_slots_normalises(self, auth_client, db_session):
+    async def test_create_with_both_slots_preserves_spelling(self, auth_client, db_session):
         client, csrf = auth_client
         filament_id, _ = await self._base(db_session)
 
@@ -207,7 +224,10 @@ class TestRfidSlotApi:
         )
         assert response.status_code == 201, response.text
         body = response.json()
-        assert (body["rfid_uid"], body["rfid_uid_2"]) == (CHIP_A, CHIP_B)
+        assert (body["rfid_uid"], body["rfid_uid_2"]) == (
+            CHIP_A_COMPACT,
+            CHIP_B.lower(),
+        )
 
     async def test_create_only_secondary_backfills_primary(self, auth_client, db_session):
         client, csrf = auth_client
@@ -330,21 +350,21 @@ class TestRfidResultAddsSecondChip:
 
         await self._write(client, headers, spool.id, CHIP_A_COMPACT)
         await db_session.refresh(spool)
-        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, None)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A_COMPACT, None)
 
         await self._write(client, headers, spool.id, CHIP_B)
         await db_session.refresh(spool)
-        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, CHIP_B)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A_COMPACT, CHIP_B)
 
         # Re-writing an existing chip changes nothing.
         await self._write(client, headers, spool.id, CHIP_A)
         await db_session.refresh(spool)
-        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, CHIP_B)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A_COMPACT, CHIP_B)
 
         # Both slots full: the chip is already written, so the secondary is replaced.
         await self._write(client, headers, spool.id, CHIP_C)
         await db_session.refresh(spool)
-        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A, CHIP_C)
+        assert (spool.rfid_uid, spool.rfid_uid_2) == (CHIP_A_COMPACT, CHIP_C)
 
         status = (await client.get(f"/api/v1/devices/{device_id}/write-status")).json()
         assert "ersetzt" in (status.get("removed_from") or "")

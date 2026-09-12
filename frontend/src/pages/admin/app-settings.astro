@@ -108,7 +108,7 @@ import Layout from '../../layouts/Layout.astro'
 
     <!-- RFID Extended Data Card (full width) -->
     <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 16px;" data-i18n="admin.rfidSettingsTitle">RFID Tag Extended Data</h2>
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 16px;" data-i18n="admin.rfidSettingsTitle">RFID Settings</h2>
 
       <!-- Toggle: Extended Data aktivieren -->
       <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
@@ -130,6 +130,17 @@ import Layout from '../../layouts/Layout.astro'
           <option value="openspool" data-i18n="admin.rfidProtocolOpenspool">OpenSpool</option>
           <option value="filaman" data-i18n="admin.rfidProtocolFilaman">FilaMan</option>
         </select>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <div style="flex: 1;">
+          <label data-i18n="admin.rfidDisplayColons" style="font-weight: 500; display: block; margin-bottom: 4px;">Show colons in RFID UIDs</label>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;" data-i18n="admin.rfidDisplayColonsHint">Display hexadecimal UIDs as XX:XX:XX. This does not change stored values or matching.</p>
+        </div>
+        <label class="fm-toggle">
+          <input type="checkbox" id="rfid-display-colons" />
+          <span class="fm-toggle-slider"></span>
+        </label>
       </div>
     </div>
 
@@ -205,6 +216,7 @@ import Layout from '../../layouts/Layout.astro'
       const rfidExtendedDataInput = document.getElementById('rfid-extended-data-enabled') as HTMLInputElement
       const rfidProtocolSelect = document.getElementById('rfid-protocol') as HTMLSelectElement
       const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
+      const rfidDisplayColonsInput = document.getElementById('rfid-display-colons') as HTMLInputElement
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
 
@@ -237,6 +249,7 @@ import Layout from '../../layouts/Layout.astro'
           warningDiv.classList.toggle('hidden', !data.login_disabled)
           rfidExtendedDataInput.checked = data.rfid_extended_data_enabled ?? false
           rfidProtocolSelect.value = data.rfid_protocol || 'openspool'
+          rfidDisplayColonsInput.checked = data.rfid_display_colons !== false
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
@@ -260,6 +273,7 @@ import Layout from '../../layouts/Layout.astro'
           currency: currencySelect.value,
           rfid_extended_data_enabled: rfidExtendedDataInput.checked,
           rfid_protocol: rfidProtocolSelect.value,
+          rfid_display_colons: rfidDisplayColonsInput.checked,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
         }
@@ -278,6 +292,7 @@ import Layout from '../../layouts/Layout.astro'
 
           if (resp.ok) {
             localStorage.setItem('currency', currencySelect.value)
+            localStorage.setItem('rfid_display_colons', String(rfidDisplayColonsInput.checked))
             showMessage(t('admin.appSettingsSaveSuccess'), false)
           } else {
             const err = await resp.json().catch(() => ({}))
