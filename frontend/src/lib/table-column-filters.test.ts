@@ -1,13 +1,39 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  colorWheelPixels,
+  emptyColumnFilter,
   matchesColumnFilter,
-  normalizeColorFilter,
+  sanitizeColumnFilters,
   systemExtraFieldFilterType,
   systemExtraFieldFilterValue,
   type ColorFilterValue,
+  type ColumnFilterValue,
 } from './table-column-filters'
+
+describe('Persisted table filters', () => {
+  it('discards removed filters and values whose type no longer matches the column', () => {
+    const filters = {
+      colors: { type: 'multi', values: ['Blue'] },
+      colorRange: { ...emptyColumnFilter('color'), mode: 'color' },
+      diameter: { type: 'number', operator: 'eq', value: '1.75', valueTo: '' },
+    } as Record<string, ColumnFilterValue>
+
+    expect(sanitizeColumnFilters(filters, [
+      { key: 'colors', type: 'multi' },
+      { key: 'diameter', type: 'multi' },
+    ])).toEqual({ colors: { type: 'multi', values: ['Blue'] } })
+  })
+
+  it('ignores malformed saved values instead of failing page setup', () => {
+    expect(sanitizeColumnFilters({
+      colors: { type: 'multi' },
+      designation: { type: 'text', operator: 'bogus', value: 'PLA' },
+    }, [
+      { key: 'colors', type: 'multi' },
+      { key: 'designation', type: 'text' },
+    ])).toEqual({})
+  })
+})
 
 describe('System Extra Field table filters', () => {
   it.each([
@@ -47,42 +73,20 @@ describe('System Extra Field table filters', () => {
 })
 
 describe('Color range table filters', () => {
-  it('renders continuous HSV colors through every wheel axis', () => {
-    const pixels = colorWheelPixels(5)
-    const pixel = (x: number, y: number) => [...pixels.slice((y * 5 + x) * 4, (y * 5 + x + 1) * 4)]
+  it('starts the chromatic range near but outside the neutral center', () => {
+    const filter = emptyColumnFilter('color') as ColorFilterValue
+    filter.mode = 'color'
 
-    expect(pixel(2, 2)).toEqual([255, 255, 255, 255])
-    expect([pixel(4, 2), pixel(2, 0), pixel(0, 2), pixel(2, 4)]).toEqual([
-      [255, 51, 51, 255],
-      [153, 255, 51, 255],
-      [51, 255, 255, 255],
-      [153, 51, 255, 255],
-    ])
-    expect(pixel(0, 0)).toEqual([0, 0, 0, 0])
+    expect(matchesColumnFilter(['#FFF0E0'], filter)).toBe(true)
+    expect(matchesColumnFilter(['#FFF7F0'], filter)).toBe(false)
   })
 
-  it('migrates restored color state to one valid mode', () => {
-    expect(normalizeColorFilter({
-      type: 'color',
-      chromatic: true,
-      hueFrom: 10,
-      hueTo: 45,
-      saturationFrom: 20,
-      saturationTo: 100,
-      valueFrom: 0,
-      valueTo: 100,
-      valuePreview: 100,
-      includeTransparent: false,
-      neutrals: ['black', 'white'],
-    })).toEqual(expect.objectContaining({ mode: 'black' }))
-  })
+  it('excludes near-black colors from the default chromatic range', () => {
+    const filter = emptyColumnFilter('color') as ColorFilterValue
+    filter.mode = 'color'
 
-  it('ignores malformed legacy neutral state', () => {
-    expect(normalizeColorFilter({
-      type: 'color', chromatic: true, neutrals: 'black',
-      hueFrom: 10, hueTo: 45, saturationFrom: 20, saturationTo: 100,
-      valueFrom: 0, valueTo: 100, valuePreview: 100, includeTransparent: false,
-    })).toEqual(expect.objectContaining({ mode: 'color' }))
+    expect(matchesColumnFilter(['#260D00'], filter)).toBe(false)
+    expect(matchesColumnFilter(['#2B1600'], filter)).toBe(true)
   })
 
   it('matches chromatic colors inside the hue arc and saturation radii', () => {
@@ -100,7 +104,8 @@ describe('Color range table filters', () => {
     } satisfies ColorFilterValue
 
     expect(matchesColumnFilter(['#A64B1B'], filter)).toBe(true)
-    expect(matchesColumnFilter(['#A64B1B80'], filter)).toBe(true)
+    expect(matchesColumnFilter(['#A64B1B80'], filter)).toBe(false)
+    expect(matchesColumnFilter(['#A64B1B80'], { ...filter, includeTransparent: true })).toBe(true)
     expect(matchesColumnFilter(['#FF8A33'], filter)).toBe(false)
     expect(matchesColumnFilter(['#FFCCCC'], filter)).toBe(false)
     expect(matchesColumnFilter(['#00FF00'], filter)).toBe(false)
@@ -147,6 +152,29 @@ describe('Color range table filters', () => {
     expect(matchesColumnFilter(['not-a-color'], { ...base, mode: 'grey' })).toBe(false)
   })
 
+  it('uses customized neutral brightness and saturation ranges', () => {
+    const filter = {
+      type: 'color',
+      mode: 'black',
+      hueFrom: 10,
+      hueTo: 45,
+      saturationFrom: 10,
+      saturationTo: 100,
+      valueFrom: 16,
+      valueTo: 100,
+      valuePreview: 100,
+      neutralSaturationTo: 10,
+      neutralValueFrom: 5,
+      neutralValueTo: 10,
+      includeTransparent: false,
+    } satisfies ColorFilterValue
+
+    expect(matchesColumnFilter(['#191919'], filter)).toBe(true)
+    expect(matchesColumnFilter(['#191717'], filter)).toBe(true)
+    expect(matchesColumnFilter(['#191616'], filter)).toBe(false)
+    expect(matchesColumnFilter(['#262626'], filter)).toBe(false)
+  })
+
   it('optionally includes colors with a non-opaque alpha channel', () => {
     const filter = {
       type: 'color',
@@ -164,6 +192,27 @@ describe('Color range table filters', () => {
     expect(matchesColumnFilter(['#0066CC80'], filter)).toBe(true)
     expect(matchesColumnFilter(['#0066CCFE'], filter)).toBe(true)
     expect(matchesColumnFilter(['#0066CC'], filter)).toBe(false)
+  })
+
+  it('keeps transparent colors inside the selected neutral family', () => {
+    const base = {
+      type: 'color',
+      mode: 'black',
+      hueFrom: 0,
+      hueTo: 360,
+      saturationFrom: 0,
+      saturationTo: 100,
+      valueFrom: 0,
+      valueTo: 100,
+      valuePreview: 100,
+      includeTransparent: true,
+    } satisfies ColorFilterValue
+
+    expect(matchesColumnFilter(['#00000080'], base)).toBe(true)
+    expect(matchesColumnFilter(['#FF000080'], base)).toBe(false)
+    expect(matchesColumnFilter(['#0000FF80'], { ...base, mode: 'white' })).toBe(false)
+    expect(matchesColumnFilter(['#FFFFFF80'], { ...base, mode: 'white' })).toBe(true)
+    expect(matchesColumnFilter(['#00000080'], { ...base, includeTransparent: false })).toBe(false)
   })
 })
 

@@ -37,6 +37,8 @@ class EventBus:
             response_cache.delete("filter_options:filaments")
         elif event_name in {"spools_changed", "locations_changed", "statuses_changed"}:
             response_cache.delete("filter_options:spools")
+            if event_name == "spools_changed":
+                response_cache.delete("filter_options:filaments")
 
         data = json.dumps(event)
         dead: list[asyncio.Queue[str]] = []

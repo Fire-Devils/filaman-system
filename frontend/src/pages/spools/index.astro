@@ -218,7 +218,7 @@ import Layout from '../../layouts/Layout.astro'
       isColumnFilterActive,
       matchesColumnFilter,
       multiColumnFilter,
-      normalizeColorFilter,
+      sanitizeColumnFilters,
       syncHeaderSortButtons,
       systemExtraFieldFilterValue,
       systemExtraFieldHeaderFilter,
@@ -320,11 +320,6 @@ import Layout from '../../layouts/Layout.astro'
       ])
     }
     if (filterMaterial) columnFilters.material = multiColumnFilter([filterMaterial])
-    if (columnFilters.colorRange?.type === 'color') columnFilters.colorRange = normalizeColorFilter(columnFilters.colorRange)
-    Object.keys(columnFilters).forEach((key) => {
-      if (!isColumnFilterActive(columnFilters[key])) delete columnFilters[key]
-    })
-
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
@@ -446,7 +441,6 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'manufacturer') return String(filament?.manufacturer_id ?? filament?.manufacturer?.id ?? '')
       if (key === 'material') return filament?.material_type
       if (key === 'colors') return filamentColorValues(filament, 'name')
-      if (key === 'colorRange') return filamentColorValues(filament, 'hex_code')
       if (key === 'status') return String(spool.status_id)
       if (key === 'remaining') return spool.remaining_weight_g
       if (key === 'location') return spool.location_id == null ? '' : String(spool.location_id)
@@ -1081,15 +1075,6 @@ import Layout from '../../layouts/Layout.astro'
           onApply: (value) => applyColumnFilter('colors', value),
         },
         {
-          key: 'colorRange',
-          label: t('filters.colorRange'),
-          columnSelector: 'th.col-colors',
-          type: 'color',
-          icon: 'gear',
-          initialValue: columnFilters.colorRange,
-          onApply: (value) => applyColumnFilter('colorRange', value),
-        },
-        {
           key: 'remaining',
           label: t('spools.remaining'),
           columnSelector: 'th.col-remaining',
@@ -1162,6 +1147,8 @@ import Layout from '../../layouts/Layout.astro'
           )
         }),
       ]
+      columnFilters = sanitizeColumnFilters(columnFilters, definitions)
+      definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
       splHeaderFilters = initHeaderColumnFilters(table, definitions)
       syncHeaderSortButtons(table, sortKey, sortDirection)
     }

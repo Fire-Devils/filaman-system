@@ -149,7 +149,7 @@ import Layout from '../../layouts/Layout.astro'
       isColumnFilterActive,
       matchesColumnFilter,
       multiColumnFilter,
-      normalizeColorFilter,
+      sanitizeColumnFilters,
       syncHeaderSortButtons,
       systemExtraFieldFilterValue,
       systemExtraFieldHeaderFilter,
@@ -222,6 +222,7 @@ import Layout from '../../layouts/Layout.astro'
     } catch { /* ignore invalid data */ }
     let isInitialLoad = true
     let filterRequestId = 0
+    let filterRenderQueued = false
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
     let filHeaderFilters: HeaderFilterController | null = null
     let allSpoolStatusIds: string[] = []
@@ -236,11 +237,6 @@ import Layout from '../../layouts/Layout.astro'
     if (!columnFilters.type) columnFilters.type = multiColumnFilter(normalizeSavedValues(savedFilterState?.type))
     if (!columnFilters.colors) columnFilters.colors = multiColumnFilter(normalizeSavedValues(savedFilterState?.color))
     if (filterManufacturerId) columnFilters.manufacturer = multiColumnFilter([filterManufacturerId])
-    if (columnFilters.colorRange?.type === 'color') columnFilters.colorRange = normalizeColorFilter(columnFilters.colorRange)
-    Object.keys(columnFilters).forEach((key) => {
-      if (!isColumnFilterActive(columnFilters[key])) delete columnFilters[key]
-    })
-
     // Debounce timer for search input
 
     function getCsrfToken(): string {
@@ -349,7 +345,6 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'type') return filament.material_type
       if (key === 'designation') return filament.designation
       if (key === 'colors') return filamentColorValues(filament, 'name')
-      if (key === 'colorRange') return filamentColorValues(filament, 'hex_code')
       if (key === 'diameter') return filament.diameter_mm
       if (key === 'spools') return filament.spool_count
       if (key === 'spoolStatus') return (filament.spool_status_ids || []).map(String)
@@ -413,6 +408,11 @@ import Layout from '../../layouts/Layout.astro'
         const options = await cachedFetch<{
           manufacturers: HeaderFilterOption[]
           types: string[]
+          designations: string[]
+          diameters: number[]
+          finishes: string[]
+          subgroups: string[]
+          spool_counts: number[]
           colors: Array<{ value: string; label: string; color_hexes: string[] }>
           has_empty_colors: boolean
         }>(CACHE_KEYS.FILAMENT_FILTER_OPTIONS, async () => {
@@ -423,6 +423,11 @@ import Layout from '../../layouts/Layout.astro'
 
         filHeaderFilters?.setOptions('manufacturer', options.manufacturers)
         filHeaderFilters?.setOptions('type', options.types.map(type => ({ value: type, label: type })))
+        filHeaderFilters?.setOptions('designation', options.designations.map(value => ({ value, label: value })))
+        filHeaderFilters?.setOptions('diameter', options.diameters.map(value => ({ value: String(value), label: `${value} mm` })))
+        filHeaderFilters?.setOptions('finish', options.finishes.map(value => ({ value, label: value })))
+        filHeaderFilters?.setOptions('subgroup', options.subgroups.map(value => ({ value, label: value })))
+        filHeaderFilters?.setOptions('spools', options.spool_counts.map(value => ({ value: String(value), label: String(value) })))
         const colorOptions: HeaderFilterOption[] = options.colors.map(color => ({
           value: color.value,
           label: color.label,
@@ -789,6 +794,8 @@ import Layout from '../../layouts/Layout.astro'
           label: t('filaments.designation'),
           columnSelector: 'th.col-designation',
           type: 'text',
+          autocomplete: true,
+          options: [],
           initialValue: columnFilters.designation,
           onApply: (value) => applyColumnFilter('designation', value),
         },
@@ -803,19 +810,11 @@ import Layout from '../../layouts/Layout.astro'
           onApply: (value) => applyColumnFilter('colors', value),
         },
         {
-          key: 'colorRange',
-          label: t('filters.colorRange'),
-          columnSelector: 'th.col-colors',
-          type: 'color',
-          icon: 'gear',
-          initialValue: columnFilters.colorRange,
-          onApply: (value) => applyColumnFilter('colorRange', value),
-        },
-        {
           key: 'diameter',
           label: t('filaments.diameter'),
           columnSelector: 'th.col-diameter',
-          type: 'number',
+          type: 'multi',
+          options: [],
           initialValue: columnFilters.diameter,
           onApply: (value) => applyColumnFilter('diameter', value),
         },
@@ -824,6 +823,7 @@ import Layout from '../../layouts/Layout.astro'
           label: t('filaments.spools'),
           columnSelector: 'th.col-spools',
           type: 'number',
+          autocomplete: true,
           initialValue: columnFilters.spools,
           onApply: (value) => applyColumnFilter('spools', value),
         },
@@ -833,6 +833,9 @@ import Layout from '../../layouts/Layout.astro'
           columnSelector: 'th.col-spools',
           type: 'multi',
           icon: 'gear',
+          disclosureOf: 'spools',
+          disclosureStorageKey: 'filaman-spool-status-open',
+          searchable: false,
           initialValue: columnFilters.spoolStatus,
           onApply: (value) => applyColumnFilter('spoolStatus', value),
         },
@@ -856,7 +859,8 @@ import Layout from '../../layouts/Layout.astro'
           key: 'finish',
           label: t('filaments.colFinish'),
           columnSelector: 'th.col-finish',
-          type: 'text',
+          type: 'multi',
+          options: [],
           initialValue: columnFilters.finish,
           onApply: (value) => applyColumnFilter('finish', value),
         },
@@ -864,7 +868,8 @@ import Layout from '../../layouts/Layout.astro'
           key: 'subgroup',
           label: t('filaments.colSubgroup'),
           columnSelector: 'th.col-subgroup',
-          type: 'text',
+          type: 'multi',
+          options: [],
           initialValue: columnFilters.subgroup,
           onApply: (value) => applyColumnFilter('subgroup', value),
         },
@@ -893,6 +898,8 @@ import Layout from '../../layouts/Layout.astro'
           )
         }),
       ]
+      columnFilters = sanitizeColumnFilters(columnFilters, definitions)
+      definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
       filHeaderFilters = initHeaderColumnFilters(table, definitions)
       syncHeaderSortButtons(table, sortKey, sortDirection)
     }
@@ -901,7 +908,12 @@ import Layout from '../../layouts/Layout.astro'
       if (isColumnFilterActive(value)) columnFilters[key] = value
       else delete columnFilters[key]
       if (urlParam) removeFilterUrlParams(urlParam)
-      applyFiltersAndRender()
+      if (filterRenderQueued) return
+      filterRenderQueued = true
+      queueMicrotask(() => {
+        filterRenderQueued = false
+        applyFiltersAndRender()
+      })
     }
 
     function removeFilterUrlParams(...keys: string[]) {

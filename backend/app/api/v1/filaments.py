@@ -809,6 +809,11 @@ class ColorFilterOption(FilterOption):
 class FilamentFilterOptionsResponse(BaseModel):
     manufacturers: list[FilterOption]
     types: list[str]
+    designations: list[str]
+    diameters: list[float]
+    finishes: list[str]
+    subgroups: list[str]
+    spool_counts: list[int]
     colors: list[ColorFilterOption]
     has_empty_colors: bool
 
@@ -830,39 +835,77 @@ async def list_filament_types(db: DBSession, principal: PrincipalDep):
 
 @router_filaments.get("/filter-options", response_model=FilamentFilterOptionsResponse)
 async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
-    """Return only values used by at least one filament, in one database query."""
+    """Return only values used by at least one filament."""
     cached = response_cache.get("filter_options:filaments")
     if cached is not None:
         return cached
 
-    result = await db.execute(
+    facet_result = await db.execute(
         select(
             Filament.manufacturer_id,
             Manufacturer.name,
             Filament.material_type,
-            Color.name,
-            Color.hex_code,
+            Filament.designation,
+            Filament.diameter_mm,
+            Filament.finish_type,
+            Filament.material_subgroup,
         )
         .join(Manufacturer, Manufacturer.id == Filament.manufacturer_id)
+        .distinct()
+    )
+    color_result = await db.execute(
+        select(Color.name, Color.hex_code)
+        .select_from(Filament)
         .outerjoin(FilamentColor, FilamentColor.filament_id == Filament.id)
         .outerjoin(Color, Color.id == FilamentColor.color_id)
+        .distinct()
+    )
+    active_spool_counts = (
+        select(Spool.filament_id, func.count(Spool.id).label("spool_count"))
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(SpoolStatus.key != "archived")
+        .group_by(Spool.filament_id)
+        .subquery()
+    )
+    spool_count_result = await db.execute(
+        select(func.coalesce(active_spool_counts.c.spool_count, 0))
+        .select_from(Filament)
+        .outerjoin(
+            active_spool_counts,
+            active_spool_counts.c.filament_id == Filament.id,
+        )
         .distinct()
     )
 
     manufacturers: dict[int, str] = {}
     types: set[str] = set()
+    designations: set[str] = set()
+    diameters: set[float] = set()
+    finishes: set[str] = set()
+    subgroups: set[str] = set()
     colors: dict[str, set[str]] = {}
-    has_empty_colors = False
     for (
         manufacturer_id,
         manufacturer_name,
         material_type,
-        color_name,
-        hex_code,
-    ) in result.all():
+        designation,
+        diameter_mm,
+        finish,
+        subgroup,
+    ) in facet_result.all():
         manufacturers[manufacturer_id] = manufacturer_name
         if material_type:
             types.add(material_type)
+        if designation:
+            designations.add(designation)
+        if diameter_mm is not None:
+            diameters.add(diameter_mm)
+        if finish:
+            finishes.add(finish)
+        if subgroup:
+            subgroups.add(subgroup)
+    has_empty_colors = False
+    for color_name, hex_code in color_result.all():
         if color_name:
             colors.setdefault(color_name, set())
             if hex_code:
@@ -878,6 +921,11 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
             )
         ],
         types=sorted(types, key=str.casefold),
+        designations=sorted(designations, key=str.casefold),
+        diameters=sorted(diameters),
+        finishes=sorted(finishes, key=str.casefold),
+        subgroups=sorted(subgroups, key=str.casefold),
+        spool_counts=sorted(int(row[0]) for row in spool_count_result.all()),
         colors=[
             ColorFilterOption(
                 value=name,

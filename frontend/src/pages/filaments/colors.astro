@@ -11,22 +11,19 @@ import Layout from '../../layouts/Layout.astro'
       </a>
       <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="colors.title">Manage Colors</h1>
     </div>
-    <button
-      id="btn-new"
-      class="fm-btn fm-btn-primary"
-      data-i18n="colors.addColor"
-    >
-      Add Color
-    </button>
+    <div style="display: flex; gap: 12px;">
+      <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
+      <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="colors.addColor">Add Color</button>
+    </div>
   </div>
   
   <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
+    <table class="fm-table" id="colors-list-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th data-i18n="colors.name">Name</th>
-          <th data-i18n="colors.hexCode">Hex Code</th>
-          <th data-i18n="colors.usage">Usage</th>
+          <th data-i18n="colors.name" data-sort="name" class="sortable col-name">Name</th>
+          <th data-i18n="colors.hexCode" data-sort="hex_code" class="sortable col-hex">Hex Code</th>
+          <th data-i18n="colors.usage" data-sort="usage_count" class="sortable col-usage">Usage</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
@@ -63,9 +60,31 @@ import Layout from '../../layouts/Layout.astro'
     import { fetchAllPages } from '../../lib/api'
     import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
     import { escapeHtml } from '../../lib/extra-fields'
+    import {
+      bindTableFilterControls,
+      initHeaderColumnFilters,
+      isColumnFilterActive,
+      matchesColumnFilter,
+      syncHeaderSortButtons,
+      type ColumnFilterValue,
+      type HeaderFilterController,
+    } from '../../lib/table-column-filters'
     await initI18n()
 
     let colors: any[] = []
+    let sortKey: string | null = 'name'
+    let sortDirection: 'asc' | 'desc' | null = 'asc'
+    let columnFilters: Record<string, ColumnFilterValue> = {}
+    let colorHeaderFilters: HeaderFilterController | null = null
+    const colorSortKeys = new Set(['name', 'hex_code', 'usage_count'])
+
+    try {
+      const saved = JSON.parse(localStorage.getItem('filaman-sort-colors') || 'null')
+      if (colorSortKeys.has(saved?.key) && (saved.direction === 'asc' || saved.direction === 'desc')) {
+        sortKey = saved.key
+        sortDirection = saved.direction
+      }
+    } catch { /* ignore invalid data */ }
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -76,6 +95,14 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const data = await fetchAllPages('/api/v1/colors')
         colors = data.items
+        colorHeaderFilters?.setOptions('name', colors.map(color => ({
+          value: String(color.id),
+          label: color.name,
+          colorHexes: [color.hex_code],
+        })))
+        colorHeaderFilters?.setOptions('usage_count', [...new Set<number>(colors.map(color => color.usage_count))]
+          .sort((left, right) => left - right)
+          .map(value => ({ value: String(value), label: String(value) })))
         renderColors()
       } catch (error) {
         if (isAbortError(error)) return
@@ -90,8 +117,23 @@ import Layout from '../../layouts/Layout.astro'
     
     function renderColors() {
       const tbody = document.getElementById('colors-table')!
+      let visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
+        const value = key === 'name' ? String(color.id) : color[key]
+        return matchesColumnFilter(value, filter)
+      }))
+      if (sortKey && sortDirection) {
+        const direction = sortDirection
+        visibleColors = [...visibleColors].sort((a, b) => {
+          const left = a[sortKey!] ?? ''
+          const right = b[sortKey!] ?? ''
+          const comparison = typeof left === 'number'
+            ? left - right
+            : String(left).localeCompare(String(right), undefined, { sensitivity: 'base' })
+          return direction === 'asc' ? comparison : -comparison
+        })
+      }
       
-      if (colors.length === 0) {
+      if (visibleColors.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="4" style="text-align: center; color: var(--text-muted);">
@@ -102,7 +144,7 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = colors.map(c => `
+      tbody.innerHTML = visibleColors.map(c => `
         <tr>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
@@ -179,6 +221,77 @@ import Layout from '../../layouts/Layout.astro'
             await (window as any).__fmAlert(t('colors.failedDelete'))
           }
         })
+      })
+    }
+
+    function applyColumnFilter(key: string, value: ColumnFilterValue) {
+      if (isColumnFilterActive(value)) columnFilters[key] = value
+      else delete columnFilters[key]
+      renderColors()
+    }
+
+    function setupTableControls() {
+      const table = document.getElementById('colors-list-table') as HTMLTableElement
+      colorHeaderFilters = initHeaderColumnFilters(table, [
+        {
+          key: 'name',
+          label: t('colors.name'),
+          columnSelector: 'th.col-name',
+          type: 'multi',
+          multiDisplay: 'colors',
+          options: [],
+          onApply: value => applyColumnFilter('name', value),
+        },
+        {
+          key: 'hex_code',
+          label: t('colors.hexCode'),
+          columnSelector: 'th.col-hex',
+          type: 'text',
+          onApply: value => applyColumnFilter('hex_code', value),
+        },
+        {
+          key: 'usage_count',
+          label: t('colors.usage'),
+          columnSelector: 'th.col-usage',
+          type: 'number',
+          autocomplete: true,
+          onApply: value => applyColumnFilter('usage_count', value),
+        },
+      ])
+      syncHeaderSortButtons(table, sortKey, sortDirection)
+      if (sortKey && sortDirection) {
+        table.querySelector(`th[data-sort="${sortKey}"]`)?.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
+      }
+
+      table.tHead?.addEventListener('click', event => {
+        const header = (event.target as HTMLElement).closest<HTMLElement>('th[data-sort]')
+        if (!header) return
+        const key = header.dataset.sort!
+        if (sortKey !== key) {
+          sortKey = key
+          sortDirection = 'asc'
+        } else if (sortDirection === 'asc') sortDirection = 'desc'
+        else if (sortDirection === 'desc') {
+          sortKey = null
+          sortDirection = null
+        } else sortDirection = 'asc'
+        table.querySelectorAll('th[data-sort]').forEach(cell => cell.classList.remove('sort-asc', 'sort-desc'))
+        if (sortKey && sortDirection) {
+          header.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
+          localStorage.setItem('filaman-sort-colors', JSON.stringify({ key: sortKey, direction: sortDirection }))
+        } else localStorage.removeItem('filaman-sort-colors')
+        syncHeaderSortButtons(table, sortKey, sortDirection)
+        renderColors()
+      })
+
+      bindTableFilterControls({
+        onApply: renderColors,
+        onClearColumns: () => {
+          columnFilters = {}
+          colorHeaderFilters?.resetAll()
+          renderColors()
+        },
+        onClearAll: () => {},
       })
     }
     
@@ -271,6 +384,7 @@ import Layout from '../../layouts/Layout.astro'
       }
     })
     
+    setupTableControls()
     loadColors()
 
     // Live-Update via SSE: Farben automatisch neu laden

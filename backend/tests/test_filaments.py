@@ -1,4 +1,5 @@
 import pytest
+from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
 from sqlalchemy import select
 
@@ -389,9 +390,26 @@ class TestFilamentCRUD:
         used_color = await _create_color(db_session, name="Ocean Blue", hex_code="#0066CC")
         await _create_color(db_session, name="Unused Orange", hex_code="#FF6600")
         filament = await _create_filament(
-            db_session, used_manufacturer.id, designation="Blue PETG", material_type="PETG"
+            db_session,
+            used_manufacturer.id,
+            designation="Blue PETG",
+            material_type="PETG",
+            finish_type="Matte",
+            material_subgroup="PETG-CF",
         )
+        no_spools = await _create_filament(
+            db_session,
+            used_manufacturer.id,
+            designation="Blue PETG",
+            material_type="PETG",
+            finish_type="Matte",
+            material_subgroup="PETG-CF",
+        )
+        new_status = await _get_status(db_session, "new")
+        await _create_spool(db_session, filament.id, new_status.id)
+        await _create_spool(db_session, filament.id, new_status.id)
         db_session.add(FilamentColor(filament_id=filament.id, color_id=used_color.id, position=1))
+        db_session.add(FilamentColor(filament_id=no_spools.id, color_id=used_color.id, position=1))
         await db_session.commit()
 
         response = await client.get("/api/v1/filaments/filter-options")
@@ -400,10 +418,20 @@ class TestFilamentCRUD:
         data = response.json()
         assert data["manufacturers"] == [{"value": str(used_manufacturer.id), "label": "Used Maker"}]
         assert data["types"] == ["PETG"]
+        assert data["designations"] == ["Blue PETG"]
+        assert data["diameters"] == [1.75]
+        assert data["finishes"] == ["Matte"]
+        assert data["subgroups"] == ["PETG-CF"]
+        assert data["spool_counts"] == [0, 2]
         assert data["colors"] == [{
             "value": "Ocean Blue", "label": "Ocean Blue", "color_hexes": ["#0066CC"]
         }]
         assert data["has_empty_colors"] is False
+
+        await _create_spool(db_session, filament.id, new_status.id)
+        await event_bus.publish({"event": "spools_changed"})
+        refreshed = await client.get("/api/v1/filaments/filter-options")
+        assert refreshed.json()["spool_counts"] == [0, 3]
 
     @pytest.mark.asyncio
     async def test_filter_options_report_filaments_without_colors(self, auth_client, db_session):
