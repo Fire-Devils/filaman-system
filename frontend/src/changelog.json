@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Ein neu erstellter API Key wird jetzt zusätzlich als QR-Code angezeigt. In der FilaMan-App lässt sich der Token damit einscannen statt abzutippen (Anmeldung → Token → QR-Symbol im Token-Feld)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "A newly created API key is now also shown as a QR code. In the FilaMan app you can scan the token instead of typing it (sign-in → Token → QR icon in the token field)." }
+        ]
+      }
+    },
+    {
       "version": "1.3.4",
       "date": "",
       "changes": {

@@ -60,6 +60,20 @@ import Layout from '../../layouts/Layout.astro'
             Copy
           </button>
         </div>
+
+        <div style="margin-top: 16px;">
+          <div style="font-weight: 600; margin-bottom: 4px;" data-i18n="apiKeys.qrTitle">Für die FilaMan-App scannen</div>
+          <p style="color: var(--color-text-muted); font-size: 0.875rem; margin: 0 0 12px 0;" data-i18n="apiKeys.qrHint">
+            In der App: Anmeldung → Token → QR-Symbol im Token-Feld.
+          </p>
+          <!-- Fester weißer Grund: der QR-Code hat feste Farben und würde
+               sonst im dunklen Theme schlecht erkannt werden. -->
+          <div
+            id="new-token-qr"
+            style="display: inline-block; background: #ffffff; padding: 12px; border-radius: 8px; line-height: 0;"
+          ></div>
+          <div id="new-token-qr-error" class="fm-alert-error hidden" style="margin-top: 12px;"></div>
+        </div>
       </div>
     </div>
     
@@ -93,6 +107,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { ensureQrCodeLoaded, getQrCodeConstructor } from '../../lib/qr-code'
     await initI18n()
 
     function getCsrfToken(): string {
@@ -111,12 +126,40 @@ import Layout from '../../layouts/Layout.astro'
     const newTokenContainer = document.getElementById('new-token-container') as HTMLDivElement
     const newTokenInput = document.getElementById('new-token-input') as HTMLInputElement
     const copyTokenBtn = document.getElementById('copy-token-btn') as HTMLButtonElement
+    const newTokenQr = document.getElementById('new-token-qr') as HTMLDivElement
+    const newTokenQrError = document.getElementById('new-token-qr-error') as HTMLDivElement
     
     const keysLoading = document.getElementById('keys-loading') as HTMLDivElement
     const keysError = document.getElementById('keys-error') as HTMLDivElement
     const keysTableContainer = document.getElementById('keys-table-container') as HTMLDivElement
     const keysTbody = document.getElementById('keys-tbody') as HTMLTableSectionElement
     const noKeysMsg = document.getElementById('no-keys-msg') as HTMLDivElement
+
+    // Zeichnet den frisch erstellten Token als QR-Code, damit die FilaMan-App
+    // ihn scannen kann statt ihn abzutippen. Der Token wird nur einmal
+    // angezeigt, der QR-Code lebt also genauso lange wie das Panel.
+    async function renderTokenQr(token: string) {
+      newTokenQr.innerHTML = ''
+      newTokenQrError.classList.add('hidden')
+
+      try {
+        await ensureQrCodeLoaded()
+        const QrCode = getQrCodeConstructor()
+        new QrCode(newTokenQr, {
+          text: token,
+          width: 180,
+          height: 180,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QrCode.CorrectLevel.M,
+        })
+      } catch (error) {
+        console.error('Failed to render token QR code:', error)
+        newTokenQr.innerHTML = ''
+        newTokenQrError.textContent = t('apiKeys.qrError')
+        newTokenQrError.classList.remove('hidden')
+      }
+    }
 
     async function loadApiKeys() {
       keysLoading.classList.remove('hidden')
@@ -226,6 +269,8 @@ import Layout from '../../layouts/Layout.astro'
       
       createError.classList.add('hidden')
       newTokenContainer.classList.add('hidden')
+      newTokenQr.innerHTML = ''
+      newTokenQrError.classList.add('hidden')
       createBtn.disabled = true
       createBtn.textContent = t('common.saving') || 'Saving...'
       
@@ -252,6 +297,7 @@ import Layout from '../../layouts/Layout.astro'
         // Show the new token
         newTokenInput.value = data.token
         newTokenContainer.classList.remove('hidden')
+        void renderTokenQr(data.token)
         
         // Reset form
         createForm.reset()
