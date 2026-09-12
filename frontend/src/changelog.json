@@ -1,6 +1,26 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "change", "text": "Die Seite \"Display\" heißt jetzt \"AMS View\" und wurde neu gestaltet: Jedes Fach ist ein Farbfeld mit gut lesbarer Beschriftung, reguläre AMS-Einheiten stehen in einer Reihe, AMS-HT und externe Halter in der Zeile darunter. Vier AMS-Einheiten liegen bei genügend Platz nebeneinander und bei schmalem Fenster als 2×2 (nie 3+1), der Kiosk-Modus nutzt die volle Fensterbreite. In der Seitenleiste steht \"AMS View\" jetzt unter \"Drucker\", \"Standorte\" darunter. (Beigetragen von wolfrage76)" },
+          { "type": "feature", "text": "Die AMS View hat jetzt eine Drucker-Auswahl (alle Drucker oder ein einzelner). Die Auswahl steht in der Adresse (\"?printer=…\"), sodass ein Kiosk-Display dauerhaft auf einem Drucker bleiben kann. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Mehrere Korrekturen in der AMS View: Bei H2/H2C erscheinen die externen Halter jetzt als zwei Fächer (\"Ext1\"/\"Ext2\") statt vier übrig gebliebener Einträge, belegte Fächer verlinken auf die zugewiesene Spule, leere AMS-Einheiten verschwinden nicht mehr zwischen zwei Aktualisierungen, Farben werden mit dem Herstellernamen benannt, die Zuführfächer der AMS-HT sind markiert, und \"Trocknen\" erscheint nur noch, wenn tatsächlich ein Trocknungszyklus läuft. (Beigetragen von wolfrage76)" },
+          { "type": "feature", "text": "RFID-UIDs werden jetzt genau in der übermittelten Schreibweise gespeichert; verglichen wird weiterhin unabhängig von Trennzeichen, \"04:EF:14\" findet also auch \"04ef14\". Neu in den App-Einstellungen: \"Doppelpunkte in RFID-UIDs anzeigen\" steuert die Darstellung in Spulenliste, Detailseite und RFID-Dialogen. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Nach dem Schreiben eines Tags an der NFC-Waage wird die Spule jetzt auch dann automatisch zugewiesen, wenn die UID noch nicht in der Spule gespeichert ist. Außerdem überschreibt die Tag-Rückmeldung ein bereits bekanntes Restgewicht nicht mehr mit dem Bruttowert der Waage, und eine aktivierte automatische Zuweisung ohne bereiten Treiber wird jetzt im Log gemeldet statt still zu scheitern. (Beigetragen von wolfrage76)" }
+        ],
+        "en": [
+          { "type": "change", "text": "The \"Display\" page is now called \"AMS View\" and has been redesigned: every bay is a colour swatch with readable labels, regular AMS units sit on one row and AMS-HT plus external holders on the line below. Four AMS units go 4-across when there is room and 2×2 when the window is narrow (never 3+1), and kiosk mode uses the full viewport width. In the sidebar, \"AMS View\" now sits under \"Printers\", with \"Locations\" below it. (Contributed by wolfrage76)" },
+          { "type": "feature", "text": "AMS View now has a printer selector (all printers, or a single machine). The choice is kept in the address (\"?printer=…\"), so a kiosk display can stay on one printer. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "Several AMS View fixes: on H2/H2C the external holders now show as two bays (\"Ext1\"/\"Ext2\") instead of four leftover entries, assigned bays link to their spool, empty AMS units no longer disappear between refreshes, colours are named using the manufacturer's colour name, AMS-HT feeding bays are marked, and \"Drying\" only appears while a drying cycle is actually running. (Contributed by wolfrage76)" },
+          { "type": "feature", "text": "RFID UIDs are now stored exactly as submitted, while matching stays independent of separators — \"04:EF:14\" still finds \"04ef14\". New in App Settings: \"Show colons in RFID UIDs\" controls how UIDs are displayed in the spool list, detail pages and RFID dialogs. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "After writing a tag on the NFC scale, the spool is now auto-assigned even when the UID has not been stored on the spool yet. The tag result also no longer overwrites a known remaining weight with the scale's gross reading, and auto-assign being enabled without an armed driver is now reported in the log instead of failing silently. (Contributed by wolfrage76)" }
+        ]
+      }
+    },
+    {
       "version": "1.3.1",
       "date": "",
       "changes": {
