@@ -45,7 +45,10 @@ from app.models import (
     Spool,
     SpoolEvent,
     SpoolStatus,
-    SystemExtraField,
+)
+from app.services.custom_field_search import (
+    any_custom_field_matches,
+    searchable_custom_field_keys,
 )
 from app.services.spool_service import SpoolService
 
@@ -329,21 +332,21 @@ async def list_spools(
         if id_search.isdigit() and len(id_search) <= 18:
             or_conditions.append(Spool.id == int(id_search))
 
-        # Match on the *values* of defined spool extra fields (custom_fields JSON).
-        # custom_fields[key].as_string() compiles to json_extract(..., '$.key')
-        # on SQLite and custom_fields ->> 'key' on Postgres, so only values are
-        # searched, not the field keys themselves.
-        ef_keys = (
-            await db.execute(
-                select(SystemExtraField.key).where(
-                    SystemExtraField.target_type == "spool"
-                )
+        # Match on the *values* of extra fields — never on the field keys. A
+        # field counts whether it is defined system-wide, only on the record
+        # (custom_field_definitions) or not at all, and filament fields count
+        # too because the filament is already joined here (issue #147).
+        dialect = db.get_bind().dialect.name
+        for column, table, target_type in (
+            (Spool.custom_fields, "spools", "spool"),
+            (Filament.custom_fields, "filaments", "filament"),
+        ):
+            keys = await searchable_custom_field_keys(
+                db, table=table, target_type=target_type
             )
-        ).scalars().all()
-        for key in ef_keys:
-            or_conditions.append(
-                Spool.custom_fields[key].as_string().ilike(search_term)
-            )
+            match = any_custom_field_matches(column, keys, search, dialect=dialect)
+            if match is not None:
+                or_conditions.append(match)
 
         conditions.append(or_(*or_conditions))
         needs_filament_join = True

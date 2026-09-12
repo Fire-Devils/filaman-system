@@ -5,9 +5,11 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "fix", "text": "Die Suche auf der Spulenseite findet Extrafeld-Werte jetzt unabhängig davon, wie das Feld entstanden ist: systemweit definiert, nur an der einzelnen Spule definiert (z. B. über die API angelegt) oder ganz ohne Definition. Zusätzlich werden jetzt auch die Extrafelder des zugehörigen Filaments durchsucht, verschachtelte Felder gefunden und Ja/Nein-Werte einheitlich behandelt. Gesucht wird weiterhin nur in den Werten, nicht in den Feldnamen. (Gemeldet von mark77-DE)" },
           { "type": "removed", "text": "Fünf weitere Berechtigungen, die in der Rollenverwaltung auswählbar waren, aber nirgends geprüft wurden, sind entfernt: \"Farben anzeigen\", \"Standorte anzeigen\" und \"Hersteller anzeigen\" (Lesen ist grundsätzlich für jeden angemeldeten Zugang erlaubt) sowie \"Eigene API-Schlüssel ändern\" und \"Eigene API-Schlüssel erneuern\", für die es gar keine Funktion gibt. An den tatsächlichen Rechten bestehender Rollen ändert sich dadurch nichts." }
         ],
         "en": [
+          { "type": "fix", "text": "The search on the spools page now finds extra-field values no matter how the field came to be: defined system-wide, defined on the individual spool (for example created through the API) or with no definition at all. It now also searches the extra fields of the linked filament, matches nested fields and treats yes/no values consistently. As before, only values are searched, never field names. (Reported by mark77-DE)" },
           { "type": "removed", "text": "Five more permissions that could be selected in the role editor but were never checked have been removed: \"View colors\", \"View locations\" and \"View manufacturers\" (reading is open to every authenticated principal anyway), plus \"Update own API keys\" and \"Rotate own API keys\", for which no feature exists. Nothing your existing roles are actually allowed to do changes." }
         ]
       }

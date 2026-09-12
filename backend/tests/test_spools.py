@@ -462,6 +462,146 @@ class TestSpoolCRUD:
         assert response.json()["total"] == 0
 
     @pytest.mark.asyncio
+    async def test_list_spools_search_by_record_local_extra_field(
+        self, auth_client, db_session
+    ):
+        """The case from issue #147: the field is defined on the record only."""
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            custom_fields={"sampleboard_uid": "04:D3:4F:51:6F:61:81"},
+            custom_field_definitions={
+                "sampleboard_uid": {
+                    "label": "Sample Board - UID",
+                    "field_type": "text",
+                }
+            },
+        )
+        await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            custom_fields={"sampleboard_uid": "04:AA:BB:CC:DD:EE:FF"},
+        )
+
+        response = await client.get("/api/v1/spools?search=04:D3:4F:51:6F:61:81")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_by_undefined_extra_field(
+        self, auth_client, db_session
+    ):
+        """A value written without any definition is searchable too (#147)."""
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            custom_fields={"bambu_color_name": "Olive Green"},
+        )
+
+        response = await client.get("/api/v1/spools?search=Olive Green")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_by_filament_extra_field(
+        self, auth_client, db_session
+    ):
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        filament.custom_fields = {"supplier_sku": "SKU-4711"}
+        other_filament = await _create_filament(
+            db_session, manufacturer.id, designation="Other PLA"
+        )
+        await db_session.commit()
+
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(db_session, filament.id, status.id)
+        await _create_spool(db_session, other_filament.id, status.id)
+
+        response = await client.get("/api/v1/spools?search=SKU-4711")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_by_nested_extra_field(
+        self, auth_client, db_session
+    ):
+        """Dotted keys are a nested path, not a flat member name."""
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            custom_fields={"sample": {"board": {"uid": "NESTED-777"}}},
+        )
+        await _create_spool(db_session, filament.id, status.id)
+
+        response = await client.get("/api/v1/spools?search=NESTED-777")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_by_boolean_extra_field(
+        self, auth_client, db_session
+    ):
+        """SQLite stores JSON booleans as 1/0, PostgreSQL as true/false."""
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(
+            db_session, filament.id, status.id, custom_fields={"dried": True}
+        )
+        await _create_spool(
+            db_session, filament.id, status.id, custom_fields={"dried": False}
+        )
+
+        response = await client.get("/api/v1/spools?search=true")
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
+    async def test_list_spools_search_object_extra_field_ignores_spacing(
+        self, auth_client, db_session
+    ):
+        """Whitespace in the term must not decide whether an object matches."""
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        target = await _create_spool(
+            db_session,
+            filament.id,
+            status.id,
+            custom_fields={"temp_range": {"min": 10, "max": 20}},
+        )
+
+        response = await client.get('/api/v1/spools?search="min": 10')
+        assert response.status_code == 200
+        assert [item["id"] for item in response.json()["items"]] == [target.id]
+
+    @pytest.mark.asyncio
     async def test_get_spool_with_filament(self, auth_client, db_session):
         client, _ = auth_client
 
