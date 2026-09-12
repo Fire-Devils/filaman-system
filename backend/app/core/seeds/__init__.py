@@ -70,11 +70,10 @@ PERMISSIONS = [
         "description": "Delete filaments",
         "category": "filaments",
     },
-    {
-        "key": "manufacturers:read",
-        "description": "View manufacturers",
-        "category": "manufacturers",
-    },
+    # manufacturers:read / colors:read / locations:read were removed in migration
+    # d5f3b8c2a614: reading is open to every authenticated principal (the list and
+    # detail endpoints use PrincipalDep), so nothing ever checked these keys.
+    # See docs/permissions.md before re-adding them.
     {
         "key": "manufacturers:create",
         "description": "Create manufacturers",
@@ -90,7 +89,6 @@ PERMISSIONS = [
         "description": "Delete manufacturers",
         "category": "manufacturers",
     },
-    {"key": "colors:read", "description": "View colors", "category": "colors"},
     {"key": "colors:create", "description": "Create colors", "category": "colors"},
     {"key": "colors:update", "description": "Update colors", "category": "colors"},
     {"key": "colors:delete", "description": "Delete colors", "category": "colors"},
@@ -133,7 +131,6 @@ PERMISSIONS = [
         "description": "Create spool location moves",
         "category": "spool_events",
     },
-    {"key": "locations:read", "description": "View locations", "category": "locations"},
     {
         "key": "locations:create",
         "description": "Create locations",
@@ -184,20 +181,15 @@ PERMISSIONS = [
         "category": "user_api_keys",
     },
     {
-        "key": "user_api_keys:update_own",
-        "description": "Update own API keys",
-        "category": "user_api_keys",
-    },
-    {
-        "key": "user_api_keys:rotate_own",
-        "description": "Rotate own API keys",
-        "category": "user_api_keys",
-    },
-    {
         "key": "user_api_keys:delete_own",
         "description": "Delete own API keys",
         "category": "user_api_keys",
     },
+    # user_api_keys:update_own / :rotate_own were removed in migration
+    # d5f3b8c2a614: me_api_keys.py has no update and no rotate endpoint, so the
+    # keys could never be checked. The three keys above stay deliberately
+    # unenforced (self-service on the caller's own keys) — see
+    # docs/permissions.md.
     {
         "key": "admin:users_manage",
         "description": "Manage users (admin)",
@@ -241,19 +233,14 @@ ROLES = [
 
 VIEWER_PERMISSIONS = [
     "filaments:read",
-    "manufacturers:read",
-    "locations:read",
     "spools:read",
     "spool_events:read",
     "printers:read",
     "display:read",
-    "colors:read",
 ]
 
 USER_PERMISSIONS = [
     "filaments:read",
-    "manufacturers:read",
-    "locations:read",
     "printers:read",
     "display:read",
     "spools:read",
@@ -267,8 +254,6 @@ USER_PERMISSIONS = [
     "spool_events:create_move_location",
     "user_api_keys:read_own",
     "user_api_keys:create_own",
-    "user_api_keys:update_own",
-    "user_api_keys:rotate_own",
     "user_api_keys:delete_own",
 ]
 

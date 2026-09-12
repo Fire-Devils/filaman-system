@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "removed", "text": "Fünf weitere Berechtigungen, die in der Rollenverwaltung auswählbar waren, aber nirgends geprüft wurden, sind entfernt: \"Farben anzeigen\", \"Standorte anzeigen\" und \"Hersteller anzeigen\" (Lesen ist grundsätzlich für jeden angemeldeten Zugang erlaubt) sowie \"Eigene API-Schlüssel ändern\" und \"Eigene API-Schlüssel erneuern\", für die es gar keine Funktion gibt. An den tatsächlichen Rechten bestehender Rollen ändert sich dadurch nichts." }
+        ],
+        "en": [
+          { "type": "removed", "text": "Five more permissions that could be selected in the role editor but were never checked have been removed: \"View colors\", \"View locations\" and \"View manufacturers\" (reading is open to every authenticated principal anyway), plus \"Update own API keys\" and \"Rotate own API keys\", for which no feature exists. Nothing your existing roles are actually allowed to do changes." }
+        ]
+      }
+    },
+    {
       "version": "1.3.3",
       "date": "",
       "changes": {
