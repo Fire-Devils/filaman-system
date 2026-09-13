@@ -561,7 +561,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
-            <td colspan="16" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
+            <td colspan="17" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
           </tr>
         `
       }
@@ -675,7 +675,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || statusId || locationId || manufacturerId || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="16" style="text-align: center; color: var(--text-muted);">
+            <td colspan="17" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
@@ -697,7 +697,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || statusId || locationId || manufacturerId || material
         tbody.innerHTML = `
           <tr>
-            <td colspan="16" style="text-align: center; color: var(--text-muted);">
+            <td colspan="17" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
@@ -730,7 +730,7 @@ import Layout from '../../layouts/Layout.astro'
         const gid = `group-${groupIdx}`
         html += `
           <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
-            <td colspan="16" style="padding: 10px 12px; color: var(--text);">
+            <td colspan="17" style="padding: 10px 12px; color: var(--text);">
               <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.colorDots} ${group.label}</span>
               <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${group.manufacturer} &middot; ${group.material} &middot; ${t('spools.spoolsInGroup', { count: group.spools.length })}</span>
             </td>
