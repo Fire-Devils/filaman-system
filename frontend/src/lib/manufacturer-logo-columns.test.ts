@@ -10,6 +10,12 @@ async function compilePage(path: string) {
 }
 
 describe('manufacturer logo table columns', () => {
+  it.each(['manufacturers', 'filaments', 'spools'])('keeps the %s logo column wide enough for its logo', async page => {
+    const { code } = await compilePage(`../pages/${page}/index.astro`)
+
+    expect(code).toContain('style="min-width: 114px;"')
+  })
+
   it('keeps the manufacturer name keyed and bounds dynamic logos inline', async () => {
     const { code } = await compilePage('../pages/manufacturers/index.astro')
 
