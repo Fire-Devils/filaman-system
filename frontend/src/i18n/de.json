@@ -979,7 +979,6 @@
     "failedDeleteUser": "Benutzer konnte nicht gelöscht werden",
     "failedCreateUser": "Benutzer konnte nicht erstellt werden",
     "failedUpdateUser": "Benutzer konnte nicht aktualisiert werden",
-    "dropdownOptionsRequired": "Mindestens eine Dropdown-Option ist erforderlich",
     "deviceTokens": "Geräte-Token",
     "createDevice": "Gerät erstellen",
     "scopes": "Bereiche",

@@ -978,7 +978,6 @@
     "failedDeleteUser": "Failed to delete user",
     "failedCreateUser": "Failed to create user",
     "failedUpdateUser": "Failed to update user",
-    "dropdownOptionsRequired": "At least one dropdown option is required",
     "deviceTokens": "Device Tokens",
     "createDevice": "Create Device",
     "scopes": "Scopes",
