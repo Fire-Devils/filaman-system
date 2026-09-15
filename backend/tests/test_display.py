@@ -134,6 +134,105 @@ def test_canonicalize_external_vt_ids():
     assert canonicalize_slot_key(0, 2) == (0, 2)
 
 
+def test_x1c_string_temp_and_humidity_are_parsed():
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": {
+                "ams": [
+                    {
+                        "id": "0",
+                        "humidity": "4",
+                        "temp": "26.5",
+                        "tray": [{"id": "0", "tray_type": "PLA"}],
+                    }
+                ]
+            },
+        }
+    )
+    unit = live["ams"][0]
+    assert unit["temperature"] == 26.5
+    assert unit["humidity"] == 4
+
+
+def test_x1c_prefers_humidity_raw_percent():
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [
+                {"id": 0, "humidity": 4, "humidity_raw": 23, "temp": 25.0, "tray": []},
+            ],
+        }
+    )
+    unit = live["ams"][0]
+    assert unit["humidity"] == 23
+    assert unit["temperature"] == 25.0
+
+
+def test_x1c_wrapper_climate_fills_tray_only_units():
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": {
+                "ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]}],
+                "humidity": "16",
+                "temp": "24.2",
+                "tray_now": "255",
+            },
+        }
+    )
+    unit = live["ams"][0]
+    assert unit["temperature"] == 24.2
+    assert unit["humidity"] == 16
+
+
+def test_driver_ams_units_climate_matches_printers_page():
+    """Printers page reads health.ams_units; AMS View must show those numbers."""
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [{"id": 0, "tray": [{"id": 0, "tray_type": "PLA"}]}],
+            "ams_units": [{"ams_id": 0, "humidity": 26, "temp": 23.8}],
+        }
+    )
+    assert live["ams"][0]["humidity"] == 26
+    assert live["ams"][0]["temperature"] == 23.8
+
+
+def test_zero_ams_temp_is_not_a_reading():
+    live = normalize_driver_state(
+        {"connected": True, "ams": [{"id": 0, "temp": "0.0", "humidity": "16", "tray": []}]}
+    )
+    assert live["ams"][0]["temperature"] is None
+    assert live["ams"][0]["humidity"] == 16
+
+
+def test_h2c_humidity_percent_is_kept():
+    live = normalize_driver_state(
+        {"connected": True, "ams": [{"id": 0, "temp": 19.5, "humidity": 16, "tray": []}]}
+    )
+    assert live["ams"][0]["temperature"] == 19.5
+    assert live["ams"][0]["humidity"] == 16
+
+
+def test_extract_trays_accepts_dict_and_single_object():
+    from app.services.display_service import extract_trays
+
+    assert extract_trays({"tray": {"0": {"tray_type": "PLA", "tray_color": "FF0000FF"}}})[0]["tray_type"] == "PLA"
+    assert extract_trays({"tray": {"id": 0, "tray_type": "PETG"}})[0]["tray_type"] == "PETG"
+
+
+def test_exists_without_tray_type_is_loaded():
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [{"id": 128, "is_ams_ht": True, "tray": [{"id": 0, "state": 9, "exists": True}]}],
+        }
+    )
+    ht = live["ams"][0]["slots"][0]
+    assert ht["has_filament"] is True
+
+
 def test_legacy_external_keys_collapse_to_two_bays():
     """H2C once stored both 255-0/1 and mistaken 255-254/255 — board must show Ext1/Ext2 only."""
     fm = {
@@ -312,6 +411,43 @@ class _P:
         self.id, self.name, self.driver_key = id, name, driver_key
 
 
+def test_ams_units_climate_fills_filaman_only_board():
+    fm = {(0, 0): {"present": True, "material": "PLA", "color": "#111111"}}
+    out = build_printer_display(
+        _P(name="X1C"),
+        fm,
+        {"connected": True, "ams": [], "ams_units": [{"ams_id": 0, "humidity": 16, "temp": 26.8}]},
+    )
+    assert out["ams"][0]["humidity"] == 16
+    assert out["ams"][0]["temperature"] == 26.8
+
+
+def test_unlinked_ht_meta_fills_empty_live_unit():
+    """H2C HT often has driver tray_type in assignment.meta but no FilaMan spool.
+
+    A thin status still lists the HT unit (climate / empty tray[]), which used
+    to paint an empty HT1/HT2 while the printer page showed PLA.
+    """
+    fm = {
+        (128, 0): {"present": True, "material": "PLA", "color": "#00FF00"},
+        (129, 1): {"present": True, "material": "PETG", "color": "#0000FF"},
+    }
+    status = {
+        "connected": True,
+        "ams": [
+            {"id": 128, "is_ams_ht": True, "temp": 45.0, "humidity": 2, "tray": []},
+            {"id": 129, "is_ams_ht": True, "temp": 40.0, "humidity": 1, "tray": []},
+        ],
+    }
+    out = build_printer_display(_P(name="H2C"), fm, status)
+    hts = [u for u in out["ams"] if u["kind"] == "ams_ht"]
+    assert [(u["label"], u["slots"][0]["material"], u["slots"][0]["empty"]) for u in hts] == [
+        ("HT1", "PLA", False),
+        ("HT2", "PETG", False),
+    ]
+    assert all(len(u["slots"]) == 1 and u["slots"][0]["slot"] == 0 for u in hts)
+
+
 def test_ht_tray_now_marks_ht_bay():
     status = {
         "connected": True,
@@ -417,6 +553,34 @@ class TestDisplayEndpoint:
     async def test_requires_auth(self, client):
         response = await client.get("/api/v1/display")
         assert response.status_code == 401
+
+    async def test_unlinked_ht_assignment_meta_populates_board(self, auth_client, db_session):
+        client, _ = auth_client
+        printer = await _create_printer(db_session, name="H2C", driver_key="bambuddy")
+        slot = await _create_slot(
+            db_session,
+            printer.id,
+            slot_no=512,
+            name="AMS HT 1 Slot 1",
+            custom_fields={"slot_index": "128-0"},
+        )
+        slot.assignment = PrinterSlotAssignment(
+            present=True,
+            meta={"tray_type": "PLA", "tray_color": "00FF00FF", "nozzle_temp_min": 190, "nozzle_temp_max": 220},
+        )
+        db_session.add(slot.assignment)
+        await db_session.commit()
+
+        response = await client.get("/api/v1/display")
+        assert response.status_code == 200, response.text
+        [p] = response.json()["printers"]
+        ht = next(u for u in p["ams"] if u["kind"] == "ams_ht")
+        bay = ht["slots"][0]
+        assert bay["empty"] is False
+        assert bay["material"] == "PLA"
+        assert bay["color"] == "#00FF00"
+        assert bay["spool_id"] is None
+        assert bay["nozzle_min"] == 190 and bay["nozzle_max"] == 220
 
     async def test_user_gets_board_from_assignments(self, auth_client, db_session):
         client, _ = auth_client
