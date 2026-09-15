@@ -26,7 +26,14 @@ import Layout from '../../../layouts/Layout.astro'
       fix: { icon: '✓', color: 'var(--info-text, #3b82f6)', de: 'Behoben', en: 'Fixed' },
       change: { icon: '↻', color: 'var(--warning-text, #f59e0b)', de: 'Geändert', en: 'Changed' },
       breaking: { icon: '!', color: 'var(--error-text, #ef4444)', de: 'Breaking', en: 'Breaking' },
+      security: { icon: '⚠', color: 'var(--error-text, #ef4444)', de: 'Sicherheit', en: 'Security' },
+      improved: { icon: '↑', color: 'var(--accent, #6366f1)', de: 'Verbessert', en: 'Improved' },
+      removed: { icon: '−', color: 'var(--text-muted, #6b7280)', de: 'Entfernt', en: 'Removed' },
     }
+
+    // Synonyme, die in aelteren Changelog-Eintraegen vorkommen
+    typeLabels.added = typeLabels.feature
+    typeLabels.improvement = typeLabels.improved
 
     for (const version of changelogData.versions) {
       const changes = version.changes[lang as keyof typeof version.changes] || version.changes['en'] || []
