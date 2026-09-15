@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import de from '../i18n/de.json'
 import en from '../i18n/en.json'
+// French (fr) locale — contributed by Nanostra (Frédéric Dubus)
 import fr from '../i18n/fr.json'
 
 function resolveCatalogValue(catalog: object, key: string): unknown {
@@ -17,6 +18,7 @@ describe('live page translation consumers', () => {
   it.each([
     ['en', en],
     ['de', de],
+    // French (fr) locale — contributed by Nanostra (Frédéric Dubus)
     ['fr', fr],
   ] as const)('provides every static plugin-page key in %s', (_locale, catalog) => {
     const source = readFileSync(
