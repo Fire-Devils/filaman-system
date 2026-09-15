@@ -16,7 +16,7 @@ class AppSettingsResponse(BaseModel):
     currency: str
     rfid_extended_data_enabled: bool
     rfid_protocol: str
-    rfid_display_colons: bool = True
+    rfid_display_colons: bool = False
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: str = "generic"
 
@@ -61,7 +61,7 @@ async def get_app_settings(
             currency="EUR",
             rfid_extended_data_enabled=False,
             rfid_protocol="openspool",
-            rfid_display_colons=True,
+            rfid_display_colons=False,
         )
 
     return AppSettingsResponse(
@@ -126,7 +126,7 @@ async def get_public_app_settings(db: DBSession):
             currency="EUR",
             rfid_extended_data_enabled=False,
             rfid_protocol="openspool",
-            rfid_display_colons=True,
+            rfid_display_colons=False,
         )
     else:
         resp = AppSettingsResponse(

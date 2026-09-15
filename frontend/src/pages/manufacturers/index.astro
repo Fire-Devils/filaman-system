@@ -65,6 +65,7 @@ import Layout from '../../layouts/Layout.astro'
       <thead>
         <tr>
           <th data-i18n="manufacturers.name" data-sort="name" class="sortable col-name">Name</th>
+          <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="manufacturers.url" data-sort="url" class="sortable col-url">URL</th>
           <th data-i18n="manufacturers.filaments" data-sort="filament_count" class="sortable col-filaments">Filaments</th>
           <th data-i18n="manufacturers.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
@@ -77,7 +78,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="manufacturers-table">
         <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
+          <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -429,7 +430,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
+            <td colspan="10" style="text-align: center; color: var(--error-text); padding: 24px;">${t('manufacturers.failedLoad')}</td>
           </tr>
         `
       }
@@ -548,7 +549,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
               ${hasFilters ? t('manufacturers.noResults') : t('manufacturers.noManufacturers')}
             </td>
           </tr>
@@ -564,7 +565,8 @@ import Layout from '../../layouts/Layout.astro'
       // Note: escapeHtml() is used for all user-supplied data; URLs use escapeHtml for both href and text
       tbody.innerHTML = paged.map(mf => `
         <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
-          <td class="col-name" style="font-weight: 500;">${mf.logo_url ? `<span style="display: inline-flex; align-items: center; gap: 8px;">${escapeHtml(mf.name)}<img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 1.4em; width: auto; flex-shrink: 0; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px;" onerror="this.style.display='none'" /></span>` : escapeHtml(mf.name)}</td>
+          <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}</td>
+          <td class="col-logo" style="padding: 12px; text-align: center;">${mf.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-url">${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
           <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
@@ -1055,6 +1057,7 @@ import Layout from '../../layouts/Layout.astro'
       {
         heading: t('common.columnsStandard'),
         columns: [
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'url', label: t('manufacturers.url') },
           { key: 'filaments', label: t('manufacturers.filaments') },
           { key: 'spools', label: t('manufacturers.spools') },
@@ -1072,7 +1075,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     initColumnPicker({
       storageKey: 'filaman-columns-manufacturers',
-      defaultVisible: ['url', 'filaments', 'spools', 'materials'],
+      defaultVisible: ['logo', 'url', 'filaments', 'spools', 'materials'],
       groups: mfrColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',

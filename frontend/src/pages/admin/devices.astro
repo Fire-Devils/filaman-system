@@ -3,6 +3,22 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Admin Devices">
+  <style>
+    .device-dialog {
+      width: calc(100% - 2rem);
+      max-width: 28rem;
+      max-height: calc(100vh - 2rem);
+      margin: auto;
+      padding: 24px;
+      color: var(--text);
+      overflow-y: auto;
+    }
+
+    .device-dialog::backdrop {
+      background: rgba(0, 0, 0, 0.55);
+    }
+  </style>
+
   <div style="margin-bottom: 24px;">
     <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
   </div>
@@ -38,79 +54,121 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.createDevice">Create Device</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
-        <div>
-          <label for="device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
-          <input type="text" id="device-name" required class="fm-input" />
-        </div>
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.create">Create</button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
+  <dialog id="modal-container" class="fm-card device-dialog" aria-labelledby="modal-title">
+    <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.createDevice">Create Device</h3>
+    <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <label for="device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
+        <input type="text" id="device-name" required class="fm-input" />
+      </div>
+      <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
+      <div style="display: flex; gap: 12px;">
+        <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.create">Create</button>
+        <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
   
-  <div id="token-modal" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.tokenCreated">Device Token Created</h3>
-      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;" data-i18n="admin.tokenWarning">Copy this token now. It will not be shown again.</p>
-      <div style="background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px; font-family: monospace; font-size: 0.85rem; word-break: break-all; margin-bottom: 16px;" id="token-display"></div>
-      <button id="token-copy" class="fm-btn fm-btn-primary" style="width: 100%;" data-i18n="admin.copyToClipboard">Copy to Clipboard</button>
-      <button id="token-close" class="fm-btn fm-btn-outline" style="width: 100%; margin-top: 8px;" data-i18n="common.close">Close</button>
-    </div>
-  </div>
+  <dialog id="token-modal" class="fm-card device-dialog" aria-labelledby="token-modal-title">
+    <h3 id="token-modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.tokenCreated">Device Token Created</h3>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;" data-i18n="admin.tokenWarning">Copy this token now. It will not be shown again.</p>
+    <label for="token-display" class="fm-visually-hidden" data-i18n="admin.deviceCode">Device code</label>
+    <input readonly class="fm-input" style="font-family: monospace; font-size: 0.85rem; margin-bottom: 16px;" id="token-display" />
+    <div id="token-copy-error" class="fm-alert-error hidden" role="alert" style="margin-bottom: 16px;"></div>
+    <button type="button" id="token-copy" class="fm-btn fm-btn-primary" style="width: 100%;" data-i18n="admin.copyToClipboard">Copy to Clipboard</button>
+    <button type="button" id="token-close" class="fm-btn fm-btn-outline" style="width: 100%; margin-top: 8px;" data-i18n="common.close">Close</button>
+  </dialog>
   
-  <div id="edit-modal" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editDevice">Edit Device</h3>
-      <form id="edit-form" style="display: flex; flex-direction: column; gap: 16px;">
-        <input type="hidden" id="edit-device-id" />
-        <div>
-          <label for="edit-device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
-          <input type="text" id="edit-device-name" required class="fm-input" />
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" id="edit-auto-assign" style="width: 18px; height: 18px; cursor: pointer;" />
-          <label for="edit-auto-assign" style="cursor: pointer; font-size: 0.9rem;" data-i18n="admin.autoAssignEnabled">Enable Auto-Assign</label>
-        </div>
-        <div id="edit-timeout-group">
-          <label for="edit-auto-timeout" class="fm-label"><span data-i18n="admin.autoAssignTimeout">Timeout (seconds)</span></label>
-          <input type="number" id="edit-auto-timeout" min="10" max="300" step="1" class="fm-input" />
-        </div>
-        <div id="edit-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="edit-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
-          <button type="button" id="edit-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
+  <dialog id="edit-modal" class="fm-card device-dialog" aria-labelledby="edit-modal-title">
+    <h3 id="edit-modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editDevice">Edit Device</h3>
+    <form id="edit-form" style="display: flex; flex-direction: column; gap: 16px;">
+      <input type="hidden" id="edit-device-id" />
+      <div>
+        <label for="edit-device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
+        <input type="text" id="edit-device-name" required class="fm-input" />
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="edit-auto-assign" style="width: 18px; height: 18px; cursor: pointer;" />
+        <label for="edit-auto-assign" style="cursor: pointer; font-size: 0.9rem;" data-i18n="admin.autoAssignEnabled">Enable Auto-Assign</label>
+      </div>
+      <div id="edit-timeout-group">
+        <label for="edit-auto-timeout" class="fm-label"><span data-i18n="admin.autoAssignTimeout">Timeout (seconds)</span></label>
+        <input type="number" id="edit-auto-timeout" min="10" max="300" step="1" class="fm-input" />
+      </div>
+      <div id="edit-error" class="fm-alert-error hidden" role="alert"></div>
+      <div style="display: flex; gap: 12px;">
+        <button type="submit" id="edit-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+        <button type="button" id="edit-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
   
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { isAbortError } from '../../lib/abort'
+    import { copyText } from '../../lib/clipboard'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { api, fetchAllPages } from '../../lib/api'
     await initI18n()
 
-    let devices: any[] = []
-    
-    function getCsrfToken(): string {
-      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
-      return match ? decodeURIComponent(match[1]) : ''
+    interface DeviceRecord {
+      id: number
+      name: string
+      is_active: boolean
+      registration_pending: boolean
+      ip_address: string | null
+      auto_assign_enabled: boolean
+      auto_assign_timeout: number
+      last_used_at: string | null
+      is_online: boolean
     }
+
+    type DeviceAdminWindow = {
+      __fmAlert: (message: string) => Promise<boolean>
+      __fmConfirm: (message: string) => Promise<boolean>
+    }
+
+    const dialogWindow = window as unknown as DeviceAdminWindow
+    const createModal = document.getElementById('modal-container') as HTMLDialogElement
+    const tokenModal = document.getElementById('token-modal') as HTMLDialogElement
+    const editModal = document.getElementById('edit-modal') as HTMLDialogElement
+    const modals = [createModal, tokenModal, editModal]
+    let devices: DeviceRecord[] = []
+    let returnFocus: HTMLElement | null = null
+
+    function openModal(modal: HTMLDialogElement, initialFocus: HTMLElement) {
+      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      modal.showModal()
+      initialFocus.focus()
+    }
+
+    function closeModal(modal: HTMLDialogElement) {
+      modal.close()
+    }
+
+    modals.forEach(modal => {
+      modal.addEventListener('close', () => {
+        returnFocus?.focus()
+        returnFocus = null
+      })
+    })
+
+    tokenModal.addEventListener('cancel', event => {
+      event.preventDefault()
+    })
     
     async function loadDevices() {
       try {
-        const response = await fetch('/api/v1/admin/devices', { credentials: 'include', signal: getAbortSignal() })
-        devices = await response.json().then(d => d.items)
+        devices = (await fetchAllPages<DeviceRecord>('/api/v1/admin/devices')).items
         renderDevices()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load devices:', error)
+        document.getElementById('devices-table')!.innerHTML = `
+          <tr><td colspan="6" role="alert" style="text-align: center; color: var(--error-text);">
+            ${t('admin.failedLoadDevices')}
+          </td></tr>
+        `
       }
     }
     
@@ -128,7 +186,7 @@ import Layout from '../../layouts/Layout.astro'
         let statusColor = 'var(--accent-2)' // Green
         
         if (!d.is_active) {
-          if (d.token_hash === 'pending_registration') {
+          if (d.registration_pending) {
             statusLabel = t('admin.pending')
             statusColor = 'orange'
           } else {
@@ -142,17 +200,18 @@ import Layout from '../../layouts/Layout.astro'
           statusLabel = t('common.offline')
           statusColor = 'var(--text-muted)'
         }
+        const deviceHost = d.ip_address?.includes(':') ? `[${d.ip_address}]` : d.ip_address
         
         return `
         <tr>
-          <td>${d.name}</td>
+          <td>${escapeHtml(d.name)}</td>
           <td>
             <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${statusColor}; border: 1px solid ${statusColor}40;">
               ${statusLabel}
             </span>
           </td>
           <td style="font-family: monospace; font-size: 0.85rem;">
-            ${d.ip_address ? `<a href="http://${d.ip_address}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${d.ip_address}</a>` : '-'}
+            ${deviceHost ? `<a href="http://${escapeHtml(deviceHost)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${escapeHtml(d.ip_address!)}</a>` : '-'}
           </td>
           <td>
             <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${d.auto_assign_enabled ? 'var(--accent-2)' : 'var(--text-muted)'}; border: 1px solid ${d.auto_assign_enabled ? 'var(--accent-2)' : 'var(--text-muted)'}40;">
@@ -173,26 +232,17 @@ import Layout from '../../layouts/Layout.astro'
           const button = e.currentTarget as HTMLButtonElement
           const id = parseInt(button.dataset.id!)
           
-          if (!(await (window as any).__fmConfirm(t('admin.confirmDeleteDevice')))) return
+          if (!(await dialogWindow.__fmConfirm(t('admin.confirmDeleteDevice')))) return
           
           try {
-            const response = await fetch(`/api/v1/admin/devices/${id}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}))
-              throw new Error(errorData.message || 'Failed to delete device')
-            }
-            
+            await api.delete(`/admin/devices/${id}`)
             loadDevices()
-          } catch (err: any) {
+          } catch (err: unknown) {
             if (isAbortError(err)) return
             console.error('Delete device error:', err)
-            await (window as any).__fmAlert(err.message || t('admin.failedDeleteDevice'))
+            await dialogWindow.__fmAlert(
+              err instanceof Error ? err.message : t('admin.failedDeleteDevice'),
+            )
           }
         })
       })
@@ -209,27 +259,39 @@ import Layout from '../../layouts/Layout.astro'
           ;(document.getElementById('edit-auto-assign') as HTMLInputElement).checked = device.auto_assign_enabled || false
           ;(document.getElementById('edit-auto-timeout') as HTMLInputElement).value = String(device.auto_assign_timeout || 60)
           toggleTimeoutVisibility()
-          document.getElementById('edit-modal')!.classList.add('open')
+          openModal(
+            editModal,
+            document.getElementById('edit-device-name')!,
+          )
         })
       })
     }
     
     function showToken(token: string) {
-      const modal = document.getElementById('token-modal')!
-      const display = document.getElementById('token-display')!
+      const display = document.getElementById('token-display') as HTMLInputElement
+      const copyButton = document.getElementById('token-copy') as HTMLButtonElement
       
-      display.textContent = token
-      modal.classList.add('open')
+      display.value = token
+      copyButton.textContent = t('admin.copyToClipboard')
+      document.getElementById('token-copy-error')!.classList.add('hidden')
+      openModal(tokenModal, copyButton)
     }
     
-    document.getElementById('token-copy')?.addEventListener('click', () => {
-      const token = document.getElementById('token-display')!.textContent!
-      navigator.clipboard.writeText(token)
-      ;(document.getElementById('token-copy') as HTMLButtonElement).textContent = t('admin.copied')
+    document.getElementById('token-copy')?.addEventListener('click', async () => {
+      const display = document.getElementById('token-display') as HTMLInputElement
+      const copyError = document.getElementById('token-copy-error')!
+      if (await copyText(display.value)) {
+        copyError.classList.add('hidden')
+        ;(document.getElementById('token-copy') as HTMLButtonElement).textContent = t('admin.copied')
+      } else {
+        copyError.textContent = t('admin.copyFailed')
+        copyError.classList.remove('hidden')
+        display.select()
+      }
     })
     
     document.getElementById('token-close')?.addEventListener('click', () => {
-      document.getElementById('token-modal')!.classList.remove('open')
+      closeModal(tokenModal)
     })
     
     function toggleTimeoutVisibility() {
@@ -241,7 +303,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('edit-auto-assign')?.addEventListener('change', toggleTimeoutVisibility)
     
     document.getElementById('edit-cancel')?.addEventListener('click', () => {
-      document.getElementById('edit-modal')!.classList.remove('open')
+      closeModal(editModal)
     })
     
     document.getElementById('edit-form')?.addEventListener('submit', async (e) => {
@@ -260,24 +322,17 @@ import Layout from '../../layouts/Layout.astro'
       submitBtn.textContent = t('common.saving')
       
       try {
-        const response = await fetch(`/api/v1/admin/devices/${deviceId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-          credentials: 'include',
-          body: JSON.stringify({ name, auto_assign_enabled: autoAssign, auto_assign_timeout: timeout }),
-          signal: getAbortSignal(),
+        await api.put(`/admin/devices/${deviceId}`, {
+          name,
+          auto_assign_enabled: autoAssign,
+          auto_assign_timeout: timeout,
         })
         
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}))
-          throw new Error(data.message || t('admin.failedUpdateDevice'))
-        }
-        
-        document.getElementById('edit-modal')!.classList.remove('open')
+        closeModal(editModal)
         loadDevices()
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('admin.failedUpdateDevice')
         error.classList.remove('hidden')
       } finally {
         submitBtn.disabled = false
@@ -287,11 +342,14 @@ import Layout from '../../layouts/Layout.astro'
     
     document.getElementById('btn-new')?.addEventListener('click', () => {
       ;(document.getElementById('device-name') as HTMLInputElement).value = ''
-      document.getElementById('modal-container')!.classList.add('open')
+      openModal(
+        createModal,
+        document.getElementById('device-name')!,
+      )
     })
     
     document.getElementById('modal-cancel')?.addEventListener('click', () => {
-      document.getElementById('modal-container')!.classList.remove('open')
+      closeModal(createModal)
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
@@ -307,26 +365,13 @@ import Layout from '../../layouts/Layout.astro'
       submitBtn.textContent = t('common.creating')
       
       try {
-        const response = await fetch('/api/v1/admin/devices', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-          credentials: 'include',
-          body: JSON.stringify({ name }),
-          signal: getAbortSignal(),
-        })
-        
-        if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.message || t('admin.failedCreateDevice'))
-        }
-        
-        const data = await response.json()
-        document.getElementById('modal-container')!.classList.remove('open')
+        const data = await api.post<{ device_code: string }>('/admin/devices', { name })
+        closeModal(createModal)
         showToken(data.device_code)
         loadDevices()
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('admin.failedCreateDevice')
         error.classList.remove('hidden')
       } finally {
         submitBtn.disabled = false

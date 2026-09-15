@@ -30,7 +30,7 @@ export function formatRfidUid(value: string | null | undefined): string {
     return value;
   }
   const upper = compact.toUpperCase();
-  const showColons = localStorage.getItem('rfid_display_colons') !== 'false';
+  const showColons = localStorage.getItem('rfid_display_colons') === 'true';
   return showColons ? upper.match(/.{2}/g)!.join(':') : upper;
 }
 
@@ -38,10 +38,10 @@ export async function initRfidDisplayFormat(): Promise<boolean> {
   try {
     const res = await fetch('/api/v1/app-settings/public-info');
     const data = await res.json();
-    const showColons = data.rfid_display_colons !== false;
+    const showColons = data.rfid_display_colons === true;
     localStorage.setItem('rfid_display_colons', String(showColons));
     return showColons;
   } catch {
-    return localStorage.getItem('rfid_display_colons') !== 'false';
+    return localStorage.getItem('rfid_display_colons') === 'true';
   }
 }

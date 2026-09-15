@@ -236,9 +236,91 @@ def extract_ams_units(state: dict[str, Any]) -> list[dict[str, Any]]:
     ):
         if isinstance(candidate, dict) and isinstance(candidate.get("ams"), list):
             candidate = candidate["ams"]
+        elif isinstance(candidate, dict) and isinstance(candidate.get("ams"), dict):
+            candidate = [u for u in candidate["ams"].values() if isinstance(u, dict)]
+        elif isinstance(candidate, dict) and (
+            isinstance(candidate.get("tray"), (list, dict))
+            or isinstance(candidate.get("trays"), (list, dict))
+            or isinstance(candidate.get("slots"), (list, dict))
+        ):
+            # Single AMS flattened onto the wrapper (common X1C / one-unit payload).
+            return [candidate]
         if isinstance(candidate, list):
             return [u for u in candidate if isinstance(u, dict)]
     return []
+
+
+def _ams_wrapper(state: dict[str, Any]) -> dict[str, Any] | None:
+    """Parent ``ams`` object — X1C often puts humidity/temp here, not on each unit."""
+    for candidate in (state.get("ams"), _deep_get(state, ("print", "ams"))):
+        if not isinstance(candidate, dict):
+            continue
+        if isinstance(candidate.get("ams"), (list, dict)) or "tray_now" in candidate or "ams_exist_bits" in candidate:
+            return candidate
+    return None
+
+
+def _unit_temperature(*payloads: dict[str, Any] | None) -> float | None:
+    """First positive °C. Original AMS / X1C often send ``0`` / ``0.0`` when empty."""
+    for payload in payloads:
+        if not payload:
+            continue
+        for key in ("temperature", "temp", "ams_temp"):
+            value = _as_float(payload.get(key))
+            if value is not None and value > 0:
+                return value
+    return None
+
+
+def _unit_humidity(
+    *payloads: dict[str, Any] | None,
+) -> tuple[float | None, int | None]:
+    """``(percent, optional 1–5 level)``.
+
+    Prefer ``humidity_raw`` (sensor %). Otherwise use ``humidity`` the same way
+    the Printers page does — Bambuddy already resolves raw→percent into that
+    field on ``ams_units``. A leftover 1–5 MQTT index is still a number we can
+    show; AMS View must not hide climate the Printers page already displays.
+    """
+    raw: float | None = None
+    humidity: float | None = None
+    for payload in payloads:
+        if not payload:
+            continue
+        if raw is None:
+            raw = _as_float(_first(payload, ("humidity_raw",)))
+        if humidity is None and payload.get("humidity") not in (None, ""):
+            humidity = _as_float(payload.get("humidity"))
+    if raw is not None and 0 <= raw <= 100:
+        level = int(humidity) if humidity is not None and 1 <= humidity <= 5 else None
+        return raw, level
+    level = int(humidity) if humidity is not None and 1 <= humidity <= 5 else None
+    return humidity, level
+
+
+def _apply_ams_units_climate(
+    units_by_id: dict[int, dict[str, Any]],
+    raw: dict[str, Any] | None,
+) -> None:
+    """Stamp Printers-page climate (driver ``ams_units``) onto AMS View units."""
+    health = raw.get("ams_units") if isinstance(raw, dict) else None
+    if not isinstance(health, list):
+        return
+    for item in health:
+        if not isinstance(item, dict):
+            continue
+        ams_id = canonicalize_slot_key(_as_int(_first(item, ("ams_id", "id"), 0)) or 0, 0)[0]
+        bucket = units_by_id.get(ams_id)
+        if bucket is None:
+            continue
+        temp = _unit_temperature(item)
+        humidity, humidity_level = _unit_humidity(item)
+        if temp is not None:
+            bucket["temperature"] = temp
+        if humidity is not None:
+            bucket["humidity"] = humidity
+        if humidity_level is not None:
+            bucket["humidity_level"] = humidity_level
 
 
 def _unit_drying(unit: dict[str, Any]) -> dict[str, Any] | None:
@@ -258,16 +340,57 @@ def _unit_drying(unit: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _looks_like_tray(payload: dict[str, Any]) -> bool:
+    """True for a single tray object (not a ``{index: tray}`` map)."""
+    return any(
+        key in payload
+        for key in (
+            "tray_type",
+            "tray_color",
+            "material",
+            "filament_type",
+            "tag_uid",
+            "tray_uuid",
+            "remain",
+            "exists",
+            "state",
+            "slot",
+            "tray_id",
+        )
+    )
+
+
 def extract_trays(unit: dict[str, Any]) -> list[dict[str, Any]]:
     for key in ("slots", "trays", "tray"):
         trays = unit.get(key)
         if isinstance(trays, list):
             return [t for t in trays if isinstance(t, dict)]
+        if isinstance(trays, dict):
+            if _looks_like_tray(trays):
+                return [trays]
+            out: list[dict[str, Any]] = []
+            for idx, tray in trays.items():
+                if not isinstance(tray, dict):
+                    continue
+                if "id" not in tray and "slot" not in tray and "tray_id" not in tray:
+                    slot_no = _as_int(idx)
+                    if slot_no is not None:
+                        tray = {**tray, "id": slot_no}
+                out.append(tray)
+            if out:
+                return out
     return []
 
 
 def _tray_has_filament(tray: dict[str, Any]) -> bool:
-    return bool(str(_first(tray, ("material", "tray_type", "filament_type"), "") or "").strip())
+    if bool(str(_first(tray, ("material", "tray_type", "filament_type"), "") or "").strip()):
+        return True
+    state = _as_int(tray.get("state"))
+    if state in (11, 12):
+        return True
+    # H2C/H2D 01.04+ can report a loaded "?" spool with no tray_type. Bambuddy
+    # sets ``exists`` from tray_exist_bits; treat that as a filled bay.
+    return tray.get("exists") is True and state not in (0, 8)
 
 
 def _normalize_live_slot(tray: dict[str, Any], slot_no: int) -> dict[str, Any]:
@@ -337,7 +460,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         active_tray          extruder_slots[active_extruder] | active_tray | tray_now
                              (ams*4+slot; AMS-HT 128–135 = that unit, slot 0; 254/255 = none)
         hms                  [{code, msg}] | []
-        ams[]                ams_id|id, is_ams_ht, temperature|temp, humidity,
+        ams[]                ams_id|id, is_ams_ht, temperature|temp, humidity
+                             (percent, or 1–5 level on X1C), humidity_raw (%),
                              dry_status, dry_target_temp, dry_time,
                              slots|trays|tray[]: slot|id|tray_id, material|tray_type,
                              color|tray_color, remaining_percent|remain, tag_uid,
@@ -408,27 +532,33 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
 
     units: list[dict[str, Any]] = []
     units_by_id: dict[int, dict[str, Any]] = {}
+    ams_parent = _ams_wrapper(raw)
     for unit in extract_ams_units(raw):
         raw_ams_id = _as_int(_first(unit, ("ams_id", "id"), 0)) or 0
         ams_id = canonicalize_slot_key(raw_ams_id, 0)[0]
         kind = ams_kind(ams_id, unit)
         drying = _unit_drying(unit)
+        temperature = _unit_temperature(unit, ams_parent)
+        humidity, humidity_level = _unit_humidity(unit, ams_parent)
         bucket = units_by_id.get(ams_id)
         if bucket is None:
             bucket = {
                 "ams_id": ams_id,
                 "kind": kind,
-                "temperature": _as_float(_first(unit, ("temperature", "temp"))),
-                "humidity": _as_float(_first(unit, ("humidity", "humidity_raw"))),
+                "temperature": temperature,
+                "humidity": humidity,
+                "humidity_level": humidity_level,
                 "drying": drying,
                 "slots": {},
             }
             units_by_id[ams_id] = bucket
         else:
             if bucket["temperature"] is None:
-                bucket["temperature"] = _as_float(_first(unit, ("temperature", "temp")))
+                bucket["temperature"] = temperature
             if bucket["humidity"] is None:
-                bucket["humidity"] = _as_float(_first(unit, ("humidity", "humidity_raw")))
+                bucket["humidity"] = humidity
+            if bucket.get("humidity_level") is None:
+                bucket["humidity_level"] = humidity_level
             if bucket["drying"] is None:
                 bucket["drying"] = drying
 
@@ -458,6 +588,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "kind": "external",
                 "temperature": None,
                 "humidity": None,
+                "humidity_level": None,
                 "drying": None,
                 "slots": {},
             }
@@ -468,6 +599,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
             normalized,
         )
 
+    _apply_ams_units_climate(units_by_id, raw)
+
     for ams_id in sorted(units_by_id):
         bucket = units_by_id[ams_id]
         units.append(
@@ -476,6 +609,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 "kind": bucket["kind"],
                 "temperature": bucket["temperature"],
                 "humidity": bucket["humidity"],
+                "humidity_level": bucket.get("humidity_level"),
                 "drying": bucket["drying"],
                 "slots": [bucket["slots"][n] for n in sorted(bucket["slots"])],
             }
@@ -580,11 +714,35 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
     }
 
 
+def _assignment_meta_swatch(assignment: PrinterSlotAssignment) -> dict[str, Any]:
+    """Filament the driver last reported on a slot that has no FilaMan spool.
+
+    The printer page already shows ``meta.tray_type`` / ``tray_color`` for
+    unlinked occupied bays. AMS View used to ignore that and look empty.
+    """
+    meta = assignment.meta or {}
+    tray_type = str(meta.get("tray_type") or meta.get("material") or "").strip()
+    out: dict[str, Any] = {}
+    if tray_type:
+        out["material"] = tray_type
+    color = meta.get("tray_color") or meta.get("color")
+    if color:
+        out["color"] = normalize_hex_color(color, "")
+    nozzle_min = _as_int(meta.get("nozzle_temp_min") or meta.get("nozzle_min"))
+    nozzle_max = _as_int(meta.get("nozzle_temp_max") or meta.get("nozzle_max"))
+    if nozzle_min is not None:
+        out["nozzle_min"] = nozzle_min
+    if nozzle_max is not None:
+        out["nozzle_max"] = nozzle_max
+    return out
+
+
 async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int, int], dict[str, Any]]:
     """{(ams_id, tray): swatch} from FilaMan's slot assignments for one printer."""
     result = await db.execute(
         select(PrinterSlot)
         .where(PrinterSlot.printer_id == printer_id, PrinterSlot.is_active.is_(True))
+        .execution_options(populate_existing=True)
         .options(
             selectinload(PrinterSlot.assignment)
             .selectinload(PrinterSlotAssignment.spool)
@@ -612,6 +770,8 @@ async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int,
         entry: dict[str, Any] = {"present": bool(assignment and assignment.present)}
         if assignment and assignment.spool:
             entry.update(_spool_swatch(assignment.spool, printer_id))
+        elif assignment and assignment.present:
+            entry.update(_assignment_meta_swatch(assignment))
         out[key] = _prefer_fm_entry(out.get(key), entry)
     return out
 
@@ -619,6 +779,30 @@ async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int,
 # ---------------------------------------------------------------------------
 # merge
 # ---------------------------------------------------------------------------
+
+
+def _pick_ht_sources(
+    ams_id: int,
+    slot_nos: set[int],
+    live_slots: dict[tuple[int, int], dict[str, Any]],
+    fm_slots: dict[tuple[int, int], dict[str, Any]],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """AMS-HT is one bay. Some firmware/drivers store the tray as id 1."""
+    best_live: dict[str, Any] | None = None
+    best_fm: dict[str, Any] | None = None
+    best = (-1, -1, -1)
+    for n in sorted(slot_nos | {0, 1}):
+        live = live_slots.get((ams_id, n))
+        fm = fm_slots.get((ams_id, n))
+        score = (
+            int(bool(fm and fm.get("spool_id") is not None)),
+            int(bool(fm and str(fm.get("material") or "").strip())),
+            int(bool(live and live.get("has_filament"))),
+        )
+        if score > best:
+            best = score
+            best_live, best_fm = live, fm
+    return best_live, best_fm
 
 
 def _merge_slot(
@@ -632,7 +816,8 @@ def _merge_slot(
     fm = fm or {}
     has_spool = fm.get("spool_id") is not None
     has_live = bool(live.get("has_filament"))
-    empty = not has_spool and not has_live
+    has_fm_filament = bool(str(fm.get("material") or "").strip())
+    empty = not has_spool and not has_live and not has_fm_filament
 
     remaining_percent = fm.get("remaining_percent")
     remaining_source: str | None = "filaman" if remaining_percent is not None else None
@@ -740,6 +925,7 @@ def build_printer_display(
                     "kind": unit["kind"] if ams_id not in EXTERNAL_IDS else "external",
                     "temperature": unit["temperature"],
                     "humidity": unit["humidity"],
+                    "humidity_level": unit.get("humidity_level"),
                     "drying": unit["drying"],
                     "_slot_nos": set(),
                 }
@@ -749,6 +935,8 @@ def build_printer_display(
                     existing["temperature"] = unit["temperature"]
                 if existing["humidity"] is None:
                     existing["humidity"] = unit["humidity"]
+                if existing.get("humidity_level") is None:
+                    existing["humidity_level"] = unit.get("humidity_level")
                 if existing["drying"] is None:
                     existing["drying"] = unit["drying"]
             for s in unit["slots"]:
@@ -758,9 +946,11 @@ def build_printer_display(
     for (ams_id, slot_no) in fm_slots:
         unit = units_by_id.setdefault(
             ams_id,
-            {"ams_id": ams_id, "kind": ams_kind(ams_id), "temperature": None, "humidity": None, "drying": None, "_slot_nos": set()},
+            {"ams_id": ams_id, "kind": ams_kind(ams_id), "temperature": None, "humidity": None, "humidity_level": None, "drying": None, "_slot_nos": set()},
         )
         unit["_slot_nos"].add(slot_no)
+
+    _apply_ams_units_climate(units_by_id, driver_state)
 
     units: list[dict[str, Any]] = []
     for ams_id in sorted(units_by_id):
@@ -772,10 +962,14 @@ def build_printer_display(
         elif not slot_nos:
             slot_nos = {0}
         unit["label"] = ams_label(ams_id, kind)
-        unit["slots"] = [
-            _merge_slot(ams_id, n, kind, live_slots.get((ams_id, n)), fm_slots.get((ams_id, n)))
-            for n in sorted(slot_nos)
-        ]
+        if kind == "ams_ht":
+            ht_live, ht_fm = _pick_ht_sources(ams_id, slot_nos, live_slots, fm_slots)
+            unit["slots"] = [_merge_slot(ams_id, 0, kind, ht_live, ht_fm)]
+        else:
+            unit["slots"] = [
+                _merge_slot(ams_id, n, kind, live_slots.get((ams_id, n)), fm_slots.get((ams_id, n)))
+                for n in sorted(slot_nos)
+            ]
         units.append(unit)
 
     all_slots = [s for u in units for s in u["slots"]]

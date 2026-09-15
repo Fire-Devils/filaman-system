@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, IPvAnyAddress
 
 
 class WeighRequest(BaseModel):
@@ -28,7 +28,7 @@ class LocateResponse(BaseModel):
 
 
 class HeartbeatRequest(BaseModel):
-    ip_address: str
+    ip_address: IPvAnyAddress
 
 
 class WriteTagRequest(BaseModel):

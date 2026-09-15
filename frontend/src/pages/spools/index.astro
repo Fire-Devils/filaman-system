@@ -105,6 +105,7 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="spools.id" data-sort="id" class="sortable col-id">ID</th>
           <th data-i18n="spools.filament" data-sort="filament_id" class="sortable col-filament">Filament</th>
           <th data-i18n="spools.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
+          <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="spools.material" data-sort="material" class="sortable col-material">Material</th>
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
           <th data-i18n="spools.status" data-sort="status" class="sortable col-status">Status</th>
@@ -791,6 +792,7 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-id" style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
           <td class="col-filament" style="padding: 12px;">${getFilamentName(s)}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${getManufacturerName(s)}</td>
+          <td class="col-logo" style="padding: 12px;">${getFilamentForSpool(s)?.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${getFilamentForSpool(s).manufacturer.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-material" style="padding: 12px; color: var(--text-muted);">${getMaterialType(s)}</td>
           <td class="col-colors" style="padding: 12px;">${colorDots || '-'}</td>
           <td class="col-status" style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
@@ -1197,6 +1199,7 @@ import Layout from '../../layouts/Layout.astro'
         columns: [
           { key: 'id', label: t('spools.id') },
           { key: 'manufacturer', label: t('spools.manufacturer') },
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'material', label: t('spools.material') },
           { key: 'colors', label: t('filaments.colors') },
           { key: 'status', label: t('spools.status') },
@@ -1219,7 +1222,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     const splPicker = initColumnPicker({
       storageKey: 'filaman-columns-spools',
-      defaultVisible: ['id', 'manufacturer', 'material', 'colors', 'status', 'remaining', 'location'],
+      defaultVisible: ['id', 'manufacturer', 'logo', 'material', 'colors', 'status', 'remaining', 'location'],
       groups: splColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',

@@ -22,14 +22,10 @@ export class ApiError extends Error {
   }
 }
 
-interface ApiResponse<T> {
-  data: T
-}
-
 interface ApiErrorResponse {
-  code: string
-  message: string
-  detail?: Record<string, string[]>
+  code?: string
+  message?: string
+  detail?: string | { code?: string; message?: string }
 }
 
 export async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -60,7 +56,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
   })
 
   if (!response.ok) {
-    const errorBody: any = await response.json().catch(() => ({}))
+    const errorBody: ApiErrorResponse = await response.json().catch(() => ({}))
     const detail = errorBody?.detail
     const code =
       (typeof detail === 'object' && detail?.code) ||
@@ -111,25 +107,32 @@ export const api = {
  * Handles endpoints returning { items: T[], total: number }.
  * Uses AbortSignal for navigation cleanup.
  */
-export async function fetchAllPages<T = any>(baseUrl: string): Promise<{ items: T[], total: number }> {
+export async function fetchAllPages<T = unknown>(baseUrl: string): Promise<{ items: T[], total: number }> {
   const signal = getAbortSignal()
   const separator = baseUrl.includes('?') ? '&' : '?'
   const firstUrl = `${baseUrl}${separator}page=1&page_size=200`
   const response = await fetch(firstUrl, { credentials: 'include', signal })
   if (!response.ok) throw new Error(`Failed to fetch ${baseUrl}`)
   const data = await response.json()
-  const items: T[] = data.items
+  let items: T[] = data.items
   const total: number = data.total
 
   if (total > 200) {
     const totalPages = Math.ceil(total / 200)
+    const pagePromises: Promise<T[]>[] = []
     for (let p = 2; p <= totalPages; p++) {
       const pageUrl = `${baseUrl}${separator}page=${p}&page_size=200`
-      const pageResponse = await fetch(pageUrl, { credentials: 'include', signal })
-      if (!pageResponse.ok) throw new Error(`Failed to fetch ${baseUrl}`)
-      const pageData = await pageResponse.json()
-      items.push(...pageData.items)
+      pagePromises.push(
+        fetch(pageUrl, { credentials: 'include', signal })
+          .then(res => {
+            if (!res.ok) throw new Error(`Failed to fetch ${baseUrl}`)
+            return res.json()
+          })
+          .then(d => d.items)
+      )
     }
+    const additionalPages = await Promise.all(pagePromises)
+    additionalPages.forEach(pageItems => { items = items.concat(pageItems) })
   }
 
   return { items, total }
