@@ -1,6 +1,32 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Die Tabellen für Filamente, Spulen, Hersteller und Farben haben jetzt pro Spalte eigene Sortier- und Filterschaltflächen. Je nach Spaltentyp stehen Text-, Zahlen-, Datums- und Auswahlfilter bereit, und die Auswahlmöglichkeiten stammen nur aus tatsächlich vorhandenen Werten. Sichtbare systemweite Extrafelder lassen sich genauso filtern, und Suche, Gruppierung sowie die gespeicherte Spaltenansicht bleiben davon unberührt. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Farben lassen sich jetzt visuell filtern: über ein durchsuchbares Farbraster und wahlweise über Bereiche für Farbton, Sättigung, Helligkeit und Transparenz, inklusive Vorlagen für Schwarz, Grau, Weiß und ROYGBIV. Derselbe Farbfilter steht auch beim Anlegen eines neuen Filaments zur Verfügung. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Das Hersteller-Logo ist jetzt eine eigene Spalte in den Tabellen für Hersteller, Filamente und Spulen. Sie ist standardmäßig sichtbar und lässt sich wie jede andere Spalte ausblenden, verschieben und in der Breite ändern; der Herstellername bleibt daneben als Text stehen. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Schaltfläche zum Kopieren des Gerätecodes funktioniert jetzt auch, wenn FilaMan im lokalen Netz über eine unverschlüsselte Verbindung geöffnet wird. \"Kopiert!\" erscheint nur bei Erfolg, andernfalls bleibt der Code markiert und kann von Hand kopiert werden. Außerdem lädt die Geräteliste jetzt alle Seiten in fester Reihenfolge und meldet einen Fehler, statt still eine unvollständige Liste zu zeigen. (Beigetragen von akira69)" },
+          { "type": "security", "text": "Die Geräteverwaltung zeigt keine Token-Daten mehr in der Geräteliste und schreibt keine Registrierungscodes mehr in die Browser-Konsole. Von Geräten gemeldete Adressen und Texte werden jetzt geprüft, bevor sie angezeigt werden. Ob eine Registrierung noch aussteht, bleibt wie gewohnt sichtbar. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "In der AMS View stimmen Luftfeuchte und Temperatur jetzt mit der Drucker-Seite überein, bei X1C erscheinen dort also echte Prozent- und °C-Werte. Belegte HT-Fächer ohne zugeordnete Spule zeigen jetzt Material und Farbe des Druckers, statt leer zu wirken. (Beigetragen von wolfrage76)" },
+          { "type": "change", "text": "Die App-Einstellung \"Doppelpunkte in RFID-UIDs anzeigen\" ist bei einer neuen Installation jetzt standardmäßig aus. Eine bereits gespeicherte Einstellung bleibt unverändert, und an gespeicherten UIDs oder der Suche ändert sich nichts. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Die Fehlermeldung für ein Auswahl- oder Mehrfachauswahlfeld ohne Optionen erscheint jetzt einheitlich für beide Feldtypen. (Beigetragen von wolfrage76)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "The filament, spool, manufacturer and colour tables now have their own sort and filter buttons per column. Depending on the column type you get text, number, date and choice filters, and the choices are built only from values that actually exist. Visible system-wide extra fields can be filtered the same way, while search, grouping and your saved column layout stay untouched. (Contributed by akira69)" },
+          { "type": "feature", "text": "Colours can now be filtered visually: through a searchable colour grid and optionally through ranges for hue, saturation, brightness and transparency, including presets for black, grey, white and ROYGBIV. The same colour filter is available when creating a new filament. (Contributed by akira69)" },
+          { "type": "feature", "text": "The manufacturer logo is now a column of its own in the manufacturer, filament and spool tables. It is visible by default and can be hidden, reordered and resized like any other column, with the manufacturer name still shown as text next to it. (Contributed by akira69)" },
+          { "type": "fix", "text": "The button that copies a device code now also works when FilaMan is opened over an unencrypted connection on your local network. \"Copied!\" only appears on success, otherwise the code stays selected so you can copy it by hand. The device list also loads every page in a stable order now and reports an error instead of silently showing an incomplete list. (Contributed by akira69)" },
+          { "type": "security", "text": "Device management no longer shows token data in the device list and no longer writes enrollment codes to the browser console. Addresses and text reported by devices are now validated before they are displayed. Whether a registration is still pending remains visible as before. (Contributed by akira69)" },
+          { "type": "fix", "text": "In AMS View, humidity and temperature now match the Printers page, so X1C units show real percentage and °C readings. Occupied HT bays without a linked spool now show the printer's material and colour instead of looking empty. (Contributed by wolfrage76)" },
+          { "type": "change", "text": "The app setting \"Show colons in RFID UIDs\" is now off by default on a fresh installation. An already saved setting is left unchanged, and stored UIDs and search behaviour are unaffected. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "The error message for a dropdown or multi-select field without options now appears consistently for both field types. (Contributed by wolfrage76)" }
+        ]
+      }
+    },
+    {
       "version": "1.3.5",
       "date": "",
       "changes": {
