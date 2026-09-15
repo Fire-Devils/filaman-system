@@ -249,7 +249,7 @@ import Layout from '../../layouts/Layout.astro'
           warningDiv.classList.toggle('hidden', !data.login_disabled)
           rfidExtendedDataInput.checked = data.rfid_extended_data_enabled ?? false
           rfidProtocolSelect.value = data.rfid_protocol || 'openspool'
-          rfidDisplayColonsInput.checked = data.rfid_display_colons !== false
+          rfidDisplayColonsInput.checked = data.rfid_display_colons === true
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'

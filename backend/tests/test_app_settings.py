@@ -12,6 +12,7 @@ class TestAppSettingsAdmin:
         assert response.status_code == 200
         data = response.json()
         assert data["login_disabled"] is False
+        assert data["rfid_display_colons"] is False
 
     @pytest.mark.asyncio
     async def test_put_app_settings_creates_row(self, auth_client):
@@ -65,6 +66,25 @@ class TestAppSettingsAdmin:
         public_response = await client.get("/api/v1/app-settings/public-info")
         assert public_response.status_code == 200
         assert public_response.json()["rfid_display_colons"] is False
+
+    @pytest.mark.asyncio
+    async def test_put_without_display_colons_keeps_default_off(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"currency": "USD"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 200
+        assert response.json()["rfid_display_colons"] is False
+
+        enabled = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"rfid_display_colons": True},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert enabled.json()["rfid_display_colons"] is True
 
     @pytest.mark.asyncio
     async def test_put_app_settings_updates_existing(self, auth_client):
@@ -197,6 +217,7 @@ class TestAppSettingsPublic:
         assert response.status_code == 200
         data = response.json()
         assert data["login_disabled"] is False
+        assert data["rfid_display_colons"] is False
 
     @pytest.mark.asyncio
     async def test_public_info_returns_login_disabled_true(self, client, auth_client):
