@@ -95,6 +95,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr style="background: var(--bg-soft);">
           <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" /></th>
           <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
+          <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="filaments.type" data-sort="type" class="sortable col-type">Type</th>
           <th data-i18n="filaments.designation" data-sort="designation" class="sortable col-designation">Designation</th>
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
@@ -110,7 +111,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="filaments-table">
         <tr>
-          <td colspan="13" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="14" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -515,7 +516,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load filaments:', error)
         document.getElementById('filaments-table')!.innerHTML = `
           <tr>
-            <td colspan="13" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
+            <td colspan="14" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
           </tr>
         `
       }
@@ -538,7 +539,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || manufacturerId || type || color
         tbody.innerHTML = `
           <tr>
-            <td colspan="13" style="text-align: center; color: var(--text-muted);">
+            <td colspan="14" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
@@ -557,6 +558,7 @@ import Layout from '../../layouts/Layout.astro'
         <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" /></td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${f.manufacturer?.name || '-'}</td>
+          <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${f.manufacturer.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${f.material_type}</td>
           <td class="col-designation" style="padding: 12px;">
             <div style="font-weight: 500;">${f.designation}</div>
@@ -588,7 +590,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || manufacturerId || type || color
         tbody.innerHTML = `
           <tr>
-            <td colspan="13" style="text-align: center; color: var(--text-muted);">
+            <td colspan="14" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
@@ -616,7 +618,7 @@ import Layout from '../../layouts/Layout.astro'
         const gid = `group-${groupIdx}`
         html += `
           <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
-            <td colspan="13" style="padding: 10px 12px; color: var(--text);">
+            <td colspan="14" style="padding: 10px 12px; color: var(--text);">
               <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.label}</span>
               <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${t('filaments.filamentsInGroup', { count: group.filaments.length })}</span>
             </td>
@@ -762,6 +764,7 @@ import Layout from '../../layouts/Layout.astro'
         heading: t('common.columnsStandard'),
         columns: [
           { key: 'manufacturer', label: t('filaments.manufacturer') },
+          { key: 'logo', label: t('manufacturers.logo') },
           { key: 'type', label: t('filaments.type') },
           { key: 'colors', label: t('filaments.colors') },
           { key: 'diameter', label: t('filaments.diameter') },
@@ -782,7 +785,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     const filPicker = initColumnPicker({
       storageKey: 'filaman-columns-filaments',
-      defaultVisible: ['manufacturer', 'type', 'colors', 'diameter', 'spools'],
+      defaultVisible: ['manufacturer', 'logo', 'type', 'colors', 'diameter', 'spools'],
       groups: filColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
