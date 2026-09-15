@@ -16,6 +16,8 @@ import json
 import logging
 from typing import Any, AsyncGenerator
 
+from app.core.cache import response_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,17 @@ class EventBus:
 
     async def publish(self, event: dict[str, Any]) -> None:
         """Broadcast event to all connected SSE clients."""
+        event_name = event.get("event")
+        if event_name in {"filaments_changed", "manufacturers_changed"}:
+            response_cache.delete("filter_options:filaments")
+            response_cache.delete("filter_options:spools")
+        elif event_name == "colors_changed":
+            response_cache.delete("filter_options:filaments")
+        elif event_name in {"spools_changed", "locations_changed", "statuses_changed"}:
+            response_cache.delete("filter_options:spools")
+            if event_name == "spools_changed":
+                response_cache.delete("filter_options:filaments")
+
         data = json.dumps(event)
         dead: list[asyncio.Queue[str]] = []
         for queue in self._subscribers:

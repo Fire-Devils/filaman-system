@@ -6,9 +6,6 @@ import Layout from '../../layouts/Layout.astro'
   <style>
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { background: var(--bg-hover); }
-    .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
-    .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
-    .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
   </style>
   <style is:global>
     .pagination-container { display: flex; justify-content: space-between; align-items: center; }
@@ -71,29 +68,22 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div class="filter-bar">
-    <input
-      type="text"
-      id="filter-search"
-      class="fm-input fm-input-search"
-      data-i18n-placeholder="spools.searchPlaceholder"
-      placeholder="Search ID, filament, manufacturer, extra fields..."
-    />
-    <select id="filter-status" class="fm-select" style="width: auto; min-width: 160px;">
-      <option value="" data-i18n="spools.allStatuses">All Statuses</option>
-    </select>
-    <select id="filter-location" class="fm-select" style="width: auto; min-width: 160px;">
-      <option value="" data-i18n="spools.allLocations">All Locations</option>
-    </select>
-    <select id="filter-manufacturer" class="fm-select" style="width: auto; min-width: 160px;">
-      <option value="" data-i18n="spools.allManufacturers">All Manufacturers</option>
-    </select>
-    <select id="filter-material" class="fm-select" style="width: auto; min-width: 140px;">
-      <option value="" data-i18n="spools.allMaterials">All Materials</option>
-    </select>
+    <div class="fm-filter-search-wrap">
+      <input
+        type="text"
+        id="filter-search"
+        class="fm-input fm-input-search"
+        data-i18n-placeholder="spools.searchPlaceholder"
+        placeholder="Search filament, manufacturer..."
+      />
+      <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
+    </div>
     <label style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
       <input type="checkbox" id="filter-group" class="fm-checkbox" />
       <span data-i18n="spools.groupByFilament">Group by Filament</span>
     </label>
+    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
+    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
   </div>
 
   <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -117,7 +107,8 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="spools.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
           <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="spools.material" data-sort="material" class="sortable col-material">Material</th>
-          <th data-i18n="spools.status" data-sort="status_id" class="sortable col-status">Status</th>
+          <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
+          <th data-i18n="spools.status" data-sort="status" class="sortable col-status">Status</th>
           <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable col-remaining">Remaining</th>
           <th data-i18n="spools.location" data-sort="location_id" class="sortable col-location">Location</th>
           <th data-i18n="spools.colPrice" data-sort="purchase_price" class="sortable col-price">Price</th>
@@ -215,17 +206,35 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
-    import { fetchSequential } from '../../lib/cache'
+    import { cachedFetch, CACHE_KEYS, fetchSequential, invalidateCache } from '../../lib/cache'
     import { assignableLocations } from '../../lib/driver-managed-locations'
-    import { toColorSwatchBackground } from '../../lib/colors'
+    import { filamentColorValues, toColorSwatchBackground } from '../../lib/colors'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
+    import type { SystemExtraFieldDef } from '../../lib/extra-fields'
+    import {
+      bindTableFilterControls,
+      initHeaderColumnFilters,
+      isColumnFilterActive,
+      matchesColumnFilter,
+      multiColumnFilter,
+      sanitizeColumnFilters,
+      syncHeaderSortButtons,
+      systemExtraFieldFilterValue,
+      systemExtraFieldHeaderFilter,
+      type ColumnFilterValue,
+      type HeaderFilterController,
+      type HeaderFilterDefinition,
+      type HeaderFilterOption,
+    } from '../../lib/table-column-filters'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency } from '../../lib/format'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { fetchAllPages } from '../../lib/api'
     await initI18n()
 
     let currentPage = 1
+    let spoolExtraFields: SystemExtraFieldDef[] = []
     const allowedPageSizes = [25, 50, 100, 150, 200]
     let pageSize = (() => {
       try {
@@ -233,11 +242,21 @@ import Layout from '../../layouts/Layout.astro'
         return allowedPageSizes.includes(saved) ? saved : 50
       } catch { return 50 }
     })()
-    let statuses: any[] = []
+    type SpoolStatus = { id: number; key: string; label: string }
+    let statuses: SpoolStatus[] = []
     let locations: any[] = []
-    const manufacturers: any[] = []
+    type SpoolFilterScope = {
+      manufacturers: HeaderFilterOption[]
+      materials: string[]
+      locations: HeaderFilterOption[]
+      has_empty_location: boolean
+    }
+    type SpoolFilterFacets = {
+      used_status_ids: number[]
+      by_status: Record<string, SpoolFilterScope>
+    }
+    let spoolFilterFacets: SpoolFilterFacets | null = null
     let allSpools: any[] = []
-    const filteredSpools: any[] = []
     let totalSpools = 0
     let activeDevices: any[] = []
     let sortKey: string | null = null
@@ -250,7 +269,7 @@ import Layout from '../../layouts/Layout.astro'
       if (savedSort) {
         const { key, direction } = JSON.parse(savedSort)
         if (key && (direction === 'asc' || direction === 'desc')) {
-          sortKey = key
+          sortKey = key === 'status_id' ? 'status' : key
           sortDirection = direction
         }
       }
@@ -264,22 +283,44 @@ import Layout from '../../layouts/Layout.astro'
       }
     } catch { /* ignore invalid data */ }
     // Restore filter state from localStorage
-    let savedFilterState: { status?: string, location?: string, manufacturer?: string, material?: string, group?: boolean } | null = null
+    let savedFilterState: {
+      status?: string | string[]
+      location?: string | string[]
+      manufacturer?: string | string[]
+      material?: string | string[]
+      columns?: Record<string, ColumnFilterValue>
+      group?: boolean
+    } | null = null
     try {
       const sf = localStorage.getItem('filaman-filters-spools')
       if (sf) savedFilterState = JSON.parse(sf)
     } catch { /* ignore invalid data */ }
     let isInitialLoad = true
-    let filterManufacturerId: string | null = null
-    let filterLocationId: string | null = null
-    let filterMaterial: string | null = null
-    let searchTimeout: ReturnType<typeof setTimeout> | null = null
+    let filterRequestId = 0
+    let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
+    let splHeaderFilters: HeaderFilterController | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
-    filterManufacturerId = urlParams.get('manufacturer_id')
-    filterLocationId = urlParams.get('location_id')
-    filterMaterial = urlParams.get('material')
-
+    const normalizeSavedValues = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+      return typeof value === 'string' && value.length > 0 ? [value] : []
+    }
+    if (!columnFilters.status) columnFilters.status = multiColumnFilter(normalizeSavedValues(savedFilterState?.status))
+    if (!columnFilters.location) columnFilters.location = multiColumnFilter(normalizeSavedValues(savedFilterState?.location))
+    if (!columnFilters.manufacturer) columnFilters.manufacturer = multiColumnFilter(normalizeSavedValues(savedFilterState?.manufacturer))
+    if (!columnFilters.material) columnFilters.material = multiColumnFilter(normalizeSavedValues(savedFilterState?.material))
+    const filterManufacturerId = urlParams.get('manufacturer_id')
+    const filterLocationIds = urlParams.getAll('location_id')
+    const filterLocationUnassigned = urlParams.get('location_unassigned') === 'true'
+    const filterMaterial = urlParams.get('material')
+    if (filterManufacturerId) columnFilters.manufacturer = multiColumnFilter([filterManufacturerId])
+    if (filterLocationIds.length || filterLocationUnassigned) {
+      columnFilters.location = multiColumnFilter([
+        ...filterLocationIds,
+        ...(filterLocationUnassigned ? [''] : []),
+      ])
+    }
+    if (filterMaterial) columnFilters.material = multiColumnFilter([filterMaterial])
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
@@ -319,6 +360,8 @@ import Layout from '../../layouts/Layout.astro'
           th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
         }
       })
+      const table = document.querySelector('.fm-table') as HTMLTableElement | null
+      if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
     function getFilamentForSpool(spool: any): any {
@@ -339,10 +382,11 @@ import Layout from '../../layouts/Layout.astro'
 
     function getSortValue(item: any, key: string): any {
       if (key === 'filament_id') return getFilamentName(item)
-      if (key === 'status_id') return getStatusLabel(item.status_id)
+      if (key === 'status') return getStatusLabel(item.status_id)
       if (key === 'location_id') return getLocationName(item.location_id)
       if (key === 'manufacturer') return getManufacturerName(item)
       if (key === 'material') return getMaterialType(item)
+      if (key === 'colors') return filamentColorValues(getFilamentForSpool(item), 'name')[0]?.toLowerCase() || ''
       if (key === 'mfr_color') return getFilamentForSpool(item)?.manufacturer_color_name ?? ''
       if (key.startsWith('cf_')) {
         const cfKey = key.slice(3)
@@ -369,12 +413,58 @@ import Layout from '../../layouts/Layout.astro'
 
     function getFilterValues() {
       const search = (document.getElementById('filter-search') as HTMLInputElement).value.toLowerCase().trim()
-      const statusId = (document.getElementById('filter-status') as HTMLSelectElement).value
-      const locationId = (document.getElementById('filter-location') as HTMLSelectElement).value
-      const manufacturerId = (document.getElementById('filter-manufacturer') as HTMLSelectElement).value
-      const material = (document.getElementById('filter-material') as HTMLSelectElement).value
+      const statusIds = getMultiFilterValues('status')
+      const locationIds = getMultiFilterValues('location')
+      const manufacturerIds = getMultiFilterValues('manufacturer')
+      const materials = getMultiFilterValues('material')
       const groupBy = (document.getElementById('filter-group') as HTMLInputElement).checked
-      return { search, statusId, locationId, manufacturerId, material, groupBy }
+      return { search, statusIds, locationIds, manufacturerIds, materials, groupBy }
+    }
+
+    function getMultiFilterValues(key: string): string[] {
+      const filter = columnFilters[key]
+      return filter?.type === 'multi' ? [...filter.values] : []
+    }
+
+    function hasLocalColumnFilters(): boolean {
+      const serverKeys = new Set(['status', 'location', 'manufacturer', 'material'])
+      return Object.entries(columnFilters).some(([key, value]) => isColumnFilterActive(value) && !serverKeys.has(key))
+    }
+
+    function needsAllSpoolData(): boolean {
+      return hasLocalColumnFilters() || sortKey === 'colors' || sortKey === 'status'
+    }
+
+    function getSpoolFilterValue(spool: any, key: string): unknown {
+      const filament = getFilamentForSpool(spool)
+      if (key === 'id') return spool.id
+      if (key === 'filament') return filament ? `${filament.designation} ${filament.material_type}` : ''
+      if (key === 'manufacturer') return String(filament?.manufacturer_id ?? filament?.manufacturer?.id ?? '')
+      if (key === 'material') return filament?.material_type
+      if (key === 'colors') return filamentColorValues(filament, 'name')
+      if (key === 'status') return String(spool.status_id)
+      if (key === 'remaining') return spool.remaining_weight_g
+      if (key === 'location') return spool.location_id == null ? '' : String(spool.location_id)
+      if (key === 'price') return spool.purchase_price
+      if (key === 'mfr_color') return filament?.manufacturer_color_name
+      if (key === 'lot') return spool.lot_number
+      if (key === 'purchase_date') return spool.purchase_date
+      if (key === 'last_used') return spool.last_used_at
+      if (key === 'total_weight') return spool.initial_total_weight_g
+      if (key === 'empty_weight') return spool.empty_spool_weight_g
+      if (key.startsWith('cf_')) {
+        const field = spoolExtraFields.find((candidate) => candidate.key === key.slice(3))
+        return field
+          ? systemExtraFieldFilterValue(field, spool.custom_fields?.[field.key])
+          : spool.custom_fields?.[key.slice(3)]
+      }
+      return null
+    }
+
+    function filterSpools(spools: any[]): any[] {
+      const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
+      return spools.filter((spool) => activeFilters.every(([key, filter]) =>
+        matchesColumnFilter(getSpoolFilterValue(spool, key), filter)))
     }
 
     function applyFiltersAndRender() {
@@ -396,6 +486,11 @@ import Layout from '../../layouts/Layout.astro'
         renderGroupedSpools(sorted)
         document.getElementById('pagination-top')!.innerHTML = ''
         document.getElementById('pagination')!.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.spoolCount', { count: totalSpools })}</div>`
+      } else if (needsAllSpoolData()) {
+        const sorted = sortSpools(allSpools)
+        const startIndex = (currentPage - 1) * pageSize
+        renderSpools(sorted.slice(startIndex, startIndex + pageSize))
+        renderPagination(totalSpools, currentPage)
       } else {
         // Normal mode: data already filtered, sorted and paginated by backend
         renderSpools(allSpools)
@@ -403,96 +498,159 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
+    async function fetchSpoolFilterFacets(signal: AbortSignal): Promise<SpoolFilterFacets> {
+      return cachedFetch(CACHE_KEYS.SPOOL_FILTER_OPTIONS, async () => {
+        const response = await fetch('/api/v1/spools/filter-options', { credentials: 'include', signal })
+        if (!response.ok) throw new Error(`Failed to load spool filter options (${response.status})`)
+        return response.json()
+      })
+    }
+
+    function updateSpoolFilterOptions() {
+      if (!spoolFilterFacets) return
+
+      const selectedStatusFilter = columnFilters.status
+      const selectedStatusIds = selectedStatusFilter?.type === 'multi'
+        ? selectedStatusFilter.values
+        : []
+      const archivedStatusIds = new Set(
+        statuses.filter((status) => status.key === 'archived').map((status) => String(status.id))
+      )
+      const scopeIds = selectedStatusIds.length > 0
+        ? selectedStatusIds
+        : spoolFilterFacets.used_status_ids.map(String).filter(id => !archivedStatusIds.has(id))
+
+      const manufacturers = new Map<string, HeaderFilterOption>()
+      const materials = new Set<string>()
+      const locationOptions = new Map<string, HeaderFilterOption>()
+      const allManufacturers = new Map<string, HeaderFilterOption>()
+      const allLocations = new Map<string, HeaderFilterOption>()
+      let hasEmptyLocation = false
+      Object.values(spoolFilterFacets.by_status).forEach((scope) => {
+        scope.manufacturers.forEach(option => allManufacturers.set(option.value, option))
+        scope.locations.forEach(option => allLocations.set(option.value, option))
+      })
+      scopeIds.forEach((statusId) => {
+        const scope = spoolFilterFacets?.by_status[statusId]
+        if (!scope) return
+        scope.manufacturers.forEach(option => manufacturers.set(option.value, option))
+        scope.materials.forEach(material => materials.add(material))
+        scope.locations.forEach(option => locationOptions.set(option.value, option))
+        hasEmptyLocation ||= scope.has_empty_location
+      })
+
+      // Keep incompatible selections visible so users can remove them after changing status.
+      const selectedValues = (key: string) => {
+        const filter = columnFilters[key]
+        return filter?.type === 'multi' ? filter.values : []
+      }
+      selectedValues('manufacturer').forEach((value) => {
+        const option = allManufacturers.get(value)
+        if (option) manufacturers.set(value, option)
+      })
+      selectedValues('material').forEach(value => materials.add(value))
+      selectedValues('location').forEach((value) => {
+        if (value === '') hasEmptyLocation = true
+        const option = allLocations.get(value)
+        if (option) locationOptions.set(value, option)
+      })
+
+      const byLabel = (a: HeaderFilterOption, b: HeaderFilterOption) => a.label.localeCompare(b.label)
+      splHeaderFilters?.setOptions('manufacturer', [...manufacturers.values()].sort(byLabel))
+      splHeaderFilters?.setOptions('material', [...materials]
+        .sort((a, b) => a.localeCompare(b))
+        .map(material => ({ value: material, label: material })))
+      const scopedLocations = [...locationOptions.values()].sort(byLabel)
+      if (hasEmptyLocation) scopedLocations.unshift({ value: '', label: t('common.empty') })
+      splHeaderFilters?.setOptions('location', scopedLocations)
+    }
+
+    async function refreshSpoolFilterOptions() {
+      const signal = getAbortSignal()
+      spoolFilterFacets = await fetchSpoolFilterFacets(signal)
+      updateSpoolFilterOptions()
+    }
+
     async function loadFilters() {
       try {
         const signal = getAbortSignal()
-        // Sequential fetching for SQLite compatibility; lightweight API calls instead of loading all filaments
-        const [statusesRes, locationsRes, manufacturersRes, typesRes] = await fetchSequential([
-          () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal }).catch(() => null),
+        // One aggregate facet request plus reference data used by bulk-action dialogs.
+        const [filterFacets, locationsRes] = await fetchSequential([
+          () => fetchSpoolFilterFacets(signal),
           () => fetch('/api/v1/locations?page=1&page_size=200', { credentials: 'include', signal }).catch(() => null),
-          () => fetch('/api/v1/manufacturers?page=1&page_size=200', { credentials: 'include', signal }).catch(() => null),
-          () => fetch('/api/v1/filaments/types', { credentials: 'include', signal }).catch(() => null),
         ] as const)
 
-        if (statusesRes?.ok) {
-          statuses = await statusesRes.json()
-          const select = document.getElementById('filter-status') as HTMLSelectElement
-          statuses.forEach((s: any) => {
-            const opt = document.createElement('option')
-            opt.value = s.id
-            const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
-            opt.textContent = t(i18nKey) || s.label
-            select.appendChild(opt)
-          })
-          // Restore status filter from localStorage
-          if (savedFilterState?.status) select.value = savedFilterState.status
-        }
+        spoolFilterFacets = filterFacets
         
         if (locationsRes?.ok) {
           const locationsData = await locationsRes.json()
           locations = locationsData.items || locationsData
-          const select = document.getElementById('filter-location') as HTMLSelectElement
-          locations.forEach((l: any) => {
-            const opt = document.createElement('option')
-            opt.value = l.id
-            opt.textContent = l.name
-            select.appendChild(opt)
-          })
-          if (filterLocationId) select.value = filterLocationId
-          else if (savedFilterState?.location) select.value = savedFilterState.location
         }
-
-        // Manufacturers dropdown
-        const mfSelect = document.getElementById('filter-manufacturer') as HTMLSelectElement
-        if (manufacturersRes?.ok) {
-          const mfData = await manufacturersRes.json()
-          const mfs = (mfData.items || mfData) as any[]
-          const sortedMfs = [...mfs].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-          sortedMfs.forEach(m => {
-            const opt = document.createElement('option')
-            opt.value = String(m.id)
-            opt.textContent = m.name
-            mfSelect.appendChild(opt)
-          })
-        }
-        if (filterManufacturerId) mfSelect.value = filterManufacturerId
-        else if (savedFilterState?.manufacturer) mfSelect.value = savedFilterState.manufacturer
-
-        // Material types dropdown
-        const matSelect = document.getElementById('filter-material') as HTMLSelectElement
-        if (typesRes?.ok) {
-          const types = await typesRes.json() as string[]
-          types.forEach(type => {
-            const opt = document.createElement('option')
-            opt.value = type
-            opt.textContent = type
-            matSelect.appendChild(opt)
-          })
-        }
-        if (filterMaterial) matSelect.value = filterMaterial
-        else if (savedFilterState?.material) matSelect.value = savedFilterState.material
+        updateSpoolFilterOptions()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load filters:', error)
       }
     }
+
+    async function loadSpoolColorOptions() {
+      try {
+        const signal = getAbortSignal()
+        const options = await cachedFetch<{
+          colors: Array<{ value: string; label: string; color_hexes: string[] }>
+          has_empty_colors: boolean
+        }>(CACHE_KEYS.FILAMENT_FILTER_OPTIONS, async () => {
+          const response = await fetch('/api/v1/filaments/filter-options', { credentials: 'include', signal })
+          if (!response.ok) throw new Error(`Failed to load color filter options (${response.status})`)
+          return response.json()
+        })
+        const colorOptions: HeaderFilterOption[] = options.colors.map(color => ({
+          value: color.value,
+          label: color.label,
+          colorHexes: color.color_hexes,
+        }))
+        if (options.has_empty_colors) colorOptions.unshift({ value: '', label: t('common.empty') })
+        splHeaderFilters?.setOptions('colors', colorOptions)
+      } catch (error) {
+        if (isAbortError(error)) return
+        console.error('Failed to load spool color options:', error)
+      }
+    }
+
+    async function loadSpoolStatuses() {
+      try {
+        const response = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() })
+        if (!response.ok) throw new Error(`Failed to load spool statuses (${response.status})`)
+        statuses = await response.json()
+        splHeaderFilters?.setOptions('status', statuses.map((status) => {
+          const i18nKey = `spools.status${status.key.charAt(0).toUpperCase() + status.key.slice(1)}`
+          return { value: String(status.id), label: t(i18nKey) || status.label }
+        }))
+        updateSpoolFilterOptions()
+      } catch (error) {
+        if (isAbortError(error)) return
+        console.error('Failed to load spool statuses:', error)
+      }
+    }
     
     async function loadSpools() {
-      const { search, statusId, locationId, manufacturerId, material, groupBy } = getFilterValues()
+      const requestId = ++filterRequestId
+      const { search, statusIds, locationIds, manufacturerIds, materials, groupBy } = getFilterValues()
 
       // Check if archived status is selected
-      const archivedStatus = statuses.find((s: any) => s.key === 'archived')
-      const isArchivedSelected = archivedStatus && String(statusId) === String(archivedStatus.id)
+      const archivedStatus = statuses.find((s) => s.key === 'archived')
+      const isArchivedSelected = !!archivedStatus && statusIds.includes(String(archivedStatus.id))
 
       // Build query params for backend
       const params = new URLSearchParams()
-      if (statusId) params.set('status_id', statusId)
+      statusIds.forEach((id) => params.append('status_id', id))
       if (isArchivedSelected) params.set('include_archived', 'true')
-      if (manufacturerId) params.set('manufacturer_id', manufacturerId)
-      if (locationId) params.set('location_id', locationId)
-      if (material) params.set('type', material)
+      manufacturerIds.forEach((id) => params.append('manufacturer_id', id))
+      locationIds.filter(Boolean).forEach((id) => params.append('location_id', id))
+      if (locationIds.includes('')) params.set('location_unassigned', 'true')
+      materials.forEach((item) => params.append('type', item))
       if (search) params.set('search', search)
-      if (sortKey && sortDirection) {
+      if (sortKey && sortDirection && sortKey !== 'colors' && sortKey !== 'status') {
         params.set('sort_by', sortKey)
         params.set('sort_order', sortDirection)
       }
@@ -500,29 +658,16 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const signal = getAbortSignal()
 
-        if (groupBy) {
-          // Group-by mode: load ALL matching spools (all pages)
-          params.set('page', '1')
-          params.set('page_size', '200')
-          const response = await fetch(`/api/v1/spools?${params}`, { credentials: 'include', signal })
-          if (!response.ok) throw new Error('Failed to fetch spools')
-          const data = await response.json()
+        if (groupBy || needsAllSpoolData()) {
+          // Grouping and client-side typed filters require the complete backend-filtered result.
+          const data = await fetchAllPages<any>(`/api/v1/spools?${params}`)
+          if (requestId !== filterRequestId) return
           allSpools = data.items
           totalSpools = data.total
-          if (data.total > 200) {
-            const totalPages = Math.ceil(data.total / 200)
-            const pagePromises = []
-            for (let p = 2; p <= totalPages; p++) {
-              const pParams = new URLSearchParams(params)
-              pParams.set('page', String(p))
-              pagePromises.push(
-                fetch(`/api/v1/spools?${pParams}`, { credentials: 'include', signal })
-                  .then(res => res.ok ? res.json() : null)
-                  .then(d => d ? d.items : [])
-              )
-            }
-            const additionalPages = await Promise.all(pagePromises)
-            additionalPages.forEach(items => { allSpools = allSpools.concat(items) })
+          if (hasLocalColumnFilters()) {
+            allSpools = filterSpools(allSpools)
+            totalSpools = allSpools.length
+            currentPage = Math.min(currentPage, Math.ceil(totalSpools / pageSize) || 1)
           }
         } else {
           // Normal mode: load only the current page
@@ -531,6 +676,7 @@ import Layout from '../../layouts/Layout.astro'
           const response = await fetch(`/api/v1/spools?${params}`, { credentials: 'include', signal })
           if (!response.ok) throw new Error('Failed to fetch spools')
           const data = await response.json()
+          if (requestId !== filterRequestId) return
           allSpools = data.items
           totalSpools = data.total
           // Clamp currentPage if it exceeds available pages
@@ -543,6 +689,7 @@ import Layout from '../../layouts/Layout.astro'
             const retry = await fetch(`/api/v1/spools?${params}`, { credentials: 'include', signal })
             if (retry.ok) {
               const retryData = await retry.json()
+              if (requestId !== filterRequestId) return
               allSpools = retryData.items
               totalSpools = retryData.total
             }
@@ -552,12 +699,13 @@ import Layout from '../../layouts/Layout.astro'
         // Save filter state
         localStorage.setItem('filaman-page-spools', String(currentPage))
         localStorage.setItem('filaman-filters-spools', JSON.stringify({
-          status: statusId, location: locationId, manufacturer: manufacturerId, material, group: groupBy
+          columns: columnFilters, group: groupBy
         }))
 
+        if (requestId !== filterRequestId) return
         renderPage()
       } catch (error) {
-        if (isAbortError(error)) return
+        if (requestId !== filterRequestId || isAbortError(error)) return
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
@@ -573,8 +721,8 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function getStatusLabel(statusId: number): string {
-      const s = statuses.find((s: any) => s.id === statusId)
-      if (!s) return `#${statusId}`
+      const s = statuses.find((s) => String(s.id) === String(statusId))
+      if (!s) return '-'
       const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
       return t(i18nKey) || s.label
     }
@@ -642,10 +790,11 @@ import Layout from '../../layouts/Layout.astro'
         <tr class="${selectedSpoolIds.has(s.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-spool-id="${s.id}" ${selectedSpoolIds.has(s.id) ? 'checked' : ''} onchange="window.__toggleSpoolSelection(${s.id}, this.checked)" /></td>
           <td class="col-id" style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
-          <td class="col-filament" style="padding: 12px;">${colorDots} ${getFilamentName(s)}</td>
+          <td class="col-filament" style="padding: 12px;">${getFilamentName(s)}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${getManufacturerName(s)}</td>
           <td class="col-logo" style="padding: 12px;">${getFilamentForSpool(s)?.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${getFilamentForSpool(s).manufacturer.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-material" style="padding: 12px; color: var(--text-muted);">${getMaterialType(s)}</td>
+          <td class="col-colors" style="padding: 12px;">${colorDots || '-'}</td>
           <td class="col-status" style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
           <td class="col-remaining" style="padding: 12px; font-family: monospace; ${weightStyle}">
             ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
@@ -671,8 +820,8 @@ import Layout from '../../layouts/Layout.astro'
     function renderSpools(spools: any[]) {
       const tbody = document.getElementById('spools-table')!
       if (spools.length === 0) {
-        const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
-        const hasFilters = search || statusId || locationId || manufacturerId || material
+        const { search } = getFilterValues()
+        const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
             <td colspan="17" style="text-align: center; color: var(--text-muted);">
@@ -693,8 +842,8 @@ import Layout from '../../layouts/Layout.astro'
       const tbody = document.getElementById('spools-table')!
 
       if (spools.length === 0) {
-        const { search, statusId, locationId, manufacturerId, material } = getFilterValues()
-        const hasFilters = search || statusId || locationId || manufacturerId || material
+        const { search } = getFilterValues()
+        const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
             <td colspan="17" style="text-align: center; color: var(--text-muted);">
@@ -861,16 +1010,187 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    // Wire up filter events
-    document.getElementById('filter-search')?.addEventListener('input', () => {
-      if (searchTimeout) clearTimeout(searchTimeout)
-      searchTimeout = setTimeout(() => applyFiltersAndRender(), 250)
+    function setupHeaderFilters() {
+      const table = document.querySelector('.fm-table') as HTMLTableElement | null
+      if (!table) return
+      const definitions: HeaderFilterDefinition[] = [
+        {
+          key: 'id',
+          label: t('spools.id'),
+          columnSelector: 'th.col-id',
+          type: 'number',
+          initialValue: columnFilters.id,
+          onApply: (value) => applyColumnFilter('id', value),
+        },
+        {
+          key: 'filament',
+          label: t('spools.filament'),
+          columnSelector: 'th.col-filament',
+          type: 'text',
+          initialValue: columnFilters.filament,
+          onApply: (value) => applyColumnFilter('filament', value),
+        },
+        {
+          key: 'status',
+          label: t('spools.status'),
+          columnSelector: 'th.col-status',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.status,
+          onApply: (value) => applyColumnFilter('status', value),
+        },
+        {
+          key: 'location',
+          label: t('spools.location'),
+          columnSelector: 'th.col-location',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.location,
+          onApply: (value) => applyColumnFilter('location', value, 'location_id'),
+        },
+        {
+          key: 'manufacturer',
+          label: t('spools.manufacturer'),
+          columnSelector: 'th.col-manufacturer',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.manufacturer,
+          onApply: (value) => applyColumnFilter('manufacturer', value, 'manufacturer_id'),
+        },
+        {
+          key: 'material',
+          label: t('spools.material'),
+          columnSelector: 'th.col-material',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.material,
+          onApply: (value) => applyColumnFilter('material', value, 'material'),
+        },
+        {
+          key: 'colors',
+          label: t('filaments.colors'),
+          columnSelector: 'th.col-colors',
+          type: 'multi',
+          multiDisplay: 'colors',
+          options: [],
+          initialValue: columnFilters.colors,
+          onApply: (value) => applyColumnFilter('colors', value),
+        },
+        {
+          key: 'remaining',
+          label: t('spools.remaining'),
+          columnSelector: 'th.col-remaining',
+          type: 'number',
+          initialValue: columnFilters.remaining,
+          onApply: (value) => applyColumnFilter('remaining', value),
+        },
+        {
+          key: 'price',
+          label: t('spools.colPrice'),
+          columnSelector: 'th.col-price',
+          type: 'number',
+          initialValue: columnFilters.price,
+          onApply: (value) => applyColumnFilter('price', value),
+        },
+        {
+          key: 'mfr_color',
+          label: t('spools.colMfrColor'),
+          columnSelector: 'th.col-mfr_color',
+          type: 'text',
+          initialValue: columnFilters.mfr_color,
+          onApply: (value) => applyColumnFilter('mfr_color', value),
+        },
+        {
+          key: 'lot',
+          label: t('spools.colLot'),
+          columnSelector: 'th.col-lot',
+          type: 'text',
+          initialValue: columnFilters.lot,
+          onApply: (value) => applyColumnFilter('lot', value),
+        },
+        {
+          key: 'purchase_date',
+          label: t('spools.colPurchaseDate'),
+          columnSelector: 'th.col-purchase_date',
+          type: 'date',
+          initialValue: columnFilters.purchase_date,
+          onApply: (value) => applyColumnFilter('purchase_date', value),
+        },
+        {
+          key: 'last_used',
+          label: t('spools.colLastUsed'),
+          columnSelector: 'th.col-last_used',
+          type: 'date',
+          initialValue: columnFilters.last_used,
+          onApply: (value) => applyColumnFilter('last_used', value),
+        },
+        {
+          key: 'total_weight',
+          label: t('spools.colTotalWeight'),
+          columnSelector: 'th.col-total_weight',
+          type: 'number',
+          initialValue: columnFilters.total_weight,
+          onApply: (value) => applyColumnFilter('total_weight', value),
+        },
+        {
+          key: 'empty_weight',
+          label: t('spools.colEmptyWeight'),
+          columnSelector: 'th.col-empty_weight',
+          type: 'number',
+          initialValue: columnFilters.empty_weight,
+          onApply: (value) => applyColumnFilter('empty_weight', value),
+        },
+        ...spoolExtraFields.map((field) => {
+          const key = `cf_${field.key}`
+          return systemExtraFieldHeaderFilter(
+            field,
+            columnFilters[key],
+            (value) => applyColumnFilter(key, value),
+          )
+        }),
+      ]
+      columnFilters = sanitizeColumnFilters(columnFilters, definitions)
+      definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
+      splHeaderFilters = initHeaderColumnFilters(table, definitions)
+      syncHeaderSortButtons(table, sortKey, sortDirection)
+    }
+
+    function applyColumnFilter(key: string, value: ColumnFilterValue, urlParam?: string) {
+      if (isColumnFilterActive(value)) columnFilters[key] = value
+      else delete columnFilters[key]
+      if (key === 'status') updateSpoolFilterOptions()
+      if (urlParam) removeFilterUrlParams(urlParam)
+      if (key === 'location') removeFilterUrlParams('location_unassigned')
+      applyFiltersAndRender()
+    }
+
+    function removeFilterUrlParams(...keys: string[]) {
+      const url = new URL(window.location.href)
+      let changed = false
+      keys.forEach((key) => {
+        if (url.searchParams.has(key)) {
+          url.searchParams.delete(key)
+          changed = true
+        }
+      })
+      if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    }
+
+    bindTableFilterControls({
+      onApply: applyFiltersAndRender,
+      onClearColumns: () => {
+        columnFilters = {}
+        splHeaderFilters?.resetAll()
+        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material')
+        applyFiltersAndRender()
+      },
+      onClearAll: () => {
+        columnFilters = {}
+        splHeaderFilters?.resetAll()
+        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material')
+        applyFiltersAndRender()
+      },
     })
-    document.getElementById('filter-status')?.addEventListener('change', () => loadSpools())
-    document.getElementById('filter-location')?.addEventListener('change', () => applyFiltersAndRender())
-    document.getElementById('filter-manufacturer')?.addEventListener('change', () => applyFiltersAndRender())
-    document.getElementById('filter-material')?.addEventListener('change', () => applyFiltersAndRender())
-    document.getElementById('filter-group')?.addEventListener('change', () => applyFiltersAndRender())
     
     // ── Column Visibility ──────────────────────────────────────────────
     const splColumnGroups: ColumnGroup[] = [
@@ -881,6 +1201,7 @@ import Layout from '../../layouts/Layout.astro'
           { key: 'manufacturer', label: t('spools.manufacturer') },
           { key: 'logo', label: t('manufacturers.logo') },
           { key: 'material', label: t('spools.material') },
+          { key: 'colors', label: t('filaments.colors') },
           { key: 'status', label: t('spools.status') },
           { key: 'remaining', label: t('spools.remaining') },
           { key: 'location', label: t('spools.location') },
@@ -901,7 +1222,7 @@ import Layout from '../../layouts/Layout.astro'
     ]
     const splPicker = initColumnPicker({
       storageKey: 'filaman-columns-spools',
-      defaultVisible: ['id', 'manufacturer', 'logo', 'material', 'status', 'remaining', 'location'],
+      defaultVisible: ['id', 'manufacturer', 'logo', 'material', 'colors', 'status', 'remaining', 'location'],
       groups: splColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
@@ -926,8 +1247,9 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const res = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
-        const fields: any[] = await res.json()
+        const fields: SystemExtraFieldDef[] = await res.json()
         if (fields.length === 0) return
+        spoolExtraFields = fields
         const extraGroup: ColumnGroup = {
           heading: t('common.columnsExtraFields'),
           columns: fields.map(f => ({ key: `cf_${f.key}`, label: f.label })),
@@ -963,21 +1285,31 @@ import Layout from '../../layouts/Layout.astro'
     if (savedFilterState?.group) {
       (document.getElementById('filter-group') as HTMLInputElement).checked = true
     }
-    Promise.all([loadFilters(), loadActiveDevices(), initCurrency(), loadSpoolExtraFieldColumns()])
+    Promise.all([initCurrency(), loadSpoolExtraFieldColumns(), loadActiveDevices()])
+      .then(async () => {
+        setupHeaderFilters()
+        await Promise.allSettled([loadSpoolStatuses(), loadSpoolColorOptions()])
+        return loadFilters()
+      })
       .then(() => loadSpools())
       .then(() => {
         // Refresh column utilities after first render to ensure handles are attached
         splReorder.refreshColumns()
         splResize.refreshColumns()
       })
-
     // Live-Update via SSE: Spulen automatisch neu laden
     let _spoolsReloadTimer: ReturnType<typeof setTimeout> | null = null
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'spools_changed') {
+      if (event === 'spools_changed' || event === 'filaments_changed' || event === 'manufacturers_changed' || event === 'locations_changed' || event === 'colors_changed') {
+        invalidateCache(CACHE_KEYS.SPOOL_FILTER_OPTIONS)
+        invalidateCache(CACHE_KEYS.FILAMENT_FILTER_OPTIONS)
         if (_spoolsReloadTimer) clearTimeout(_spoolsReloadTimer)
-        _spoolsReloadTimer = setTimeout(() => loadSpools(), 300)
+        _spoolsReloadTimer = setTimeout(async () => {
+          await refreshSpoolFilterOptions()
+          if (event === 'colors_changed' || event === 'filaments_changed') await loadSpoolColorOptions()
+          await loadSpools()
+        }, 300)
       }
     })
 
@@ -1157,7 +1489,7 @@ import Layout from '../../layouts/Layout.astro'
     // Set Status
     document.getElementById('bulk-btn-status')?.addEventListener('click', async () => {
       if (selectedSpoolIds.size === 0) return
-      const options = statuses.map((s: any) => {
+      const options = statuses.map((s) => {
         const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
         return `<option value="${s.id}">${t(i18nKey) || s.label}</option>`
       }).join('')
@@ -1541,26 +1873,7 @@ import Layout from '../../layouts/Layout.astro'
       }
 
       // Load all empty spools with pagination (API limit: 200 per page)
-      const firstRes = await fetch(`/api/v1/spools?page=1&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include', signal })
-      if (!firstRes.ok) {
-        console.error('Failed to load empty spools:', firstRes.status, firstRes.statusText)
-        throw new Error(`HTTP ${firstRes.status}`)
-      }
-      const firstData = await firstRes.json()
-      let emptySpools: any[] = firstData.items || []
-      if (firstData.total > 200) {
-        const totalPages = Math.ceil(firstData.total / 200)
-        const pagePromises = []
-        for (let p = 2; p <= totalPages; p++) {
-          pagePromises.push(
-            fetch(`/api/v1/spools?page=${p}&page_size=200&status_id=${emptyStatus.id}`, { credentials: 'include', signal })
-              .then(r => r.ok ? r.json() : null)
-              .then(d => d ? d.items : [])
-          )
-        }
-        const additionalPages = await Promise.all(pagePromises)
-        additionalPages.forEach(items => { emptySpools = emptySpools.concat(items) })
-      }
+      const { items: emptySpools } = await fetchAllPages<any>(`/api/v1/spools?status_id=${emptyStatus.id}`)
 
       if (emptySpools.length === 0) {
         fromEmptyNone.style.display = ''

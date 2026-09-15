@@ -243,6 +243,7 @@ class FilamentResponse(BaseModel):
 class FilamentDetailResponse(FilamentResponse):
     manufacturer: ManufacturerSummaryResponse | None = None
     spool_count: int = 0
+    spool_status_ids: list[int] = []
     colors: list[FilamentColorResponse] = []
 
 

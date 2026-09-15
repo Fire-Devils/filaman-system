@@ -233,6 +233,59 @@ class TestSpoolCRUD:
         assert {"new", "opened", "empty", "archived"}.issubset(keys)
 
     @pytest.mark.asyncio
+    async def test_filter_options_are_actual_values_scoped_by_status(self, auth_client, db_session):
+        client, _ = auth_client
+        active_manufacturer = await _create_manufacturer(db_session, name="Active Maker")
+        archived_manufacturer = await _create_manufacturer(db_session, name="Archived Maker")
+        await _create_manufacturer(db_session, name="Unused Maker")
+        active_filament = await _create_filament(
+            db_session, active_manufacturer.id, designation="Active PLA", material_type="PLA"
+        )
+        archived_filament = await _create_filament(
+            db_session, archived_manufacturer.id, designation="Archived PETG", material_type="PETG"
+        )
+        active_location = await _create_location(db_session, name="Active Shelf")
+        archived_location = await _create_location(db_session, name="Archive Shelf")
+        await _create_location(db_session, name="Unused Shelf")
+        new_status = await _get_status(db_session, "new")
+        archived_status = await _get_status(db_session, "archived")
+        await _create_spool(db_session, active_filament.id, new_status.id, location_id=active_location.id)
+        await _create_spool(
+            db_session, archived_filament.id, archived_status.id, location_id=archived_location.id
+        )
+
+        response = await client.get("/api/v1/spools/filter-options")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["used_status_ids"] == sorted([new_status.id, archived_status.id])
+        assert data["by_status"][str(new_status.id)] == {
+            "manufacturers": [{"value": str(active_manufacturer.id), "label": "Active Maker"}],
+            "materials": ["PLA"],
+            "locations": [{"value": str(active_location.id), "label": "Active Shelf"}],
+            "has_empty_location": False,
+        }
+        assert data["by_status"][str(archived_status.id)] == {
+            "manufacturers": [{"value": str(archived_manufacturer.id), "label": "Archived Maker"}],
+            "materials": ["PETG"],
+            "locations": [{"value": str(archived_location.id), "label": "Archive Shelf"}],
+            "has_empty_location": False,
+        }
+
+    @pytest.mark.asyncio
+    async def test_filter_options_report_spools_without_locations(self, auth_client, db_session):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="Loose Maker")
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        await _create_spool(db_session, filament.id, status.id, location_id=None)
+
+        response = await client.get("/api/v1/spools/filter-options")
+
+        assert response.status_code == 200
+        assert response.json()["by_status"][str(status.id)]["has_empty_location"] is True
+
+    @pytest.mark.asyncio
     async def test_create_spool_minimal(self, auth_client, db_session):
         client, csrf_token = auth_client
 
@@ -369,6 +422,45 @@ class TestSpoolCRUD:
         assert data["total"] >= 1
 
     @pytest.mark.asyncio
+    async def test_list_spools_filter_by_unassigned_location(self, auth_client, db_session):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        location = await _create_location(db_session)
+        status = await _get_status(db_session, "new")
+        unassigned = await _create_spool(db_session, filament.id, status.id)
+        await _create_spool(db_session, filament.id, status.id, location_id=location.id)
+
+        response = await client.get("/api/v1/spools?location_unassigned=true")
+
+        assert response.status_code == 200
+        assert {item["id"] for item in response.json()["items"]} == {unassigned.id}
+
+    @pytest.mark.asyncio
+    async def test_list_spools_filter_by_location_or_unassigned(self, auth_client, db_session):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        selected_location = await _create_location(db_session, name="Selected")
+        other_location = await _create_location(db_session, name="Other")
+        status = await _get_status(db_session, "new")
+        unassigned = await _create_spool(db_session, filament.id, status.id)
+        selected = await _create_spool(
+            db_session, filament.id, status.id, location_id=selected_location.id
+        )
+        await _create_spool(db_session, filament.id, status.id, location_id=other_location.id)
+
+        response = await client.get(
+            f"/api/v1/spools?location_id={selected_location.id}&location_unassigned=true"
+        )
+
+        assert response.status_code == 200
+        assert {item["id"] for item in response.json()["items"]} == {
+            unassigned.id,
+            selected.id,
+        }
+
+    @pytest.mark.asyncio
     async def test_list_spools_filter_by_filament(self, auth_client, db_session):
         client, _ = auth_client
 
@@ -386,6 +478,56 @@ class TestSpoolCRUD:
         assert all(item["filament_id"] == filament_one.id for item in data["items"])
 
     @pytest.mark.asyncio
+    async def test_list_spools_filter_by_multiple_manufacturers(self, auth_client, db_session):
+        client, _ = auth_client
+
+        manufacturer_a = await _create_manufacturer(db_session, name="SpoolFilter A")
+        manufacturer_b = await _create_manufacturer(db_session, name="SpoolFilter B")
+        manufacturer_c = await _create_manufacturer(db_session, name="SpoolFilter C")
+        filament_a = await _create_filament(db_session, manufacturer_a.id, designation="A", material_type="PLA")
+        filament_b = await _create_filament(db_session, manufacturer_b.id, designation="B", material_type="PETG")
+        filament_c = await _create_filament(db_session, manufacturer_c.id, designation="C", material_type="ABS")
+        status = await _get_status(db_session, "new")
+        spool_a = await _create_spool(db_session, filament_a.id, status.id)
+        spool_b = await _create_spool(db_session, filament_b.id, status.id)
+        await _create_spool(db_session, filament_c.id, status.id)
+
+        response = await client.get(
+            f"/api/v1/spools?manufacturer_id={manufacturer_a.id}&manufacturer_id={manufacturer_b.id}&page=1&page_size=50"
+        )
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert spool_a.id in ids
+        assert spool_b.id in ids
+
+    @pytest.mark.asyncio
+    async def test_list_spools_filter_by_multiple_status_csv(self, auth_client, db_session):
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="StatusCsv Maker")
+        filament = await _create_filament(db_session, manufacturer.id)
+        status_archived = await _get_status(db_session, "archived")
+        non_archived_result = await db_session.execute(
+            select(SpoolStatus).where(SpoolStatus.key != "archived").order_by(SpoolStatus.id)
+        )
+        non_archived = non_archived_result.scalars().all()
+        assert len(non_archived) >= 2
+        status_a = non_archived[0]
+        status_b = non_archived[1]
+        spool_a = await _create_spool(db_session, filament.id, status_a.id)
+        spool_b = await _create_spool(db_session, filament.id, status_b.id)
+        await _create_spool(db_session, filament.id, status_archived.id)
+
+        response = await client.get(
+            f"/api/v1/spools?status_id={status_a.id},{status_b.id}&include_archived=true&page=1&page_size=50"
+        )
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert spool_a.id in ids
+        assert spool_b.id in ids
+
     async def test_list_spools_search_by_id(self, auth_client, db_session):
         client, _ = auth_client
 

@@ -100,6 +100,15 @@ export function toColorSwatchBackground(
   ].join(', ')
 }
 
+export function filamentColorValues(
+  filament: { colors?: Array<{ color?: { name?: unknown; hex_code?: unknown } | null }> } | null | undefined,
+  field: 'name' | 'hex_code',
+): string[] {
+  return (filament?.colors || [])
+    .map((entry) => entry.color?.[field])
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+}
+
 export interface AlphaColorControls {
   picker: HTMLInputElement
   hexInput: HTMLInputElement

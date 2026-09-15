@@ -6,6 +6,7 @@ import {
   alphaPercentToHex,
   bindAlphaColorControls,
   composeHexWithAlpha,
+  filamentColorValues,
   composeHexWithAlphaByte,
   getAlphaPercent,
   normalizeHexCode,
@@ -13,6 +14,24 @@ import {
   toCssColor,
   toOpaqueRgbHex,
 } from './colors'
+
+describe('filament table color values', () => {
+  const filament = {
+    colors: [
+      { color: { name: 'Red', hex_code: '#FF0000' } },
+      { color: null },
+      { color: { name: 'Clear', hex_code: '#FFFFFF00' } },
+    ],
+  }
+
+  it('returns color names for the normal color filter', () => {
+    expect(filamentColorValues(filament, 'name')).toEqual(['Red', 'Clear'])
+  })
+
+  it('returns hex codes for the color-range filter', () => {
+    expect(filamentColorValues(filament, 'hex_code')).toEqual(['#FF0000', '#FFFFFF00'])
+  })
+})
 
 function createAlphaControls() {
   const picker = document.createElement('input')

@@ -6,9 +6,6 @@ import Layout from '../../layouts/Layout.astro'
   <style>
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { background: var(--bg-hover); }
-    .sortable::after { content: ' \2195'; opacity: 0.3; font-size: 0.8em; }
-    .sortable.sort-asc::after { content: ' \2191'; opacity: 1; }
-    .sortable.sort-desc::after { content: ' \2193'; opacity: 1; }
     .filter-bar {
       display: flex;
       flex-wrap: wrap;
@@ -38,16 +35,18 @@ import Layout from '../../layouts/Layout.astro'
   </div>
 
   <div class="filter-bar">
-    <input
-      type="text"
-      id="filter-search"
-      class="fm-input fm-input-search"
-      data-i18n-placeholder="manufacturers.searchPlaceholder"
-      placeholder="Search manufacturers..."
-    />
-    <select id="filter-material" class="fm-select" style="width: auto; min-width: 160px;">
-      <option value="" data-i18n="manufacturers.allMaterials">All Materials</option>
-    </select>
+    <div class="fm-filter-search-wrap">
+      <input
+        type="text"
+        id="filter-search"
+        class="fm-input fm-input-search"
+        data-i18n-placeholder="manufacturers.searchPlaceholder"
+        placeholder="Search manufacturers..."
+      />
+      <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
+    </div>
+    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
+    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
   </div>
 
   <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
@@ -235,6 +234,17 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
+    import {
+      bindTableFilterControls,
+      initHeaderColumnFilters,
+      isColumnFilterActive,
+      matchesColumnFilter,
+      multiColumnFilter,
+      syncHeaderSortButtons,
+      type ColumnFilterValue,
+      type HeaderFilterController,
+      type HeaderFilterOption,
+    } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../lib/filamentdb-lookup'
     await initI18n()
@@ -262,7 +272,6 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
     } catch { /* ignore invalid data */ }
-    let searchTimeout: ReturnType<typeof setTimeout> | null = null
     const allowedPageSizes = [25, 50, 100, 150, 200]
     let pageSize = (() => {
       try {
@@ -272,6 +281,19 @@ import Layout from '../../layouts/Layout.astro'
     })()
     let currentPage = 1
     let isInitialLoad = true
+    let mfrHeaderFilters: HeaderFilterController | null = null
+
+    let savedFilterState: { names?: string[], materials?: string[], columns?: Record<string, ColumnFilterValue> } | null = null
+    try {
+      const sf = localStorage.getItem('filaman-filters-manufacturers')
+      if (sf) savedFilterState = JSON.parse(sf)
+    } catch { /* ignore invalid data */ }
+    let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
+    if (!columnFilters.name) columnFilters.name = multiColumnFilter(savedFilterState?.names || [])
+    if (!columnFilters.materials) columnFilters.materials = multiColumnFilter(savedFilterState?.materials || [])
+    Object.keys(columnFilters).forEach((key) => {
+      if (!isColumnFilterActive(columnFilters[key])) delete columnFilters[key]
+    })
 
     // Restore page from localStorage
     try {
@@ -313,6 +335,8 @@ import Layout from '../../layouts/Layout.astro'
           th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
         }
       })
+      const table = document.querySelector('.fm-table') as HTMLTableElement | null
+      if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
     function getSortValue(item: any, key: string): any {
@@ -340,19 +364,15 @@ import Layout from '../../layouts/Layout.astro'
 
     function getFilterValues() {
       const search = (document.getElementById('filter-search') as HTMLInputElement).value.toLowerCase().trim()
-      const material = (document.getElementById('filter-material') as HTMLSelectElement).value
-      return { search, material }
+      return { search }
     }
 
     function filterManufacturers(items: any[]): any[] {
-      const { search, material } = getFilterValues()
+      const { search } = getFilterValues()
+      const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
 
       return items.filter(mf => {
-        // Material filter
-        if (material) {
-          const hasMaterial = mf.materials && mf.materials.some((m: string) => m === material)
-          if (!hasMaterial) return false
-        }
+        if (!activeFilters.every(([key, filter]) => matchesColumnFilter(getManufacturerFilterValue(mf, key), filter))) return false
 
         // Text search across name, url, materials
         if (search) {
@@ -367,34 +387,38 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    function populateMaterialFilter(items: any[]) {
-      const materialSelect = document.getElementById('filter-material') as HTMLSelectElement
-      const selectedValue = materialSelect.value
-      const defaultOption = materialSelect.querySelector('option[value=""]')?.cloneNode(true) as HTMLOptionElement | null
-      materialSelect.replaceChildren(defaultOption ?? new Option(t('manufacturers.allMaterials'), ''))
+    function getManufacturerFilterValue(manufacturer: any, key: string): unknown {
+      if (key === 'name') return manufacturer.name
+      if (key === 'url') return manufacturer.url
+      if (key === 'filaments') return manufacturer.filament_count
+      if (key === 'spools') return manufacturer.spool_count
+      if (key === 'materials') return manufacturer.materials || []
+      if (key === 'total_price') return manufacturer.total_price_available
+      if (key === 'archived') return manufacturer.archived_spool_count
+      if (key === 'spool_weight') return manufacturer.empty_spool_weight_g
+      return null
+    }
 
+    function updateHeaderFilterOptions(items: any[]) {
+      const nameOptions: HeaderFilterOption[] = [...new Set(items.map((mf: any) => mf.name || '').filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .map((name) => ({ value: name, label: name }))
       const materials = new Set<string>()
       items.forEach(mf => {
         if (mf.materials) {
           mf.materials.forEach((m: string) => materials.add(m))
         }
       })
-      const sortedMaterials = [...materials].sort()
-      sortedMaterials.forEach(mat => {
-        const opt = document.createElement('option')
-        opt.value = mat
-        opt.textContent = mat
-        materialSelect.appendChild(opt)
-      })
-
-      materialSelect.value = selectedValue && materials.has(selectedValue) ? selectedValue : ''
+      const materialOptions: HeaderFilterOption[] = [...materials].sort().map((mat) => ({ value: mat, label: mat }))
+      mfrHeaderFilters?.setOptions('name', nameOptions)
+      mfrHeaderFilters?.setOptions('materials', materialOptions)
     }
 
     async function loadManufacturers() {
       try {
         const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         manufacturers = data.items
-        populateMaterialFilter(manufacturers)
+        updateHeaderFilterOptions(manufacturers)
         if (isInitialLoad) {
           isInitialLoad = false
         } else {
@@ -514,14 +538,15 @@ import Layout from '../../layouts/Layout.astro'
       const tbody = document.getElementById('manufacturers-table')!
       const filtered = filterManufacturers(manufacturers)
       const sorted = sortManufacturers(filtered)
+      localStorage.setItem('filaman-filters-manufacturers', JSON.stringify({ columns: columnFilters }))
 
       // Validate current page
       const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
       if (currentPage > totalPages) currentPage = totalPages
 
       if (sorted.length === 0) {
-        const { search, material } = getFilterValues()
-        const hasFilters = search || material
+        const { search } = getFilterValues()
+        const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
             <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
@@ -923,19 +948,108 @@ import Layout from '../../layouts/Layout.astro'
       }
     })
 
-    // Wire up filter events
-    document.getElementById('filter-search')?.addEventListener('input', () => {
-      if (searchTimeout) clearTimeout(searchTimeout)
-      searchTimeout = setTimeout(() => {
-        currentPage = 1
-        localStorage.setItem('filaman-page-manufacturers', '1')
-        renderManufacturers()
-      }, 250)
-    })
-    document.getElementById('filter-material')?.addEventListener('change', () => {
+    function setupHeaderFilters() {
+      const table = document.querySelector('.fm-table') as HTMLTableElement | null
+      if (!table) return
+      mfrHeaderFilters = initHeaderColumnFilters(table, [
+        {
+          key: 'name',
+          label: t('manufacturers.name'),
+          columnSelector: 'th.col-name',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.name,
+          onApply: (value) => applyColumnFilter('name', value),
+        },
+        {
+          key: 'url',
+          label: t('manufacturers.url'),
+          columnSelector: 'th.col-url',
+          type: 'text',
+          initialValue: columnFilters.url,
+          onApply: (value) => applyColumnFilter('url', value),
+        },
+        {
+          key: 'filaments',
+          label: t('manufacturers.filaments'),
+          columnSelector: 'th.col-filaments',
+          type: 'number',
+          initialValue: columnFilters.filaments,
+          onApply: (value) => applyColumnFilter('filaments', value),
+        },
+        {
+          key: 'spools',
+          label: t('manufacturers.spools'),
+          columnSelector: 'th.col-spools',
+          type: 'number',
+          initialValue: columnFilters.spools,
+          onApply: (value) => applyColumnFilter('spools', value),
+        },
+        {
+          key: 'materials',
+          label: t('manufacturers.materials'),
+          columnSelector: 'th.col-materials',
+          type: 'multi',
+          options: [],
+          initialValue: columnFilters.materials,
+          onApply: (value) => applyColumnFilter('materials', value),
+        },
+        {
+          key: 'total_price',
+          label: t('manufacturers.colTotalPrice'),
+          columnSelector: 'th.col-total_price',
+          type: 'number',
+          initialValue: columnFilters.total_price,
+          onApply: (value) => applyColumnFilter('total_price', value),
+        },
+        {
+          key: 'archived',
+          label: t('manufacturers.colArchived'),
+          columnSelector: 'th.col-archived',
+          type: 'number',
+          initialValue: columnFilters.archived,
+          onApply: (value) => applyColumnFilter('archived', value),
+        },
+        {
+          key: 'spool_weight',
+          label: t('manufacturers.colSpoolWeight'),
+          columnSelector: 'th.col-spool_weight',
+          type: 'number',
+          initialValue: columnFilters.spool_weight,
+          onApply: (value) => applyColumnFilter('spool_weight', value),
+        },
+      ])
+      syncHeaderSortButtons(table, sortKey, sortDirection)
+    }
+
+    function applyColumnFilter(key: string, value: ColumnFilterValue) {
+      if (isColumnFilterActive(value)) columnFilters[key] = value
+      else delete columnFilters[key]
       currentPage = 1
       localStorage.setItem('filaman-page-manufacturers', '1')
       renderManufacturers()
+    }
+
+    bindTableFilterControls({
+      onApply: () => {
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      },
+      onClearColumns: () => {
+        columnFilters = {}
+        mfrHeaderFilters?.resetAll()
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      },
+      onClearAll: () => {
+        columnFilters = {}
+        mfrHeaderFilters?.resetAll()
+        currentPage = 1
+        localStorage.setItem('filaman-page-manufacturers', '1')
+        renderManufacturers()
+      },
     })
 
     // ── Column Visibility ──────────────────────────────────────────────
@@ -981,6 +1095,8 @@ import Layout from '../../layouts/Layout.astro'
       storageKey: 'filaman-column-widths-manufacturers',
     })
     // ── End Column Visibility ──────────────────────────────────────────
+
+    setupHeaderFilters()
 
     setupSortableHeaders()
     if (sortKey && sortDirection) updateSortIndicators()

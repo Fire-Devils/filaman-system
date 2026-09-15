@@ -1,4 +1,5 @@
 import pytest
+from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
 from sqlalchemy import select
 
@@ -382,6 +383,68 @@ class TestFilamentCRUD:
         assert {"PLA", "PETG", "ABS"}.issubset(set(types))
 
     @pytest.mark.asyncio
+    async def test_filter_options_only_include_used_values(self, auth_client, db_session):
+        client, _ = auth_client
+        used_manufacturer = await _create_manufacturer(db_session, name="Used Maker")
+        await _create_manufacturer(db_session, name="Unused Maker")
+        used_color = await _create_color(db_session, name="Ocean Blue", hex_code="#0066CC")
+        await _create_color(db_session, name="Unused Orange", hex_code="#FF6600")
+        filament = await _create_filament(
+            db_session,
+            used_manufacturer.id,
+            designation="Blue PETG",
+            material_type="PETG",
+            finish_type="Matte",
+            material_subgroup="PETG-CF",
+        )
+        no_spools = await _create_filament(
+            db_session,
+            used_manufacturer.id,
+            designation="Blue PETG",
+            material_type="PETG",
+            finish_type="Matte",
+            material_subgroup="PETG-CF",
+        )
+        new_status = await _get_status(db_session, "new")
+        await _create_spool(db_session, filament.id, new_status.id)
+        await _create_spool(db_session, filament.id, new_status.id)
+        db_session.add(FilamentColor(filament_id=filament.id, color_id=used_color.id, position=1))
+        db_session.add(FilamentColor(filament_id=no_spools.id, color_id=used_color.id, position=1))
+        await db_session.commit()
+
+        response = await client.get("/api/v1/filaments/filter-options")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["manufacturers"] == [{"value": str(used_manufacturer.id), "label": "Used Maker"}]
+        assert data["types"] == ["PETG"]
+        assert data["designations"] == ["Blue PETG"]
+        assert data["diameters"] == [1.75]
+        assert data["finishes"] == ["Matte"]
+        assert data["subgroups"] == ["PETG-CF"]
+        assert data["spool_counts"] == [0, 2]
+        assert data["colors"] == [{
+            "value": "Ocean Blue", "label": "Ocean Blue", "color_hexes": ["#0066CC"]
+        }]
+        assert data["has_empty_colors"] is False
+
+        await _create_spool(db_session, filament.id, new_status.id)
+        await event_bus.publish({"event": "spools_changed"})
+        refreshed = await client.get("/api/v1/filaments/filter-options")
+        assert refreshed.json()["spool_counts"] == [0, 3]
+
+    @pytest.mark.asyncio
+    async def test_filter_options_report_filaments_without_colors(self, auth_client, db_session):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session, name="No Color Maker")
+        await _create_filament(db_session, manufacturer.id, material_type="PLA")
+
+        response = await client.get("/api/v1/filaments/filter-options")
+
+        assert response.status_code == 200
+        assert response.json()["has_empty_colors"] is True
+
+    @pytest.mark.asyncio
     async def test_list_filaments_paginated(self, auth_client, db_session):
         client, _ = auth_client
 
@@ -401,6 +464,42 @@ class TestFilamentCRUD:
         item = next(item for item in data["items"] if item["id"] == filament.id)
         assert item["manufacturer"]["id"] == manufacturer.id
         assert item["colors"][0]["color_id"] == color.id
+
+    @pytest.mark.asyncio
+    async def test_list_filaments_filter_by_multiple_manufacturers(self, auth_client, db_session):
+        client, _ = auth_client
+
+        manufacturer_a = await _create_manufacturer(db_session, name="FilterMaker A")
+        manufacturer_b = await _create_manufacturer(db_session, name="FilterMaker B")
+        manufacturer_c = await _create_manufacturer(db_session, name="FilterMaker C")
+        filament_a = await _create_filament(db_session, manufacturer_a.id, designation="A PLA", material_type="PLA")
+        filament_b = await _create_filament(db_session, manufacturer_b.id, designation="B PETG", material_type="PETG")
+        await _create_filament(db_session, manufacturer_c.id, designation="C ABS", material_type="ABS")
+
+        response = await client.get(
+            f"/api/v1/filaments?manufacturer_id={manufacturer_a.id}&manufacturer_id={manufacturer_b.id}&page=1&page_size=50"
+        )
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert filament_a.id in ids
+        assert filament_b.id in ids
+
+    @pytest.mark.asyncio
+    async def test_list_filaments_filter_by_multiple_types_csv(self, auth_client, db_session):
+        client, _ = auth_client
+
+        manufacturer = await _create_manufacturer(db_session, name="TypeFilter Maker")
+        pla_filament = await _create_filament(db_session, manufacturer.id, designation="Type PLA", material_type="PLA")
+        petg_filament = await _create_filament(db_session, manufacturer.id, designation="Type PETG", material_type="PETG")
+        await _create_filament(db_session, manufacturer.id, designation="Type ABS", material_type="ABS")
+
+        response = await client.get("/api/v1/filaments?type=PLA,PETG&page=1&page_size=50")
+
+        assert response.status_code == 200
+        ids = {item["id"] for item in response.json()["items"]}
+        assert pla_filament.id in ids
+        assert petg_filament.id in ids
 
     @pytest.mark.asyncio
     async def test_list_filaments_sort_by_spool_count(self, auth_client, db_session):

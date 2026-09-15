@@ -45,6 +45,7 @@ from app.models import (
     SystemExtraField,
 )
 from app.utils.colors import normalize_hex_color
+from app.utils.query_params import parse_multi_int, parse_multi_str
 
 logger = logging.getLogger(__name__)
 
@@ -791,8 +792,30 @@ async def resolve_filament_from_tag(
         system_extra_fields_created=created_system_fields,
     )
 
+
 # Default filament types (always included in the types list)
 DEFAULT_FILAMENT_TYPES = ["PLA", "PETG", "ABS", "ASA", "TPU", "NYLON", "PC"]
+
+
+class FilterOption(BaseModel):
+    value: str
+    label: str
+
+
+class ColorFilterOption(FilterOption):
+    color_hexes: list[str]
+
+
+class FilamentFilterOptionsResponse(BaseModel):
+    manufacturers: list[FilterOption]
+    types: list[str]
+    designations: list[str]
+    diameters: list[float]
+    finishes: list[str]
+    subgroups: list[str]
+    spool_counts: list[int]
+    colors: list[ColorFilterOption]
+    has_empty_colors: bool
 
 
 @router_filaments.get("/types", response_model=list[str])
@@ -810,14 +833,123 @@ async def list_filament_types(db: DBSession, principal: PrincipalDep):
     return all_types
 
 
+@router_filaments.get("/filter-options", response_model=FilamentFilterOptionsResponse)
+async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
+    """Return only values used by at least one filament."""
+    cached = response_cache.get("filter_options:filaments")
+    if cached is not None:
+        return cached
+
+    facet_result = await db.execute(
+        select(
+            Filament.manufacturer_id,
+            Manufacturer.name,
+            Filament.material_type,
+            Filament.designation,
+            Filament.diameter_mm,
+            Filament.finish_type,
+            Filament.material_subgroup,
+        )
+        .join(Manufacturer, Manufacturer.id == Filament.manufacturer_id)
+        .distinct()
+    )
+    color_result = await db.execute(
+        select(Color.name, Color.hex_code)
+        .select_from(Filament)
+        .outerjoin(FilamentColor, FilamentColor.filament_id == Filament.id)
+        .outerjoin(Color, Color.id == FilamentColor.color_id)
+        .distinct()
+    )
+    active_spool_counts = (
+        select(Spool.filament_id, func.count(Spool.id).label("spool_count"))
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(SpoolStatus.key != "archived")
+        .group_by(Spool.filament_id)
+        .subquery()
+    )
+    spool_count_result = await db.execute(
+        select(func.coalesce(active_spool_counts.c.spool_count, 0))
+        .select_from(Filament)
+        .outerjoin(
+            active_spool_counts,
+            active_spool_counts.c.filament_id == Filament.id,
+        )
+        .distinct()
+    )
+
+    manufacturers: dict[int, str] = {}
+    types: set[str] = set()
+    designations: set[str] = set()
+    diameters: set[float] = set()
+    finishes: set[str] = set()
+    subgroups: set[str] = set()
+    colors: dict[str, set[str]] = {}
+    for (
+        manufacturer_id,
+        manufacturer_name,
+        material_type,
+        designation,
+        diameter_mm,
+        finish,
+        subgroup,
+    ) in facet_result.all():
+        manufacturers[manufacturer_id] = manufacturer_name
+        if material_type:
+            types.add(material_type)
+        if designation:
+            designations.add(designation)
+        if diameter_mm is not None:
+            diameters.add(diameter_mm)
+        if finish:
+            finishes.add(finish)
+        if subgroup:
+            subgroups.add(subgroup)
+    has_empty_colors = False
+    for color_name, hex_code in color_result.all():
+        if color_name:
+            colors.setdefault(color_name, set())
+            if hex_code:
+                colors[color_name].add(hex_code)
+        else:
+            has_empty_colors = True
+
+    payload = FilamentFilterOptionsResponse(
+        manufacturers=[
+            FilterOption(value=str(manufacturer_id), label=name)
+            for manufacturer_id, name in sorted(
+                manufacturers.items(), key=lambda item: item[1].casefold()
+            )
+        ],
+        types=sorted(types, key=str.casefold),
+        designations=sorted(designations, key=str.casefold),
+        diameters=sorted(diameters),
+        finishes=sorted(finishes, key=str.casefold),
+        subgroups=sorted(subgroups, key=str.casefold),
+        spool_counts=sorted(int(row[0]) for row in spool_count_result.all()),
+        colors=[
+            ColorFilterOption(
+                value=name,
+                label=name,
+                color_hexes=sorted(hex_codes),
+            )
+            for name, hex_codes in sorted(
+                colors.items(), key=lambda item: item[0].casefold()
+            )
+        ],
+        has_empty_colors=has_empty_colors,
+    )
+    response_cache.set("filter_options:filaments", payload, ttl=300)
+    return payload
+
+
 @router_filaments.get("", response_model=PaginatedResponse[FilamentDetailResponse])
 async def list_filaments(
     db: DBSession,
     principal: PrincipalDep,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    type: str | None = None,
-    manufacturer_id: int | None = None,
+    type: list[str] | None = Query(None),
+    manufacturer_id: list[str] | None = Query(None),
     search: str | None = Query(None, max_length=200),
     sort_by: str = Query(
         "designation",
@@ -830,11 +962,13 @@ async def list_filaments(
     needs_manufacturer_join = False
     needs_spool_count_join = False
     spool_count_subquery = None
+    types = parse_multi_str(type, "type")
+    manufacturer_ids = parse_multi_int(manufacturer_id, "manufacturer_id")
 
-    if type:
-        conditions.append(Filament.material_type == type)
-    if manufacturer_id:
-        conditions.append(Filament.manufacturer_id == manufacturer_id)
+    if types:
+        conditions.append(Filament.material_type.in_(types))
+    if manufacturer_ids:
+        conditions.append(Filament.manufacturer_id.in_(manufacturer_ids))
 
     if search:
         search_term = f"%{search}%"
@@ -912,6 +1046,7 @@ async def list_filaments(
     # Compute spool counts for the fetched filaments (excluding archived spools)
     filament_ids = [f.id for f in items]
     spool_counts: dict[int, int] = {}
+    spool_status_ids: dict[int, list[int]] = {}
     if filament_ids:
         spool_count_query = (
             select(Spool.filament_id, func.count(Spool.id))
@@ -923,12 +1058,22 @@ async def list_filaments(
         spool_result = await db.execute(spool_count_query)
         spool_counts = {row[0]: row[1] for row in spool_result.all()}
 
+        status_query = (
+            select(Spool.filament_id, Spool.status_id)
+            .where(Spool.filament_id.in_(filament_ids))
+            .distinct()
+        )
+        status_result = await db.execute(status_query)
+        for filament_id, status_id in status_result.all():
+            spool_status_ids.setdefault(filament_id, []).append(status_id)
+
     items_with_count = [
         FilamentDetailResponse.model_validate(
             {
                 **f.__dict__,
                 "manufacturer": f.manufacturer,
                 "spool_count": spool_counts.get(f.id, 0),
+                "spool_status_ids": spool_status_ids.get(f.id, []),
                 "colors": sorted(f.filament_colors, key=lambda fc: fc.position),
             }
         )
