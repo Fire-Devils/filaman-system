@@ -25,19 +25,16 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# In-memory auth cache: avoids 2 SELECTs + 1 UPDATE per request
+# In-memory session and API-key auth caches
 # ---------------------------------------------------------------------------
 _SESSION_CACHE_TTL = 60  # seconds – cached Principal lives this long
 _LAST_USED_THROTTLE = 300  # seconds – only write last_used_at every 5 min
 _API_KEY_CACHE_TTL = 60
-_DEVICE_CACHE_TTL = 60
 
 # {session_id: (Principal, token_hash, user_active, expires_at, cached_at)}
 _session_cache: dict[int, tuple[Principal, str, bool, datetime | None, float]] = {}
 # {api_key_id: (Principal, key_hash, user_active, cached_at)}
 _api_key_cache: dict[int, tuple[Principal, str, bool, float]] = {}
-# {device_id: (Principal, token_hash, device_active, cached_at)}
-_device_cache: dict[int, tuple[Principal, str, bool, float]] = {}
 # Track last_used_at write timestamps to throttle DB writes
 _last_used_writes: dict[str, float] = {}  # "sess:123" -> monotonic timestamp
 
@@ -46,7 +43,6 @@ def invalidate_auth_caches() -> None:
     """Clear all auth caches. Call after user/session/key changes."""
     _session_cache.clear()
     _api_key_cache.clear()
-    _device_cache.clear()
     _last_used_writes.clear()
 
 
@@ -113,6 +109,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Device "):
+            token = auth_header[7:]
+            principal = await self._authenticate_device(token)
+            if principal:
+                request.state.principal = principal
+                return await call_next(request)
+
         session_token = request.cookies.get("session_id")
         if session_token:
             principal = await self._authenticate_session(session_token)
@@ -157,17 +161,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         attach_csrf_cookie(request, response, existing_csrf)
                 return response
 
-        auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("ApiKey "):
             token = auth_header[7:]
             principal = await self._authenticate_api_key(token)
-            if principal:
-                request.state.principal = principal
-                return await call_next(request)
-
-        if auth_header.startswith("Device "):
-            token = auth_header[7:]
-            principal = await self._authenticate_device(token)
             if principal:
                 request.state.principal = principal
                 return await call_next(request)
@@ -407,26 +403,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         _, device_id, secret = parsed
 
-        # --- Fast path: check in-memory cache ---
-        cached = _device_cache.get(device_id)
-        if cached is not None:
-            principal, cached_hash, device_active, cached_at = cached
-            if time.monotonic() - cached_at < _DEVICE_CACHE_TTL:
-                if not verify_token(secret, cached_hash):
-                    return None
-                if not device_active:
-                    return None
-                # Throttled last_used_at write
-                cache_key = f"dev:{device_id}"
-                if _should_write_last_used(cache_key):
-                    from app.models import Device
-
-                    asyncio.create_task(_bg_write_last_used(Device, "id", device_id))
-                return principal
-            else:
-                _device_cache.pop(device_id, None)
-
-        # --- Slow path: full DB lookup ---
         async with async_session_maker() as db:
             from app.models import Device
 
@@ -437,44 +413,57 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return None
             if not device.is_active or device.deleted_at is not None:
                 return None
+            needs_commit = False
             if is_argon2_hash(device.token_hash):
                 # Legacy argon2 hash — verify and migrate to SHA-256
-                if not await verify_password_async(secret, device.token_hash):
+                legacy_hash = device.token_hash
+                if not await verify_password_async(secret, legacy_hash):
                     return None
                 new_hash = hash_token(secret)
-                await db.execute(
+                migration = await db.execute(
                     update(Device)
-                    .where(Device.id == device_id)
+                    .where(
+                        Device.id == device_id,
+                        Device.token_hash == legacy_hash,
+                    )
                     .values(token_hash=new_hash)
                 )
-                device.token_hash = new_hash
+                if migration.rowcount != 1:
+                    await db.rollback()
+                    result = await db.execute(
+                        select(Device).where(Device.id == device_id)
+                    )
+                    device = result.scalar_one_or_none()
+                    if (
+                        device is None
+                        or not device.is_active
+                        or device.deleted_at is not None
+                        or not verify_token(secret, device.token_hash)
+                    ):
+                        return None
+                else:
+                    device.token_hash = new_hash
+                    needs_commit = True
             else:
                 if not verify_token(secret, device.token_hash):
                     return None
 
-            await db.execute(
-                update(Device)
-                .where(Device.id == device_id)
-                .values(last_used_at=datetime.now(timezone.utc))
-            )
-            await db.commit()
+            if _should_write_last_used(f"dev:{device_id}"):
+                await db.execute(
+                    update(Device)
+                    .where(Device.id == device_id)
+                    .values(last_used_at=datetime.now(timezone.utc))
+                )
+                needs_commit = True
 
-            _last_used_writes[f"dev:{device_id}"] = time.monotonic()
+            if needs_commit:
+                await db.commit()
 
             principal = Principal(
                 auth_type="device",
                 device_id=device_id,
                 scopes=device.scopes,
             )
-
-            # Populate cache
-            _device_cache[device_id] = (
-                principal,
-                device.token_hash,
-                True,
-                time.monotonic(),
-            )
-
             return principal
 
 

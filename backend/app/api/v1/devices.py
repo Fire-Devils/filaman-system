@@ -1,3 +1,4 @@
+from ipaddress import ip_address
 import logging
 
 import httpx
@@ -7,10 +8,38 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession
+from app.api.deps import (
+    DBSession,
+    PrincipalDep,
+    RequirePermission,
+    ensure_any_permission,
+)
 from app.utils.colors import visible_rgb_hex_or_legacy
 
 logger = logging.getLogger(__name__)
+
+
+def _device_url(address: str, path: str) -> httpx.URL:
+    try:
+        parsed = ip_address(address)
+    except ValueError:
+        parsed = None
+    if (
+        parsed is None
+        or parsed.is_unspecified
+        or parsed.is_loopback
+        or parsed.is_link_local
+        or parsed.is_multicast
+        or parsed.is_reserved
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "unsafe_device_address",
+                "message": "Device address is not allowed for outbound requests",
+            },
+        )
+    return httpx.URL(scheme="http", host=str(parsed), path=path)
 
 
 def _is_primary_worker() -> bool:
@@ -112,41 +141,23 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 
 async def get_current_device(
     db: DBSession,
-    authorization: str = Header(..., alias="Authorization"),
+    principal: PrincipalDep,
 ) -> Device:
-    # Parse "Device <token>"
-    if not authorization.startswith("Device "):
+    if principal.auth_type != "device" or principal.device_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "unauthenticated", "message": "Invalid authorization header"},
+            detail={"code": "unauthenticated", "message": "Device authentication required"},
         )
-    
-    token = authorization[7:] # Remove "Device "
-    
-    # Use existing logic from middleware to parse token
-    from app.core.security import parse_token
-    parsed = parse_token(token)
-    if parsed is None or parsed[0] != "dev":
-         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "unauthenticated", "message": "Invalid token format"},
-        )
-    
-    _, device_id, _ = parsed
-    
-    result = await db.execute(select(Device).where(Device.id == device_id))
+
+    result = await db.execute(select(Device).where(Device.id == principal.device_id))
     device = result.scalar_one_or_none()
-    
+
     if not device or not device.is_active or device.deleted_at:
-         raise HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unauthenticated", "message": "Device not found or inactive"},
         )
-    
-    # Update last_used_at
-    device.last_used_at = datetime.now(timezone.utc)
-    await db.commit()
-    
+
     return device
 
 
@@ -187,7 +198,7 @@ async def device_heartbeat(
     db: DBSession,
     device: Device = Depends(get_current_device),
 ):
-    device.ip_address = data.ip_address
+    device.ip_address = str(data.ip_address)
     device.last_seen_at = datetime.now(timezone.utc)
     await db.commit()
     return {"status": "ok"}
@@ -196,6 +207,7 @@ async def device_heartbeat(
 @router.get("/active", response_model=list[dict])
 async def list_active_devices(
     db: DBSession,
+    principal=RequirePermission("spools:read"),
 ):
     # Find active devices (last seen < 3 min)
     now = datetime.now(timezone.utc)
@@ -228,7 +240,21 @@ async def write_rfid_tag(
     device_id: int,
     data: WriteTagRequest,
     db: DBSession,
+    principal: PrincipalDep,
 ):
+    if data.spool_id:
+        await ensure_any_permission(db, principal, "spools:update")
+    elif data.location_id:
+        await ensure_any_permission(db, principal, "locations:update")
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "bad_request",
+                "message": "Either spool_id or location_id must be provided",
+            },
+        )
+
     # Find Device
     result = await db.execute(select(Device).where(Device.id == device_id))
     device = result.scalar_one_or_none()
@@ -240,17 +266,12 @@ async def write_rfid_tag(
         )
 
     # Prepare request to device
-    device_url = f"http://{device.ip_address}/api/v1/rfid/write"
+    device_url = _device_url(device.ip_address, "/api/v1/rfid/write")
     payload = {}
     if data.spool_id:
         payload["spool_id"] = data.spool_id
-    elif data.location_id:
-        payload["location_id"] = data.location_id
     else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "bad_request", "message": "Either spool_id or location_id must be provided"},
-        )
+        payload["location_id"] = data.location_id
 
     # Extended Data: nur wenn Spool und Setting aktiv
     if data.spool_id:
@@ -300,7 +321,7 @@ async def write_rfid_tag(
             timeout=5.0,  # Short timeout just to trigger the device
             http2=False,
             headers=headers,
-            follow_redirects=True,
+            follow_redirects=False,
         ) as client:
             # Fire and forget - we don't wait for the RFID result
             await client.post(device_url, json=payload)
@@ -320,6 +341,7 @@ async def write_rfid_tag(
 async def get_write_status(
     device_id: int,
     db: DBSession,
+    principal=RequirePermission("spools:read"),
 ):
     """
     Fragt den Status des letzten Schreibvorgangs für ein Gerät ab.
@@ -722,6 +744,7 @@ async def locate_spool(
 async def request_tag_scan(
     device_id: int,
     db: DBSession,
+    principal=RequirePermission("spools:create"),
 ):
     """Fordert das Gerät auf, den nächsten NFC-Tag zu lesen und die Daten zurückzusenden."""
     result = await db.execute(select(Device).where(Device.id == device_id))
@@ -732,6 +755,8 @@ async def request_tag_scan(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Device not found, inactive or has no IP address"},
         )
+
+    device_url = _device_url(device.ip_address, "/api/v1/rfid/scan-request")
 
     # Status auf pending setzen
     if device.custom_fields is None:
@@ -745,10 +770,9 @@ async def request_tag_scan(
     await db.commit()
 
     # Scan-Request ans Gerät senden und Ergebnis prüfen
-    device_url = f"http://{device.ip_address}/api/v1/rfid/scan-request"
     request_error: str | None = None
     try:
-        async with httpx.AsyncClient(timeout=5.0, http2=False, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=5.0, http2=False, follow_redirects=False) as client:
             response = await client.post(device_url, json={})
 
         if response.status_code >= 400:
@@ -843,6 +867,7 @@ async def receive_tag_data(
 async def get_tag_scan_result(
     device_id: int,
     db: DBSession,
+    principal=RequirePermission("spools:read"),
 ):
     """Gibt den Status und das Ergebnis des letzten Tag-Scans zurück."""
     result = await db.execute(select(Device).where(Device.id == device_id))

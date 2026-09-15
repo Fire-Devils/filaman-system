@@ -91,7 +91,7 @@ class DeviceResponse(BaseModel):
     last_seen_at: datetime | None
     ip_address: str | None
     created_at: datetime | None
-    token_hash: str | None  # Needed for frontend status logic
+    registration_pending: bool
     is_online: bool = False
     auto_assign_enabled: bool = False
     auto_assign_timeout: int = 60
@@ -486,7 +486,7 @@ async def list_devices(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    query = select(Device).where(Device.deleted_at.is_(None)).order_by(Device.name)
+    query = select(Device).where(Device.deleted_at.is_(None)).order_by(Device.name, Device.id)
     query = query.offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
@@ -505,8 +505,6 @@ async def create_device(
     db: DBSession,
     principal = RequirePermission("admin:devices_manage"),
 ):
-    print(f"Creating device with name: {data.name}, type: {data.device_type}")
-    
     # Generate unique device_code
     code = None
     for _ in range(10):
@@ -532,7 +530,6 @@ async def create_device(
     await db.commit()
     await db.refresh(device)
 
-    print(f"Device created: {device.id}, code: {device.device_code}")
     return {"id": device.id, "name": device.name, "device_code": device.device_code}
 
 

@@ -37,6 +37,10 @@ class Device(Base, TimestampMixin):
         delta = datetime.now(timezone.utc) - self.last_seen_at
         return delta.total_seconds() < 180  # 3 minutes
 
+    @property
+    def registration_pending(self) -> bool:
+        return not self.is_active and self.device_code is not None
+
     spool_events: Mapped[list["SpoolEvent"]] = relationship(back_populates="device")
 
 
