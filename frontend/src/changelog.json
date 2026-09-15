@@ -12,7 +12,8 @@
           { "type": "security", "text": "Die Geräteverwaltung zeigt keine Token-Daten mehr in der Geräteliste und schreibt keine Registrierungscodes mehr in die Browser-Konsole. Von Geräten gemeldete Adressen und Texte werden jetzt geprüft, bevor sie angezeigt werden. Ob eine Registrierung noch aussteht, bleibt wie gewohnt sichtbar. (Beigetragen von akira69)" },
           { "type": "fix", "text": "In der AMS View stimmen Luftfeuchte und Temperatur jetzt mit der Drucker-Seite überein, bei X1C erscheinen dort also echte Prozent- und °C-Werte. Belegte HT-Fächer ohne zugeordnete Spule zeigen jetzt Material und Farbe des Druckers, statt leer zu wirken. (Beigetragen von wolfrage76)" },
           { "type": "change", "text": "Die App-Einstellung \"Doppelpunkte in RFID-UIDs anzeigen\" ist bei einer neuen Installation jetzt standardmäßig aus. Eine bereits gespeicherte Einstellung bleibt unverändert, und an gespeicherten UIDs oder der Suche ändert sich nichts. (Beigetragen von wolfrage76)" },
-          { "type": "fix", "text": "Die Fehlermeldung für ein Auswahl- oder Mehrfachauswahlfeld ohne Optionen erscheint jetzt einheitlich für beide Feldtypen. (Beigetragen von wolfrage76)" }
+          { "type": "fix", "text": "Die Fehlermeldung für ein Auswahl- oder Mehrfachauswahlfeld ohne Optionen erscheint jetzt einheitlich für beide Feldtypen. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "Auf der Changelog-Seite werden Sicherheits-, Verbesserungs- und Entfernt-Einträge jetzt auch als solche gekennzeichnet, statt pauschal als \"Geändert\" zu erscheinen." }
         ],
         "en": [
           { "type": "feature", "text": "The filament, spool, manufacturer and colour tables now have their own sort and filter buttons per column. Depending on the column type you get text, number, date and choice filters, and the choices are built only from values that actually exist. Visible system-wide extra fields can be filtered the same way, while search, grouping and your saved column layout stay untouched. (Contributed by akira69)" },
@@ -22,7 +23,8 @@
           { "type": "security", "text": "Device management no longer shows token data in the device list and no longer writes enrollment codes to the browser console. Addresses and text reported by devices are now validated before they are displayed. Whether a registration is still pending remains visible as before. (Contributed by akira69)" },
           { "type": "fix", "text": "In AMS View, humidity and temperature now match the Printers page, so X1C units show real percentage and °C readings. Occupied HT bays without a linked spool now show the printer's material and colour instead of looking empty. (Contributed by wolfrage76)" },
           { "type": "change", "text": "The app setting \"Show colons in RFID UIDs\" is now off by default on a fresh installation. An already saved setting is left unchanged, and stored UIDs and search behaviour are unaffected. (Contributed by wolfrage76)" },
-          { "type": "fix", "text": "The error message for a dropdown or multi-select field without options now appears consistently for both field types. (Contributed by wolfrage76)" }
+          { "type": "fix", "text": "The error message for a dropdown or multi-select field without options now appears consistently for both field types. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "On the changelog page, security, improvement and removal entries are now labelled as such instead of all showing up as \"Changed\"." }
         ]
       }
     },
