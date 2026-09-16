@@ -323,6 +323,18 @@ def _apply_ams_units_climate(
             bucket["humidity_level"] = humidity_level
 
 
+def _or_none(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Drop a sub-object that carries nothing, so ``null`` keeps meaning "unknown".
+
+    A driver that only reports ``connected`` (health, no display hook) would
+    otherwise hand out ``temperatures`` with six nulls in it, and a board that
+    tests the object for truthiness would draw an empty row.
+    """
+    if not payload:
+        return None
+    return payload if any(v not in (None, "") for v in payload.values()) else None
+
+
 def _unit_drying(unit: dict[str, Any]) -> dict[str, Any] | None:
     """Return drying telemetry only when a cycle is actually running.
 
@@ -982,8 +994,8 @@ def build_printer_display(
         "driver": printer.driver_key,
         "connected": bool(live["connected"]) if live else None,
         "state": live["state"] if live else "unknown",
-        "job": live["job"] if live else None,
-        "temperatures": live["temperatures"] if live else None,
+        "job": _or_none(live["job"]) if live else None,
+        "temperatures": _or_none(live["temperatures"]) if live else None,
         "speed_level": live["speed_level"] if live else None,
         "active": active,
         "alerts": _build_alerts(printer.name, live or {}, units),

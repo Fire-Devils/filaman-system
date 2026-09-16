@@ -21,7 +21,7 @@ from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.seeds import run_all_seeds
-from app.core.shared_health import shared_health_store
+from app.core.shared_health import shared_display_store, shared_health_store
 from app.plugins.manager import plugin_manager
 from app.services.plugin_service import PLUGINS_DIR
 
@@ -101,6 +101,12 @@ async def _watchdog_health_check() -> None:
     # can return accurate status to the frontend.
     if health:
         shared_health_store.publish(health)
+
+    # Same for the Display API: a board whose polls never land on the primary
+    # would otherwise show nothing at all.
+    display_states = await plugin_manager.get_display_states()
+    if display_states:
+        shared_display_store.publish(display_states)
 
     # Deaktivierte Plugins ermitteln
     async with async_session_maker() as db:
@@ -271,6 +277,9 @@ async def lifespan(app: FastAPI):
         initial_health = plugin_manager.get_health()
         if initial_health:
             shared_health_store.publish(initial_health)
+        initial_display = await plugin_manager.get_display_states()
+        if initial_display:
+            shared_display_store.publish(initial_display)
 
     # Start the driver watchdog in every worker (handles health checks
     # for the primary and automatic takeover for secondary workers).
@@ -289,8 +298,9 @@ async def lifespan(app: FastAPI):
 
     if _is_primary:
         await plugin_manager.stop_all()
-        # Clean up shared health memory (primary is the owner)
+        # Clean up shared memory (primary is the owner of both blocks)
         shared_health_store.cleanup()
+        shared_display_store.cleanup()
         # Release the file lock (OS also releases automatically on exit).
         # We intentionally do NOT delete the lock file so that secondary
         # workers can still attempt flock() on it during takeover.
@@ -303,8 +313,9 @@ async def lifespan(app: FastAPI):
             _lock_fd = None
         _is_primary = False
     else:
-        # Secondary workers just close their handle (don't unlink)
+        # Secondary workers just close their handles (don't unlink)
         shared_health_store.close()
+        shared_display_store.close()
     logger.info("FilaMan backend stopped")
 
 

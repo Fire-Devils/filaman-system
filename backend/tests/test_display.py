@@ -1,6 +1,11 @@
 """Display API: merge of FilaMan slot assignments and optional driver live state."""
 
+import os
+
+import pytest
+
 from app.api.v1 import display as display_api
+from app.core.shared_health import SharedStateStore
 from app.models import Filament, FilamentPrinterParam, PrinterSlotAssignment, SpoolPrinterParam
 from app.services.display_service import (
     SCHEMA_VERSION,
@@ -699,3 +704,164 @@ class TestDisplayEndpoint:
 
         response = await client.get("/api/v1/display", headers=_device_headers(token))
         assert response.status_code == 403, response.text
+
+
+# ---------------------------------------------------------------------------
+# drivers across workers
+# ---------------------------------------------------------------------------
+
+
+class _HealthOnlyDriver:
+    """A driver like the Bambu Lab one: no display hook, but a health() dict."""
+
+    driver_key = "bambulab"
+
+    def __init__(self, connected=True):
+        self._connected = connected
+
+    def health(self):
+        return {
+            "driver_key": self.driver_key,
+            "running": True,
+            "connected": self._connected,
+            "ams_units": [{"ams_id": 0, "humidity": 6, "temp": 24.4, "tray_count": 4}],
+        }
+
+
+@pytest.fixture
+def display_store(monkeypatch):
+    """A private shared-memory block, so tests never touch a running instance."""
+    store = SharedStateStore(name=f"filaman_display_test_{os.getpid()}", size=65536)
+    monkeypatch.setattr(display_api, "shared_display_store", store)
+    yield store
+    store.cleanup()
+
+
+@pytest.fixture
+def drivers(monkeypatch):
+    """Own the driver registry for the test, and hand back a plain dict."""
+    from app.plugins.manager import plugin_manager
+
+    registry: dict[int, object] = {}
+    monkeypatch.setattr(plugin_manager, "drivers", registry)
+    return registry
+
+
+class TestDriverStateAcrossWorkers:
+    async def test_driver_without_the_hook_still_gives_connected_and_climate(
+        self, auth_client, db_session, display_store, drivers
+    ):
+        """health() carries both, and the display service already reads that shape."""
+        client, _ = auth_client
+        printer, _ = await _printer_with_spool(db_session)
+        drivers[printer.id] = _HealthOnlyDriver()
+
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        assert response.status_code == 200, response.text
+        [p] = response.json()["printers"]
+        assert p["connected"] is True
+        assert p["ams"][0]["temperature"] == 24.4
+        assert p["ams"][0]["humidity"] == 6
+
+    async def test_worker_without_drivers_serves_the_snapshot(
+        self, auth_client, db_session, display_store, drivers
+    ):
+        """The primary publishes; a worker with an empty registry still answers."""
+        client, _ = auth_client
+        printer, _ = await _printer_with_spool(db_session)
+
+        drivers[printer.id] = _HealthOnlyDriver()
+        primary = await client.get(f"/api/v1/display/printers/{printer.id}")
+        assert primary.json()["printers"][0]["connected"] is True
+
+        drivers.clear()  # this worker never loaded a driver
+        secondary = await client.get(f"/api/v1/display/printers/{printer.id}")
+        assert secondary.status_code == 200, secondary.text
+        [p] = secondary.json()["printers"]
+        assert p["connected"] is True
+        assert p["ams"][0]["temperature"] == 24.4
+        assert p["ams"][0]["humidity"] == 6
+
+    async def test_stopped_driver_stops_looking_live(
+        self, auth_client, db_session, display_store, drivers
+    ):
+        """Clearing the snapshot is what a driver stop does, on every worker."""
+        client, _ = auth_client
+        printer, _ = await _printer_with_spool(db_session)
+        drivers[printer.id] = _HealthOnlyDriver()
+        await client.get(f"/api/v1/display/printers/{printer.id}")
+
+        drivers.clear()
+        display_store.clear(printer.id)
+
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        [p] = response.json()["printers"]
+        assert p["connected"] is None
+        assert p["ams"][0]["temperature"] is None
+        assert p["ams"][0]["slots"][1]["spool_id"] is not None  # the board still stands
+
+    async def test_health_only_driver_leaves_job_and_temperatures_null(
+        self, auth_client, db_session, display_store, drivers
+    ):
+        """health() knows nothing about the job, so those stay null, not empty shells."""
+        client, _ = auth_client
+        printer, _ = await _printer_with_spool(db_session)
+        drivers[printer.id] = _HealthOnlyDriver()
+
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        [p] = response.json()["printers"]
+        assert p["temperatures"] is None
+        assert p["job"] is None
+
+    async def test_disconnected_driver_is_reported_offline_not_unknown(
+        self, auth_client, db_session, display_store, drivers
+    ):
+        client, _ = auth_client
+        printer, _ = await _printer_with_spool(db_session)
+        drivers[printer.id] = _HealthOnlyDriver(connected=False)
+
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        assert response.json()["printers"][0]["connected"] is False
+
+    async def test_a_throwing_driver_costs_freshness_not_contents(
+        self, auth_client, db_session, display_store, drivers
+    ):
+        client, _ = auth_client
+        printer, _ = await _printer_with_spool(db_session)
+        driver = _HealthOnlyDriver()
+        drivers[printer.id] = driver
+        await client.get(f"/api/v1/display/printers/{printer.id}")
+
+        def boom():
+            raise RuntimeError("driver fell over")
+
+        driver.health = boom
+        response = await client.get(f"/api/v1/display/printers/{printer.id}")
+        [p] = response.json()["printers"]
+        assert p["connected"] is True
+        assert p["ams"][0]["temperature"] == 24.4
+
+    async def test_a_real_board_fits_into_the_block(self, display_store):
+        """Four AMS with sixteen trays must not trip the payload-size guard."""
+        unit = lambda i: {  # noqa: E731
+            "id": i,
+            "temp": 24.4,
+            "humidity": 6,
+            "tray": [
+                {
+                    "id": t,
+                    "tray_type": "PLA",
+                    "tray_color": "F8A813FF",
+                    "tray_sub_brands": "Matte - Charcoal (11101)",
+                    "remain": 80,
+                    "tag_uid": "0000000000000000",
+                    "tray_uuid": "00000000000000000000000000000000",
+                    "nozzle_temp_min": 190,
+                    "nozzle_temp_max": 300,
+                }
+                for t in range(4)
+            ],
+        }
+        state = {"connected": True, "ams": {"ams": [unit(i) for i in range(4)]}}
+        display_store.publish({n: state for n in range(1, 5)})
+        assert display_store.read(3) == state
