@@ -1,8 +1,8 @@
 /**
  * Following a tag reader to the spool it just scanned.
  *
- * A scale posts every scan to /api/v1/devices/scale/tag-scan, which records it
- * on the device row, and the browser polls /api/v1/devices/last-scan for it.
+ * A reader posts every scan to /api/v1/tag/scan, which records it on the
+ * reader's row in tag_readers, and the browser polls /api/v1/tag/last-scan for it.
  * The database is the hand-off on purpose: FilaMan runs several Gunicorn
  * workers and its event bus is per-worker, so an event would only reach the
  * browsers that happen to hang off the same one.

@@ -582,7 +582,8 @@ const { title } = Astro.props
       /* ── Follow a tag reader to the spool it scanned ──────────── */
       // Polled rather than pushed: drivers and the event bus are per Gunicorn
       // worker, so an event would reach only the browsers on one of the four.
-      // The scan sits on the device row instead, which every worker can read.
+      // The scan sits on the reader's row in tag_readers instead, which every
+      // worker can read.
       ;(function followTagScanner() {
         const POLL_MS = 1200
         let lastSeenSeq: number | null = null

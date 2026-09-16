@@ -28,8 +28,8 @@ Two dependencies enforce keys, both in `backend/app/api/deps.py`:
 **Rule: list and detail endpoints use `PrincipalDep`, not `RequirePermission`.**
 Anyone who is authenticated at all may read. Authorization starts at writing.
 
-Examples: manufacturers (`api/v1/filaments.py:184`), colors (`:491`) and
-locations (`api/v1/spools.py:151`) are read with `PrincipalDep`, while
+Examples: manufacturers (`api/v1/filaments.py:185`), colors (`:492`) and
+locations (`api/v1/spools.py:156`) are read with `PrincipalDep`, while
 `manufacturers:create/update/delete`, `colors:*` and `locations:*` are guarded
 with `RequirePermission`.
 
@@ -44,9 +44,15 @@ Consequences, on purpose:
 
 | Key | Where | Why |
 | --- | --- | --- |
-| `spool_events:read` | `api/v1/spools.py:694,1080` | Event history is separate from the spool itself |
-| `display:read` | `api/v1/display.py:56,76` | A wall panel device gets exactly this scope and nothing else — see [display-api.md](display-api.md) |
-| `printers:read`, `filaments:read`, `spools:read` | `api/v1/printers.py:623,643,651` only, inside `ensure_any_permission(...)` | Printer actions that touch a spool or filament; the plain list endpoints do not check them |
+| `spool_events:read` | `api/v1/spools.py:801,1187` | Event history is separate from the spool itself |
+| `display:read` | `api/v1/display.py:81,101` | A wall panel device gets exactly this scope and nothing else — see [display-api.md](display-api.md) |
+| `printers:read`, `filaments:read`, `spools:read` | `api/v1/printers.py:623,643,651`, inside `ensure_any_permission(...)` | Printer actions that touch a spool or filament; the plain list endpoints do not check them |
+| `spools:read` | `api/v1/devices.py:210,344,870` | Device status for the UI: active devices, RFID write status, last tag-scan result of a device |
+| `spools:read` | `api/v1/tag.py`, in `_reader_principal` (`/tag/scan`, `/tag/last-scan`, `/tag/readers`) | Tag readers and the browser that follows them. A registered device passes on its token alone, like `scale/weight`; users and API keys need the key |
+
+Every default role (`viewer`, `user`, `admin`) holds `spools:read`, so these
+checks only bite for custom roles without it or for API keys whose scopes leave
+it out.
 
 ## API keys are self-service
 
