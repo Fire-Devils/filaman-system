@@ -704,6 +704,7 @@
     "stopDriver": "Stop Driver",
     "driverStarting": "Starting...",
     "driverStopping": "Stopping...",
+    "syncActionRunning": "Running…",
     "checkAll": "Check All Printers",
     "reconnectDone": "Reconnecting all printers.",
     "externalSlot": "External Spool",
