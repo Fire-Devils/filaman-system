@@ -209,6 +209,7 @@
     "createBtn": "Erstellen",
     "tokenWarning": "Kopiere diesen Token jetzt — er wird nicht erneut angezeigt!",
     "copyBtn": "Kopieren",
+    "copyFailed": "Kopieren fehlgeschlagen. Wähle den Token aus und kopiere ihn manuell.",
     "qrTitle": "Für die FilaMan-App scannen",
     "qrHint": "In der App: Anmeldung → Token → QR-Symbol im Token-Feld.",
     "qrError": "QR-Code konnte nicht erzeugt werden. Bitte den Token kopieren.",

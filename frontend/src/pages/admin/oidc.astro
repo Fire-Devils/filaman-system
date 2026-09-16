@@ -119,6 +119,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { copyText } from '../../lib/clipboard'
 
     async function init() {
       await initI18n()
@@ -145,12 +146,18 @@ import Layout from '../../layouts/Layout.astro'
       // Set callback URL based on current origin
       callbackUrlInput.value = `${window.location.origin}/auth/oidc/callback`
 
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(callbackUrlInput.value).then(() => {
-          const originalText = copyBtn.textContent
+      // Over plain HTTP navigator.clipboard is undefined, so this threw before
+      // the then() could run and the button never moved. copyText() falls back
+      // to a hidden textarea; a failure selects the field to copy by hand.
+      copyBtn.addEventListener('click', async () => {
+        const originalText = copyBtn.textContent
+        if (await copyText(callbackUrlInput.value)) {
           copyBtn.textContent = '✓'
-          setTimeout(() => { copyBtn.textContent = originalText }, 2000)
-        })
+        } else {
+          copyBtn.textContent = '✕'
+          callbackUrlInput.select()
+        }
+        setTimeout(() => { copyBtn.textContent = originalText }, 2000)
       })
 
       function showMessage(text: string, isError: boolean) {
