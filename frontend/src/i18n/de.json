@@ -118,6 +118,14 @@
     "removeTagError": "Der RFID-Tag konnte nicht entfernt werden.",
     "writeTimeout": "Zeitüberschreitung beim Schreibvorgang"
   },
+  "scanner": {
+    "unknownTag": "Tag {uid} geh\u00f6rt zu keiner Spule.",
+    "offer": "Spule #{id} gescannt.",
+    "offerNamed": "#{id} {name} gescannt.",
+    "open": "\u00d6ffnen",
+    "landed": "Per Tag-Scan ge\u00f6ffnet ({uid}).",
+    "landedPlain": "Per Tag-Scan ge\u00f6ffnet."
+  },
 
   "login": {
     "title": "Anmeldung - FilaMan",
@@ -198,7 +206,15 @@
     "passwordTooShort": "Passwort muss mindestens 8 Zeichen lang sein",
     "changingPassword": "Ändern...",
     "apiKeys": "API Keys",
-    "apiKeysDesc": "API Keys für externe Integrationen wie Bambuddy verwalten"
+    "apiKeysDesc": "API Keys für externe Integrationen wie Bambuddy verwalten",
+    "tagScanner": "Tag-Scanner",
+    "tagScannerDesc": "Gilt nur f\u00fcr diesen Browser.",
+    "scannerAutoOpen": "Gescannte Spule \u00f6ffnen",
+    "scannerAutoOpenHint": "Spule auf die Waage legen, und dieser Browser springt zu ihr.",
+    "scannerDevice": "Leseger\u00e4t",
+    "scannerDeviceAny": "Was zuletzt gescannt hat",
+    "scannerDeviceHint": "Ausw\u00e4hlen, wenn mehrere Waagen im Einsatz sind und dieser Bildschirm nur einer davon folgen soll.",
+    "scannerDeviceOffline": "Leser \u201e{id}\u201c (hat noch nicht gemeldet)"
   },
   "apiKeys": {
     "title": "API Keys",

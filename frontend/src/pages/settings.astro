@@ -69,6 +69,36 @@ import Layout from '../layouts/Layout.astro'
     </a>
 
     <div class="fm-card" style="padding: 24px;">
+      <h2 style="font-weight: 600; margin: 0 0 6px 0;" data-i18n="settings.tagScanner">Tag scanner</h2>
+      <p style="color: var(--color-text-muted); margin: 0 0 20px 0; font-size: 0.9rem;" data-i18n="settings.tagScannerDesc">
+        Applies to this browser only.
+      </p>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+        <div style="flex: 1;">
+          <label for="scanner-auto-open" style="font-weight: 500;" data-i18n="settings.scannerAutoOpen">Open the spool that was scanned</label>
+          <p style="color: var(--color-text-muted); margin: 4px 0 0 0; font-size: 0.85rem;" data-i18n="settings.scannerAutoOpenHint">
+            Put a spool on the scale and this browser follows to it.
+          </p>
+        </div>
+        <label class="fm-toggle">
+          <input type="checkbox" id="scanner-auto-open" />
+          <span class="fm-toggle-slider"></span>
+        </label>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <label for="scanner-device" class="fm-label" data-i18n="settings.scannerDevice">Reader</label>
+        <select id="scanner-device" class="fm-input">
+          <option value="" data-i18n="settings.scannerDeviceAny">Whichever scanned last</option>
+        </select>
+        <p style="color: var(--color-text-muted); margin: 6px 0 0 0; font-size: 0.85rem;" data-i18n="settings.scannerDeviceHint">
+          Pick one if several scales are in use and this screen should follow only one of them.
+        </p>
+      </div>
+    </div>
+
+    <div class="fm-card" style="padding: 24px;">
       <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="settings.changePassword">Change Password</h2>
       <form id="password-form" style="display: grid; gap: 16px;">
         <div>
@@ -128,6 +158,12 @@ import Layout from '../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
+    import {
+      getBoundReaderId,
+      isAutoOpenEnabled,
+      setAutoOpenEnabled,
+      setBoundReaderId,
+    } from '../lib/tag-scanner'
     await initI18n()
 
     function getCsrfToken(): string {
@@ -273,6 +309,58 @@ import Layout from '../layouts/Layout.astro'
       }
     })
     
+    // ── Tag scanner ────────────────────────────────────────────────────
+    // Stored in this browser, not on the account: the kiosk on the wall and the
+    // laptop in the workshop want opposite things from the same login.
+    const autoOpenInput = document.getElementById('scanner-auto-open') as HTMLInputElement
+    const deviceSelect = document.getElementById('scanner-device') as HTMLSelectElement
+
+    autoOpenInput.checked = isAutoOpenEnabled()
+    autoOpenInput.addEventListener('change', () => {
+      setAutoOpenEnabled(autoOpenInput.checked)
+    })
+
+    deviceSelect.addEventListener('change', () => {
+      setBoundReaderId(deviceSelect.value || null)
+    })
+
+    async function loadScannerReaders() {
+      const bound = getBoundReaderId()
+      try {
+        // Readers, not devices: a reader may be a scale, an app on an API key
+        // or anything else that reports a scan, and only the scale has a row
+        // in the device registry.
+        const response = await fetch('/api/v1/tag/readers', {
+          credentials: 'include',
+          signal: getAbortSignal(),
+        })
+        if (!response.ok) return
+        const readers = await response.json()
+        for (const reader of Array.isArray(readers) ? readers : []) {
+          const option = document.createElement('option')
+          option.value = reader.reader_id
+          option.textContent = reader.name || reader.reader_id
+          deviceSelect.appendChild(option)
+        }
+      } catch (error) {
+        // A reader list that cannot be loaded still leaves "whichever scanned
+        // last" selectable, which is the useful default anyway.
+        if (!isAbortError(error)) console.error(error)
+      }
+      // After the options exist, so a stored choice actually takes. A reader
+      // only appears once it has scanned, so one that has not reported since
+      // the last restart gets an entry of its own rather than silently reading
+      // as "whichever scanned last".
+      if (bound && !deviceSelect.querySelector(`option[value="${CSS.escape(bound)}"]`)) {
+        const option = document.createElement('option')
+        option.value = bound
+        option.textContent = t('settings.scannerDeviceOffline', { id: bound })
+        deviceSelect.appendChild(option)
+      }
+      deviceSelect.value = bound || ''
+    }
+
     loadProfile()
+    loadScannerReaders()
   </script>
 </Layout>
