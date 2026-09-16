@@ -248,6 +248,19 @@ import Layout from '../layouts/Layout.astro'
       color: var(--text-muted);
       font-variant-numeric: tabular-nums;
     }
+    .ams-climate-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    /* Sized off the text rather than in pixels, so the icons keep step with
+       the numbers when a wall panel scales the page up. */
+    .ams-climate-item img {
+      width: 1.15em;
+      height: 1.15em;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
     .ams-drying {
       font-size: 0.7rem;
       font-weight: 700;
@@ -642,10 +655,18 @@ import Layout from '../layouts/Layout.astro'
         </${tag}>`
     }
 
+    // The same three icons the Printers page puts next to these very numbers,
+    // so somebody with both screens open reads one language. Decorative only:
+    // the value stays as text, and alt="" keeps them out of the accessibility
+    // tree rather than having a screen reader announce "image" three times.
+    function withIcon(icon: string, text: string) {
+      return `<span class="ams-climate-item"><img src="/${icon}.svg" alt="">${esc(text)}</span>`
+    }
+
     function renderUnit(u: any) {
       const climate = [
-        u.temperature != null ? `${Math.round(u.temperature)}°C` : '',
-        u.humidity != null ? `${Math.round(u.humidity)}% RH` : '',
+        u.temperature != null ? withIcon('temperature', `${Math.round(u.temperature)}°C`) : '',
+        u.humidity != null ? withIcon('moisture', `${Math.round(u.humidity)}%`) : '',
       ].filter(Boolean)
       const slots = u.slots || []
       const filled = slots.filter((s: any) => !s.empty).length
@@ -656,8 +677,8 @@ import Layout from '../layouts/Layout.astro'
             <span class="ams-unit-name">${esc(u.label)}</span>
             <span class="ams-climate">
               ${u.drying ? `<span class="ams-drying">${t('display.drying')}</span>` : ''}
-              ${climate.map(c => `<span>${esc(c)}</span>`).join('')}
-              <span>${t('display.slotsFilled', { filled, total: slots.length })}</span>
+              ${climate.join('')}
+              ${withIcon('slots', t('display.slotsFilled', { filled, total: slots.length }))}
             </span>
           </div>
           <div class="ams-bays">${slots.map(renderBay).join('')}</div>
