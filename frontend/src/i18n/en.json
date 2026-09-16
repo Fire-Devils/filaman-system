@@ -118,6 +118,14 @@
     "removeTagError": "Could not remove the RFID tag.",
     "writeTimeout": "Write operation timed out"
   },
+  "scanner": {
+    "unknownTag": "Tag {uid} does not belong to any spool.",
+    "offer": "Spool #{id} scanned.",
+    "offerNamed": "#{id} {name} scanned.",
+    "open": "Open",
+    "landed": "Opened by a tag scan ({uid}).",
+    "landedPlain": "Opened by a tag scan."
+  },
   "login": {
     "title": "Login - FilaMan",
     "heading": "FilaMan",
@@ -198,7 +206,15 @@
     "passwordTooShort": "Password must be at least 8 characters",
     "changingPassword": "Changing...",
     "apiKeys": "API Keys",
-    "apiKeysDesc": "Manage API keys for external integrations like Bambuddy"
+    "apiKeysDesc": "Manage API keys for external integrations like Bambuddy",
+    "tagScanner": "Tag scanner",
+    "tagScannerDesc": "Applies to this browser only.",
+    "scannerAutoOpen": "Open the spool that was scanned",
+    "scannerAutoOpenHint": "Put a spool on the scale and this browser follows to it.",
+    "scannerDevice": "Reader",
+    "scannerDeviceAny": "Whichever scanned last",
+    "scannerDeviceHint": "Pick one if several scales are in use and this screen should follow only one of them.",
+    "scannerDeviceOffline": "Reader \u201c{id}\u201d (has not reported yet)"
   },
   "apiKeys": {
     "title": "API Keys",

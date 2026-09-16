@@ -196,6 +196,14 @@ const { title } = Astro.props
       import { getAbortSignal } from '../lib/abort'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { navHrefFor } from '../lib/plugin-nav'
+      import {
+        isAutoOpenEnabled,
+        getBoundReaderId,
+        lastScanUrl,
+        mayNavigate,
+        rememberJump,
+        takeRememberedJump,
+      } from '../lib/tag-scanner'
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
@@ -569,6 +577,120 @@ const { title } = Astro.props
         })
 
         connect()
+      })()
+
+      /* ── Follow a tag reader to the spool it scanned ──────────── */
+      // Polled rather than pushed: drivers and the event bus are per Gunicorn
+      // worker, so an event would reach only the browsers on one of the four.
+      // The scan sits on the reader's row in tag_readers instead, which every
+      // worker can read.
+      ;(function followTagScanner() {
+        const POLL_MS = 1200
+        let lastSeenSeq: number | null = null
+        let inFlight = false
+
+        async function poll() {
+          if (inFlight || !isAutoOpenEnabled()) return
+          inFlight = true
+          try {
+            const response = await fetch(lastScanUrl(getBoundReaderId()), {
+              credentials: 'include',
+              cache: 'no-store',
+            })
+            if (!response.ok) return
+            const scan = await response.json()
+            const seq = Number(scan?.seq) || 0
+            if (!seq) return
+
+            // The first answer only sets the mark. Without that, opening a tab
+            // would jump to whatever was scanned an hour ago.
+            if (lastSeenSeq === null) {
+              lastSeenSeq = seq
+              return
+            }
+            if (seq <= lastSeenSeq) return
+            lastSeenSeq = seq
+
+            if (!scan.spool_id) {
+              showScanNote(t('scanner.unknownTag', { uid: scan.uid || '?' }))
+              return
+            }
+            // Jumping is for the pages where it continues what you were doing.
+            // Anywhere else - a plugin page, the AMS view, a form - the scan is
+            // an interruption, so it is offered instead of obeyed.
+            if (mayNavigate(document, window.location.pathname)) {
+              // Handed to the page we are about to become, so it can say why it
+              // is there. A note put up here would die with this one.
+              rememberJump({ uid: scan.uid || '', spoolId: scan.spool_id, at: Date.now() })
+              window.location.href = `/spools/${scan.spool_id}`
+              return
+            }
+            showScanNote(
+              scan.spool_label
+                ? t('scanner.offerNamed', { id: scan.spool_id, name: scan.spool_label })
+                : t('scanner.offer', { id: scan.spool_id }),
+              `/spools/${scan.spool_id}`
+            )
+          } catch {
+            // A poll that fails changes nothing; the next one tries again.
+          } finally {
+            inFlight = false
+          }
+        }
+
+        // The quiet half of the feature. An unknown tag is not an error, it is
+        // nothing to open, and naming the UID makes it obvious which spool
+        // still needs linking. With a link it becomes the offer used wherever
+        // the page must not be taken away.
+        function showScanNote(text: string, href?: string, ms?: number) {
+          document.getElementById('tag-scan-note')?.remove()
+          const note = document.createElement('div')
+          note.id = 'tag-scan-note'
+          note.className = 'fm-alert-info'
+          note.setAttribute('role', 'status')
+          note.style.cssText =
+            'position: fixed; right: 20px; bottom: 20px; z-index: 1000; max-width: 340px;' +
+            'display: flex; align-items: center; gap: 12px;'
+          const label = document.createElement('span')
+          label.style.flex = '1'
+          label.textContent = text
+          note.appendChild(label)
+          if (href) {
+            const open = document.createElement('a')
+            open.className = 'fm-btn fm-btn-primary'
+            open.href = href
+            open.textContent = t('scanner.open')
+            note.appendChild(open)
+          }
+          document.body.appendChild(note)
+          // An offer has to outlive the glance that notices it, so it waits
+          // longest. A note that only reports something gets long enough to be
+          // read and no longer, because lingering is just in the way.
+          setTimeout(() => note.remove(), ms ?? (href ? 20000 : 6000))
+        }
+
+        // A hidden tab keeps polling on purpose. Somebody watching the screen
+        // while working in another window is exactly the case this is for, and
+        // a tab that stopped listening would simply never move. It costs almost
+        // nothing: browsers throttle timers in a background tab to about once a
+        // minute by themselves, so the interval below only applies up front.
+        // A page that changed under you owes an explanation. This is the other
+        // half of the jump above, running on the page it landed on.
+        const landed = takeRememberedJump()
+        if (landed) {
+          // Longer than a plain note: this one answers "why am I suddenly
+          // here", and that question is asked after the eye has wandered.
+          showScanNote(
+            landed.uid
+              ? t('scanner.landed', { uid: landed.uid })
+              : t('scanner.landedPlain'),
+            undefined,
+            10000
+          )
+        }
+
+        setInterval(poll, POLL_MS)
+        void poll()
       })()
     </script>
   </body>
