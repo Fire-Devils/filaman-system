@@ -118,6 +118,14 @@
     "removeTagError": "Impossible de retirer le tag RFID.",
     "writeTimeout": "Délai dépassé lors de l'écriture"
   },
+  "scanner": {
+    "unknownTag": "Le tag {uid} n'est associé à aucune bobine.",
+    "offer": "Bobine n°{id} scannée.",
+    "offerNamed": "Bobine n°{id} ({name}) scannée.",
+    "open": "Ouvrir",
+    "landed": "Page ouverte par le scan d'un tag ({uid}).",
+    "landedPlain": "Page ouverte par le scan d'un tag."
+  },
   "login": {
     "title": "Connexion - FilaMan",
     "heading": "FilaMan",
@@ -198,7 +206,15 @@
     "passwordTooShort": "Le mot de passe doit comporter au moins 8 caractères",
     "changingPassword": "Modification…",
     "apiKeys": "Clés API",
-    "apiKeysDesc": "Gérer les clés API pour des intégrations externes comme Bambuddy"
+    "apiKeysDesc": "Gérer les clés API pour des intégrations externes comme Bambuddy",
+    "tagScanner": "Scanner de tags",
+    "tagScannerDesc": "S'applique uniquement à ce navigateur.",
+    "scannerAutoOpen": "Ouvrir la bobine scannée",
+    "scannerAutoOpenHint": "Posez une bobine sur la balance et ce navigateur ouvre sa page automatiquement.",
+    "scannerDevice": "Lecteur",
+    "scannerDeviceAny": "Le dernier à avoir scanné",
+    "scannerDeviceHint": "À choisir si plusieurs balances sont utilisées et que cet écran ne doit en suivre qu'une seule.",
+    "scannerDeviceOffline": "Lecteur « {id} » (n'a encore signalé aucun scan)"
   },
   "apiKeys": {
     "title": "Clés API",
@@ -208,6 +224,7 @@
     "createBtn": "Créer",
     "tokenWarning": "Copiez ce token maintenant — il ne sera plus affiché !",
     "copyBtn": "Copier",
+    "copyFailed": "Échec de la copie. Sélectionnez le token et copiez-le manuellement.",
     "qrTitle": "Scanner avec l'app FilaMan",
     "qrHint": "Dans l'app : connexion → Token → icône QR dans le champ du token.",
     "qrError": "Impossible de générer le QR code. Copiez le token à la place.",
