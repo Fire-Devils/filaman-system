@@ -704,6 +704,7 @@
     "stopDriver": "Arrêter le pilote",
     "driverStarting": "Démarrage…",
     "driverStopping": "Arrêt…",
+    "syncActionRunning": "En cours…",
     "checkAll": "Vérifier toutes les imprimantes",
     "reconnectDone": "Reconnexion de toutes les imprimantes.",
     "externalSlot": "Bobine externe",
