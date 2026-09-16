@@ -127,10 +127,22 @@ Rules you can rely on:
    spool record.
 2. **The driver's live state (optional)** — a driver may implement
    `get_display_state()` on its `BaseDriver` subclass to add tray contents as the
-   printer sees them, job progress, temperatures and the active slot. The
-   Bambuddy driver does. Without it, `connected`, `job` and `temperatures` are
-   `null` and the board is still complete.
+   printer sees them, job progress, temperatures, drying and the active slot.
+3. **The driver's health, as a fallback** — a driver without that hook still
+   reports `health()`, and `connected` plus the AMS `ams_units` it carries are
+   enough for the online badge and for per-unit temperature and humidity. So
+   every driver contributes something; without the hook, `job`, `temperatures`
+   and `state` stay `null` and the board is still complete.
 
 Driver authors: return either the normalised shape documented in
 `app/services/display_service.py::normalize_driver_state`, or a Bambu-style
 status dict — both are accepted. Keep it cached; it is called on every poll.
+
+### Freshness across workers
+
+FilaMan runs several Gunicorn workers, but a printer driver lives in the primary
+one only. The primary publishes what it sees into shared memory and every other
+worker serves that snapshot, so any worker can answer a poll. The price is that a
+value can be a few seconds behind: harmless for temperature and humidity, briefly
+visible on the active bay right after a filament change. A driver that is stopped
+drops out of the snapshot at once rather than lingering.

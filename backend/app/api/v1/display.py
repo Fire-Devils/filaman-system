@@ -7,35 +7,60 @@ authenticates like a scale: ``Authorization: Device <token>``).
 Polling: send ``If-None-Match`` with the last ``ETag`` and an unchanged board
 answers ``304`` with no body.  ``?fields=slots`` trims the payload to what a
 swatch board needs.  See ``docs/display-api.md``.
+
+Workers: drivers run in the primary worker only, so live state travels to the
+other workers through :data:`app.core.shared_health.shared_display_store`.  A
+board can therefore be served a snapshot a few seconds old - fine for climate,
+visible on the active bay.
 """
 
 from __future__ import annotations
 
-import inspect
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 
 from app.api.deps import DBSession, RequirePermission
+from app.core.shared_health import shared_display_store
 from app.models import Printer
 from app.services.display_service import build_display, compute_etag
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/display", tags=["display"])
 
 
 async def _driver_state(printer: Printer) -> dict[str, Any] | None:
-    """Ask the printer's running driver for live state; None when unsupported."""
+    """Live state for one printer, from wherever this worker can reach it.
+
+    Drivers live in the primary Gunicorn worker only, so on every other one
+    ``plugin_manager.drivers`` is empty and asking it would blank the board.
+    The primary publishes what it sees into shared memory and the secondaries
+    serve that, the same trick the Printers page uses for driver health.
+
+    A driver that does not implement ``get_display_state()`` still has
+    ``health()``, which carries ``connected`` and the AMS ``ams_units`` the
+    Printers page draws its climate from - both shapes the display service
+    already understands, so every driver contributes something.
+    """
     from app.plugins.manager import plugin_manager
 
-    driver = plugin_manager.drivers.get(printer.id)
-    getter = getattr(driver, "get_display_state", None)
-    if driver is None or getter is None:
+    if printer.id not in plugin_manager.drivers:
+        return shared_display_store.read(printer.id)
+
+    try:
+        state = await plugin_manager.get_display_state(printer.id)
+    except Exception:
+        # A driver that throws should cost the board its freshness, not its
+        # contents, so fall back to what was last published.
+        logger.debug("get_display_state failed for printer %s", printer.id, exc_info=True)
+        return shared_display_store.read(printer.id)
+    if state is None:
         return None
-    result = getter()
-    if inspect.isawaitable(result):
-        result = await result
-    return result if isinstance(result, dict) else None
+
+    shared_display_store.publish({printer.id: state})
+    return state
 
 
 def _respond(request: Request, response: Response, payload: dict[str, Any]) -> Any:

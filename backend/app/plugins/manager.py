@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import inspect
 import json
 import logging
 import shutil
@@ -649,6 +650,42 @@ class PluginManager:
             for printer_id, driver in self.drivers.items()
         }
         return dict(self.health_status)
+
+    async def get_display_states(self) -> dict[int, dict[str, Any]]:
+        """Live state of every local driver, for the Display API.
+
+        A driver without ``get_display_state()`` falls back to ``health()``:
+        that already carries ``connected`` and the AMS ``ams_units``, which is
+        what the display service needs for the online badge and the climate.
+        """
+        states: dict[int, dict[str, Any]] = {}
+        for printer_id, driver in self.drivers.items():
+            try:
+                state = await self.get_display_state(printer_id)
+            except Exception:
+                logger.debug(
+                    "get_display_state failed for printer %s", printer_id, exc_info=True
+                )
+                continue
+            if state is not None:
+                states[printer_id] = state
+        return states
+
+    async def get_display_state(self, printer_id: int) -> dict[str, Any] | None:
+        """Live state of one local driver, or None when there is no driver here."""
+        driver = self.drivers.get(printer_id)
+        if driver is None:
+            return None
+        state: Any = None
+        getter = getattr(driver, "get_display_state", None)
+        if getter is not None:
+            state = getter()
+            if inspect.isawaitable(state):
+                state = await state
+        if not isinstance(state, dict):
+            health = getattr(driver, "health", None)
+            state = health() if callable(health) else None
+        return state if isinstance(state, dict) else None
 
     # -- Plugin Extra-Field Management ----------------------------------------
 

@@ -1,14 +1,22 @@
-"""Cross-worker shared health state via multiprocessing.shared_memory.
+"""Cross-worker shared driver state via multiprocessing.shared_memory.
 
-The primary Gunicorn worker publishes driver health dicts into a named
+The primary Gunicorn worker publishes per-printer dicts into a named
 shared-memory block.  Secondary workers (which have no drivers loaded)
-read from the same block so they can return accurate health information
+read from the same block so they can return accurate information
 to the frontend — preventing the "button toggling" issue caused by
 load-balanced requests hitting workers without drivers.
 
+Two blocks use this:
+
+* ``shared_health_store`` - driver health for the Printers page.
+* ``shared_display_store`` - live state for the Display API.  It carries
+  every tray of every AMS, so it gets its own, larger block and a shorter
+  staleness window: a board showing a dead printer as connected is worse
+  than one showing nothing.
+
 Memory layout:
   [4 bytes uint32 LE — JSON payload length]
-  [N bytes — JSON payload: {"<printer_id>": {...health}, ...}]
+  [N bytes — JSON payload: {"<printer_id>": {...state}, ...}]
   [8 bytes float64 LE — UNIX timestamp of last write]
 """
 
@@ -31,11 +39,24 @@ _TS_FMT = "<d"  # float64 LE (timestamp)
 _TS_SIZE = struct.calcsize(_TS_FMT)
 _STALE_SECONDS = 120  # data older than this is considered stale
 
+_DISPLAY_SHM_NAME = "filaman_display"
+_DISPLAY_SHM_SIZE = 262144  # 256 KiB - live state carries every tray
+_DISPLAY_STALE_SECONDS = 45  # a board must not keep a dead driver alive
 
-class SharedHealthStore:
-    """Read/write driver health across Gunicorn workers."""
 
-    def __init__(self) -> None:
+class SharedStateStore:
+    """Read/write per-printer driver state across Gunicorn workers."""
+
+    def __init__(
+        self,
+        *,
+        name: str = _SHM_NAME,
+        size: int = _SHM_SIZE,
+        stale_seconds: float = _STALE_SECONDS,
+    ) -> None:
+        self._name = name
+        self._size = size
+        self._stale_seconds = stale_seconds
         self._shm: shared_memory.SharedMemory | None = None
         self._is_owner = False
 
@@ -54,25 +75,25 @@ class SharedHealthStore:
             # Try to create; if it already exists (previous crash), attach.
             try:
                 self._shm = shared_memory.SharedMemory(
-                    name=_SHM_NAME,
+                    name=self._name,
                     create=True,
-                    size=_SHM_SIZE,
+                    size=self._size,
                 )
                 self._is_owner = True
-                logger.debug("SharedHealthStore: created shared memory block")
+                logger.debug("%s: created shared memory block", self._name)
             except FileExistsError:
                 self._shm = shared_memory.SharedMemory(
-                    name=_SHM_NAME,
+                    name=self._name,
                     create=False,
                 )
-                logger.debug("SharedHealthStore: attached to existing block")
+                logger.debug("%s: attached to existing block", self._name)
         else:
             try:
                 self._shm = shared_memory.SharedMemory(
-                    name=_SHM_NAME,
+                    name=self._name,
                     create=False,
                 )
-                logger.debug("SharedHealthStore: attached to existing block")
+                logger.debug("%s: attached to existing block", self._name)
             except FileNotFoundError:
                 return None
 
@@ -80,8 +101,8 @@ class SharedHealthStore:
 
     # -- public API -----------------------------------------------------
 
-    def publish(self, health: dict[int, dict[str, Any]]) -> None:
-        """Merge health data for one or more printers into shared memory.
+    def publish(self, state: dict[int, dict[str, Any]]) -> None:
+        """Merge state for one or more printers into shared memory.
 
         Callers may pass a full snapshot (all printers) or just the
         printer(s) they have fresh data for — existing entries for other
@@ -92,7 +113,7 @@ class SharedHealthStore:
             return
 
         current = self._read_raw(shm) or {}
-        current.update({str(k): v for k, v in health.items()})
+        current.update({str(k): v for k, v in state.items()})
         self._write(shm, current)
 
     def _read_raw(self, shm: shared_memory.SharedMemory) -> dict[str, Any] | None:
@@ -100,12 +121,12 @@ class SharedHealthStore:
         try:
             buf = shm.buf
             (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
-            if length == 0 or length > _SHM_SIZE - _HEADER_SIZE - _TS_SIZE:
+            if length == 0 or length > self._size - _HEADER_SIZE - _TS_SIZE:
                 return None
             payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
             return json.loads(payload_bytes)
         except Exception:
-            logger.debug("SharedHealthStore: failed to read raw payload", exc_info=True)
+            logger.debug("%s: failed to read raw payload", self._name, exc_info=True)
             return None
 
     def _write(self, shm: shared_memory.SharedMemory, payload_dict: dict[str, Any]) -> None:
@@ -113,9 +134,10 @@ class SharedHealthStore:
         ts = time.time()
 
         total = _HEADER_SIZE + len(payload) + _TS_SIZE
-        if total > _SHM_SIZE:
+        if total > self._size:
             logger.warning(
-                "SharedHealthStore: payload too large (%d bytes), skipping",
+                "%s: payload too large (%d bytes), skipping",
+                self._name,
                 total,
             )
             return
@@ -126,7 +148,7 @@ class SharedHealthStore:
         struct.pack_into(_TS_FMT, buf, _HEADER_SIZE + len(payload), ts)
 
     def read(self, printer_id: int) -> dict[str, Any] | None:
-        """Read health for a single printer.  Returns None if the block
+        """Read state for a single printer.  Returns None if the block
         doesn't exist, has no data for this printer, or the data is stale.
         """
         shm = self._ensure_shm(create=False)
@@ -136,7 +158,7 @@ class SharedHealthStore:
         try:
             buf = shm.buf
             (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
-            if length == 0 or length > _SHM_SIZE - _HEADER_SIZE - _TS_SIZE:
+            if length == 0 or length > self._size - _HEADER_SIZE - _TS_SIZE:
                 return None
 
             payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
@@ -146,17 +168,17 @@ class SharedHealthStore:
                 _HEADER_SIZE + length,
             )
 
-            if time.time() - ts > _STALE_SECONDS:
+            if time.time() - ts > self._stale_seconds:
                 return None
 
             data: dict[str, Any] = json.loads(payload_bytes)
             return data.get(str(printer_id))
         except Exception:
-            logger.debug("SharedHealthStore: failed to read health", exc_info=True)
+            logger.debug("%s: failed to read state", self._name, exc_info=True)
             return None
 
     def read_all(self) -> dict[int, dict[str, Any]] | None:
-        """Read health for all printers.  Returns None if stale/missing."""
+        """Read state for all printers.  Returns None if stale/missing."""
         shm = self._ensure_shm(create=False)
         if shm is None:
             return None
@@ -164,7 +186,7 @@ class SharedHealthStore:
         try:
             buf = shm.buf
             (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
-            if length == 0 or length > _SHM_SIZE - _HEADER_SIZE - _TS_SIZE:
+            if length == 0 or length > self._size - _HEADER_SIZE - _TS_SIZE:
                 return None
 
             payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
@@ -174,17 +196,17 @@ class SharedHealthStore:
                 _HEADER_SIZE + length,
             )
 
-            if time.time() - ts > _STALE_SECONDS:
+            if time.time() - ts > self._stale_seconds:
                 return None
 
             raw: dict[str, Any] = json.loads(payload_bytes)
             return {int(k): v for k, v in raw.items()}
         except Exception:
-            logger.debug("SharedHealthStore: failed to read_all", exc_info=True)
+            logger.debug("%s: failed to read_all", self._name, exc_info=True)
             return None
 
     def clear(self, printer_id: int) -> None:
-        """Remove a printer from shared health (e.g. after stop)."""
+        """Remove a printer from the block (e.g. after a driver stop)."""
         shm = self._ensure_shm(create=False)
         if shm is None:
             return
@@ -209,7 +231,7 @@ class SharedHealthStore:
             if self._is_owner:
                 try:
                     self._shm.unlink()
-                    logger.debug("SharedHealthStore: unlinked shared memory")
+                    logger.debug("%s: unlinked shared memory", self._name)
                 except Exception:
                     pass
             self._shm = None
@@ -225,5 +247,10 @@ class SharedHealthStore:
             self._shm = None
 
 
-# Module-level singleton — imported by printers.py and main.py
-shared_health_store = SharedHealthStore()
+# Module-level singletons — imported by printers.py, display.py and main.py
+shared_health_store = SharedStateStore()
+shared_display_store = SharedStateStore(
+    name=_DISPLAY_SHM_NAME,
+    size=_DISPLAY_SHM_SIZE,
+    stale_seconds=_DISPLAY_STALE_SECONDS,
+)

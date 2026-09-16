@@ -22,7 +22,7 @@ from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.core.cache import response_cache
 from app.core.config import settings
 from app.core.seeds import BUILTIN_PLUGINS, DEPRECATED_PLUGINS
-from app.core.shared_health import shared_health_store
+from app.core.shared_health import shared_display_store, shared_health_store
 from app.core.worker_reload import request_worker_reload
 from app.models import (
     AppSettings,
@@ -815,10 +815,11 @@ async def toggle_plugin_active(
                     await plugin_manager.stop_printer(pid)
                     affected += 1
 
-            # Clear shared health entries immediately so secondaries don't report
+            # Clear shared entries immediately so secondaries don't report
             # stale running/connected states.
             for pid in affected_printer_ids:
                 shared_health_store.clear(pid)
+                shared_display_store.clear(pid)
         else:
             # Aktivierung: aktive Drucker dieses Plugins starten
             result = await db.execute(

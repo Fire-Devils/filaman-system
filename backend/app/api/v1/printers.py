@@ -22,7 +22,7 @@ from app.models import (
     Filament,
     FilamentColor,
 )
-from app.core.shared_health import shared_health_store
+from app.core.shared_health import shared_display_store, shared_health_store
 from app.plugins.manager import plugin_manager
 
 logger = logging.getLogger(__name__)
@@ -1108,10 +1108,13 @@ async def start_driver(
             detail={"code": "start_failed", "message": "Driver could not be started"},
         )
 
-    # Publish health immediately so all workers see the new state
+    # Publish immediately so all workers see the new state
     driver = plugin_manager.drivers.get(printer_id)
     if driver:
         shared_health_store.publish({printer_id: driver.health()})
+        state = await plugin_manager.get_display_state(printer_id)
+        if state is not None:
+            shared_display_store.publish({printer_id: state})
 
     return DriverActionResponse(success=True, message="Driver started")
 
@@ -1146,8 +1149,10 @@ async def stop_driver(
 
     await plugin_manager.stop_printer(printer_id)
 
-    # Clear shared health so secondaries immediately see running=False
+    # Clear shared state so secondaries immediately see running=False and the
+    # AMS View stops showing a stopped driver as live.
     shared_health_store.clear(printer_id)
+    shared_display_store.clear(printer_id)
 
     return DriverActionResponse(success=True, message="Driver stopped")
 
