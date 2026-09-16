@@ -22,6 +22,7 @@ const { id } = Astro.params
   <script>
     import { t, initI18n, getLang } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { copyText } from '../../lib/clipboard'
     import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
     await initI18n()
 
@@ -610,8 +611,20 @@ const { id } = Astro.params
         if (!btn) return
         const pre = btn.closest('div')?.nextElementSibling as HTMLElement
         if (!pre) return
-        navigator.clipboard.writeText(pre.textContent || '').then(() => {
-          btn.textContent = '\u2713'
+        // Same reason as elsewhere: navigator.clipboard is absent over plain
+        // HTTP. There is no input to fall back on here, so a failure selects
+        // the log entry itself and the user copies it by hand.
+        void copyText(pre.textContent || '').then((ok) => {
+          if (ok) {
+            btn.textContent = '\u2713'
+          } else {
+            btn.textContent = '\u2715'
+            const range = document.createRange()
+            range.selectNodeContents(pre)
+            const selection = window.getSelection()
+            selection?.removeAllRanges()
+            selection?.addRange(range)
+          }
           setTimeout(() => btn.innerHTML = '&#x29C9;', 1000)
         })
       })
