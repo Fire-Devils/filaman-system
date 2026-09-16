@@ -563,6 +563,7 @@ class SpoolmanService:
 
         now = datetime.now(timezone.utc)
         if data.use_weight is not None:
+            # aggregate micro-deltas per session
             await SpoolService(self.db).record_consumption(
                 spool,
                 delta_weight_g=data.use_weight,
@@ -575,7 +576,8 @@ class SpoolmanService:
                 weight_g = _length_to_weight_g(
                     data.use_length, filament.diameter_mm, filament.density_g_cm3
                 )
-                await SpoolService(self.db).record_consumption(
+                # aggregate micro-deltas per session
+            await SpoolService(self.db).record_consumption(
                     spool,
                     delta_weight_g=weight_g,
                     event_at=now,
