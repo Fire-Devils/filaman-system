@@ -184,6 +184,7 @@
     "language": "Language",
     "langEn": "English",
     "langDe": "Deutsch",
+    "langFr": "Français",
     "saveProfile": "Save Profile",
     "profileSaved": "Profile saved successfully",
     "profileFailed": "Failed to save profile",
