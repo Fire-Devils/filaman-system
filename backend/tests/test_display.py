@@ -9,6 +9,7 @@ from app.core.shared_health import SharedStateStore
 from app.models import Filament, FilamentPrinterParam, PrinterSlotAssignment, SpoolPrinterParam
 from app.services.display_service import (
     SCHEMA_VERSION,
+    ams_model,
     build_printer_display,
     compute_etag,
     normalize_driver_state,
@@ -403,6 +404,71 @@ def test_active_dry_status_is_drying():
         }
     )
     assert live["ams"][0]["drying"] == {"status": 2, "target_temp": 55.0, "time": 90}
+
+
+@pytest.mark.parametrize(
+    ("unit", "model"),
+    [
+        ({"info": "1001"}, "ams"),
+        ({"info": "2002"}, "ams_lite"),
+        ({"info": "10001003"}, "ams_2_pro"),
+        ({"info": "2104"}, "ams_ht"),
+        ({"info": "0005"}, "ams_lite"),  # AMS Lite on an N9, shown as a Lite
+        ({"info": 3}, "ams_2_pro"),
+        ({"module_type": "n3f"}, "ams_2_pro"),
+        ({"module_type": "ams"}, "ams"),
+        ({"module_type": "n3s"}, "ams_ht"),
+        ({"model": "ams_ht"}, "ams_ht"),
+        ({"module_type": "", "info": "1003"}, "ams_2_pro"),
+        ({"info": "0000"}, None),
+        ({"info": "not-hex"}, None),
+        ({"module_type": "something_new"}, None),
+        ({}, None),
+        (None, None),
+    ],
+)
+def test_ams_model(unit, model):
+    assert ams_model(unit) == model
+
+
+def test_normalize_reports_the_model_of_each_unit():
+    """Bits 0-3 of ``info`` name the hardware; the external holder has none."""
+    live = normalize_driver_state(
+        {
+            "connected": True,
+            "ams": [
+                {"id": 0, "info": "1003", "tray": [{"id": 0, "tray_type": "PLA"}]},
+                {"id": 1, "info": "1001", "tray": [{"id": 0, "tray_type": "PETG"}]},
+                {"id": 128, "info": "1004", "tray": [{"id": 0, "tray_type": "PA"}]},
+                {"id": 2, "tray": [{"id": 0}]},
+            ],
+            "vt_tray": [{"id": 254, "tray_type": "TPU"}],
+        }
+    )
+    models = {u["ams_id"]: u["model"] for u in live["ams"]}
+    assert models == {0: "ams_2_pro", 1: "ams", 2: None, 128: "ams_ht", 255: None}
+
+
+def test_ams_units_model_reaches_a_board_without_live_trays():
+    """A driver without the display hook reports the model in health().ams_units."""
+    fm = {
+        (0, 0): {"present": True, "material": "PLA", "color": "#111111"},
+        (1, 0): {"present": True, "material": "PETG", "color": "#222222"},
+    }
+    out = build_printer_display(
+        _P(name="X1C"),
+        fm,
+        {
+            "connected": True,
+            "ams": [],
+            "ams_units": [
+                {"ams_id": 0, "humidity": 16, "temp": 26.8, "module_type": "n3f"},
+                {"ams_id": 1, "humidity": 20, "temp": 25.0},
+            ],
+        },
+    )
+    assert [(u["ams_id"], u["model"]) for u in out["ams"]] == [(0, "ams_2_pro"), (1, None)]
+    assert slots_only(out)["ams"][0]["model"] == "ams_2_pro"
 
 
 def test_normalize_ht_tray_now_is_unit_id():

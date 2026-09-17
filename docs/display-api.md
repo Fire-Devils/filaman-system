@@ -81,6 +81,7 @@ Authorization: Device 12.34.abcdef…
         {
           "ams_id": 0,                // as the printer numbers it (AMS-HT start at 128)
           "kind": "ams",              // "ams" | "ams_ht" | "external" (spool holder, id 254/255)
+          "model": "ams_2_pro",       // "ams" | "ams_lite" | "ams_2_pro" | "ams_ht", null when the driver does not say
           "label": "AMS A",           // "AMS A".."AMS D", "HT1".. — use it or make your own
           "temperature": 25.4, "humidity": 3,
           "drying": null,             // or { status, target_temp, time }
@@ -130,13 +131,16 @@ Rules you can rely on:
    printer sees them, job progress, temperatures, drying and the active slot.
 3. **The driver's health, as a fallback** — a driver without that hook still
    reports `health()`, and `connected` plus the AMS `ams_units` it carries are
-   enough for the online badge and for per-unit temperature and humidity. So
+   enough for the online badge and for per-unit temperature, humidity and
+   `model` (from an entry's `module_type` or `info`). So
    every driver contributes something; without the hook, `job`, `temperatures`
    and `state` stay `null` and the board is still complete.
 
 Driver authors: return either the normalised shape documented in
 `app/services/display_service.py::normalize_driver_state`, or a Bambu-style
 status dict — both are accepted. Keep it cached; it is called on every poll.
+For `model`, pass an AMS unit's `info` hex string on as the printer sent it, or
+Bambuddy's `module_type` (`ams`, `n3f`, `n3s`); either one is enough.
 
 ### Freshness across workers
 
