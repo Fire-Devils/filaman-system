@@ -45,6 +45,12 @@ SLOTS_PER_AMS = 4
 # BambuStudio DryStatus (bits 4–7 of ams info / dry_status on AMS 2 Pro / HT).
 # 0 = off; 1–4 are an in-progress cycle. Idle units still send dry_status=0.
 _DRY_STATUS_ACTIVE = {1, 2, 3, 4}  # checking, drying, cooling, stopping
+# Which hardware a unit is. The same ``info`` field carries it in bits 0–3
+# (BambuStudio DevAmsType: 1 AMS, 2 AMS Lite, 3 N3F, 4 N3S, 5 AMS Lite on N9).
+AMS_MODELS = ("ams", "ams_lite", "ams_2_pro", "ams_ht")
+_AMS_MODEL_BY_INFO_TYPE = {1: "ams", 2: "ams_lite", 3: "ams_2_pro", 4: "ams_ht", 5: "ams_lite"}
+# The module names from ``get_version`` ("n3f/0"), as Bambuddy passes them on in ``module_type``.
+_AMS_MODEL_BY_MODULE = {"ams": "ams", "n3f": "ams_2_pro", "n3s": "ams_ht"}
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +178,32 @@ def ams_kind(ams_id: int, unit: dict[str, Any] | None = None) -> str:
     if unit and unit.get("is_ams_ht"):
         return "ams_ht"
     return "ams_ht" if ams_id >= AMS_HT_ID_BASE else "ams"
+
+
+def ams_model(unit: dict[str, Any] | None) -> str | None:
+    """``ams`` | ``ams_lite`` | ``ams_2_pro`` | ``ams_ht``, or ``None`` when not reported.
+
+    ``kind`` says how many slots a unit has; this says which unit it is, which
+    is what a client needs to know whether the unit can dry its spools.
+    Accepts the normalised ``model``, Bambuddy's ``module_type`` and the raw
+    ``info`` hex string a Bambu printer sends with every AMS unit.
+    """
+    if not unit:
+        return None
+    model = unit.get("model")
+    if model in AMS_MODELS:
+        return model
+    module = unit.get("module_type")
+    if isinstance(module, str) and module.strip().lower() in _AMS_MODEL_BY_MODULE:
+        return _AMS_MODEL_BY_MODULE[module.strip().lower()]
+    info = unit.get("info")
+    if info in (None, ""):
+        return None
+    try:
+        bits = info if isinstance(info, int) else int(str(info), 16)
+    except ValueError:
+        return None
+    return _AMS_MODEL_BY_INFO_TYPE.get(bits & 0xF)
 
 
 def ams_label(ams_id: int, kind: str) -> str:
@@ -302,7 +334,11 @@ def _apply_ams_units_climate(
     units_by_id: dict[int, dict[str, Any]],
     raw: dict[str, Any] | None,
 ) -> None:
-    """Stamp Printers-page climate (driver ``ams_units``) onto AMS View units."""
+    """Stamp Printers-page climate (driver ``ams_units``) onto AMS View units.
+
+    The model comes along when the driver reports one: for a driver without
+    ``get_display_state()`` these entries are the only per-unit data there is.
+    """
     health = raw.get("ams_units") if isinstance(raw, dict) else None
     if not isinstance(health, list):
         return
@@ -315,6 +351,9 @@ def _apply_ams_units_climate(
             continue
         temp = _unit_temperature(item)
         humidity, humidity_level = _unit_humidity(item)
+        model = ams_model(item)
+        if model is not None and bucket.get("model") is None:
+            bucket["model"] = model
         if temp is not None:
             bucket["temperature"] = temp
         if humidity is not None:
@@ -472,7 +511,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         active_tray          extruder_slots[active_extruder] | active_tray | tray_now
                              (ams*4+slot; AMS-HT 128–135 = that unit, slot 0; 254/255 = none)
         hms                  [{code, msg}] | []
-        ams[]                ams_id|id, is_ams_ht, temperature|temp, humidity
+        ams[]                ams_id|id, is_ams_ht, model|module_type|info (bits 0-3),
+                             temperature|temp, humidity
                              (percent, or 1–5 level on X1C), humidity_raw (%),
                              dry_status, dry_target_temp, dry_time,
                              slots|trays|tray[]: slot|id|tray_id, material|tray_type,
@@ -549,6 +589,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         raw_ams_id = _as_int(_first(unit, ("ams_id", "id"), 0)) or 0
         ams_id = canonicalize_slot_key(raw_ams_id, 0)[0]
         kind = ams_kind(ams_id, unit)
+        model = ams_model(unit)
         drying = _unit_drying(unit)
         temperature = _unit_temperature(unit, ams_parent)
         humidity, humidity_level = _unit_humidity(unit, ams_parent)
@@ -557,6 +598,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
             bucket = {
                 "ams_id": ams_id,
                 "kind": kind,
+                "model": model,
                 "temperature": temperature,
                 "humidity": humidity,
                 "humidity_level": humidity_level,
@@ -565,6 +607,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
             }
             units_by_id[ams_id] = bucket
         else:
+            if bucket.get("model") is None:
+                bucket["model"] = model
             if bucket["temperature"] is None:
                 bucket["temperature"] = temperature
             if bucket["humidity"] is None:
@@ -598,6 +642,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
             bucket = {
                 "ams_id": ams_id,
                 "kind": "external",
+                "model": None,
                 "temperature": None,
                 "humidity": None,
                 "humidity_level": None,
@@ -619,6 +664,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
             {
                 "ams_id": ams_id,
                 "kind": bucket["kind"],
+                "model": bucket.get("model"),
                 "temperature": bucket["temperature"],
                 "humidity": bucket["humidity"],
                 "humidity_level": bucket.get("humidity_level"),
@@ -935,6 +981,7 @@ def build_printer_display(
                 units_by_id[ams_id] = {
                     "ams_id": ams_id,
                     "kind": unit["kind"] if ams_id not in EXTERNAL_IDS else "external",
+                    "model": unit.get("model") if ams_id not in EXTERNAL_IDS else None,
                     "temperature": unit["temperature"],
                     "humidity": unit["humidity"],
                     "humidity_level": unit.get("humidity_level"),
@@ -943,6 +990,8 @@ def build_printer_display(
                 }
                 existing = units_by_id[ams_id]
             else:
+                if existing.get("model") is None and ams_id not in EXTERNAL_IDS:
+                    existing["model"] = unit.get("model")
                 if existing["temperature"] is None:
                     existing["temperature"] = unit["temperature"]
                 if existing["humidity"] is None:
@@ -958,7 +1007,7 @@ def build_printer_display(
     for (ams_id, slot_no) in fm_slots:
         unit = units_by_id.setdefault(
             ams_id,
-            {"ams_id": ams_id, "kind": ams_kind(ams_id), "temperature": None, "humidity": None, "humidity_level": None, "drying": None, "_slot_nos": set()},
+            {"ams_id": ams_id, "kind": ams_kind(ams_id), "model": None, "temperature": None, "humidity": None, "humidity_level": None, "drying": None, "_slot_nos": set()},
         )
         unit["_slot_nos"].add(slot_no)
 
@@ -1016,6 +1065,7 @@ def slots_only(printer_payload: dict[str, Any]) -> dict[str, Any]:
             {
                 "ams_id": u["ams_id"],
                 "kind": u["kind"],
+                "model": u.get("model"),
                 "label": u["label"],
                 "slots": [
                     {k: s[k] for k in ("slot", "label", "empty", "active", "color", "material", "remaining_percent", "spool_id")}
