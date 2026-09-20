@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "change", "text": "Die AMS View zeigt Temperatur, Luftfeuchte und Fachbelegung jetzt mit denselben Symbolen wie die Drucker-Seite. Das Kürzel \"RH\" entfällt dadurch, die Werte bleiben als Text lesbar und die Symbole wachsen im Kiosk-Modus mit der Schriftgröße mit. (Beigetragen von Niko11111)" },
+          { "type": "fix", "text": "Auf Französisch erscheinen jetzt auch die zuletzt hinzugekommenen Texte übersetzt: der Tag-Scanner samt Einstellungen und Hinweisen, die Meldung bei fehlgeschlagenem Kopieren eines API-Keys und die Beschriftung eines laufenden Drucker-Befehls. An Deutsch und Englisch ändert sich nichts. (Beigetragen von nanostra)" },
+          { "type": "feature", "text": "Angebundene Displays und Apps erfahren jetzt, welches AMS-Modell eine Einheit ist (AMS, AMS Lite, AMS 2 Pro oder AMS HT). Damit lassen sich Funktionen anbieten, die nur beheizte Einheiten können — etwa das Festhalten eines Trockenvorgangs. Meldet ein Drucker-Plugin das Modell nicht, bleibt die Angabe leer. (Beigetragen von Niko11111)" }
+        ],
+        "en": [
+          { "type": "change", "text": "The AMS View now shows temperature, humidity and slot usage with the same icons as the Printers page. The \"RH\" label is gone, the values stay readable as text, and the icons scale with the font size in kiosk mode. (Contributed by Niko11111)" },
+          { "type": "fix", "text": "In French, the most recently added texts are now translated as well: the tag scanner with its settings and notes, the message shown when copying an API key fails, and the label of a running printer action. Nothing changes for German and English. (Contributed by nanostra)" },
+          { "type": "feature", "text": "Connected displays and apps now learn which AMS model a unit is (AMS, AMS Lite, AMS 2 Pro or AMS HT). This makes it possible to offer features only heated units support, such as recording a drying run. If a printer plugin does not report the model, the field stays empty. (Contributed by Niko11111)" }
+        ]
+      }
+    },
+    {
       "version": "1.3.7",
       "date": "",
       "changes": {
