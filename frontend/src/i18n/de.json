@@ -705,6 +705,7 @@
     "stopDriver": "Treiber stoppen",
     "driverStarting": "Wird gestartet...",
     "driverStopping": "Wird gestoppt...",
+    "syncActionRunning": "Läuft…",
     "checkAll": "Alle Drucker prüfen",
     "reconnectDone": "Alle Drucker werden neu verbunden.",
     "externalSlot": "Externer Slot",

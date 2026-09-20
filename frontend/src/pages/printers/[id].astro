@@ -637,7 +637,7 @@ const { id } = Astro.params
         if (!action) return
         btn.disabled = true
         const originalText = btn.textContent || ''
-        btn.textContent = getLang() === 'de' ? 'Läuft…' : 'Running…'
+        btn.textContent = t('printers.syncActionRunning')
         try {
           const res = await fetch(`/api/v1/printers/${id}/driver/action`, {
             method: 'POST',
