@@ -13,6 +13,10 @@ export function setTransientPresetCache(key: string, value: object | null) {
   else transientPresetCache.delete(key)
 }
 
+export function getTransientPresetCache(key: string) {
+  return transientPresetCache.get(key) ?? null
+}
+
 function readJsonObject(key: string, fallbackKey?: string): Record<string, unknown> | null {
   try {
     const raw = localStorage.getItem(key) ?? (fallbackKey ? localStorage.getItem(fallbackKey) : null)
@@ -114,12 +118,20 @@ export function getFreeformLabelPresetNames(storageKey: string) {
 
 export function loadFreeformLabelPresetDesign(options: {
   presetsKey: string
+  crossPresetsKey?: string
   presetName: string
+  presetSource?: 'own' | 'cross' | 'builtin'
   kind: LabelKind
 }): LabelDesignV2 | null {
-  const preset = readStoredPresets(options.presetsKey)
-    .find(candidate => candidate.name === options.presetName)
-    ?? getStandardLabelPresets(options.kind).find(candidate => candidate.name === options.presetName)
+  const own = () => readStoredPresets(options.presetsKey).find(candidate => candidate.name === options.presetName)
+  const cross = () => options.crossPresetsKey
+    ? readStoredPresets(options.crossPresetsKey).find(candidate => candidate.name === options.presetName)
+    : undefined
+  const builtin = () => getStandardLabelPresets(options.kind).find(candidate => candidate.name === options.presetName)
+  const preset = options.presetSource === 'own' ? own()
+    : options.presetSource === 'cross' ? cross()
+      : options.presetSource === 'builtin' ? builtin()
+        : own() ?? builtin()
   return preset ? normalizePresetDesign(preset.data.design) : null
 }
 

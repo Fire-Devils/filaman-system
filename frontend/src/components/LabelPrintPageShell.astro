@@ -1,7 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro'
 import BatchLabelPrintStyles from './BatchLabelPrintStyles.astro'
-import LabelDesignerEditor from './LabelDesignerEditor.astro'
+import DesignerSidebar from './freeform-label/DesignerSidebar.astro'
+import DesignerWorkspace from './freeform-label/DesignerWorkspace.astro'
 import LabelPrintBaseStyles from './LabelPrintBaseStyles.astro'
 import LabelSheetOutputSettings from './LabelSheetOutputSettings.astro'
 import PrintActionFooter from './PrintActionFooter.astro'
@@ -68,7 +69,7 @@ const {
         extraFieldsMode={extraFieldsMode}
       />
 
-      <LabelDesignerEditor />
+      <DesignerSidebar />
       <LabelSheetOutputSettings />
 
       <PrintActionFooter
@@ -83,16 +84,20 @@ const {
 
     {variant === 'single' ? (
       <main class="preview-container">
-        <PreviewZoomBar min="50" resetClass="preview-zoom-reset" />
+        <PreviewZoomBar min="50" />
         <div class="preview-scroll-area">
-          <slot name="preview" />
+          <DesignerWorkspace>
+            <slot name="preview" />
+          </DesignerWorkspace>
         </div>
         <TemporaryPdfPreview />
       </main>
     ) : (
       <main class="preview-container" id="preview-container">
         <PreviewZoomBar />
-        <slot name="preview" />
+        <DesignerWorkspace>
+          <slot name="preview" />
+        </DesignerWorkspace>
         <TemporaryPdfPreview />
       </main>
     )}

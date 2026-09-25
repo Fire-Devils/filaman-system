@@ -43,12 +43,12 @@ const WORKING_DESIGN_KEYS = [
 ]
 const unsupportedPresetNames = new Map<LabelKind, Set<string>>()
 
-function safeWrite(key: string, value: unknown): boolean {
+function safeWrite(key: string, value: object) {
   try {
     localStorage.setItem(key, JSON.stringify(value))
-    return true
+    setTransientPresetCache(key, null)
   } catch {
-    return false
+    setTransientPresetCache(key, value)
   }
 }
 
@@ -149,6 +149,7 @@ function preparePresetOwner(userId: number) {
 export function clearLabelPresetBrowserStorage() {
   setTransientPresetCache(SPOOL_LABEL_PRESETS_KEY, null)
   setTransientPresetCache(FILAMENT_LABEL_PRESETS_KEY, null)
+  setTransientPresetCache(LABEL_SHEET_PRESETS_KEY, null)
   // Preserve legacy browser-only presets when their database migration has not succeeded yet.
   if (needsBrowserPresetMigration()) {
     hydrationPromise = null

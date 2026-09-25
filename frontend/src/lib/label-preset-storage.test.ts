@@ -11,9 +11,9 @@ import {
   saveLabelPreset,
 } from './label-preset-storage'
 import { createDefaultLabelDesign } from './freeform-label/defaults'
-import { persistStoredPresetMutation, readStoredPresets } from './freeform-label/editor-storage'
+import { getTransientPresetCache, persistStoredPresetMutation, readStoredPresets } from './freeform-label/editor-storage'
 import { api } from './api'
-import { needsBrowserPresetMigration, readBrowserPresetsForMigration } from './label-preset-browser-migration'
+import { LABEL_SHEET_PRESETS_KEY, needsBrowserPresetMigration, readBrowserPresetsForMigration } from './label-preset-browser-migration'
 
 beforeEach(() => {
   clearLabelPresetBrowserStorage()
@@ -27,6 +27,27 @@ afterEach(() => {
 })
 
 describe('label preset cache migration', () => {
+  it('keeps hydrated paper presets in memory when browser storage is unavailable', async () => {
+    localStorage.setItem('filaman-label-presets-db-migrated-v1', 'complete')
+    vi.spyOn(api, 'get').mockResolvedValue([{
+      id: 7,
+      preset_type: 'sheet',
+      name: 'Shipping labels',
+      data: { settings: { paperSize: 'letter' } },
+    }])
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError')
+    })
+
+    await hydrateLabelPresetStorage(1)
+
+    expect(getTransientPresetCache(LABEL_SHEET_PRESETS_KEY)).toEqual([{
+      id: 'database-7',
+      name: 'Shipping labels',
+      settings: { paperSize: 'letter' },
+    }])
+  })
+
   it('keeps unsaved working designs for the same account across logout and login', async () => {
     localStorage.setItem('filaman-label-presets-owner-v1', '1')
     localStorage.setItem('filaman-label-presets-db-migrated-v1', 'complete')

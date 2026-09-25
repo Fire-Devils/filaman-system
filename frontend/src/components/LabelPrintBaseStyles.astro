@@ -1,9 +1,12 @@
 <style is:global>
   .print-page {
+    --label-danger: #ff8a80;
     display: flex;
-    height: calc(100vh - 64px);
+    height: 100dvh;
     margin: -32px;
   }
+
+  html[data-theme="light"] .print-page { --label-danger: #b42318; }
 
   .print-sidebar {
     width: 320px;
@@ -15,6 +18,8 @@
     /* The inner scroll region owns clipping; sidebar overlays must escape this shell. */
     overflow: visible;
   }
+
+  .print-sidebar.sidebar-sheets-wide { width: 530px; }
 
   .print-sidebar-scroll {
     flex: 1;
@@ -61,7 +66,7 @@
   }
 
   .fm-label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     margin-bottom: 6px;
     display: block;
@@ -72,11 +77,11 @@
     background: var(--input-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 10px 12px;
+    padding: 7px 9px;
     color: var(--text);
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     width: 100%;
-    height: 42px;
+    height: 36px;
     box-sizing: border-box;
   }
 
@@ -99,7 +104,7 @@
   }
 
   .fm-checkbox-group span {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     color: var(--text);
   }
 
@@ -108,7 +113,7 @@
     border-radius: 999px;
     border: 1px solid transparent;
     font-weight: 600;
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     cursor: pointer;
     font-family: var(--font-sans);
   }
@@ -164,7 +169,13 @@
     font-weight: 600;
     cursor: pointer;
     transition: background var(--transition), color var(--transition);
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :is(.tab-btn, .fm-btn, .fm-input, .fm-checkbox-group input, .preview-zoom-btn, .preset-action-btn, .sheet-source-picker button):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   .tab-btn:hover { color: var(--text); }
@@ -178,7 +189,7 @@
   .preview-zoom-bar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   }
 
   .preview-zoom-btn {
@@ -190,13 +201,6 @@
   }
 
   .preview-zoom-btn:hover { border-color: var(--accent); }
-
-  .preview-zoom-slider { accent-color: var(--accent); }
-
-  .preview-zoom-label {
-    text-align: right;
-    color: var(--text-muted);
-  }
 
   .label-preview {
     background: white;
@@ -346,6 +350,31 @@
     color: black;
     white-space: nowrap;
     line-height: 1;
+  }
+
+  @media (max-width: 900px) {
+    .print-page {
+      flex-direction: column;
+      height: auto;
+      min-height: 100dvh;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    .print-sidebar {
+      border-right: 0;
+      border-top: 1px solid var(--border);
+      flex: 0 0 auto;
+      order: 1;
+      width: 100%;
+    }
+
+    .print-sidebar.sidebar-wide,
+    .print-sidebar.sidebar-sheets-wide { width: 100%; }
+    .print-sidebar-scroll { min-height: auto; overflow: visible; padding: 16px; }
+    .preview-container { min-height: 320px; order: -1; width: 100%; }
+    .fm-btn { min-height: 44px; min-width: 44px; }
+    .tab-btn { min-height: 44px; }
   }
 
 </style>

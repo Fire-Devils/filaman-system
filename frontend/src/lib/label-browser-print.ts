@@ -7,8 +7,9 @@ import type {
 } from './label-sheet'
 import {
   resetPreviewSurface,
-  stripElementIds,
+  prepareLabelOutputClone,
 } from './label-preview-dom'
+import { waitForLabelOutputAssets } from './label-output-readiness'
 
 const PRINT_HOST_ID = 'filaman-label-print-host'
 const PRINT_STYLE_ID = 'filaman-label-print-style'
@@ -218,43 +219,12 @@ function createPrintHost(job: LabelBrowserPrintJob) {
     page.className = 'filaman-print-page'
     page.classList.toggle('filaman-print-grid', job.printGrid)
     const clone = sourcePage.cloneNode(true) as HTMLElement
-    stripElementIds(clone)
+    prepareLabelOutputClone(clone)
     normalizePrintClone(clone, job.kind, job.printGrid)
     page.appendChild(clone)
     host.appendChild(page)
   })
   return host
-}
-
-function getPageImages(pages: HTMLElement[]) {
-  const images: HTMLImageElement[] = []
-  pages.forEach(page => {
-    if (page instanceof HTMLImageElement) images.push(page)
-    images.push(...page.querySelectorAll<HTMLImageElement>('img'))
-  })
-  return images
-}
-
-async function waitForImage(image: HTMLImageElement) {
-  if (typeof image.decode !== 'function') return
-  try {
-    await image.decode()
-  } catch (error) {
-    if (!image.complete) throw error
-  }
-}
-
-async function waitForAssets(pages: HTMLElement[]) {
-  const fonts = (document as Document & {
-    fonts?: { ready?: Promise<unknown> }
-  }).fonts
-  const fontsReady = fonts?.ready
-    ? Promise.resolve(fonts.ready)
-    : Promise.resolve()
-  await Promise.all([
-    fontsReady,
-    ...getPageImages(pages).map(waitForImage),
-  ])
 }
 
 function waitForTimerBackedAnimationFrame() {
@@ -302,7 +272,7 @@ export async function printLabelBrowserJob(
   document.body.classList.add(PRINTING_CLASS)
 
   try {
-    await waitForAssets(job.pages)
+    await waitForLabelOutputAssets([...job.pages, host])
     await waitForTimerBackedAnimationFrame()
     await waitForTimerBackedAnimationFrame()
     window.addEventListener('afterprint', cleanupLabelBrowserPrint, {

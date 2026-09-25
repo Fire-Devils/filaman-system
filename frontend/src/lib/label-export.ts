@@ -1,10 +1,13 @@
 import { toCanvas } from 'html-to-image'
-import { stripElementIds } from './label-preview-dom'
+import { prepareLabelOutputClone } from './label-preview-dom'
+import { waitForLabelOutputAssets } from './label-output-readiness'
 
 export const LABEL_EXPORT_DPI = 600
 export const LABEL_EXPORT_CSS_DPI = 96
 // Label exports are intentionally rendered at print-grade 600 DPI.
 export const LABEL_EXPORT_PIXEL_RATIO = LABEL_EXPORT_DPI / LABEL_EXPORT_CSS_DPI
+export const MAX_LABEL_RASTER_PIXELS = 8_000_000
+export const MAX_BATCH_RASTER_PIXELS = 80_000_000
 const LABEL_CAPTURE_ATTEMPTS = 2
 const LABEL_CAPTURE_VISIBLE_PIXEL_THRESHOLD = 250
 const LABEL_CAPTURE_MIN_VISIBLE_PIXELS = 16
@@ -26,6 +29,27 @@ export interface LabelPdfPage {
 export interface LabelPdfDocument {
   save(filename: string): void
   output(type: 'blob'): Blob
+}
+
+export class LabelRasterBudgetError extends Error {
+  constructor(readonly kind: 'label' | 'batch', message: string) {
+    super(message)
+  }
+}
+
+export function assertLabelRasterBudget(
+  dimensions: { widthMm: number; heightMm: number },
+  count = 1,
+) {
+  const widthPx = Math.ceil(dimensions.widthMm * LABEL_EXPORT_DPI / 25.4)
+  const heightPx = Math.ceil(dimensions.heightMm * LABEL_EXPORT_DPI / 25.4)
+  const pixels = widthPx * heightPx
+  if (pixels > MAX_LABEL_RASTER_PIXELS) {
+    throw new LabelRasterBudgetError('label', 'This label is too large to export safely at 600 DPI. Reduce its dimensions.')
+  }
+  if (pixels * count > MAX_BATCH_RASTER_PIXELS) {
+    throw new LabelRasterBudgetError('batch', 'This batch is too large to export safely at 600 DPI. Export fewer labels at a time.')
+  }
 }
 
 export function downloadDataUrl(dataUrl: string, filename: string) {
@@ -50,7 +74,7 @@ function hidePreviewChromeForCapture(element: HTMLElement) {
 
 function createOffscreenCaptureClone(element: HTMLElement) {
   const clone = element.cloneNode(true) as HTMLElement
-  stripElementIds(clone)
+  prepareLabelOutputClone(clone)
   const captureHost = document.createElement('div')
   captureHost.setAttribute('aria-hidden', 'true')
   captureHost.style.position = 'fixed'
@@ -130,7 +154,8 @@ async function renderCaptureCanvas(
     backgroundColor: '#ffffff',
     // Manufacturer logos can be object URLs; cache-busting would make blob: URLs invalid.
     cacheBust: false,
-    skipFonts: true,
+    // html-to-image embeds used font families and caches their data URLs between labels.
+    preferredFontFormat: 'woff2',
     filter: (node: Node) => {
       if (node instanceof Element && window.getComputedStyle(node).display === 'none') {
         return false
@@ -160,9 +185,7 @@ export async function captureLabelElement(element: HTMLElement, options: LabelCa
     }
 
     try {
-      if (document.fonts?.ready) {
-        await document.fonts.ready
-      }
+      await waitForLabelOutputAssets([captureElement])
       await waitForCaptureFrame()
 
       const canvas = await renderCaptureCanvas(captureElement, options)
