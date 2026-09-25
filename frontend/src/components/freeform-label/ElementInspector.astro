@@ -1,0 +1,114 @@
+<aside id="freeform-element-inspector" class="freeform-element-inspector" aria-labelledby="freeform-geometry-heading" hidden>
+  <div id="freeform-inspector-fields" class="freeform-inspector-fields">
+    <div class="freeform-inspector-heading">
+      <h2 id="freeform-geometry-heading" class="freeform-geometry-heading" data-i18n="labelDesigner.positionAndSize">Position &amp; size</h2>
+      <button id="freeform-json-expand" class="freeform-json-trigger" type="button" popovertarget="freeform-json-section" data-requires-selection data-no-designer-tooltip aria-label="Element JSON" data-i18n-aria-label="labelDesigner.elementJsonButton"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z" /></svg><span>JSON</span></button>
+    </div>
+    <div class="freeform-geometry-grid">
+      <label><span>X</span><span class="freeform-unit-input"><input type="number" step="0.1" data-element-prop="x" aria-label="X (mm)" data-i18n-aria-label="labelDesigner.xMm" /><span aria-hidden="true">mm</span></span></label>
+      <label><span>Y</span><span class="freeform-unit-input"><input type="number" step="0.1" data-element-prop="y" aria-label="Y (mm)" data-i18n-aria-label="labelDesigner.yMm" /><span aria-hidden="true">mm</span></span></label>
+      <label><span>Width<span data-qr-size-warning hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22 21H2L12 3Z"/><path d="M12 9v5m0 3v.1"/></svg></span></span><span class="freeform-unit-input"><input type="number" step="0.1" data-element-prop="w" aria-label="Width (mm)" data-i18n-aria-label="labelDesigner.widthMm" /><span aria-hidden="true">mm</span></span></label>
+      <label><span>Height<span data-qr-size-warning hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 22 21H2L12 3Z"/><path d="M12 9v5m0 3v.1"/></svg></span></span><span class="freeform-unit-input"><input type="number" step="0.1" data-element-prop="h" aria-label="Height (mm)" data-i18n-aria-label="labelDesigner.heightMm" /><span aria-hidden="true">mm</span></span></label>
+    </div>
+    <div class="freeform-qr-readability" hidden><p id="freeform-qr-readability-recommendation" data-i18n="labelDesigner.qrReadabilityUnavailable">300 DPI size guidance appears after the code is rendered.</p><p id="freeform-qr-readability-warning" class="freeform-qr-readability-warning" role="status" hidden></p><p id="freeform-qr-readability-note" data-i18n="labelDesigner.qrReadabilityNote">Keep 4 modules of white clear space around the code and make a test print. This advisory does not guarantee scanning.</p></div>
+    <section id="freeform-json-section" class="freeform-json-section" popover="auto" role="dialog" aria-labelledby="freeform-json-title">
+      <div class="freeform-json-heading"><h3 id="freeform-json-title" data-i18n="labelDesigner.elementJsonManualEditor">ELEMENT JSON MANUAL EDITOR</h3><div class="freeform-json-heading-actions"><button type="button" popovertarget="freeform-syntax-section" aria-label="Template syntax" data-i18n="labelDesigner.syntax">Syntax</button><button type="button" popovertarget="freeform-json-section" popovertargetaction="hide" aria-label="Close">×</button></div></div>
+      <label for="freeform-element-json" class="visually-hidden" data-i18n="labelDesigner.elementJson">Element JSON</label>
+      <textarea id="freeform-element-json" rows="12" spellcheck="false" aria-describedby="freeform-json-error"></textarea>
+      <p id="freeform-json-error" class="freeform-json-error" role="alert"></p>
+      <div class="freeform-json-actions"><button id="freeform-json-revert" type="button" data-i18n="common.revert">Revert</button><button id="freeform-json-apply" type="button" class="preset-action-btn-primary" data-i18n="common.apply">Apply</button></div>
+    </section>
+    <section id="freeform-syntax-section" class="freeform-syntax-section" popover="auto" role="dialog" aria-labelledby="freeform-syntax-title">
+      <div class="freeform-json-heading"><h3 id="freeform-syntax-title" data-i18n="labelDesigner.templateSyntax">TEMPLATE SYNTAX</h3><button type="button" popovertarget="freeform-syntax-section" popovertargetaction="hide" aria-label="Close">×</button></div>
+      <table>
+        <tbody>
+          <tr><th scope="row"><code>{'{filament.name}'}</code></th><td><span data-i18n="labelDesigner.syntaxField">Insert a field value.</span><span class="freeform-syntax-example" data-i18n="labelDesigner.syntaxFieldExample">e.g. {'{filament.type}'} prints TPU</span></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-date" aria-hidden="true">▣</span><code>{'{token|date}'}</code></th><td><span data-i18n="labelDesigner.syntaxDate">Print only the localized date from a date or datetime field.</span><span class="freeform-syntax-example" data-i18n="labelDesigner.syntaxDateExample">e.g. {'{extra.filament.certified_at|date}'} prints 7/25/26</span></td></tr>
+          <tr><th scope="row"><code>{'{text{token}text}'}</code></th><td><span data-i18n="labelDesigner.syntaxConditional">Wrap a field in literal text; hide the whole phrase if the field is empty.</span><span class="freeform-syntax-example" data-i18n="labelDesigner.syntaxConditionalExample">e.g. {'{Diameter: {filament.diameter} mm}'} prints the complete phrase or nothing</span></td></tr>
+          <tr><th scope="row"><code>{'[if={filament.color}]text[/if]'}</code></th><td><span data-i18n="labelDesigner.syntaxExplicitCondition">Show the whole phrase only when the condition field has a value. Adding other fields preserves the original condition.</span><span class="freeform-syntax-example" data-i18n="labelDesigner.syntaxExplicitConditionExample">e.g. {'[if={filament.color}]Color: {id} {filament.color}![/if]'} hides the whole phrase when color is empty</span></td></tr>
+          <tr><th scope="row"><code>{'{filament.color_hex}'}</code></th><td><span data-i18n="labelDesigner.syntaxHex">Stored filament color hex, including alpha if present.</span><span class="freeform-syntax-example" data-i18n="labelDesigner.syntaxHexExample">e.g. #2A5BE8 or #2A5BE880</span></td></tr>
+          <tr><th scope="row"><code>{'{color_swatch[1]}'}</code></th><td><span data-i18n="labelDesigner.syntaxSwatch">Inline filament-color swatch; the bracket number sets width in character units.</span><span class="freeform-syntax-example"><span data-i18n="labelDesigner.syntaxExamplePrefix">e.g.</span> <span class="freeform-syntax-example-swatch" aria-label="blue swatch" data-i18n-aria-label="labelDesigner.syntaxBlueSwatch"></span> <span data-i18n="labelDesigner.syntaxSwatchExample">Blue; [10] is wider</span></span></td></tr>
+          <tr><th scope="row"><code>[size=120%]text[/size]</code></th><td><span data-i18n="labelDesigner.syntaxSize">Relative text size for literal text, field values, and swatches.</span><span class="freeform-syntax-example"><span data-i18n="labelDesigner.syntaxExamplePrefix">e.g.</span> [size=140%]{'{filament.type}'}[/size]</span></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-bold" aria-hidden="true">B</span><code>[b]bold[/b]</code><br /><code>**bold**</code><span class="freeform-syntax-legacy" data-i18n="labelDesigner.legacySyntax">Legacy syntax</span></th><td><strong data-i18n="labelDesigner.modifierBold">Bold</strong></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-italic" aria-hidden="true">I</span><code>[i]italic[/i]</code><br /><code>*italic*</code><span class="freeform-syntax-legacy" data-i18n="labelDesigner.legacySyntax">Legacy syntax</span></th><td><em data-i18n="labelDesigner.modifierItalic">Italic</em></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-underline" aria-hidden="true">U</span><code>__underline__</code></th><td><u data-i18n="labelDesigner.modifierUnderline">Underline</u></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-caps" aria-hidden="true">⇧</span><code>^^UPPER^^</code></th><td><span data-i18n="labelDesigner.syntaxUppercase">Uppercase text and field values.</span><span class="freeform-syntax-example" data-i18n="labelDesigner.syntaxUppercaseExample">e.g. ^^ff6a00^^ prints FF6A00</span></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-inverse" aria-hidden="true">◐</span><code>==inverse==</code></th><td><span class="freeform-syntax-inverse-sample" data-i18n="labelDesigner.syntaxInverse">Inverse text, white on black</span></td></tr>
+          <tr><th scope="row"><span class="freeform-syntax-modifier-icon freeform-syntax-color-inverse" aria-hidden="true">◐</span><code>@@color@@</code></th><td><span data-i18n="labelDesigner.syntaxColorInverse">Inverse using filament color with automatic black or white text for contrast.</span><span class="freeform-syntax-example"><span class="freeform-syntax-blue-sample" data-i18n="labelDesigner.syntaxBlueContrast">Blue uses white text</span> <span class="freeform-syntax-yellow-sample" data-i18n="labelDesigner.syntaxYellowContrast">Yellow uses black text</span></span></td></tr>
+          <tr><th scope="row" data-i18n="labelDesigner.syntaxNested">Nested</th><td><span data-i18n="labelDesigner.syntaxNesting">Font, size, [b], and [i] tags can nest; close tags in reverse order. Unmatched or crossed tags appear as literal text.</span><span class="freeform-syntax-example"><span data-i18n="labelDesigner.syntaxExamplePrefix">e.g.</span> [b][i]{'{filament.name}'}[/i][/b] <span data-i18n="labelDesigner.syntaxPrints">prints</span> <strong><em>Galaxy Black</em></strong>; [b]__{'{filament.name}'}__[/b] <span data-i18n="labelDesigner.syntaxPrints">prints</span> <strong><u>Galaxy Black</u></strong></span></td></tr>
+          <tr id="freeform-syntax-font"><th scope="row"><code>[font=Fraunces]text[/font]</code></th><td><span data-i18n="labelDesigner.syntaxFont">Set a font for part of one Text element. Supported: Space Grotesk, Roboto Condensed, Fraunces, Space Mono.</span><span class="freeform-syntax-example">JSON: <code set:text={'"template": "[font=Fraunces]{filament.name}[/font]"'} /></span></td></tr>
+        </tbody>
+      </table>
+      <p class="freeform-syntax-note" data-i18n="labelDesigner.wrapFitHelp">Wrap and Scale font to fit apply to the whole Text element; they are not template markup.</p>
+    </section>
+  </div>
+</aside>
+
+<style>
+  .freeform-element-inspector { background: transparent; min-width: 0; width: 170px; }
+  .freeform-element-inspector[hidden] { display: none; }
+  .freeform-json-heading, .freeform-json-actions { align-items: center; display: flex; gap: 8px; justify-content: space-between; }
+  .freeform-json-heading-actions { display: flex; gap: 5px; }
+  .freeform-element-inspector h3 { margin: 0; }
+  .freeform-element-inspector h3 { font-size: 0.8rem; text-transform: uppercase; }
+  .freeform-json-trigger, .freeform-json-heading button, .freeform-json-actions button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; color: var(--text); cursor: pointer; font-size: 0.7rem; padding: 5px 7px; }
+  .freeform-json-trigger:disabled { cursor: default; opacity: 0.45; }
+  .freeform-inspector-fields { display: grid; gap: 4px; }
+  .freeform-inspector-heading { align-items: center; display: flex; gap: 4px; justify-content: space-between; min-width: 0; }
+  .freeform-geometry-heading { color: var(--text-muted); font-size: 0.65rem; font-weight: 600; letter-spacing: 0.06em; line-height: 18px; margin: 0; text-transform: uppercase; white-space: nowrap; }
+  .freeform-json-trigger { align-items: center; display: inline-flex; flex: none; font-size: 0.58rem; gap: 2px; height: 18px; line-height: 1; padding: 0 3px; }
+  .freeform-json-trigger svg { height: 10px; width: 10px; }
+  .freeform-geometry-grid { display: grid; gap: 5px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .freeform-geometry-grid label { color: var(--text-muted); display: grid; font-size: 0.6rem; gap: 2px; letter-spacing: 0.02em; }
+  .freeform-geometry-grid label.is-qr-undersized { color: #fbbf24; }
+  .freeform-geometry-grid label.is-qr-undersized input { background: #fbbf2426; border-color: #fbbf24; color: #fbbf24; }
+  [data-qr-size-warning] { display: inline-flex; margin-left: 3px; vertical-align: -2px; }
+  [data-qr-size-warning] svg { fill: #fbbf24; height: 12px; stroke: #1f2937; stroke-linecap: round; stroke-width: 2; width: 12px; }
+  [data-qr-size-warning][hidden], .freeform-qr-readability[hidden], .freeform-qr-readability-warning[hidden] { display: none; }
+  .freeform-qr-readability { color: var(--text-muted); font-size: 0.64rem; line-height: 1.25; }
+  .freeform-qr-readability p { margin: 2px 0; }
+  .freeform-qr-readability-warning { color: #fbbf24; }
+  .freeform-unit-input { display: block; position: relative; }
+  .freeform-unit-input input { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-size: 0.7rem; height: 30px; min-width: 0; padding: 4px 4px 4px 6px; width: 100%; }
+  .freeform-unit-input > span { color: var(--text-muted); font-size: 0.6rem; pointer-events: none; position: absolute; right: 22px; top: 50%; transform: translateY(-50%); }
+  :global(.freeform-canvas-row.is-geometry-narrow) .freeform-element-inspector { width: 104px; }
+  :global(.freeform-canvas-row.is-geometry-narrow) .freeform-geometry-heading { font-size: 0.55rem; letter-spacing: 0.02em; }
+  :global(.freeform-canvas-row.is-geometry-narrow) .freeform-json-trigger span { display: none; }
+  :global(.freeform-canvas-row.is-geometry-narrow) .freeform-geometry-grid { grid-template-columns: 1fr; }
+  :global(.freeform-canvas-row.is-geometry-below) .freeform-element-inspector { width: min(100%, 380px); }
+  :global(.freeform-canvas-row.is-geometry-below) .freeform-inspector-fields { grid-template-columns: 1fr; }
+  :global(.freeform-canvas-row.is-geometry-below) .freeform-inspector-heading { grid-column: 1; grid-row: 1; }
+  :global(.freeform-canvas-row.is-geometry-below) .freeform-geometry-grid { grid-column: 1 / -1; grid-row: 2; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  :global(.freeform-canvas-row.is-geometry-below) .freeform-qr-readability { grid-column: 1 / -1; grid-row: 3; }
+  .freeform-json-section[popover] { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 50px #0008; color: var(--text); height: min(420px, calc(100dvh - 32px)); inset: 50% auto auto 50%; margin: 0; max-height: calc(100dvh - 32px); max-width: calc(100vw - 32px); min-height: min(260px, calc(100dvh - 32px)); min-width: min(300px, calc(100vw - 32px)); overflow: auto; padding: 14px; resize: both; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); }
+  .freeform-json-section:popover-open { display: flex; flex-direction: column; gap: 8px; }
+  .freeform-json-section::backdrop { background: #0005; }
+  .freeform-syntax-section[popover] { background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 8px 32px #0005; color: var(--text); inset: 50% auto auto 50%; line-height: 1.6; margin: 0; max-height: calc(100dvh - 32px); max-width: calc(100vw - 32px); overflow: auto; padding: 14px 16px; transform: translate(-50%, -50%); width: min(760px, calc(100vw - 32px)); }
+  .freeform-syntax-section::backdrop { background: #0005; }
+  .freeform-syntax-section h3 { color: var(--accent); letter-spacing: 0.08em; }
+  .freeform-syntax-section p { margin: 8px 0; }
+  .freeform-syntax-section table { border-collapse: collapse; font-size: 0.76rem; width: 100%; }
+  .freeform-syntax-section th, .freeform-syntax-section td { border-top: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: middle; }
+  .freeform-syntax-section th { color: var(--accent); font-family: 'Space Mono', monospace; font-size: 0.68rem; font-weight: 400; white-space: nowrap; }
+  .freeform-syntax-section td { color: var(--text-muted); }
+  .freeform-syntax-section code { font-family: 'Space Mono', monospace; font-size: 0.68rem; }
+  .freeform-syntax-legacy { color: var(--text-muted); font-family: inherit; font-size: 0.58rem; font-weight: 400; margin-left: 5px; white-space: nowrap; }
+  .freeform-syntax-example { color: color-mix(in srgb, var(--accent) 60%, var(--text-muted)); display: block; font-size: 0.68rem; font-style: italic; margin-top: 2px; }
+  .freeform-syntax-modifier-icon { align-items: center; background: color-mix(in srgb, var(--bg-elevated) 72%, var(--accent) 12%); border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border)); border-radius: 4px; color: var(--accent); display: inline-flex; font-family: Arial, Helvetica, sans-serif; font-size: 0.57rem; font-weight: 700; height: 20px; justify-content: center; line-height: 1; margin-right: 8px; vertical-align: middle; width: 22px; }
+  .freeform-syntax-bold { font-weight: 800; }
+  .freeform-syntax-italic { font-style: italic; }
+  .freeform-syntax-underline { text-decoration: underline; }
+  .freeform-syntax-caps { font-size: 0.72rem; }
+  .freeform-syntax-inverse, .freeform-syntax-inverse-sample { background: #000; color: #fff; }
+  .freeform-syntax-inverse { border-color: #000; font-size: 0.84rem; }
+  .freeform-syntax-color-inverse, .freeform-syntax-blue-sample { background: #2a5be8; color: #fff; }
+  .freeform-syntax-color-inverse { border-color: #2a5be8; font-size: 0.84rem; }
+  .freeform-syntax-yellow-sample { background: #f5e663; color: #000; }
+  .freeform-syntax-inverse-sample, .freeform-syntax-blue-sample, .freeform-syntax-yellow-sample { border-radius: 2px; padding: 0 2px; }
+  .freeform-syntax-example-swatch { background: #2a5be8; border: 1px solid #0005; border-radius: 0.14em; display: inline-block; height: 0.82em; margin: 0 0.2ch; vertical-align: baseline; width: 1ch; }
+  .freeform-syntax-note { border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.7rem; padding-top: 8px; }
+  #freeform-element-json { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; color: var(--text); flex: 1; font-family: 'Space Mono', monospace; font-size: 0.75rem; line-height: 1.4; min-height: 0; resize: none; width: 100%; }
+  .freeform-json-error { color: var(--label-danger, #ff8a80); font-size: 0.72rem; margin: 0; min-height: 1.2em; }
+  .visually-hidden { border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+  .freeform-element-inspector :is(button, input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
