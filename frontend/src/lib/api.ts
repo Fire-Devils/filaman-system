@@ -39,7 +39,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
   const { csrfToken: csrfOverride, ...fetchOptions } = options
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(fetchOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...fetchOptions.headers as Record<string, string>,
   }
 
