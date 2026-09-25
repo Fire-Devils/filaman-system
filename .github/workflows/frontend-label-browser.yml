@@ -1,0 +1,39 @@
+name: Frontend label browser checks
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-label-browser.yml'
+  push:
+    branches: [devel]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-label-browser.yml'
+
+jobs:
+  label-browser:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run dev -- --host 127.0.0.1 > /tmp/filaman-astro.log 2>&1 &
+      - name: Wait for Astro
+        run: |
+          for attempt in {1..60}; do
+            curl --fail --silent http://127.0.0.1:4321/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/filaman-astro.log
+          exit 1
+      - run: npm run check:browser
+        env:
+          CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
