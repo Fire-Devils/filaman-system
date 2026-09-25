@@ -9,9 +9,12 @@ import {
   vi,
 } from 'vitest'
 import JSZip from 'jszip'
+import { LabelOutputAssetError } from './label-output-readiness'
 
 import {
   LABEL_PRINT_PDF_MODE_KEY,
+  applyBatchLabelPreviewZoom,
+  applySingleLabelPreviewZoom,
   appendLabelSettingsCheckbox,
   bindLabelOutputPreview,
   bindLabelOutputs,
@@ -20,24 +23,32 @@ import {
   bindPdfOutputActions,
   bindPrintPageSidebarCollapse,
   bindPrintPdfPreference,
+  bindPrintWorkspaceTabs,
   captureLabelSettings,
+  createPrintWorkspaceCoordinator,
   createPreviewRenderCoordinator,
   getLabelOutputControls,
   getLabelSettingsControls,
   getStandardLabelSettings,
   readVersionedLabelSettings,
+  readPrintWorkspaceMode,
   resetLabelSettings,
   restoreLabelSettings,
+  syncDesignerRepresentativeElements,
   type LabelPdfFactoryOverride,
 } from './label-print-page'
 import type { LabelPdfDocument, LabelPdfPage } from './label-export'
+import * as labelPrintPage from './label-print-page'
 import {
   bindTemporaryPdfPreview,
   type TemporaryPdfPreviewController,
 } from './label-pdf-preview'
 import {
+  applyLabelSheetPreviewZoom,
+  bindLabelSheetControls,
   syncLabelSheetIndividualExportState,
   type LabelSheetControls,
+  type LabelSheetSource,
 } from './label-sheet'
 import {
   cleanupLabelBrowserPrint,
@@ -101,6 +112,305 @@ describe('createPreviewRenderCoordinator', () => {
   })
 })
 
+describe('print workspace modes', () => {
+  it('docks the existing zoom controls in the designer and restores them for other modes', () => {
+    document.body.innerHTML = `
+      <main class="preview-container">
+        <div class="preview-zoom-bar"><button>Zoom in</button></div>
+        <div id="workspace"><div class="freeform-command-bar"><div class="freeform-zoom-slot"></div></div></div>
+      </main>
+      <section id="standard"></section><section id="designer"></section><section id="sheets"></section>
+    `
+    const previewRoot = document.querySelector<HTMLElement>('.preview-container')!
+    const zoom = document.querySelector<HTMLElement>('.preview-zoom-bar')!
+    const clicked = vi.fn()
+    zoom.querySelector('button')!.addEventListener('click', clicked)
+    const binding = bindPrintWorkspaceTabs({
+      buttons: [],
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      designerWorkspace: document.querySelector<HTMLElement>('#workspace'),
+      storageKey: 'workspace-mode',
+      onChange: () => applyBatchLabelPreviewZoom(previewRoot, 100),
+    })
+    binding.activate('standard')
+    expect(zoom.style.position).toBe('fixed')
+    binding.activate('designer')
+    expect(zoom.parentElement?.className).toBe('freeform-zoom-slot')
+    expect(zoom.style.position).toBe('')
+    zoom.querySelector('button')!.click()
+    expect(clicked).toHaveBeenCalledOnce()
+    for (const mode of ['sheets', 'designer', 'standard'] as const) binding.activate(mode)
+    expect(previewRoot.firstElementChild).toBe(zoom)
+    expect(document.querySelectorAll('.preview-zoom-bar')).toHaveLength(1)
+    expect(zoom.style.position).toBe('fixed')
+  })
+
+  it('validates persisted modes and falls back to standard', () => {
+    localStorage.setItem('workspace-mode', 'sheets')
+    expect(readPrintWorkspaceMode('workspace-mode')).toBe('sheets')
+    localStorage.setItem('workspace-mode', 'unknown')
+    expect(readPrintWorkspaceMode('workspace-mode')).toBe('standard')
+  })
+
+  it('shows one of Standard, Designer, and Label Sheets and updates output availability', () => {
+    document.body.innerHTML = `
+      <aside class="print-sidebar"></aside>
+      <button data-workspace-mode="standard"></button>
+      <button data-workspace-mode="designer"></button>
+      <button data-workspace-mode="sheets"></button>
+      <section id="standard"></section>
+      <section id="designer"></section>
+      <section id="sheets"></section>
+      <button id="png"></button><button id="aml"></button><button id="pdf"></button><button id="print"></button>
+    `
+    const changes: string[] = []
+    const binding = bindPrintWorkspaceTabs({
+      buttons: document.querySelectorAll('[data-workspace-mode]'),
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      outputButtons: {
+        png: document.querySelector('#png')!,
+        aml: document.querySelector('#aml')!,
+        pdf: document.querySelector('#pdf')!,
+        print: document.querySelector('#print')!,
+      },
+      storageKey: 'workspace-mode',
+      sidebar: document.querySelector<HTMLElement>('.print-sidebar'),
+      onChange: mode => changes.push(mode),
+    })
+
+    binding.activate('sheets')
+    const sidebar = document.querySelector<HTMLElement>('.print-sidebar')!
+    expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(true)
+    expect(document.querySelector<HTMLElement>('#sheets')!.hidden).toBe(false)
+    expect(document.querySelector<HTMLElement>('#standard')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#png')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#aml')!.hidden).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#pdf')!.hidden).toBe(false)
+
+    binding.activate('designer')
+    expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(false)
+    expect(sidebar.classList.contains('sidebar-wide')).toBe(true)
+    expect(document.querySelector<HTMLButtonElement>('#png')!.hidden).toBe(false)
+    expect(changes).toEqual(['sheets', 'designer'])
+    expect(binding.getActiveMode()).toBe('designer')
+    binding.activate('sheets')
+    binding.activate('standard')
+    expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(false)
+    expect(sidebar.classList.contains('sidebar-wide')).toBe(false)
+  })
+
+  it('uses arrow, Home, and End keys to focus and activate workspace tabs', () => {
+    document.body.innerHTML = `
+      <div role="tablist">
+        <button id="tab-btn-print" data-workspace-mode="standard"></button>
+        <button id="tab-btn-designer" data-workspace-mode="designer"></button>
+        <button id="tab-btn-sheets" data-workspace-mode="sheets"></button>
+      </div>
+      <section id="standard"></section><section id="designer"></section><section id="sheets"></section>
+    `
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-workspace-mode]'))
+    bindPrintWorkspaceTabs({
+      buttons,
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      storageKey: 'workspace-keyboard-mode',
+      initialMode: 'standard',
+      onChange: () => undefined,
+    })
+
+    buttons[0].focus()
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[2])
+    expect(buttons[2].getAttribute('aria-selected')).toBe('true')
+    expect(document.querySelector<HTMLElement>('#sheets')!.hidden).toBe(false)
+
+    buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[0])
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[2])
+    buttons[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement).toBe(buttons[0])
+    expect(buttons.map(button => button.tabIndex)).toEqual([0, -1, -1])
+  })
+
+  it.each([
+    { route: 'single label', entities: [11] },
+    { route: 'batch labels', entities: [11, 12, 13] },
+  ])('$route executes the shared mode, source, representative, output, and callback contract', ({ entities }) => {
+    let source: LabelSheetSource = { type: 'standard' }
+    const changes: string[] = []
+    const coordinator = createPrintWorkspaceCoordinator({
+      initialMode: 'standard',
+      getItems: () => entities,
+      getSheetSource: () => source,
+      onModeChange: state => changes.push(`${state.mode}:${state.source}`),
+    })
+
+    const designer = coordinator.activate('designer')
+    expect(designer.representativeItem).toBe(entities[0])
+    expect(designer.previewItems).toEqual([entities[0]])
+    expect(designer.outputItems).toEqual(entities)
+    expect(coordinator.getPreviewItems()).toEqual([entities[0]])
+    expect(coordinator.getOutputItems()).toEqual(entities)
+
+    const standardSheets = coordinator.activate('sheets')
+    expect(standardSheets.source).toBe('standard')
+    expect(coordinator.getPreviewItems()).toEqual(entities)
+
+    source = { type: 'designer', presetName: 'Saved' }
+    const sheets = coordinator.activate('sheets')
+    expect(sheets.source).toBe('designer')
+    expect(coordinator.getSource()).toBe('designer')
+    expect(coordinator.getOutputItems()).toEqual(entities)
+    expect(changes).toEqual([
+      'designer:designer',
+      'sheets:standard',
+      'sheets:designer',
+    ])
+  })
+
+  it('keeps only the representative batch label in the editable workspace', () => {
+    document.body.innerHTML = `
+      <div id="wrapper-1" class="label-wrapper"></div>
+      <div id="wrapper-2" class="label-wrapper"></div>
+      <div id="wrapper-3" class="label-wrapper"></div>
+    `
+    const wrappers = Array.from(document.querySelectorAll<HTMLElement>('.label-wrapper'))
+
+    syncDesignerRepresentativeElements('designer', wrappers)
+
+    expect(wrappers.map(wrapper => ({
+      representative: wrapper.classList.contains('is-designer-representative'),
+      outputOnly: wrapper.classList.contains('is-designer-output-only'),
+      ariaHidden: wrapper.getAttribute('aria-hidden'),
+    }))).toEqual([
+      { representative: true, outputOnly: false, ariaHidden: null },
+      { representative: false, outputOnly: true, ariaHidden: 'true' },
+      { representative: false, outputOnly: true, ariaHidden: 'true' },
+    ])
+
+    syncDesignerRepresentativeElements('sheets', wrappers)
+    expect(wrappers.every(wrapper => !wrapper.classList.contains('is-designer-output-only'))).toBe(true)
+    expect(wrappers.every(wrapper => !wrapper.hasAttribute('aria-hidden'))).toBe(true)
+  })
+
+  it('changes the batch preview while retaining the full output order and clamping the selection', () => {
+    let items = [11, 22, 33]
+    const workspace = createPrintWorkspaceCoordinator({
+      initialMode: 'designer', getItems: () => items,
+      getSheetSource: () => ({ type: 'standard' }), onModeChange: () => undefined,
+    })
+    workspace.selectPreview(1)
+    expect(workspace.getState()).toMatchObject({ previewIndex: 1, representativeItem: 22, previewItems: [22], outputItems: [11, 22, 33] })
+    workspace.selectPreview(99)
+    expect(workspace.getPreviewItems()).toEqual([33])
+    workspace.activate('sheets')
+    expect(workspace.getPreviewItems()).toEqual([11, 22, 33])
+    workspace.activate('designer')
+    expect(workspace.getRepresentativeItem()).toBe(33)
+    items = [11]
+    expect(workspace.getState()).toMatchObject({ previewIndex: 0, previewItems: [11] })
+    workspace.selectPreview(-1)
+    expect(workspace.getRepresentativeItem()).toBe(11)
+    items = []
+    expect(workspace.getPreviewItems()).toEqual([])
+  })
+
+  it('puts the selected preview first for editor interactions and restores normal DOM order', () => {
+    document.body.innerHTML = '<div id="canvas"><div id="first"></div><div id="second"></div><div id="third"></div></div>'
+    const canvas = document.querySelector('#canvas')!
+    const elements = Array.from(canvas.children) as HTMLElement[]
+    syncDesignerRepresentativeElements('designer', elements, 1)
+    expect(canvas.firstElementChild?.id).toBe('second')
+    expect(elements[1].classList.contains('is-designer-representative')).toBe(true)
+    expect(elements[0].getAttribute('aria-hidden')).toBe('true')
+    syncDesignerRepresentativeElements('designer', elements, 2)
+    expect(canvas.firstElementChild?.id).toBe('third')
+    syncDesignerRepresentativeElements('standard', elements)
+    expect(Array.from(canvas.children).map(el => el.id)).toEqual(['first', 'second', 'third'])
+  })
+
+  it('synchronizes the hidden sheet output mode before notifying a route', () => {
+    document.body.innerHTML = `
+      <button data-workspace-mode="standard"></button>
+      <button data-workspace-mode="designer"></button>
+      <button data-workspace-mode="sheets"></button>
+      <section id="standard"></section>
+      <section id="designer"></section>
+      <section id="sheets"></section>
+    `
+    const calls: string[] = []
+    const sheetControls = {
+      setOutputMode: (mode: 'individual' | 'sheet') => calls.push(`output:${mode}`),
+    }
+    const binding = bindPrintWorkspaceTabs({
+      buttons: document.querySelectorAll('[data-workspace-mode]'),
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      sheetControls,
+      storageKey: 'workspace-mode',
+      onChange: mode => calls.push(`change:${mode}`),
+    })
+
+    binding.activate('sheets')
+    binding.activate('designer')
+
+    expect(calls).toEqual([
+      'output:sheet',
+      'change:sheets',
+      'output:individual',
+      'change:designer',
+    ])
+  })
+
+  it('renders once when workspace activation changes the sheet output mode', () => {
+    document.body.innerHTML = `
+      <button data-workspace-mode="standard"></button>
+      <button data-workspace-mode="designer"></button>
+      <button data-workspace-mode="sheets"></button>
+      <section id="standard"></section>
+      <section id="designer"></section>
+      <section id="sheets"></section>
+      <select id="output-mode">
+        <option value="individual">Individual</option>
+        <option value="sheet">Sheet</option>
+      </select>
+    `
+    const render = vi.fn()
+    const sheetControls = bindLabelSheetControls(render)
+    const binding = bindPrintWorkspaceTabs({
+      buttons: document.querySelectorAll('[data-workspace-mode]'),
+      panels: {
+        standard: document.querySelector('#standard')!,
+        designer: document.querySelector('#designer')!,
+        sheets: document.querySelector('#sheets')!,
+      },
+      sheetControls,
+      storageKey: 'workspace-mode',
+      onChange: render,
+    })
+
+    binding.activate('sheets')
+
+    expect(sheetControls.getOutputMode()).toBe('sheet')
+    expect(render).toHaveBeenCalledOnce()
+  })
+})
+
 function makePdfDocument() {
   return {
     save: vi.fn(),
@@ -147,6 +457,9 @@ function makeBrowserPrintBinding(
       {} as ReturnType<LabelSheetControls['getSettings']>
     ),
     setOutputMode: () => undefined,
+    getSource: () => ({ type: 'standard' }),
+    setSource: () => undefined,
+    setDesignerPresets: () => undefined,
   } as LabelSheetControls
   return {
     previewRoot: document.body,
@@ -256,10 +569,8 @@ function renderPrintPageControls() {
     <div id="fm-page"></div>
     <main class="preview-container">
       <button id="preview-zoom-out">Zoom out</button>
-      <input id="preview-zoom-slider" type="range" min="50" max="300" step="5" value="100">
+      <input id="preview-zoom-input" type="number" min="50" max="500" step="5" value="100">
       <button id="preview-zoom-in">Zoom in</button>
-      <span id="preview-zoom-label">100%</span>
-      <button id="preview-zoom-reset">Reset zoom</button>
       <div class="preview-scroll-area">
         <div id="label-preview"></div>
       </div>
@@ -487,14 +798,18 @@ describe('shared print-page controls', () => {
     )
   })
 
-  it('collapses the application sidebar at the current print-page breakpoint', () => {
+  it('collapses the application sidebar before the designer workspace becomes too narrow', () => {
     renderPrintPageControls()
+    document.documentElement.classList.remove('sidebar-collapsed')
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,
-      value: 1000,
+      value: 1300,
     })
 
     const cleanup = bindPrintPageSidebarCollapse()
+    expect(document.documentElement.classList.contains('sidebar-collapsed')).toBe(false)
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1240 })
+    window.dispatchEvent(new Event('resize'))
 
     expect(document.documentElement.classList.contains('sidebar-collapsed'))
       .toBe(true)
@@ -507,6 +822,166 @@ describe('shared print-page controls', () => {
 })
 
 describe('shared single-label print-page behavior', () => {
+  it('keeps designer zoom below its toolbar while retaining centered standard preview zoom', () => {
+    document.body.innerHTML = '<div id="freeform-designer-workspace" class="is-active"><div class="freeform-canvas-host"><div class="label-preview"></div></div></div>'
+    const label = document.querySelector<HTMLElement>('.label-preview')!
+    const applySingle = (labelPrintPage as unknown as {
+      applySingleLabelPreviewZoom(label: HTMLElement, zoom: number): void
+    }).applySingleLabelPreviewZoom
+
+    expect(applySingle).toBeTypeOf('function')
+    applySingle(label, 270)
+    expect(label.style.transform).toBe('scale(2.7)')
+    expect(label.style.transformOrigin).toBe('top left')
+    document.querySelector('#freeform-designer-workspace')!.classList.remove('is-active')
+    applySingle(label, 270)
+    expect(label.style.transformOrigin).toBe('center center')
+  })
+
+  it('does not magnify hidden batch placeholders repeatedly when zoom changes', () => {
+    document.body.innerHTML = '<main><div class="freeform-canvas-host"><div class="label-wrapper"><div class="label-preview"></div></div><div class="label-wrapper"><div class="label-preview"></div></div></div></main>'
+    const root = document.querySelector<HTMLElement>('main')!
+    const wrappers = Array.from(root.querySelectorAll<HTMLElement>('.label-wrapper'))
+    wrappers.forEach((wrapper, index) => {
+      const label = wrapper.firstElementChild as HTMLElement
+      // Unrendered placeholders take their width from the wrapper being scaled.
+      Object.defineProperties(label, {
+        offsetWidth: { get: () => index === 0 ? 120 : Number.parseFloat(wrapper.style.width) || 120 },
+        offsetHeight: { get: () => 80 },
+      })
+    })
+    syncDesignerRepresentativeElements('designer', wrappers)
+    for (const zoom of [315, 385, 395, 405, 415, 425, 500]) applyBatchLabelPreviewZoom(root, zoom)
+    expect(wrappers[0].style.width).toBe('600px')
+    expect(wrappers[1].style.width).toBe('')
+    expect((wrappers[1].firstElementChild as HTMLElement).style.transform).toBe('')
+
+    syncDesignerRepresentativeElements('designer', wrappers, 1)
+    applyBatchLabelPreviewZoom(root, 500)
+    expect(wrappers[1].style.width).toBe('600px')
+    expect(wrappers[1].style.height).toBe('400px')
+    expect((wrappers[1].firstElementChild as HTMLElement).style.transform).toBe('scale(5)')
+  })
+
+  it.each([
+    { zoom: 138, scale: 'scale(1.38)', width: '331.2px', height: '220.8px' },
+    { zoom: 150, scale: 'scale(1.5)', width: '360px', height: '240px' },
+    { zoom: 500, scale: 'scale(5)', width: '1200px', height: '800px' },
+    { zoom: 600, scale: 'scale(5)', width: '1200px', height: '800px' },
+  ])('zooms batch label wrappers to $zoom% with a 500% ceiling', ({ zoom, scale, width, height }) => {
+    document.body.innerHTML = `
+      <main id="preview-root">
+        <div id="freeform-designer-workspace">
+          <div id="freeform-canvas-host" class="freeform-canvas-host">
+            <div class="label-wrapper" id="wrapper-101">
+              <div class="label-preview" id="label-101"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    `
+    const root = document.querySelector<HTMLElement>('#preview-root')!
+    const wrapper = document.querySelector<HTMLElement>('#wrapper-101')!
+    const label = document.querySelector<HTMLElement>('#label-101')!
+    Object.defineProperties(label, {
+      offsetWidth: { configurable: true, value: 240 },
+      offsetHeight: { configurable: true, value: 160 },
+    })
+
+    applyBatchLabelPreviewZoom(root, zoom)
+
+    expect(label.style.transform).toBe(scale)
+    expect(label.style.transformOrigin).toBe('top left')
+    expect(wrapper.style.width).toBe(width)
+    expect(wrapper.style.height).toBe(height)
+  })
+
+  it.each([500, 600])('zooms sheet pages and their scrollable frames up to 500% for %s input', zoom => {
+    document.body.innerHTML = `
+      <div class="label-sheet-page-frame"><div class="label-sheet-page"></div></div>
+    `
+    const page = document.querySelector<HTMLElement>('.label-sheet-page')!
+    const frame = page.parentElement!
+    Object.defineProperties(page, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 1100 },
+    })
+
+    applyLabelSheetPreviewZoom(document.body, zoom)
+
+    expect(page.style.transform).toBe('scale(5)')
+    expect(frame.style.width).toBe('4000px')
+    expect(frame.style.height).toBe('5500px')
+  })
+
+  it('centers a sheet while it fits and left-aligns it once zoom makes it overflow', () => {
+    document.body.innerHTML = `
+      <main id="preview-root" style="padding: 40px">
+        <div class="label-sheet-page-frame"><div class="label-sheet-page"></div></div>
+      </main>
+    `
+    const previewRoot = document.querySelector<HTMLElement>('#preview-root')!
+    const page = document.querySelector<HTMLElement>('.label-sheet-page')!
+    const frame = page.parentElement!
+    Object.defineProperties(previewRoot, {
+      clientWidth: { configurable: true, value: 1000 },
+    })
+    Object.defineProperties(page, {
+      offsetWidth: { configurable: true, value: 800 },
+      offsetHeight: { configurable: true, value: 1100 },
+    })
+
+    applyLabelSheetPreviewZoom(previewRoot, 110)
+    expect(frame.style.marginInline).toBe('auto')
+
+    applyLabelSheetPreviewZoom(previewRoot, 120)
+    expect(frame.style.marginInline).toBe('0')
+
+    applyLabelSheetPreviewZoom(previewRoot, 100)
+    expect(frame.style.marginInline).toBe('auto')
+  })
+
+  it.each(['plain', 'versioned', 'route-owned'] as const)(
+    'restores %s zoom above 300% and persists button and typed changes up to 500%',
+    storageMode => {
+      renderPrintPageControls()
+      const storageKey = 'large-preview-zoom'
+      localStorage.setItem(storageKey, storageMode === 'versioned'
+        ? JSON.stringify({ _v: 2, width: '60', zoom: '485' })
+        : '485')
+      const zoom = bindLabelPreviewZoom({
+        storageKey,
+        previewRoot: document.querySelector<HTMLElement>('.preview-scroll-area')!,
+        settingsVersion: storageMode === 'versioned' ? 2 : undefined,
+        ...(storageMode === 'route-owned' ? {
+          readStoredZoom: () => Number(localStorage.getItem(storageKey)),
+          writeStoredZoom: (value: number) => localStorage.setItem(storageKey, String(value)),
+        } : {}),
+        onChange: () => undefined,
+      })
+      expect(zoom.getZoom()).toBe(485)
+
+      const zoomIn = document.querySelector<HTMLButtonElement>('#preview-zoom-in')!
+      zoomIn.click()
+      expect(zoom.getZoom()).toBe(495)
+      zoomIn.click()
+      zoomIn.click()
+      expect(zoom.getZoom()).toBe(500)
+      expect(document.querySelector<HTMLInputElement>('#preview-zoom-input')?.value).toBe('500')
+      expect(localStorage.getItem(storageKey)).toBe(storageMode === 'versioned'
+        ? JSON.stringify({ _v: 2, width: '60', zoom: '500' })
+        : '500')
+
+      const input = document.querySelector<HTMLInputElement>('#preview-zoom-input')!
+      input.value = '450'
+      input.dispatchEvent(new Event('change'))
+      expect(zoom.getZoom()).toBe(450)
+      input.value = '100'
+      input.dispatchEvent(new Event('change'))
+      expect(zoom.getZoom()).toBe(100)
+    },
+  )
+
   it('restores and persists preview zoom through the existing zoom controls', () => {
     renderPrintPageControls()
     localStorage.setItem('test-label-zoom', '135')
@@ -524,10 +999,8 @@ describe('shared single-label print-page behavior', () => {
     })
 
     expect(zoom.getZoom()).toBe(135)
-    expect(document.querySelector('#preview-zoom-slider'))
+    expect(document.querySelector('#preview-zoom-input'))
       .toHaveProperty('value', '135')
-    expect(document.querySelector('#preview-zoom-label')?.textContent)
-      .toBe('135%')
     expect(onChange).toHaveBeenCalledOnce()
 
     document.querySelector<HTMLButtonElement>('#preview-zoom-in')?.click()
@@ -535,6 +1008,115 @@ describe('shared single-label print-page behavior', () => {
     expect(zoom.getZoom()).toBe(145)
     expect(localStorage.getItem('test-label-zoom')).toBe('145')
     expect(onChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('accepts a typed percentage in the inline zoom control', () => {
+    renderPrintPageControls()
+    const input = document.querySelector<HTMLInputElement>('#preview-zoom-input')!
+    const onChange = vi.fn()
+    const zoom = bindLabelPreviewZoom({
+      storageKey: 'typed-preview-zoom',
+      previewRoot: document.querySelector('.preview-scroll-area')!,
+      onChange,
+    })
+
+    input.value = '137'
+    input.dispatchEvent(new Event('change'))
+
+    expect(zoom.getZoom()).toBe(135)
+    expect(input.value).toBe('135')
+    expect(localStorage.getItem('typed-preview-zoom')).toBe('135')
+    expect(onChange).toHaveBeenCalledOnce()
+  })
+
+  it('zooms the label on Ctrl+wheel without zooming the page or normal scrolling', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const label = document.createElement('div')
+    label.className = 'label-preview'
+    previewRoot.append(label)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback)
+      return frames.length
+    })
+    const zoom = bindLabelPreviewZoom({ storageKey: 'gesture-preview-zoom', previewRoot, onChange: () => applySingleLabelPreviewZoom(label, zoom.getZoom()) })
+    const wheel = (target: Element, ctrlKey: boolean) => {
+      const event = Object.assign(new Event('wheel', { bubbles: true, cancelable: true }), { deltaY: -80, deltaMode: 0, ctrlKey })
+      target.dispatchEvent(event)
+      return event
+    }
+
+    const ordinaryScroll = wheel(label, false)
+    expect(ordinaryScroll.defaultPrevented).toBe(false)
+    expect(zoom.getZoom()).toBe(100)
+
+    const outsideLabel = wheel(previewRoot, true)
+    expect(outsideLabel.defaultPrevented).toBe(false)
+    expect(zoom.getZoom()).toBe(100)
+
+    window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: true }))
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    const labelGesture = wheel(label, true)
+    expect(labelGesture.defaultPrevented).toBe(true)
+    expect(frames).toHaveLength(1)
+    frames[0](0)
+    expect(zoom.getZoom()).toBe(138)
+    expect(label.style.transform).toBe('scale(1.38)')
+    expect(localStorage.getItem('gesture-preview-zoom')).toBe('138')
+  })
+
+  it('zooms on Ctrl+wheel while hovering the label sheet paper', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const sheet = document.createElement('section')
+    sheet.className = 'label-sheet-page'
+    previewRoot.append(sheet)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback)
+      return frames.length
+    })
+    const zoom = bindLabelPreviewZoom({ storageKey: 'sheet-gesture-preview-zoom', previewRoot, onChange: () => undefined })
+    const gesture = Object.assign(new Event('wheel', { bubbles: true, cancelable: true }), {
+      deltaY: -80,
+      deltaMode: 0,
+      ctrlKey: true,
+    })
+
+    sheet.dispatchEvent(gesture)
+
+    expect(gesture.defaultPrevented).toBe(true)
+    expect(frames).toHaveLength(1)
+    frames[0](0)
+    expect(zoom.getZoom()).toBe(138)
+  })
+
+  it('batches small pinch deltas into one smooth proportional zoom update', () => {
+    renderPrintPageControls()
+    const previewRoot = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    const label = document.createElement('div')
+    label.className = 'label-preview'
+    previewRoot.append(label)
+    const frames: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      frames.push(callback)
+      return frames.length
+    })
+    const zoom = bindLabelPreviewZoom({ storageKey: 'smooth-gesture-zoom', previewRoot, onChange: () => undefined })
+
+    for (let index = 0; index < 3; index += 1) {
+      label.dispatchEvent(Object.assign(new Event('wheel', { bubbles: true, cancelable: true }), {
+        deltaY: -10,
+        deltaMode: 0,
+        ctrlKey: true,
+      }))
+    }
+
+    expect(frames).toHaveLength(1)
+    expect(zoom.getZoom()).toBe(100)
+    frames[0](0)
+    expect(zoom.getZoom()).toBe(113)
   })
 
   it('supports route-owned preview zoom storage without replacing its settings payload', () => {
@@ -593,9 +1175,9 @@ describe('shared single-label print-page behavior', () => {
     })
     expect(zoom.getZoom()).toBe(135)
 
-    const slider = document.querySelector<HTMLInputElement>('#preview-zoom-slider')!
-    slider.value = '145'
-    slider.dispatchEvent(new Event('input'))
+    const input = document.querySelector<HTMLInputElement>('#preview-zoom-input')!
+    input.value = '145'
+    input.dispatchEvent(new Event('change'))
 
     expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({
       _v: 2,
@@ -671,6 +1253,7 @@ describe('shared single-label print-page behavior', () => {
     resetButton.click()
 
     expect(onChange).toHaveBeenCalledTimes(2)
+    expect(onChange.mock.calls).toEqual([[], []])
     expect(onReset).toHaveBeenCalledOnce()
 
     cleanup()
@@ -859,15 +1442,19 @@ describe('shared single-label print-page behavior', () => {
       setOutputMode: mode => {
         outputMode = mode
       },
+      getSource: () => ({ type: 'standard' }),
+      setSource: () => undefined,
+      setDesignerPresets: () => undefined,
     } satisfies LabelSheetControls
     const applyIndividualZoom = vi.fn()
+    let zoom = 125
     const sync = bindLabelOutputPreview({
       previewRoot,
       sheetControls,
       outputControls,
       getSourceElements: () => [label],
       getDimensions: () => ({ widthMm: 60, heightMm: 40 }),
-      getZoom: () => 125,
+      getZoom: () => zoom,
       applyIndividualZoom,
     })
 
@@ -882,6 +1469,14 @@ describe('shared single-label print-page behavior', () => {
       .toBe('scale(1.25)')
     expect(outputControls.pngButton.disabled).toBe(true)
     expect(outputControls.amlButton.disabled).toBe(true)
+
+    const page = previewRoot.querySelector<HTMLElement>('.label-sheet-page')!
+    zoom = 150
+    sync(true)
+    expect(previewRoot.querySelector('.label-sheet-page')).toBe(page)
+    expect(page.style.transform).toBe('scale(1.5)')
+    sync()
+    expect(previewRoot.querySelector('.label-sheet-page')).not.toBe(page)
   })
 })
 
@@ -1144,6 +1739,7 @@ describe('single and batch PDF factory reuse', () => {
         <select id="output-mode"><option>Individual</option></select>
         <textarea id="designer-template"></textarea>
       </aside>
+      <div id="freeform-designer-workspace" contenteditable="true"></div>
       <div class="preview-zoom-bar">
         <button id="zoom-in">Zoom in</button>
         <input id="zoom-slider" type="range">
@@ -1155,6 +1751,7 @@ describe('single and batch PDF factory reuse', () => {
       '#designer-template',
       '#zoom-in',
       '#zoom-slider',
+      '#freeform-designer-workspace',
     ].map(selector => document.querySelector<HTMLElement & { disabled: boolean }>(selector)!)
 
     controls.pngButton.click()
@@ -1948,6 +2545,22 @@ describe('collection output binding', () => {
     expect(download).not.toHaveBeenCalled()
   })
 
+  it('reports missing assets and blocks a misleading partial batch download', async () => {
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const { controls } = bindCollectionOutputs([1, 2], {
+      allowPartialPng: true,
+      capture: async item => {
+        if (item === 1) throw new LabelOutputAssetError('Label image asset-1 unavailable')
+        return 'data:image/png;base64,c3Vydml2b3I='
+      },
+    })
+    controls.pngButton.click()
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining('asset-1')))
+    expect(download).not.toHaveBeenCalled()
+  })
+
   it('creates PDF pages in collection order', async () => {
     const pdf = makePdfDocument()
     const capturedPages: LabelPdfPage[][] = []
@@ -2086,6 +2699,28 @@ describe('collection output binding', () => {
       .toContain('is-temporary-pdf-preview-active')
     expect(open).not.toHaveBeenCalled()
     expect(printLabelBrowserJob).not.toHaveBeenCalled()
+  })
+
+  it('restores designer interaction after repeated print-preview returns', async () => {
+    const { controls } = bindCollectionOutputs([1], {
+      createPdf: async () => makePdfDocument(),
+      withPdfPreview: true,
+    })
+    const workspace = document.querySelector<HTMLElement>('.preview-scroll-area')!
+    workspace.id = 'freeform-designer-workspace'
+    controls.printPdfCheckbox.checked = true
+    const surface = document.querySelector<HTMLElement>('#temporary-pdf-preview')!
+    const back = document.querySelector<HTMLButtonElement>('#temporary-pdf-back')!
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      controls.printButton.click()
+      await vi.waitFor(() => expect(surface.hidden).toBe(false))
+      expect(workspace.inert).toBe(true)
+      back.click()
+      expect(workspace.inert).toBe(false)
+      expect(workspace.hasAttribute('aria-hidden')).toBe(false)
+      expect(surface.hidden).toBe(true)
+    }
   })
 
   it('preserves a live aria-disabled change when the coordinator releases controls', async () => {

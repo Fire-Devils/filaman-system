@@ -1,19 +1,22 @@
 ---
 interface Props {
   min?: string
-  resetClass?: string
 }
 
 const {
   min = '25',
-  resetClass = '',
 } = Astro.props
 ---
 
 <div class="preview-zoom-bar">
-  <button class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-  <input type="range" id="preview-zoom-slider" min={min} max="300" step="5" value="100" class="preview-zoom-slider">
-  <button class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-  <span id="preview-zoom-label" class="preview-zoom-label">100%</span>
-  <button class={`preview-zoom-btn ${resetClass}`} id="preview-zoom-reset" title="Reset zoom" aria-label="Reset zoom">⟳</button>
+  <button type="button" class="preview-zoom-btn" id="preview-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+  <label class="preview-zoom-value"><input type="number" id="preview-zoom-input" min={min} max="500" step="5" value="100" aria-label="Preview zoom (%)" data-i18n-aria-label="labelPrint.zoomLabel"><span aria-hidden="true">%</span></label>
+  <button type="button" class="preview-zoom-btn" id="preview-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
 </div>
+
+<style>
+  .preview-zoom-value { align-items: center; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); display: inline-flex; font-size: 0.8rem; height: 28px; padding: 0 6px; }
+  .preview-zoom-value:focus-within { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+  .preview-zoom-value input { appearance: textfield; background: transparent; border: 0; color: var(--text); font: inherit; font-variant-numeric: tabular-nums; outline: 0; padding: 0; text-align: right; width: 3ch; }
+  .preview-zoom-value input::-webkit-inner-spin-button, .preview-zoom-value input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+</style>

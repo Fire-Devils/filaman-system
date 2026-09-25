@@ -11,6 +11,7 @@ import {
 
 import {
   bindFixedPreviewToolbar,
+  prepareLabelOutputClone,
   stripElementIds,
 } from './label-preview-dom'
 
@@ -34,6 +35,59 @@ describe('stripElementIds', () => {
 
     expect(root.id).toBe('')
     expect(root.querySelector('[id]')).toBeNull()
+  })
+})
+
+describe('prepareLabelOutputClone', () => {
+  it('removes live text-editing affordances without changing token output', () => {
+    const label = document.createElement('div')
+    label.innerHTML = '<div data-label-element-id="text" data-label-text-editing contenteditable="true"><strong><span data-template-token-chip contenteditable="false" draggable="false">PETG</span></strong></div>'
+    prepareLabelOutputClone(label)
+    expect(label.querySelector('[data-label-text-editing], [data-template-token-chip], [contenteditable], [draggable]')).toBeNull()
+    expect(label.querySelector('strong')?.textContent).toBe('PETG')
+  })
+
+  it('clips overflowing artwork to physical label dimensions and removes margin guides', () => {
+    const page = document.createElement('section')
+    page.innerHTML = '<div class="label-preview" data-label-interactive style="overflow:visible;width:60mm;height:40mm;--inner-border-style:0.3mm solid black"><div data-label-element-id="shape" style="left:-5mm;width:20mm"></div><div data-label-margin-guide data-label-editor-chrome></div></div>'
+    prepareLabelOutputClone(page)
+    const label = page.querySelector<HTMLElement>('.label-preview')!
+    expect(label.style.overflow).toBe('hidden')
+    expect(label.style.width).toBe('60mm')
+    expect(label.style.height).toBe('40mm')
+    expect(label.querySelector<HTMLElement>('[data-label-element-id]')!.style.left).toBe('-5mm')
+    expect(label.querySelector('[data-label-margin-guide]')).toBeNull()
+    expect(label.style.getPropertyValue('--inner-border-style')).toBe('0.3mm solid black')
+  })
+
+  it.each([900, 901])('removes editor-only state and focus semantics at %ipx while preserving rendered label elements', width => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    const root = document.createElement('section')
+    root.id = 'label-root'
+    root.className = 'label-preview is-selected is-designer-output-only'
+    root.setAttribute('aria-hidden', 'true')
+    root.setAttribute('data-label-interactive', '')
+    root.innerHTML = `
+      <div id="content" class="is-selected" data-label-element-id="text" data-label-interaction-bound tabindex="0" role="button" aria-label="Text element">Label</div>
+      <button data-editor-handle>Resize</button>
+      <div data-label-editor-chrome>Toolbar</div>
+    `
+
+    prepareLabelOutputClone(root)
+
+    expect(root.id).toBe('')
+    expect(root.hasAttribute('data-label-interactive')).toBe(false)
+    expect(root.classList.contains('is-designer-output-only')).toBe(false)
+    expect(root.hasAttribute('aria-hidden')).toBe(false)
+    expect(root.querySelector('[data-editor-handle]')).toBeNull()
+    expect(root.querySelector('[data-label-editor-chrome]')).toBeNull()
+    expect(root.querySelector('[data-label-element-id="text"]')?.textContent).toBe('Label')
+    expect(root.querySelector('.is-selected')).toBeNull()
+    expect(root.querySelector('[data-label-interaction-bound]')).toBeNull()
+    const outputElement = root.querySelector('[data-label-element-id="text"]')
+    expect(outputElement?.hasAttribute('tabindex')).toBe(false)
+    expect(outputElement?.hasAttribute('role')).toBe(false)
+    expect(outputElement?.hasAttribute('aria-label')).toBe(false)
   })
 })
 

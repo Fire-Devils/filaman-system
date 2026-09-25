@@ -21,11 +21,17 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
 <script>
   import { bindLabelSheetControls, createLabelSheetPdf } from '../../lib/label-sheet'
-  import { initLabelDesignerEditor } from '../../lib/label-designer-editor'
+  import { labelAssetContentUrl } from '../../lib/freeform-label/assets'
+  import {
+    bindDesignerPreviewNavigation,
+    bindLabelPrintWorkspaceTabs,
+    createBatchLabelPreviewRuntime,
+    getPrintDesignerDesign,
+    initPrintDesignerEditor,
+  } from '../../lib/label-print-workspace'
   import {
     buildSpoolDesignerDataFromLabelData,
     getDesignerLabelDimensions,
-    loadDesignerSettingsFromStorage,
     renderDesignerLabel,
     type DesignerExtraField,
   } from '../../lib/label-designer'
@@ -45,6 +51,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     appendLabelSettingsCheckbox,
     captureLabelSettings,
     captureBatchLabel,
+    createPrintWorkspaceCoordinator,
     createPreviewRenderCoordinator,
     findBatchLabelElement,
     getCachedEntityLogoUrl,
@@ -52,16 +59,16 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     getLabelSettingsControls,
     getStandardLabelSettings,
     makeBatchLabelHtml,
-    bindPrintDesignerTabs,
+    singleLabelPrintUrl,
     prefetchEntityLogos,
-    readPrintDesignerTab,
+    readPrintWorkspaceMode,
     readStorageValue,
     removeStorageValue,
     resetLabelSettings,
     restoreLabelSettings,
     type LabelSettingsState,
     type LabelPrintEntityAdapter,
-    type PrintDesignerTab,
+    type PrintWorkspaceMode,
     writeStorageValue,
   } from '../../lib/label-print-page'
   import {
@@ -86,6 +93,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     buildSystemExtraFieldDefinitionMap,
     getExtraFieldValue,
     normalizeEntityExtraFieldDefinitions,
+    normalizeSystemExtraFieldDefinitions,
     renderRecordExtraField,
     type EntityExtraFieldDefinitions,
   } from '../../lib/entity-extra-fields'
@@ -98,15 +106,20 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   bindPrintPageSidebarCollapse()
   const settingsControls = getLabelSettingsControls()
   const outputControls = getLabelOutputControls()
-  const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn')
-  const tabPanelPrint = document.getElementById('tab-panel-print') as HTMLElement
-  const tabPanelDesigner = document.getElementById('tab-panel-designer') as HTMLElement
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
   const previewContainer = document.getElementById('preview-container') as HTMLElement
+  const previewLabelsHost = document.getElementById('freeform-canvas-host') as HTMLElement
+  const countEl = document.getElementById('label-count')!
+  const ids = (new URLSearchParams(window.location.search).get('ids') || '')
+    .split(',').map(Number).filter(n => n > 0)
+  const singlePrintUrl = singleLabelPrintUrl('spool', ids)
+  if (singlePrintUrl) window.location.replace(singlePrintUrl)
+  else {
   await hydrateLabelPresetStorage()
-  let syncOutputPreview: () => void = () => undefined
+  let syncOutputPreview: (zoomOnly?: boolean) => void = () => undefined
+  let refreshWorkspace: () => void = () => syncOutputPreview()
   const sheetControls = bindLabelSheetControls(
-    () => syncOutputPreview(),
+    () => refreshWorkspace(),
     (key, fallback) => t(key) || fallback,
   )
 
@@ -132,9 +145,20 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   let labelLookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS
   type SpoolLabelEntity = ApiSpool
   const logoCache: Record<number, string | null> = {}
-  let activePreviewTab: PrintDesignerTab = readPrintDesignerTab('filaman-label-active-tab')
-  let renderVersion = 0
+  const initialMode: PrintWorkspaceMode = readPrintWorkspaceMode('filaman-label-active-tab')
+  let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
   const previewRenders = createPreviewRenderCoordinator()
+  const workspace = createPrintWorkspaceCoordinator({
+    initialMode,
+    getItems: () => spools,
+    getSheetSource: sheetControls.getSource,
+    onModeChange: state => {
+      if (state.mode === 'designer' && designerEditor) void designerEditor.refresh()
+      else void renderBatchPreview(state.mode)
+    },
+  })
+
+  const syncPreviewNavigation = bindDesignerPreviewNavigation(workspace)
 
   // Extra field definitions from API: {key, label, target_type}
   let efDefs: ExtraFieldDef[] = []
@@ -144,32 +168,6 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   function efMapKey(targetType: string, key: string): string {
     return `${targetType}:${key}`
-  }
-
-  function isApiObject(value: unknown): value is ApiObject {
-    return typeof value === 'object' && value !== null
-  }
-
-  function isExtraFieldDef(value: unknown): value is SystemExtraFieldDef {
-    return isApiObject(value) && typeof value.key === 'string' && typeof value.label === 'string'
-  }
-
-  function normalizeExtraFieldDefs(value: unknown, targetType: ExtraFieldDef['target_type']): ExtraFieldDef[] {
-    const items = Array.isArray(value)
-      ? value
-      : isApiObject(value) && Array.isArray(value.items)
-        ? value.items
-        : []
-    return items
-      .filter(isExtraFieldDef)
-      .map(def => ({
-        ...def,
-        id: typeof def.id === 'number' ? def.id : 0,
-        key: def.key,
-        label: def.label,
-        field_type: typeof def.field_type === 'string' ? def.field_type : 'text',
-        target_type: targetType,
-      }))
   }
 
   function getExtraFieldDefinitionMaps() {
@@ -239,20 +237,6 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       })
     }
     return Array.from(fields.values())
-  }
-
-  function getBatchFilamentColorData() {
-    for (const spool of spools) {
-      const data = buildSpoolLabelDataFromApi(spool, labelLookups)
-      if (data.hex_code || data.color_hexes) {
-        return {
-          hex: data.hex_code,
-          colorHexes: data.color_hexes,
-          multiColorStyle: data.multi_color_style,
-        }
-      }
-    }
-    return null
   }
 
   function getExtraFieldsForSpool(spool: ApiSpool): {key: string, label: string, value: string}[] {
@@ -365,17 +349,31 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     })
   }
 
-  async function renderDesignerLabelForSpool(container: HTMLElement, spool: ApiSpool, isStale = () => false) {
-    const settings = loadDesignerSettingsFromStorage({
-      presetsKey: DESIGNER_PRESETS_KEY,
+  function getDesignerDesign() {
+    return getPrintDesignerDesign({
       settingsKey: DESIGNER_SETTINGS_KEY,
+      presetsKey: DESIGNER_PRESETS_KEY,
+      kind: 'spool',
+      mode: workspace.getActiveMode(),
+      sheetSource: sheetControls.getSource(),
     })
+  }
+
+  async function renderDesignerLabelForSpool(
+    container: HTMLElement,
+    spool: ApiSpool,
+    interactive: boolean,
+    design: ReturnType<typeof getDesignerDesign>,
+    isStale = () => false,
+  ) {
     await renderDesignerLabel({
       element: container,
       previewBorder: false,
-      settings,
+      design,
       data: labelAdapter.buildDesignerData(spool),
       logoUrl: getCachedEntityLogoUrl(labelAdapter, logoCache, spool),
+      resolveAssetUrl: labelAssetContentUrl,
+      interactive,
       isStale,
       entityPath: labelAdapter.entityPath,
     })
@@ -389,45 +387,24 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     await prefetchEntityLogos(spools, labelAdapter, loadLogo)
   }
 
-  // Render labels in parallel chunks so the browser stays responsive
-  function renderAll(tab: 'print' | 'designer' = activePreviewTab) {
-    return previewRenders.run(() => renderAllNow(tab))
-  }
+  const batchPreview = createBatchLabelPreviewRuntime({
+    getActiveMode: workspace.getActiveMode,
+    getPreviewIndex: workspace.getPreviewIndex,
+    getWorkspaceState: workspace.getState,
+    getDesign: getDesignerDesign,
+    findElement: spool => findBatchLabelElement(labelAdapter, spool),
+    renderStandard: renderLabel,
+    renderDesigner: renderDesignerLabelForSpool,
+    getSourceElements: getLabelSourceElements,
+    afterRender: () => { syncPreviewNavigation(); syncOutputPreview(); saveSettings() },
+  })
 
-  async function renderAllNow(tab: 'print' | 'designer') {
-    const token = ++renderVersion
-    const isStale = () => token !== renderVersion || activePreviewTab !== tab
-    const CHUNK = 6
-    for (let i = 0; i < spools.length; i += CHUNK) {
-      if (isStale()) return
-      const chunk = spools.slice(i, i + CHUNK)
-      await Promise.all(chunk.map(spool => {
-        const el = findBatchLabelElement(labelAdapter, spool)
-        if (!el) return Promise.resolve()
-        return tab === 'designer'
-          ? renderDesignerLabelForSpool(el, spool, isStale)
-          : renderLabel(el, spool, isStale)
-      }))
-      if (isStale()) return
-      // Yield to browser between chunks
-      await new Promise(r => setTimeout(r, 0))
-    }
-    if (isStale()) return
-    syncOutputPreview()
-    saveSettings()
-  }
-
-  function queueRenderAll() {
-    void renderAll()
-  }
+  const renderBatchPreview = (mode = workspace.getActiveMode(), output = false) =>
+    previewRenders.run(() => batchPreview.render(mode, output))
+  refreshWorkspace = renderBatchPreview
 
   function getActiveLabelDimensions() {
-    if (activePreviewTab === 'designer') {
-      return getDesignerLabelDimensions(loadDesignerSettingsFromStorage({
-        presetsKey: DESIGNER_PRESETS_KEY,
-        settingsKey: DESIGNER_SETTINGS_KEY,
-      }))
-    }
+    if (workspace.getSource() === 'designer') return getDesignerLabelDimensions(getDesignerDesign())
     return getStandardLabelDimensions(getStandardSettings())
   }
 
@@ -453,8 +430,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.json()),
       ])
       const allDefs = [
-        ...normalizeExtraFieldDefs(spoolDefs, 'spool'),
-        ...normalizeExtraFieldDefs(filamentDefs, 'filament'),
+        ...normalizeSystemExtraFieldDefinitions(spoolDefs).map(def => ({ ...def, target_type: 'spool' as const })),
+        ...normalizeSystemExtraFieldDefinitions(filamentDefs).map(def => ({ ...def, target_type: 'filament' as const })),
       ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
       systemFieldKeys.clear()
       allDefs.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))
@@ -525,7 +502,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
           container: group.container,
           label: def.label,
           checked: false,
-          onChange: queueRenderAll,
+          onChange: renderBatchPreview,
         })
       }
     } catch {}
@@ -545,7 +522,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     settingsVersion: 0,
     previewRoot: previewContainer,
     getTranslation: (key, fallback) => t(key) || fallback,
-    onChange: () => syncOutputPreview(),
+    onChange: () => syncOutputPreview(true),
   })
   const syncSharedOutputPreview = bindLabelOutputPreview({
     previewRoot: previewContainer,
@@ -554,22 +531,28 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     getSourceElements: getLabelSourceElements,
     getDimensions: getActiveLabelDimensions,
     getZoom: previewZoom.getZoom,
-    applyIndividualZoom: zoom => applyBatchLabelPreviewZoom(previewContainer, zoom),
+    applyIndividualZoom: zoom => {
+      applyBatchLabelPreviewZoom(previewContainer, zoom)
+      void designerEditor?.refreshInteractions()
+    },
   })
-  syncOutputPreview = () => {
-    syncSharedOutputPreview()
-    updateLabelCount()
+  syncOutputPreview = (zoomOnly = false) => {
+    syncSharedOutputPreview(zoomOnly)
+    if (!zoomOnly) updateLabelCount()
   }
 
-  const designerEditor = await initLabelDesignerEditor({
+  designerEditor = await initPrintDesignerEditor({
+    sheetControls,
+    activateDesigner: () => tabControls.activate('designer'),
     extraFields: [],
     entityType: labelAdapter.entityType,
     batchMode: true,
-    getFilamentColorHex: () => getBatchFilamentColorData()?.hex || '',
-    getFilamentColorHexes: () => getBatchFilamentColorData()?.colorHexes || '',
-    getFilamentMultiColorStyle: () => getBatchFilamentColorData()?.multiColorStyle || '',
     translate: (key, fallback) => t(key) || fallback,
-    onChange: queueRenderAll,
+    getPreviewData: () => {
+      const spool = workspace.getState().representativeItem
+      return spool ? labelAdapter.buildDesignerData(spool) : null
+    },
+    onChange: renderBatchPreview,
     presetsKey: DESIGNER_PRESETS_KEY,
     settingsKey: DESIGNER_SETTINGS_KEY,
     entityLabel: 'Spool',
@@ -578,25 +561,22 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     crossPresetsLabel: (t('spools.dsPresetsCrossGroupFilament') || 'Filament presets'),
   })
 
-  const tabControls = bindPrintDesignerTabs({
-    buttons: tabBtns,
-    printPanel: tabPanelPrint,
-    designerPanel: tabPanelDesigner,
-    resetButton: resetBtn,
-    sidebar: document.querySelector<HTMLElement>('.print-sidebar'),
+  const tabControls = bindLabelPrintWorkspaceTabs({
+    outputControls,
+    sheetControls,
     storageKey: 'filaman-label-active-tab',
-    initialTab: activePreviewTab,
-    onChange: tab => {
-      activePreviewTab = tab
-      queueRenderAll()
-    },
+    initialMode,
+    onChange: mode => workspace.activate(mode),
   })
 
   bindLabelOutputs({
     controls: outputControls,
     collection: {
-      getItems: () => spools,
-      prepare: () => previewRenders.settle(),
+      getItems: workspace.getOutputItems,
+      prepare: async () => {
+        await previewRenders.settle()
+        if (workspace.getActiveMode() === 'designer') await renderBatchPreview('designer', true)
+      },
       capture: captureLabel,
       getDimensions: getActiveLabelDimensions,
       browserPrint: {
@@ -641,7 +621,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
             for (const { key: k } of modelFieldDefs) { const c = efCheckMap[`model:${k}`]; if (c) state[k] = c.checked }
             writeStorageValue('filaman-spool-model-field-checks', JSON.stringify(state))
           } catch {}
-          queueRenderAll()
+          void renderBatchPreview()
         },
       })
     }
@@ -655,15 +635,11 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     ;(document.getElementById('btn-back-label') as HTMLElement).textContent = t('labelPrint.backToSpool')
   }
 
-  const idsParam = urlParams.get('ids') || ''
-  const ids = idsParam.split(',').map(Number).filter(n => n > 0)
-  const countEl = document.getElementById('label-count')!
-
   if (ids.length === 0) {
     countEl.textContent = t('labelPrint.noSpoolsSelected')
   } else {
     countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
-    ids.forEach(id => previewContainer.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
+    ids.forEach(id => previewLabelsHost.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
 
     const [spoolResults, loadedLookups] = await Promise.all([
       Promise.allSettled(ids.map(async id => {
@@ -676,23 +652,24 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     labelLookups = loadedLookups
     spools = spoolResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiSpool>).value)
     await loadExtraFieldDefs()
-    designerEditor.refreshExtraFields(getBatchDesignerExtraFields())
+    designerEditor?.refreshExtraFields(getBatchDesignerExtraFields())
     updateLabelCount()
 
     loadSettings()
     await prefetchLogos()
-    tabControls.activate(activePreviewTab)
+    tabControls.activate(initialMode)
   }
 
   bindLabelSettingsEvents({
     controls: settingsControls,
     resetButton: resetBtn,
-    onChange: queueRenderAll,
+    onChange: renderBatchPreview,
     onReset: () => {
       removeStorageValue(SETTINGS_KEY)
       resetLabelSettings(settingsControls, efCheckMap)
       previewZoom.applyZoom(100)
-      queueRenderAll()
+      void renderBatchPreview()
     },
   })
+  }
 </script>

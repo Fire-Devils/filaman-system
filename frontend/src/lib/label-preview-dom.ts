@@ -27,6 +27,33 @@ export function stripElementIds(root: Element): void {
   root.querySelectorAll('[id]').forEach(element => element.removeAttribute('id'))
 }
 
+export function prepareLabelOutputClone(root: Element): void {
+  stripElementIds(root)
+  const editorChrome = '[data-editor-handle], [data-label-editor-chrome]'
+  if (root.matches(editorChrome)) root.remove()
+  root.querySelectorAll(editorChrome).forEach(element => element.remove())
+  const renderedElements = [root, ...root.querySelectorAll('*')]
+  renderedElements.forEach(element => {
+    if (element instanceof HTMLElement && (element.matches('.label-preview') || element.hasAttribute('data-label-interactive'))) {
+      element.style.overflow = 'hidden'
+    }
+    const outputOnly = element.classList.contains('is-designer-output-only')
+    element.classList.remove('is-selected')
+    element.classList.remove('is-designer-representative', 'is-designer-output-only')
+    if (outputOnly) element.removeAttribute('aria-hidden')
+    element.removeAttribute('data-label-interactive')
+    element.removeAttribute('data-label-interaction-bound')
+    for (const attribute of ['data-label-text-editing', 'data-template-token-chip', 'data-template-token-active', 'contenteditable', 'draggable']) {
+      element.removeAttribute(attribute)
+    }
+    if (element.hasAttribute('data-label-element-id')) {
+      element.removeAttribute('tabindex')
+      element.removeAttribute('role')
+      element.removeAttribute('aria-label')
+    }
+  })
+}
+
 export function resetPreviewSurface(element: HTMLElement): void {
   element.style.zoom = '1'
   element.style.transform = 'none'
@@ -53,6 +80,10 @@ export function bindFixedPreviewToolbar(
     if (!isActive()) return
     const toolbar = getPreviewToolbar(options.previewRoot)
     if (!toolbar) return
+    if (toolbar.closest('.freeform-command-bar')) {
+      restore()
+      return
+    }
     const rect = options.previewRoot.getBoundingClientRect()
     const right = rect.right ?? rect.left + rect.width
     const visibleLeft = Math.max(0, rect.left)

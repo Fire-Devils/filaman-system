@@ -16,8 +16,6 @@
   .print-page-batch .preview-container.is-label-sheet-mode .preview-zoom-bar { align-self: flex-start; }
   .print-page-batch .preview-zoom-btn { width: 28px; height: 28px; border-radius: var(--radius-sm); font: inherit; line-height: 1; }
   .print-page-batch .preview-zoom-btn:hover { color: var(--accent); }
-  .print-page-batch .preview-zoom-slider { width: 150px; }
-  .print-page-batch .preview-zoom-label { min-width: 44px; font-size: 0.8rem; font-weight: 600; }
   .print-page-batch .label-preview {
     background: white !important;
     box-shadow: 0 4px 24px rgba(0,0,0,0.18);
@@ -29,5 +27,10 @@
   .print-page-batch .label-hex-code,
   .print-page-batch .label-spool-id,
   .print-page-batch .label-id-corner { color: black !important; }
+
+  @media (max-width: 900px) {
+    .print-page-batch { overflow: visible; }
+    .print-page-batch .preview-container { align-items: center; flex: 0 0 auto; min-height: 320px; overflow: auto; padding: 20px; }
+  }
 
 </style>
