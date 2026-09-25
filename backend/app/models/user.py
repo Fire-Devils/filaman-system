@@ -15,6 +15,7 @@ from app.models.base import Base, TimestampMixin, TZDateTime
 
 if TYPE_CHECKING:
     from app.models.filament import FilamentRating
+    from app.models.label_asset import LabelAsset
     from app.models.label_preset import LabelPreset
     from app.models.rbac import Permission, Role
     from app.models.spool import SpoolEvent
@@ -64,6 +65,9 @@ class User(Base, TimestampMixin):
         back_populates="user"
     )
     label_presets: Mapped[list["LabelPreset"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    label_assets: Mapped[list["LabelAsset"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
