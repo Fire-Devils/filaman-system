@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./label-fonts.css";
 
 /* ── FilaMan Design System ─────────────────────────────────────────── */
 
@@ -19,6 +20,7 @@
 
 /* ── Brand theme (default – greenish tint) ─────────────────────────── */
 html[data-theme="brand"] {
+  color-scheme: dark;
   --bg: #0c1612;
   --bg-elevated: #13261d;
   --bg-soft: #183225;
@@ -53,6 +55,7 @@ html[data-theme="brand"] {
 
 /* ── Light theme ───────────────────────────────────────────────────── */
 html[data-theme="light"] {
+  color-scheme: light;
   --bg: #f8f6f1;
   --bg-elevated: #ffffff;
   --bg-soft: #f1ece3;
@@ -86,6 +89,7 @@ html[data-theme="light"] {
 
 /* ── Dark theme ────────────────────────────────────────────────────── */
 html[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0b0d12;
   --bg-elevated: #141825;
   --bg-soft: #1a2032;

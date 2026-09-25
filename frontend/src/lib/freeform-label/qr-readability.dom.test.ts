@@ -48,12 +48,16 @@ describe('QR readability advisory', () => {
     const { binding } = await renderEditor([37])
     const toolbar = document.querySelector('#freeform-text-toolbar')!
     const inspector = document.querySelector('#freeform-element-inspector')!
+    const advisory = document.querySelector('#freeform-qr-readability-heading')!
     const recommendation = document.querySelector('#freeform-qr-readability-recommendation')!
 
     expect(toolbar.querySelector('legend')?.textContent).toBe('QR Code Center Logo')
     expect(toolbar.querySelector('.freeform-qr-readability')).toBeNull()
     expect(inspector.contains(recommendation)).toBe(true)
-    expect(inspector.querySelector('.freeform-geometry-grid')?.nextElementSibling).toContain(recommendation)
+    expect(inspector.querySelector('#freeform-layer-position')?.nextElementSibling?.firstElementChild).toBe(advisory)
+    expect(advisory.textContent).toBe('QR advisory')
+    expect(advisory.classList.contains('freeform-geometry-heading')).toBe(true)
+    expect(advisory.nextElementSibling).toBe(recommendation)
     binding.destroy()
   })
 
