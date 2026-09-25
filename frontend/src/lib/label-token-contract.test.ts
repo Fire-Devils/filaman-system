@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildSpoolDesignerDataFromLabelData,
-  DESIGNER_DEFAULTS,
-  FILAMENT_TOKENS,
-  SPOOL_TOKENS,
   buildSpoolDataFromApiSpool,
 } from './label-designer'
 import { REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS } from './filament-label-data'
@@ -13,7 +10,10 @@ import {
   createSpoolLabelLookups,
   resolveSpoolLabelRelations,
 } from './spool-label-lookups'
-import { buildSpoolLabelDataFromApi } from './spool-label-data'
+import {
+  buildSpoolLabelDataFromApi,
+  SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
+} from './spool-label-data'
 import { formatDateDisplay, formatDateTimeDisplay } from './extra-fields'
 
 const apiSpool = {
@@ -88,21 +88,46 @@ const lookups = createSpoolLabelLookups(
   [{ id: 3, label: 'Opened' }],
 )
 
+const legacyDesignerTokens = [
+  '{color_swatch[1]}',
+  '{id}',
+  '{filament.id}',
+  '{filament.name}',
+  '{filament.manufacturer}',
+  '{filament.manufacturer_id}',
+  '{filament.type}',
+  '{filament.subtype}',
+  '{filament.manufacturer_color_name}',
+  '{filament.color}',
+  '{filament.colors}',
+  '{filament.color_hex}',
+  '{filament.color_hexes}',
+  '{filament.color_mode}',
+  '{filament.multi_color_style}',
+  '{filament.raw_material_weight_g}',
+  '{filament.diameter}',
+  '{filament.finish}',
+  '{filament.density}',
+  '{filament.price}',
+  '{filament.default_spool_weight_g}',
+  '{filament.spool_outer_diameter_mm}',
+  '{filament.spool_width_mm}',
+  '{filament.spool_material}',
+  '{filament.shop_url}',
+  ...SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key }) => `{${key}}`),
+]
+
 describe('spool label token contract', () => {
-  it('advertises only backed built-in tokens while keeping complete spool timestamps and weights', () => {
-    const filamentTokens = FILAMENT_TOKENS.map(({ token }) => token)
-    const spoolTokens = SPOOL_TOKENS.map(({ token }) => token)
+  it('keeps Standard fields focused while retaining complete spool timestamps and weights', () => {
+    const spoolKeys = SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key }) => key)
     const standardKeys = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS.map(({ key }) => key)
 
-    expect(filamentTokens).not.toContain('{filament.extruder_temp}')
-    expect(filamentTokens).not.toContain('{filament.bed_temp}')
     expect(standardKeys).not.toContain('filament.extruder_temp')
     expect(standardKeys).not.toContain('filament.bed_temp')
-    expect(DESIGNER_DEFAULTS.info.template).not.toMatch(/extruder_temp|bed_temp/)
 
-    expect(spoolTokens).toContain('{spool_core_weight_g}')
-    expect(spoolTokens).toContain('{stocked_in_at}')
-    expect(spoolTokens).toContain('{created_at}')
+    expect(spoolKeys).toContain('spool_core_weight_g')
+    expect(spoolKeys).toContain('stocked_in_at')
+    expect(spoolKeys).toContain('created_at')
   })
 
   it('continues resolving legacy temperature tokens in saved templates', () => {
@@ -112,7 +137,7 @@ describe('spool label token contract', () => {
     expect(renderTemplateText('{filament.bed_temp}', data)).toBe('60')
   })
 
-  it('renders every advertised filament and spool token from the API wire shape', () => {
+  it('continues rendering every token supported by saved legacy Designer templates', () => {
     const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
     const canonical = buildSpoolLabelDataFromApi(apiSpool, lookups)
 
@@ -122,7 +147,7 @@ describe('spool label token contract', () => {
     expect(data['filament.color']).toBe(canonical.color)
     expect(data.remaining_weight_g).toBe(canonical.remaining_weight_g)
 
-    for (const { token } of [...FILAMENT_TOKENS, ...SPOOL_TOKENS]) {
+    for (const token of legacyDesignerTokens) {
       const rendered = renderTemplateText(token, data)
       expect(rendered, `${token} should render a value`).not.toBe('')
       expect(rendered, `${token} should not remain unresolved`).not.toContain('{')

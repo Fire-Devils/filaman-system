@@ -7,6 +7,7 @@ import {
   getExtraFieldValue,
   mergeExtraFieldValues,
   normalizeEntityExtraFieldDefinitions,
+  normalizeSystemExtraFieldDefinitions,
   renderEntityExtraFieldRows,
   renderRecordExtraField,
   renderUnregisteredExtraFieldRows,
@@ -31,6 +32,17 @@ const dryingTemperatureFilament = {
 }
 
 describe('entity extra field helpers', () => {
+  it('normalizes system field list and paginated responses for both batch printers', () => {
+    const fields = [{ key: 'temperature', label: 'Temperature', field_type: 'number', id: 7 },
+      { key: 'note', label: 'Note' }, { key: 3, label: 'Invalid' }, null]
+    expect(normalizeSystemExtraFieldDefinitions({ items: fields })).toEqual([
+      { key: 'temperature', label: 'Temperature', field_type: 'number', id: 7 },
+      { key: 'note', label: 'Note', field_type: 'text', id: 0 },
+    ])
+    expect(normalizeSystemExtraFieldDefinitions(fields)).toEqual(normalizeSystemExtraFieldDefinitions({ items: fields }))
+    expect(normalizeSystemExtraFieldDefinitions({ items: 'invalid' })).toEqual([])
+  })
+
   it('resolves dotted values from nested custom fields', () => {
     expect(getExtraFieldValue({ drying: { temperature: 55 } }, 'drying.temperature')).toBe(55)
   })
