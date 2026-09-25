@@ -1,26 +1,39 @@
 """Admin-Endpoints fuer System, Plugin-Management und Killswitch."""
 
+import base64
+import binascii
 import importlib
+import io
+import json
 import logging
 import os
 import re
 import shutil
 import sys
+import tempfile
 import time
+from collections.abc import AsyncIterator, Mapping
+from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, BinaryIO, Literal, cast
 
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import DateTime, delete, select, text
+from sqlalchemy import DateTime, LargeBinary, delete, select, text
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.inspection import inspect as sa_inspect
+from sqlalchemy.orm import undefer
+from starlette.concurrency import run_in_threadpool
+from starlette.types import Receive, Scope, Send
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.core.cache import response_cache
 from app.core.config import settings
+from app.core.security import Principal
 from app.core.seeds import BUILTIN_PLUGINS, DEPRECATED_PLUGINS
 from app.core.shared_health import shared_display_store, shared_health_store
 from app.core.worker_reload import request_worker_reload
@@ -34,7 +47,9 @@ from app.models import (
     FilamentPrinterProfile,
     FilamentRating,
     InstalledPlugin,
+    LabelAsset,
     LabelPreset,
+    LabelPresetAsset,
     Location,
     Manufacturer,
     OAuthIdentity,
@@ -62,9 +77,27 @@ from app.models.label_preset import (
     label_preset_name_key,
     normalize_label_preset_name,
 )
+from app.services.backup_stream import (
+    BACKUP_FORMAT,
+    BACKUP_VERSION,
+    BackupRecordTooLarge,
+    BackupStreamError,
+    LegacyBackupJSONError,
+    atomic_binary_writer,
+    detect_backup_format,
+    read_legacy_backup,
+    read_record,
+    write_json,
+    write_record,
+)
 from app.services.filamentdb_import_service import (
     FilamentDBImportError,
     FilamentDBImportService,
+)
+from app.services.label_asset_service import (
+    extract_label_asset_ids,
+    set_label_preset_asset_references,
+    validate_canonical_label_image,
 )
 from app.services.plugin_service import PluginInstallError, PluginInstallService
 
@@ -72,6 +105,10 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/admin/system", tags=["admin-system"])
+BACKUP_BATCH_ROWS = 20
+PluginManagementPrincipal = Annotated[
+    Principal, RequirePermission("admin:plugins_manage")
+]
 
 # Oeffentlicher Router fuer Plugin-Navigation (kein Admin-Prefix)
 public_router = APIRouter(tags=["plugins"])
@@ -177,7 +214,7 @@ async def plugin_nav(
 @router.get("/plugins", response_model=list[PluginResponse])
 async def list_plugins(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Alle installierten Plugins auflisten."""
     service = PluginInstallService(db)
@@ -377,7 +414,7 @@ async def version_check(
 @router.get("/plugins/available", response_model=list[AvailablePluginResponse])
 async def list_available_plugins(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Verfuegbare Plugins aus dem FilaMan-Plugin-Verzeichnis abrufen.
 
@@ -433,7 +470,7 @@ async def install_from_registry(
     request: Request,
     body: RegistryInstallRequest,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Plugin aus dem FilaMan-Plugin-Verzeichnis installieren.
 
@@ -545,8 +582,8 @@ async def install_from_registry(
 async def install_plugin(
     request: Request,
     db: DBSession,
-    file: UploadFile = File(...),
-    principal=RequirePermission("admin:plugins_manage"),
+    file: Annotated[UploadFile, File()],
+    principal: PluginManagementPrincipal,
 ):
     """Plugin aus ZIP-Datei installieren oder aktualisieren.
 
@@ -652,7 +689,7 @@ async def install_plugin(
 async def uninstall_plugin(
     plugin_key: str,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
     delete_data: bool = Query(
         False,
         description="Also delete SystemExtraFields and printer_params created by this plugin",
@@ -744,7 +781,7 @@ class PluginToggleResponse(BaseModel):
 async def get_affected_printers(
     plugin_key: str,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Anzahl aktiver Drucker zurueckgeben, die von diesem Plugin abhaengen."""
     service = PluginInstallService(db)
@@ -780,7 +817,7 @@ async def toggle_plugin_active(
     plugin_key: str,
     body: PluginToggleRequest,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Plugin aktivieren oder deaktivieren — Treiber werden gestoppt/gestartet."""
     from app.plugins.manager import plugin_manager
@@ -846,7 +883,7 @@ async def toggle_plugin_active(
 async def get_plugin(
     plugin_key: str,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Details eines installierten Plugins abrufen."""
     service = PluginInstallService(db)
@@ -940,7 +977,7 @@ async def _require_filamentdb_active(db) -> None:
 @router.post("/filamentdb-import/test-connection")
 async def filamentdb_test_connection(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Verbindung zur FilamentDB testen."""
     await _require_filamentdb_active(db)
@@ -958,7 +995,7 @@ async def filamentdb_test_connection(
 @router.post("/filamentdb-import/preview")
 async def filamentdb_preview(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Vorschau der zu importierenden FilamentDB-Daten (nur Hersteller + Materialien)."""
     await _require_filamentdb_active(db)
@@ -989,7 +1026,7 @@ async def filamentdb_preview(
             content={
                 "detail": {
                     "code": "internal_error",
-                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
+                    "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },
@@ -1000,7 +1037,7 @@ async def filamentdb_preview(
 async def filamentdb_filaments(
     body: FilamentDBFilamentsRequest,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Filamente + Farben fuer ausgewaehlte Hersteller laden."""
     await _require_filamentdb_active(db)
@@ -1033,7 +1070,7 @@ async def filamentdb_filaments(
             content={
                 "detail": {
                     "code": "internal_error",
-                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
+                    "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },
@@ -1044,7 +1081,7 @@ async def filamentdb_filaments(
 async def filamentdb_diff(
     body: FilamentDBDiffRequest,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Existierende Filamente mit FilamentDB-Daten vergleichen."""
     await _require_filamentdb_active(db)
@@ -1076,7 +1113,7 @@ async def filamentdb_diff(
             content={
                 "detail": {
                     "code": "internal_error",
-                    "message": f"Unerwarteter Fehler: {str(e)}\n\nTraceback:\n{tb}",
+                    "message": f"Unerwarteter Fehler: {e!s}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },
@@ -1090,7 +1127,7 @@ async def filamentdb_diff(
 async def filamentdb_execute(
     body: FilamentDBImportRequest,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """FilamentDB-Import ausfuehren."""
     await _require_filamentdb_active(db)
@@ -1132,7 +1169,7 @@ async def filamentdb_execute(
             content={
                 "detail": {
                     "code": "internal_error",
-                    "message": f"Unerwarteter Fehler beim Import: {str(e)}\n\nTraceback:\n{tb}",
+                    "message": f"Unerwarteter Fehler beim Import: {e!s}\n\nTraceback:\n{tb}",
                     "type": type(e).__name__,
                 }
             },
@@ -1152,7 +1189,7 @@ class KillswitchResponse(BaseModel):
 @router.delete("/killswitch", response_model=KillswitchResponse)
 async def killswitch(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Alle Spulen, Filamente, Hersteller, Farben, Standorte, Drucker
     und zugehoerige Events/Logs loeschen.
@@ -1195,12 +1232,12 @@ async def killswitch(
     try:
         for table_name, model in tables_in_order:
             result = await db.execute(delete(model))
-            deleted[table_name] = result.rowcount or 0
+            deleted[table_name] = cast(CursorResult[Any], result).rowcount or 0
 
         await db.commit()
     except Exception as exc:
         await db.rollback()
-        logger.exception("KILLSWITCH failed: %s", exc)
+        logger.exception("KILLSWITCH failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "killswitch_failed", "message": str(exc)},
@@ -1239,16 +1276,68 @@ class BackupMetadata(BaseModel):
     plugins: list[BackupPluginInfo] | None = None
 
 
-class BackupExportResponse(BaseModel):
-    metadata: BackupMetadata
-    data: dict[str, list[dict[str, Any]]]
-
-
 class BackupImportResponse(BaseModel):
     message: str
     imported: dict[str, int]
     plugins_installed: list[str] | None = None
     plugins_warnings: list[str] | None = None
+
+
+COMPLETE_BACKUP_TABLES: tuple[tuple[str, type[Any]], ...] = (
+    ("spool_statuses", SpoolStatus),
+    ("permissions", Permission),
+    ("roles", Role),
+    ("app_settings", AppSettings),
+    ("users", User),
+    ("user_roles", UserRole),
+    ("user_permissions", UserPermission),
+    ("role_permissions", RolePermission),
+    ("oauth_identities", OAuthIdentity),
+    ("user_api_keys", UserApiKey),
+    ("user_sessions", UserSession),
+    ("label_assets", LabelAsset),
+    ("label_presets", LabelPreset),
+    ("label_preset_assets", LabelPresetAsset),
+    ("oidc_settings", OIDCSettings),
+    ("oidc_auth_states", OIDCAuthState),
+    ("devices", Device),
+    ("installed_plugins", InstalledPlugin),
+    ("manufacturers", Manufacturer),
+    ("colors", Color),
+    ("locations", Location),
+    ("filaments", Filament),
+    ("filament_colors", FilamentColor),
+    ("filament_ratings", FilamentRating),
+    ("system_extra_fields", SystemExtraField),
+    ("printers", Printer),
+    ("filament_printer_profiles", FilamentPrinterProfile),
+    ("filament_printer_params", FilamentPrinterParam),
+    ("spools", Spool),
+    ("spool_printer_params", SpoolPrinterParam),
+    ("spool_events", SpoolEvent),
+    ("printer_slots", PrinterSlot),
+    ("printer_slot_assignments", PrinterSlotAssignment),
+    ("printer_slot_events", PrinterSlotEvent),
+)
+
+INVENTORY_BACKUP_TABLES: tuple[tuple[str, type[Any]], ...] = (
+    ("manufacturers", Manufacturer),
+    ("colors", Color),
+    ("locations", Location),
+    ("filaments", Filament),
+    ("filament_colors", FilamentColor),
+    ("filament_ratings", FilamentRating),
+    ("system_extra_fields", SystemExtraField),
+    ("printers", Printer),
+    ("filament_printer_profiles", FilamentPrinterProfile),
+    ("filament_printer_params", FilamentPrinterParam),
+    ("spools", Spool),
+    ("spool_printer_params", SpoolPrinterParam),
+    ("spool_events", SpoolEvent),
+    ("printer_slots", PrinterSlot),
+    ("printer_slot_assignments", PrinterSlotAssignment),
+    ("printer_slot_events", PrinterSlotEvent),
+)
 
 
 def _serialize_row(row: Any) -> dict[str, Any]:
@@ -1262,100 +1351,141 @@ def _serialize_row(row: Any) -> dict[str, Any]:
 
         if isinstance(value, datetime):
             result[col.name] = value.isoformat()
+        elif isinstance(value, bytes):
+            result[col.name] = base64.b64encode(value).decode("ascii")
         else:
             result[col.name] = value
 
     return result
 
 
-async def _export_all_data(db: DBSession) -> dict[str, list[dict[str, Any]]]:
-    """Export all tables in dependency order."""
-    data = {}
-
-    # Order: independent tables first, then dependent tables
-    tables_order = [
-        # Seed/Config data
-        ("spool_statuses", SpoolStatus),
-        ("permissions", Permission),
-        ("roles", Role),
-        ("app_settings", AppSettings),
-        # Users and auth
-        ("users", User),
-        ("user_roles", UserRole),
-        ("user_permissions", UserPermission),
-        ("role_permissions", RolePermission),
-        ("oauth_identities", OAuthIdentity),
-        ("user_api_keys", UserApiKey),
-        ("user_sessions", UserSession),
-        ("label_presets", LabelPreset),
-        ("oidc_settings", OIDCSettings),
-        ("oidc_auth_states", OIDCAuthState),
-        # Devices
-        ("devices", Device),
-        # Plugins
-        ("installed_plugins", InstalledPlugin),
-        # Domain data - independent
-        ("manufacturers", Manufacturer),
-        ("colors", Color),
-        ("locations", Location),
-        # Domain data - dependent
-        ("filaments", Filament),
-        ("filament_colors", FilamentColor),
-        ("filament_ratings", FilamentRating),
-        ("system_extra_fields", SystemExtraField),
-        ("printers", Printer),
-        ("filament_printer_profiles", FilamentPrinterProfile),
-        ("filament_printer_params", FilamentPrinterParam),
-        ("spools", Spool),
-        ("spool_printer_params", SpoolPrinterParam),
-        ("spool_events", SpoolEvent),
-        ("printer_slots", PrinterSlot),
-        ("printer_slot_assignments", PrinterSlotAssignment),
-        ("printer_slot_events", PrinterSlotEvent),
-    ]
-
-    for table_name, model in tables_order:
-        result = await db.execute(select(model))
-        rows = result.scalars().all()
-        data[table_name] = [_serialize_row(row) for row in rows]
-        logger.info(f"Exported {len(rows)} rows from {table_name}")
-
-    return data
+def _deserialize_row(
+    model: type[Any], table_name: str, row_data: dict[str, Any]
+) -> dict[str, Any]:
+    mapper = sa_inspect(model)
+    col_to_attr = {attr.columns[0].name: attr.key for attr in mapper.column_attrs}
+    columns = {attr.columns[0].name: attr.columns[0] for attr in mapper.column_attrs}
+    attr_data: dict[str, Any] = {}
+    for col_name, value in row_data.items():
+        attr_name = col_to_attr.get(col_name, col_name)
+        column_type = getattr(columns.get(col_name), "type", None)
+        if isinstance(value, str) and isinstance(column_type, LargeBinary):
+            try:
+                attr_data[attr_name] = base64.b64decode(value, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid base64 data for {table_name}.{col_name}"
+                ) from exc
+            continue
+        is_datetime_column = isinstance(column_type, DateTime) or isinstance(
+            getattr(column_type, "impl", None), DateTime
+        )
+        if isinstance(value, str) and is_datetime_column:
+            try:
+                attr_data[attr_name] = datetime.fromisoformat(
+                    value.replace("Z", "+00:00")
+                )
+            except (ValueError, AttributeError):
+                attr_data[attr_name] = value
+        else:
+            attr_data[attr_name] = value
+    return attr_data
 
 
-async def _export_inventory_data(db: DBSession) -> dict[str, list[dict[str, Any]]]:
-    """Export only inventory/domain data (no users, auth, devices, plugins)."""
-    data = {}
+async def _write_backup_file(
+    db: DBSession,
+    path: Path,
+    *,
+    kind: str,
+    metadata: dict[str, Any],
+    tables: tuple[tuple[str, type[Any]], ...],
+    format: Literal["json", "jsonl", "auto"] = "jsonl",
+) -> Path:
+    """Write rows atomically to disk; auto falls back for oversized JSONL records."""
+    if format == "auto":
+        try:
+            return await _write_backup_file(
+                db, path, kind=kind, metadata=metadata, tables=tables, format="jsonl"
+            )
+        except BackupRecordTooLarge:
+            pass
+        return await _write_backup_file(
+            db, path, kind=kind, metadata=metadata, tables=tables, format="json"
+        )
 
-    # Only domain tables - no users, auth, devices, plugins
-    tables_order = [
-        # Independent domain data
-        ("manufacturers", Manufacturer),
-        ("colors", Color),
-        ("locations", Location),
-        # Dependent domain data
-        ("filaments", Filament),
-        ("filament_colors", FilamentColor),
-        ("filament_ratings", FilamentRating),
-        ("system_extra_fields", SystemExtraField),
-        ("printers", Printer),
-        ("filament_printer_profiles", FilamentPrinterProfile),
-        ("filament_printer_params", FilamentPrinterParam),
-        ("spools", Spool),
-        ("spool_printer_params", SpoolPrinterParam),
-        ("spool_events", SpoolEvent),
-        ("printer_slots", PrinterSlot),
-        ("printer_slot_assignments", PrinterSlotAssignment),
-        ("printer_slot_events", PrinterSlotEvent),
-    ]
+    path = path.with_suffix(f".{format}")
+    counts = {table_name: 0 for table_name, _model in tables}
+    with atomic_binary_writer(path) as stream:
+        if format == "jsonl":
+            write_record(
+                stream,
+                {
+                    "format": BACKUP_FORMAT,
+                    "version": BACKUP_VERSION,
+                    "kind": kind,
+                    "metadata": metadata,
+                },
+            )
+        else:
+            stream.write(b'{"metadata":')
+            write_json(stream, metadata)
+            stream.write(b',"data":{')
+        for table_index, (table_name, model) in enumerate(tables):
+            if format == "json":
+                if table_index:
+                    stream.write(b",")
+                write_json(stream, table_name)
+                stream.write(b":[")
+            result = await db.stream(
+                select(model)
+                .options(undefer("*"))
+                .execution_options(
+                    yield_per=1 if model is LabelAsset else BACKUP_BATCH_ROWS
+                )
+            )
+            try:
+                async for row in result.scalars():
+                    try:
+                        if format == "jsonl":
+                            write_record(
+                                stream,
+                                {"table": table_name, "row": _serialize_row(row)},
+                            )
+                        else:
+                            if counts[table_name]:
+                                stream.write(b",")
+                            write_json(stream, _serialize_row(row))
+                    except BackupRecordTooLarge as exc:
+                        raise BackupRecordTooLarge(
+                            f"Cannot export {table_name}: {exc}"
+                        ) from exc
+                    counts[table_name] += 1
+            finally:
+                await result.close()
+            if format == "json":
+                stream.write(b"]")
+        if format == "jsonl":
+            write_record(stream, {"end": True, "counts": counts})
+        else:
+            stream.write(b"}}")
+    return path
 
-    for table_name, model in tables_order:
-        result = await db.execute(select(model))
-        rows = result.scalars().all()
-        data[table_name] = [_serialize_row(row) for row in rows]
-        logger.info(f"Exported {len(rows)} inventory rows from {table_name}")
 
-    return data
+class _BackupFileResponse(FileResponse):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            # Also covers range rejection, failed sends, and task cancellation.
+            Path(self.path).unlink(missing_ok=True)
+
+
+def _temporary_backup_path() -> Path:
+    descriptor, name = tempfile.mkstemp(suffix=".jsonl")
+    os.close(descriptor)
+    path = Path(name)
+    path.unlink()
+    return path
 
 
 async def _get_schema_version(db: DBSession) -> str | None:
@@ -1364,14 +1494,15 @@ async def _get_schema_version(db: DBSession) -> str | None:
         result = await db.execute(text("SELECT version_num FROM alembic_version"))
         version = result.scalar_one_or_none()
         return version
-    except Exception:
+    except SQLAlchemyError:
         return None
 
 
 @router.get("/backup/export")
 async def export_backup(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
+    format: Literal["json", "jsonl", "auto"] = "json",
 ):
     """Export complete database backup as JSON.
 
@@ -1398,9 +1529,6 @@ async def export_backup(
     # Get app version
     app_version = _read_installed_version()
 
-    # Export all data
-    data = await _export_all_data(db)
-
     # Collect non-builtin, non-deprecated plugin info for metadata
     builtin_keys = {p["plugin_key"] for p in BUILTIN_PLUGINS}
     deprecated_keys = set(DEPRECATED_PLUGINS)
@@ -1421,23 +1549,36 @@ async def export_backup(
         plugins=backup_plugins if backup_plugins else None,
     )
 
-    logger.info(f"Backup export completed by user {principal.user_id}")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    path = _temporary_backup_path()
+    try:
+        path = await _write_backup_file(
+            db,
+            path,
+            kind="complete",
+            metadata=metadata.model_dump(),
+            tables=COMPLETE_BACKUP_TABLES,
+            format=format,
+        )
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
 
-    return JSONResponse(
-        content={
-            "metadata": metadata.model_dump(),
-            "data": data,
-        },
-        headers={
-            "Content-Disposition": f'attachment; filename="filaman_backup_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.json"'
-        },
+    logger.info(f"Backup export completed by user {principal.user_id}")
+    return _BackupFileResponse(
+        path,
+        media_type=(
+            "application/x-ndjson" if path.suffix == ".jsonl" else "application/json"
+        ),
+        filename=f"filaman_backup_{timestamp}{path.suffix}",
     )
 
 
 @router.get("/backup/export-inventory")
 async def export_inventory_backup(
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
+    format: Literal["json", "jsonl", "auto"] = "json",
 ):
     """Export inventory data only (no users, auth, devices, plugins).
 
@@ -1454,37 +1595,44 @@ async def export_inventory_backup(
     schema_version = await _get_schema_version(db)
     app_version = _read_installed_version()
 
-    data = await _export_inventory_data(db)
-
     metadata = BackupMetadata(
         export_date=datetime.now(timezone.utc).isoformat(),
         app_version=app_version,
         schema_version=schema_version,
     )
 
-    logger.info(f"Inventory backup export completed by user {principal.user_id}")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    path = _temporary_backup_path()
+    try:
+        path = await _write_backup_file(
+            db,
+            path,
+            kind="inventory",
+            metadata=metadata.model_dump(),
+            tables=INVENTORY_BACKUP_TABLES,
+            format=format,
+        )
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
 
-    return JSONResponse(
-        content={
-            "metadata": metadata.model_dump(),
-            "data": data,
-        },
-        headers={
-            "Content-Disposition": f'attachment; filename="filaman_inventory_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.json"'
-        },
+    logger.info(f"Inventory backup export completed by user {principal.user_id}")
+    return _BackupFileResponse(
+        path,
+        media_type=(
+            "application/x-ndjson" if path.suffix == ".jsonl" else "application/json"
+        ),
+        filename=f"filaman_inventory_{timestamp}{path.suffix}",
     )
 
 
 async def _create_auto_backup(db: DBSession) -> Path:
     """Create automatic backup before import/restore operations."""
-    backup_dir = Path("/app/data/backups")
+    backup_dir = _get_backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    backup_path = backup_dir / f"auto_backup_before_import_{timestamp}.json"
-
-    # Export data
-    data = await _export_all_data(db)
+    backup_path = backup_dir / f"auto_backup_before_import_{timestamp}.jsonl"
     schema_version = await _get_schema_version(db)
     app_version = _read_installed_version()
 
@@ -1495,15 +1643,14 @@ async def _create_auto_backup(db: DBSession) -> Path:
         "auto_backup": True,
     }
 
-    backup_content = {
-        "metadata": metadata,
-        "data": data,
-    }
-
-    # Write to file
-    import json
-
-    backup_path.write_text(json.dumps(backup_content, indent=2))
+    backup_path = await _write_backup_file(
+        db,
+        backup_path,
+        kind="complete",
+        metadata=metadata,
+        tables=COMPLETE_BACKUP_TABLES,
+        format="auto",
+    )
 
     logger.info(f"Auto-backup created: {backup_path}")
     return backup_path
@@ -1513,49 +1660,9 @@ async def _delete_all_data(db: DBSession) -> dict[str, int]:
     """Delete all data from all tables in reverse dependency order."""
     deleted = {}
 
-    # Reverse order: dependent tables first, then independent tables
-    tables_order = [
-        ("printer_slot_events", PrinterSlotEvent),
-        ("printer_slot_assignments", PrinterSlotAssignment),
-        ("printer_slots", PrinterSlot),
-        ("spool_events", SpoolEvent),
-        ("spool_printer_params", SpoolPrinterParam),
-        ("spools", Spool),
-        ("filament_printer_params", FilamentPrinterParam),
-        ("filament_printer_profiles", FilamentPrinterProfile),
-        ("printers", Printer),
-        ("system_extra_fields", SystemExtraField),
-        ("filament_ratings", FilamentRating),
-        ("filament_colors", FilamentColor),
-        ("filaments", Filament),
-        ("locations", Location),
-        ("colors", Color),
-        ("manufacturers", Manufacturer),
-        # Plugins
-        ("installed_plugins", InstalledPlugin),
-        # Devices
-        ("devices", Device),
-        # Users and auth
-        ("oidc_auth_states", OIDCAuthState),
-        ("oidc_settings", OIDCSettings),
-        ("user_sessions", UserSession),
-        ("user_api_keys", UserApiKey),
-        ("oauth_identities", OAuthIdentity),
-        ("label_presets", LabelPreset),
-        ("role_permissions", RolePermission),
-        ("user_permissions", UserPermission),
-        ("user_roles", UserRole),
-        ("users", User),
-        ("roles", Role),
-        ("permissions", Permission),
-        # Config and seed data
-        ("app_settings", AppSettings),
-        ("spool_statuses", SpoolStatus),
-    ]
-
-    for table_name, model in tables_order:
+    for table_name, model in reversed(COMPLETE_BACKUP_TABLES):
         result = await db.execute(delete(model))
-        deleted[table_name] = result.rowcount or 0
+        deleted[table_name] = cast(CursorResult[Any], result).rowcount or 0
         logger.info(f"Deleted {deleted[table_name]} rows from {table_name}")
 
     return deleted
@@ -1565,182 +1672,186 @@ async def _delete_inventory_data(db: DBSession) -> dict[str, int]:
     """Delete only inventory/domain data (preserve users, auth, devices, plugins)."""
     deleted = {}
 
-    # Reverse order: dependent tables first
-    tables_order = [
-        ("printer_slot_events", PrinterSlotEvent),
-        ("printer_slot_assignments", PrinterSlotAssignment),
-        ("printer_slots", PrinterSlot),
-        ("spool_events", SpoolEvent),
-        ("spool_printer_params", SpoolPrinterParam),
-        ("spools", Spool),
-        ("filament_printer_params", FilamentPrinterParam),
-        ("filament_printer_profiles", FilamentPrinterProfile),
-        ("printers", Printer),
-        ("system_extra_fields", SystemExtraField),
-        ("filament_ratings", FilamentRating),
-        ("filament_colors", FilamentColor),
-        ("filaments", Filament),
-        ("locations", Location),
-        ("colors", Color),
-        ("manufacturers", Manufacturer),
-    ]
-
-    for table_name, model in tables_order:
+    for table_name, model in reversed(INVENTORY_BACKUP_TABLES):
         result = await db.execute(delete(model))
-        deleted[table_name] = result.rowcount or 0
+        deleted[table_name] = cast(CursorResult[Any], result).rowcount or 0
         logger.info(f"Deleted {deleted[table_name]} inventory rows from {table_name}")
 
     return deleted
 
 
 async def _import_inventory_data(
-    db: DBSession, data: dict[str, list[dict[str, Any]]]
+    db: DBSession, data: Mapping[str, Any]
 ) -> dict[str, int]:
     """Import only inventory/domain data."""
-    imported = {}
+    return await _import_mapping_data(db, data, INVENTORY_BACKUP_TABLES)
 
-    # Same order as export
-    tables_order = [
-        ("manufacturers", Manufacturer),
-        ("colors", Color),
-        ("locations", Location),
-        ("filaments", Filament),
-        ("filament_colors", FilamentColor),
-        ("filament_ratings", FilamentRating),
-        ("system_extra_fields", SystemExtraField),
-        ("printers", Printer),
-        ("filament_printer_profiles", FilamentPrinterProfile),
-        ("filament_printer_params", FilamentPrinterParam),
-        ("spools", Spool),
-        ("spool_printer_params", SpoolPrinterParam),
-        ("spool_events", SpoolEvent),
-        ("printer_slots", PrinterSlot),
-        ("printer_slot_assignments", PrinterSlotAssignment),
-        ("printer_slot_events", PrinterSlotEvent),
-    ]
 
-    for table_name, model in tables_order:
-        rows = data.get(table_name, [])
-        if rows:
-            mapper = sa_inspect(model)
-            col_to_attr = {
-                attr.columns[0].name: attr.key for attr in mapper.column_attrs
-            }
+async def _import_backup_row(
+    db: DBSession,
+    table_name: str,
+    model: type[Any],
+    row_data: Mapping[str, Any],
+) -> None:
+    attr_data = _deserialize_row(model, table_name, dict(row_data))
 
-            for row_data in rows:
-                attr_data = {}
-                for col_name, value in row_data.items():
-                    attr_name = col_to_attr.get(col_name, col_name)
+    if model is LabelPreset and isinstance(attr_data.get("name"), str):
+        attr_data["name"] = normalize_label_preset_name(attr_data["name"])
+        attr_data["name_key"] = label_preset_name_key(attr_data["name"])
+    elif model is LabelAsset:
+        canonical = await run_in_threadpool(
+            validate_canonical_label_image, attr_data.get("content", b"")
+        )
+        if (
+            canonical.sha256 != attr_data.get("sha256")
+            or canonical.byte_size != attr_data.get("byte_size")
+            or canonical.width != attr_data.get("width")
+            or canonical.height != attr_data.get("height")
+            or attr_data.get("media_type") != "image/png"
+        ):
+            raise ValueError("Invalid canonical label image in backup")
+    elif model is LabelPresetAsset:
+        preset_id = attr_data.get("preset_id")
+        asset_id = attr_data.get("asset_id")
+        preset = await db.get(LabelPreset, preset_id)
+        asset = await db.get(LabelAsset, asset_id)
+        if (
+            preset is None
+            or asset is None
+            or preset.user_id != attr_data.get("user_id")
+            or asset.user_id != attr_data.get("user_id")
+        ):
+            raise ValueError("Invalid label image reference in backup")
+        return
 
-                    if isinstance(value, str) and "T" in value:
-                        try:
-                            attr_data[attr_name] = datetime.fromisoformat(
-                                value.replace("Z", "+00:00")
-                            )
-                        except (ValueError, AttributeError):
-                            attr_data[attr_name] = value
-                    else:
-                        attr_data[attr_name] = value
+    instance = model(**attr_data)
+    db.add(instance)
 
-                db.add(model(**attr_data))
 
-            await db.flush()
+async def _finish_backup_import(
+    db: DBSession, imported: dict[str, int]
+) -> dict[str, int]:
+    if "label_preset_assets" not in imported:
+        return imported
 
-            imported[table_name] = len(rows)
-            logger.info(f"Imported {len(rows)} inventory rows into {table_name}")
-        else:
-            imported[table_name] = 0
-
+    rebuilt_references = 0
+    last_id: int | None = None
+    while True:
+        query = select(LabelPreset).order_by(LabelPreset.id).limit(BACKUP_BATCH_ROWS)
+        if last_id is not None:
+            query = query.where(LabelPreset.id > last_id)
+        presets = list((await db.scalars(query)).all())
+        if not presets:
+            break
+        for preset in presets:
+            asset_ids = extract_label_asset_ids(preset.data)
+            await set_label_preset_asset_references(db, preset, asset_ids)
+            rebuilt_references += len(asset_ids)
+        last_id = presets[-1].id
+    imported["label_preset_assets"] = rebuilt_references
     return imported
+
+
+async def _import_mapping_data(
+    db: DBSession,
+    data: Mapping[str, Any],
+    tables: tuple[tuple[str, type[Any]], ...],
+) -> dict[str, int]:
+    imported = {table_name: 0 for table_name, _model in tables}
+    for table_name, model in tables:
+        source = data.get(table_name, [])
+        if isinstance(source, io.IOBase):
+            rows = (json.loads(line) for line in source)
+        elif isinstance(source, list):
+            rows = iter(source)
+        else:
+            raise BackupStreamError(f"Backup table {table_name} must be a list")
+        count = 0
+        for count, row_data in enumerate(rows, start=1):
+            if not isinstance(row_data, Mapping):
+                raise BackupStreamError(
+                    f"Backup row for {table_name} must be an object"
+                )
+            await _import_backup_row(db, table_name, model, row_data)
+            if model is LabelAsset or count % BACKUP_BATCH_ROWS == 0:
+                await db.flush()
+        if count:
+            await db.flush()
+            logger.info("Imported %d rows into %s", count, table_name)
+        imported[table_name] = count
+    return await _finish_backup_import(db, imported)
 
 
 async def _import_all_data(
-    db: DBSession, data: dict[str, list[dict[str, Any]]]
+    db: DBSession, data: Mapping[str, Any]
 ) -> dict[str, int]:
     """Import all data in dependency order."""
-    imported = {}
+    return await _import_mapping_data(db, data, COMPLETE_BACKUP_TABLES)
 
-    # Same order as export
-    tables_order = [
-        ("spool_statuses", SpoolStatus),
-        ("permissions", Permission),
-        ("roles", Role),
-        ("app_settings", AppSettings),
-        ("users", User),
-        ("user_roles", UserRole),
-        ("user_permissions", UserPermission),
-        ("role_permissions", RolePermission),
-        ("oauth_identities", OAuthIdentity),
-        ("user_api_keys", UserApiKey),
-        ("user_sessions", UserSession),
-        ("label_presets", LabelPreset),
-        ("oidc_settings", OIDCSettings),
-        ("oidc_auth_states", OIDCAuthState),
-        ("devices", Device),
-        ("installed_plugins", InstalledPlugin),
-        ("manufacturers", Manufacturer),
-        ("colors", Color),
-        ("locations", Location),
-        ("filaments", Filament),
-        ("filament_colors", FilamentColor),
-        ("filament_ratings", FilamentRating),
-        ("system_extra_fields", SystemExtraField),
-        ("printers", Printer),
-        ("filament_printer_profiles", FilamentPrinterProfile),
-        ("filament_printer_params", FilamentPrinterParam),
-        ("spools", Spool),
-        ("spool_printer_params", SpoolPrinterParam),
-        ("spool_events", SpoolEvent),
-        ("printer_slots", PrinterSlot),
-        ("printer_slot_assignments", PrinterSlotAssignment),
-        ("printer_slot_events", PrinterSlotEvent),
-    ]
 
-    for table_name, model in tables_order:
-        rows = data.get(table_name, [])
-        if rows:
-            mapper = sa_inspect(model)
-            col_to_attr = {
-                attr.columns[0].name: attr.key for attr in mapper.column_attrs
-            }
-            columns = {
-                attr.columns[0].name: attr.columns[0] for attr in mapper.column_attrs
-            }
+def _read_jsonl_header(
+    stream: BinaryIO, expected_kind: Literal["complete", "inventory"]
+) -> dict[str, Any]:
+    header = read_record(stream)
+    if (
+        header is None
+        or set(header) != {"format", "version", "kind", "metadata"}
+        or header.get("format") != BACKUP_FORMAT
+        or header.get("version") != BACKUP_VERSION
+        or header.get("kind") != expected_kind
+        or not isinstance(header.get("metadata"), dict)
+    ):
+        raise BackupStreamError("Invalid backup header")
+    return header["metadata"]
 
-            for row_data in rows:
-                attr_data = {}
-                for col_name, value in row_data.items():
-                    attr_name = col_to_attr.get(col_name, col_name)
 
-                    column = columns.get(col_name)
-                    column_type = getattr(column, "type", None)
-                    is_datetime_column = isinstance(
-                        column_type, DateTime
-                    ) or isinstance(getattr(column_type, "impl", None), DateTime)
-                    if isinstance(value, str) and is_datetime_column:
-                        try:
-                            attr_data[attr_name] = datetime.fromisoformat(
-                                value.replace("Z", "+00:00")
-                            )
-                        except (ValueError, AttributeError):
-                            attr_data[attr_name] = value
-                    else:
-                        attr_data[attr_name] = value
+async def _import_jsonl_data(
+    db: DBSession,
+    stream: BinaryIO,
+    *,
+    expected_kind: Literal["complete", "inventory"],
+    tables: tuple[tuple[str, type[Any]], ...],
+) -> tuple[dict[str, int], dict[str, Any]]:
+    metadata = _read_jsonl_header(stream, expected_kind)
+    positions = {table_name: index for index, (table_name, _model) in enumerate(tables)}
+    models = dict(tables)
+    imported = {table_name: 0 for table_name, _model in tables}
+    current_position = -1
 
-                if model is LabelPreset and isinstance(attr_data.get("name"), str):
-                    attr_data["name"] = normalize_label_preset_name(attr_data["name"])
-                    attr_data["name_key"] = label_preset_name_key(attr_data["name"])
+    while (record := read_record(stream)) is not None:
+        if record.get("end") is True:
+            if (
+                set(record) != {"end", "counts"}
+                or record.get("counts") != imported
+            ):
+                raise BackupStreamError("Backup footer counts do not match")
+            if read_record(stream) is not None:
+                raise BackupStreamError("Backup contains data after its footer")
+            if current_position >= 0:
+                await db.flush()
+            return await _finish_backup_import(db, imported), metadata
 
-                db.add(model(**attr_data))
-
+        if set(record) != {"table", "row"} or not isinstance(record.get("row"), dict):
+            raise BackupStreamError("Invalid backup row record")
+        table_name = record.get("table")
+        if not isinstance(table_name, str) or table_name not in positions:
+            raise BackupStreamError("Backup contains an unknown table")
+        position = positions[table_name]
+        if position < current_position:
+            raise BackupStreamError("Backup tables are out of order")
+        if position > current_position:
+            if current_position >= 0:
+                await db.flush()
+            current_position = position
+        await _import_backup_row(db, table_name, models[table_name], record["row"])
+        imported[table_name] += 1
+        if (
+            models[table_name] is LabelAsset
+            or imported[table_name] % BACKUP_BATCH_ROWS == 0
+        ):
             await db.flush()
 
-            imported[table_name] = len(rows)
-            logger.info(f"Imported {len(rows)} rows into {table_name}")
-        else:
-            imported[table_name] = 0
-
-    return imported
+    raise BackupStreamError("Backup footer is missing")
 
 
 async def _reinstall_plugins_from_backup(
@@ -1774,7 +1885,7 @@ async def _reinstall_plugins_from_backup(
     # Fetch available plugins from registry
     try:
         available = await _fetch_available_from_filaman()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — optional plugin reinstalls must not fail a completed restore.
         logger.warning("Plugin-Registry nicht erreichbar: %s", exc)
         for p in to_install:
             warnings.append(
@@ -1832,11 +1943,51 @@ async def _reinstall_plugins_from_backup(
     return installed, warnings
 
 
+_BACKUP_CONTENT_TYPES = {
+    "application/json",
+    "application/x-ndjson",
+    "application/jsonl",
+    "text/plain",
+    "application/octet-stream",
+}
+
+
+@asynccontextmanager
+async def _prepare_backup_upload(
+    file: UploadFile, expected_kind: Literal["complete", "inventory"]
+) -> AsyncIterator[tuple[Literal["jsonl", "legacy-json"], dict[str, Any], dict[str, BinaryIO] | None]]:
+    await file.seek(0)
+    backup_format = detect_backup_format(file.file)
+    if backup_format == "jsonl":
+        metadata = _read_jsonl_header(file.file, expected_kind)
+        await file.seek(0)
+        yield backup_format, metadata, None
+        return
+
+    tables = COMPLETE_BACKUP_TABLES if expected_kind == "complete" else INVENTORY_BACKUP_TABLES
+    with ExitStack() as stack:
+        metadata, data = await run_in_threadpool(
+            stack.enter_context,
+            read_legacy_backup(file.file, {name for name, _model in tables}),
+        )
+        yield backup_format, metadata, data
+
+
+def _invalid_backup_error(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "code": "invalid_json" if isinstance(exc, LegacyBackupJSONError) else "invalid_backup_structure",
+            "message": str(exc),
+        },
+    )
+
+
 @router.post("/backup/import", response_model=BackupImportResponse)
 async def import_backup(
     db: DBSession,
-    file: UploadFile = File(...),
-    principal=RequirePermission("admin:plugins_manage"),
+    file: Annotated[UploadFile, File()],
+    principal: PluginManagementPrincipal,
 ):
     """Import complete database backup from JSON.
 
@@ -1854,126 +2005,123 @@ async def import_backup(
             },
         )
 
-    # Validate content type
-    if file.content_type not in (
-        "application/json",
-        "text/plain",
-        "application/octet-stream",
-    ):
+    if (file.content_type or "").partition(";")[0].strip().lower() not in _BACKUP_CONTENT_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "invalid_content_type",
-                "message": f"Expected JSON file, received: {file.content_type}",
+                "message": f"Expected backup file, received: {file.content_type}",
             },
         )
 
-    # Read and parse JSON
-    import json
-
-    try:
-        content = await file.read()
-        backup_data = json.loads(content)
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "invalid_json",
-                "message": f"Invalid JSON file: {str(e)}",
-            },
-        )
-
-    # Validate structure
-    if "metadata" not in backup_data or "data" not in backup_data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "invalid_backup_structure",
-                "message": "Backup file must contain 'metadata' and 'data' fields",
-            },
-        )
-
-    logger.info(f"Starting backup import by user {principal.user_id}")
-    logger.info(f"Backup metadata: {backup_data['metadata']}")
-
-    try:
-        # Step 1: Create automatic backup of current data
-        auto_backup_path = await _create_auto_backup(db)
-        logger.info(f"Auto-backup created at: {auto_backup_path}")
-
-        # Clean session identity map — the auto-backup loaded all objects
-        # via select(), and bulk-delete below bypasses the ORM.  Without
-        # expunge_all() the session may still track stale instances whose
-        # PKs collide with the rows we are about to re-insert, causing
-        # SQLAlchemy to skip INSERTs or emit UPDATEs instead.
-        db.expunge_all()
-
-        # For SQLite: defer FK constraint checks until COMMIT so that
-        # INSERT order within a single flush does not matter.  This
-        # PRAGMA *can* be set inside a transaction (unlike foreign_keys).
-        if settings.database_url.startswith("sqlite"):
-            await db.execute(text("PRAGMA defer_foreign_keys = ON"))
-
-        # Step 2: Delete all existing data
-        deleted = await _delete_all_data(db)
-        logger.info(f"Deleted data: {deleted}")
-
-        # Step 3: Import new data
-        imported = await _import_all_data(db, backup_data["data"])
-        logger.info(f"Imported data: {imported}")
-
-        # Commit transaction (deferred FK constraints checked here)
-        await db.commit()
-
-        logger.info(f"Backup import completed successfully by user {principal.user_id}")
-
-        response_cache.clear()
-
-        # Step 4: Reinstall user-installed plugins from backup
-        plugins_installed = None
-        plugins_warnings = None
-        backup_metadata = backup_data.get("metadata", {})
-        raw_plugins = backup_metadata.get("plugins")
-        if raw_plugins:
-            plugin_list = [BackupPluginInfo(**p) for p in raw_plugins]
-            plugins_installed, plugins_warnings = await _reinstall_plugins_from_backup(
-                db, plugin_list
+    async with AsyncExitStack() as stack:
+        try:
+            backup_format, backup_metadata, legacy_data = await stack.enter_async_context(
+                _prepare_backup_upload(file, "complete")
             )
-            if plugins_installed:
-                logger.info(
-                    "Backup-Import: %d Plugin(s) installiert",
-                    len(plugins_installed),
-                )
-            if plugins_warnings:
-                logger.warning(
-                    "Backup-Import: %d Plugin-Warnung(en)",
-                    len(plugins_warnings),
-                )
+        except BackupStreamError as exc:
+            raise _invalid_backup_error(exc) from exc
 
-        return BackupImportResponse(
-            message=f"Backup imported successfully. Auto-backup created at: {auto_backup_path.name}",
-            imported=imported,
-            plugins_installed=plugins_installed or None,
-            plugins_warnings=plugins_warnings or None,
-        )
+        raw_plugins = backup_metadata.get("plugins")
+        try:
+            plugin_list = [BackupPluginInfo(**item) for item in raw_plugins or []]
+        except (TypeError, ValueError) as exc:
+            raise _invalid_backup_error(
+                BackupStreamError("Invalid plugin metadata")
+            ) from exc
 
-    except Exception as exc:
-        await db.rollback()
-        logger.exception(f"Backup import failed: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "code": "import_failed",
-                "message": f"Import failed: {str(exc)}",
-            },
-        )
+        logger.info(f"Starting backup import by user {principal.user_id}")
+        logger.info(f"Backup metadata: {backup_metadata}")
+
+        try:
+            # Step 1: Create automatic backup of current data
+            auto_backup_path = await _create_auto_backup(db)
+            logger.info(f"Auto-backup created at: {auto_backup_path}")
+
+            # Clean session identity map — the auto-backup loaded all objects
+            # via select(), and bulk-delete below bypasses the ORM.  Without
+            # expunge_all() the session may still track stale instances whose
+            # PKs collide with the rows we are about to re-insert, causing
+            # SQLAlchemy to skip INSERTs or emit UPDATEs instead.
+            db.expunge_all()
+
+            # For SQLite: defer FK constraint checks until COMMIT so that
+            # INSERT order within a single flush does not matter.  This
+            # PRAGMA *can* be set inside a transaction (unlike foreign_keys).
+            if settings.database_url.startswith("sqlite"):
+                await db.execute(text("PRAGMA defer_foreign_keys = ON"))
+
+            # Step 2: Delete all existing data
+            deleted = await _delete_all_data(db)
+            logger.info(f"Deleted data: {deleted}")
+
+            # Step 3: Import new data
+            if backup_format == "jsonl":
+                file.file.seek(0)
+                imported, backup_metadata = await _import_jsonl_data(
+                    db,
+                    file.file,
+                    expected_kind="complete",
+                    tables=COMPLETE_BACKUP_TABLES,
+                )
+            else:
+                assert legacy_data is not None
+                imported = await _import_all_data(db, legacy_data)
+            logger.info(f"Imported data: {imported}")
+
+            # Commit transaction (deferred FK constraints checked here)
+            await db.commit()
+
+            logger.info(f"Backup import completed successfully by user {principal.user_id}")
+
+            response_cache.clear()
+
+            # Step 4: Reinstall user-installed plugins from backup
+            plugins_installed = None
+            plugins_warnings = None
+            if plugin_list:
+                plugins_installed, plugins_warnings = await _reinstall_plugins_from_backup(
+                    db, plugin_list
+                )
+                if plugins_installed:
+                    logger.info(
+                        "Backup-Import: %d Plugin(s) installiert",
+                        len(plugins_installed),
+                    )
+                if plugins_warnings:
+                    logger.warning(
+                        "Backup-Import: %d Plugin-Warnung(en)",
+                        len(plugins_warnings),
+                    )
+
+            return BackupImportResponse(
+                message=f"Backup imported successfully. Auto-backup created at: {auto_backup_path.name}",
+                imported=imported,
+                plugins_installed=plugins_installed or None,
+                plugins_warnings=plugins_warnings or None,
+            )
+
+        except (BackupStreamError, ValueError) as exc:
+            await db.rollback()
+            logger.warning("Backup import rejected: %s", exc)
+            raise _invalid_backup_error(exc) from exc
+        except Exception as exc:  # noqa: BLE001 — rollback any failure without logging sensitive backup values.
+            await db.rollback()
+            logger.error("Backup import failed (%s)", type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "code": "import_failed",
+                    "message": "Import failed",
+                },
+            )
 
 
 @router.post("/backup/import-inventory", response_model=BackupImportResponse)
 async def import_inventory_backup(
     db: DBSession,
-    file: UploadFile = File(...),
-    principal=RequirePermission("admin:plugins_manage"),
+    file: Annotated[UploadFile, File()],
+    principal: PluginManagementPrincipal,
 ):
     """Import inventory data only (preserves users, auth, devices, plugins).
 
@@ -1985,84 +2133,80 @@ async def import_inventory_backup(
 
     An automatic backup will be created before import.
     """
-    if (
-        "application/json" not in file.content_type
-        and "text/plain" not in file.content_type
-    ):
+    if (file.content_type or "").partition(";")[0].strip().lower() not in _BACKUP_CONTENT_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "invalid_content_type",
-                "message": f"Expected JSON file, received: {file.content_type}",
+                "message": f"Expected backup file, received: {file.content_type}",
             },
         )
 
-    import json
+    async with AsyncExitStack() as stack:
+        try:
+            backup_format, backup_metadata, legacy_data = await stack.enter_async_context(
+                _prepare_backup_upload(file, "inventory")
+            )
+        except BackupStreamError as exc:
+            raise _invalid_backup_error(exc) from exc
 
-    try:
-        content = await file.read()
-        backup_data = json.loads(content)
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "invalid_json",
-                "message": f"Invalid JSON file: {str(e)}",
-            },
-        )
+        logger.info(f"Starting inventory backup import by user {principal.user_id}")
+        logger.info(f"Backup metadata: {backup_metadata}")
 
-    if "metadata" not in backup_data or "data" not in backup_data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "invalid_backup_structure",
-                "message": "Backup file must contain 'metadata' and 'data' fields",
-            },
-        )
+        try:
+            auto_backup_path = await _create_auto_backup(db)
+            logger.info(f"Auto-backup created at: {auto_backup_path}")
 
-    logger.info(f"Starting inventory backup import by user {principal.user_id}")
-    logger.info(f"Backup metadata: {backup_data['metadata']}")
+            # Clean session identity map — see import_backup for rationale
+            db.expunge_all()
 
-    try:
-        auto_backup_path = await _create_auto_backup(db)
-        logger.info(f"Auto-backup created at: {auto_backup_path}")
+            # For SQLite: defer FK constraint checks until COMMIT
+            if settings.database_url.startswith("sqlite"):
+                await db.execute(text("PRAGMA defer_foreign_keys = ON"))
 
-        # Clean session identity map — see import_backup for rationale
-        db.expunge_all()
+            deleted = await _delete_inventory_data(db)
+            logger.info(f"Deleted inventory data: {deleted}")
 
-        # For SQLite: defer FK constraint checks until COMMIT
-        if settings.database_url.startswith("sqlite"):
-            await db.execute(text("PRAGMA defer_foreign_keys = ON"))
+            if backup_format == "jsonl":
+                file.file.seek(0)
+                imported, _metadata = await _import_jsonl_data(
+                    db,
+                    file.file,
+                    expected_kind="inventory",
+                    tables=INVENTORY_BACKUP_TABLES,
+                )
+            else:
+                assert legacy_data is not None
+                imported = await _import_inventory_data(db, legacy_data)
+            logger.info(f"Imported inventory data: {imported}")
 
-        deleted = await _delete_inventory_data(db)
-        logger.info(f"Deleted inventory data: {deleted}")
+            await db.commit()
 
-        imported = await _import_inventory_data(db, backup_data["data"])
-        logger.info(f"Imported inventory data: {imported}")
+            logger.info(
+                f"Inventory backup import completed successfully by user {principal.user_id}"
+            )
 
-        await db.commit()
+            response_cache.clear()
 
-        logger.info(
-            f"Inventory backup import completed successfully by user {principal.user_id}"
-        )
+            return BackupImportResponse(
+                message=f"Inventory backup imported successfully. Auto-backup created at: {auto_backup_path.name}",
+                imported=imported,
+            )
 
-        response_cache.clear()
-
-        return BackupImportResponse(
-            message=f"Inventory backup imported successfully. Auto-backup created at: {auto_backup_path.name}",
-            imported=imported,
-        )
-
-    except Exception as exc:
-        await db.rollback()
-        logger.exception(f"Inventory backup import failed: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "code": "import_failed",
-                "message": f"Import failed: {str(exc)}",
-            },
-        )
+        except (BackupStreamError, ValueError) as exc:
+            await db.rollback()
+            logger.warning("Inventory backup import rejected: %s", exc)
+            raise _invalid_backup_error(exc) from exc
+        except Exception as exc:  # noqa: BLE001 — rollback any failure without logging sensitive backup values.
+            await db.rollback()
+            logger.error("Inventory backup import failed (%s)", type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "code": "import_failed",
+                    "message": "Import failed",
+                },
+            )
 
 
 # ------------------------------------------------------------------ #
@@ -2111,7 +2255,7 @@ class SqliteRestoreResponse(BaseModel):
 
 @router.get("/backup/sqlite-list", response_model=SqliteBackupListResponse)
 async def list_sqlite_backups(
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Vorhandene SQLite-Backup-Dateien auflisten."""
     if not principal.is_superadmin:
@@ -2155,7 +2299,7 @@ async def list_sqlite_backups(
 async def restore_sqlite_backup(
     body: SqliteRestoreRequest,
     db: DBSession,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """SQLite-Backup wiederherstellen.
 
@@ -2220,7 +2364,7 @@ async def restore_sqlite_backup(
         logger.info("SQLite database restored from: %s", backup_file)
 
     except Exception as exc:
-        logger.exception("SQLite restore failed: %s", exc)
+        logger.exception("SQLite restore failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "restore_failed", "message": f"Restore failed: {exc}"},
@@ -2238,7 +2382,7 @@ async def restore_sqlite_backup(
 @router.delete("/backup/sqlite/{filename}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sqlite_backup(
     filename: str,
-    principal=RequirePermission("admin:plugins_manage"),
+    principal: PluginManagementPrincipal,
 ):
     """Einzelne SQLite-Backup-Datei loeschen."""
     if not principal.is_superadmin:
