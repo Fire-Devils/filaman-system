@@ -1,7 +1,14 @@
 import hashlib
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -62,5 +69,6 @@ class LabelPreset(Base, TimestampMixin):
             "name_key",
             name="uq_label_presets_user_type_name_key",
         ),
+        UniqueConstraint("id", "user_id", name="uq_label_presets_id_user"),
         Index("ix_label_presets_user_type", "user_id", "preset_type"),
     )
