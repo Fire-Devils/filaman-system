@@ -58,22 +58,19 @@ export function buildLabelExtraFieldCatalogGroups<T extends LabelExtraFieldCatal
   const groups: LabelExtraFieldCatalogGroup<T>[] = []
 
   for (const origin of ['system', 'custom'] as const) {
-    if (origin === 'custom' && options.batchMode) continue
     for (const source of sources) {
       const unique = new Map<string, T>()
       for (const field of fields) {
         const fieldSource = field.source === 'spool' || field.source === 'filament'
           ? field.source
           : options.entityType
-        if (fieldSource !== source || (field.origin ?? 'custom') !== origin || !field.key) continue
+        if (fieldSource !== source || (field.origin ?? 'custom') !== origin || !field.key || (origin === 'custom' && options.batchMode)) continue
         if (!unique.has(field.key)) unique.set(field.key, field)
       }
       const sorted = [...unique.values()].sort((left, right) =>
         String(left.label || left.key).localeCompare(String(right.label || right.key)),
       )
-      if (origin === 'system' || sorted.length > 0) {
-        groups.push({ source, origin, fields: sorted })
-      }
+      groups.push({ source, origin, fields: sorted })
     }
   }
 
@@ -92,12 +89,13 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
   const entityName = group.source === 'filament' ? 'Filament' : 'Spool'
   const translationRoot = `${group.source}s`
   const groupElement = document.createElement('div')
+  groupElement.className = 'ds-tokens-group'
   const labelElement = document.createElement('div')
   const chipsElement = document.createElement('div')
   labelElement.className = 'ds-tokens-group-label'
   labelElement.textContent = group.origin === 'system'
-    ? options.translate(`${translationRoot}.dsSystemExtraFieldsLabel`, `${entityName} System Extra Fields`)
-    : options.translate(`${translationRoot}.dsCustomFieldsLabel`, `${entityName} Custom Fields`)
+    ? options.translate('labelDesigner.extraFields', 'Extra Fields')
+    : options.translate('labelDesigner.customFields', 'Custom Fields')
   chipsElement.className = 'ds-token-hints'
 
   let expanded = false
@@ -122,6 +120,16 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
       chipsElement.appendChild(empty)
     }
 
+    if (group.origin === 'custom' && group.fields.length === 0 && !options.batchMode) {
+      const empty = document.createElement('span')
+      empty.className = 'ds-tokens-empty'
+      empty.textContent = options.translate(
+        `${translationRoot}.dsNoCustomFields`,
+        `No ${entityName} Custom Fields are enabled.`,
+      )
+      chipsElement.appendChild(empty)
+    }
+
     if (group.origin === 'custom' && group.fields.length > customLimit) {
       const toggle = document.createElement('button')
       toggle.className = 'ds-custom-fields-toggle'
@@ -137,7 +145,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
       chipsElement.appendChild(toggle)
     }
 
-    if (group.origin === 'system' && options.batchMode) {
+    if (group.origin === 'custom' && options.batchMode) {
       const note = document.createElement('span')
       note.className = 'ds-tokens-empty ds-batch-custom-fields-note'
       note.textContent = options.translate(

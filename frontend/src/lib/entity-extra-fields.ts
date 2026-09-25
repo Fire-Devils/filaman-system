@@ -137,6 +137,22 @@ export function normalizeEntityExtraFieldDefinitions(
   )
 }
 
+export function normalizeSystemExtraFieldDefinitions(value: unknown): SystemExtraFieldDef[] {
+  const items = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && 'items' in value && Array.isArray(value.items)
+      ? value.items
+      : []
+  return items
+    .filter((item): item is SystemExtraFieldDef => item !== null && typeof item === 'object' &&
+      typeof item.key === 'string' && typeof item.label === 'string')
+    .map(item => ({
+      ...item,
+      id: typeof item.id === 'number' ? item.id : 0,
+      field_type: typeof item.field_type === 'string' ? item.field_type : 'text',
+    }))
+}
+
 export function mergeEntityExtraFieldDefinitions(
   entityDefinitions: EntityExtraFieldDefinitions | Record<string, unknown> | null | undefined,
   systemDefinitions: Record<string, SystemExtraFieldDef> = {},
