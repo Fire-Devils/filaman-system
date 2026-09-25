@@ -7,11 +7,13 @@ const MIGRATION_KEY = 'filaman-label-presets-db-migrated-v1'
 
 type LocalNamedPreset = {
   name: string
-  settings: unknown
+  data: unknown
 }
 
-type LocalSheetPreset = LocalNamedPreset & {
+type LocalSheetPreset = {
   id: string
+  name: string
+  settings: unknown
 }
 
 function safeRead(key: string): unknown {
@@ -29,12 +31,21 @@ function readDesignerPresets(key: string): LocalNamedPreset[] {
     : raw && typeof raw === 'object' && Array.isArray((raw as { presets?: unknown }).presets)
       ? (raw as { presets: unknown[] }).presets
       : []
-  return presets
-    .filter((item): item is Record<string, unknown> => Boolean(
-      item && typeof item === 'object' && typeof item.name === 'string' && item.settings,
-    ))
-    .map(item => ({ name: String(item.name).trim().slice(0, 120), settings: item.settings }))
-    .filter(item => item.name.length > 0)
+  return presets.flatMap(item => {
+    if (!item || typeof item !== 'object' || typeof item.name !== 'string') return []
+    const name = item.name.trim().slice(0, 120)
+    if (!name) return []
+    const data = item.data
+    if (data && typeof data === 'object' && !Array.isArray(data)
+      && data.version === 2
+      && data.design && typeof data.design === 'object' && !Array.isArray(data.design)
+      && data.design.version === 2) {
+      return [{ name, data }]
+    }
+    return 'settings' in item && item.settings
+      ? [{ name, data: { settings: item.settings } }]
+      : []
+  })
 }
 
 function readSheetPresets(): LocalSheetPreset[] {
@@ -63,7 +74,6 @@ export function needsBrowserPresetMigration(): boolean {
 export function completeBrowserPresetMigration(): void {
   try {
     localStorage.setItem(MIGRATION_KEY, 'complete')
-    localStorage.removeItem(LEGACY_SPOOL_LABEL_PRESETS_KEY)
   } catch {
     // Database hydration still works when browser storage is blocked.
   }
@@ -100,12 +110,12 @@ export function readBrowserPresetsForMigration() {
     ...uniqueSpoolPresets.map(preset => ({
       preset_type: 'spool' as const,
       name: preset.name,
-      data: { settings: preset.settings },
+      data: preset.data,
     })),
     ...readDesignerPresets(FILAMENT_LABEL_PRESETS_KEY).map(preset => ({
       preset_type: 'filament' as const,
       name: preset.name,
-      data: { settings: preset.settings },
+      data: preset.data,
     })),
     ...readSheetPresets().map(preset => ({
       preset_type: 'sheet' as const,
