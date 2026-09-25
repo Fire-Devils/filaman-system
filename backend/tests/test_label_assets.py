@@ -448,6 +448,41 @@ class TestLabelAssetPersistence:
 
 class TestLabelAssetApi:
     @pytest.mark.asyncio
+    async def test_upload_rejects_oversized_request_before_authentication(self, client):
+        response = await client.post(
+            "/api/v1/me/label-assets",
+            content=b"",
+            headers={
+                "content-length": str(6 * 1024 * 1024 + 1),
+                "content-type": "multipart/form-data; boundary=empty",
+            },
+        )
+
+        assert response.status_code == 413
+        assert response.json()["detail"]["code"] == "request_too_large"
+
+    @pytest.mark.asyncio
+    async def test_upload_rejects_oversized_stream_without_content_length(self, client):
+        async def oversized_body():
+            yield (
+                b"--stream\r\n"
+                b'Content-Disposition: form-data; name="file"; filename="large.png"\r\n'
+                b"Content-Type: image/png\r\n\r\n"
+            )
+            for _ in range(7):
+                yield b"x" * (1024 * 1024)
+            yield b"\r\n--stream--\r\n"
+
+        response = await client.post(
+            "/api/v1/me/label-assets",
+            content=oversized_body(),
+            headers={"content-type": "multipart/form-data; boundary=stream"},
+        )
+
+        assert response.status_code == 413
+        assert response.json()["detail"]["code"] == "request_too_large"
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("mode, transparency", [("1", 0), ("I;16", 32768)])
     async def test_upload_accepts_transparent_grayscale_png(
         self, auth_client, mode, transparency
@@ -1022,6 +1057,8 @@ class TestLabelAssetBackups:
 
         assert "location ~ ^/api/v1/admin/system/backup/import" in config
         assert "client_max_body_size 2g;" in config
+        assert "location = /api/v1/me/label-assets" in config
+        assert "client_max_body_size 6m;" in config
         assert "client_max_body_size 0;" not in config
 
     @pytest.mark.asyncio
@@ -1584,6 +1621,48 @@ class TestLabelAssetBackups:
             (await db_session.execute(select(LabelPresetAsset.asset_id))).scalars()
         )
         assert restored_ids == {used.id}
+
+    @pytest.mark.asyncio
+    async def test_backup_preserves_valid_asset_junctions_for_future_presets(
+        self, db_session, admin_user
+    ):
+        from app.api.v1.system import _import_all_data
+
+        asset, _ = await create_label_asset(
+            db_session, admin_user.id, "future.png", image_bytes()
+        )
+        preset = LabelPreset(
+            user_id=admin_user.id,
+            preset_type="spool",
+            name="Future preset",
+            name_key=label_preset_name_key("Future preset"),
+            data={"version": 3, "design": {"version": 3}},
+        )
+        db_session.add(preset)
+        await db_session.flush()
+        db_session.add(LabelPresetAsset(
+            preset_id=preset.id,
+            asset_id=asset.id,
+            user_id=admin_user.id,
+        ))
+        await db_session.flush()
+        exported = await export_backup_data(db_session)
+        await db_session.execute(delete(LabelPresetAsset))
+        await db_session.execute(delete(LabelPreset))
+        await db_session.execute(delete(LabelAsset))
+        await db_session.flush()
+
+        imported = await _import_all_data(db_session, {
+            "label_assets": exported["label_assets"],
+            "label_presets": exported["label_presets"],
+            "label_preset_assets": exported["label_preset_assets"],
+        })
+
+        assert imported["label_preset_assets"] == 1
+        reference = await db_session.scalar(select(LabelPresetAsset))
+        assert reference is not None
+        assert reference.preset_id == preset.id
+        assert reference.asset_id == asset.id
 
     @pytest.mark.asyncio
     async def test_backup_rejects_preset_json_referencing_missing_asset(
