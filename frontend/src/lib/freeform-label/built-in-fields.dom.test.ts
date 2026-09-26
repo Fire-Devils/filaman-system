@@ -26,8 +26,6 @@ const filamentFields = [
   ['{filament.color_mode}', 'color_mode', 'multi'],
   ['{filament.multi_color_style}', 'multi_color_style', 'gradient'],
   ['{filament.raw_material_weight_g}', 'raw_material_weight_g', '1000'],
-  ['{filament.extruder_temp}', 'extruder_temp', '215'],
-  ['{filament.bed_temp}', 'bed_temp', '60'],
   ['{filament.diameter}', 'diameter', '1.75'],
   ['{filament.finish}', 'finish', 'Glossy'],
   ['{filament.density}', 'density', '1.24'],
