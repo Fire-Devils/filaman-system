@@ -23,6 +23,21 @@ async function setup(options: Partial<FreeformLabelDesignerEditorOptions> = {}) 
 const extraTokens = () => [...document.querySelectorAll<HTMLButtonElement>('.freeform-extra-fields [data-field-token]')]
 
 describe('restored extra-field token picker', () => {
+  it('opens the Spool tab for spool presets', async () => {
+    await setup({ entityType: 'spool' })
+    expect(document.getElementById('freeform-field-tab-spool')!.getAttribute('aria-selected')).toBe('true')
+    expect(document.getElementById('freeform-field-panel-spool')!.hidden).toBe(false)
+    expect(document.getElementById('freeform-field-panel-filament')!.hidden).toBe(true)
+  })
+
+  it('offers the existing filament temperature tokens', async () => {
+    await setup()
+    const tokens = [...document.querySelectorAll<HTMLButtonElement>('#freeform-field-panel-filament [data-field-token]')]
+      .map(button => button.dataset.fieldToken)
+    expect(tokens).toContain('{filament.extruder_temp}')
+    expect(tokens).toContain('{filament.bed_temp}')
+  })
+
   it('shows extra and custom fields inside their source tabs', async () => {
     await setup({ extraFields: [
       { key: 'filament.batch', label: 'Batch', source: 'filament', origin: 'system', value: '' },

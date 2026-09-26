@@ -23,6 +23,8 @@ export const FILAMENT_TOKENS: readonly LabelTokenChoice[] = [
   { token: '{filament.color_mode}', label: 'color_mode' },
   { token: '{filament.multi_color_style}', label: 'multi_color_style' },
   { token: '{filament.raw_material_weight_g}', label: 'raw_material_weight_g' },
+  { token: '{filament.extruder_temp}', label: 'extruder_temp' },
+  { token: '{filament.bed_temp}', label: 'bed_temp' },
   { token: '{filament.diameter}', label: 'diameter' },
   { token: '{filament.finish}', label: 'finish' },
   { token: '{filament.density}', label: 'density' },
