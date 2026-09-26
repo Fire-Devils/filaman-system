@@ -552,20 +552,26 @@ describe('first-class print workspace navigation', () => {
 })
 
 describe('compact responsive print layout', () => {
-  it('stacks preview before full-width controls and keeps mobile actions touch-sized', () => {
+  it('keeps controls beside a shrinking preview and keeps mobile actions touch-sized', () => {
     const base = readFileSync(`${componentsDirectory}LabelPrintBaseStyles.astro`, 'utf8')
     const single = readFileSync(`${componentsDirectory}SingleLabelPrintStyles.astro`, 'utf8')
     const batch = readFileSync(`${componentsDirectory}BatchLabelPrintStyles.astro`, 'utf8')
     const styles = `${base}\n${single}\n${batch}`
 
     expect(styles).toMatch(/@media \(max-width: 900px\)/)
-    expect(styles).toMatch(/\.print-page\s*\{[^}]*height:\s*auto[^}]*overflow-y:\s*auto/s)
-    expect(styles).toMatch(/\.print-sidebar\s*\{[^}]*width:\s*100%/s)
-    expect(styles).toMatch(/\.preview-container\s*\{[^}]*order:\s*-1/s)
+    expect(styles).toMatch(/\.preview-container\s*\{[^}]*min-width:\s*0/s)
+    expect(styles).toMatch(/\.print-page:not\(:has\(#freeform-designer-workspace\.is-active\)\)\s*\{[^}]*flex-direction:\s*column/s)
+    expect(styles).toMatch(/\.print-page-single:not\(:has\(#freeform-designer-workspace\.is-active\)\) \.preview-container/)
+    expect(styles).toMatch(/\.print-page-batch:not\(:has\(#freeform-designer-workspace\.is-active\)\) \.preview-container/)
     expect(styles).toMatch(/\.fm-btn\s*\{[^}]*min-height:\s*44px/s)
     expect(styles).toMatch(/\.tab-btn\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/s)
   })
 
+  it('collapses the Shape label with the other compact add tools', () => {
+    const workspace = readFileSync(`${componentsDirectory}freeform-label/DesignerWorkspace.astro`, 'utf8')
+
+    expect(workspace).toMatch(/\[data-designer-add\]:not\(\[data-designer-add='text'\]\).*\[data-shape-menu-trigger\].*\.freeform-tool-label/s)
+  })
 
 })
 

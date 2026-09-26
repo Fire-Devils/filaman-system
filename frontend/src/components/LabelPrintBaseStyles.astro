@@ -6,6 +6,8 @@
     margin: -32px;
   }
 
+  .preview-container { min-width: 0; }
+
   html[data-theme="light"] .print-page { --label-danger: #b42318; }
 
   .print-sidebar {
@@ -353,7 +355,7 @@
   }
 
   @media (max-width: 900px) {
-    .print-page {
+    .print-page:not(:has(#freeform-designer-workspace.is-active)) {
       flex-direction: column;
       height: auto;
       min-height: 100dvh;
@@ -361,7 +363,7 @@
       overflow-y: auto;
     }
 
-    .print-sidebar {
+    .print-page:not(:has(#freeform-designer-workspace.is-active)) .print-sidebar {
       border-right: 0;
       border-top: 1px solid var(--border);
       flex: 0 0 auto;
@@ -369,10 +371,10 @@
       width: 100%;
     }
 
-    .print-sidebar.sidebar-wide,
-    .print-sidebar.sidebar-sheets-wide { width: 100%; }
-    .print-sidebar-scroll { min-height: auto; overflow: visible; padding: 16px; }
-    .preview-container { min-height: 320px; order: -1; width: 100%; }
+    .print-page:not(:has(#freeform-designer-workspace.is-active)) .print-sidebar.sidebar-wide,
+    .print-page:not(:has(#freeform-designer-workspace.is-active)) .print-sidebar.sidebar-sheets-wide { width: 100%; }
+    .print-page:not(:has(#freeform-designer-workspace.is-active)) .print-sidebar-scroll { min-height: auto; overflow: visible; padding: 16px; }
+    .print-page:not(:has(#freeform-designer-workspace.is-active)) .preview-container { min-height: 320px; order: -1; width: 100%; }
     .fm-btn { min-height: 44px; min-width: 44px; }
     .tab-btn { min-height: 44px; }
   }

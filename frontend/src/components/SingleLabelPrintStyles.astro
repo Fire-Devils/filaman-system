@@ -35,7 +35,6 @@
 
   .print-page-single .preview-container {
     flex: 1;
-    min-width: 320px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -81,8 +80,8 @@
   }
 
   @media (max-width: 900px) {
-    .print-page-single { overflow: visible; }
-    .print-page-single .preview-container { flex: 0 0 auto; min-width: 0; overflow: visible; }
-    .print-page-single .preview-scroll-area { min-height: 320px; overflow: auto; padding: 20px; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) { overflow: visible; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) .preview-container { flex: 0 0 auto; overflow: visible; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) .preview-scroll-area { min-height: 320px; overflow: auto; padding: 20px; }
   }
 </style>
