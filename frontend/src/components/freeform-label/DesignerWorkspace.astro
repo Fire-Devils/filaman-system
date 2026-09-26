@@ -99,7 +99,8 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
   .freeform-preview-navigation button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
   .freeform-preview-navigation button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   @container freeform-workspace (max-width: 1050px) {
-    .freeform-command-bar:has(#freeform-preview-navigation:not([hidden])) [data-designer-add]:not([data-designer-add='text']) .freeform-tool-label { display: none; }
+    .freeform-command-bar:has(#freeform-preview-navigation:not([hidden])) [data-designer-add]:not([data-designer-add='text']) .freeform-tool-label,
+    .freeform-command-bar:has(#freeform-preview-navigation:not([hidden])) [data-shape-menu-trigger] .freeform-tool-label { display: none; }
   }
   .freeform-designer-workspace.is-active :global(.label-count) { display: none; }
   .freeform-zoom-slot :global(.preview-zoom-bar) { background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; left: auto; padding: 0; position: static; transform: none; }
@@ -132,6 +133,7 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
   .freeform-canvas-row :global(.freeform-element-inspector) { grid-column: 3; justify-self: end; }
   .freeform-canvas-row :global(.freeform-field-dock) { grid-column: 1 / -1; grid-row: 3; justify-self: center; }
   .freeform-canvas-row.is-geometry-narrow { grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) 112px minmax(0, 1fr); }
+  .freeform-canvas-row:not(.has-geometry-inspector) { grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) minmax(0, 1fr); }
   .freeform-canvas-row.is-geometry-below { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   .freeform-canvas-row.is-geometry-below .freeform-canvas-host { grid-column: 1; }
   .freeform-canvas-row.is-geometry-below :global(.freeform-element-inspector) { grid-column: 1; grid-row: 3; justify-self: center; }
