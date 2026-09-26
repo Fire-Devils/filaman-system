@@ -30,12 +30,17 @@ describe('restored extra-field token picker', () => {
     expect(document.getElementById('freeform-field-panel-filament')!.hidden).toBe(true)
   })
 
-  it('offers the existing filament temperature tokens', async () => {
-    await setup()
+  it('offers configured temperature fields without advertising legacy aliases', async () => {
+    await setup({ extraFields: [
+      { key: 'filament.bed', label: 'Bed Temperature', source: 'filament', origin: 'system', value: '55–65 °C' },
+      { key: 'filament.extruder', label: 'Extruder Temperature', source: 'filament', origin: 'system', value: '210–220 °C' },
+    ] })
     const tokens = [...document.querySelectorAll<HTMLButtonElement>('#freeform-field-panel-filament [data-field-token]')]
       .map(button => button.dataset.fieldToken)
-    expect(tokens).toContain('{filament.extruder_temp}')
-    expect(tokens).toContain('{filament.bed_temp}')
+    expect(tokens).toContain('{extra.filament.bed}')
+    expect(tokens).toContain('{extra.filament.extruder}')
+    expect(tokens).not.toContain('{filament.extruder_temp}')
+    expect(tokens).not.toContain('{filament.bed_temp}')
   })
 
   it('shows extra and custom fields inside their source tabs', async () => {
