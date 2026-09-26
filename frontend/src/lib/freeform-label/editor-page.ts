@@ -409,6 +409,7 @@ export async function initFreeformLabelDesignerEditor(
       getPreviewData: options.getPreviewData,
     })
     await domBinding.ready
+    if (entityType === 'spool') spoolTab?.click()
   } catch (error) {
     destroy()
     throw error
