@@ -1,0 +1,69 @@
+---
+import { designerIcon } from '../../lib/freeform-label/icons'
+---
+
+<div id="tab-panel-designer-v2" class="settings-section freeform-designer-sidebar" role="tabpanel" aria-labelledby="tab-btn-designer" hidden>
+  <section class="freeform-sidebar-section" aria-labelledby="freeform-presets-heading">
+    <h2 id="freeform-presets-heading" data-i18n="labelDesigner.presets">Label presets</h2>
+    <label class="fm-label" for="freeform-preset-list" data-i18n="labelDesigner.savedPresets">Saved presets</label>
+    <div class="preset-control-row">
+      <select id="freeform-preset-list" class="fm-select preset-select"></select>
+      <div class="freeform-preset-actions">
+        <button id="freeform-preset-load" class="preset-action-btn" type="button" data-i18n="common.load">Load</button>
+        <button id="freeform-preset-delete" class="preset-action-btn preset-action-btn-danger" type="button" title="Delete" aria-label="Delete" data-i18n-title="common.delete" data-i18n-aria-label="common.delete" set:html={designerIcon('delete')} />
+      </div>
+    </div>
+    <label class="fm-label" for="freeform-preset-name" data-i18n="labelDesigner.presetName">Preset name</label>
+    <div class="preset-control-row">
+      <input id="freeform-preset-name" class="fm-input preset-name-input" maxlength="120" placeholder="My label" data-i18n-placeholder="labelDesigner.presetNamePlaceholder" />
+      <div class="freeform-preset-actions freeform-save-actions">
+        <button id="freeform-preset-update" class="preset-action-btn" type="button" data-i18n="labelDesigner.updatePreset" disabled>Update</button>
+        <button id="freeform-preset-save" class="preset-action-btn preset-action-btn-primary" type="button" data-i18n="labelDesigner.saveNew">Save as New</button>
+        <button type="button" class="preset-action-btn sheet-use-action" data-sheet-use="designer" hidden>
+          <span class="sheet-save-label" data-i18n="labelPrint.saveAndUseOnSheet">Save &amp; use on sheet</span>
+          <span class="sheet-use-label" data-i18n="labelPrint.useOnSheet">Use on this sheet</span>
+        </button>
+      </div>
+    </div>
+    <p id="freeform-preset-status" class="freeform-control-status" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="freeform-sidebar-section" aria-labelledby="freeform-label-heading">
+    <h2 id="freeform-label-heading" data-i18n="labelDesigner.labelGeometry">Label geometry</h2>
+    <div class="freeform-dimension-grid">
+      <label><span data-i18n="labelDesigner.widthMm">Width (mm)</span><input id="freeform-label-width" class="fm-input" type="number" min="20" max="300" step="0.5" /></label>
+      <label><span data-i18n="labelDesigner.heightMm">Height (mm)</span><input id="freeform-label-height" class="fm-input" type="number" min="10" max="200" step="0.5" /></label>
+      <label><span data-i18n="labelDesigner.marginMm">Margin (mm)</span><input id="freeform-label-margin" class="fm-input" type="number" min="0" max="6" step="0.5" /></label>
+      <label class="fm-checkbox-group freeform-border-toggle"><input id="freeform-label-border" type="checkbox" /><span data-i18n="labelDesigner.printBorder">Print border</span></label>
+    </div>
+  </section>
+
+  <section class="freeform-sidebar-section" aria-labelledby="freeform-selection-heading">
+    <h2 id="freeform-selection-heading" data-i18n="labelDesigner.selection">Selection</h2>
+    <p id="freeform-selection-summary" class="freeform-selection-summary"></p>
+  </section>
+</div>
+
+<style>
+  .freeform-designer-sidebar { gap: 10px; }
+  .freeform-sidebar-section { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px; }
+  .freeform-sidebar-section h2 { color: var(--text-muted); font-size: 0.72rem; letter-spacing: 0.08em; margin: 0 0 8px; text-transform: uppercase; }
+  .freeform-sidebar-section .preset-control-row { display: grid; gap: 6px; }
+  .freeform-sidebar-section .preset-control-row + .fm-label { margin-top: 10px; }
+  .freeform-preset-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .freeform-save-actions:has(.sheet-use-action:not([hidden])) { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .sheet-use-action:not([hidden]) { display: grid; grid-column: 1 / -1; white-space: normal; }
+  /* Both labels occupy the same cell, keeping the button size stable in either state. */
+  .sheet-use-action span { grid-area: 1 / 1; align-self: center; }
+  .sheet-use-label, .sheet-use-action[data-saved="true"] .sheet-save-label { visibility: hidden; }
+  .sheet-use-action[data-saved="true"] .sheet-use-label { visibility: visible; }
+  #freeform-preset-status:empty { display: none; }
+  .freeform-dimension-grid { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .freeform-dimension-grid label { display: grid; font-size: 0.75rem; gap: 4px; }
+  .freeform-dimension-grid .freeform-border-toggle { align-items: center; align-self: end; display: flex; gap: 6px; min-height: 36px; margin: 0; padding: 0; }
+  .freeform-control-status, .freeform-selection-summary { color: var(--text-muted); font-size: 0.75rem; margin: 8px 0 0; min-height: 1.2em; }
+  .freeform-designer-sidebar :is(button, select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .preset-action-btn-danger:hover, .preset-action-btn-danger:focus-visible { border-color: var(--label-danger, #ff8a80); color: var(--label-danger, #ff8a80); }
+  #freeform-preset-delete { align-items: center; display: inline-flex; justify-content: center; }
+  #freeform-preset-delete :global(svg) { height: 16px; width: 16px; }
+</style>

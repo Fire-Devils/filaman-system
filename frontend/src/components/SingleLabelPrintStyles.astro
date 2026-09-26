@@ -5,7 +5,7 @@
   }
 
   .print-page-single .print-sidebar { transition: width 0.2s ease; }
-  .print-page-single .print-sidebar.sidebar-wide { width: 530px; }
+  .print-page-single .print-sidebar.sidebar-wide { width: var(--designer-sidebar-width, 360px); }
   .print-page-single .back-link { transition: opacity var(--transition); }
 
   .print-page-single .fm-input {
@@ -35,7 +35,6 @@
 
   .print-page-single .preview-container {
     flex: 1;
-    min-width: 320px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -66,20 +65,6 @@
     color: var(--btn-primary-text);
   }
 
-  .print-page-single .preview-zoom-reset { font-size: 0.85rem; }
-
-  .print-page-single .preview-zoom-slider {
-    flex: 1;
-    max-width: 160px;
-    cursor: pointer;
-  }
-
-  .print-page-single .preview-zoom-label {
-    font-size: 0.75rem;
-    min-width: 38px;
-    font-variant-numeric: tabular-nums;
-  }
-
   .print-page-single .preview-scroll-area {
     flex: 1;
     display: flex;
@@ -92,5 +77,11 @@
   .print-page-single .label-preview {
     box-shadow: var(--shadow-lg);
     border: 1px dashed #ccc;
+  }
+
+  @media (max-width: 900px) {
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) { overflow: visible; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) .preview-container { flex: 0 0 auto; overflow: visible; }
+    .print-page-single:not(:has(#freeform-designer-workspace.is-active)) .preview-scroll-area { min-height: 320px; overflow: auto; padding: 20px; }
   }
 </style>

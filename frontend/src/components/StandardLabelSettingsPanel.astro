@@ -16,17 +16,18 @@ const {
 } = Astro.props
 ---
 
-<div id="tab-panel-print" class="settings-section">
+<div id="tab-panel-print" class="settings-section" role="tabpanel" aria-labelledby="tab-btn-print">
+  <button type="button" class="fm-btn fm-btn-outline" data-sheet-use="standard" data-i18n="labelPrint.useOnSheet" hidden>Use on this sheet</button>
   <h3 id="title-settings" data-i18n="labelPrint.settingsTitle">Print Settings</h3>
 
   <div>
     <label class="fm-label" id="label-width-text" data-i18n="labelPrint.widthMm">Width (mm)</label>
-    <input type="number" id="input-width" value="60" class="fm-input">
+    <input type="number" id="input-width" step="any" value="60" class="fm-input">
   </div>
 
   <div>
     <label class="fm-label" id="label-height-text" data-i18n="labelPrint.heightMm">Height (mm)</label>
-    <input type="number" id="input-height" value="40" class="fm-input">
+    <input type="number" id="input-height" step="any" value="40" class="fm-input">
   </div>
 
   <div>

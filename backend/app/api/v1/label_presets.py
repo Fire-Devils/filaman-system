@@ -1,10 +1,12 @@
 import json
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import DBSession, PrincipalDep
@@ -14,6 +16,11 @@ from app.models.label_preset import (
     LABEL_PRESET_NAME_MAX_LENGTH,
     label_preset_name_key,
     normalize_label_preset_name,
+)
+from app.services.label_asset_service import (
+    LabelAssetValidationError,
+    extract_label_asset_ids,
+    set_label_preset_asset_references,
 )
 
 router = APIRouter(prefix="/me/label-presets", tags=["me"])
@@ -34,6 +41,7 @@ class LabelPresetInput(BaseModel):
 
 
 class LabelPresetUpsertInput(LabelPresetInput):
+    create_only: bool = False
     previous_name: str | None = Field(
         default=None,
         min_length=1,
@@ -82,7 +90,7 @@ def _require_user_id(principal: Principal) -> int:
 
 
 def _validate_presets(
-    presets: list[LabelPresetInput], *, reject_duplicates: bool = True
+    presets: Sequence[LabelPresetInput], *, reject_duplicates: bool = True
 ) -> None:
     if len(presets) > MAX_PRESETS_PER_TYPE:
         raise HTTPException(
@@ -132,9 +140,17 @@ async def _lock_user_presets(db: DBSession, user_id: int) -> None:
     await db.execute(select(User.id).where(User.id == user_id).with_for_update())
 
 
-async def _commit_presets(db: DBSession) -> None:
+@asynccontextmanager
+async def _preset_transaction(db: DBSession) -> AsyncIterator[None]:
     try:
+        yield
         await db.commit()
+    except LabelAssetValidationError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "invalid_label_asset", "message": str(exc)},
+        ) from exc
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -168,7 +184,7 @@ async def _list_presets(
 async def list_label_presets(
     db: DBSession,
     principal: PrincipalDep,
-    preset_type: LabelPresetType | None = Query(None),
+    preset_type: Annotated[LabelPresetType | None, Query()] = None,
 ):
     return await _list_presets(db, _require_user_id(principal), preset_type)
 
@@ -182,40 +198,33 @@ async def upsert_label_preset(
 ):
     """Create or update one named preset without replacing its siblings."""
     user_id = _require_user_id(principal)
-    _validate_presets([body])
-    await _lock_user_presets(db, user_id)
+    async with _preset_transaction(db):
+        _validate_presets([body])
+        asset_ids = extract_label_asset_ids(body.data)
+        await _lock_user_presets(db, user_id)
 
-    name_key = label_preset_name_key(body.name)
-    lookup_name_keys = {name_key}
-    if body.previous_name is not None:
-        lookup_name_keys.add(label_preset_name_key(body.previous_name))
-    result = await db.execute(
-        select(LabelPreset).where(
-            LabelPreset.user_id == user_id,
-            LabelPreset.preset_type == preset_type,
-            LabelPreset.name_key.in_(lookup_name_keys),
+        name_key = label_preset_name_key(body.name)
+        lookup_name_keys = {name_key}
+        if body.previous_name is not None:
+            lookup_name_keys.add(label_preset_name_key(body.previous_name))
+        result = await db.execute(
+            select(LabelPreset).where(
+                LabelPreset.user_id == user_id,
+                LabelPreset.preset_type == preset_type,
+                LabelPreset.name_key.in_(lookup_name_keys),
+            )
         )
-    )
-    matching_presets = {
-        preset.name_key: preset for preset in result.scalars().all()
-    }
-    preset = matching_presets.get(name_key)
-    previous_preset = (
-        matching_presets.get(label_preset_name_key(body.previous_name))
-        if body.previous_name is not None
-        else None
-    )
-    is_rename = body.previous_name is not None and body.previous_name != body.name
-    if is_rename and previous_preset is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "preset_conflict",
-                "message": "The preset being renamed no longer exists",
-            },
+        matching_presets = {
+            preset.name_key: preset for preset in result.scalars().all()
+        }
+        preset = matching_presets.get(name_key)
+        previous_preset = (
+            matching_presets.get(label_preset_name_key(body.previous_name))
+            if body.previous_name is not None
+            else None
         )
-    if previous_preset is not None and previous_preset is not preset:
-        if preset is not None:
+        is_rename = body.previous_name is not None and body.previous_name != body.name
+        if body.create_only and preset is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
@@ -223,38 +232,57 @@ async def upsert_label_preset(
                     "message": f"A preset named {body.name} already exists",
                 },
             )
-        preset = previous_preset
-        preset.name = body.name
-        preset.name_key = name_key
-    if preset is None:
-        count = await db.scalar(
-            select(func.count())
-            .select_from(LabelPreset)
-            .where(
-                LabelPreset.user_id == user_id,
-                LabelPreset.preset_type == preset_type,
-            )
-        )
-        if (count or 0) >= MAX_PRESETS_PER_TYPE:
+        if is_rename and previous_preset is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_409_CONFLICT,
                 detail={
-                    "code": "validation_error",
-                    "message": f"At most {MAX_PRESETS_PER_TYPE} presets are allowed per type",
+                    "code": "preset_conflict",
+                    "message": "The preset being renamed no longer exists",
                 },
             )
-        preset = LabelPreset(
-            user_id=user_id,
-            preset_type=preset_type,
-            name=body.name,
-            name_key=name_key,
-            data=body.data,
-        )
-        db.add(preset)
-    else:
-        preset.data = body.data
+        if previous_preset is not None and previous_preset is not preset:
+            if preset is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "preset_conflict",
+                        "message": f"A preset named {body.name} already exists",
+                    },
+                )
+            preset = previous_preset
+            preset.name = body.name
+            preset.name_key = name_key
+        if preset is None:
+            count = await db.scalar(
+                select(func.count())
+                .select_from(LabelPreset)
+                .where(
+                    LabelPreset.user_id == user_id,
+                    LabelPreset.preset_type == preset_type,
+                )
+            )
+            if (count or 0) >= MAX_PRESETS_PER_TYPE:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "code": "validation_error",
+                        "message": f"At most {MAX_PRESETS_PER_TYPE} presets are allowed per type",
+                    },
+                )
+            preset = LabelPreset(
+                user_id=user_id,
+                preset_type=preset_type,
+                name=body.name,
+                name_key=name_key,
+                data=body.data,
+            )
+            db.add(preset)
+        else:
+            preset.data = body.data
 
-    await _commit_presets(db)
+        await db.flush()
+        await set_label_preset_asset_references(db, preset, asset_ids)
+
     await db.refresh(preset)
     return preset
 
@@ -278,16 +306,19 @@ async def delete_label_preset(
                 "message": str(exc),
             },
         ) from exc
-    await _lock_user_presets(db, user_id)
-    name_key = label_preset_name_key(normalized_name)
-    await db.execute(
-        delete(LabelPreset).where(
-            LabelPreset.user_id == user_id,
-            LabelPreset.preset_type == preset_type,
-            LabelPreset.name_key == name_key,
+    async with _preset_transaction(db):
+        await _lock_user_presets(db, user_id)
+        name_key = label_preset_name_key(normalized_name)
+        preset = await db.scalar(
+            select(LabelPreset).where(
+                LabelPreset.user_id == user_id,
+                LabelPreset.preset_type == preset_type,
+                LabelPreset.name_key == name_key,
+            )
         )
-    )
-    await _commit_presets(db)
+        if preset is not None:
+            await set_label_preset_asset_references(db, preset, set())
+            await db.delete(preset)
 
 
 @router.post("/migrate", response_model=list[LabelPresetResponse])
@@ -298,46 +329,51 @@ async def migrate_label_presets(
 ):
     """Import browser presets once without replacing database-owned values."""
     user_id = _require_user_id(principal)
-    grouped: dict[str, list[LabelPresetMigrationInput]] = {}
-    for preset in body.presets:
-        grouped.setdefault(preset.preset_type, []).append(preset)
-    for presets in grouped.values():
-        _validate_presets(presets, reject_duplicates=False)
+    async with _preset_transaction(db):
+        grouped: dict[str, list[LabelPresetMigrationInput]] = {}
+        for preset in body.presets:
+            grouped.setdefault(preset.preset_type, []).append(preset)
+        for presets in grouped.values():
+            _validate_presets(presets, reject_duplicates=False)
+        preset_asset_ids = [extract_label_asset_ids(preset.data) for preset in body.presets]
 
-    await _lock_user_presets(db, user_id)
-    existing_result = await db.execute(
-        select(LabelPreset.preset_type, LabelPreset.name_key).where(
-            LabelPreset.user_id == user_id
-        )
-    )
-    existing = set(existing_result.all())
-    counts: dict[str, int] = {}
-    for preset_type, _name_key in existing:
-        counts[preset_type] = counts.get(preset_type, 0) + 1
-    for preset in body.presets:
-        name_key = label_preset_name_key(preset.name)
-        key = (preset.preset_type, name_key)
-        if key in existing:
-            continue
-        if counts.get(preset.preset_type, 0) >= MAX_PRESETS_PER_TYPE:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail={
-                    "code": "validation_error",
-                    "message": f"At most {MAX_PRESETS_PER_TYPE} presets are allowed per type",
-                },
+        await _lock_user_presets(db, user_id)
+        existing_result = await db.execute(
+            select(LabelPreset.preset_type, LabelPreset.name_key).where(
+                LabelPreset.user_id == user_id
             )
-        db.add(
-            LabelPreset(
+        )
+        existing = {
+            (preset_type, name_key)
+            for preset_type, name_key in existing_result.tuples()
+        }
+        counts: dict[str, int] = {}
+        for preset_type, _name_key in existing:
+            counts[preset_type] = counts.get(preset_type, 0) + 1
+        for preset, asset_ids in zip(body.presets, preset_asset_ids, strict=True):
+            name_key = label_preset_name_key(preset.name)
+            key = (preset.preset_type, name_key)
+            if key in existing:
+                continue
+            if counts.get(preset.preset_type, 0) >= MAX_PRESETS_PER_TYPE:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "code": "validation_error",
+                        "message": f"At most {MAX_PRESETS_PER_TYPE} presets are allowed per type",
+                    },
+                )
+            new_preset = LabelPreset(
                 user_id=user_id,
                 preset_type=preset.preset_type,
                 name=preset.name,
                 name_key=name_key,
                 data=preset.data,
             )
-        )
-        existing.add(key)
-        counts[preset.preset_type] = counts.get(preset.preset_type, 0) + 1
+            db.add(new_preset)
+            await db.flush()
+            await set_label_preset_asset_references(db, new_preset, asset_ids)
+            existing.add(key)
+            counts[preset.preset_type] = counts.get(preset.preset_type, 0) + 1
 
-    await _commit_presets(db)
     return await _list_presets(db, user_id)

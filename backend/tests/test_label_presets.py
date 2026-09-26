@@ -1,8 +1,11 @@
-import pytest
-from sqlalchemy import func, select
+import json
 
+import pytest
 from app.models import LabelPreset
 from app.models.label_preset import label_preset_name_key
+from sqlalchemy import delete, func, select
+
+from tests.support.backup import export_backup_data
 
 
 class TestLabelPresets:
@@ -31,6 +34,33 @@ class TestLabelPresets:
 
         response = await client.get("/api/v1/me/label-presets")
         assert [item["name"] for item in response.json()] == ["Compact", "Wide"]
+
+    @pytest.mark.asyncio
+    async def test_create_only_save_rejects_an_existing_name_without_overwriting(
+        self, auth_client
+    ):
+        client, csrf_token = auth_client
+        original = {"settings": {"source": "first tab"}}
+        created = await client.put(
+            "/api/v1/me/label-presets/spool/item",
+            json={"name": "Shared", "data": original},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert created.status_code == 200
+
+        conflict = await client.put(
+            "/api/v1/me/label-presets/spool/item",
+            json={
+                "name": "Shared",
+                "data": {"settings": {"source": "stale second tab"}},
+                "create_only": True,
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert conflict.status_code == 409
+        response = await client.get("/api/v1/me/label-presets?preset_type=spool")
+        assert response.json()[0]["data"] == original
 
     @pytest.mark.asyncio
     async def test_native_api_contract_and_api_key_auth(
@@ -167,9 +197,7 @@ class TestLabelPresets:
         )
 
         assert response.status_code == 422
-        count = await db_session.scalar(
-            select(func.count()).select_from(LabelPreset)
-        )
+        count = await db_session.scalar(select(func.count()).select_from(LabelPreset))
         assert count == 100
 
     @pytest.mark.asyncio
@@ -254,9 +282,7 @@ class TestLabelPresets:
 
         assert response.status_code == 422
         assert response.json()["detail"]["code"] == "validation_error"
-        count = await db_session.scalar(
-            select(func.count()).select_from(LabelPreset)
-        )
+        count = await db_session.scalar(select(func.count()).select_from(LabelPreset))
         assert count == 0
 
     @pytest.mark.asyncio
@@ -275,8 +301,7 @@ class TestLabelPresets:
         response = await client.get("/api/v1/me/label-presets?preset_type=spool")
         assert len(response.json()) == 2
         assert {
-            item["name"]: item["data"]["settings"]["width"]
-            for item in response.json()
+            item["name"]: item["data"]["settings"]["width"] for item in response.json()
         } == {
             "Favorite 🎨 / draft": 40,
             "favorite 🎨 / draft": 50,
@@ -335,10 +360,15 @@ class TestLabelPresets:
         )
         assert response.status_code == 200
 
-        response = await client.get("/api/v1/admin/system/backup/export")
+        response = await client.get("/api/v1/admin/system/backup/export?format=jsonl")
 
         assert response.status_code == 200
-        presets = response.json()["data"]["label_presets"]
+        records = [json.loads(line) for line in response.content.splitlines()]
+        presets = [
+            record["row"]
+            for record in records
+            if record.get("table") == "label_presets"
+        ]
         assert len(presets) == 1
         assert presets[0]["name"] == "Backed Up"
         assert presets[0]["data"]["settings"]["width"] == 62
@@ -347,7 +377,7 @@ class TestLabelPresets:
     async def test_iso_like_preset_names_round_trip_through_import(
         self, db_session, admin_user
     ):
-        from app.api.v1.system import _export_all_data, _import_all_data
+        from app.api.v1.system import _import_all_data
 
         names = [
             "2026-07-13T12:34:56+00:00",
@@ -364,12 +394,12 @@ class TestLabelPresets:
             for name in names
         )
         await db_session.commit()
-        exported = (await _export_all_data(db_session))["label_presets"]
+        exported = (await export_backup_data(db_session))["label_presets"]
         for preset in exported:
             preset["name_key"] = "0" * 64
 
         await db_session.execute(
-            LabelPreset.__table__.delete().where(LabelPreset.user_id == admin_user.id)
+            delete(LabelPreset).where(LabelPreset.user_id == admin_user.id)
         )
         await db_session.flush()
         await _import_all_data(db_session, {"label_presets": exported})
@@ -379,6 +409,4 @@ class TestLabelPresets:
                 select(LabelPreset.name, LabelPreset.name_key).order_by(LabelPreset.id)
             )
         ).all()
-        assert restored == [
-            (name, label_preset_name_key(name)) for name in names
-        ]
+        assert restored == [(name, label_preset_name_key(name)) for name in names]

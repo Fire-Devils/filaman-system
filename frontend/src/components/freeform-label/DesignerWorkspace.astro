@@ -1,0 +1,182 @@
+---
+import ElementInspector from './ElementInspector.astro'
+import FieldDock from './FieldDock.astro'
+import CanvasTextToolbar from './CanvasTextToolbar.astro'
+import { designerIcon, type DesignerIconName } from '../../lib/freeform-label/icons'
+
+const addTools: Array<{ type: string; icon: DesignerIconName; label: string; i18n: string; shortLabel: string; shortI18n: string }> = [
+  { type: 'text', icon: 'text', label: 'Add text', i18n: 'labelDesigner.addText', shortLabel: 'Text', shortI18n: 'labelDesigner.toolText' },
+  { type: 'qr', icon: 'qr', label: 'Add QR code', i18n: 'labelDesigner.addQrCode', shortLabel: 'QR', shortI18n: 'labelDesigner.toolQr' },
+  { type: 'manufacturerLogo', icon: 'logo', label: 'Add manufacturer logo', i18n: 'labelDesigner.addManufacturerLogo', shortLabel: 'Logo', shortI18n: 'labelDesigner.toolLogo' },
+  { type: 'image', icon: 'image', label: 'Add image', i18n: 'labelDesigner.addImage', shortLabel: 'Image', shortI18n: 'labelDesigner.toolImage' },
+  { type: 'swatch', icon: 'swatch', label: 'Add color swatch', i18n: 'labelDesigner.addColorSwatch', shortLabel: 'Swatch', shortI18n: 'labelDesigner.toolSwatch' },
+]
+const shapes = [
+  { type: 'circle', label: 'Circle', path: '<circle cx="12" cy="12" r="8" />' },
+  { type: 'square', label: 'Square', path: '<rect x="4" y="4" width="16" height="16" />' },
+  { type: 'rectangle', label: 'Rectangle', path: '<rect x="3" y="6" width="18" height="12" />' },
+  { type: 'line', label: 'Line', path: '<path d="M4 19 20 5" />' },
+]
+const historyTools: Array<{ action: string; icon: DesignerIconName; label: string; i18n: string; shortLabel: string; shortI18n: string }> = [
+  { action: 'undo', icon: 'undo', label: 'Undo', i18n: 'labelDesigner.undo', shortLabel: 'Undo', shortI18n: 'labelDesigner.toolUndo' },
+  { action: 'redo', icon: 'redo', label: 'Redo', i18n: 'labelDesigner.redo', shortLabel: 'Redo', shortI18n: 'labelDesigner.toolRedo' },
+]
+const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: string; i18n: string; shortLabel: string; shortI18n: string }> = [
+  { action: 'back', icon: 'back', label: 'Move backward', i18n: 'labelDesigner.moveBackward', shortLabel: 'Back', shortI18n: 'labelDesigner.toolBack' },
+  { action: 'forward', icon: 'forward', label: 'Move forward', i18n: 'labelDesigner.moveForward', shortLabel: 'Front', shortI18n: 'labelDesigner.toolFront' },
+  { action: 'duplicate', icon: 'duplicate', label: 'Duplicate', i18n: 'labelDesigner.duplicate', shortLabel: 'Duplicate', shortI18n: 'labelDesigner.duplicate' },
+  { action: 'delete', icon: 'delete', label: 'Delete element', i18n: 'labelDesigner.deleteElement', shortLabel: 'Delete', shortI18n: 'labelDesigner.toolDelete' },
+]
+---
+
+<div id="freeform-designer-workspace" class="freeform-designer-workspace">
+  <div class="freeform-command-bar">
+    <div class="freeform-toolbar" role="toolbar" aria-label="Label designer tools" data-i18n-aria-label="labelDesigner.toolbar">
+      <div class="freeform-add-tools" role="group" aria-labelledby="freeform-add-heading">
+        <span id="freeform-add-heading" class="freeform-add-heading" data-i18n="labelDesigner.addElement">Add Element</span>
+        <div class="freeform-toolbar-group">
+          {addTools.map(tool => <button type="button" data-designer-add={tool.type} data-no-designer-tooltip aria-label={tool.label} data-i18n-aria-label={tool.i18n}><Fragment set:html={designerIcon(tool.icon)} /><span class="freeform-tool-label" data-i18n={tool.shortI18n}>{tool.shortLabel}</span></button>)}
+          <button type="button" data-shape-menu-trigger data-no-designer-tooltip aria-haspopup="menu" aria-expanded="false" aria-controls="freeform-shape-menu" aria-label="Add shape" data-i18n-aria-label="labelDesigner.addShape">
+            <Fragment set:html={designerIcon('shape')} /><span class="freeform-tool-label" data-i18n="labelDesigner.toolShape">Shape</span><svg class="freeform-shape-chevron" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 4.5 3 3 3-3" /></svg>
+          </button>
+        </div>
+      </div>
+      <div class="freeform-toolbar-group freeform-icon-tools">
+        {historyTools.map(tool => <button type="button" data-designer-action={tool.action} title={tool.label} aria-label={tool.label} data-i18n-title={tool.i18n} data-i18n-aria-label={tool.i18n}><Fragment set:html={designerIcon(tool.icon)} /><span class="freeform-tool-label" data-i18n={tool.shortI18n}>{tool.shortLabel}</span></button>)}
+      </div>
+      <div class="freeform-toolbar-group freeform-icon-tools">
+        {arrangeTools.map(tool => <button type="button" data-designer-action={tool.action} data-requires-selection title={tool.action === 'delete' ? 'Remove the selected element from this label. Image files stay in the library.' : tool.label} aria-label={tool.label} data-i18n-title={tool.action === 'delete' ? 'labelDesigner.deleteElementHint' : tool.i18n} data-i18n-aria-label={tool.i18n}><Fragment set:html={designerIcon(tool.icon)} /><span class="freeform-tool-label" data-i18n={tool.shortI18n}>{tool.shortLabel}</span></button>)}
+      </div>
+    </div>
+    <div class="freeform-zoom-slot"></div>
+    <nav id="freeform-preview-navigation" class="freeform-preview-navigation" aria-label="Preview selected labels" data-i18n-aria-label="labelDesigner.previewSelectedLabels" hidden>
+      <button type="button" data-preview-step="-1" aria-label="Previous label" title="Previous label" data-i18n-aria-label="labelDesigner.previousLabel" data-i18n-title="labelDesigner.previousLabel">‹</button>
+      <span data-preview-position role="status" aria-live="polite" aria-atomic="true"></span>
+      <button type="button" data-preview-step="1" aria-label="Next label" title="Next label" data-i18n-aria-label="labelDesigner.nextLabel" data-i18n-title="labelDesigner.nextLabel">›</button>
+    </nav>
+  </div>
+  <div class="freeform-workspace-main">
+    <div class="freeform-canvas-area">
+    <div class="freeform-canvas-region">
+     <div class="freeform-canvas-stage">
+      <div id="freeform-mobile-notice" class="freeform-mobile-notice" role="status" aria-live="polite" hidden data-i18n="labelDesigner.desktopRequired">Editing requires a wider workspace. Preview and output remain available.</div>
+      <p id="freeform-canvas-instructions" class="visually-hidden" data-i18n="labelDesigner.canvasInstructions">Label canvas. Focus an element to select it; use arrow keys to move it.</p>
+      <div class="freeform-canvas-row">
+        <CanvasTextToolbar />
+        <div id="freeform-canvas-host" class="freeform-canvas-host" role="region" tabindex="0" aria-labelledby="freeform-canvas-instructions">
+          <slot />
+        </div>
+        <ElementInspector />
+        <FieldDock />
+      </div>
+     </div>
+    </div>
+    </div>
+  </div>
+  <div id="freeform-shape-menu" class="freeform-shape-menu" data-shape-menu role="menu" aria-label="Basic shapes" data-i18n-aria-label="labelDesigner.basicShapes" hidden>
+    {shapes.map(shape => <button type="button" role="menuitem" tabindex="-1" data-designer-shape={shape.type} data-no-designer-tooltip><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><Fragment set:html={shape.path} /></svg><span data-i18n={`labelDesigner.shape${shape.label}`}>{shape.label}</span></button>)}
+  </div>
+</div>
+
+<style>
+  :global(.freeform-designer-tooltip) { background: #111827; border: 1px solid #475569; border-radius: 5px; box-shadow: 0 4px 12px #0008; color: #f8fafc; font-size: 0.65rem; line-height: 1.25; max-width: min(280px, calc(100vw - 16px)); padding: 5px 7px; pointer-events: none; position: fixed; white-space: normal; width: max-content; z-index: 1000; }
+  :global(.freeform-designer-tooltip[hidden]) { display: none; }
+  :global(.preview-container:has(#freeform-designer-workspace.is-active)),
+  :global(.preview-scroll-area:has(> #freeform-designer-workspace.is-active)) { gap: 0; padding: 0; }
+  .freeform-designer-workspace, .freeform-workspace-main, .freeform-canvas-area, .freeform-canvas-region, .freeform-canvas-stage { display: contents; }
+  .freeform-command-bar, .freeform-toolbar, .freeform-designer-workspace :global(.freeform-element-inspector), .freeform-designer-workspace :global(.freeform-field-dock) { display: none; }
+  .freeform-designer-workspace.is-active { background: var(--bg); container: freeform-workspace / inline-size; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; width: 100%; }
+  .freeform-designer-workspace.is-active .freeform-workspace-main { container: freeform-main / inline-size; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; min-width: 0; position: relative; }
+  .freeform-designer-workspace.is-active .freeform-command-bar { align-items: center; background: var(--bg-elevated); border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; padding: 6px 10px; position: relative; z-index: 10; }
+  .freeform-designer-workspace.is-active .freeform-toolbar { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 8px; }
+  .freeform-add-tools { display: grid; gap: 2px; }
+  .freeform-add-heading { color: var(--text-muted); font-size: 0.65rem; line-height: 1; padding-left: 6px; }
+  .freeform-zoom-slot { align-items: center; align-self: flex-end; border-left: 1px solid var(--border); display: flex; height: 32px; padding-left: 8px; }
+  .freeform-preview-navigation:not([hidden]) { align-items: center; display: flex; gap: 6px; margin-left: auto; }
+  .freeform-preview-navigation span { color: var(--text); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .freeform-preview-navigation button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; font-size: 1.3rem; height: 32px; line-height: 1; width: 32px; }
+  .freeform-preview-navigation button:disabled { cursor: default; opacity: 0.4; }
+  .freeform-preview-navigation button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+  .freeform-preview-navigation button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @container freeform-workspace (max-width: 1050px) {
+    .freeform-command-bar:has(#freeform-preview-navigation:not([hidden])) [data-designer-add]:not([data-designer-add='text']) .freeform-tool-label,
+    .freeform-command-bar:has(#freeform-preview-navigation:not([hidden])) [data-shape-menu-trigger] .freeform-tool-label { display: none; }
+  }
+  .freeform-designer-workspace.is-active :global(.label-count) { display: none; }
+  .freeform-zoom-slot :global(.preview-zoom-bar) { background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; left: auto; padding: 0; position: static; transform: none; }
+  .freeform-icon-tools .freeform-tool-label { display: none; }
+  .freeform-designer-workspace.is-active:not([data-editor-editable='false']) :global(.freeform-element-inspector:not([hidden])) { display: block; flex: none; max-height: 100%; overflow: auto; z-index: 6; }
+  .freeform-designer-workspace.is-active :global(.freeform-field-dock) { display: flex; }
+  .freeform-toolbar-group { display: flex; flex-shrink: 0; gap: 2px; }
+  .freeform-add-tools + .freeform-toolbar-group, .freeform-toolbar-group + .freeform-toolbar-group { border-left: 1px solid var(--border); padding-left: 8px; }
+  .freeform-toolbar button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--text); display: inline-flex; flex: none; gap: 3px; height: 32px; justify-content: center; min-width: 32px; padding: 0 6px; width: auto; }
+  .freeform-toolbar button:not(:disabled):hover, .freeform-toolbar button:focus-visible { background: var(--bg-soft); border-color: var(--border); }
+  .freeform-toolbar button:disabled { cursor: default; opacity: 0.45; }
+  .freeform-toolbar button[data-designer-action='delete'] { background: var(--error-bg); border-color: var(--error-border); color: var(--label-danger, #ff8a80); }
+  .freeform-toolbar button[data-designer-action='delete']:not(:disabled):hover, .freeform-toolbar button[data-designer-action='delete']:focus-visible { background: var(--error-border); border-color: var(--label-danger, #ff8a80); }
+  .freeform-toolbar button :global(svg) { height: 16px; width: 16px; }
+  .freeform-toolbar button .freeform-shape-chevron { height: 11px; width: 11px; }
+  .freeform-toolbar button[aria-expanded='true'] { background: var(--bg-soft); border-color: var(--border); }
+  .freeform-shape-menu { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 6px 20px #0003; padding: 4px; position: fixed; width: 160px; z-index: 30; }
+  .freeform-shape-menu[hidden], .freeform-designer-workspace:not(.is-active) .freeform-shape-menu, .freeform-designer-workspace[data-editor-editable='false'] .freeform-shape-menu { display: none; }
+  .freeform-shape-menu button { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--text); cursor: pointer; display: flex; font-size: 0.8rem; gap: 9px; min-height: 34px; padding: 6px 9px; text-align: left; width: 100%; }
+  .freeform-shape-menu button:hover, .freeform-shape-menu button:focus-visible { background: var(--bg-soft); outline: 2px solid var(--accent); outline-offset: -2px; }
+  .freeform-shape-menu svg { flex: none; height: 20px; width: 20px; }
+  .freeform-tool-label { display: inline; font-size: 0.72rem; line-height: 1; white-space: nowrap; }
+  .freeform-designer-workspace.is-active .freeform-canvas-area { display: block; isolation: isolate; min-height: 0; min-width: 0; position: relative; }
+  .freeform-designer-workspace.is-active .freeform-canvas-region { background: var(--bg); display: block; inset: 0; isolation: isolate; overflow: auto; overscroll-behavior: contain; position: absolute; scrollbar-gutter: stable both-edges; }
+  .freeform-designer-workspace.is-active .freeform-canvas-stage { align-items: safe center; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; min-height: 100%; min-width: 100%; padding: 0 18px 48px; width: 100%; }
+  .freeform-canvas-row { align-items: start; display: grid; grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) 178px minmax(0, 1fr); grid-template-rows: minmax(82px, max-content) auto auto; min-width: 0; width: 100%; }
+  .freeform-canvas-row :global(.freeform-text-toolbar) { align-self: center; grid-column: 1 / -1; grid-row: 1; justify-self: center; max-width: 100%; min-width: 0; width: max-content; }
+  .freeform-canvas-row .freeform-canvas-host, .freeform-canvas-row :global(.freeform-element-inspector) { grid-row: 2; }
+  .freeform-canvas-row .freeform-canvas-host { grid-column: 2; justify-self: safe center; }
+  .freeform-canvas-row :global(.freeform-element-inspector) { grid-column: 3; justify-self: end; }
+  .freeform-canvas-row :global(.freeform-field-dock) { grid-column: 1 / -1; grid-row: 3; justify-self: center; }
+  .freeform-canvas-row.is-geometry-narrow { grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) 112px minmax(0, 1fr); }
+  .freeform-canvas-row.is-geometry-below { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .freeform-canvas-row.is-geometry-below .freeform-canvas-host { grid-column: 1; }
+  .freeform-canvas-row.is-geometry-below :global(.freeform-element-inspector) { grid-column: 1; grid-row: 3; justify-self: center; }
+  .freeform-canvas-row.is-geometry-below :global(.freeform-field-dock) { grid-column: 1; grid-row: 4; }
+  .freeform-designer-workspace.is-active :global(.is-designer-output-only) { left: -100000px; pointer-events: none; position: fixed; top: 0; }
+  .freeform-canvas-host { display: block; flex: none; outline: none; position: relative; }
+  .freeform-canvas-host:focus-visible, .freeform-canvas-host :global([data-label-element-id]:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
+  .freeform-canvas-host :global([data-label-element-id].is-selected) { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .freeform-canvas-host :global([data-label-element-id][data-label-selection-framed]) { outline: none; }
+  .freeform-canvas-host :global([data-label-selection-for]) { cursor: move; outline: var(--selection-outline) solid var(--accent); outline-offset: 0; position: absolute; touch-action: none; }
+  .freeform-canvas-host :global([data-label-selection-text]) { pointer-events: none; }
+  .freeform-canvas-host :global([data-label-selection-text] [data-label-selection-handle]) { pointer-events: auto; }
+  .freeform-canvas-host :global([data-label-selection-handle]) { position: absolute; touch-action: none; }
+  .freeform-canvas-host :global([data-label-selection-edge]) { cursor: move; }
+  .freeform-canvas-host :global([data-label-selection-corner]) { z-index: 1; }
+  .freeform-canvas-host :global([data-label-selection-corner='top-left']), .freeform-canvas-host :global([data-label-selection-corner='bottom-right']) { cursor: nwse-resize; }
+  .freeform-canvas-host :global([data-label-selection-corner='top-right']), .freeform-canvas-host :global([data-label-selection-corner='bottom-left']) { cursor: nesw-resize; }
+  .freeform-canvas-host :global([data-label-selection-corner]::after) { background: var(--accent); content: ''; height: var(--selection-dot); position: absolute; transform: translate(-50%, -50%); width: var(--selection-dot); }
+  .freeform-canvas-host :global([data-label-selection-corner][data-selection-left]::after) { left: calc(100% - var(--selection-inset-x)); }
+  .freeform-canvas-host :global([data-label-selection-corner][data-selection-right]::after) { left: var(--selection-inset-x); }
+  .freeform-canvas-host :global([data-label-selection-corner][data-selection-top]::after) { top: calc(100% - var(--selection-inset-y)); }
+  .freeform-canvas-host :global([data-label-selection-corner][data-selection-bottom]::after) { top: var(--selection-inset-y); }
+  .freeform-canvas-host :global([data-label-line-end]) { cursor: ew-resize; display: none; position: absolute; top: 50%; touch-action: none; transform: translateY(-50%); z-index: 2; }
+  .freeform-canvas-host :global(.is-selected > [data-label-line-end]) { display: block; }
+  .freeform-canvas-host :global([data-label-line-end]::after) { background: var(--accent); border-radius: 50%; content: ''; height: var(--line-endpoint-dot); position: absolute; top: 50%; transform: translate(-50%, -50%); width: var(--line-endpoint-dot); }
+  .freeform-canvas-host :global([data-label-line-end='left']::after) { left: calc(100% - var(--line-endpoint-inset)); }
+  .freeform-canvas-host :global([data-label-line-end='right']::after) { left: var(--line-endpoint-inset); }
+  .freeform-canvas-host :global([data-label-text-editing]), .freeform-canvas-host :global([data-label-text-editing] *) { cursor: text !important; user-select: text; -webkit-user-select: text; }
+  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-chip]) { border-radius: 0.15em; outline: 1px solid #94a3b866; background-color: #cbd5e133; cursor: default !important; user-select: all; -webkit-user-select: all; }
+  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-active]) { background-color: color-mix(in srgb, var(--accent) 24%, transparent); outline-color: color-mix(in srgb, var(--accent) 60%, #94a3b8); }
+  .freeform-canvas-host :global([data-template-token-caption]) { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 2px; color: #475569; font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 400; line-height: 1; max-width: 100%; overflow: hidden; padding: 1px 2px; pointer-events: none; position: absolute; text-overflow: ellipsis; white-space: nowrap; width: max-content; z-index: 3; }
+  .freeform-designer-workspace:not(.is-active) :global(.freeform-text-toolbar), .freeform-designer-workspace[data-editor-editable='false'] :global(.freeform-text-toolbar) { display: none; }
+  .freeform-mobile-notice { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); display: none; font-size: 0.78rem; margin-bottom: 12px; padding: 8px 10px; }
+  .visually-hidden { border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] { display: block; overflow: auto; }
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-workspace-main,
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-canvas-area,
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-canvas-stage { display: contents; }
+  .freeform-designer-workspace[data-editor-editable='false'] .freeform-toolbar,
+  .freeform-designer-workspace[data-editor-editable='false'] :global(.freeform-element-inspector),
+  .freeform-designer-workspace[data-editor-editable='false'] :global(.freeform-field-dock) { display: none; }
+  .freeform-designer-workspace[data-editor-editable='false'] .freeform-canvas-region { display: block; padding: 12px; position: static; }
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-canvas-row { display: flex; justify-content: safe center; }
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-mobile-notice:not([hidden]) { display: block; }
+  @media (prefers-reduced-motion: reduce) { .freeform-designer-workspace.is-active .freeform-canvas-stage { transition: none; } }
+</style>

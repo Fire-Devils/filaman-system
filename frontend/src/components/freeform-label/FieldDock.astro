@@ -1,0 +1,78 @@
+---
+import { FILAMENT_TOKENS, SPOOL_TOKENS } from '../../lib/label-token-catalog'
+---
+
+<section id="freeform-field-dock" class="freeform-field-dock" aria-labelledby="freeform-fields-title" data-open="false" data-available="false">
+ <div class="freeform-field-dock-header">
+ <button id="freeform-field-dock-toggle" class="freeform-field-dock-toggle" type="button" aria-expanded="false" aria-controls="freeform-field-dock-body" disabled>
+  <span id="freeform-fields-title" data-i18n="labelDesigner.fieldsAndTemplate">Fields & template</span>
+  <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m4 10 4-4 4 4" /></svg>
+ </button>
+ <button id="freeform-template-expand" class="freeform-template-trigger" type="button" popovertarget="freeform-template-section" data-no-designer-tooltip aria-label="Template Manual Editor" data-i18n-aria-label="labelDesigner.templateManualEditor"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 5 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z" /></svg><span data-i18n="labelDesigner.templateManualEditor">Template Manual Editor</span></button>
+ </div>
+ <div id="freeform-field-dock-body" class="freeform-field-dock-body" aria-hidden="true" inert>
+ <div class="freeform-field-dock-clip">
+ <div class="freeform-field-dock-content">
+ <div class="freeform-token-editor">
+  <div class="freeform-field-tabs" role="tablist" aria-label="Field groups" data-i18n-aria-label="labelDesigner.fieldGroups">
+    <button id="freeform-field-tab-filament" type="button" role="tab" aria-selected="true" aria-controls="freeform-field-panel-filament" tabindex="0" data-field-group-tab="filament" data-no-designer-tooltip data-i18n="labelDesigner.filamentFields">Filament</button>
+    <button id="freeform-field-tab-spool" type="button" role="tab" aria-selected="false" aria-controls="freeform-field-panel-spool" tabindex="-1" data-field-group-tab="spool" data-no-designer-tooltip data-i18n="labelDesigner.spoolFields">Spool</button>
+  </div>
+  <div class="freeform-field-groups freeform-field-panel-frame">
+    <div id="freeform-field-panel-filament" role="tabpanel" aria-labelledby="freeform-field-tab-filament" data-field-group="filament"><div class="freeform-built-in-fields">{FILAMENT_TOKENS.map(({ token, label }) => <button class="freeform-token-chip" type="button" data-field-token={token} title={token}>{label}</button>)}</div><div class="freeform-extra-fields" data-extra-field-source="filament"></div></div>
+    <div id="freeform-field-panel-spool" role="tabpanel" aria-labelledby="freeform-field-tab-spool" data-field-group="spool" hidden><div class="freeform-built-in-fields">{SPOOL_TOKENS.map(({ token, label }) => <button class="freeform-token-chip" type="button" data-field-token={token} title={token}>{label}</button>)}</div><div class="freeform-extra-fields" data-extra-field-source="spool"></div></div>
+  </div>
+ </div>
+ </div>
+ </div>
+ </div>
+ <section id="freeform-template-section" class="freeform-template-section" popover="auto" role="dialog" aria-labelledby="freeform-template-title">
+  <div class="freeform-template-heading"><h3 id="freeform-template-title" data-i18n="labelDesigner.templateManualEditor">Template Manual Editor</h3><div><button type="button" popovertarget="freeform-syntax-section" data-i18n="labelDesigner.syntax">Syntax</button><button type="button" popovertarget="freeform-template-section" popovertargetaction="hide" aria-label="Close">×</button></div></div>
+  <label for="freeform-template" data-i18n="labelDesigner.template">Template</label>
+  <textarea id="freeform-template" class="fm-input" rows="12" data-element-prop="template" spellcheck="false"></textarea>
+ </section>
+</section>
+
+<style>
+  .freeform-field-dock { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px #0002; flex-direction: column; margin-top: 12px; max-height: 280px; width: min(560px, 100%); }
+  .freeform-field-dock[data-available='false'] { display: none !important; }
+  .freeform-field-dock-header { align-items: center; display: flex; gap: 6px; padding: 6px 7px 0 0; }
+  .freeform-field-dock-toggle { align-items: center; background: transparent; border: 0; color: var(--text-muted); cursor: pointer; display: flex; flex: 1; flex-shrink: 0; font-size: 0.7rem; gap: 12px; height: 32px; padding: 0 10px; text-align: left; }
+  .freeform-field-dock-toggle:hover:not(:disabled) { color: var(--text); }
+  .freeform-field-dock-toggle:disabled { cursor: default; opacity: 1; }
+  .freeform-field-dock-toggle svg { height: 16px; width: 16px; }
+  .freeform-field-dock[data-open='true'] .freeform-field-dock-toggle svg { transform: rotate(180deg); }
+  .freeform-field-dock-body { display: grid; grid-template-rows: 0fr; min-height: 0; visibility: hidden; transition: grid-template-rows 200ms ease, visibility 200ms; }
+  .freeform-field-dock[data-open='true'] .freeform-field-dock-body { grid-template-rows: 1fr; visibility: visible; }
+  .freeform-field-dock-clip { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .freeform-field-dock-content { display: grid; gap: 10px; padding: 0 10px 9px; }
+  .freeform-token-editor { min-width: 0; }
+  .freeform-template-trigger, .freeform-template-heading button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; color: var(--text); cursor: pointer; font-size: 0.68rem; padding: 5px 7px; }
+  .freeform-template-trigger { align-items: center; display: inline-flex; gap: 4px; white-space: nowrap; }
+  .freeform-template-trigger svg { height: 12px; width: 12px; }
+  .freeform-template-section[popover] { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 50px #0008; color: var(--text); height: min(360px, calc(100dvh - 32px)); inset: 50% auto auto 50%; margin: 0; max-height: calc(100dvh - 32px); max-width: calc(100vw - 32px); min-height: min(220px, calc(100dvh - 32px)); min-width: min(300px, calc(100vw - 32px)); overflow: auto; padding: 14px; resize: both; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); }
+  .freeform-template-section:popover-open { display: flex; flex-direction: column; gap: 8px; }
+  .freeform-template-section::backdrop { background: #0005; }
+  .freeform-template-heading { align-items: center; display: flex; justify-content: space-between; }
+  .freeform-template-heading h3 { font-size: 0.8rem; margin: 0; }
+  .freeform-template-heading > div { display: flex; gap: 5px; }
+  .freeform-template-section label { color: var(--text-muted); font-size: 0.7rem; }
+  #freeform-template { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; color: var(--text); flex: 1; font-family: 'Space Mono', monospace; font-size: 0.75rem; line-height: 1.4; min-height: 0; resize: none; width: 100%; }
+  .freeform-field-tabs, .freeform-built-in-fields { display: flex; flex-wrap: wrap; gap: 4px; }
+  .freeform-field-tabs button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.72rem; min-height: 28px; padding: 4px 7px; }
+  .freeform-field-tabs { align-items: flex-end; gap: 3px; margin: 7px 0 0; padding-left: 4px; position: relative; z-index: 1; }
+  .freeform-field-tabs button { border-bottom-left-radius: 0; border-bottom-right-radius: 0; color: var(--text-muted); }
+  .freeform-field-tabs button[aria-selected='true'] { background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated)); border-color: var(--accent); border-bottom-color: var(--bg-elevated); box-shadow: inset 0 2px 0 var(--accent); color: var(--text); font-weight: 700; margin-bottom: -1px; }
+  .freeform-field-panel-frame { background: color-mix(in srgb, var(--bg-soft) 55%, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 7px; }
+  .freeform-extra-fields { display: grid; gap: 3px; margin-top: 6px; min-width: 0; width: 100%; }
+  .freeform-extra-fields :global(.ds-tokens-group) { align-items: start; display: grid; gap: 5px; grid-template-columns: max-content minmax(0, 1fr); }
+  .freeform-extra-fields :global(.ds-tokens-group-label) { color: var(--text-muted); font-size: 0.65rem; font-weight: 600; line-height: 26px; white-space: nowrap; }
+  .freeform-extra-fields :global(.ds-token-hints) { align-items: center; display: flex; flex-wrap: wrap; gap: 4px; min-height: 26px; min-width: 0; }
+  .freeform-extra-fields :global(.ds-tokens-empty) { color: var(--text-muted); font-size: 0.64rem; line-height: 1.5; }
+  .freeform-extra-fields :global(.ds-custom-fields-toggle) { background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); cursor: pointer; font-size: 0.64rem; min-height: 26px; padding: 2px 6px; }
+  .freeform-extra-fields :global(.ds-custom-fields-toggle:hover) { border-color: var(--accent); color: var(--accent); }
+  .freeform-token-chip, .freeform-extra-fields :global(.freeform-token-chip) { background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); cursor: pointer; font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.64rem; line-height: 1.4; min-height: 26px; padding: 2px 6px; white-space: nowrap; }
+  .freeform-token-chip:hover, .freeform-extra-fields :global(.freeform-token-chip:hover) { background: var(--accent); color: var(--btn-primary-text); }
+  .freeform-field-dock :global(button:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .freeform-field-dock-body { transition: none; } }
+</style>

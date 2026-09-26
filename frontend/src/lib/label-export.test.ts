@@ -79,6 +79,49 @@ afterEach(() => {
 })
 
 describe('label capture scheduling', () => {
+  it('embeds web fonts in every capture, including a subsequent label with a different font', async () => {
+    const label = document.createElement('div')
+    label.textContent = 'IIII WWWW 12345'
+    document.body.appendChild(label)
+    imageMock.toCanvas.mockImplementation(async (_element, options) => {
+      expect(options.skipFonts).not.toBe(true)
+      return makeCaptureCanvas('data:image/png;base64,font-label', 'visible')
+    })
+
+    for (const family of ['Space Mono', 'Fraunces']) {
+      label.style.fontFamily = family
+      await expect(captureLabelElement(label)).resolves.toBe('data:image/png;base64,font-label')
+    }
+  })
+
+  it('blocks capture when an uploaded image is missing instead of exporting remaining text', async () => {
+    const label = document.createElement('div')
+    label.innerHTML = '<div data-label-output-error="Missing image asset-1">Image unavailable</div><p>Visible text</p>'
+    imageMock.toCanvas.mockResolvedValue(makeCaptureCanvas('data:image/png;base64,incomplete', 'visible'))
+    await expect(captureLabelElement(label)).rejects.toThrow(/asset-1/)
+    expect(imageMock.toCanvas).not.toHaveBeenCalled()
+  })
+
+  it('blocks capture when a required bundled font cannot load', async () => {
+    const label = document.createElement('div')
+    label.style.fontFamily = 'Fraunces'
+    label.textContent = 'Label text'
+    document.body.appendChild(label)
+    const descriptor = Object.getOwnPropertyDescriptor(document, 'fonts')
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { ready: Promise.resolve(), load: async () => [] },
+    })
+    imageMock.toCanvas.mockResolvedValue(makeCaptureCanvas('data:image/png;base64,fallback', 'visible'))
+    try {
+      await expect(captureLabelElement(label)).rejects.toThrow(/Fraunces/)
+      expect(imageMock.toCanvas).not.toHaveBeenCalled()
+    } finally {
+      if (descriptor) Object.defineProperty(document, 'fonts', descriptor)
+      else Reflect.deleteProperty(document, 'fonts')
+    }
+  })
+
   it('retries an apparently successful blank raster before returning the capture', async () => {
     const label = document.createElement('div')
     label.textContent = 'Visible label'
@@ -121,7 +164,8 @@ describe('label capture scheduling', () => {
   it('captures an off-screen clone without mutating the visible preview', async () => {
     const label = document.createElement('div')
     label.id = 'label-preview'
-    label.className = 'label-preview'
+    label.className = 'label-preview is-selected'
+    label.setAttribute('data-label-interactive', '')
     label.style.transform = 'scale(1.25)'
     label.style.transformOrigin = 'center center'
     label.style.borderColor = 'red'
@@ -129,8 +173,13 @@ describe('label capture scheduling', () => {
     label.style.boxShadow = '0 4px 12px black'
     const child = document.createElement('span')
     child.id = 'label-child'
+    child.className = 'is-selected'
+    child.setAttribute('data-label-interaction-bound', '')
     child.textContent = 'Visible label'
     label.appendChild(child)
+    const handle = document.createElement('button')
+    handle.setAttribute('data-editor-handle', '')
+    label.appendChild(handle)
     document.body.appendChild(label)
 
     let captureSource: HTMLElement | undefined
@@ -140,6 +189,10 @@ describe('label capture scheduling', () => {
       expect(element.isConnected).toBe(true)
       expect(element.id).toBe('')
       expect(element.querySelector('[id]')).toBeNull()
+      expect(element.querySelector('.is-selected')).toBeNull()
+      expect(element.querySelector('[data-label-interactive]')).toBeNull()
+      expect(element.querySelector('[data-label-interaction-bound]')).toBeNull()
+      expect(element.querySelector('[data-editor-handle]')).toBeNull()
       expect(element.style.position).toBe('')
       expect(element.style.left).toBe('')
       expect(element.parentElement?.style.position).toBe('fixed')
@@ -161,6 +214,8 @@ describe('label capture scheduling', () => {
     expect(label.style.borderColor).toBe('red')
     expect(label.style.borderRadius).toBe('12px')
     expect(label.style.boxShadow).toBe('0 4px 12px black')
+    expect(label.classList.contains('is-selected')).toBe(true)
+    expect(label.querySelector('[data-editor-handle]')).toBe(handle)
   })
 
   it('completes when the PNG renderer needs a visual frame after Print backgrounds the source tab', async () => {

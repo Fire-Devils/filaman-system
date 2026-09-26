@@ -1,11 +1,34 @@
+<div id="tab-panel-sheets" class="settings-section" role="tabpanel" aria-labelledby="tab-btn-sheets" hidden>
 <details class="ds-section sheet-output-section" open>
   <summary class="ds-section-header" data-i18n="labelPrint.outputTitle">Output</summary>
   <div class="ds-section-body">
+    <fieldset class="sheet-source-picker">
+      <legend data-i18n="labelPrint.sheetSource">Label source</legend>
+      <div class="sheet-source-segments">
+        <label class="sheet-source-option"><input type="radio" name="label-sheet-source" value="standard" checked /><span data-i18n="labelPrint.standardLabel">Standard Label</span></label>
+        <label class="sheet-source-option"><input type="radio" name="label-sheet-source" value="designer" aria-controls="sheet-designer-source-controls" /><span data-i18n="labelPrint.designedLabel">Designed Label</span></label>
+      </div>
+      <div id="sheet-designer-source-controls" class="sheet-designer-source-controls" hidden>
+        <label class="fm-label" for="sheet-designer-preset" data-i18n="labelPrint.designedLabelPreset">Designed label preset</label>
+        <select id="sheet-designer-preset" class="fm-input" aria-label="Designed label preset" data-i18n-aria-label="labelPrint.designedLabelPreset" disabled></select>
+        <button id="sheet-edit-designer" class="sheet-edit-designer" type="button" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 4 4 4M3 21l5-1L21 7a2.8 2.8 0 0 0-4-4L4 16z"/></svg>
+          <span data-i18n="labelPrint.editDesignedLabel">Edit label</span>
+        </button>
+      </div>
+      <div class="sheet-size-action">
+        <span id="sheet-label-size" class="sheet-label-size"></span>
+        <button type="button" class="sheet-edit-designer" data-sheet-create>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span data-i18n="labelPrint.createLabelForSize">Create label for this size</span>
+        </button>
+      </div>
+      <p id="sheet-create-size-hint" class="sheet-label-size" hidden></p>
+    </fieldset>
     <div>
-      <label class="fm-label" for="output-mode" data-i18n="labelPrint.outputMode">Output mode</label>
-      <select id="output-mode" class="fm-input">
-        <option value="individual" data-i18n="labelPrint.outputIndividual">Individual labels</option>
-        <option value="sheet" data-i18n="labelPrint.outputSheet">Label paper</option>
+      <select id="output-mode" hidden aria-hidden="true" tabindex="-1">
+        <option value="individual">Individual labels</option>
+        <option value="sheet">Label paper</option>
       </select>
     </div>
     <div id="label-sheet-settings" class="sheet-settings-grid" style="display:none;">
@@ -17,7 +40,7 @@
             <div class="preset-control-row">
               <select id="sheet-preset" class="fm-select preset-select"></select>
               <button type="button" id="sheet-load-preset" class="preset-action-btn" data-i18n="labelPrint.loadPaperPreset">Load</button>
-              <button type="button" id="sheet-delete-preset" class="preset-action-btn preset-action-btn-danger preset-action-btn-icon" data-i18n-title="labelPrint.deletePaperPreset" title="Delete selected preset" aria-label="Delete selected preset">
+              <button type="button" id="sheet-delete-preset" class="preset-action-btn preset-action-btn-danger preset-action-btn-icon" data-i18n-title="labelPrint.deletePaperPreset" data-i18n-aria-label="labelPrint.deletePaperPreset" title="Delete selected preset" aria-label="Delete selected preset">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
               </button>
             </div>
@@ -31,10 +54,10 @@
           </div>
         </div>
       </details>
-      <section class="sheet-layout-guide full" aria-label="Label paper layout">
+      <section class="sheet-layout-guide full" aria-label="Label paper layout" data-i18n-aria-label="labelPrint.paperLayout">
         <h3 class="sheet-layout-guide-title" data-i18n="labelPrint.paperLayoutTitle">Label Paper Layout</h3>
-        <div class="sheet-geometry-guide" aria-label="Label paper geometry guide">
-          <svg viewBox="0 0 800 420" role="img" aria-label="Label paper geometry guide">
+        <div class="sheet-geometry-guide" aria-label="Label paper geometry guide" data-i18n-aria-label="labelPrint.paperGeometryGuide">
+          <svg viewBox="0 0 800 420" role="img" aria-label="Label paper geometry guide" data-i18n-aria-label="labelPrint.paperGeometryGuide">
             <defs>
               <marker id="sheet-guide-arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                 <path d="M0 0l10 5-10 5z"></path>
@@ -119,6 +142,7 @@
     </div>
   </div>
 </details>
+</div>
 
 <style>
   .sheet-output-section {
@@ -128,6 +152,80 @@
     flex: 0 0 auto;
     margin-top: auto;
     overflow: hidden;
+  }
+
+  .sheet-source-picker {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    margin: 0;
+    padding: 10px;
+  }
+
+  .sheet-label-size { color: var(--text-muted); font-size: 0.75rem; margin: 0; }
+  .sheet-size-action { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .sheet-size-action button { margin-left: auto; }
+
+  .sheet-source-picker legend { color: var(--text-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; padding: 0 4px; text-transform: uppercase; }
+
+  .sheet-source-segments {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: grid;
+    gap: 4px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 4px;
+  }
+
+  .sheet-source-option { cursor: pointer; min-width: 0; position: relative; }
+  .sheet-source-option input { height: 1px; opacity: 0; position: absolute; width: 1px; }
+  .sheet-source-option span {
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius-sm) - 2px);
+    color: var(--text-muted);
+    display: flex;
+    font-size: 0.78rem;
+    font-weight: 600;
+    justify-content: center;
+    line-height: 1.3;
+    min-height: 34px;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  .sheet-source-option input:checked + span { background: var(--bg-elevated); border-color: var(--accent); color: var(--text); }
+  .sheet-source-option input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sheet-source-option:hover span { color: var(--text); }
+  .sheet-designer-source-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+  .sheet-designer-source-controls label { grid-column: 1 / -1; margin: 0; }
+  .sheet-designer-source-controls[hidden] { display: none; }
+  .sheet-designer-source-controls select { font-size: 0.8rem; min-width: 0; width: 100%; }
+  .sheet-edit-designer {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    justify-self: start;
+    line-height: 1.3;
+    padding: 7px 10px;
+  }
+  .sheet-edit-designer svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sheet-edit-designer:hover:not(:disabled) { background: var(--bg-soft); color: var(--text); }
+  .sheet-edit-designer:disabled { cursor: not-allowed; opacity: 0.5; }
+
+  @media (max-width: 900px) {
+    .sheet-source-option span { min-height: 44px; }
+    .sheet-source-picker :is(button, select) { min-height: 44px; }
   }
 
   .sheet-output-section > .ds-section-header {

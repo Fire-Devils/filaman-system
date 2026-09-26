@@ -1,0 +1,166 @@
+---
+import { designerIcon } from '../../lib/freeform-label/icons'
+import { TEMPLATE_TEXT_MODIFIERS } from '../../lib/freeform-label/text-modifiers'
+import { LABEL_FONT_FAMILIES } from '../../lib/freeform-label/types'
+import ImageCropDialog from './ImageCropDialog.astro'
+
+const alignmentOptions = [
+  { value: 'left', label: 'Left', icon: 'alignLeft', i18n: 'labelDesigner.alignLeft' },
+  { value: 'center', label: 'Center', icon: 'alignCenter', i18n: 'labelDesigner.alignCenter' },
+  { value: 'right', label: 'Right', icon: 'alignRight', i18n: 'labelDesigner.alignRight' },
+] as const
+
+const objectAlignmentOptions = [
+  { value: 'left', label: 'Left', icon: 'objectAlignLeft', i18n: 'labelDesigner.alignLeft' },
+  { value: 'center', label: 'Center', icon: 'objectAlignCenter', i18n: 'labelDesigner.alignCenter' },
+  { value: 'right', label: 'Right', icon: 'objectAlignRight', i18n: 'labelDesigner.alignRight' },
+] as const
+
+const verticalAlignmentOptions = [
+  { value: 'top', label: 'Top', icon: 'alignTop', i18n: 'labelDesigner.alignTop' },
+  { value: 'middle', label: 'Middle', icon: 'alignMiddle', i18n: 'labelDesigner.alignMiddle' },
+  { value: 'bottom', label: 'Bottom', icon: 'alignBottom', i18n: 'labelDesigner.alignBottom' },
+] as const
+---
+<div id="freeform-text-toolbar" class="freeform-text-toolbar" data-label-editor-chrome aria-label="Selected element controls" hidden>
+  <div class="freeform-text-controls" data-element-section="text" hidden>
+    <div class="freeform-context-row" role="toolbar" aria-label="Text formatting" data-i18n-aria-label="labelDesigner.textFormatting">
+      <span class="freeform-font-label" data-i18n="labelDesigner.font">Font</span>
+      <details class="freeform-font-menu">
+        <summary aria-label="Font" data-i18n-aria-label="labelDesigner.font"><span data-font-current>Space Grotesk</span></summary>
+        <div class="freeform-font-options" role="group" aria-label="Fonts">
+          {LABEL_FONT_FAMILIES.map(family => <button type="button" data-font-choice={family} data-no-designer-tooltip style={`font-family: '${family}'`}>{family}</button>)}
+        </div>
+      </details>
+      {TEMPLATE_TEXT_MODIFIERS.map(item => (
+        <button
+          type="button"
+          data-text-modifier={item.modifier}
+          aria-pressed="false"
+          title={item.glyph ? undefined : item.label}
+          aria-label={item.label}
+          data-i18n-title={item.glyph ? undefined : item.i18n}
+          data-i18n-aria-label={item.i18n}
+          data-no-designer-tooltip={item.glyph ? true : undefined}
+        >
+          {item.glyph === 'bold' && <strong>B</strong>}
+          {item.glyph === 'italic' && <em>I</em>}
+          {item.glyph === 'underline' && <u>U</u>}
+          {item.icon && <Fragment set:html={designerIcon(item.icon)} />}
+        </button>
+      ))}
+    </div>
+    <div class="freeform-context-row freeform-font-details">
+      <label data-designer-tooltip title="Base font weight for the whole text element (400 regular, 700 bold). The Bold button can format selected text separately." data-i18n-title="labelDesigner.fontWeightHint"><span data-i18n="labelDesigner.weight">Weight</span><select data-element-prop="fontWeight"><option value="400">400</option><option value="500">500</option><option value="600">600</option><option value="700">700</option></select></label>
+      <label data-designer-tooltip title="Base font size in millimeters for the whole text element. Scale font to fit may reduce it." data-i18n-title="labelDesigner.fontSizeHint"><span data-i18n="labelDesigner.fontSizeLabel">Size</span><span class="freeform-unit-input"><input type="number" min="1" max="20" step="0.1" data-element-prop="fontSizeMm" aria-label="Size (mm)" data-i18n-aria-label="labelDesigner.fontSizeMm" /><span aria-hidden="true">mm</span></span></label>
+      <div class="freeform-fit-pair">
+        <details id="freeform-fit-settings" class="freeform-fit-settings"><summary data-designer-tooltip title="Set the smallest font size Scale font to fit may use." data-i18n-title="labelDesigner.minFontSizeHint" aria-label="Minimum size (mm)" data-i18n-aria-label="labelDesigner.minFontSizeMm" data-i18n="labelDesigner.minFontSizeShort">Min</summary><div class="freeform-fit-popover"><label><span data-i18n="labelDesigner.minFontSizeMm">Minimum size (mm)</span><span class="freeform-unit-input"><input type="number" min="0.265" max="20" step="any" data-element-prop="minFontSizeMm" aria-label="Minimum size (mm)" data-i18n-aria-label="labelDesigner.minFontSizeMm" /><span aria-hidden="true">mm</span></span></label></div></details>
+        <button type="button" class="freeform-layout-toggle" data-element-toggle="fitToWidth" aria-pressed="false" title="Shrink all text in this element to fit its box." aria-label="Scale font to fit" data-i18n-title="labelDesigner.scaleFontToFitHint" data-i18n-aria-label="labelDesigner.scaleFontToFit"><Fragment set:html={designerIcon('fitText')} /></button>
+      </div>
+      <button type="button" class="freeform-layout-toggle" data-element-toggle="wrap" aria-pressed="false" title="Wrap this text element within its width; Wrap alone doesn't shrink the font. With Scale font to fit, use at most two lines." aria-label="Word wrap" data-i18n-title="labelDesigner.wordWrapHint" data-i18n-aria-label="labelDesigner.wordWrap"><Fragment set:html={designerIcon('wordWrap')} /></button>
+      <div class="freeform-alignment-buttons" role="group" aria-label="Alignment" data-i18n-aria-label="labelDesigner.alignment">
+        {alignmentOptions.map(option => <button type="button" data-element-align={option.value} aria-label={option.label} title={option.label} data-i18n-aria-label={option.i18n} data-i18n-title={option.i18n} aria-pressed="false" disabled><Fragment set:html={designerIcon(option.icon)} /></button>)}
+      </div>
+      <div class="freeform-alignment-buttons" role="group" aria-label="Vertical alignment" data-i18n-aria-label="labelDesigner.verticalAlignment">
+        {verticalAlignmentOptions.map(option => <button type="button" data-element-vertical-align={option.value} aria-label={option.label} title={option.label} data-i18n-aria-label={option.i18n} data-i18n-title={option.i18n} aria-pressed="false" disabled><Fragment set:html={designerIcon(option.icon)} /></button>)}
+      </div>
+    </div>
+    <p id="freeform-text-fit-warning" class="freeform-text-fit-warning" role="alert" hidden></p>
+  </div>
+
+  <div class="freeform-context-row" data-element-section="shape" hidden>
+    <label><span data-i18n="labelDesigner.lineThicknessMm">Line thickness</span><input type="number" min="0" max="10" step="0.1" data-element-prop="strokeWidthMm" /><span aria-hidden="true">mm</span></label>
+  </div>
+
+  <div class="freeform-context-row" data-element-section="manufacturerLogo" hidden>
+    <span class="freeform-element-indicator" data-i18n="labelDesigner.elementManufacturerLogo">Manufacturer logo element</span>
+    <div class="freeform-alignment-buttons" role="group" aria-label="Alignment" data-i18n-aria-label="labelDesigner.alignment">
+      {objectAlignmentOptions.map(option => <button type="button" data-element-align={option.value} aria-label={option.label} title={option.label} data-i18n-aria-label={option.i18n} data-i18n-title={option.i18n} aria-pressed="false" disabled><Fragment set:html={designerIcon(option.icon)} /></button>)}
+    </div>
+  </div>
+
+  <div class="freeform-qr-controls" data-element-section="qr" hidden>
+    <fieldset class="freeform-qr-center-picker">
+      <legend data-i18n="labelDesigner.qrCenterLogo">QR Code Center Logo</legend>
+      <div class="freeform-qr-center-options">
+        <label class="freeform-qr-center-option" title="Color center logo" data-i18n-title="labelDesigner.qrCenterColorHint"><input type="radio" name="freeform-qr-center" value="colorLogo" data-element-prop="mode" /><span class="freeform-qr-center-card"><span class="freeform-qr-center-preview" aria-hidden="true"><img src="/logo-qr.png" alt="" width="24" height="20" /></span><span data-i18n="labelDesigner.qrCenterColor">Color</span></span></label>
+        <label class="freeform-qr-center-option" title="Text center logo" data-i18n-title="labelDesigner.qrCenterTextHint"><input type="radio" name="freeform-qr-center" value="logo" data-element-prop="mode" /><span class="freeform-qr-center-card"><span class="freeform-qr-center-preview" aria-hidden="true"><svg viewBox="0 0 100 42"><text x="50" y="26" text-anchor="middle" fill="black" font-family="Space Grotesk, sans-serif" font-size="22" font-weight="700">FilaMan</text></svg></span><span data-i18n="labelDesigner.qrCenterText">Text</span></span></label>
+        <label class="freeform-qr-center-option" title="No center logo" data-i18n-title="labelDesigner.qrCenterNoneHint"><input type="radio" name="freeform-qr-center" value="simple" data-element-prop="mode" /><span class="freeform-qr-center-card"><span class="freeform-qr-center-preview" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h3v3h3v3h-6zM12 3v3M12 9v3H3M6 12v3M12 15v6M15 12h6M18 9v3" /></svg></span><span data-i18n="labelDesigner.qrCenterNone">None</span></span></label>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="freeform-image-controls" data-element-section="image" hidden>
+    <label><span data-i18n="labelDesigner.image">Image</span><select id="freeform-image-asset"></select></label>
+    <div class="freeform-image-actions">
+      <button id="freeform-image-apply" type="button" disabled><span data-i18n="common.apply">Apply</span></button>
+      <button id="freeform-image-crop" type="button" data-no-designer-tooltip disabled><Fragment set:html={designerIcon('crop')} /><span data-i18n="labelDesigner.cropImage">Crop image</span></button>
+      <button id="freeform-image-upload-trigger" type="button" data-i18n-title="labelDesigner.uploadImageHint" title="Upload a PNG, JPEG, or WebP image to the image library."><Fragment set:html={designerIcon('upload')} /><span data-i18n="labelDesigner.uploadImage">Upload image</span></button>
+      <input id="freeform-image-upload" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+      <button id="freeform-image-delete" type="button" class="freeform-danger-action" aria-describedby="freeform-image-delete-help" data-i18n-title="labelDesigner.deleteImageHint" title="Delete the selected file from the image library. Images used by saved presets are protected. Use Delete in the top toolbar to remove only the box from this label."><Fragment set:html={designerIcon('delete')} /><span data-i18n="labelDesigner.deleteImageFromLibrary">Delete from library</span></button>
+    </div>
+    <p id="freeform-image-delete-help" class="visually-hidden" data-i18n="labelDesigner.deleteImageHint">Delete the selected file from the image library. Images used by saved presets are protected. Use Delete in the top toolbar to remove only the box from this label.</p>
+    <p id="freeform-image-status" role="status" aria-live="polite"></p>
+    <ImageCropDialog />
+  </div>
+</div>
+
+<style>
+  .freeform-text-toolbar { display: grid; flex: none; gap: 4px; max-width: 100%; z-index: 3; }
+  .freeform-text-toolbar[hidden], [data-element-section][hidden] { display: none; }
+  .freeform-text-controls { display: grid; gap: 4px; justify-items: center; }
+  .freeform-element-indicator { color: var(--text-muted); font-size: 0.68rem; line-height: 1.4; }
+  .freeform-text-controls .freeform-context-row { justify-content: center; }
+  .freeform-context-row, .freeform-image-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 3px; }
+  .freeform-font-details { column-gap: 10px; padding: 2px 3px; }
+  .freeform-text-toolbar :global(button), .freeform-text-toolbar select, .freeform-text-toolbar input[type='number'] { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-size: 0.7rem; height: 28px; min-width: 27px; padding: 3px 5px; }
+  .freeform-text-toolbar :global(button) { cursor: pointer; }
+  .freeform-text-toolbar :global(button[aria-pressed='true']) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); }
+  .freeform-text-toolbar :global(button svg) { height: 16px; width: 16px; }
+  .freeform-text-toolbar [data-element-toggle='fitToWidth'] :global(svg) { height: 20px; width: 20px; }
+  .freeform-font-label { color: var(--text-muted); font-size: 0.66rem; }
+  .freeform-font-menu { flex: none; position: relative; }
+  .freeform-font-menu summary { align-items: center; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; color: var(--text); cursor: pointer; display: flex; font-size: 0.7rem; height: 28px; justify-content: space-between; list-style: none; min-width: 128px; padding: 3px 8px; }
+  .freeform-font-menu summary::-webkit-details-marker { display: none; }
+  .freeform-font-menu summary::after { border: solid currentColor; border-width: 0 1px 1px 0; content: ''; height: 5px; margin-left: 12px; transform: rotate(45deg); width: 5px; }
+  .freeform-font-menu summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .freeform-font-options { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 8px 22px #0008; display: grid; left: 0; min-width: max-content; padding: 3px; position: absolute; top: calc(100% + 3px); z-index: 10; }
+  .freeform-font-options button { border-color: transparent; font-size: 0.8rem; justify-content: flex-start; min-width: 148px; text-align: left; }
+  .freeform-font-options button:hover, .freeform-font-options button[aria-pressed='true'] { background: color-mix(in srgb, var(--accent) 14%, var(--bg-soft)); }
+  .freeform-font-details > label, .freeform-fit-settings label, [data-element-section='shape'] label, .freeform-image-controls > label { align-items: center; display: flex; gap: 3px; }
+  .freeform-font-details > label { gap: 7px; }
+  .freeform-font-details > label > span:first-child, .freeform-fit-settings label > span:first-child, [data-element-section='shape'] label > span:first-child, .freeform-image-controls > label > span:first-child { color: var(--text-muted); font-size: 0.66rem; }
+  .freeform-font-details select { width: 58px; }
+  .freeform-font-details input[type='number'] { border: 0; height: 26px; padding: 3px 4px 3px 5px; width: 70px; }
+  .freeform-unit-input { display: inline-block; position: relative; }
+  .freeform-unit-input > span { color: var(--text-muted); font-size: 0.62rem; pointer-events: none; position: absolute; right: 22px; top: 50%; transform: translateY(-50%); }
+  .freeform-layout-toggle { padding: 4px !important; }
+  .freeform-alignment-buttons { display: flex; gap: 2px; }
+  .freeform-alignment-buttons button { padding: 4px !important; }
+  .freeform-fit-pair { align-items: center; display: flex; flex: none; gap: 2px; }
+  .freeform-fit-settings { color: var(--text-muted); flex: none; position: relative; visibility: hidden; }
+  .freeform-fit-settings:has(+ [data-element-toggle='fitToWidth'][aria-pressed='true']) { visibility: visible; }
+  .freeform-fit-settings summary { align-items: center; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; display: flex; font-size: 0.62rem; height: 28px; justify-content: center; list-style: none; padding: 3px 5px; }
+  .freeform-fit-settings summary::-webkit-details-marker { display: none; }
+  .freeform-fit-settings summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .freeform-fit-popover { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 22px #0008; left: 50%; padding: 7px; position: absolute; top: calc(100% + 5px); transform: translateX(-50%); white-space: nowrap; z-index: 5; }
+  .freeform-fit-popover label { align-items: center; display: flex; gap: 5px; }
+  .freeform-text-fit-warning { color: var(--danger, #dc2626); font-size: 0.68rem; margin: 0; }
+  .freeform-qr-controls { display: flex; justify-content: center; max-width: 100%; }
+  .freeform-qr-center-picker { border: 0; margin: 0; max-width: 100%; min-width: 0; padding: 0; }
+  .freeform-qr-center-picker legend { color: var(--text-muted); font-size: 0.66rem; margin-bottom: 3px; padding: 0; }
+  .freeform-qr-center-options { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; }
+  .freeform-qr-center-option { cursor: pointer; position: relative; }
+  .freeform-qr-center-option input { height: 1px; opacity: 0; position: absolute; width: 1px; }
+  .freeform-qr-center-card { align-items: center; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; color: var(--text-muted); display: flex; font-size: 0.64rem; gap: 3px; padding: 3px 5px; }
+  .freeform-qr-center-preview { align-items: center; background: white; border-radius: 2px; display: flex; height: 22px; justify-content: center; overflow: hidden; width: 34px; }
+  .freeform-qr-center-preview :is(img, svg) { height: 20px; max-width: 100%; }
+  .freeform-qr-center-option input:checked + .freeform-qr-center-card { border-color: var(--accent); color: var(--text); }
+  .freeform-image-controls { display: grid; gap: 4px; }
+  .freeform-image-actions button { align-items: center; display: inline-flex; gap: 4px; }
+  .freeform-image-controls select { min-width: 150px; }
+  .freeform-image-controls p { color: var(--text-muted); font-size: 0.66rem; margin: 0; }
+  .freeform-text-toolbar :is(button, select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .freeform-danger-action:not(:disabled):hover, .freeform-danger-action:focus-visible { border-color: var(--label-danger, #ff8a80); color: var(--label-danger, #ff8a80); }
+  .visually-hidden { border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }
+</style>

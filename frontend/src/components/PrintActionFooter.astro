@@ -23,10 +23,11 @@ const resolvedPrintButtonId = printButtonId ?? 'btn-print'
 ---
 
 <div class="action-buttons">
-  <div class="export-buttons">
-    <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPngI18n}>Export PNG</button>
-    <button id="btn-export-aml" class="fm-btn fm-btn-outline" type="button" data-i18n="labelPrint.btnExportAml">Export AML</button>
-    <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n={exportPdfI18n}>Export PDF</button>
+  <div class="export-heading" id="label-export-heading" data-i18n="labelPrint.exportHeading">Export</div>
+  <div class="export-buttons" role="group" aria-labelledby="label-export-heading">
+    <button id="btn-export-png" class="fm-btn fm-btn-outline" type="button" data-i18n-aria-label={exportPngI18n} aria-label="Export PNG">PNG</button>
+    <button id="btn-export-aml" class="fm-btn fm-btn-outline" type="button" data-i18n-aria-label="labelPrint.btnExportAml" aria-label="Export AML">AML</button>
+    <button id="btn-export-pdf" class="fm-btn fm-btn-outline" type="button" data-i18n-aria-label={exportPdfI18n} aria-label="Export PDF">PDF</button>
   </div>
   <button
     id={resolvedPrintButtonId}
@@ -100,6 +101,14 @@ const resolvedPrintButtonId = printButtonId ?? 'btn-print'
     border-top: 1px solid var(--border);
   }
 
+  .export-heading {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
   .export-buttons {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -113,7 +122,8 @@ const resolvedPrintButtonId = printButtonId ?? 'btn-print'
 
   .export-buttons .fm-btn {
     min-width: 0;
-    padding-inline: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
   }
 
   .print-help-row {
@@ -146,6 +156,10 @@ const resolvedPrintButtonId = printButtonId ?? 'btn-print'
 
   @media (max-width: 640px) {
     .print-help-row { flex-wrap: wrap; }
+  }
+
+  @media (max-width: 900px) {
+    .action-buttons { padding: 16px; }
   }
 
   .print-help {
