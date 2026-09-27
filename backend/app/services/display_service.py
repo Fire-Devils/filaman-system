@@ -729,14 +729,41 @@ def _nozzle_range(spool: Spool, printer_id: int) -> tuple[int | None, int | None
     return _as_int(merged.get(_NOZZLE_MIN_KEY)), _as_int(merged.get(_NOZZLE_MAX_KEY))
 
 
+_FINISH_TYPES = frozenset({"solid", "translucent", "neon", "glow"})
+_COLOR_STYLES = frozenset({"striped", "gradient"})
+
+
+def _filament_swatch_colors(filament: Any) -> list[str]:
+    """Every stored filament color, in position order. Invalid hexes are dropped."""
+    if filament is None or not getattr(filament, "filament_colors", None):
+        return []
+    ordered = sorted(filament.filament_colors, key=lambda fc: getattr(fc, "position", 0) or 0)
+    hexes: list[str] = []
+    for entry in ordered:
+        color = getattr(entry, "color", None)
+        raw = getattr(color, "hex_code", None) if color is not None else None
+        normalized = normalize_hex_color(raw, "")
+        if normalized:
+            hexes.append(normalized)
+    return hexes
+
+
 def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
     filament = spool.filament
     manufacturer = filament.manufacturer.name if filament and filament.manufacturer else ""
-    color_hex = ""
-    if filament and filament.filament_colors:
-        colors = sorted(filament.filament_colors, key=lambda fc: getattr(fc, "position", 0) or 0)
-        if colors and colors[0].color:
-            color_hex = colors[0].color.hex_code or ""
+    hexes = _filament_swatch_colors(filament)
+    # A single-color filament keeps one swatch. Multi mode paints every color;
+    # an explicit single mode never grows a stripe from a leftover extra color.
+    color_mode = (getattr(filament, "color_mode", None) or "single").strip().lower() if filament else "single"
+    if color_mode != "multi":
+        hexes = hexes[:1]
+    color_hex = hexes[0] if hexes else ""
+    style = (getattr(filament, "multi_color_style", None) or "").strip().lower() if filament else ""
+    color_style = style if color_mode == "multi" and len(hexes) > 1 and style in _COLOR_STYLES else ""
+    if color_mode == "multi" and len(hexes) > 1 and not color_style:
+        color_style = "striped"
+    finish_raw = (getattr(filament, "finish_type", None) or "").strip().lower() if filament else ""
+    finish = finish_raw if finish_raw in _FINISH_TYPES else ""
     # AMS View shows the filament's Manufacturer Color Name, not Color.name
     # (that field is often a hex code or a generic swatch label).
     color_name = (filament.manufacturer_color_name or "").strip() if filament else ""
@@ -762,6 +789,9 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         "material": (filament.material_type if filament else "") or "",
         "manufacturer": manufacturer,
         "color": normalize_hex_color(color_hex, ""),
+        "colors": hexes,
+        "color_style": color_style,
+        "finish": finish,
         "color_name": color_name,
         "remaining_grams": int(round(remaining)) if remaining is not None else None,
         "remaining_percent": remaining_percent,
@@ -885,13 +915,20 @@ def _merge_slot(
             remaining_percent = rp
             remaining_source = "printer"
 
+    color = fm.get("color") or live.get("color") or DEFAULT_EMPTY_COLOR
+    colors = [c for c in (fm.get("colors") or []) if isinstance(c, str) and c]
+    if not colors and color != DEFAULT_EMPTY_COLOR:
+        colors = [color]
     return {
         "ams_id": ams_id,
         "slot": slot_no,
         "label": slot_label(ams_id, slot_no, kind),
         "empty": empty,
         "active": bool(live.get("active", False)),
-        "color": fm.get("color") or live.get("color") or DEFAULT_EMPTY_COLOR,
+        "color": color,
+        "colors": [] if empty else colors,
+        "color_style": "" if empty else (fm.get("color_style") or ""),
+        "finish": "" if empty else (fm.get("finish") or ""),
         "color_name": fm.get("color_name") or live.get("color_name") or "",
         "material": fm.get("material") or live.get("material") or "",
         "manufacturer": fm.get("manufacturer") or "",

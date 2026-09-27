@@ -117,9 +117,57 @@ def test_spool_swatch_uses_manufacturer_color_name():
     out = _spool_swatch(spool, printer_id=1)
     assert out["color_name"] == "Galaxy Blue"
     assert out["color"] == "#456DF1"
+    assert out["colors"] == ["#456DF1"]
+    assert out["color_style"] == ""
+    assert out["finish"] == ""
 
     filament.manufacturer_color_name = "  "
     assert _spool_swatch(spool, printer_id=1)["color_name"] == ""
+
+
+def test_spool_swatch_multi_color_and_finish():
+    """Multi mode paints every color; finish is the filament finish type."""
+    from types import SimpleNamespace
+
+    from app.services.display_service import _spool_swatch
+
+    filament = SimpleNamespace(
+        designation="Silk Quad",
+        material_type="PLA",
+        manufacturer_color_name="Black Grey Red Yellow",
+        manufacturer=None,
+        color_mode="multi",
+        multi_color_style="gradient",
+        finish_type="Glow",
+        filament_colors=[
+            SimpleNamespace(position=1, color=SimpleNamespace(hex_code="#0A0A0A")),
+            SimpleNamespace(position=0, color=SimpleNamespace(hex_code="#909292ff")),
+            SimpleNamespace(position=2, color=SimpleNamespace(hex_code="not-a-color")),
+        ],
+        printer_params=[],
+        raw_material_weight_g=None,
+    )
+    spool = SimpleNamespace(
+        id=47,
+        filament=filament,
+        remaining_weight_g=None,
+        initial_total_weight_g=None,
+        empty_spool_weight_g=None,
+        rfid_uid=None,
+        rfid_uid_2=None,
+        last_used_at=None,
+        printer_params=[],
+    )
+    out = _spool_swatch(spool, printer_id=12)
+    assert out["colors"] == ["#909292", "#0A0A0A"]
+    assert out["color"] == "#909292"
+    assert out["color_style"] == "gradient"
+    assert out["finish"] == "glow"
+
+    filament.color_mode = "single"
+    single = _spool_swatch(spool, printer_id=12)
+    assert single["colors"] == ["#909292"]
+    assert single["color_style"] == ""
 
 
 def test_normalize_hex_color():

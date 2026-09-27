@@ -90,7 +90,10 @@ Authorization: Device 12.34.abcdef…
               "ams_id": 0, "slot": 0, "label": "A1",
               "empty": false,
               "active": false,
-              "color": "#F8A813",     // always #RRGGBB; "#202020" when empty
+              "color": "#F8A813",     // always #RRGGBB; first color; "#202020" when empty
+              "colors": ["#F8A813"],  // ordered #RRGGBB; more than one when the filament is multi
+              "color_style": "",      // "striped" | "gradient" | "" (only when colors has 2+)
+              "finish": "",           // "solid" | "translucent" | "neon" | "glow" | ""
               "color_name": "Orange",
               "material": "PLA",
               "manufacturer": "SUNLU",
@@ -115,7 +118,7 @@ Authorization: Device 12.34.abcdef…
 Rules you can rely on:
 
 - Numbers are raw. No pre-formatted strings, no thresholds — decide "low" yourself.
-- `color` is always a 7-char `#RRGGBB`. Alpha is stripped.
+- `color` is always a 7-char `#RRGGBB`. Alpha is stripped. `colors` is that same list in filament order: one entry unless the filament's color mode is multi. `color_style` is `striped` or `gradient` only then. `finish` is the filament finish type (`translucent` and `glow` are the ones AMS View paints over the swatch). `fields=slots` does not include these extra keys.
 - A regular AMS always lists slots 0–3, even when empty. An AMS-HT lists slot 0; the external holder lists as many trays as the printer reports (labels `Ext1`, `Ext2`, …).
 - `spool_id` is set only when FilaMan has a spool assigned to that slot; a slot
   can still be non-empty (the printer sees filament) with `spool_id: null`.
