@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "In der AMS View zeigen die Fächer jetzt alle Farben eines mehrfarbigen Filaments: gestreifte Farben stehen als klare Bänder nebeneinander, Farbverläufe gehen ineinander über. Leuchtfilament bekommt einen leuchtenden Rahmen, transparentes Filament einen Glanz wie Glas. Einfarbige und leere Fächer sehen aus wie bisher, und ein Klick öffnet weiterhin die Spule. (Beigetragen von wolfrage76)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "In the AMS View, bays now show every color of a multi-color filament: striped colors appear as clear bands side by side, gradients blend into each other. Glow-in-the-dark filament gets a glowing frame, translucent filament a glass-like highlight. Single-color and empty bays look the same as before, and clicking a bay still opens the spool. (Contributed by wolfrage76)" }
+        ]
+      }
+    },
+    {
       "version": "1.3.8",
       "date": "",
       "changes": {
