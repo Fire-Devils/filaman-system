@@ -78,7 +78,9 @@ def RequirePermission(permission_key: str):
                 },
             )
 
-        if principal.is_superadmin:
+        if principal.is_superadmin and (
+            principal.scopes is None or permission_key in principal.scopes
+        ):
             return principal
 
         if principal.auth_type == "device":
@@ -127,7 +129,10 @@ async def ensure_any_permission(
     *permission_keys: str,
 ) -> None:
     """Raise 403 unless the principal has at least one of the given permissions."""
-    if principal.is_superadmin:
+    if principal.is_superadmin and (
+        principal.scopes is None
+        or any(key in principal.scopes for key in permission_keys)
+    ):
         return
 
     if principal.auth_type == "device":
