@@ -15,8 +15,6 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import func, select
-
 from app.models.filament import Filament
 from app.models.spool import Spool
 from app.models.system_extra_field import SystemExtraField
@@ -30,6 +28,8 @@ from app.services.spoolman_import_service import (
     SpoolmanImportError,
     SpoolmanImportService,
 )
+from sqlalchemy import func, select
+
 from tests.support.spoolman_fixture_server import SpoolmanFixtureServer
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "spoolman" / "rich_fields.json"
@@ -55,6 +55,13 @@ async def test_fixture_import_supports_every_storage_mode(db_session, mode):
     assert result.errors == []
     assert result.filaments_created == 2
     assert result.spools_created == 2
+
+    filament = await db_session.scalar(select(Filament).order_by(Filament.id))
+    assert filament is not None
+    assert filament.extruder_temp_range_c == {"min": 200, "max": 220}
+    assert filament.bed_temp_range_c == {"min": 55, "max": 65}
+    assert "extruder" not in (filament.custom_fields or {})
+    assert "bed" not in (filament.custom_fields or {})
 
     spool = await _imported_spool(db_session, 20)
     assert spool is not None
@@ -99,9 +106,7 @@ async def test_per_field_override_mixes_system_local_and_preserve(db_session):
     definitions = (await db_session.execute(select(SystemExtraField))).scalars().all()
 
     assert result.errors == []
-    assert {(item.target_type, item.key) for item in definitions} == {
-        ("spool", "dry")
-    }
+    assert {(item.target_type, item.key) for item in definitions} == {("spool", "dry")}
     assert spool is not None
     assert spool.custom_field_definitions["tag"]["field_type"] == "text"
     assert spool.custom_fields["tag"] == "rack-a"
@@ -137,9 +142,9 @@ async def test_second_import_is_idempotent_and_reuses_definitions(db_session):
         extra_field_mode=ImportStorageMode.SYSTEM,
     )
 
-    assert first.extra_fields_created == 4
+    assert first.extra_fields_created == 2
     assert second.extra_fields_created == 0
-    assert second.extra_fields_reused == 4
+    assert second.extra_fields_reused == 2
     assert second.filaments_created == 0
     assert second.spools_created == 0
 
@@ -164,9 +169,7 @@ async def test_server_repair_promotes_valid_values_and_keeps_invalid_values(
     db_session,
 ):
     server = SpoolmanFixtureServer.from_path(FIXTURE_PATH)
-    importer = SpoolmanImportService(
-        db_session, client_factory=server.client_factory
-    )
+    importer = SpoolmanImportService(db_session, client_factory=server.client_factory)
     await importer.execute("http://spoolman")
     repair = SpoolmanImportRepairService(db_session)
     source = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))["field_definitions"]
@@ -189,9 +192,7 @@ async def test_server_repair_promotes_valid_values_and_keeps_invalid_values(
 
 async def test_offline_repair_supports_system_and_local_actions(db_session):
     server = SpoolmanFixtureServer.from_path(FIXTURE_PATH)
-    importer = SpoolmanImportService(
-        db_session, client_factory=server.client_factory
-    )
+    importer = SpoolmanImportService(db_session, client_factory=server.client_factory)
     import_preview = await importer.preview("http://spoolman")
     await importer.execute(
         "http://spoolman",
@@ -227,9 +228,7 @@ async def test_offline_repair_supports_system_and_local_actions(db_session):
 
 async def test_datetime_can_be_repaired_to_date(db_session):
     server = SpoolmanFixtureServer.from_path(FIXTURE_PATH)
-    importer = SpoolmanImportService(
-        db_session, client_factory=server.client_factory
-    )
+    importer = SpoolmanImportService(db_session, client_factory=server.client_factory)
     await importer.execute("http://spoolman")
     source = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))["field_definitions"]
     repair = SpoolmanImportRepairService(db_session)
