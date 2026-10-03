@@ -1,0 +1,631 @@
+---
+import InlineColorEditor from './InlineColorEditor.astro'
+
+interface Props {
+  mode: 'create' | 'edit'
+  cancelHref: string
+}
+
+const { mode, cancelHref } = Astro.props
+---
+
+    <form id="filament-form" class="filament-editor-form">
+      <header id="filament-editor-hero" class="filament-hero filament-editor-hero">
+        <div class="filament-hero-layout">
+          <div class="filament-editor-heading">
+            <h1 id="filament-editor-title" data-i18n={mode === 'create' ? 'filaments.newFilament' : 'filaments.editFilament'}>
+              {mode === 'create' ? 'Create New Filament' : 'Edit Filament'}
+            </h1>
+            <div class="filament-editor-manufacturer">
+              <div class="filament-manufacturer-field" data-dirty-key="manufacturer_id">
+                <label for="manufacturer_id" class="filament-sr-only" data-i18n="filaments.manufacturer">Manufacturer *</label>
+                <select id="manufacturer_id" name="manufacturer_id" required class="filament-manufacturer-select" aria-label="Manufacturer" data-i18n-aria-label="filaments.manufacturer">
+                  <option value="" data-i18n="filaments.selectManufacturer">Select manufacturer...</option>
+                </select>
+                <div class="filament-search-scope-control">
+                  <span id="fil-search-scope-hint"></span>
+                  <label>
+                    <span data-i18n="filamentdbLookup.searchAction">search</span>
+                    <input id="fil-search-all-manufacturers" type="checkbox" aria-label="Search all manufacturers" data-i18n-aria-label="filamentdbLookup.searchAllManufacturers" />
+                  </label>
+                </div>
+              </div>
+              <div id="fil-fdb-section" style="display: none;">
+                <div id="fil-lookup-heading" class="filament-lookup-heading"></div>
+                <div id="fil-lookup-container"></div>
+                <div id="fil-lookup-toast" class="fdb-toast" style="display: none;"></div>
+              </div>
+            </div>
+            <div class="filament-hero-meta">
+              <span id="filament-editor-type" class="filament-pill">—</span>
+            </div>
+            <button id="filament-color-launcher" class="filament-color-editor-button" type="button" aria-label="Edit colors" data-i18n-aria-label="filaments.editColors">
+              <span id="filament-editor-color-swatch" class="filament-color-dot"></span>
+              <code id="filament-editor-color-name" class="filament-color-name" data-i18n="filaments.chooseColors">Choose colors</code>
+              <span class="filament-color-edit-icon" aria-hidden="true">✎</span>
+            </button>
+          </div>
+          <div class="filament-hero-actions">
+            <button
+              type="submit"
+              id="submit-btn"
+              class="fm-btn fm-btn-primary"
+              data-i18n={mode === 'create' ? 'filaments.createFilament' : 'filaments.saveFilament'}
+            >
+              {mode === 'create' ? 'Create Filament' : 'Save Filament'}
+            </button>
+            <a id="filament-form-cancel" href={cancelHref} class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</a>
+          </div>
+        </div>
+      </header>
+      <p class="filament-required-legend"><span class="filament-required" aria-hidden="true">*</span> <span data-i18n="filaments.requiredFieldsLegend">Required</span></p>
+      <div class="filament-form-sections">
+        <section class="fm-card filament-spec-card filament-form-primary-section" data-filament-section="material">
+          <h2 class="filament-spec-title" data-i18n="filaments.materialDetails">Material</h2>
+          <div class="filament-form-section-body">
+            <div class="filament-required-field" data-dirty-key="material_type">
+              <label for="type" class="fm-label"><span data-i18n="filaments.type">Base Material</span> <span class="filament-required" aria-hidden="true">*</span></label>
+              <select id="type" name="type" required class="fm-select"><option value="" data-i18n="filaments.selectType">Select base material...</option></select>
+              <div id="custom-type-wrapper" class="filament-required-field hidden" style="margin-top: 8px;">
+                <label for="custom_type" class="fm-label"><span data-i18n="filaments.customTypeLabel">Custom Base Material</span> <span class="filament-required" aria-hidden="true">*</span></label>
+                <input type="text" id="custom_type" name="custom_type" placeholder="e.g. HIPS" data-i18n-placeholder="filaments.customTypePlaceholder" class="fm-input" maxlength="50" style="text-transform: uppercase;" />
+              </div>
+            </div>
+            <div class="filament-required-field" data-dirty-key="diameter_mm">
+              <label for="diameter_mm" class="fm-label"><span data-i18n="filaments.diameter">Diameter</span> <span class="filament-required" aria-hidden="true">*</span></label>
+              <div class="filament-unit-input"><input type="number" id="diameter_mm" name="diameter_mm" step="0.01" value="1.75" required class="fm-input" /><span>mm</span></div>
+            </div>
+            <div data-dirty-key="material_subgroup">
+              <label for="material_subgroup" class="fm-label" data-i18n="filaments.materialSubgroup">Material Variant / Additive</label>
+              <input type="text" id="material_subgroup" name="material_subgroup" placeholder="e.g. CF, GF, Wood-filled" data-i18n-placeholder="filaments.materialSubgroupPlaceholder" class="fm-input" />
+            </div>
+            <div data-dirty-key="finish_type">
+              <label for="finish_type" class="fm-label" data-i18n="filaments.finishType">Finish / Appearance</label>
+              <select id="finish_type" name="finish_type" class="fm-select">
+                <option value="">-</option>
+                <option value="solid" data-i18n="filaments.finishSolid">Solid</option>
+                <option value="matte" data-i18n="filaments.finishMatte">Matte</option>
+                <option value="silk" data-i18n="filaments.finishSilk">Silk</option>
+                <option value="translucent" data-i18n="filaments.finishTranslucent">Translucent</option>
+                <option value="neon" data-i18n="filaments.finishNeon">Neon</option>
+                <option value="glow" data-i18n="filaments.finishGlow">Glow in the Dark</option>
+              </select>
+            </div>
+            <div class="filament-form-wide filament-required-field" data-dirty-key="designation">
+              <label for="designation" class="fm-label"><span data-i18n="filaments.designation">Manufacturer Product / Series Name</span> <span class="filament-required" aria-hidden="true">*</span></label>
+              <input type="text" id="designation" name="designation" required placeholder="e.g. Basic, Hyper, Tough+, PolyTerra" data-i18n-placeholder="filaments.designationPlaceholder" class="fm-input" />
+            </div>
+            <div data-dirty-key="density_g_cm3">
+              <label for="density_g_cm3" class="fm-label" data-i18n="filaments.densityLabel">Density</label>
+              <div class="filament-unit-input"><input type="number" id="density_g_cm3" name="density_g_cm3" step="0.01" placeholder="e.g. 1.24" data-i18n-placeholder="filaments.densityPlaceholder" class="fm-input" /><span>g/cm³</span></div>
+            </div>
+            <label class="filament-form-check" data-dirty-key="is_discontinued"><input type="checkbox" id="is_discontinued" name="is_discontinued" class="fm-checkbox" /><span data-i18n="filaments.discontinued">Discontinued</span></label>
+          </div>
+        </section>
+
+        <section class="fm-card filament-spec-card" data-filament-section="spool">
+          <h2 class="filament-spec-title" data-i18n="filaments.spoolDetails">Spool</h2>
+          <div class="filament-form-section-body">
+            <div data-dirty-key="raw_material_weight_g"><label for="raw_material_weight_g" class="fm-label" data-i18n="filaments.rawMaterialWeightLabel">Net Filament Weight</label><div class="filament-unit-input"><input type="number" id="raw_material_weight_g" name="raw_material_weight_g" step="1" placeholder="e.g. 1000" data-i18n-placeholder="filaments.rawMaterialPlaceholder" class="fm-input" /><span>g</span></div></div>
+            <div data-dirty-key="default_spool_weight_g"><label for="default_spool_weight_g" class="fm-label" data-i18n="filaments.defaultSpoolWeightLabel">Empty Spool Weight</label><div class="filament-unit-input"><input type="number" id="default_spool_weight_g" name="default_spool_weight_g" step="1" placeholder="e.g. 250" data-i18n-placeholder="filaments.defaultSpoolWeightPlaceholder" class="fm-input" /><span>g</span></div></div>
+            <div data-dirty-key="spool_material"><label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label><select id="spool_material" name="spool_material" class="fm-select"><option value="">-</option><option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option><option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option><option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option><option value="Other" data-i18n="spools.spoolMaterialOther">Other</option></select></div>
+            <div data-dirty-key="spool_outer_diameter_mm"><label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameterLabel">Spool Outer Diameter</label><div class="filament-unit-input"><input type="number" id="spool_outer_diameter_mm" name="spool_outer_diameter_mm" step="0.1" class="fm-input" /><span>mm</span></div></div>
+            <div data-dirty-key="spool_width_mm"><label for="spool_width_mm" class="fm-label" data-i18n="spools.spoolWidthLabel">Spool Width</label><div class="filament-unit-input"><input type="number" id="spool_width_mm" name="spool_width_mm" step="0.1" class="fm-input" /><span>mm</span></div></div>
+            <div data-dirty-key="price"><label for="price" class="fm-label" data-i18n="filaments.price">Purchase Price</label><input type="number" id="price" name="price" step="0.01" placeholder="e.g. 24.99" data-i18n-placeholder="filaments.pricePlaceholder" class="fm-input" /></div>
+            <div data-dirty-key="price_currency"><label for="price_currency" class="fm-label" data-i18n="filaments.priceCurrency">Price currency</label><input id="price_currency" name="price_currency" maxlength="3" placeholder="USD" class="fm-input" style="text-transform: uppercase;" /></div>
+          </div>
+        </section>
+
+        <section class="fm-card filament-spec-card" data-filament-section="temperatures">
+          <h2 class="filament-spec-title" data-i18n="filaments.temperatures">Temperatures</h2>
+          <div class="filament-form-section-body">
+            <div data-dirty-key="extruder_temp_range_c"><label class="fm-label" data-i18n="filaments.extruderTemperatureLabel">Extruder Temperature</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="extruder_temp_value" step="1" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Extruder temperature value" class="fm-input" /><input type="number" id="extruder_temp_to" step="1" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Extruder temperature upper value" class="fm-input" /></div><span>°C</span></div></div>
+            <div data-dirty-key="bed_temp_range_c"><label class="fm-label" data-i18n="filaments.bedTemperatureLabel">Bed Temperature</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="bed_temp_value" step="1" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Bed temperature value" class="fm-input" /><input type="number" id="bed_temp_to" step="1" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Bed temperature upper value" class="fm-input" /></div><span>°C</span></div></div>
+            <div data-dirty-key="chamber_temp_c"><label for="chamber_temp_c" class="fm-label" data-i18n="filaments.chamberTemperatureLabel">Chamber temperature</label><div class="filament-unit-input"><input type="number" id="chamber_temp_c" name="chamber_temp_c" step="1" class="fm-input" /><span>°C</span></div></div>
+            <div data-dirty-key="softening_temp_c"><label for="softening_temp_c" class="fm-label" data-i18n="filaments.softeningTemperatureLabel">Softening temperature</label><div class="filament-unit-input"><input type="number" id="softening_temp_c" name="softening_temp_c" step="1" class="fm-input" /><span>°C</span></div></div>
+          </div>
+        </section>
+
+        <section class="fm-card filament-spec-card" data-filament-section="drying">
+          <h2 class="filament-spec-title" data-i18n="filaments.dryingInfo">Drying</h2>
+          <div class="filament-form-section-body">
+            <div data-dirty-key="drying_temp_c"><label for="drying_temp_c" class="fm-label" data-i18n="filaments.dryingTemperatureLabel">Drying temperature</label><div class="filament-unit-input"><input type="number" id="drying_temp_c" name="drying_temp_c" step="1" class="fm-input" /><span>°C</span></div></div>
+            <div data-dirty-key="drying_time_hours"><label for="drying_time_hours" class="fm-label" data-i18n="filaments.dryingTimeLabel">Drying time</label><div class="filament-unit-input"><input type="number" id="drying_time_hours" name="drying_time_hours" step="0.1" class="fm-input" /><span>h</span></div></div>
+          </div>
+        </section>
+
+        <section class="fm-card filament-spec-card" data-filament-section="printBehavior">
+          <h2 class="filament-spec-title" data-i18n="filaments.printBehavior">Print behavior</h2>
+          <div class="filament-form-section-body">
+            <div data-dirty-key="cooling_fan_range_percent"><label class="fm-label" data-i18n="filaments.coolingFanLabel">Cooling fan</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="cooling_fan_value" min="0" max="100" step="1" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Cooling fan value" class="fm-input" /><input type="number" id="cooling_fan_to" min="0" max="100" step="1" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Cooling fan upper value" class="fm-input" /></div><span>%</span></div></div>
+            <div data-dirty-key="max_volumetric_speed_mm3_s"><label for="max_volumetric_speed_mm3_s" class="fm-label" data-i18n="filaments.maxVolumetricSpeedLabel">Max volumetric speed</label><div class="filament-unit-input"><input type="number" id="max_volumetric_speed_mm3_s" name="max_volumetric_speed_mm3_s" step="0.1" class="fm-input" /><span>mm³/s</span></div></div>
+            <div data-dirty-key="flow_ratio"><label for="flow_ratio" class="fm-label" data-i18n="filaments.flowRatio">Flow ratio</label><input type="number" id="flow_ratio" name="flow_ratio" step="0.001" class="fm-input" /></div>
+            <div data-dirty-key="pressure_advance_k"><label for="pressure_advance_k" class="fm-label" data-i18n="filaments.pressureAdvance">Pressure advance (K)</label><input type="number" id="pressure_advance_k" name="pressure_advance_k" step="0.001" class="fm-input" /></div>
+          </div>
+        </section>
+
+        <section class="fm-card filament-spec-card" data-filament-section="compatibilitySources">
+          <h2 class="filament-spec-title" data-i18n="filaments.compatibilitySources">Compatibility &amp; sources</h2>
+          <div class="filament-form-section-body">
+            <div data-dirty-key="ams_compatibility"><label for="ams_compatibility" class="fm-label" data-i18n="filaments.amsCompatibility">AMS compatibility</label><input id="ams_compatibility" name="ams_compatibility" placeholder="AMS, AMS 2 Pro" class="fm-input" /></div>
+            <div data-dirty-key="build_plate_compatibility"><label for="build_plate_compatibility" class="fm-label" data-i18n="filaments.buildPlateCompatibility">Build plate compatibility</label><input id="build_plate_compatibility" name="build_plate_compatibility" placeholder="Textured PEI, Smooth PEI" class="fm-input" /></div>
+            <div data-dirty-key="manufacturer_sku"><label for="manufacturer_sku" class="fm-label" data-i18n="filaments.manufacturerSku">Manufacturer SKU</label><input id="manufacturer_sku" name="manufacturer_sku" class="fm-input" /></div>
+            <div data-dirty-key="shop_url"><label for="shop_url" class="fm-label" data-i18n="filaments.shopUrl">Product / Purchase URL</label><input type="url" id="shop_url" name="shop_url" placeholder="e.g. https://shop.example.com/filament" data-i18n-placeholder="filaments.shopUrlPlaceholder" class="fm-input" /></div>
+            <div data-dirty-key="datasheet_url"><label for="datasheet_url" class="fm-label" data-i18n="filaments.datasheetUrl">Datasheet URL</label><input type="url" id="datasheet_url" name="datasheet_url" class="fm-input" /></div>
+            <div data-dirty-key="image_url"><label for="image_url" class="fm-label" data-i18n="filaments.imageUrl">Image URL</label><input type="url" id="image_url" name="image_url" class="fm-input" /></div>
+          </div>
+        </section>
+      </div>
+
+      <dialog id="filament-color-dialog" class="fm-modal-overlay filament-color-dialog-overlay" aria-labelledby="filament-color-dialog-title">
+        <div class="fm-card filament-color-dialog">
+          <div class="filament-color-dialog-header">
+            <h2 id="filament-color-dialog-title" data-i18n="filaments.colorSelection">Color Selection</h2>
+            <span id="filament-color-dialog-preview" class="filament-color-dialog-preview" hidden></span>
+            <button id="filament-color-dialog-close" type="button" class="filament-color-dialog-close" aria-label="Close" data-i18n-aria-label="common.close">&times;</button>
+          </div>
+          <div class="filament-color-dialog-body">
+            <div class="filament-color-meta-row">
+              <div class="filament-color-meta-field" data-dirty-key="manufacturer_color_name">
+                <label for="manufacturer_color_name" class="fm-label"><span data-i18n="filaments.manufacturerColorName">Manufacturer’s Color Name</span><span class="filament-optional" data-i18n="filaments.optional">optional</span></label>
+                <input type="text" id="manufacturer_color_name" name="manufacturer_color_name" placeholder="e.g. Bambu Green, Jade White" data-i18n-placeholder="filaments.manufacturerColorNamePlaceholder" class="fm-input" />
+              </div>
+              <div class="filament-color-mode-group">
+                <div class="filament-required-field filament-color-meta-field" data-dirty-key="color_mode">
+                  <label class="fm-label"><span data-i18n="filaments.colorMode">Color Configuration</span> <span class="filament-required" aria-hidden="true">*</span></label>
+                  <div class="filament-color-mode-options">
+                    <label><input type="radio" name="color_mode" value="single" checked required /><span data-i18n="filaments.colorModeSingle">Single Color</span></label>
+                    <label><input type="radio" name="color_mode" value="multi" /><span data-i18n="filaments.colorModeMulti">Multi Color</span></label>
+                  </div>
+                </div>
+                <div id="multi-color-options" class="filament-required-field filament-color-meta-field" data-dirty-key="multi_color_style" hidden>
+                  <label for="multi_color_style" class="fm-label"><span data-i18n="filaments.multiColorStyle">Multi-Color Pattern</span> <span class="filament-required" aria-hidden="true">*</span></label>
+                  <select id="multi_color_style" name="multi_color_style" class="fm-select" required disabled><option value="striped" data-i18n="filaments.styleStriped">Striped</option><option value="gradient" data-i18n="filaments.styleGradient">Gradient</option></select>
+                </div>
+              </div>
+            </div>
+            <div class="filament-color-picker filament-required-field" data-dirty-key="colors">
+              <div id="existing-color-picker" class="filament-existing-color-picker">
+                <div class="filament-color-picker-heading">
+                  <h3><span id="color-selection-title" data-i18n="filaments.selectExistingFilamentColor">Select Existing Filament Color</span></h3>
+                  <span id="color-hint" class="filament-optional" data-i18n="filaments.clickSelectionOrder" hidden>Click in selection order</span>
+                </div>
+                <div class="filament-color-search-row">
+                  <input type="search" id="color-search" class="fm-input fm-header-filter-search" placeholder="Search color names..." data-i18n-placeholder="filaments.searchColorNames" aria-label="Search color names" data-i18n-aria-label="filaments.searchColorNames" />
+                  <button type="button" id="color-filter-clear" class="fm-btn fm-btn-outline filament-color-toolbar-button" data-i18n="filaments.clearFilters">Clear Filters</button>
+                </div>
+                <div id="selected-colors"></div>
+                <div class="filament-color-panel">
+                  <div class="filament-color-action-row">
+                    <div class="filament-color-sort-buttons" aria-label="Sort colors" data-i18n-aria-label="filaments.sortColors">
+                      <button type="button" id="color-sort-name" class="filament-color-sort-button" data-direction="none"><span data-i18n="filaments.sortName">Name</span><span class="filament-color-sort-arrow" aria-hidden="true"></span></button>
+                      <button type="button" id="color-sort-hex" class="filament-color-sort-button" data-direction="none"><span data-i18n="filaments.sortHex">Hex</span><span class="filament-color-sort-arrow" aria-hidden="true"></span></button>
+                    </div>
+                    <button type="button" id="color-filter-button" class="fm-btn fm-btn-outline filament-color-toolbar-button fm-header-filter-trigger" data-filter-sidecar aria-label="Visual Color Filter" data-i18n-aria-label="filaments.visualColorFilter"><span data-i18n="filaments.visualColorFilter">Visual Color Filter</span></button>
+                    <label class="fm-header-filter-grid-toggle"><input id="color-list-toggle" type="checkbox" role="switch" aria-label="Color list" data-i18n-aria-label="filters.colorList" /><span class="fm-header-filter-grid-toggle-track" aria-hidden="true"></span><span data-i18n="filters.colorList">Color list</span></label>
+                  </div>
+                  <div id="color-grid" class="fm-color-grid"><p data-i18n="common.loading">Loading...</p></div>
+                </div>
+              </div>
+              <InlineColorEditor />
+            </div>
+          </div>
+          <div class="filament-color-dialog-actions">
+            <button id="filament-color-dialog-done" type="button" class="fm-btn fm-btn-primary" data-i18n="common.close">Close</button>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- System Fields -->
+      <div id="system-fields-container" class="fm-card filament-extra-fields-card" data-dirty-key="custom_fields" style="display: none;">
+        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;" data-i18n="common.systemFields">System Fields</h3>
+        <div id="system-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <!-- Dynamic system fields go here -->
+        </div>
+      </div>
+
+      <!-- Custom Fields -->
+      <div id="filament-custom-fields-card" class="fm-card filament-extra-fields-card" data-dirty-key="custom_fields">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <label class="fm-label" style="margin: 0;" data-i18n="filaments.specificExtraFields">Filament-specific extra fields</label>
+          <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
+            + <span data-i18n="common.add">Add</span>
+          </button>
+        </div>
+        <p style="margin: -4px 0 12px; color: var(--text-muted); font-size: 0.82rem;">
+          <span data-i18n="filaments.specificExtraFieldsHelp">These typed fields apply only to this filament.</span>
+          <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="filaments.manageSystemExtraFields">Create/Manage cross-filament System Extra Fields here</a>
+        </p>
+        <div id="custom-fields-container" style="display: grid; gap: 8px;">
+          <!-- Dynamic fields go here -->
+        </div>
+      </div>
+
+      <div id="error-message" class="fm-alert-error hidden"></div>
+
+    </form>
+
+<style>
+  .filament-editor-form { display: grid; gap: 12px; }
+  .filament-editor-hero { margin-bottom: 0; overflow: visible; }
+  .filament-editor-hero::before { border-radius: inherit; }
+  .filament-editor-heading { min-width: 0; }
+  .filament-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .filament-editor-manufacturer {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(12rem, 22rem) minmax(16rem, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    width: min(55rem, calc(100vw - 10rem));
+    max-width: 100%;
+    margin: 5px 0 10px;
+  }
+  .filament-manufacturer-field { min-width: 0; }
+  .filament-search-scope-control {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 6px;
+    align-items: center;
+    margin: 4px 2px 0;
+    color: var(--text-muted);
+    font-size: .68rem;
+  }
+  .filament-search-scope-control label { display: inline-flex; gap: 4px; align-items: center; font: inherit; color: inherit; cursor: pointer; }
+  .filament-search-scope-control input { width: .8rem; height: .8rem; margin: 0; accent-color: var(--accent); }
+  .filament-manufacturer-select {
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 34px 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font: 600 .82rem/1.2 var(--font-sans);
+    cursor: pointer;
+  }
+  .filament-manufacturer-select:hover,
+  .filament-manufacturer-select:focus { border-color: var(--accent); outline: none; color: var(--text); }
+  #fil-fdb-section {
+    position: absolute;
+    top: 0;
+    left: calc(22rem + 12px);
+    z-index: 2;
+    width: calc(100% - 22rem - 12px);
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+  }
+
+  .filament-color-editor-button {
+    display: inline-grid;
+    grid-template-columns: auto minmax(0, auto) auto;
+    gap: 9px;
+    align-items: center;
+    max-width: min(460px, 70vw);
+    margin-top: 10px;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-elevated) 74%, transparent);
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .filament-color-editor-button:hover,
+  .filament-color-editor-button:focus-visible { border-color: var(--accent); outline: none; }
+  .filament-color-editor-button.is-dirty {
+    border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  .filament-color-editor-button .filament-color-dot {
+    width: min(180px, 28vw);
+    background-image: conic-gradient(#d1d5db 25%, #fff 0 50%, #d1d5db 0 75%, #fff 0);
+    background-size: 8px 8px;
+    background-clip: padding-box;
+  }
+  .filament-color-editor-button .filament-color-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filament-color-edit-icon {
+    display: grid;
+    place-items: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    background: var(--bg-soft);
+    color: var(--accent);
+    font-size: .85rem;
+  }
+
+  .filament-form-sections {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+    width: 100%;
+    max-width: 90rem;
+    margin-inline: auto;
+  }
+  .filament-form-section-body { display: grid; gap: 0; padding: 4px 16px; }
+  .filament-form-section-body > [data-dirty-key] {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(7rem, 13rem);
+    gap: 12px;
+    align-items: center;
+    min-height: 40px;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .filament-form-section-body > [data-dirty-key]:last-child { border-bottom: 0; }
+  .filament-form-section-body .fm-label { margin: 0; font-size: .8rem; }
+  .filament-required { color: var(--error-text); }
+  .filament-required-legend { margin: 0 0 6px; color: var(--text-muted); font-size: .72rem; }
+  .filament-required-field:has(> :is(input, select, textarea):required:valid) > .fm-label .filament-required,
+  .filament-required-field:has(> .filament-unit-input :required:valid) > .fm-label .filament-required,
+  .filament-required-field:has(> .filament-color-mode-options :required:valid) > .fm-label .filament-required,
+  .filament-required-field:has(#selected-colors:not(:empty)) .filament-required { display: none; }
+  #custom-type-wrapper { grid-column: 1 / -1; }
+  #custom-type-wrapper {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(7rem, 13rem);
+    gap: 12px;
+    align-items: center;
+  }
+  #custom-type-wrapper.hidden { display: none; }
+  :global(#filament-form .filament-form-section-body .fm-input),
+  :global(#filament-form .filament-form-section-body .fm-select) {
+    height: 30px;
+    min-height: 30px;
+    padding: 3px 7px;
+    font-size: .78rem;
+  }
+  :global(#filament-form .filament-form-section-body .fm-input::placeholder) {
+    color: var(--text-muted);
+    opacity: .56;
+    font-weight: 400;
+  }
+  :global(#filament-form input[type="number"]) { appearance: textfield; -moz-appearance: textfield; }
+  :global(#filament-form input[type="number"]::-webkit-inner-spin-button),
+  :global(#filament-form input[type="number"]::-webkit-outer-spin-button) { margin: 0; appearance: none; }
+
+  .filament-form-check { grid-template-columns: minmax(0, 1fr) auto !important; cursor: pointer; }
+  .filament-form-check input { grid-column: 2; grid-row: 1; }
+  .filament-form-check span { grid-column: 1; grid-row: 1; font-size: .8rem; }
+  .filament-range-inputs { display: grid; grid-template-columns: repeat(2, minmax(5.5ch, 1fr)); gap: 6px; min-width: 0; }
+  .filament-unit-input { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+  .filament-unit-input > :first-child { flex: 1 1 auto; min-width: 0; }
+  .filament-unit-input > input[type="number"] { min-width: 5.5ch; }
+  .filament-unit-input > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    font-size: .75rem;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .filament-color-dialog-overlay { padding: 16px; }
+  .filament-color-dialog-overlay .filament-color-dialog {
+    width: min(600px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    margin: auto;
+    padding: 0;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-elevated);
+    color: var(--text);
+    box-shadow: var(--shadow-lg);
+  }
+  .filament-color-dialog-header,
+  .filament-color-dialog-actions {
+    position: sticky;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-elevated);
+  }
+  .filament-color-dialog-header { top: 0; border-bottom: 1px solid var(--border); }
+  .filament-color-dialog-header h2 { margin: 0; font-size: 1.05rem; }
+  .filament-color-dialog-preview {
+    width: min(180px, 32vw);
+    height: 28px;
+    margin-left: 4px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+    border-radius: 999px;
+  }
+  .filament-color-dialog-close {
+    margin-left: auto;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 1.3rem;
+  }
+  .filament-color-dialog-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 16px 18px;
+  }
+  .filament-color-meta-row {
+    display: grid;
+    grid-template-columns: minmax(205px, .8fr) minmax(325px, 1.2fr);
+    gap: 14px;
+    min-width: 560px;
+    overflow-x: auto;
+  }
+  .filament-color-meta-row > [data-dirty-key],
+  .filament-color-mode-group > [data-dirty-key] { min-width: 0; }
+  .filament-color-mode-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+  .filament-color-meta-field { display: grid; align-content: start; gap: 5px; min-width: 0; }
+  #multi-color-options[hidden] { display: none; }
+  .filament-color-meta-field > .fm-label { display: flex; align-items: baseline; gap: 4px; margin: 0; white-space: nowrap; font-size: .68rem; }
+  .filament-color-meta-field > :is(.fm-input, .fm-select) { height: 34px; min-height: 34px; padding: 4px 8px; font-size: .78rem; }
+  .filament-color-meta-field > :is(.fm-input, .fm-select):disabled { opacity: .48; }
+  .filament-optional { color: var(--text-muted); font-size: .62rem; font-weight: 400; white-space: nowrap; }
+  .filament-color-dialog > .filament-color-dialog-body :is(.fm-input, .fm-select)::placeholder,
+  :global(#filament-color-dialog .fm-inline-color-form .fm-input::placeholder) {
+    color: var(--text-muted);
+    opacity: .56;
+    font-weight: 400;
+  }
+  .filament-color-mode-options { display: flex; flex-wrap: wrap; gap: 12px; min-height: 34px; align-items: center; }
+  .filament-color-mode-options label { display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: .78rem; }
+  .filament-color-mode-options input { accent-color: var(--accent); }
+  .filament-color-picker { min-width: 0; }
+  .filament-existing-color-picker { transition: opacity var(--transition); }
+  .filament-existing-color-picker.is-inactive { opacity: .38; }
+  .filament-color-picker-heading { display: flex; align-items: baseline; gap: 8px; }
+  .filament-color-picker-heading h3 { margin: 0; color: var(--text); font-size: .9rem; }
+  .filament-color-search-row,
+  .filament-color-action-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+  }
+  .filament-color-search-row .fm-header-filter-search { min-width: 0; margin: 0; flex: 1 1 auto; }
+  .filament-color-search-row #color-filter-clear { margin-left: auto; }
+  .filament-color-action-row .fm-header-filter-grid-toggle { margin-left: auto; }
+  #selected-colors { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  #selected-colors[hidden] { display: none; }
+  .filament-color-panel { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
+  .filament-color-panel .filament-color-action-row { margin: 0; padding: 8px; border-bottom: 1px solid var(--border); }
+  #color-grid { max-height: 190px; overflow-y: auto; padding: 8px; }
+  #color-grid > p { color: var(--text-muted); font-size: .85rem; }
+  .filament-color-dialog-actions { bottom: 0; justify-content: flex-end; border-top: 1px solid var(--border); }
+  .filament-color-sort-buttons { display: inline-flex; gap: 4px; }
+  .filament-color-sort-button,
+  .filament-color-toolbar-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: .7rem;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .filament-color-sort-button:hover,
+  .filament-color-sort-button:focus-visible,
+  .filament-color-toolbar-button:hover,
+  .filament-color-toolbar-button:focus-visible { border-color: var(--accent); color: var(--text); outline: none; }
+  .filament-color-sort-button[data-direction="asc"],
+  .filament-color-sort-button[data-direction="desc"] { border-color: var(--accent); color: var(--accent); }
+  .filament-color-sort-arrow::after { content: '↕'; }
+  .filament-color-sort-button[data-direction="asc"] .filament-color-sort-arrow::after { content: '↑'; }
+  .filament-color-sort-button[data-direction="desc"] .filament-color-sort-arrow::after { content: '↓'; }
+  .filament-color-toolbar-button:disabled { cursor: default; opacity: .45; }
+  :global(#filament-color-dialog .fm-inline-color-disclosure) { max-width: 30rem; }
+  :global(#filament-color-dialog .fm-inline-color-form .fm-input) {
+    min-height: 34px;
+    padding: 4px 8px;
+    font-size: .78rem;
+  }
+  :global(#filament-color-dialog .fm-color-editor-picker input[type="color"]) {
+    width: 132px;
+    height: 46px;
+    border-radius: 999px;
+  }
+  :global(#filament-color-dialog .fm-color-editor-value-row) { grid-template-columns: 140px minmax(0, 1fr); }
+  :global(#filament-color-dialog .fm-header-color-modes button) { gap: 3px; padding-inline: 2px; font-size: .62rem; }
+  :global(#filament-color-dialog .fm-header-color-neutral-swatch) { flex: 0 0 12px; width: 12px; height: 12px; }
+
+  @media (min-width: 900px) {
+    .filament-color-dialog-overlay .filament-color-dialog { transform: translateX(150px); }
+    :global(#filament-color-dialog:has(.fm-header-filter-panel-sidecar.open) .filament-color-dialog) {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+    :global(#filament-color-dialog .fm-header-filter-panel-sidecar.open) {
+      left: calc(50vw - 450px) !important;
+      top: 50% !important;
+      width: 300px;
+      max-height: calc(100vh - 32px);
+      transform: translateY(-50%);
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
+
+  .filament-extra-fields-card { padding: 16px; }
+  :global(.filament-change-pill) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.75rem;
+    padding: 3px 10px;
+    border: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: .72rem;
+    font-weight: 750;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  :global(.filament-change-pill.hidden) { display: none; }
+  .filament-lookup-heading { margin-bottom: 6px; color: var(--text); font-size: .8rem; font-weight: 700; }
+
+  @media (max-width: 1499px) {
+    .filament-form-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 820px) {
+    .filament-editor-manufacturer { grid-template-columns: 1fr; width: 100%; }
+    #fil-fdb-section { position: static; width: 100%; }
+    .filament-form-sections { grid-template-columns: 1fr; }
+    .filament-color-action-row { flex-wrap: wrap; }
+  }
+  @media (max-width: 899px) {
+    :global(#filament-color-dialog .fm-header-filter-panel-sidecar.open) {
+      left: 50% !important;
+      right: auto !important;
+      top: 50% !important;
+      width: min(360px, calc(100vw - 32px));
+      max-height: calc(100vh - 32px);
+      transform: translate(-50%, -50%);
+    }
+  }
+  @media (max-width: 640px) {
+    .filament-form-section-body > [data-dirty-key],
+    #custom-type-wrapper { grid-template-columns: 1fr; gap: 5px; padding: 8px 0; }
+    .filament-form-check input,
+    .filament-form-check span { grid-column: auto; grid-row: auto; }
+  }
+
+  :global(#filament-form [data-dirty-key].is-dirty) {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: 3px;
+    border-radius: var(--radius-sm);
+  }
+  :global(#filament-color-dialog [data-dirty-key].is-dirty) { outline: none; }
+</style>
