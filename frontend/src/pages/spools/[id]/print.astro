@@ -78,6 +78,7 @@ export function getStaticPaths() {
     hydrateLabelPresetStorage,
     SPOOL_LABEL_PRESETS_KEY,
   } from '../../../lib/label-preset-storage'
+  import { readStoredPresets } from '../../../lib/freeform-label/editor-storage'
   import {
     loadSpoolLabelLookups,
   } from '../../../lib/spool-label-lookups'
@@ -158,7 +159,7 @@ export function getStaticPaths() {
 
   // --- Tab switching ---
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
-  const initialMode = readPrintWorkspaceMode(ACTIVE_MODE_KEY)
+  let initialMode = readPrintWorkspaceMode(ACTIVE_MODE_KEY)
   let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
   let labelLogoUrl: string | null = null
   let labelLogoLoaded = false
@@ -537,9 +538,29 @@ export function getStaticPaths() {
     Object.assign(labelData, apiLabelData)
   }
 
-  // Initialize: load logo then render the persisted workspace.
+  // A PC print request can open this page with the requested preset.
+  const requestedPresetId = Number(params.get('preset_id'))
+  if (Number.isSafeInteger(requestedPresetId) && requestedPresetId > 0) {
+    try {
+      const preset = readStoredPresets(SPOOL_LABEL_PRESETS_KEY)
+        .find(item => item.databaseId === requestedPresetId)
+      if (!preset || !designerEditor) {
+        throw new Error('Selected label preset is unavailable')
+      }
+      designerEditor.refreshPresetList(preset.name)
+      if (!designerEditor.loadPreset(preset.name, false)) throw new Error('Selected label preset is unavailable')
+      initialMode = 'designer'
+    } catch (error) {
+      initialMode = 'standard'
+      window.alert(error instanceof Error ? error.message : 'Could not load label preset')
+    }
+  } else if (params.get('scale_print') === '1') {
+    initialMode = 'standard'
+  }
+
+  // Initialize: load logo then render the selected workspace.
   loadLabelLogo().then(() => {
-    tabControls.activate(readPrintWorkspaceMode(ACTIVE_MODE_KEY))
+    tabControls.activate(initialMode)
   })
 
   // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),

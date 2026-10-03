@@ -14,7 +14,8 @@
     "test:labels": "vitest run src/lib/label-token-contract.test.ts",
     "check:label-layout": "node scripts/check-label-layout.mjs",
     "check:editor-workspace": "node scripts/check-editor-workspace.mjs",
-    "check:browser": "npm run check:label-layout && npm run check:editor-workspace"
+    "check:pc-print-prompt": "node scripts/check-pc-print-prompt.mjs",
+    "check:browser": "npm run check:label-layout && npm run check:editor-workspace && npm run check:pc-print-prompt"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

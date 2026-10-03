@@ -1550,9 +1550,11 @@
     "marginMm": "Margin (mm)",
     "printBorder": "Print border",
     "presetLoaded": "Preset loaded.",
+    "presetSelectionFailed": "Preset loaded, but selection synchronization failed. Load it again to retry.",
     "presetNameExists": "That name is already in use. Choose a new name.",
     "presetNameRequired": "Enter a preset name.",
     "presetSaved": "Preset saved.",
+    "presetSavedSelectionFailed": "Preset saved, but selection synchronization failed. Load it again to retry.",
     "presetSaveFailed": "Preset save failed.",
     "presetDeleted": "Preset deleted.",
     "presetDeleteFailed": "Preset delete failed.",
@@ -1609,6 +1611,9 @@
     "elementShape": "Shape element"
   },
   "labelPrint": {
+    "pcPrintTitle": "Print request",
+    "pcPrintPrompt": "Print label for spool #{id} on this PC?",
+    "openPcPrint": "Open print window",
     "pageTitle": "FilaMan - Label Print",
     "backToOverview": "Back to Overview",
     "backToSpool": "Back to Spool",

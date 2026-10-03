@@ -466,7 +466,7 @@ describe('first-class print workspace navigation', () => {
       expect(outputControls.pngButton.hidden).toBe(false)
       expect(document.querySelector<HTMLInputElement>('#freeform-preset-name')!.value).toBe('Wide')
       expect(document.querySelector<HTMLSelectElement>('#freeform-preset-list')!.value).toBe('own:Wide')
-      expect(document.querySelector<HTMLButtonElement>('#freeform-preset-update')!.disabled).toBe(false)
+      await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#freeform-preset-update')!.disabled).toBe(false))
       window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }))
       document.querySelector<HTMLButtonElement>('#sheet-edit-designer')!.click()
       expect(activatedWidths).toEqual([85])

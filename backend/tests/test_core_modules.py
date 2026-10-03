@@ -31,6 +31,11 @@ class TestConfigSettings:
     async def test_default_log_format(self):
         assert settings.log_format == "json"
 
+    def test_default_label_renderer_is_basic(self, monkeypatch):
+        monkeypatch.delenv("LABEL_RENDERER", raising=False)
+
+        assert Settings(_env_file=None).label_renderer == "basic"
+
     @pytest.mark.asyncio
     async def test_resolve_relative_db_path_with_dot_slash(self):
         resolved = Settings.resolve_relative_db_path("sqlite+aiosqlite:///./test.db")

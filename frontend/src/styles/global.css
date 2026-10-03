@@ -1463,6 +1463,55 @@ body:has(.fm-header-filter-panel.open)::after {
   font-weight: 500;
 }
 
+.pc-print-prompt.hidden {
+  display: none;
+}
+
+.pc-print-prompt {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1000;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(460px, calc(100vw - 32px));
+  padding-right: 40px;
+  box-shadow: var(--shadow-lg);
+}
+
+.pc-print-prompt-message {
+  margin: 0;
+}
+
+.pc-print-prompt .fm-btn {
+  white-space: nowrap;
+}
+
+.pc-print-prompt-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+@media (max-width: 560px) {
+  .pc-print-prompt {
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    grid-template-columns: auto minmax(0, 1fr);
+    width: auto;
+  }
+
+  .pc-print-prompt .fm-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
 .rfid-write-progress {
   display: flex;
   flex-direction: column;

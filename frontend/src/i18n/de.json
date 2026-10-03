@@ -1551,9 +1551,11 @@
     "marginMm": "Rand (mm)",
     "printBorder": "Rand drucken",
     "presetLoaded": "Vorlage geladen.",
+    "presetSelectionFailed": "Vorlage geladen, aber die Auswahl konnte nicht synchronisiert werden. Laden Sie sie erneut, um es noch einmal zu versuchen.",
     "presetNameExists": "Dieser Name wird bereits verwendet. Bitte einen neuen Namen wählen.",
     "presetNameRequired": "Geben Sie einen Vorlagennamen ein.",
     "presetSaved": "Vorlage gespeichert.",
+    "presetSavedSelectionFailed": "Vorlage gespeichert, aber die Auswahl konnte nicht synchronisiert werden. Laden Sie sie erneut, um es noch einmal zu versuchen.",
     "presetSaveFailed": "Vorlage konnte nicht gespeichert werden.",
     "presetDeleted": "Vorlage gelöscht.",
     "presetDeleteFailed": "Vorlage konnte nicht gelöscht werden.",
@@ -1610,6 +1612,9 @@
     "elementShape": "Formelement"
   },
   "labelPrint": {
+    "pcPrintTitle": "Druckanfrage",
+    "pcPrintPrompt": "Etikett für Spule #{id} auf diesem PC drucken?",
+    "openPcPrint": "Druckfenster öffnen",
     "pageTitle": "FilaMan - Label-Druck",
     "backToOverview": "Zurück zur Übersicht",
     "backToSpool": "Zurück zur Spule",
