@@ -8,16 +8,14 @@ import {
   mergeExtraFieldValues,
   normalizeEntityExtraFieldDefinitions,
   normalizeSystemExtraFieldDefinitions,
+  renderDetailExtraFieldRows,
   renderEntityExtraFieldRows,
   renderRecordExtraField,
   renderUnregisteredExtraFieldRows,
   resolveRecordExtraFieldDefinition,
   unflattenCollectedSystemFieldValues,
 } from './entity-extra-fields'
-import {
-  buildDesignerExtraFieldsFromFilament,
-  buildFilamentExtraFieldsForPrint,
-} from './filament-label-data'
+import { buildDesignerExtraFieldsFromFilament, buildFilamentExtraFieldsForPrint } from './filament-label-data'
 import { buildDesignerExtraFieldsFromApiSpool } from './spool-label-data'
 
 const dryingTemperatureFilament = {
@@ -41,6 +39,31 @@ describe('entity extra field helpers', () => {
     ])
     expect(normalizeSystemExtraFieldDefinitions(fields)).toEqual(normalizeSystemExtraFieldDefinitions({ items: fields }))
     expect(normalizeSystemExtraFieldDefinitions({ items: 'invalid' })).toEqual([])
+  })
+
+  it('renders stored system, custom, and legacy values with one empty-value rule', () => {
+    const html = renderDetailExtraFieldRows(
+      { system_note: '', custom_note: null, legacy_note: '' },
+      {
+        custom_note: { label: 'Custom note', field_type: 'text' },
+        missing_custom: { label: 'Missing custom', field_type: 'text' },
+      },
+      {
+        system_note: { key: 'system_note', label: 'System note', field_type: 'text' },
+        missing_system: { key: 'missing_system', label: 'Missing system', field_type: 'text' },
+      },
+      'System field',
+    )
+
+    expect(html).toContain('System note')
+    expect(html).toContain('System field')
+    expect(html).toContain('Custom note')
+    expect(html).toContain('legacy_note')
+    expect(html).toContain('class="filament-spec-label"')
+    expect(html).toContain('class="filament-spec-value"')
+    expect(html.match(/>—</g)).toHaveLength(3)
+    expect(html).not.toContain('Missing system')
+    expect(html).not.toContain('Missing custom')
   })
 
   it('resolves dotted values from nested custom fields', () => {
@@ -81,12 +104,7 @@ describe('entity extra field helpers', () => {
     ]
     const systemKeys = new Set(['inspection'])
 
-    expect(
-      buildSystemExtraFieldDefinitionMap(
-        definitions,
-        definition => systemKeys.has(definition.key),
-      ),
-    ).toEqual({
+    expect(buildSystemExtraFieldDefinitionMap(definitions, definition => systemKeys.has(definition.key))).toEqual({
       inspection: definitions[0],
     })
   })
@@ -116,15 +134,12 @@ describe('entity extra field helpers', () => {
   })
 
   it('merges system and record-local values without losing nested siblings', () => {
-    expect(
-      mergeExtraFieldValues(
-        { drying: { duration: 4 }, vendor: 'ACME' },
-        { drying: { temperature: 55 } },
-      ),
-    ).toEqual({
-      drying: { duration: 4, temperature: 55 },
-      vendor: 'ACME',
-    })
+    expect(mergeExtraFieldValues({ drying: { duration: 4 }, vendor: 'ACME' }, { drying: { temperature: 55 } })).toEqual(
+      {
+        drying: { duration: 4, temperature: 55 },
+        vendor: 'ACME',
+      },
+    )
   })
 
   it('reconstructs dotted multiselect values as nested JSON', () => {
@@ -304,9 +319,7 @@ describe('entity extra field helpers', () => {
       },
     )
 
-    expect(fields.map(field => [field.key, field.label])).toEqual([
-      ['drying', 'System drying group'],
-    ])
+    expect(fields.map(field => [field.key, field.label])).toEqual([['drying', 'System drying group']])
   })
 
   it('can include empty record-local and System definitions for print selectors', () => {
@@ -390,32 +403,20 @@ describe('entity extra field helpers', () => {
     })
 
     expect(
-      resolveRecordExtraFieldDefinition(
-        'certification',
-        batchDefinition,
-        currentDefinitions,
-        false,
-      ),
+      resolveRecordExtraFieldDefinition('certification', batchDefinition, currentDefinitions, false),
     ).toMatchObject({
       label: 'Current record label',
       field_type: 'number',
       config: { unit: 'mm' },
     })
-    expect(
-      resolveRecordExtraFieldDefinition('certification', batchDefinition, {}, false),
-    ).toMatchObject({
+    expect(resolveRecordExtraFieldDefinition('certification', batchDefinition, {}, false)).toMatchObject({
       key: 'certification',
       label: 'certification',
       field_type: 'text',
     })
-    expect(
-      resolveRecordExtraFieldDefinition(
-        'certification',
-        batchDefinition,
-        currentDefinitions,
-        true,
-      ),
-    ).toBe(batchDefinition)
+    expect(resolveRecordExtraFieldDefinition('certification', batchDefinition, currentDefinitions, true)).toBe(
+      batchDefinition,
+    )
   })
 
   it('renders mixed-record batches with each record’s own label, type, and unit', () => {
@@ -433,15 +434,7 @@ describe('entity extra field helpers', () => {
       },
     })
 
-    expect(
-      renderRecordExtraField(
-        'inspection',
-        12.345,
-        batchDefinition,
-        secondRecordDefinitions,
-        false,
-      ),
-    ).toEqual({
+    expect(renderRecordExtraField('inspection', 12.345, batchDefinition, secondRecordDefinitions, false)).toEqual({
       label: 'Second record tolerance',
       value: '12.35 mm',
     })
@@ -466,15 +459,7 @@ describe('entity extra field helpers', () => {
       },
     })
 
-    expect(
-      renderRecordExtraField(
-        'inspection',
-        20,
-        systemDefinition,
-        recordDefinitions,
-        true,
-      ),
-    ).toEqual({
+    expect(renderRecordExtraField('inspection', 20, systemDefinition, recordDefinitions, true)).toEqual({
       label: 'System inspection',
       value: '20 %',
     })
@@ -482,7 +467,7 @@ describe('entity extra field helpers', () => {
 })
 
 describe('record-local fields in label designer', () => {
-  it('exposes legacy-named temperatures in the correct Extra Fields catalog', () => {
+  it('keeps legacy-named standard temperatures out of the Extra Fields catalog', () => {
     const fields = buildDesignerExtraFieldsFromFilament(
       {
         custom_fields: { extruder_temp: 215, bed_temp: 60 },
@@ -499,10 +484,7 @@ describe('record-local fields in label designer', () => {
       },
     )
 
-    expect(fields.map(field => [field.key, field.origin]).sort()).toEqual([
-      ['filament.bed_temp', 'custom'],
-      ['filament.extruder_temp', 'system'],
-    ])
+    expect(fields).toEqual([])
   })
 
   it('uses a dotted filament field label and unit', () => {

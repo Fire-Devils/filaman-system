@@ -200,7 +200,8 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
   }
 
   const designationElement = requiredElement<HTMLElement>(container, '.label-designation')
-  const fullDesignation = [data.designation, settings.showMaterial ? data.material : ''].filter(Boolean).join(' ')
+  const sameAsMaterial = data.designation.replace(/[^a-z0-9]/gi, '').toLowerCase() === data.material.replace(/[^a-z0-9]/gi, '').toLowerCase()
+  const fullDesignation = [data.designation, settings.showMaterial && !sameAsMaterial ? data.material : ''].filter(Boolean).join(' ')
   designationElement.textContent = fullDesignation
   designationElement.style.cssText = `font-size:${fontScale * 12}pt;display:${fullDesignation ? 'block' : 'none'}`
 
