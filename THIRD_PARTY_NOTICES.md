@@ -2,6 +2,12 @@
 
 FilaMan includes the following third-party software and fonts.
 
+## Moby seccomp profile
+
+`docker/chromium-seccomp.json` is derived from the Moby default seccomp
+profile v0.2.1, with modifications documented beside the profile. Moby is
+licensed under the Apache License 2.0; see `docker/LICENSE.chromium-seccomp`.
+
 ## interact.js
 
 Copyright (c) 2012-present Taye Adeyemi <dev@taye.me>

@@ -1,0 +1,27 @@
+---
+import LabelPrintBaseStyles from '../components/LabelPrintBaseStyles.astro'
+import '../styles/label-fonts.css'
+
+export const prerender = true
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Label renderer</title>
+    <LabelPrintBaseStyles />
+  </head>
+  <body>
+    <script>
+      import { renderApiLabel } from '../lib/label-api-render'
+
+      declare global {
+        interface Window {
+          renderApiLabel: typeof renderApiLabel
+        }
+      }
+      window.renderApiLabel = renderApiLabel
+    </script>
+  </body>
+</html>

@@ -1,10 +1,11 @@
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.api.deps import resolve_user_permissions
-from app.core.security import generate_token_secret, hash_password, hash_token
+from app.api.deps import ensure_any_permission, resolve_user_permissions
+from app.core.security import Principal, generate_token_secret, hash_password, hash_token
 from app.core.seeds import USER_PERMISSIONS
 from app.models import Device, Role, User, UserApiKey, UserRole, UserSession
 from tests.test_devices import (
@@ -326,6 +327,53 @@ class TestDeviceScopeAuth:
 
 
 class TestApiKeyScopeRestriction:
+    @pytest.mark.asyncio
+    async def test_empty_scopes_restrict_superadmin_api_key(self, client: AsyncClient, admin_user, db_session):
+        secret = generate_token_secret()
+        api_key = UserApiKey(
+            user_id=admin_user.id,
+            name="Restricted Superadmin Key",
+            key_hash=hash_token(secret),
+            scopes=[],
+        )
+        db_session.add(api_key)
+        await db_session.commit()
+        await db_session.refresh(api_key)
+
+        response = await client.get(
+            "/api/v1/labels/presets",
+            headers={"Authorization": f"ApiKey uak.{api_key.id}.{secret}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "forbidden"
+
+    @pytest.mark.asyncio
+    async def test_empty_scopes_restrict_superadmin_api_key_for_any_permission(self, admin_user, db_session):
+        principal = Principal(
+            auth_type="api_key",
+            user_id=admin_user.id,
+            is_superadmin=True,
+            scopes=[],
+        )
+
+        with pytest.raises(HTTPException) as rejected:
+            await ensure_any_permission(db_session, principal, "spools:update", "locations:update")
+
+        assert rejected.value.status_code == 403
+        assert rejected.value.detail["code"] == "forbidden"
+
+    @pytest.mark.asyncio
+    async def test_matching_scope_allows_superadmin_api_key_for_any_permission(self, admin_user, db_session):
+        principal = Principal(
+            auth_type="api_key",
+            user_id=admin_user.id,
+            is_superadmin=True,
+            scopes=["locations:update"],
+        )
+
+        await ensure_any_permission(db_session, principal, "spools:update", "locations:update")
+
     @pytest.mark.asyncio
     async def test_api_key_scope_intersection_denies_create_spool(self, client: AsyncClient, normal_user, db_session):
         secret = generate_token_secret()

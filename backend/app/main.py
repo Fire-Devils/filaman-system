@@ -526,10 +526,23 @@ async def allow_iframe_embedding(request, call_next):
 # Cache-Control Middleware for static files
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
-    response = await call_next(request)
     path = request.url.path
     is_api = path.startswith("/api/") or path.startswith("/auth/")
-    if not is_api and (
+    is_label_render = path.startswith("/api/v1/labels/spool/") and path.rstrip("/").endswith("/render")
+    try:
+        response = await call_next(request)
+    except Exception:
+        if not is_label_render:
+            raise
+        logger.exception("Unhandled label render error")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"},
+            headers={"Cache-Control": "no-store"},
+        )
+    if is_label_render:
+        response.headers["Cache-Control"] = "no-store"
+    elif not is_api and (
         path.startswith("/_astro/")
         or path.startswith("/img/")
         or path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))

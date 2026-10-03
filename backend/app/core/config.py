@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,11 +29,8 @@ class Settings(BaseSettings):
     @classmethod
     def resolve_relative_db_path(cls, v: str) -> str:
         """Resolve relative sqlite paths against PROJECT_ROOT."""
-        if v and (v.startswith("sqlite:///") or v.startswith("sqlite+aiosqlite:///")):
-            # Check for relative path indicator ./
-            if "/./" in v:
-                # Replace /./ with /<PROJECT_ROOT>/
-                return v.replace("/./", f"/{PROJECT_ROOT}/")
+        if v and v.startswith(("sqlite:///", "sqlite+aiosqlite:///")) and "/./" in v:
+            return v.replace("/./", f"/{PROJECT_ROOT}/")
         return v
 
     admin_email: str | None = None
@@ -54,6 +52,7 @@ class Settings(BaseSettings):
 
     # FilamentDB community database URL for lookup/autocomplete
     filamentdb_url: str = "https://db.filaman.app"
+    label_renderer: Literal["chromium", "basic"] = "basic"
 
 
 settings = Settings()

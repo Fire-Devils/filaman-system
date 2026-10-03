@@ -66,6 +66,7 @@ export function buildDesignerPresetCache(
         try {
           const data = normalizeDesignerPresetData(preset.data, presetType)
           return [{
+            databaseId: preset.id,
             name: preset.name,
             data,
           }]
@@ -166,16 +167,15 @@ export async function ensureLabelPresetBrowserMigration(userId: number): Promise
   await hydrateLabelPresetStorage(userId)
 }
 
+export async function refreshLabelPresetStorage(userId?: number): Promise<void> {
+  const resolvedUserId = userId ?? (await api.get<{ id: number }>('/me')).id
+  preparePresetOwner(resolvedUserId)
+  await fetchPresetDatabase()
+}
+
 export function hydrateLabelPresetStorage(userId?: number): Promise<void> {
   if (!hydrationPromise) {
-    const resolvedUserId = userId === undefined
-      ? api.get<{ id: number }>('/me').then(user => user.id)
-      : Promise.resolve(userId)
-    hydrationPromise = resolvedUserId
-      .then(id => {
-        preparePresetOwner(id)
-        return fetchPresetDatabase()
-      })
+    hydrationPromise = refreshLabelPresetStorage(userId)
       .catch((error) => {
         hydrationPromise = null
         console.warn('Could not load label presets from the database; using browser fallback', error)
@@ -193,7 +193,7 @@ function presetTypeForStorageKey(storageKey: string): PresetType | null {
 
 export async function saveLabelPreset(
   storageKey: string,
-  preset: { name: string; settings?: unknown; data?: LabelDesignerPresetData; id?: string },
+  preset: { name: string; settings?: unknown; data?: LabelDesignerPresetData; id?: string; databaseId?: number },
   previousName?: string,
   createOnly = false,
 ): Promise<boolean> {
@@ -207,13 +207,24 @@ export async function saveLabelPreset(
     return false
   }
   try {
-    await api.put<ApiLabelPreset>(
+    const saved = await api.put<ApiLabelPreset>(
       `/me/label-presets/${presetType}/item`,
       buildLabelPresetUpsertBody(storageKey, preset, previousName, createOnly),
     )
+    if (presetType !== 'sheet') preset.databaseId = saved.id
     return true
   } catch (error) {
     console.warn('Could not save label presets to the database', error)
+    return false
+  }
+}
+
+export async function selectLabelPreset(presetId: number | null): Promise<boolean> {
+  try {
+    await api.put('/me/label-presets/selection', { preset_id: presetId })
+    return true
+  } catch (error) {
+    console.warn('Could not select the label preset', error)
     return false
   }
 }

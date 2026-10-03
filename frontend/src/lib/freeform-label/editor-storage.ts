@@ -66,6 +66,7 @@ export function loadFreeformLabelDesign(options: {
 }
 
 export interface StoredPreset {
+  databaseId?: number
   name: string
   data: LabelDesignerPresetData
 }
@@ -85,12 +86,13 @@ function readPresetCandidates(storageKey: string): unknown[] {
 
 function normalizeStoredPreset(candidate: unknown, storageKey: string): StoredPreset | null {
   if (!candidate || typeof candidate !== 'object') return null
-  const { name, data, settings } = candidate as { name?: unknown; data?: unknown; settings?: unknown }
+  const { databaseId, name, data, settings } = candidate as { databaseId?: unknown; name?: unknown; data?: unknown; settings?: unknown }
   if (typeof name !== 'string' || !name.trim()) return null
   const payload = data ?? (settings ? { settings } : null)
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
   try {
     return {
+      ...(Number.isInteger(databaseId) && Number(databaseId) > 0 ? { databaseId: Number(databaseId) } : {}),
       name: name.trim().slice(0, 120),
       data: normalizeDesignerPresetData(payload, storageKey === FILAMENT_LABEL_PRESETS_KEY ? 'filament' : 'spool'),
     }

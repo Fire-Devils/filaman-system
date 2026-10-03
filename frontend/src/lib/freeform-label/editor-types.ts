@@ -65,7 +65,7 @@ export interface FreeformLabelDesignerEditorController {
   getDesign: () => LabelDesignV2
   savePreset: (asNew?: boolean) => Promise<string | null>
   loadSettings: (design?: LabelDesignV2) => boolean
-  loadPreset: (name: string, source?: 'own' | 'cross' | 'builtin') => boolean
+  loadPreset: (name: string, sourceOrSync?: 'own' | 'cross' | 'builtin' | boolean) => boolean
   refresh: () => Promise<void>
   refreshInteractions: () => Promise<void>
   refreshExtraFields: (extraFields: DesignerExtraField[]) => void

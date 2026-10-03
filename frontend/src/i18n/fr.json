@@ -1550,9 +1550,11 @@
     "marginMm": "Marge (mm)",
     "printBorder": "Imprimer la bordure",
     "presetLoaded": "Préréglage chargé.",
+    "presetSelectionFailed": "Préréglage chargé, mais la synchronisation de la sélection a échoué. Chargez-le à nouveau pour réessayer.",
     "presetNameExists": "Ce nom est déjà utilisé. Choisissez-en un autre.",
     "presetNameRequired": "Saisissez un nom de préréglage.",
     "presetSaved": "Préréglage enregistré.",
+    "presetSavedSelectionFailed": "Préréglage enregistré, mais la synchronisation de la sélection a échoué. Chargez-le à nouveau pour réessayer.",
     "presetSaveFailed": "Échec de l’enregistrement du préréglage.",
     "presetDeleted": "Préréglage supprimé.",
     "presetDeleteFailed": "Échec de la suppression du préréglage.",
@@ -1609,6 +1611,9 @@
     "elementShape": "Élément forme"
   },
   "labelPrint": {
+    "pcPrintTitle": "Demande d’impression",
+    "pcPrintPrompt": "Imprimer l’étiquette de la bobine n° {id} sur ce PC ?",
+    "openPcPrint": "Ouvrir la fenêtre d’impression",
     "pageTitle": "FilaMan - Impression d'étiquettes",
     "backToOverview": "Retour à la vue d'ensemble",
     "backToSpool": "Retour à la bobine",

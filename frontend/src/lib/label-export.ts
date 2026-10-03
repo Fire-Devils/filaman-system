@@ -16,6 +16,8 @@ const LABEL_CAPTURE_SCAN_ROWS = 64
 
 export interface LabelCaptureOptions {
   pixelRatio?: number
+  canvasWidth?: number
+  canvasHeight?: number
   resetZoom?: boolean
   resetTransform?: boolean
 }
@@ -151,6 +153,8 @@ async function renderCaptureCanvas(
 ) {
   return withCaptureTimerFrames(() => toCanvas(captureElement, {
     pixelRatio: options.pixelRatio ?? LABEL_EXPORT_PIXEL_RATIO,
+    canvasWidth: options.canvasWidth,
+    canvasHeight: options.canvasHeight,
     backgroundColor: '#ffffff',
     // Manufacturer logos can be object URLs; cache-busting would make blob: URLs invalid.
     cacheBust: false,

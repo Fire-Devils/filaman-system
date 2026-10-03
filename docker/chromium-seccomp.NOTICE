@@ -1,0 +1,5 @@
+This profile is derived from the Moby default seccomp profile v0.2.1:
+https://github.com/moby/profiles/blob/seccomp/v0.2.1/seccomp/default.json
+
+FilaMan modifies it to allow clone, setns, and unshare so Chromium can create
+its native sandbox namespaces, while retaining the socketcall restriction.
