@@ -56,6 +56,8 @@ const apiSpool = {
     diameter_mm: 1.75,
     finish_type: 'Glossy',
     density_g_cm3: 1.24,
+    extruder_temp_range_c: { min: 200, max: 220 },
+    bed_temp_range_c: { min: 60, max: 60 },
     price: 22.5,
     default_spool_weight_g: 250,
     spool_outer_diameter_mm: 200,
@@ -122,8 +124,8 @@ describe('spool label token contract', () => {
     const spoolKeys = SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key }) => key)
     const standardKeys = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS.map(({ key }) => key)
 
-    expect(standardKeys).not.toContain('filament.extruder_temp')
-    expect(standardKeys).not.toContain('filament.bed_temp')
+    expect(standardKeys).toContain('filament.extruder_temp')
+    expect(standardKeys).toContain('filament.bed_temp')
 
     expect(spoolKeys).toContain('spool_core_weight_g')
     expect(spoolKeys).toContain('stocked_in_at')
@@ -133,7 +135,7 @@ describe('spool label token contract', () => {
   it('continues resolving legacy temperature tokens in saved templates', () => {
     const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
 
-    expect(renderTemplateText('{filament.extruder_temp}', data)).toBe('215')
+    expect(renderTemplateText('{filament.extruder_temp}', data)).toBe('200–220')
     expect(renderTemplateText('{filament.bed_temp}', data)).toBe('60')
   })
 

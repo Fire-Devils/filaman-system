@@ -10,8 +10,10 @@ import {
   formatDateTimeDisplay,
   formatDateTimeInputValue,
   formatExtraFieldDefaultValue,
+  formatNumericRange,
   isUnsafeExtraFieldPath,
   parseExtraFieldDefaultValue,
+  parseNumericRangeInputs,
   readLosslessDateTimeInputValue,
   renderUnknownFieldPlainText,
   serializeExtraFieldDefaultValue,
@@ -129,47 +131,59 @@ describe('lossless datetime controls', () => {
 
 describe('typed extra-field defaults', () => {
   it('roundtrips range defaults as compact JSON', () => {
-    const serialized = serializeExtraFieldDefaultValue('range', { min: 190, max: 220 })
+    const serialized = serializeExtraFieldDefaultValue('range', {
+      min: 190,
+      max: 220,
+    })
 
     expect(serialized).toBe('{"min":190,"max":220}')
-    expect(parseExtraFieldDefaultValue({
-      field_type: 'range',
-      default_value: serialized,
-    })).toEqual({ min: 190, max: 220 })
-    expect(formatExtraFieldDefaultValue({
-      field_type: 'range',
-      default_value: serialized,
-    })).toBe('190–220')
+    expect(
+      parseExtraFieldDefaultValue({
+        field_type: 'range',
+        default_value: serialized,
+      }),
+    ).toEqual({ min: 190, max: 220 })
+    expect(
+      formatExtraFieldDefaultValue({
+        field_type: 'range',
+        default_value: serialized,
+      }),
+    ).toBe('190–220')
   })
 
   it('roundtrips multi-select defaults as JSON', () => {
     const serialized = serializeExtraFieldDefaultValue('multiselect', ['PLA', 'PETG'])
 
     expect(serialized).toBe('["PLA","PETG"]')
-    expect(parseExtraFieldDefaultValue({
-      field_type: 'multiselect',
-      default_value: serialized,
-    })).toEqual(['PLA', 'PETG'])
-    expect(formatExtraFieldDefaultValue({
-      field_type: 'multiselect',
-      default_value: serialized,
-    })).toBe('PLA, PETG')
+    expect(
+      parseExtraFieldDefaultValue({
+        field_type: 'multiselect',
+        default_value: serialized,
+      }),
+    ).toEqual(['PLA', 'PETG'])
+    expect(
+      formatExtraFieldDefaultValue({
+        field_type: 'multiselect',
+        default_value: serialized,
+      }),
+    ).toBe('PLA, PETG')
   })
 
   it('resolves the TODAY sentinel in local date form', () => {
-    expect(parseExtraFieldDefaultValue(
-      { field_type: 'date', default_value: 'TODAY' },
-      new Date(2026, 6, 26, 12),
-    )).toBe('2026-07-26')
+    expect(parseExtraFieldDefaultValue({ field_type: 'date', default_value: 'TODAY' }, new Date(2026, 6, 26, 12))).toBe(
+      '2026-07-26',
+    )
   })
 
   it('serializes and formats checkbox defaults', () => {
     expect(serializeExtraFieldDefaultValue('checkbox', true)).toBe('true')
     expect(serializeExtraFieldDefaultValue('checkbox', false)).toBe('false')
-    expect(formatExtraFieldDefaultValue({
-      field_type: 'checkbox',
-      default_value: 'true',
-    })).toBe('✓')
+    expect(
+      formatExtraFieldDefaultValue({
+        field_type: 'checkbox',
+        default_value: 'true',
+      }),
+    ).toBe('✓')
   })
 })
 
@@ -249,7 +263,9 @@ describe('renderFieldInput — number (and legacy float alias)', () => {
   })
 
   it('prefills value from flat fallback', () => {
-    const html = renderFieldInput(field({ field_type: 'number' }), null, { test_key: 3.14 })
+    const html = renderFieldInput(field({ field_type: 'number' }), null, {
+      test_key: 3.14,
+    })
     expect(html).toContain('value="3.14"')
   })
 })
@@ -272,7 +288,10 @@ describe('renderFieldInput — range', () => {
   })
 
   it('populates min/max from rawValue object', () => {
-    const html = renderFieldInput(field({ field_type: 'range' }), { min: 100, max: 250 })
+    const html = renderFieldInput(field({ field_type: 'range' }), {
+      min: 100,
+      max: 250,
+    })
     expect(html).toContain('value="100"')
     expect(html).toContain('value="250"')
   })
@@ -292,15 +311,21 @@ describe('renderFieldInput — range', () => {
   })
 
   it('marks an existing null endpoint range for shape preservation', () => {
-    const html = renderFieldInput(field({ field_type: 'range' }), { min: 190, max: null })
+    const html = renderFieldInput(field({ field_type: 'range' }), {
+      min: 190,
+      max: null,
+    })
     expect(html).toContain('data-range-present="true"')
   })
 
   it('prefills min/max from a typed default', () => {
-    const html = renderFieldInput(field({
-      field_type: 'range',
-      default_value: '{"min":190,"max":220}',
-    }), null)
+    const html = renderFieldInput(
+      field({
+        field_type: 'range',
+        default_value: '{"min":190,"max":220}',
+      }),
+      null,
+    )
 
     expect(html).toContain('value="190"')
     expect(html).toContain('value="220"')
@@ -309,10 +334,7 @@ describe('renderFieldInput — range', () => {
 
 describe('renderFieldInput — datetime', () => {
   it('renders a datetime-local input and preserves the stored value', () => {
-    const html = renderFieldInput(
-      field({ field_type: 'datetime' }),
-      '2026-07-25T14:30',
-    )
+    const html = renderFieldInput(field({ field_type: 'datetime' }), '2026-07-25T14:30')
 
     expect(html).toContain('type="datetime-local"')
     expect(html).toContain('data-type="datetime"')
@@ -338,10 +360,13 @@ describe('renderFieldInput — datetime', () => {
   })
 
   it('prefills a valid datetime default', () => {
-    const html = renderFieldInput(field({
-      field_type: 'datetime',
-      default_value: '2026-07-26T14:30',
-    }), null)
+    const html = renderFieldInput(
+      field({
+        field_type: 'datetime',
+        default_value: '2026-07-26T14:30',
+      }),
+      null,
+    )
 
     expect(html).toContain('type="datetime-local"')
     expect(html).toContain('value="2026-07-26T14:30"')
@@ -351,19 +376,28 @@ describe('renderFieldInput — datetime', () => {
 describe('collectSystemFieldValues', () => {
   function rootWith(scalars: unknown[], multiselect: unknown[] = []): ParentNode {
     return {
-      querySelectorAll: (selector: string) => selector === '.system-field-input' ? scalars : multiselect,
+      querySelectorAll: (selector: string) => (selector === '.system-field-input' ? scalars : multiselect),
     } as unknown as ParentNode
   }
 
   it('collects scalar, numeric, checkbox, and multiselect values centrally', () => {
-    const result = collectSystemFieldValues(rootWith([
-      { dataset: { key: 'name', type: 'text' }, value: 'PLA' },
-      { dataset: { key: 'temp', type: 'number' }, value: '215.5' },
-      { dataset: { key: 'enabled', type: 'checkbox' }, checked: true, value: '' },
-    ], [
-      { dataset: { key: 'tags' }, checked: true, value: 'Matte' },
-      { dataset: { key: 'tags' }, checked: false, value: 'Silk' },
-    ]))
+    const result = collectSystemFieldValues(
+      rootWith(
+        [
+          { dataset: { key: 'name', type: 'text' }, value: 'PLA' },
+          { dataset: { key: 'temp', type: 'number' }, value: '215.5' },
+          {
+            dataset: { key: 'enabled', type: 'checkbox' },
+            checked: true,
+            value: '',
+          },
+        ],
+        [
+          { dataset: { key: 'tags' }, checked: true, value: 'Matte' },
+          { dataset: { key: 'tags' }, checked: false, value: 'Silk' },
+        ],
+      ),
+    )
 
     expect(result).toEqual({
       flat: { name: 'PLA', temp: 215.5, enabled: 'true' },
@@ -374,33 +408,37 @@ describe('collectSystemFieldValues', () => {
   it('preserves a timezone-bearing datetime when its local display was not edited', () => {
     const raw = '2026-07-25T14:30:45.123Z'
     const local = formatDateTimeInputValue(raw)!
-    const result = collectSystemFieldValues(rootWith([
-      {
-        dataset: {
-          key: 'certified_at',
-          type: 'datetime',
-          originalRaw: raw,
-          originalDisplay: local,
+    const result = collectSystemFieldValues(
+      rootWith([
+        {
+          dataset: {
+            key: 'certified_at',
+            type: 'datetime',
+            originalRaw: raw,
+            originalDisplay: local,
+          },
+          value: local,
         },
-        value: local,
-      },
-    ]))
+      ]),
+    )
 
     expect(result?.flat.certified_at).toBe(raw)
   })
 
   it('stores the new local value when a datetime was deliberately edited', () => {
-    const result = collectSystemFieldValues(rootWith([
-      {
-        dataset: {
-          key: 'certified_at',
-          type: 'datetime',
-          originalRaw: '2026-07-25T14:30:45.123Z',
-          originalDisplay: '2026-07-25T09:30',
+    const result = collectSystemFieldValues(
+      rootWith([
+        {
+          dataset: {
+            key: 'certified_at',
+            type: 'datetime',
+            originalRaw: '2026-07-25T14:30:45.123Z',
+            originalDisplay: '2026-07-25T09:30',
+          },
+          value: '2026-07-26T10:45',
         },
-        value: '2026-07-26T10:45',
-      },
-    ]))
+      ]),
+    )
 
     expect(result?.flat.certified_at).toBe('2026-07-26T10:45')
   })
@@ -408,21 +446,37 @@ describe('collectSystemFieldValues', () => {
   it('rejects a range whose minimum exceeds its maximum', () => {
     let clearFromMin: (() => void) | undefined
     const maxInput = {
-      dataset: { key: 'temps.max', type: 'number', rangeKey: 'temps', rangeEnd: 'max' },
+      dataset: {
+        key: 'temps.max',
+        type: 'number',
+        rangeKey: 'temps',
+        rangeEnd: 'max',
+      },
       value: '100',
-      setCustomValidity(message: string) { this.validationMessage = message },
+      setCustomValidity(message: string) {
+        this.validationMessage = message
+      },
       addEventListener() {},
       reportValidity() {},
       validationMessage: '',
     }
-    const result = collectSystemFieldValues(rootWith([
-      {
-        dataset: { key: 'temps.min', type: 'number', rangeKey: 'temps', rangeEnd: 'min' },
-        value: '200',
-        addEventListener(_event: string, listener: () => void) { clearFromMin = listener },
-      },
-      maxInput,
-    ]))
+    const result = collectSystemFieldValues(
+      rootWith([
+        {
+          dataset: {
+            key: 'temps.min',
+            type: 'number',
+            rangeKey: 'temps',
+            rangeEnd: 'min',
+          },
+          value: '200',
+          addEventListener(_event: string, listener: () => void) {
+            clearFromMin = listener
+          },
+        },
+        maxInput,
+      ]),
+    )
 
     expect(result).toBeNull()
     expect(maxInput.validationMessage).toContain('Maximum')
@@ -443,10 +497,7 @@ describe('collectSystemFieldValues', () => {
       setCustomValidity() {},
     })
 
-    const result = collectSystemFieldValues(rootWith([
-      input('min', '190'),
-      input('max', ''),
-    ]))
+    const result = collectSystemFieldValues(rootWith([input('min', '190'), input('max', '')]))
 
     expect(result?.flat).toEqual({ 'temps.min': 190, 'temps.max': null })
     expect(unflattenFieldValues(result?.flat ?? {})).toEqual({
@@ -457,11 +508,13 @@ describe('collectSystemFieldValues', () => {
 
 describe('unflattenFieldValues', () => {
   it('builds range objects without coercing typed values', () => {
-    expect(unflattenFieldValues({
-      'temps.min': 190.5,
-      'temps.max': 220,
-      numeric_text: '00123',
-    })).toEqual({
+    expect(
+      unflattenFieldValues({
+        'temps.min': 190.5,
+        'temps.max': 220,
+        numeric_text: '00123',
+      }),
+    ).toEqual({
       temps: { min: 190.5, max: 220 },
       numeric_text: '00123',
     })
@@ -483,12 +536,14 @@ describe('renderFieldInput — date', () => {
   it('prefills a TODAY default', () => {
     const expected = new Date()
     const pad = (part: number) => String(part).padStart(2, '0')
-    const localToday =
-      `${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`
-    const html = renderFieldInput(field({
-      field_type: 'date',
-      default_value: 'TODAY',
-    }), null)
+    const localToday = `${expected.getFullYear()}-${pad(expected.getMonth() + 1)}-${pad(expected.getDate())}`
+    const html = renderFieldInput(
+      field({
+        field_type: 'date',
+        default_value: 'TODAY',
+      }),
+      null,
+    )
 
     expect(html).toContain(`value="${localToday}"`)
   })
@@ -525,11 +580,14 @@ describe('renderFieldInput — multiselect', () => {
   })
 
   it('marks default options as checked when no value exists', () => {
-    const html = renderFieldInput(field({
-      field_type: 'multiselect',
-      options: opts,
-      default_value: '["Red","Blue"]',
-    }), null)
+    const html = renderFieldInput(
+      field({
+        field_type: 'multiselect',
+        options: opts,
+        default_value: '["Red","Blue"]',
+      }),
+      null,
+    )
 
     expect(html.match(/ checked/g)).toHaveLength(2)
   })
@@ -614,11 +672,14 @@ describe('renderFieldInput — checkbox', () => {
   })
 
   it('uses a true default when no value exists', () => {
-    const html = renderFieldInput(field({
-      field_type: 'checkbox',
-      label: 'L',
-      default_value: 'true',
-    }), null)
+    const html = renderFieldInput(
+      field({
+        field_type: 'checkbox',
+        label: 'L',
+        default_value: 'true',
+      }),
+      null,
+    )
     expect(html).toContain(' checked')
   })
 })
@@ -642,11 +703,14 @@ describe('renderFieldInput — dropdown', () => {
   })
 
   it('selects a configured default option when no value exists', () => {
-    const html = renderFieldInput(field({
-      field_type: 'dropdown',
-      options: ['PLA', 'PETG'],
-      default_value: 'PETG',
-    }), null)
+    const html = renderFieldInput(
+      field({
+        field_type: 'dropdown',
+        options: ['PLA', 'PETG'],
+        default_value: 'PETG',
+      }),
+      null,
+    )
 
     expect(html).toContain('value="PETG" selected')
   })
@@ -724,18 +788,29 @@ describe('renderFieldDisplay — number', () => {
 })
 
 describe('renderFieldDisplay — range', () => {
+  it('renders equal endpoints as one number', () => {
+    const html = renderFieldDisplay(field({ field_type: 'range', config: { unit: '°C' } }), { min: 210, max: 210 })
+    expect(html).toContain('210')
+    expect(html).toContain('°C')
+    expect(html).not.toContain('210–210')
+    expect(formatNumericRange({ min: 210, max: 210 })).toBe('210')
+  })
+
   it('renders min–max with en dash', () => {
-    const html = renderFieldDisplay(field({ field_type: 'range' }), { min: 100, max: 250 })
+    const html = renderFieldDisplay(field({ field_type: 'range' }), {
+      min: 100,
+      max: 250,
+    })
     expect(html).toContain('100')
     expect(html).toContain('250')
     expect(html).toContain('–')
   })
 
   it('applies decimal places to both bounds', () => {
-    const html = renderFieldDisplay(
-      field({ field_type: 'range', config: { decimal_places: 1 } }),
-      { min: 100, max: 250 }
-    )
+    const html = renderFieldDisplay(field({ field_type: 'range', config: { decimal_places: 1 } }), {
+      min: 100,
+      max: 250,
+    })
     expect(html).toContain('100.0')
     expect(html).toContain('250.0')
   })
@@ -743,6 +818,19 @@ describe('renderFieldDisplay — range', () => {
   it('returns string for non-object value', () => {
     const result = renderFieldDisplay(field({ field_type: 'range' }), 'not-an-object')
     expect(result).toContain('not-an-object')
+  })
+})
+
+describe('parseNumericRangeInputs', () => {
+  it('keeps one entered number as scalar shorthand', () => {
+    expect(parseNumericRangeInputs('210', '')).toBe(210)
+  })
+
+  it('returns the canonical range input when To is present', () => {
+    expect(parseNumericRangeInputs('200', '220')).toEqual({
+      min: 200,
+      max: 220,
+    })
   })
 })
 
@@ -764,8 +852,7 @@ describe('renderFieldDisplay — datetime', () => {
   })
 
   it('keeps an invalid legacy value visible', () => {
-    expect(renderFieldDisplay(field({ field_type: 'datetime' }), 'unknown'))
-      .toBe('<span>unknown</span>')
+    expect(renderFieldDisplay(field({ field_type: 'datetime' }), 'unknown')).toBe('<span>unknown</span>')
   })
 })
 
@@ -848,16 +935,15 @@ describe('renderFieldPlainText', () => {
   })
 
   it('formats ranges without object stringification', () => {
-    const result = renderFieldPlainText(
-      field({ field_type: 'range', config: { decimal_places: 1, unit: '°C' } }),
-      { min: 190, max: 215 },
-    )
+    const result = renderFieldPlainText(field({ field_type: 'range', config: { decimal_places: 1, unit: '°C' } }), {
+      min: 190,
+      max: 215,
+    })
     expect(result).toBe('190.0–215.0 °C')
   })
 
   it('formats multiselect values with readable separators', () => {
-    expect(renderFieldPlainText(field({ field_type: 'multiselect' }), ['Matte', 'Silk']))
-      .toBe('Matte, Silk')
+    expect(renderFieldPlainText(field({ field_type: 'multiselect' }), ['Matte', 'Silk'])).toBe('Matte, Silk')
   })
 
   it('prints datetimes compactly without seconds or timezone metadata', () => {
