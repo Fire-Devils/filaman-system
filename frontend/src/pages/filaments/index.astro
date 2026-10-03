@@ -100,11 +100,31 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="filaments.colSubgroup" data-sort="material_subgroup" class="sortable col-subgroup">Subgroup</th>
           <th data-i18n="filaments.colWeight" data-sort="raw_material_weight_g" class="sortable col-weight">Material Weight</th>
           <th data-i18n="filaments.colDensity" data-sort="density_g_cm3" class="sortable col-density">Density</th>
+          <th data-i18n="filaments.manufacturerSku" class="col-sku">Manufacturer SKU</th>
+          <th data-i18n="filaments.extruderTemperature" class="col-extruder_temp">Extruder temperature</th>
+          <th data-i18n="filaments.bedTemperature" class="col-bed_temp">Bed temperature</th>
+          <th data-i18n="filaments.datasheetUrl" class="col-datasheet">Datasheet</th>
+          <th data-i18n="filaments.imageUrl" class="col-image">Image</th>
+          <th data-i18n="filaments.discontinued" class="col-discontinued">Discontinued</th>
+          <th data-i18n="filaments.dryingTemperature" class="col-drying_temp">Drying temperature</th>
+          <th data-i18n="filaments.dryingTime" class="col-drying_time">Drying time</th>
+          <th data-i18n="filaments.softeningTemperature" class="col-softening_temp">Softening temperature</th>
+          <th data-i18n="filaments.coolingFan" class="col-cooling_fan">Cooling fan</th>
+          <th data-i18n="filaments.chamberTemperature" class="col-chamber_temp">Chamber temperature</th>
+          <th data-i18n="filaments.maxVolumetricSpeed" class="col-max_vol_speed">Max volumetric speed</th>
+          <th data-i18n="filaments.flowRatio" class="col-flow_ratio">Flow ratio</th>
+          <th data-i18n="filaments.pressureAdvance" class="col-pressure_advance">Pressure advance</th>
+          <th data-i18n="filaments.amsCompatibility" class="col-ams">AMS compatibility</th>
+          <th data-i18n="filaments.buildPlateCompatibility" class="col-build_plates">Build plate compatibility</th>
+          <th data-i18n="filaments.priceCurrency" class="col-currency">Price currency</th>
+          <th data-i18n="spools.spoolOuterDiameter" class="col-spool_outer">Spool outer diameter</th>
+          <th data-i18n="spools.spoolWidth" class="col-spool_width">Spool width</th>
+          <th data-i18n="spools.spoolMaterial" class="col-spool_material">Spool material</th>
         </tr>
       </thead>
       <tbody id="filaments-table">
         <tr>
-          <td colspan="14" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="34" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -143,7 +163,7 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
-    import type { SystemExtraFieldDef } from '../../lib/extra-fields'
+    import { formatNumericRange, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
@@ -537,7 +557,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load filaments:', error)
         document.getElementById('filaments-table')!.innerHTML = `
           <tr>
-            <td colspan="14" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
+            <td colspan="34" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
           </tr>
         `
       }
@@ -560,7 +580,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || Object.entries(columnFilters).some(([key, value]) => isEffectiveColumnFilterActive(key, value))
         tbody.innerHTML = `
           <tr>
-            <td colspan="14" style="text-align: center; color: var(--text-muted);">
+            <td colspan="34" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
@@ -574,7 +594,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function renderFilamentRow(f: any): string {
-      const currency = getCurrency()
+      const currency = f.price_currency || getCurrency()
       return `
         <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" /></td>
@@ -594,6 +614,26 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-subgroup" style="padding: 12px; color: var(--text-muted);">${f.material_subgroup || '-'}</td>
           <td class="col-weight" style="padding: 12px; font-family: monospace;">${f.raw_material_weight_g != null ? f.raw_material_weight_g + 'g' : '-'}</td>
           <td class="col-density" style="padding: 12px; font-family: monospace;">${f.density_g_cm3 != null ? f.density_g_cm3 + ' g/cm\u00B3' : '-'}</td>
+          <td class="col-sku" style="padding: 12px;">${f.manufacturer_sku || '-'}</td>
+          <td class="col-extruder_temp" style="padding: 12px;">${formatNumericRange(f.extruder_temp_range_c) || '-'}${f.extruder_temp_range_c ? ' °C' : ''}</td>
+          <td class="col-bed_temp" style="padding: 12px;">${formatNumericRange(f.bed_temp_range_c) || '-'}${f.bed_temp_range_c ? ' °C' : ''}</td>
+          <td class="col-datasheet" style="padding: 12px;">${f.datasheet_url ? '\u2713' : '-'}</td>
+          <td class="col-image" style="padding: 12px;">${f.image_url ? '\u2713' : '-'}</td>
+          <td class="col-discontinued" style="padding: 12px;">${f.is_discontinued ? '\u2713' : '-'}</td>
+          <td class="col-drying_temp" style="padding: 12px;">${f.drying_temp_c != null ? `${f.drying_temp_c} °C` : '-'}</td>
+          <td class="col-drying_time" style="padding: 12px;">${f.drying_time_hours != null ? `${f.drying_time_hours} h` : '-'}</td>
+          <td class="col-softening_temp" style="padding: 12px;">${f.softening_temp_c != null ? `${f.softening_temp_c} °C` : '-'}</td>
+          <td class="col-cooling_fan" style="padding: 12px;">${formatNumericRange(f.cooling_fan_range_percent) || '-'}${f.cooling_fan_range_percent ? '%' : ''}</td>
+          <td class="col-chamber_temp" style="padding: 12px;">${f.chamber_temp_c != null ? `${f.chamber_temp_c} °C` : '-'}</td>
+          <td class="col-max_vol_speed" style="padding: 12px;">${f.max_volumetric_speed_mm3_s != null ? `${f.max_volumetric_speed_mm3_s} mm³/s` : '-'}</td>
+          <td class="col-flow_ratio" style="padding: 12px;">${f.flow_ratio ?? '-'}</td>
+          <td class="col-pressure_advance" style="padding: 12px;">${f.pressure_advance_k ?? '-'}</td>
+          <td class="col-ams" style="padding: 12px;">${f.ams_compatibility?.join(', ') || '-'}</td>
+          <td class="col-build_plates" style="padding: 12px;">${f.build_plate_compatibility?.join(', ') || '-'}</td>
+          <td class="col-currency" style="padding: 12px;">${f.price_currency || '-'}</td>
+          <td class="col-spool_outer" style="padding: 12px;">${f.spool_outer_diameter_mm != null ? `${f.spool_outer_diameter_mm} mm` : '-'}</td>
+          <td class="col-spool_width" style="padding: 12px;">${f.spool_width_mm != null ? `${f.spool_width_mm} mm` : '-'}</td>
+          <td class="col-spool_material" style="padding: 12px;">${f.spool_material || '-'}</td>
           ${((window as any).__filamentExtraFields || []).map((ef: any) => {
             const val = f.custom_fields?.[ef.key]
             const display = ef.field_type === 'checkbox' ? (val ? '\u2713' : '\u2717') : (val ?? '-')
@@ -611,7 +651,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || Object.entries(columnFilters).some(([key, value]) => isEffectiveColumnFilterActive(key, value))
         tbody.innerHTML = `
           <tr>
-            <td colspan="14" style="text-align: center; color: var(--text-muted);">
+            <td colspan="34" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
@@ -639,7 +679,7 @@ import Layout from '../../layouts/Layout.astro'
         const gid = `group-${groupIdx}`
         html += `
           <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
-            <td colspan="14" style="padding: 10px 12px; color: var(--text);">
+            <td colspan="34" style="padding: 10px 12px; color: var(--text);">
               <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.label}</span>
               <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${t('filaments.filamentsInGroup', { count: group.filaments.length })}</span>
             </td>
@@ -968,6 +1008,26 @@ import Layout from '../../layouts/Layout.astro'
           { key: 'subgroup', label: t('filaments.colSubgroup') },
           { key: 'weight', label: t('filaments.colWeight') },
           { key: 'density', label: t('filaments.colDensity') },
+          { key: 'sku', label: t('filaments.manufacturerSku') },
+          { key: 'extruder_temp', label: t('filaments.extruderTemperature') },
+          { key: 'bed_temp', label: t('filaments.bedTemperature') },
+          { key: 'datasheet', label: t('filaments.datasheetUrl') },
+          { key: 'image', label: t('filaments.imageUrl') },
+          { key: 'discontinued', label: t('filaments.discontinued') },
+          { key: 'drying_temp', label: t('filaments.dryingTemperature') },
+          { key: 'drying_time', label: t('filaments.dryingTime') },
+          { key: 'softening_temp', label: t('filaments.softeningTemperature') },
+          { key: 'cooling_fan', label: t('filaments.coolingFan') },
+          { key: 'chamber_temp', label: t('filaments.chamberTemperature') },
+          { key: 'max_vol_speed', label: t('filaments.maxVolumetricSpeed') },
+          { key: 'flow_ratio', label: t('filaments.flowRatio') },
+          { key: 'pressure_advance', label: t('filaments.pressureAdvance') },
+          { key: 'ams', label: t('filaments.amsCompatibility') },
+          { key: 'build_plates', label: t('filaments.buildPlateCompatibility') },
+          { key: 'currency', label: t('filaments.priceCurrency') },
+          { key: 'spool_outer', label: t('spools.spoolOuterDiameter') },
+          { key: 'spool_width', label: t('spools.spoolWidth') },
+          { key: 'spool_material', label: t('spools.spoolMaterial') },
         ],
       },
     ]
