@@ -1,0 +1,5 @@
+services:
+  filaman-system-app:
+    image: ghcr.io/fire-devils/filaman-system:latest-chromium
+    security_opt:
+      - seccomp=./docker/chromium-seccomp.json

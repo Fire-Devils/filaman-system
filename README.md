@@ -15,6 +15,7 @@ FilaMan is a comprehensive filament management system for 3D printing. It helps 
 
 ### Documentation
 The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
+See the [label rendering and print-request API](docs/label-api.md) for device and client integration.
 
 ### 💡 Hardware Extension: FilaMan ESP32 Scale
 To unlock the full potential of this system, we highly recommend our companion hardware project:
@@ -73,6 +74,14 @@ docker run -d \
 The application will be available at `http://localhost:8083`.
 - **Default Email:** `admin@example.com`
 - **Default Password:** `admin123`
+
+The standard image uses the lightweight Basic API label renderer. For exact
+saved-preset rendering, use the `-chromium` image with the supplied sandbox
+profile:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.chromium.yml up -d
+```
 
 ### Build Docker Container Yourself
 
