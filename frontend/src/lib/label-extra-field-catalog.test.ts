@@ -67,7 +67,7 @@ const scopeCatalogField = (
 ).scopeLabelExtraField
 
 describe('label extra-field catalog', () => {
-  it('shows only System Extra Fields in batch mode', () => {
+  it('shows only System Extra Field tokens and batch notes in Custom sections', () => {
     const groups = buildCatalogGroups?.(
       [
         { key: 'filament.drying_temp', label: 'Drying temperature', source: 'filament', origin: 'system' },
@@ -85,6 +85,8 @@ describe('label extra-field catalog', () => {
     }))).toEqual([
       { source: 'filament', origin: 'system', keys: ['filament.drying_temp'] },
       { source: 'spool', origin: 'system', keys: ['spool.bin'] },
+      { source: 'filament', origin: 'custom', keys: [] },
+      { source: 'spool', origin: 'custom', keys: [] },
     ])
   })
 
@@ -144,7 +146,7 @@ describe('label extra-field catalog', () => {
     })
   })
 
-  it('labels a batch System section and explains that per-record fields are disabled', () => {
+  it('labels a batch Extra Fields section and explains disabled per-record fields under Custom Fields', () => {
     const container = document.createElement('div')
     appendCatalogGroup?.(
       container,
@@ -168,8 +170,18 @@ describe('label extra-field catalog', () => {
       },
     )
 
-    expect(container.querySelector('.ds-tokens-group-label')?.textContent)
-      .toBe('Filament System Extra Fields')
+    appendCatalogGroup?.(
+      container,
+      { source: 'filament', origin: 'custom', fields: [] },
+      {
+        batchMode: true,
+        makeChip: () => document.createElement('button'),
+        translate: (_key, fallback) => fallback,
+      },
+    )
+
+    expect([...container.querySelectorAll('.ds-tokens-group-label')].map(node => node.textContent))
+      .toEqual(['Extra Fields', 'Custom Fields'])
     expect(container.querySelector('.ds-token-chip')?.getAttribute('title'))
       .toBe('{extra.filament.humidity}')
     expect(container.querySelector('.ds-batch-custom-fields-note')?.textContent)

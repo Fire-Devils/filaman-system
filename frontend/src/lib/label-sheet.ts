@@ -5,14 +5,33 @@ import type {
 import { deleteLabelPreset, saveLabelPreset } from './label-preset-storage'
 import {
   bindFixedPreviewToolbar,
-  stripElementIds,
+  prepareLabelOutputClone,
 } from './label-preview-dom'
+import { prepareCroppedImages } from './freeform-label/cropped-image'
+import { getTransientPresetCache, setTransientPresetCache } from './freeform-label/editor-storage'
+import type { LabelKind } from './freeform-label/types'
+import { t } from './i18n'
 
 export const LABEL_SHEET_SETTINGS_KEY = 'filaman-label-sheet-settings-v1'
 export const LABEL_SHEET_PRESETS_KEY = 'filaman-label-sheet-presets-v1'
 export const LABEL_OUTPUT_MODE_KEY = 'filaman-label-output-mode-v1'
+export const LABEL_SHEET_SOURCE_KEY = 'filaman-label-sheet-source-v1'
 
 export type LabelOutputMode = 'individual' | 'sheet'
+export type LabelDesignerPresetSource = LabelKind | 'builtin'
+export interface LabelDesignerPresetRef {
+  source: LabelDesignerPresetSource
+  name: string
+  widthMm?: number
+  heightMm?: number
+}
+export interface LabelDesignerPresetGroup {
+  label: string
+  presets: LabelDesignerPresetRef[]
+}
+export type LabelSheetSource =
+  | { type: 'standard'; presetName?: never }
+  | { type: 'designer'; presetName: string; presetSource?: LabelDesignerPresetSource }
 
 export interface LabelSheetSettings {
   paperSize: 'a4' | 'letter' | 'custom'
@@ -65,10 +84,19 @@ export interface LabelSheetLayout {
   cellsPerPage: number
 }
 
+export type SheetLabelSetup = LabelSheetSource & {
+  widthMm: number
+  heightMm: number
+  name: string
+}
+
 export interface LabelSheetControls {
   getOutputMode: () => LabelOutputMode
   getSettings: () => LabelSheetSettings
-  setOutputMode: (mode: LabelOutputMode) => void
+  setOutputMode: (mode: LabelOutputMode, options?: { notify?: boolean }) => void
+  getSource: () => LabelSheetSource
+  setSource: (source: LabelSheetSource) => void
+  setDesignerPresets: (groups: LabelDesignerPresetGroup[], selected?: LabelDesignerPresetRef) => void
 }
 
 export interface LabelSheetPreviewOptions {
@@ -95,6 +123,13 @@ const LARGE_JOB_LABEL_LIMIT = 500
 const LARGE_JOB_PAGE_LIMIT = 50
 const originalPositions = new WeakMap<HTMLElement, { parent: Node; nextSibling: Node | null }>()
 const confirmedLargeJobs = new Set<string>()
+
+function createSelectOption(label: string, value: string) {
+  const option = document.createElement('option')
+  option.textContent = label
+  option.value = value
+  return option
+}
 
 const DEFAULT_SETTINGS: LabelSheetSettings = {
   paperSize: 'a4',
@@ -238,7 +273,8 @@ function writeStoredOutputMode(mode: LabelOutputMode) {
 
 function readStoredPresets(): LabelSheetPreset[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(LABEL_SHEET_PRESETS_KEY) || '[]')
+    const raw = getTransientPresetCache(LABEL_SHEET_PRESETS_KEY)
+      ?? JSON.parse(localStorage.getItem(LABEL_SHEET_PRESETS_KEY) || '[]')
     if (!Array.isArray(raw)) return []
     return raw
       .map((item): LabelSheetPreset | null => {
@@ -261,35 +297,29 @@ async function persistStoredPresetMutation(
   presets: LabelSheetPreset[],
   mutateDatabase: () => Promise<boolean>,
 ): Promise<boolean> {
-  let previous: string | null
+  if (!await mutateDatabase()) return false
   try {
-    previous = localStorage.getItem(LABEL_SHEET_PRESETS_KEY)
     localStorage.setItem(LABEL_SHEET_PRESETS_KEY, JSON.stringify(presets.map(preset => ({
       id: preset.id,
       name: preset.name,
       settings: preset.settings,
     }))))
+    setTransientPresetCache(LABEL_SHEET_PRESETS_KEY, null)
   } catch {
-    return false
+    setTransientPresetCache(LABEL_SHEET_PRESETS_KEY, presets)
   }
-  if (await mutateDatabase()) return true
-  try {
-    if (previous === null) localStorage.removeItem(LABEL_SHEET_PRESETS_KEY)
-    else localStorage.setItem(LABEL_SHEET_PRESETS_KEY, previous)
-  } catch {
-    // The caller reports the failed save to the user.
-  }
-  return false
+  return true
 }
 
 function upsertStoredPreset(
   presets: LabelSheetPreset[],
   preset: LabelSheetPreset,
   previousName?: string,
+  createOnly = false,
 ) {
   return persistStoredPresetMutation(
     presets,
-    () => saveLabelPreset(LABEL_SHEET_PRESETS_KEY, preset, previousName),
+    () => saveLabelPreset(LABEL_SHEET_PRESETS_KEY, preset, previousName, createOnly),
   )
 }
 
@@ -341,7 +371,10 @@ function confirmLargeLabelSheetJob(labelCount: number, settings: LabelSheetSetti
 
   const signature = `${labelCount}:${settings.copies}:${settings.rows}:${settings.columns}:${settings.skipCells}`
   if (confirmedLargeJobs.has(signature)) return true
-  const ok = window.confirm(`This label-paper job will render ${job.labelInstances} labels across ${job.pageCount} pages and may be slow or create a large PDF. Continue?`)
+  const ok = window.confirm(t('labelPrint.largeSheetJobWarning', {
+    labels: job.labelInstances,
+    pages: job.pageCount,
+  }))
   if (ok) confirmedLargeJobs.add(signature)
   return ok
 }
@@ -376,12 +409,22 @@ function makePresetId() {
 export function bindLabelSheetControls(
   onChange: () => void,
   getTranslation: (key: string, fallback: string) => string = (_key, fallback) => fallback,
+  kind: LabelKind = 'spool',
 ): LabelSheetControls {
   const outputMode = getSelect('output-mode')
+  const sourceInputs = Array.from(document.querySelectorAll<HTMLInputElement>(
+    'input[name="label-sheet-source"]',
+  ))
+  const designerPreset = getSelect('sheet-designer-preset')
+  const designerSourceControls = document.getElementById('sheet-designer-source-controls')
+  const selectedLabelSize = document.getElementById('sheet-selected-label-size')
+  const editDesigner = getButton('sheet-edit-designer')
+  const createLabel = document.querySelector<HTMLButtonElement>('[data-sheet-create]')
   const panel = document.getElementById('label-sheet-settings') as HTMLElement | null
   const presetSelect = getSelect('sheet-preset')
   const presetName = getInput('sheet-preset-name')
   const loadPreset = getButton('sheet-load-preset')
+  const updatePreset = getButton('sheet-update-preset')
   const savePreset = getButton('sheet-save-preset')
   const deletePreset = getButton('sheet-delete-preset')
   const layoutSummary = document.getElementById('sheet-layout-summary-value') as HTMLElement | null
@@ -391,14 +434,133 @@ export function bindLabelSheetControls(
   const storedOutputMode = readStoredOutputMode()
   let customPresets = readStoredPresets()
   let selectedPresetId = CUSTOM_PRESET_ID
+  let loadedCustomPresetId: string | null = null
   let presetMutationInFlight = false
+  let loadedPresetName = [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset =>
+    Object.entries(preset.settings).every(([key, value]) => settings[key as keyof LabelSheetSettings] === value),
+  )?.name ?? ''
+
+  const readStoredSource = (): LabelSheetSource => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LABEL_SHEET_SOURCE_KEY) ?? '') as Partial<LabelSheetSource>
+      if (parsed.type === 'designer') {
+        const presetName = typeof parsed.presetName === 'string' ? parsed.presetName : ''
+        const storedPresetSource = String(parsed.presetSource ?? '')
+        const presetSource = storedPresetSource === 'own' ? kind
+          : storedPresetSource === 'cross' ? (kind === 'spool' ? 'filament' : 'spool')
+            : storedPresetSource === 'spool' || storedPresetSource === 'filament' || storedPresetSource === 'builtin'
+              ? storedPresetSource : undefined
+        return presetSource ? { type: 'designer', presetName, presetSource } : { type: 'designer', presetName }
+      }
+    } catch {
+      // Use Standard Label when storage is blocked or malformed.
+    }
+    return { type: 'standard' }
+  }
+  const storedSource = readStoredSource()
+  let selectedDesignerPreset = storedSource.type === 'designer'
+    ? { name: storedSource.presetName, source: storedSource.presetSource }
+    : null
+  const optionPreset = (option?: HTMLOptionElement | null) => {
+    if (!option) return null
+    const source = option.dataset.presetSource as LabelDesignerPresetSource | undefined
+    return { name: option.dataset.presetName ?? option.value, source }
+  }
+  const selectedDesignerOption = () => designerPreset
+    ? Array.from(designerPreset.options).find(option => option.value === designerPreset.value)
+    : undefined
+  const syncSelectedLabelSize = () => {
+    if (!selectedLabelSize) return
+    const option = selectedDesignerOption()
+    const width = Number(option?.dataset.widthMm)
+    const height = Number(option?.dataset.heightMm)
+    selectedLabelSize.textContent = Number.isFinite(width) && Number.isFinite(height)
+      ? getTranslation('labelPrint.selectedLabelSize', 'Selected label size: {width} × {height} mm')
+        .replace('{width}', formatMm(width)).replace('{height}', formatMm(height))
+      : ''
+  }
+
+  const getSource = (): LabelSheetSource => {
+    const type = sourceInputs.find(input => input.checked)?.value
+    if (type !== 'designer') return { type: 'standard' }
+    const preset = optionPreset(selectedDesignerOption()) ?? selectedDesignerPreset
+    if (!preset) return { type: 'designer', presetName: '' }
+    return preset.source
+      ? { type: 'designer', presetName: preset.name, presetSource: preset.source }
+      : { type: 'designer', presetName: preset.name }
+  }
+
+  const syncSourceControls = (persist = true) => {
+    const source = getSource()
+    if (designerSourceControls) designerSourceControls.hidden = source.type !== 'designer'
+    if (designerPreset) designerPreset.disabled = source.type !== 'designer'
+    if (editDesigner) editDesigner.disabled = source.type !== 'designer' || !source.presetName
+    syncSelectedLabelSize()
+    syncCreateButton()
+    if (persist) {
+      try {
+        localStorage.setItem(LABEL_SHEET_SOURCE_KEY, JSON.stringify(source))
+      } catch {
+        // Sheet rendering still works when browser storage is unavailable.
+      }
+    }
+  }
+
+  const setSource = (source: LabelSheetSource) => {
+    sourceInputs.forEach(input => { input.checked = input.value === source.type })
+    if (source.type === 'designer') {
+      selectedDesignerPreset = { name: source.presetName, source: source.presetSource }
+      if (designerPreset) {
+        const option = Array.from(designerPreset.options).find(candidate =>
+          candidate.dataset.presetName === source.presetName
+          && (!source.presetSource || candidate.dataset.presetSource === source.presetSource))
+        if (option) designerPreset.value = option.value
+      }
+    }
+    syncSourceControls()
+    onChange()
+  }
+
+  const setDesignerPresets = (groups: LabelDesignerPresetGroup[], selected?: LabelDesignerPresetRef) => {
+    if (!designerPreset) return
+    const previous = selected ?? optionPreset(selectedDesignerOption()) ?? selectedDesignerPreset
+    const optionGroups = groups.filter(group => group.presets.length > 0).map(group => {
+      const optgroup = document.createElement('optgroup')
+      optgroup.label = group.label
+      group.presets.forEach(preset => {
+        const option = createSelectOption(preset.name, `${preset.source}:${preset.name}`)
+        option.dataset.presetSource = preset.source
+        option.dataset.presetName = preset.name
+        if (Number.isFinite(preset.widthMm)) option.dataset.widthMm = String(preset.widthMm)
+        if (Number.isFinite(preset.heightMm)) option.dataset.heightMm = String(preset.heightMm)
+        optgroup.appendChild(option)
+      })
+      return optgroup
+    })
+    designerPreset.replaceChildren(...optionGroups)
+    const next = Array.from(designerPreset.options).find(option =>
+      option.dataset.presetName === previous?.name
+      && (!previous?.source || option.dataset.presetSource === previous.source))
+      ?? designerPreset.options[0]
+    selectedDesignerPreset = optionPreset(next)
+    if (next) designerPreset.value = next.value
+    syncSourceControls()
+  }
 
   const findPreset = (id: string) => [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset => preset.id === id)
+  const canUpdatePreset = () => loadedCustomPresetId !== null
+    && selectedPresetId === loadedCustomPresetId
+    && presetName?.value.trim() === customPresets.find(preset => preset.id === loadedCustomPresetId)?.name
 
   const syncPresetControls = () => {
     const preset = findPreset(selectedPresetId)
-    if (presetName) presetName.value = preset?.name ?? ''
     if (loadPreset) loadPreset.disabled = presetMutationInFlight || !preset
+    if (updatePreset) {
+      updatePreset.disabled = presetMutationInFlight || !canUpdatePreset()
+      updatePreset.title = preset?.builtin
+        ? getTranslation('labelDesigner.builtInPresetHint', 'Built-in presets cannot be modified.')
+        : ''
+    }
     if (savePreset) savePreset.disabled = presetMutationInFlight
     if (deletePreset) deletePreset.disabled = presetMutationInFlight || !preset || preset.builtin === true
   }
@@ -408,30 +570,48 @@ export function bindLabelSheetControls(
     const previousValue = selectedPresetId
     presetSelect.replaceChildren()
 
-    const customOption = new Option(getTranslation('labelPrint.currentPaperSetup', 'Current setup'), CUSTOM_PRESET_ID)
+    const customOption = createSelectOption(getTranslation('labelPrint.currentPaperSetup', 'Current setup'), CUSTOM_PRESET_ID)
     presetSelect.appendChild(customOption)
 
     const builtInGroup = document.createElement('optgroup')
     builtInGroup.label = getTranslation('labelPrint.builtInPaperPresets', 'Built-in presets')
-    BUILT_IN_SHEET_PRESETS.forEach(preset => builtInGroup.appendChild(new Option(preset.name, preset.id)))
+    BUILT_IN_SHEET_PRESETS.forEach(preset => builtInGroup.appendChild(createSelectOption(preset.name, preset.id)))
     presetSelect.appendChild(builtInGroup)
 
     if (customPresets.length > 0) {
       const savedGroup = document.createElement('optgroup')
       savedGroup.label = getTranslation('labelPrint.savedPaperPresets', 'Saved presets')
-      customPresets.forEach(preset => savedGroup.appendChild(new Option(preset.name, preset.id)))
+      customPresets.forEach(preset => savedGroup.appendChild(createSelectOption(preset.name, preset.id)))
       presetSelect.appendChild(savedGroup)
     }
 
     selectedPresetId = findPreset(previousValue) ? previousValue : CUSTOM_PRESET_ID
     presetSelect.value = selectedPresetId
+    if (presetName) presetName.value = findPreset(selectedPresetId)?.name ?? ''
     syncPresetControls()
+  }
+
+  const syncCreateButton = () => {
+    const layout = getLabelSheetLayout(readFormSettings())
+    const source = getSource()
+    const standard = source.type === 'standard'
+    const unsupported = layout.cellWidthMm < 20 || layout.cellHeightMm < 10
+      || layout.cellWidthMm > (standard ? 200 : 300) || layout.cellHeightMm > (standard ? 120 : 200)
+    if (createLabel) createLabel.disabled = unsupported || (!standard && !source.presetName)
+    const hint = document.getElementById('sheet-create-size-hint')
+    if (hint) {
+      hint.hidden = !unsupported
+      hint.textContent = getTranslation('labelPrint.sheetSizeUnsupported', 'Editor size limits: Standard 20–200 × 10–120 mm; Designer 20–300 × 10–200 mm.')
+    }
   }
 
   const updateLayoutSummary = (next: LabelSheetSettings) => {
     const layout = getLabelSheetLayout(next)
     const horizontalPitch = layout.cellWidthMm + next.gapHorizontalMm
     const verticalPitch = layout.cellHeightMm + next.gapVerticalMm
+    const size = document.querySelector<HTMLElement>('#sheet-label-size .sheet-label-size-value')
+    if (size) size.textContent = `${formatMm(layout.cellWidthMm)} × ${formatMm(layout.cellHeightMm)} mm`
+    syncCreateButton()
     if (!layoutSummary) return
     layoutSummary.textContent = getTranslation(
       'labelPrint.paperLayoutSummary',
@@ -492,15 +672,22 @@ export function bindLabelSheetControls(
   }
 
   if (outputMode) outputMode.value = storedOutputMode
+  sourceInputs.forEach(input => { input.checked = input.value === storedSource.type })
+  if (storedSource.type === 'designer' && designerPreset) designerPreset.value = storedSource.presetName
   setFormValues(applySheetCapacityLimits(settings))
   renderPresetOptions()
   syncVisibility()
+  syncSourceControls(false)
 
   const handleChange = () => {
     const next = readFormSettings()
-    selectedPresetId = CUSTOM_PRESET_ID
+    if (!loadedCustomPresetId) {
+      selectedPresetId = CUSTOM_PRESET_ID
+      loadedPresetName = ''
+    }
     setFormValues(next)
-    renderPresetOptions()
+    if (loadedCustomPresetId) syncPresetControls()
+    else renderPresetOptions()
     writeStoredSettings(next)
     syncVisibility()
     onChange()
@@ -508,12 +695,16 @@ export function bindLabelSheetControls(
 
   presetSelect?.addEventListener('change', () => {
     selectedPresetId = presetSelect.value
+    if (presetName) presetName.value = findPreset(selectedPresetId)?.name ?? ''
     syncPresetControls()
   })
+  presetName?.addEventListener('input', syncPresetControls)
 
   loadPreset?.addEventListener('click', () => {
     const preset = findPreset(selectedPresetId)
     if (!preset) return
+    loadedPresetName = preset.name
+    loadedCustomPresetId = preset.builtin ? null : preset.id
     const next = applyPresetSettings(readFormSettings(), preset.settings)
     setFormValues(next)
     writeStoredSettings(next)
@@ -522,48 +713,58 @@ export function bindLabelSheetControls(
     onChange()
   })
 
-  savePreset?.addEventListener('click', async () => {
+  const persistPreset = async (asNew: boolean) => {
     if (presetMutationInFlight) return
-    const selectedPreset = findPreset(selectedPresetId)
-    const selectedCustomPreset = selectedPreset && !selectedPreset.builtin
-      ? customPresets.find(preset => preset.id === selectedPreset.id)
-      : null
+    const selectedCustomPreset = customPresets.find(preset => preset.id === loadedCustomPresetId)
+    if (!asNew && (!selectedCustomPreset || !canUpdatePreset())) return
     const fallbackName = selectedCustomPreset?.name || getTranslation('labelPrint.defaultPaperPresetName', 'Custom label paper')
     const name = (presetName?.value || fallbackName).trim() || fallbackName
-    const existingByName = customPresets.find(preset => preset.name === name)
-    const existingCustom = selectedCustomPreset || existingByName
+    if (asNew && customPresets.some(preset => preset.name === name)) {
+      window.alert(getTranslation('labelDesigner.presetNameExists', 'That name is already in use. Choose a new name.'))
+      presetName?.focus()
+      return
+    }
     const preset: LabelSheetPreset = {
-      id: existingCustom?.id || makePresetId(),
+      id: asNew ? makePresetId() : selectedCustomPreset!.id,
       name,
       settings: makePresetSettings(readFormSettings()),
     }
 
-    const nextPresets = existingCustom
-      ? customPresets.map(item => item.id === preset.id ? preset : item)
-      : [...customPresets, preset]
+    const nextPresets = asNew
+      ? [...customPresets, preset]
+      : customPresets.map(item => item.id === preset.id ? preset : item)
     presetMutationInFlight = true
     syncPresetControls()
     try {
-      const previousName = selectedCustomPreset?.name !== preset.name
-        ? selectedCustomPreset?.name
-        : undefined
-      if (!await upsertStoredPreset(nextPresets, preset, previousName)) {
+      if (!await upsertStoredPreset(nextPresets, preset, undefined, asNew)) {
         window.alert(getTranslation('labelPrint.paperPresetSaveFailed', 'Paper preset could not be saved to the database. Please try again.'))
         return
       }
       customPresets = nextPresets
+      loadedCustomPresetId = preset.id
+      loadedPresetName = preset.name
       selectedPresetId = preset.id
       renderPresetOptions()
     } finally {
       presetMutationInFlight = false
       syncPresetControls()
     }
-  })
+  }
+  updatePreset?.addEventListener('click', () => { void persistPreset(false) })
+  savePreset?.addEventListener('click', () => { void persistPreset(true) })
 
   deletePreset?.addEventListener('click', async () => {
     if (presetMutationInFlight) return
     const preset = findPreset(selectedPresetId)
     if (!preset || preset.builtin) return
+    const message = getTranslation(
+      'labelPrint.confirmDeletePaperPreset',
+      'Delete paper preset "{name}"? This cannot be undone.',
+    ).replace('{name}', preset.name)
+    const confirm = (window as typeof window & {
+      __fmConfirm?: (message: string, options?: { isDanger?: boolean }) => Promise<boolean>
+    }).__fmConfirm
+    if (!(confirm ? await confirm(message, { isDanger: true }) : window.confirm(message))) return
     const nextPresets = customPresets.filter(item => item.id !== preset.id)
     presetMutationInFlight = true
     syncPresetControls()
@@ -573,6 +774,10 @@ export function bindLabelSheetControls(
         return
       }
       customPresets = nextPresets
+      if (loadedCustomPresetId === preset.id) {
+        loadedCustomPresetId = null
+        loadedPresetName = ''
+      }
       selectedPresetId = CUSTOM_PRESET_ID
       renderPresetOptions()
     } finally {
@@ -586,6 +791,33 @@ export function bindLabelSheetControls(
     syncVisibility()
     onChange()
   })
+  sourceInputs.forEach(input => input.addEventListener('change', () => {
+    syncSourceControls()
+    onChange()
+  }))
+  designerPreset?.addEventListener('change', () => {
+    syncSourceControls()
+    onChange()
+  })
+  createLabel?.addEventListener('click', () => {
+    if (createLabel.disabled) return
+    const layout = getLabelSheetLayout(readFormSettings())
+    const dimensions = `${formatMm(layout.cellWidthMm)} × ${formatMm(layout.cellHeightMm)} mm`
+    const name = loadedPresetName ? `${loadedPresetName.slice(0, 90)} — ${dimensions}`
+      : getTranslation('labelPrint.sheetLabelName', '{size} label').replace('{size}', dimensions)
+    createLabel.dispatchEvent(new CustomEvent<SheetLabelSetup>('label-sheet-create', {
+      bubbles: true,
+      detail: { ...getSource(), widthMm: layout.cellWidthMm, heightMm: layout.cellHeightMm, name },
+    }))
+  })
+  editDesigner?.addEventListener('click', () => {
+    const source = getSource()
+    if (source.type !== 'designer' || !source.presetName) return
+    editDesigner.dispatchEvent(new CustomEvent('label-designer-edit', {
+      bubbles: true,
+      detail: { presetName: source.presetName, presetSource: source.presetSource },
+    }))
+  })
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-label-sheet-control]').forEach(control => {
     control.addEventListener('change', handleChange)
     if (control instanceof HTMLInputElement && (control.type === 'number' || control.type === 'range')) {
@@ -596,12 +828,15 @@ export function bindLabelSheetControls(
   return {
     getOutputMode: () => outputMode?.value === 'sheet' ? 'sheet' : 'individual',
     getSettings: readFormSettings,
-    setOutputMode: (mode) => {
+    setOutputMode: (mode, options) => {
       if (outputMode) outputMode.value = mode
       writeStoredOutputMode(mode)
       syncVisibility()
-      onChange()
+      if (options?.notify !== false) onChange()
     },
+    getSource,
+    setSource,
+    setDesignerPresets,
   }
 }
 
@@ -662,7 +897,11 @@ export function restoreIndividualLabelPreview(previewRoot: HTMLElement, sourceEl
     if (!position) return
     const nextSibling = position.nextSibling?.parentNode === position.parent ? position.nextSibling : null
     position.parent.insertBefore(source, nextSibling)
+    originalPositions.delete(source)
   })
+  // The active designer label must remain first when parked sources return.
+  const representative = sourceElements.find(source => source.classList.contains('is-designer-representative'))
+  representative?.parentElement?.prepend(representative)
   previewRoot.querySelector<HTMLElement>(`:scope > .${SOURCE_BIN_CLASS}`)?.remove()
   clearLabelSheetPreviewStyle()
 }
@@ -671,7 +910,7 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
   const { previewRoot, sourceElements, settings, labelWidthMm, labelHeightMm } = options
   if (!confirmLargeLabelSheetJob(sourceElements.length, settings)) {
     restoreIndividualLabelPreview(previewRoot, sourceElements)
-    return
+    return false
   }
   previewRoot.classList.add(SHEET_MODE_CLASS)
   const layout = getLabelSheetLayout(settings)
@@ -741,7 +980,8 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
     const sourceLabel = getSourceLabel(source)
     if (sourceLabel) {
       const clone = sourceLabel.cloneNode(true) as HTMLElement
-      stripElementIds(clone)
+      prepareLabelOutputClone(clone)
+      prepareCroppedImages(clone)
       clone.style.zoom = '1'
       clone.style.transform = 'none'
       clone.style.transformOrigin = 'unset'
@@ -752,16 +992,17 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
   })
 
   updateLabelSheetPreviewStyle(settings)
+  return true
 }
 
 export function syncLabelSheetPreview(options: SyncLabelSheetPreviewOptions) {
   const { controls, previewRoot, sourceElements, labelDimensions } = options
   if (controls.getOutputMode() !== 'sheet') {
     restoreIndividualLabelPreview(previewRoot, sourceElements)
-    return
+    return true
   }
-  if (sourceElements.length === 0) return
-  renderLabelSheetPreview({
+  if (sourceElements.length === 0) return true
+  return renderLabelSheetPreview({
     previewRoot,
     sourceElements,
     settings: controls.getSettings(),
@@ -771,7 +1012,9 @@ export function syncLabelSheetPreview(options: SyncLabelSheetPreviewOptions) {
 }
 
 export function applyLabelSheetPreviewZoom(previewRoot: HTMLElement, zoomPercent: number) {
-  const zoom = Math.min(3, Math.max(0.25, (Number(zoomPercent) || 100) / 100))
+  const zoom = Math.min(5, Math.max(0.25, (Number(zoomPercent) || 100) / 100))
+  const previewStyle = getComputedStyle(previewRoot)
+  const availableWidth = Math.max(0, previewRoot.clientWidth - (parseFloat(previewStyle.paddingLeft) || 0) - (parseFloat(previewStyle.paddingRight) || 0))
   previewRoot.querySelectorAll<HTMLElement>('.label-sheet-page').forEach(page => {
     const frame = page.parentElement?.classList.contains(SHEET_PAGE_FRAME_CLASS)
       ? page.parentElement as HTMLElement
@@ -783,8 +1026,10 @@ export function applyLabelSheetPreviewZoom(previewRoot: HTMLElement, zoomPercent
     page.style.transform = `scale(${zoom})`
     page.style.transformOrigin = 'top left'
     if (frame) {
-      frame.style.width = `${page.offsetWidth * zoom}px`
+      const width = page.offsetWidth * zoom
+      frame.style.width = `${width}px`
       frame.style.height = `${page.offsetHeight * zoom}px`
+      frame.style.marginInline = width <= availableWidth ? 'auto' : '0'
     }
   })
 }
@@ -834,6 +1079,14 @@ export function updateLabelSheetPreviewStyle(
   }
 
   styleEl.innerHTML = `
+    .preview-scroll-area.is-label-sheet-mode {
+      align-items: flex-start;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+    .preview-scroll-area.is-label-sheet-mode > #freeform-designer-workspace {
+      display: none;
+    }
     .label-sheet-page {
       box-sizing: border-box;
       background: white;
@@ -880,7 +1133,7 @@ export function updateLabelSheetPreviewStyle(
       border: 0.3mm dashed rgba(0,0,0,0.28);
       box-sizing: border-box;
       content: '';
-      inset: 0.45mm;
+      inset: 0;
       pointer-events: none;
       position: absolute;
     }

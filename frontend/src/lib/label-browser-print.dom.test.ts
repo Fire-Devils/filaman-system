@@ -55,10 +55,11 @@ function makeIndividualPage(id = 'wrapper-1') {
   wrapper.style.width = '720px'
   wrapper.style.height = '450px'
   wrapper.innerHTML = `
-    <div class="label-preview" id="${id}-label"
+    <div class="label-preview" id="${id}-label" data-label-interactive
       style="transform: scale(1.5); transform-origin: top left; box-shadow: 0 4px 8px black; border: 1px dashed gray">
-      <div class="designer-element" id="${id}-designer"
-        style="position:absolute; transform:rotate(12deg)">Text</div>
+      <div class="designer-element is-selected" id="${id}-designer"
+        data-label-interaction-bound style="position:absolute; transform:rotate(12deg)">Text</div>
+      <button data-editor-handle>Resize</button>
     </div>
   `
   return wrapper
@@ -161,6 +162,55 @@ describe('createLabelBrowserPrintJob', () => {
 })
 
 describe('printLabelBrowserJob', () => {
+  it('waits for and initializes cropped images in the actual print clone', async () => {
+    const source = makeIndividualPage()
+    source.querySelector('.label-preview')!.insertAdjacentHTML('beforeend', `
+      <div data-label-image-crop-viewport style="visibility: hidden">
+        <img src="asset.png" data-label-image-crop-aspect-factor="0.5">
+      </div>
+    `)
+    const originalDecode = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'decode')
+    Object.defineProperty(HTMLImageElement.prototype, 'decode', {
+      configurable: true,
+      value: async function (this: HTMLImageElement) {
+        Object.defineProperties(this, {
+          naturalWidth: { configurable: true, value: 1200 },
+          naturalHeight: { configurable: true, value: 600 },
+        })
+      },
+    })
+    vi.spyOn(window, 'print').mockImplementation(() => undefined)
+
+    try {
+      await printLabelBrowserJob({
+        kind: 'individual', widthMm: 48, heightMm: 30, pages: [source], printGrid: false,
+      })
+      const cloneViewport = document.querySelector<HTMLElement>(
+        '#filaman-label-print-host [data-label-image-crop-viewport]',
+      )!
+      expect(cloneViewport.style.getPropertyValue('--label-image-crop-aspect')).toBe('1')
+      expect(cloneViewport.style.visibility).toBe('visible')
+    } finally {
+      if (originalDecode) {
+        Object.defineProperty(HTMLImageElement.prototype, 'decode', originalDecode)
+      } else {
+        Reflect.deleteProperty(HTMLImageElement.prototype, 'decode')
+      }
+    }
+  })
+
+  it('prints standard labels whose optional logo is disabled', async () => {
+    const source = makeIndividualPage()
+    const logo = document.createElement('img')
+    logo.className = 'label-logo'
+    logo.style.display = 'none'
+    Object.defineProperty(logo, 'decode', { value: async () => { throw new Error('No source') } })
+    source.appendChild(logo)
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined)
+    await printLabelBrowserJob({ kind: 'individual', widthMm: 48, heightMm: 30, pages: [source], printGrid: false })
+    expect(print).toHaveBeenCalledOnce()
+  })
+
   it('waits for images, prints sanitized clones, and cleans up afterprint', async () => {
     const source = makeIndividualPage()
     const image = document.createElement('img')
@@ -203,6 +253,10 @@ describe('printLabelBrowserJob', () => {
     )!
     expect(host.contains(source)).toBe(false)
     expect(host.querySelector('[id]')).toBeNull()
+    expect(host.querySelector('[data-label-interactive]')).toBeNull()
+    expect(host.querySelector('[data-label-interaction-bound]')).toBeNull()
+    expect(host.querySelector('[data-editor-handle]')).toBeNull()
+    expect(host.querySelector('.is-selected')).toBeNull()
     expect(clone.style.transform).toBe('none')
     expect(clone.style.width).toBe('')
     expect(clone.style.height).toBe('')
@@ -353,7 +407,7 @@ describe('printLabelBrowserJob', () => {
       .toBe(false)
   })
 
-  it('ignores decode rejection for an image that is already complete', async () => {
+  it('rejects a broken image even when the browser marks it complete', async () => {
     const source = makeIndividualPage()
     const image = document.createElement('img')
     source.appendChild(image)
@@ -370,15 +424,15 @@ describe('printLabelBrowserJob', () => {
     const print = vi.spyOn(window, 'print')
       .mockImplementation(() => undefined)
 
-    await printLabelBrowserJob({
+    await expect(printLabelBrowserJob({
       kind: 'individual',
       widthMm: 48,
       heightMm: 30,
       pages: [source],
       printGrid: false,
-    })
+    })).rejects.toThrow(/image/i)
 
-    expect(print).toHaveBeenCalledOnce()
+    expect(print).not.toHaveBeenCalled()
   })
 
   it('cleans up when window.print throws', async () => {

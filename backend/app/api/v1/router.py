@@ -6,10 +6,10 @@ from app.api.v1.app_settings_admin import router as app_settings_admin_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.devices import router as devices_router
 from app.api.v1.display import router as display_router
-from app.api.v1.tag import router as tag_router
 from app.api.v1.events import router as events_router
 from app.api.v1.filamentdb_proxy import router as filamentdb_router
 from app.api.v1.filaments import router, router_colors, router_filaments
+from app.api.v1.label_assets import router as label_assets_router
 from app.api.v1.label_presets import router as label_presets_router
 from app.api.v1.me import router as me_router
 from app.api.v1.me_api_keys import router as me_api_keys_router
@@ -26,6 +26,7 @@ from app.api.v1.spools import (
 from app.api.v1.system import public_router as plugin_public_router
 from app.api.v1.system import router as system_router
 from app.api.v1.system_extra_fields import router as system_extra_fields_router
+from app.api.v1.tag import router as tag_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -39,6 +40,7 @@ api_router.include_router(router_spool_measurements)
 api_router.include_router(me_router)
 api_router.include_router(me_api_keys_router)
 api_router.include_router(label_presets_router)
+api_router.include_router(label_assets_router)
 api_router.include_router(printers_router)
 api_router.include_router(admin_router)
 api_router.include_router(devices_router)
@@ -286,7 +288,7 @@ def _mount_plugin_routers() -> None:
                         "Plugin-Admin-Router '%s' erfolgreich gemountet", plugin_key
                     )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.
             _logger.warning(
                 "Plugin-Router '%s' konnte nicht geladen werden: %s",
                 plugin_dir.name,

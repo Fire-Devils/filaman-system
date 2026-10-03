@@ -190,9 +190,10 @@ describe('bindTemporaryPdfPreview', () => {
     (locale, accessibleTitle) => {
       stubObjectUrls('blob:inline-pdf', 'blob:external-pdf')
       const popupDocument = document.implementation.createHTMLDocument('PDF')
-      vi.spyOn(window, 'open').mockReturnValue({
+      vi.spyOn(window, 'open').mockReturnValue(Object.assign(new EventTarget(), {
         document: popupDocument,
-      } as unknown as Window)
+        URL,
+      }) as unknown as Window)
       const preview = bindWithCurrentPageTranslation()
       setLang(locale)
 
@@ -265,10 +266,10 @@ describe('bindTemporaryPdfPreview', () => {
     expect(revoke).toHaveBeenCalledWith('blob:inline-pdf')
   })
 
-  it('opens a separate PDF object without revoking its external URL until disposal', () => {
+  it('releases a separate PDF URL when its popup closes', () => {
     const { revoke } = stubObjectUrls('blob:inline-pdf', 'blob:external-pdf')
     const popupDocument = document.implementation.createHTMLDocument('PDF')
-    const popup = { document: popupDocument }
+    const popup = Object.assign(new EventTarget(), { document: popupDocument, URL })
     vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window)
     const preview = bind('supported')
 
@@ -276,9 +277,9 @@ describe('bindTemporaryPdfPreview', () => {
     document.querySelector<HTMLButtonElement>('#temporary-pdf-open')!.click()
 
     expect(popupDocument.querySelector('object')?.data).toBe('blob:external-pdf')
-    preview.hide()
-    expect(revoke).not.toHaveBeenCalledWith('blob:external-pdf')
     window.dispatchEvent(new Event('pagehide'))
+    expect(revoke).not.toHaveBeenCalledWith('blob:external-pdf')
+    popup.dispatchEvent(new Event('pagehide'))
     expect(revoke).toHaveBeenCalledWith('blob:external-pdf')
   })
 
@@ -302,7 +303,7 @@ describe('bindTemporaryPdfPreview', () => {
     expect(revoke).toHaveBeenCalledWith('blob:replacement-pdf')
   })
 
-  it('alerts and revokes the external URL when the PDF popup is blocked', () => {
+  it('alerts without creating an external URL when the PDF popup is blocked', () => {
     const { revoke } = stubObjectUrls('blob:inline-pdf', 'blob:external-pdf')
     vi.spyOn(window, 'open').mockReturnValue(null)
     const alert = vi.spyOn(window, 'alert').mockImplementation(() => {})
@@ -312,6 +313,6 @@ describe('bindTemporaryPdfPreview', () => {
     document.querySelector<HTMLButtonElement>('#temporary-pdf-open')!.click()
 
     expect(alert).toHaveBeenCalledWith('Allow pop-ups to open the print PDF.')
-    expect(revoke).toHaveBeenCalledWith('blob:external-pdf')
+    expect(revoke).not.toHaveBeenCalledWith('blob:external-pdf')
   })
 })

@@ -48,7 +48,7 @@ import Layout from '../../layouts/Layout.astro'
         <input 
           type="file" 
           id="backup-file-input" 
-          accept=".json"
+          accept=".json,.jsonl,application/json,application/x-ndjson"
           style="display: block; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);"
         />
       </div>
@@ -106,7 +106,7 @@ import Layout from '../../layouts/Layout.astro'
         <input 
           type="file" 
           id="inventory-file-input" 
-          accept=".json"
+          accept=".json,.jsonl,application/json,application/x-ndjson"
           style="display: block; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text);"
         />
       </div>
@@ -150,6 +150,12 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     initI18n()
 
+    const dialogWindow = window as unknown as {
+      __fmAlert: (message: string) => Promise<boolean>
+      __fmConfirm: (message: string) => Promise<boolean>
+      __fmSuccess: (message: string) => Promise<boolean>
+    }
+
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
@@ -172,7 +178,7 @@ import Layout from '../../layouts/Layout.astro'
       btnExportBackup.textContent = t('admin.backupExporting') || 'Exporting...'
 
       try {
-        const response = await fetch('/api/v1/admin/system/backup/export', {
+        const response = await fetch('/api/v1/admin/system/backup/export?format=auto', {
           credentials: 'include',
           headers: { 'X-CSRF-Token': getCsrfToken() },
           signal: getAbortSignal(),
@@ -185,7 +191,7 @@ import Layout from '../../layouts/Layout.astro'
 
         const blob = await response.blob()
         const contentDisposition = response.headers.get('Content-Disposition')
-        let filename = 'filaman_backup.json'
+        let filename = 'filaman_backup.jsonl'
         if (contentDisposition) {
           const match = contentDisposition.match(/filename="(.+)"/)
           if (match) filename = match[1]
@@ -200,11 +206,11 @@ import Layout from '../../layouts/Layout.astro'
         window.URL.revokeObjectURL(url)
         document.body.removeChild(a)
 
-        await (window as any).__fmSuccess(t('admin.backupExportSuccess') || 'Backup exported successfully')
-      } catch (err: any) {
+        await dialogWindow.__fmSuccess(t('admin.backupExportSuccess') || 'Backup exported successfully')
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Export failed:', err)
-        await (window as any).__fmAlert(t('admin.backupExportFailed') || `Export failed: ${err.message}`)
+        await dialogWindow.__fmAlert(t('admin.backupExportFailed') || `Export failed: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         btnExportBackup.disabled = false
         btnExportBackup.textContent = originalText
@@ -218,7 +224,7 @@ import Layout from '../../layouts/Layout.astro'
       const confirmMsg = t('admin.backupImportConfirm') || 
         'Are you sure you want to import this backup?\n\nThis will DELETE ALL existing data!\n\nAn automatic backup will be created first.'
       
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       btnImportBackup.disabled = true
@@ -257,7 +263,7 @@ import Layout from '../../layouts/Layout.astro'
         importProgressBar.style.width = '100%'
         importStatus.textContent = t('admin.backupImportComplete') || 'Import complete!'
 
-        await (window as any).__fmSuccess(
+        await dialogWindow.__fmSuccess(
           (t('admin.backupImportSuccess') || 'Backup imported successfully!') + '\n\n' + result.message
         )
 
@@ -268,12 +274,12 @@ import Layout from '../../layouts/Layout.astro'
           window.location.reload()
         }, 2000)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Import failed:', err)
         importStatus.textContent = ''
-        await (window as any).__fmAlert(
-          (t('admin.backupImportFailed') || 'Import failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.backupImportFailed') || 'Import failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       } finally {
         setTimeout(() => {
@@ -304,7 +310,7 @@ import Layout from '../../layouts/Layout.astro'
       btnExportInventory.textContent = t('admin.inventoryExporting') || 'Exporting...'
 
       try {
-        const response = await fetch('/api/v1/admin/system/backup/export-inventory', {
+        const response = await fetch('/api/v1/admin/system/backup/export-inventory?format=auto', {
           credentials: 'include',
           headers: { 'X-CSRF-Token': getCsrfToken() },
           signal: getAbortSignal(),
@@ -317,7 +323,7 @@ import Layout from '../../layouts/Layout.astro'
 
         const blob = await response.blob()
         const contentDisposition = response.headers.get('Content-Disposition')
-        let filename = 'filaman_inventory.json'
+        let filename = 'filaman_inventory.jsonl'
         if (contentDisposition) {
           const match = contentDisposition.match(/filename="(.+)"/)
           if (match) filename = match[1]
@@ -332,11 +338,11 @@ import Layout from '../../layouts/Layout.astro'
         window.URL.revokeObjectURL(url)
         document.body.removeChild(a)
 
-        await (window as any).__fmSuccess(t('admin.inventoryExportSuccess') || 'Inventory exported successfully')
-      } catch (err: any) {
+        await dialogWindow.__fmSuccess(t('admin.inventoryExportSuccess') || 'Inventory exported successfully')
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Inventory export failed:', err)
-        await (window as any).__fmAlert(t('admin.inventoryExportFailed') || `Export failed: ${err.message}`)
+        await dialogWindow.__fmAlert(t('admin.inventoryExportFailed') || `Export failed: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         btnExportInventory.disabled = false
         btnExportInventory.textContent = originalText
@@ -350,7 +356,7 @@ import Layout from '../../layouts/Layout.astro'
       const confirmMsg = t('admin.inventoryImportConfirm') || 
         'Are you sure you want to import this inventory?\n\nThis will DELETE ALL existing inventory data!\n\nUsers and settings will be preserved.\n\nAn automatic backup will be created first.'
       
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       btnImportInventory.disabled = true
@@ -389,7 +395,7 @@ import Layout from '../../layouts/Layout.astro'
         inventoryImportProgressBar.style.width = '100%'
         inventoryImportStatus.textContent = t('admin.inventoryImportComplete') || 'Import complete!'
 
-        await (window as any).__fmSuccess(
+        await dialogWindow.__fmSuccess(
           (t('admin.inventoryImportSuccess') || 'Inventory imported successfully!') + '\n\n' + result.message
         )
 
@@ -400,12 +406,12 @@ import Layout from '../../layouts/Layout.astro'
           window.location.reload()
         }, 2000)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Inventory import failed:', err)
         inventoryImportStatus.textContent = ''
-        await (window as any).__fmAlert(
-          (t('admin.inventoryImportFailed') || 'Import failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.inventoryImportFailed') || 'Import failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       } finally {
         setTimeout(() => {
@@ -496,7 +502,7 @@ import Layout from '../../layouts/Layout.astro'
         'Are you sure you want to restore the backup "{filename}"?\n\nThe current database will be replaced. An automatic backup will be created first.')
         .replace('{filename}', filename)
 
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       try {
@@ -517,18 +523,18 @@ import Layout from '../../layouts/Layout.astro'
         }
 
         const result = await resp.json()
-        await (window as any).__fmSuccess(
+        await dialogWindow.__fmSuccess(
           (t('admin.sqliteRestoreSuccess') || 'Database restored successfully!') +
           '\n\n' + result.message
         )
 
         setTimeout(() => window.location.reload(), 2000)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Restore failed:', err)
-        await (window as any).__fmAlert(
-          (t('admin.sqliteRestoreFailed') || 'Restore failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.sqliteRestoreFailed') || 'Restore failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       }
     }
@@ -538,7 +544,7 @@ import Layout from '../../layouts/Layout.astro'
         'Are you sure you want to delete the backup "{filename}"?')
         .replace('{filename}', filename)
 
-      const confirmed = await (window as any).__fmConfirm(confirmMsg)
+      const confirmed = await dialogWindow.__fmConfirm(confirmMsg)
       if (!confirmed) return
 
       try {
@@ -556,11 +562,11 @@ import Layout from '../../layouts/Layout.astro'
 
         await loadSqliteBackups()
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         console.error('Delete failed:', err)
-        await (window as any).__fmAlert(
-          (t('admin.sqliteDeleteFailed') || 'Delete failed:') + '\n\n' + err.message
+        await dialogWindow.__fmAlert(
+          (t('admin.sqliteDeleteFailed') || 'Delete failed:') + '\n\n' + (err instanceof Error ? err.message : String(err))
         )
       }
     }

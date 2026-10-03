@@ -1,0 +1,15 @@
+/* Label-safe local fonts. Direct WOFF2 references avoid bundling legacy WOFF. */
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-display: swap; font-weight: 400; src: url("@fontsource/space-grotesk/files/space-grotesk-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-display: swap; font-weight: 500; src: url("@fontsource/space-grotesk/files/space-grotesk-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-display: swap; font-weight: 600; src: url("@fontsource/space-grotesk/files/space-grotesk-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-display: swap; font-weight: 700; src: url("@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Roboto Condensed"; font-style: normal; font-display: swap; font-weight: 400; src: url("@fontsource/roboto-condensed/files/roboto-condensed-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Roboto Condensed"; font-style: normal; font-display: swap; font-weight: 500; src: url("@fontsource/roboto-condensed/files/roboto-condensed-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Roboto Condensed"; font-style: normal; font-display: swap; font-weight: 600; src: url("@fontsource/roboto-condensed/files/roboto-condensed-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Roboto Condensed"; font-style: normal; font-display: swap; font-weight: 700; src: url("@fontsource/roboto-condensed/files/roboto-condensed-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-display: swap; font-weight: 400; src: url("@fontsource/fraunces/files/fraunces-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-display: swap; font-weight: 500; src: url("@fontsource/fraunces/files/fraunces-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-display: swap; font-weight: 600; src: url("@fontsource/fraunces/files/fraunces-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: normal; font-display: swap; font-weight: 700; src: url("@fontsource/fraunces/files/fraunces-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Mono"; font-style: normal; font-display: swap; font-weight: 400; src: url("@fontsource/space-mono/files/space-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Mono"; font-style: normal; font-display: swap; font-weight: 700; src: url("@fontsource/space-mono/files/space-mono-latin-700-normal.woff2") format("woff2"); }

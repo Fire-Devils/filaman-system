@@ -68,7 +68,7 @@ export function bindTemporaryPdfPreview(
   const inlinePdfSupport =
     options.inlinePdfSupport ?? detectInlinePdfSupport()
   let inlineUrl: string | undefined
-  const externalUrls = new Set<string>()
+  let currentDocument: TemporaryPdfPreviewDocument | undefined
   let returnFocus: HTMLElement | undefined
   let disposed = false
 
@@ -95,6 +95,7 @@ export function bindTemporaryPdfPreview(
     unsupported.hidden = true
     surface.hidden = true
     releaseInlineUrl()
+    currentDocument = undefined
     restoreLiveChildren()
     returnFocus?.focus()
     returnFocus = undefined
@@ -104,8 +105,6 @@ export function bindTemporaryPdfPreview(
     if (disposed) return
     disposed = true
     hide()
-    for (const url of externalUrls) URL.revokeObjectURL(url)
-    externalUrls.clear()
     window.removeEventListener('pagehide', onPageHide)
     backButton.removeEventListener('click', onBack)
     openButton.removeEventListener('click', onOpen)
@@ -115,17 +114,19 @@ export function bindTemporaryPdfPreview(
 
   const onOpen = () => {
     const popup = window.open('', '_blank')
-    const url = URL.createObjectURL(currentDocumentBlob())
 
     if (!popup) {
-      URL.revokeObjectURL(url)
       window.alert(
         options.getTranslation('labelPrint.printPopupBlocked', PRINT_POPUP_BLOCKED),
       )
       return
     }
 
-    externalUrls.add(url)
+    const popupUrl = (popup as Window & { URL: typeof URL }).URL
+    const url = popupUrl.createObjectURL(currentDocumentBlob())
+    popup.addEventListener('pagehide', () => {
+      popupUrl.revokeObjectURL(url)
+    }, { once: true })
     const popupDocument = popup.document
     const object = createPdfObject(popupDocument, url, options.getTranslation)
     object.style.width = '100%'
@@ -146,8 +147,6 @@ export function bindTemporaryPdfPreview(
     }
     return currentDocument.blob
   }
-
-  let currentDocument: TemporaryPdfPreviewDocument | undefined
 
   backButton.addEventListener('click', onBack)
   openButton.addEventListener('click', onOpen)
