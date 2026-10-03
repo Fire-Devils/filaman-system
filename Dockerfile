@@ -31,6 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     default-libmysqlclient-dev \
     libpq-dev \
+    libjpeg-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -58,7 +60,7 @@ ENV PYTHONUNBUFFERED=1
 ENV RUN_MIGRATIONS_IN_APP=false
 
 # Install uv, cron, and nginx in the final image
-RUN pip install uv && apt-get update && apt-get install -y cron nginx && rm -rf /var/lib/apt/lists/*
+RUN pip install uv && apt-get update && apt-get install -y cron nginx libjpeg62-turbo && rm -rf /var/lib/apt/lists/*
 
 # Copy installed dependencies from backend-builder
 COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
