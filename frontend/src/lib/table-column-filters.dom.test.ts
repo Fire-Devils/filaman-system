@@ -196,6 +196,35 @@ describe('color range header filter', () => {
     expect(trigger.classList.contains('active')).toBe(false)
   })
 
+  it('keeps a standalone color filter beside a left-side trigger', () => {
+    document.body.innerHTML = '<button id="color-filter">Filter colors</button>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+    bindColorFilterButton(trigger, vi.fn())
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768)
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      bottom: 250, height: 30, left: 120, right: 150, top: 220, width: 30,
+      x: 120, y: 220, toJSON: () => ({}),
+    })
+    vi.spyOn(panel, 'offsetWidth', 'get').mockReturnValue(300)
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(170)
+
+    trigger.click()
+
+    expect(panel.style.left).toBe('120px')
+  })
+
+  it('stacks a standalone color filter above its modal host', () => {
+    document.body.innerHTML = '<div class="fm-modal-overlay"><button id="color-filter">Filter colors</button></div>'
+    const trigger = document.querySelector<HTMLButtonElement>('#color-filter')!
+
+    bindColorFilterButton(trigger, vi.fn())
+
+    expect(document.querySelector('.fm-header-filter-panel')?.classList
+      .contains('fm-header-filter-panel-modal')).toBe(true)
+  })
+
   it('opens one grid-first Colors popover with a remembered range disclosure', () => {
     mountColorOptions()
 
@@ -238,6 +267,26 @@ describe('color range header filter', () => {
     expect(panel.style.getPropertyValue('--fm-filter-max-height')).toBe('504px')
     expect(sidecar.style.top).toBe('-96px')
     expect(sidecar.style.maxHeight).toBe('752px')
+  })
+
+  it('shifts the filter panel upward just enough to keep it in the viewport', () => {
+    mountColorOptions()
+    const trigger = document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel')!
+    trigger.click()
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(768)
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      bottom: 650, height: 30, left: 400, right: 430, top: 620, width: 30,
+      x: 400, y: 620, toJSON: () => ({}),
+    })
+    vi.spyOn(panel, 'offsetWidth', 'get').mockReturnValue(360)
+    vi.spyOn(panel, 'offsetHeight', 'get').mockReturnValue(300)
+
+    trigger.click()
+
+    expect(panel.style.top).toBe('460px')
+    expect(panel.style.getPropertyValue('--fm-filter-max-height')).toBe('300px')
   })
 
   it.each(['search', 'selection'] as const)('locks an inactive range after %s starts first', (action) => {

@@ -1,5 +1,6 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
+import FilamentForm from '../../../components/FilamentForm.astro'
 
 export function getStaticPaths() {
   return [
@@ -11,12 +12,18 @@ const { id } = Astro.params
 ---
 
 <Layout title="FilaMan - Filament">
-  <div style="margin-bottom: 24px;">
-    <a href="/filaments" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+  <div class="detail-page-toolbar">
+    <div class="detail-toolbar-back"><a href="/filaments" class="detail-back-link">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+      <span id="unsaved-changes-status" class="filament-change-pill hidden" role="status" aria-live="polite" data-i18n="filaments.changed">Changed</span></div>
+    <div id="filament-page-actions"></div>
   </div>
   
   <div id="filament-content">
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  </div>
+
+  <div id="filament-editor" class="hidden">
+    <FilamentForm mode="edit" cancelHref="/filaments" />
   </div>
 
   <div id="slicer-profile-section" class="hidden" style="margin-top: 32px;">
@@ -49,8 +56,9 @@ const { id } = Astro.params
     </div>
   </div>
 
-  <div id="spools-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.spools">Spools</h2>
+  <section class="spool-filament-panel filament-spool-panel">
+  <div id="spools-section" class="hidden">
+    <div class="spools-heading"><h2 style="font-weight: 600; margin: 0;" data-i18n="filaments.spools">Spools</h2></div>
     <div class="fm-card" style="padding: 0;">
       <table class="fm-table">
         <thead>
@@ -70,37 +78,29 @@ const { id } = Astro.params
     </div>
   </div>
 
-  <div id="price-summary" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 32px;">
-    <div class="fm-card" style="border-left: 4px solid var(--accent);">
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalValueAvailable">Total Value (available)</div>
-      <div id="total-available-price" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00</div>
-    </div>
-    <div class="fm-card" style="border-left: 4px solid var(--text-muted);">
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</div>
-      <div id="total-spent-price" style="font-size: 1.4rem; font-weight: 700;">0.00</div>
-    </div>
-  </div>
-  
-  <div id="price-history-section" class="hidden" style="margin-top: 32px; margin-bottom: 32px;">
+  <div id="price-history-section" class="hidden">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.priceHistory">Price History</h2>
+    <div id="price-summary" class="spool-totals hidden">
+      <span><span data-i18n="filaments.totalValueAvailable">Total Value (available)</span> <strong id="total-available-price">0.00</strong></span>
+      <span><span data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</span> <strong id="total-spent-price">0.00</strong></span>
+    </div>
     <div class="fm-card" style="padding: 24px;">
       <div style="height: 300px; width: 100%;">
         <canvas id="priceChart"></canvas>
       </div>
     </div>
   </div>
-  
+  </section>
+
   <script is:inline src="/vendor/chart.min.js"></script>
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
-    import {
-      getExtraFieldValue,
-      renderEntityExtraFieldRows,
-      renderUnregisteredExtraFieldRows,
-    } from '../../../lib/entity-extra-fields'
-    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
-    import { toColorSwatchBackground } from '../../../lib/colors'
+    import { escapeHtml as escapeExtraFieldHtml } from '../../../lib/extra-fields'
+    import { renderDetailExtraFieldRows } from '../../../lib/entity-extra-fields'
+    import { createEntityExtraFieldsDialog } from '../../../lib/entity-extra-fields-dialog'
+    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
+    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors } from '../../../lib/filament-detail'
+    import { createFilamentFormController } from '../../../lib/filament-form'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
@@ -110,6 +110,8 @@ const { id } = Astro.params
     await initCurrency()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
+    const extraFieldsDialogRequested = new URLSearchParams(window.location.search).get('section') === 'extra-fields'
+    const editMode = new URLSearchParams(window.location.search).get('edit') === '1' && !extraFieldsDialogRequested
     if (id === 'detail') {
       window.location.href = '/filaments'
     }
@@ -120,6 +122,7 @@ const { id } = Astro.params
     let currentPrinterParams: any[] = []
     let fieldDefinitions: any[] = []
     let systemFieldMap: Record<string, any> = {}
+    let extraFieldsDialog: ReturnType<typeof createEntityExtraFieldsDialog> | null = null
 
     // -- Bambu cloud profile picker (Option A) --
     let currentDriverKey = ''
@@ -132,16 +135,6 @@ const { id } = Astro.params
       translucent: 'filaments.finishTranslucent',
       neon: 'filaments.finishNeon',
       glow: 'filaments.finishGlow',
-    }
-
-    const colorModeLabels: Record<string, string> = {
-      single: 'filaments.colorModeSingle',
-      multi: 'filaments.colorModeMulti',
-    }
-
-    const multiStyleLabels: Record<string, string> = {
-      striped: 'filaments.styleStriped',
-      gradient: 'filaments.styleGradient',
     }
 
     async function loadFilament() {
@@ -174,7 +167,12 @@ const { id } = Astro.params
         }
 
         const filament = await response.json()
-        renderFilament(filament)
+        if (editMode) await renderFilamentEditor(filament)
+        else renderFilament(filament)
+        if (extraFieldsDialogRequested) {
+          window.history.replaceState(null, '', `/filaments/${id}`)
+          openFilamentExtraFields(filament)
+        }
         loadSpools(filament.id)
         loadPrinters()
         initPerModelProfilePicker({
@@ -197,159 +195,172 @@ const { id } = Astro.params
       }
     }
 
-    function renderColorSwatches(colors: any[]): string {
-      if (!colors || colors.length === 0) return '-'
-      return colors.map(fc => {
-        const c = fc.color
-        if (!c) return ''
-        const label = fc.display_name_override || c.name
-        return `<span style="display: inline-flex; align-items: center; gap: 6px; margin-right: 10px;">
-          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 2px solid var(--border); vertical-align: middle;"></span>
-          <span>${label}</span>
-        </span>`
-      }).join('')
+    async function renderFilamentEditor(filament: any) {
+      const form = document.getElementById('filament-form') as HTMLFormElement
+      const cancel = document.getElementById('filament-form-cancel') as HTMLAnchorElement
+      cancel.href = `/filaments/${id}`
+      const controller = createFilamentFormController({
+        form,
+        mode: 'edit',
+        async onSubmit({ scalar, colors }) {
+          const signal = getAbortSignal()
+          const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() }
+          const patchResponse = await fetch(`/api/v1/filaments/${id}`, {
+            method: 'PATCH',
+            headers,
+            credentials: 'include',
+            signal,
+            body: JSON.stringify(scalar),
+          })
+          if (!patchResponse.ok) {
+            const error = await patchResponse.json()
+            throw new Error(error.detail?.message || error.message || t('filaments.failedUpdate'))
+          }
+          const colorsResponse = await fetch(`/api/v1/filaments/${id}/colors`, {
+            method: 'PUT',
+            headers,
+            credentials: 'include',
+            signal,
+            body: JSON.stringify({
+              color_mode: scalar.color_mode,
+              multi_color_style: scalar.multi_color_style,
+              colors,
+            }),
+          })
+          if (!colorsResponse.ok) {
+            const error = await colorsResponse.json()
+            throw new Error(error.detail?.message || error.message || t('filaments.failedUpdate'))
+          }
+          invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
+          window.location.href = `/filaments/${id}`
+        },
+      })
+      await controller.loadReferenceData()
+      controller.applyInitialData(filament, 'initial')
+      controller.captureBaseline()
+      document.getElementById('filament-content')!.classList.add('hidden')
+      document.getElementById('filament-editor')!.classList.remove('hidden')
     }
 
-    function renderDetailCard(label: string, value: string): string {
-      return `<div class="fm-card">
-        <div style="font-size: 0.85rem; color: var(--text-muted);">${label}</div>
-        <div style="font-size: 1.1rem; font-weight: 600;">${value}</div>
+    function openFilamentExtraFields(filament: any, trigger?: HTMLElement): void {
+      extraFieldsDialog ??= createEntityExtraFieldsDialog({
+        targetType: 'filament',
+        systemFields: systemFieldMap,
+        async onSave(payload) {
+          const response = await fetch(`/api/v1/filaments/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
+            credentials: 'include',
+            signal: getAbortSignal(),
+            body: JSON.stringify({
+              custom_fields: payload.customFields,
+              custom_field_definitions: payload.customFieldDefinitions,
+            }),
+          })
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}))
+            throw new Error(error.detail?.message || error.message || t('filaments.failedUpdate'))
+          }
+          invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
+          window.location.reload()
+        },
+      })
+      extraFieldsDialog.open({
+        customFields: filament.custom_fields,
+        customFieldDefinitions: filament.custom_field_definitions,
+      }, trigger)
+    }
+
+    function safeExternalUrl(value: unknown): string {
+      if (typeof value !== 'string') return ''
+      try {
+        const url = new URL(value, window.location.origin)
+        return url.protocol === 'http:' || url.protocol === 'https:'
+          ? escapeExtraFieldHtml(url.href)
+          : ''
+      } catch {
+        return ''
+      }
+    }
+
+    function renderSpecRow(row: { labelKey: string; value: string; href?: string }): string {
+      const href = safeExternalUrl(row.href)
+      const value = escapeExtraFieldHtml(row.value)
+      return `<div class="filament-spec-row">
+        <span class="filament-spec-label">${t(row.labelKey)}</span>
+        <span class="filament-spec-value">${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>` : value}</span>
       </div>`
     }
     
     function renderFilament(f: any) {
-      // Build the secondary info cards grid
-      const cards: string[] = []
-      cards.push(renderDetailCard(t('filaments.type'), f.material_type))
-      if (f.material_subgroup) {
-        cards.push(renderDetailCard(t('filaments.materialSubgroup'), f.material_subgroup))
-      }
-      cards.push(renderDetailCard(t('filaments.diameter'), f.diameter_mm + 'mm'))
-      if (f.finish_type) {
-        const finishKey = finishLabels[f.finish_type]
-        cards.push(renderDetailCard(t('filaments.finishType'), finishKey ? t(finishKey) : f.finish_type))
-      }
-      cards.push(renderDetailCard(t('filaments.rawMaterial'), f.raw_material_weight_g ? f.raw_material_weight_g + 'g' : '-'))
-      cards.push(renderDetailCard(t('filaments.spoolWeight'), f.default_spool_weight_g ? f.default_spool_weight_g + 'g' : '-'))
-      if (f.price != null) {
-        cards.push(renderDetailCard(t('filaments.price'), formatPrice(f.price, getCurrency())))
-      }
-      if (f.density_g_cm3 != null) {
-        cards.push(renderDetailCard(t('filaments.density'), f.density_g_cm3.toString()))
-      }
+      const finishKey = finishLabels[f.finish_type]
+      const sections = buildFilamentDetailSections(f, {
+        finish: finishKey ? t(finishKey) : f.finish_type,
+        discontinued: f.is_discontinued == null ? undefined : t(f.is_discontinued ? 'common.yes' : 'common.no'),
+        price: f.price == null ? undefined : formatPrice(f.price, f.price_currency || getCurrency()),
+      })
+      const sectionsHtml = sections.map(section => `<section class="fm-card filament-spec-card">
+        <h2 class="filament-spec-title">${t(section.titleKey)}</h2>
+        <div class="filament-spec-rows">${section.rows.map(renderSpecRow).join('')}</div>
+      </section>`).join('')
 
-      // Color mode info
-      const colorModeKey = colorModeLabels[f.color_mode]
-      let colorModeDisplay = colorModeKey ? t(colorModeKey) : f.color_mode
-      if (f.color_mode === 'multi' && f.multi_color_style) {
-        const styleKey = multiStyleLabels[f.multi_color_style]
-        colorModeDisplay += ` (${styleKey ? t(styleKey) : f.multi_color_style})`
-      }
-
-      // Colors section
-      const colorsHtml = f.colors && f.colors.length > 0
-        ? `<div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
-              ${t('filaments.colors')} &mdash; ${colorModeDisplay}
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-              ${renderColorSwatches(f.colors)}
-            </div>
-          </div>`
-        : ''
-
-      // Manufacturer color name
-      const mfgColorHtml = f.manufacturer_color_name
-        ? `<div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.manufacturerColorName')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.manufacturer_color_name}</div>
-          </div>`
-        : ''
-
-      // Shop URL
-      const shopHtml = f.shop_url
-        ? `<div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.shopUrl')}</div>
-            <div style="font-size: 1.1rem;">
-              <a href="${f.shop_url}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); word-break: break-all;">${f.shop_url}</a>
-            </div>
-          </div>`
-        : ''
-
-      // Custom Fields
-      let customFieldsHtml = ''
-      if (f.custom_fields && Object.keys(f.custom_fields).length > 0) {
-        const sysKeys = new Set(Object.keys(systemFieldMap))
-        const entityDefs = f.custom_field_definitions ?? {}
-        // System fields: render from raw values (handles range/multiselect correctly)
-        const sysRows = Object.values(systemFieldMap)
-          .filter((sysDef: any) => getExtraFieldValue(f.custom_fields, sysDef.key) !== undefined)
-          .map((sysDef: any) => {
-            const displayHtml = renderFieldDisplay(sysDef, getExtraFieldValue(f.custom_fields, sysDef.key))
-            return `
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-left: 8px; padding-right: 8px;">
-              <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(sysDef.label)}</span>
-                <span style="background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; white-space: nowrap;">${t('common.systemField')}</span>
-              </span>
-              <span style="word-break: break-all;">${displayHtml}</span>
-            </div>
-            `
-          }).join('')
-        const entityRows = renderEntityExtraFieldRows(f.custom_fields, entityDefs, sysKeys)
-        const customRows = renderUnregisteredExtraFieldRows(
-          f.custom_fields,
-          entityDefs,
-          sysKeys,
-        )
-        const rows = sysRows + entityRows + customRows
-
-        customFieldsHtml = `
-          <div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.extraFields')}</div>
-            <div>${rows}</div>
-          </div>
-        `
-      }
+      const extraFieldRows = renderDetailExtraFieldRows(
+        f.custom_fields ?? {},
+        f.custom_field_definitions ?? {},
+        systemFieldMap,
+        t('common.systemField'),
+      )
+      const customFieldsHtml = `<section class="fm-card filament-spec-card" style="margin-top: 16px;">
+        <h2 class="filament-spec-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>${t('common.extraFields')}</span><button id="btn-edit-filament-extra-fields" type="button" class="fm-btn fm-btn-outline" style="font-size:.72rem;padding:3px 8px">${t('common.edit')}</button></h2>
+        <div class="filament-spec-rows">${extraFieldRows || `<div style="padding: 8px 0; color: var(--text-muted); font-size: .82rem;">${t('filaments.noSpecificExtraFields')}</div>`}</div>
+      </section>`
 
       document.getElementById('filament-content')!.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
-          <div>
-            <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
-            <p style="color: var(--text-muted); margin: 4px 0 0; display: flex; align-items: center; gap: 8px;">${f.manufacturer?.logo_url ? `<img src="${f.manufacturer.logo_url}" alt="" style="height: 1.4em; width: auto; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px; flex-shrink: 0;" onerror="this.style.display='none'" />` : ''}${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
+        <header class="filament-hero" style="${buildFilamentHeroStyle(f)}">
+          <div class="filament-hero-layout">
+            <div class="filament-hero-identity">
+              <div class="filament-hero-title-row">
+                <div class="filament-hero-title-copy">
+                  <h1><span class="detail-record-id">${escapeExtraFieldHtml(t('filaments.filamentId', { id: formatHeaderId(f.id) }))}</span><span class="detail-record-name">${escapeExtraFieldHtml(buildFilamentHeaderName(f))}</span></h1>
+                </div>
+                ${safeExternalUrl(f.manufacturer?.logo_url) ? `<span class="filament-hero-logo"><img src="${safeExternalUrl(f.manufacturer.logo_url)}" alt="" onerror="this.parentElement.style.display='none'" /></span>` : ''}
+              </div>
+              <div class="filament-hero-body">
+                ${renderFilamentHeaderColors(f, t('filaments.soldAs'))}
+                <div class="detail-hero-stats">
+                  <div class="detail-hero-stat"><span class="detail-stat-symbol" aria-hidden="true">⌀</span><div><span>${t('filaments.diameter')}</span><strong>${f.diameter_mm != null ? escapeExtraFieldHtml(`${f.diameter_mm} mm`) : '—'}</strong></div></div>
+                  <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail3#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
+              <a href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></a>
+              <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button>
+              <button id="btn-delete-filament" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>
+            </div>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
-              ${t('filaments.newSpool')}
-            </a>
-            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline">
-              ${t('filaments.printLabel') || 'Print Label'}
-            </a>
-            <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
-              ${t('common.edit')}
-            </a>
-            <button id="btn-duplicate-filament" type="button" class="fm-btn fm-btn-info">
-              ${t('common.duplicate')}
-            </button>
-            <button id="btn-delete-filament" class="fm-btn fm-btn-danger">
-              ${t('common.delete')}
-            </button>
-          </div>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
-          ${cards.join('\n')}
-        </div>
+        </header>
 
-        ${colorsHtml}
-        ${mfgColorHtml}
-        ${shopHtml}
+        <section class="detail-quick-actions">
+          <h2>${t('spools.quickActions')}</h2>
+          <div class="detail-quick-action-buttons">
+            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary"><svg class="detail-spool-icon" aria-hidden="true"><use href="/icons.svg#icon-spools"></use></svg>${t('filaments.newSpool')}</a>
+            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-print"></use></svg>${t('filaments.printLabel') || 'Print Label'}</a>
+          </div>
+        </section>
+
+        <div class="filament-spec-grid">${sectionsHtml}</div>
         ${customFieldsHtml}
       `
+
+      document.querySelector('.detail-page-toolbar .detail-page-actions, #filament-page-actions')!.replaceWith(document.querySelector('#filament-content .detail-page-actions')!)
 
       document.getElementById('btn-duplicate-filament')?.addEventListener('click', () => {
         sessionStorage.setItem('filaman_duplicate_filament', JSON.stringify(f))
         window.location.href = '/filaments/new'
+      })
+      document.getElementById('btn-edit-filament-extra-fields')?.addEventListener('click', event => {
+        openFilamentExtraFields(f, event.currentTarget as HTMLElement)
       })
 
       // Print Settings is intentionally reduced; the Label Designer receives the full
