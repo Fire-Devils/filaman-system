@@ -121,6 +121,40 @@ export interface LookupInstance {
   search: (query: string) => void
 }
 
+export type FilamentLookupSource = 'filamandb' | 'disabled'
+
+export function resolveFilamentLookupSource(
+  source: FilamentLookupSource,
+  filamentDbActive: boolean,
+): { endpoint: string; labelKey: string } | null {
+  if (source === 'filamandb' && filamentDbActive) {
+    return { endpoint: '/filamentdb/filaments', labelKey: 'admin.filamentLookupFilaManDB' }
+  }
+  return null
+}
+
+export function bindFilamentDbLookupToManufacturer(
+  select: HTMLSelectElement,
+  searchAll: HTMLInputElement,
+  section: HTMLElement,
+  createLookup: (scopedToManufacturer: boolean) => LookupInstance,
+): void {
+  let lookup: LookupInstance | null = null
+  const refresh = (manufacturerChanged = false) => {
+    lookup?.destroy()
+    lookup = null
+    if (manufacturerChanged && select.value) searchAll.checked = false
+    searchAll.disabled = !!select.value
+    const scopedToManufacturer = !!select.value
+    const enabled = scopedToManufacturer || searchAll.checked
+    section.style.display = enabled ? '' : 'none'
+    if (enabled) lookup = createLookup(scopedToManufacturer)
+  }
+  select.addEventListener('change', () => refresh(true))
+  searchAll.addEventListener('change', () => refresh())
+  refresh()
+}
+
 export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): LookupInstance {
   const {
     container,
