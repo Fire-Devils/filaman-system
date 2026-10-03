@@ -13,9 +13,9 @@ from urllib.parse import urlparse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rfid import rfid_storage_value
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.models.location import Location
-from app.core.rfid import rfid_storage_value
 from app.models.spool import Spool, SpoolStatus
 from app.services.spool_service import SpoolService
 from app.services.spoolman_client import SpoolmanClient
@@ -42,9 +42,7 @@ from app.utils.db import json_extract_cast_string
 logger = logging.getLogger(__name__)
 
 
-SpoolmanClientFactory = Callable[
-    [str], AbstractAsyncContextManager[SpoolmanClient]
-]
+SpoolmanClientFactory = Callable[[str], AbstractAsyncContextManager[SpoolmanClient]]
 
 
 @dataclass
@@ -131,6 +129,8 @@ def _source_field_inputs(
         for raw in ordered:
             raw_key = raw.get("key")
             key = raw_key if isinstance(raw_key, str) else ""
+            if target == "filament" and key in {"extruder", "bed"}:
+                continue
             raw_label = raw.get("name", key)
             label = raw_label if isinstance(raw_label, str) else key
             order = raw.get("order", 0) if isinstance(raw.get("order", 0), int) else 0
@@ -301,8 +301,7 @@ class SpoolmanImportService:
     def _filament_hex_codes(self, filament: dict[str, Any]) -> list[str]:
         """Return normalized primary and multi-color values in display order."""
         return [
-            normalized
-            for _, normalized in self._filament_color_positions(filament)
+            normalized for _, normalized in self._filament_color_positions(filament)
         ]
 
     def _filament_hex_positions(
@@ -330,8 +329,7 @@ class SpoolmanImportService:
             first_multi = self._normalize_hex_code(values[0]) if values else None
             if primary is not None and first_multi != primary:
                 return [(1, primary)] + [
-                    (position + 1, normalized)
-                    for position, normalized in positions
+                    (position + 1, normalized) for position, normalized in positions
                 ]
             return positions
         return [(1, primary)] if primary is not None else []
@@ -348,7 +346,9 @@ class SpoolmanImportService:
         field_actions: list[SpoolmanFieldAction | dict[str, Any]] | None = None,
     ) -> ImportResult:
         """Vollstaendigen Import aus Spoolman ausfuehren."""
-        rich_options_supplied = extra_field_mode is not None or field_actions is not None
+        rich_options_supplied = (
+            extra_field_mode is not None or field_actions is not None
+        )
         if rich_options_supplied and not expected_extra_field_fingerprint:
             raise SpoolmanImportError(
                 "Load a rich-field preview before executing an import with "
@@ -376,9 +376,7 @@ class SpoolmanImportService:
             ) from exc
         result = ImportResult()
         preview = await self.preview(base_url)
-        repair_candidates = await self.analyze_transparency_repairs(
-            preview.filaments
-        )
+        repair_candidates = await self.analyze_transparency_repairs(preview.filaments)
         if (
             expected_extra_field_fingerprint is not None
             and preview.extra_field_fingerprint != expected_extra_field_fingerprint
@@ -486,9 +484,7 @@ class SpoolmanImportService:
 
         repair_colors = [
             {"name": target_hex, "hex_code": target_hex}
-            for target_hex in sorted(
-                {candidate.target_hex for candidate in candidates}
-            )
+            for target_hex in sorted({candidate.target_hex for candidate in candidates})
         ]
         color_map = await self._import_colors(repair_colors, result)
         await self._apply_transparency_repairs(candidates, color_map, result)
@@ -574,9 +570,7 @@ class SpoolmanImportService:
                 if len(target_hex) != 9:
                     continue
 
-                current_hex = current_by_position.get(
-                    (filament_id, position)
-                )
+                current_hex = current_by_position.get((filament_id, position))
                 if (
                     current_hex is None
                     or len(current_hex) != 7
@@ -708,8 +702,7 @@ class SpoolmanImportService:
         planner = SpoolmanExtraFieldPlanner(self.db)
         assessments = await planner.assess(candidates)
         overrides = {
-            (item.target_type.value, item.key): item.action
-            for item in field_actions
+            (item.target_type.value, item.key): item.action for item in field_actions
         }
         system_assessments: list[DefinitionAssessment] = []
         mappings: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1070,40 +1063,36 @@ class SpoolmanImportService:
             ext_id = self._clean(fil_data.get("external_id"))
             if ext_id:
                 custom["spoolman_external_id"] = ext_id
-            if fil_data.get("settings_extruder_temp"):
-                custom["settings_extruder_temp"] = fil_data["settings_extruder_temp"]
-            if fil_data.get("settings_bed_temp"):
-                custom["settings_bed_temp"] = fil_data["settings_bed_temp"]
+            extruder_temp = fil_data.get("settings_extruder_temp")
+            bed_temp = fil_data.get("settings_bed_temp")
             # Extra-Dict: bekannte Felder mappen, Rest als spoolman_extra
             local_definitions: dict[str, Any] = {}
             extra = fil_data.get("extra")
             if extra and isinstance(extra, dict):
                 extracted_keys: set[str] = set()
                 # Extruder-Temp aus Extra (falls nicht direkt vorhanden)
-                if not fil_data.get("settings_extruder_temp"):
-                    et = self._extract_extra(
+                if extruder_temp is None:
+                    extruder_temp = self._extract_extra(
                         extra,
                         extracted_keys,
                         [
+                            "extruder",
                             "extruder_temp",
                             "nozzle_temp",
                             "print_temp",
                         ],
                     )
-                    if et:
-                        custom["settings_extruder_temp"] = et
                 # Bed-Temp aus Extra
-                if not fil_data.get("settings_bed_temp"):
-                    bt = self._extract_extra(
+                if bed_temp is None:
+                    bed_temp = self._extract_extra(
                         extra,
                         extracted_keys,
                         [
+                            "bed",
                             "bed_temp",
                             "heatbed_temp",
                         ],
                     )
-                    if bt:
-                        custom["settings_bed_temp"] = bt
                 # Restliche Extra-Felder als JSON speichern
                 promoted, local_definitions, remaining = self._promote_extra_values(
                     "filament",
@@ -1118,6 +1107,20 @@ class SpoolmanImportService:
                 if remaining:
                     custom["spoolman_extra"] = remaining
 
+            temperature_ranges: dict[str, dict[str, int | float | None]] = {}
+            for column, legacy_key, raw_value in (
+                ("extruder_temp_range_c", "settings_extruder_temp", extruder_temp),
+                ("bed_temp_range_c", "settings_bed_temp", bed_temp),
+            ):
+                if raw_value is None:
+                    continue
+                try:
+                    temperature_ranges[column] = convert_spoolman_value(
+                        raw_value, "float_range"
+                    )
+                except SpoolmanFieldError:
+                    custom[legacy_key] = raw_value
+
             try:
                 new_fil = Filament(
                     manufacturer_id=filaman_mfr_id,
@@ -1127,6 +1130,7 @@ class SpoolmanImportService:
                     raw_material_weight_g=raw_weight,
                     default_spool_weight_g=spool_weight,
                     density_g_cm3=fil_data.get("density"),
+                    **temperature_ranges,
                     price=fil_data.get("price"),
                     shop_url=self._shop_url(fil_data.get("article_number")),
                     manufacturer_color_name=self._clean(fil_data.get("color_hex")),
