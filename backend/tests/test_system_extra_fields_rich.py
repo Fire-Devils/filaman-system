@@ -10,6 +10,9 @@ Covers:
 """
 
 import pytest
+from pydantic import ValidationError
+from sqlalchemy import select
+
 from app.api.v1.schemas_system_extra_field import (
     VALID_FIELD_TYPES,
     SystemExtraFieldCreate,
@@ -32,8 +35,6 @@ from app.services.system_extra_field_compatibility import (
     is_existing_value_compatible,
     resolve_custom_field_value,
 )
-from pydantic import ValidationError
-from sqlalchemy import select
 
 # ──────────────────────────────────────────────────────────────
 # Schema / validator unit tests  (pure Pydantic, no DB, no HTTP)
@@ -379,8 +380,11 @@ class TestExistingValueCompatibility:
             ("false", "checkbox", None, True),
             ("TRUE", "checkbox", None, False),
             ("yes", "checkbox", None, False),
-            ({"min": 10, "max": "20"}, "range", None, False),
-            ({"min": 20, "max": 10}, "range", None, False),
+            ({"min": 10, "max": "20"}, "range", None, True),
+            ({"min": "", "max": "20"}, "range", None, True),
+            ({}, "range", None, True),
+            ({"min": None, "max": ""}, "range", None, True),
+            ({"min": 20, "max": 10}, "range", None, True),
             ({"min": 20, "max": 20}, "range", None, True),
             ([10, 20], "range", None, False),
             ("PLA", "dropdown", ["PLA", "PETG"], True),
@@ -892,6 +896,27 @@ class TestFieldTypeUpdates:
         updated = patch_resp.json()
         assert updated["config"]["unit"] == "cm"
         assert updated["config"]["decimal_places"] == 2
+
+    @pytest.mark.parametrize(
+        "value", [{"min": "10", "max": "20"}, {"min": "", "max": "20"}, {}]
+    )
+    async def test_update_range_preserves_legacy_values(
+        self, auth_client, db_session, value
+    ):
+        await _create_filament_with_custom_fields(db_session, {"legacy_range": value})
+        client, csrf = auth_client
+        created = await _create_field(
+            client, csrf, key="legacy_range", label="Range", field_type="range"
+        )
+        assert created.status_code == 200
+        response = await client.put(
+            f"{_ENDPOINT}/{created.json()['id']}",
+            json={"label": "Updated", "config": {"unit": "mm"}},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert response.status_code == 200
+        filament = await db_session.scalar(select(Filament))
+        assert filament.custom_fields["legacy_range"] == value
 
     @pytest.mark.asyncio
     async def test_update_invalid_range_config_returns_422(self, auth_client):

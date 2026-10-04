@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -21,6 +22,216 @@ def load_migration_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_ambiguous_system_keys_are_not_promoted_by_direct_fallback():
+    migration = load_migration_module()
+    custom = {
+        "flow_ratio": 10,
+        "fan_speed_min": 20,
+        "fan_speed_max": 70,
+    }
+    values = migration._promote_filamentdb_fields(
+        custom,
+        {},
+        {},
+        {"flow_ratio", "fan_speed_min"},
+    )
+
+    assert values == {}
+    assert custom == {"flow_ratio": 10, "fan_speed_min": 20, "fan_speed_max": 70}
+
+
+@pytest.mark.parametrize("target", ["filament", "spool"])
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize(
+    "custom,key,field_type,config,column,expected,fallback_value",
+    [
+        ({"bed": "140"}, "bed", "text", None, "bed_temp_range_c", None, 140),
+        ({"bed": 140}, "bed", "number", {"unit": "°F"}, "bed_temp_range_c", None, 140),
+        (
+            {"temp_nozzle_min": 392},
+            "temp_nozzle_min",
+            "number",
+            {"unit": "°F"},
+            "extruder_temp_range_c",
+            None,
+            {"min": 392},
+        ),
+        (
+            {"temp_nozzle_min": 200, "temp_nozzle_max": "220"},
+            "temp_nozzle_max",
+            "text",
+            None,
+            "extruder_temp_range_c",
+            None,
+            {"min": 200, "max": 220},
+        ),
+        (
+            {"bed": 60},
+            "bed",
+            "number",
+            {"unit": "°C"},
+            "bed_temp_range_c",
+            {"min": 60, "max": 60},
+            60,
+        ),
+        (
+            {"bed": {"min": 50, "max": 60}},
+            "bed",
+            "range",
+            {"unit": "°C"},
+            "bed_temp_range_c",
+            {"min": 50, "max": 60},
+            60,
+        ),
+        (
+            {"temp_nozzle_min": 200, "temp_nozzle_max": 220},
+            "temp_nozzle_max",
+            "number",
+            {"unit": "°C"},
+            "extruder_temp_range_c",
+            {"min": 200, "max": 220},
+            210,
+        ),
+    ],
+)
+def test_upgrade_respects_system_temperature_metadata(
+    tmp_path,
+    monkeypatch,
+    target,
+    nested,
+    local,
+    custom,
+    key,
+    field_type,
+    config,
+    column,
+    expected,
+    fallback_value,
+):
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'system-temperatures.db'}")
+    metadata = sa.MetaData()
+    filaments = sa.Table(
+        "filaments",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("custom_fields", sa.JSON),
+        sa.Column("custom_field_definitions", sa.JSON),
+    )
+    spools = sa.Table(
+        "spools",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("filament_id", sa.Integer),
+        sa.Column("custom_fields", sa.JSON),
+        sa.Column("custom_field_definitions", sa.JSON),
+    )
+    system_fields = sa.Table(
+        "system_extra_fields",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("target_type", sa.String),
+        sa.Column("key", sa.String),
+        sa.Column("label", sa.String),
+        sa.Column("field_type", sa.String),
+        sa.Column("config", sa.JSON),
+    )
+    raw = {"spoolman_extra": custom} if nested else custom
+    local_definitions = {key: {"field_type": "range"}} if local else None
+    fallback = (
+        {"settings_bed_temp": fallback_value}
+        if column == "bed_temp_range_c"
+        else {"settings_extruder_temp": fallback_value}
+    )
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(
+            filaments.insert(),
+            {
+                "id": 1,
+                "custom_fields": raw if target == "filament" else None,
+                "custom_field_definitions": local_definitions
+                if target == "filament"
+                else None,
+            },
+        )
+        connection.execute(
+            spools.insert(),
+            {
+                "id": 1,
+                "filament_id": 1,
+                "custom_fields": raw if target == "spool" else fallback,
+                "custom_field_definitions": local_definitions
+                if target == "spool"
+                else None,
+            },
+        )
+        if target == "spool" and expected is None:
+            connection.execute(
+                spools.insert(),
+                {
+                    "id": 2,
+                    "filament_id": 1,
+                    "custom_fields": fallback,
+                },
+            )
+        connection.execute(
+            system_fields.insert(),
+            {
+                "id": 1,
+                "target_type": target,
+                "key": key,
+                "label": key,
+                "field_type": field_type,
+                "config": config,
+            },
+        )
+        connection.execute(
+            system_fields.insert(),
+            {
+                "id": 2,
+                "target_type": "spool" if target == "filament" else "filament",
+                "key": key,
+                "label": key,
+                "field_type": "text",
+                "config": None,
+            },
+        )
+        migration = load_migration_module()
+        monkeypatch.setattr(
+            migration, "op", Operations(MigrationContext.configure(connection))
+        )
+        migration.upgrade()
+        upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(upgraded)).mappings().one()
+        assert row[column] == expected
+        source_table = upgraded if target == "filament" else spools
+        remaining = connection.execute(
+            sa.select(source_table.c.custom_fields).where(source_table.c.id == 1)
+        ).scalar_one()
+        assert remaining == (raw if expected is None else None)
+        assert connection.execute(
+            sa.select(source_table.c.custom_field_definitions).where(
+                source_table.c.id == 1
+            )
+        ).scalar_one() == (local_definitions if expected is None or nested else None)
+        definitions = connection.execute(sa.select(system_fields)).mappings().all()
+        if expected is None:
+            assert len(definitions) == 1
+            assert definitions[0]["field_type"] == field_type
+            assert definitions[0]["config"] == config
+            assert (
+                connection.execute(
+                    sa.select(spools.c.custom_fields).where(
+                        spools.c.id == (2 if target == "spool" else 1)
+                    )
+                ).scalar_one()
+                == fallback
+            )
+        else:
+            assert definitions == []
 
 
 def test_downgrade_preserves_standard_values_as_typed_custom_fields(
@@ -59,7 +270,10 @@ def test_downgrade_preserves_standard_values_as_typed_custom_fields(
             filaments.insert().values(
                 id=1,
                 custom_fields={"keep": "yes"},
-                custom_field_definitions={"keep": {"field_type": "text"}},
+                custom_field_definitions={
+                    "keep": {"field_type": "text"},
+                    "ams_compatibility": {"field_type": "text"},
+                },
             )
         )
         migration = load_migration_module()
@@ -77,6 +291,7 @@ def test_downgrade_preserves_standard_values_as_typed_custom_fields(
                 drying_temp_c=55,
                 manufacturer_sku="PLA-42",
                 ams_compatibility=["AMS", "AMS Lite"],
+                build_plate_compatibility=[],
                 is_discontinued=True,
             )
         )
@@ -91,7 +306,8 @@ def test_downgrade_preserves_standard_values_as_typed_custom_fields(
             "manufacturer_sku": "PLA-42",
             "is_discontinued": True,
             "drying_temp_c": 55,
-            "ams_compatibility": ["AMS", "AMS Lite"],
+            "ams_compatibility_2": ["AMS", "AMS Lite"],
+            "build_plate_compatibility": [],
         }
         assert row.custom_field_definitions == {
             "keep": {"field_type": "text"},
@@ -113,11 +329,43 @@ def test_downgrade_preserves_standard_values_as_typed_custom_fields(
                 "field_type": "number",
                 "config": {"unit": "°C"},
             },
-            "ams_compatibility": {
+            "ams_compatibility": {"field_type": "text"},
+            "ams_compatibility_2": {
                 "label": "AMS compatibility",
                 "field_type": "multiselect",
+                "options": ["AMS", "AMS Lite"],
             },
         }
+        from pydantic import TypeAdapter
+
+        from app.api.v1.schemas_entity_extra_field import EntityExtraFieldDefinitions
+
+        TypeAdapter(EntityExtraFieldDefinitions).validate_python(
+            row.custom_field_definitions
+        )
+        from app.api.v1.schemas_filament import FilamentResponse
+
+        response = FilamentResponse.model_validate(
+            {
+                **{
+                    name: None
+                    for name, field in FilamentResponse.model_fields.items()
+                    if field.is_required()
+                },
+                "id": 1,
+                "manufacturer_id": 1,
+                "designation": "Rollback",
+                "material_type": "PLA",
+                "diameter_mm": 1.75,
+                "color_mode": "single",
+                "custom_fields": row.custom_fields,
+                "custom_field_definitions": row.custom_field_definitions,
+            }
+        )
+        assert response.custom_field_definitions["ams_compatibility_2"].options == [
+            "AMS",
+            "AMS Lite",
+        ]
 
 
 def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
@@ -148,6 +396,7 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         sa.Column("key", sa.String(100), nullable=False),
         sa.Column("label", sa.String(200), nullable=False),
         sa.Column("field_type", sa.String(30), nullable=False),
+        sa.Column("config", sa.JSON),
     )
 
     with engine.begin() as connection:
@@ -283,6 +532,83 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
                     "id": 19,
                     "custom_fields": {"my_drying_temperature": 10**1000},
                     "custom_field_definitions": None,
+                },
+                {
+                    "id": 20,
+                    "custom_fields": {
+                        "spoolman_extra": {
+                            "my_drying_temperature": "58",
+                            "my_ams": '["AMS","AMS Lite"]',
+                            "keep_nested": "yes",
+                        }
+                    },
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 21,
+                    "custom_fields": {
+                        "spoolman_extra": {
+                            "dry_temp": "60",
+                            "flow_ratio": "0.96",
+                            "fan_speed_min": "20",
+                            "fan_speed_max": "70",
+                            "keep_nested": "untouched",
+                        }
+                    },
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 22,
+                    "custom_fields": {"spoolman_extra": {"sku": '"SKU-123"'}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 23,
+                    "custom_fields": {
+                        "spoolman_extra": {"my_datasheet": '"http://[bad"'}
+                    },
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 24,
+                    "custom_fields": {"spoolman_extra": {"my_currency": '"ÉUR"'}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 25,
+                    "custom_fields": {"my_drying_time": 90},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 26,
+                    "custom_fields": {"spoolman_extra": {"fahrenheit_bed": "130"}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 27,
+                    "custom_fields": {"dry_time_hours": 90},
+                    "custom_field_definitions": {
+                        "dry_time_hours": {"config": {"unit": "min"}}
+                    },
+                },
+                {
+                    "id": 28,
+                    "custom_fields": {"fan_speed_min": 120},
+                    "custom_field_definitions": {
+                        "fan_speed_min": {"config": {"unit": "rpm"}}
+                    },
+                },
+                {
+                    "id": 29,
+                    "custom_fields": {"spoolman_extra": {"sku": "12345"}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 31,
+                    "custom_fields": {"dry_time_hours": "6"},
+                    "custom_field_definitions": {
+                        "dry_time_hours": {"field_type": "text"}
+                    },
                 },
             ],
         )
@@ -480,12 +806,86 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
                     "label": "Datasheet URL",
                     "field_type": "url",
                 },
+                {
+                    "id": 22,
+                    "target_type": "filament",
+                    "key": "fan_speed_min",
+                    "label": "Fan Speed Min",
+                    "field_type": "number",
+                },
+                {
+                    "id": 23,
+                    "target_type": "filament",
+                    "key": "fan_speed_max",
+                    "label": "Fan Speed Max",
+                    "field_type": "number",
+                },
+                {
+                    "id": 24,
+                    "target_type": "spool",
+                    "key": "sku",
+                    "label": "Spool SKU",
+                    "field_type": "text",
+                },
+                {
+                    "id": 25,
+                    "target_type": "spool",
+                    "key": "fan_speed_min",
+                    "label": "Spool fan speed",
+                    "field_type": "number",
+                },
+            ],
+        )
+        connection.execute(
+            system_fields.insert(),
+            [
+                {
+                    "id": 26,
+                    "target_type": "filament",
+                    "key": "my_drying_time",
+                    "label": "Drying Time",
+                    "field_type": "number",
+                    "config": {"unit": "min"},
+                },
+                {
+                    "id": 27,
+                    "target_type": "filament",
+                    "key": "fahrenheit_bed",
+                    "label": "Bed Temperature",
+                    "field_type": "number",
+                    "config": {"unit": "°F"},
+                },
             ],
         )
 
         migration = load_migration_module()
         monkeypatch.setattr(
             migration, "op", Operations(MigrationContext.configure(connection))
+        )
+        for record_id, custom in (
+            (40, {"bed": 140}),
+            (41, {"temp_nozzle_min": 130, "temp_nozzle_max": 140}),
+        ):
+            connection.execute(
+                filaments.insert().values(
+                    id=record_id,
+                    custom_fields=custom,
+                    custom_field_definitions={
+                        key: {"field_type": "number", "config": {"unit": "°F"}}
+                        for key in custom
+                    },
+                )
+            )
+        connection.execute(filaments.insert().values(id=42))
+        connection.execute(
+            spools.insert().values(
+                id=420,
+                filament_id=42,
+                custom_fields={"bed": 140},
+                custom_field_definitions={
+                    "bed": {"field_type": "number", "config": {"unit": "°F"}}
+                },
+            )
         )
         migration.upgrade()
 
@@ -495,6 +895,15 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
             for row in connection.execute(sa.select(migrated).order_by(migrated.c.id))
         }
         assert rows[1].extruder_temp_range_c == {"min": 200, "max": 220}
+        for record_id in (40, 41, 42):
+            assert rows[record_id].bed_temp_range_c is None
+        assert rows[41].extruder_temp_range_c is None
+        assert rows[40].custom_fields == {"bed": 140}
+        assert rows[40].custom_field_definitions["bed"]["config"] == {"unit": "°F"}
+        assert rows[41].custom_fields == {
+            "temp_nozzle_min": 130,
+            "temp_nozzle_max": 140,
+        }
         assert rows[1].bed_temp_range_c == {"min": 55, "max": 65}
         assert rows[1].custom_fields == {"keep": "yes"}
         assert rows[1].custom_field_definitions == {"keep": {"field_type": "text"}}
@@ -560,6 +969,33 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         }
         assert rows[19].drying_temp_c is None
         assert rows[19].custom_fields == {"my_drying_temperature": 10**1000}
+        assert rows[20].drying_temp_c == 58
+        assert rows[20].ams_compatibility == ["AMS", "AMS Lite"]
+        assert rows[20].custom_fields == {"spoolman_extra": {"keep_nested": "yes"}}
+        assert rows[21].drying_temp_c == 60
+        assert rows[21].flow_ratio == 0.96
+        assert rows[21].cooling_fan_range_percent == {"min": 20, "max": 70}
+        assert rows[21].custom_fields == {"spoolman_extra": {"keep_nested": "untouched"}}
+        assert rows[22].manufacturer_sku == "SKU-123"
+        assert rows[22].custom_fields is None
+        assert rows[23].datasheet_url is None
+        assert rows[23].custom_fields == {
+            "spoolman_extra": {"my_datasheet": '"http://[bad"'}
+        }
+        assert rows[24].price_currency is None
+        assert rows[24].custom_fields == {"spoolman_extra": {"my_currency": '"ÉUR"'}}
+        assert rows[25].drying_time_hours is None
+        assert rows[25].custom_fields == {"my_drying_time": 90}
+        assert rows[26].bed_temp_range_c is None
+        assert rows[26].custom_fields == {"spoolman_extra": {"fahrenheit_bed": "130"}}
+        assert rows[27].drying_time_hours is None
+        assert rows[27].custom_fields == {"dry_time_hours": 90}
+        assert rows[28].cooling_fan_range_percent is None
+        assert rows[28].custom_fields == {"fan_speed_min": 120}
+        assert rows[29].manufacturer_sku == "12345"
+        assert rows[29].custom_fields is None
+        assert rows[31].drying_time_hours is None
+        assert rows[31].custom_fields == {"dry_time_hours": "6"}
 
         migrated_spools = sa.Table("spools", sa.MetaData(), autoload_with=connection)
         spool_rows = {
@@ -572,6 +1008,10 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         assert spool_rows[42].custom_fields == {"extruder_temp": 210}
         assert spool_rows[51].custom_fields == {"extruder_temp": 200}
         assert spool_rows[52].custom_fields == {"extruder_temp": "hot"}
+        assert spool_rows[420].custom_fields == {"bed": 140}
+        assert spool_rows[420].custom_field_definitions == {
+            "bed": {"field_type": "number", "config": {"unit": "°F"}}
+        }
 
         remaining_fields = set(
             connection.execute(
@@ -592,6 +1032,13 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
             ("filament", "settings_bed_temp"),
             ("spool", "extruder_temp"),
             ("filament", "my_cooling_fan"),
+            ("filament", "my_datasheet"),
+            ("filament", "my_currency"),
+            ("spool", "sku"),
+            ("spool", "fan_speed_min"),
+            ("filament", "my_drying_time"),
+            ("filament", "fahrenheit_bed"),
+            ("filament", "fan_speed_min"),
         }
 
     engine.dispose()

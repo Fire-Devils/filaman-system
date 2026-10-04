@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Filament, Spool, SystemExtraField
-from app.services.extra_field_validation import normalize_numeric_range
 
 CustomFieldPathState = Literal["missing", "value", "collision"]
 _TARGET_MODELS = {
@@ -203,15 +202,13 @@ def is_existing_value_compatible(
         )
 
     if field_type == "range":
-        if not isinstance(value, dict):
-            return False
-        try:
-            normalized = normalize_numeric_range(value)
-        except ValueError:
+        if not isinstance(value, dict) or set(value) - {"min", "max"}:
             return False
         return all(
-            endpoint is None or _number_within_bounds(endpoint, config)
-            for endpoint in normalized.values()
+            endpoint is None
+            or endpoint == ""
+            or _number_within_bounds(endpoint, config)
+            for endpoint in value.values()
         )
 
     if field_type == "dropdown":

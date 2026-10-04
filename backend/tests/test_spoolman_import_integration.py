@@ -89,6 +89,183 @@ async def test_url_only_old_client_keeps_legacy_storage(db_session):
     assert await db_session.scalar(select(SystemExtraField)) is None
 
 
+async def test_matching_spoolman_extras_fill_native_filament_fields(db_session):
+    data = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    data["filament"][0]["extra"].update(
+        {
+            "dry": "55",
+            "fan": "[25,75]",
+            "discontinued": "true",
+            "ams": '["AMS","AMS Lite"]',
+            "datasheet": '"https://example.com/spec.pdf"',
+        }
+    )
+    data["filament"][1]["extra"] = {
+        "fan_speed_min": "20",
+        "fan_speed_max": "70",
+    }
+    data["field_definitions"]["filament"].extend(
+        [
+            {
+                "key": "dry",
+                "name": "Drying Temperature",
+                "field_type": "integer",
+                "unit": "°C",
+            },
+            {
+                "key": "fan",
+                "name": "Cooling Fan Speed",
+                "field_type": "integer_range",
+                "unit": "%",
+            },
+            {"key": "discontinued", "name": "Discontinued", "field_type": "boolean"},
+            {
+                "key": "ams",
+                "name": "AMS Compatibility",
+                "field_type": "choice",
+                "choices": ["AMS", "AMS Lite"],
+                "multi_choice": True,
+            },
+            {"key": "datasheet", "name": "Datasheet URL", "field_type": "text"},
+            {
+                "key": "fan_speed_min",
+                "name": "Fan Speed Min",
+                "field_type": "integer",
+                "unit": "%",
+            },
+            {
+                "key": "fan_speed_max",
+                "name": "Fan Speed Max",
+                "field_type": "integer",
+                "unit": "%",
+            },
+        ]
+    )
+    server = SpoolmanFixtureServer(data)
+    service = SpoolmanImportService(db_session, client_factory=server.client_factory)
+    preview = await service.preview("http://spoolman")
+    standard_preview_keys = {
+        field["key"]
+        for field in preview.extra_fields
+        if field["target_type"] == "filament" and field["status"] == "standard"
+    }
+    assert {"dry", "fan", "fan_speed_min", "fan_speed_max"} <= standard_preview_keys
+    result = await service.execute(
+        "http://spoolman",
+        preview.extra_field_fingerprint,
+        extra_field_mode=ImportStorageMode.SYSTEM,
+    )
+
+    filament = await db_session.scalar(
+        select(Filament).where(Filament.designation == "PLA Red")
+    )
+    assert result.errors == []
+    assert filament is not None
+    assert filament.drying_temp_c == 55
+    assert filament.cooling_fan_range_percent == {"min": 25, "max": 75}
+    assert filament.is_discontinued is True
+    assert filament.ams_compatibility == ["AMS", "AMS Lite"]
+    assert filament.datasheet_url == "https://example.com/spec.pdf"
+    assert set(filament.custom_fields or {}) == {"spoolman_id"}
+    assert await db_session.scalar(
+        select(func.count()).select_from(SystemExtraField).where(
+            SystemExtraField.target_type == "filament",
+            SystemExtraField.key.in_(
+                [
+                    "dry",
+                    "fan",
+                    "discontinued",
+                    "ams",
+                    "datasheet",
+                    "fan_speed_min",
+                    "fan_speed_max",
+                ]
+            ),
+        )
+    ) == 0
+    clear_filament = await db_session.scalar(
+        select(Filament).where(Filament.designation == "PETG Clear")
+    )
+    assert clear_filament is not None
+    assert clear_filament.cooling_fan_range_percent == {"min": 20, "max": 70}
+    assert set(clear_filament.custom_fields or {}) == {"spoolman_id"}
+
+
+@pytest.mark.parametrize(
+    ("mode", "actions"),
+    [
+        (ImportStorageMode.PRESERVE, []),
+        (ImportStorageMode.LEGACY, []),
+        (
+            ImportStorageMode.SYSTEM,
+            [SpoolmanFieldAction(target_type="filament", key="dry", action="preserve")],
+        ),
+    ],
+)
+async def test_standard_extra_promotion_respects_storage_choice(db_session, mode, actions):
+    data = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    data["filament"][0]["extra"]["dry"] = "55"
+    data["field_definitions"]["filament"].append(
+        {"key": "dry", "name": "Drying Temperature", "field_type": "integer", "unit": "°C"}
+    )
+    server = SpoolmanFixtureServer(data)
+    service = SpoolmanImportService(db_session, client_factory=server.client_factory)
+    preview = await service.preview("http://spoolman")
+    assert any(
+        field["key"] == "dry" and field["status"] == "standard"
+        for field in preview.extra_fields
+    )
+    result = await service.execute(
+        "http://spoolman",
+        preview.extra_field_fingerprint,
+        extra_field_mode=mode,
+        field_actions=actions,
+    )
+
+    filament = await db_session.scalar(
+        select(Filament).where(Filament.designation == "PLA Red")
+    )
+    assert result.errors == []
+    assert filament is not None
+    assert filament.drying_temp_c is None
+    assert filament.custom_fields["spoolman_extra"]["dry"] == "55"
+
+
+async def test_incompatible_temperature_and_fan_units_stay_extra_fields(db_session):
+    data = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    data["filament"][0]["extra"].update(
+        {"bed": "[130,150]", "fan_speed_min": "120", "fan_speed_max": "180"}
+    )
+    definitions = data["field_definitions"]["filament"]
+    definitions[0]["unit"] = "°F"
+    definitions.extend(
+        [
+            {"key": "fan_speed_min", "name": "Fan Speed Min", "field_type": "integer", "unit": "rpm"},
+            {"key": "fan_speed_max", "name": "Fan Speed Max", "field_type": "integer", "unit": "rpm"},
+        ]
+    )
+    service = SpoolmanImportService(
+        db_session, client_factory=SpoolmanFixtureServer(data).client_factory
+    )
+    preview = await service.preview("http://spoolman")
+    result = await service.execute(
+        "http://spoolman",
+        preview.extra_field_fingerprint,
+        extra_field_mode=ImportStorageMode.SYSTEM,
+    )
+
+    filament = await db_session.scalar(
+        select(Filament).where(Filament.designation == "PLA Red")
+    )
+    assert result.errors == []
+    assert filament is not None
+    assert filament.bed_temp_range_c is None
+    assert filament.cooling_fan_range_percent is None
+    assert filament.custom_fields["bed"] == {"min": 130, "max": 150}
+    assert filament.custom_fields["fan_speed_min"] == 120
+    assert filament.custom_fields["fan_speed_max"] == 180
+
+
 async def test_per_field_override_mixes_system_local_and_preserve(db_session):
     server = SpoolmanFixtureServer.from_path(FIXTURE_PATH)
     service = SpoolmanImportService(db_session, client_factory=server.client_factory)
