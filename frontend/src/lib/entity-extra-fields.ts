@@ -651,6 +651,7 @@ export function createEntityExtraFieldEditor(options: {
         const row = button.closest<HTMLElement>('[data-entity-extra-id]')
         drafts = drafts.filter((item) => item.id !== Number(row?.dataset.entityExtraId))
         render()
+        addButton.focus()
       })
     })
   }

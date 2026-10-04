@@ -121,18 +121,6 @@ export interface LookupInstance {
   search: (query: string) => void
 }
 
-export type FilamentLookupSource = 'filamandb' | 'disabled'
-
-export function resolveFilamentLookupSource(
-  source: FilamentLookupSource,
-  filamentDbActive: boolean,
-): { endpoint: string; labelKey: string } | null {
-  if (source === 'filamandb' && filamentDbActive) {
-    return { endpoint: '/filamentdb/filaments', labelKey: 'admin.filamentLookupFilaManDB' }
-  }
-  return null
-}
-
 export function bindFilamentDbLookupToManufacturer(
   select: HTMLSelectElement,
   searchAll: HTMLInputElement,

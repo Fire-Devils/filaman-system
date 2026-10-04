@@ -24,7 +24,9 @@ describe('shared extra fields dialog', () => {
     })
 
     dialog.open({ customFields: { storage_note: 'Keep dry' } }, trigger)
-    const overlay = document.querySelector<HTMLElement>('.entity-extra-fields-overlay')!
+    const overlay = document.querySelector<HTMLDialogElement>('.entity-extra-fields-overlay')!
+    expect(overlay.tagName).toBe('DIALOG')
+    expect(overlay.open).toBe(true)
     const input = overlay.querySelector<HTMLInputElement>('.system-field-input')!
     expect(input.value).toBe('Keep dry')
     input.value = 'Below 25% RH'
@@ -34,11 +36,14 @@ describe('shared extra fields dialog', () => {
       customFields: { storage_note: 'Below 25% RH' },
       customFieldDefinitions: null,
     }))
-    expect(overlay.hidden).toBe(true)
+    expect(overlay.open).toBe(false)
 
     dialog.open({ customFields: { storage_note: 'Keep dry' } }, trigger)
     overlay.querySelector<HTMLButtonElement>('[data-extra-fields-cancel]')!.click()
-    expect(overlay.hidden).toBe(true)
+    expect(overlay.open).toBe(false)
+    dialog.open({ customFields: { storage_note: 'Keep dry' } }, trigger)
+    overlay.dispatchEvent(new Event('cancel', { cancelable: true }))
+    expect(overlay.open).toBe(false)
     expect(save).toHaveBeenCalledTimes(1)
   })
 })

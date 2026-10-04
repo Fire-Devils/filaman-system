@@ -6,18 +6,17 @@ import {
   createEntityExtraFieldEditor,
   getExtraFieldValue,
 } from './entity-extra-fields'
-import { escapeHtml, parseNumericRangeInputs, renderFieldInput } from './extra-fields'
+import { collectSystemFieldValues, escapeHtml, parseNumericRangeInputs, renderFieldInput } from './extra-fields'
 import {
   bindFilamentDbLookupToManufacturer,
   checkFilamentDbActive,
   createFilamentDbLookup,
-  resolveFilamentLookupSource,
-  type FilamentLookupSource,
 } from './filamentdb-lookup'
 import { buildFilamentHeroStyle, buildFilamentSwatchStyle } from './filament-detail'
 import { t } from './i18n'
 import { bindInlineColorEditor } from './inline-color-editor'
 import {
+  ADD_MANUFACTURER_VALUE,
   bindManufacturerCreateOption,
   createManufacturerDialog,
   type Manufacturer,
@@ -169,13 +168,26 @@ export function createFilamentFormController(options: {
   const dirtyWrappers = mode === 'edit'
     ? Array.from(form.querySelectorAll<HTMLElement>('[data-dirty-key]'))
     : []
+  const dirtyMarkers = new Map<HTMLElement, HTMLElement>()
+  for (const wrapper of dirtyWrappers) {
+    const marker = document.createElement('span')
+    marker.className = 'filament-dirty-indicator'
+    marker.textContent = t('filaments.changed')
+    marker.hidden = true
+    const label = wrapper.querySelector<HTMLElement>(':scope > .fm-label, :scope > label.fm-label, :scope > h3.fm-label, :scope > div > .fm-label')
+    const markerHost = wrapper.classList.contains('filament-form-check')
+      ? wrapper.querySelector<HTMLElement>('span') || wrapper
+      : label || wrapper
+    markerHost.appendChild(marker)
+    dirtyMarkers.set(wrapper, marker)
+  }
   const unsavedStatus = form.ownerDocument.getElementById('unsaved-changes-status')
   const clearColorFilter = bindColorFilterButton(byId('color-filter-button'), (value) => {
     colorFilter = value
     renderColorGrid()
   })
 
-  bindInlineColorEditor({
+  const inlineColorEditor = bindInlineColorEditor({
     getAbortSignal,
     getCsrfToken: csrfToken,
     isAbortError,
@@ -235,6 +247,7 @@ export function createFilamentFormController(options: {
 
   function closeColorDialog(): void {
     if (!colorDialog.open) return
+    inlineColorEditor.close()
     colorDialog.close()
     colorDialog.classList.remove('open')
     colorDialogInvoker?.focus()
@@ -252,12 +265,19 @@ export function createFilamentFormController(options: {
     return Number.isFinite(parsed) ? parsed : null
   }
 
-  function rangeValue(prefix: string): number | { min: number; max: number } | null {
-    return parseNumericRangeInputs(input(`${prefix}_value`).value, input(`${prefix}_to`).value)
+  function rangeValue(prefix: string): number | { min: number | null; max: number | null } | null {
+    const startInput = input(`${prefix}_value`)
+    const endInput = input(`${prefix}_to`)
+    const value = parseNumericRangeInputs(startInput.value, endInput.value)
+    if (value === null || typeof value === 'object') return value
+    if (!startInput.value && endInput.value) return { min: null, max: value }
+    if (startInput.dataset.openEndedRange === 'true' && !endInput.value) return { min: value, max: null }
+    return value
   }
 
   function readSnapshot(): FormSnapshot {
-    const extraFields = collectExtraFieldPayload(systemFieldsGrid, entityExtraFields)
+    const systemValues = collectSystemFieldValues(systemFieldsGrid)
+    const entityValues = entityExtraFields.getPayload()
     const fallbackExtraFields = Array.from(
       form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
         '#system-fields-grid input, #system-fields-grid select, #system-fields-grid textarea',
@@ -302,10 +322,8 @@ export function createFilamentFormController(options: {
       spool_width_mm: serialize(numberValue('spool_width_mm')),
       price: serialize(numberValue('price')),
       shop_url: serialize(input('shop_url').value.trim()),
-      custom_fields: serialize(extraFields || {
-        fields: fallbackExtraFields,
-        editor: customFieldsContainer.textContent,
-      }),
+      system_fields: serialize(systemValues ?? fallbackExtraFields),
+      entity_fields: serialize(entityValues ?? customFieldsContainer.textContent),
     }
   }
 
@@ -317,6 +335,7 @@ export function createFilamentFormController(options: {
       const keys = (wrapper.dataset.dirtyKey || '').split(/\s+/).filter(Boolean)
       const dirty = keys.some((key) => baseline?.[key] !== current[key])
       wrapper.classList.toggle('is-dirty', dirty)
+      dirtyMarkers.get(wrapper)!.hidden = !dirty
       anyDirty ||= dirty
     }
     colorLauncher.classList.toggle('is-dirty', [
@@ -478,7 +497,9 @@ export function createFilamentFormController(options: {
     if (fillDensity && density != null) input('density_g_cm3').value = String(density)
   }
 
+  let preserveDraftSpoolFields = false
   function applyManufacturerDefaults(): void {
+    if (preserveDraftSpoolFields || manufacturerSelect.value === ADD_MANUFACTURER_VALUE) return
     const manufacturer = allManufacturers.find(({ id }) => id === Number(manufacturerSelect.value))
     const values: Array<[string, unknown]> = [
       ['default_spool_weight_g', manufacturer?.empty_spool_weight_g],
@@ -557,16 +578,16 @@ export function createFilamentFormController(options: {
     return allManufacturers.find(({ id }) => id === Number(manufacturerSelect.value))?.name || ''
   }
 
-  function bindCatalogLookup(config: { endpoint: string; labelKey: string }, source: FilamentLookupSource): void {
+  function bindCatalogLookup(): void {
     if (lookupBound) return
     lookupBound = true
-    lookupHeading.textContent = t('filamentdbLookup.searchExistingFilament', { database: t(config.labelKey) })
-    lookupScopeHint.textContent = t('filamentdbLookup.selectManufacturerToSearch', { database: t(config.labelKey) })
+    lookupHeading.textContent = t('filamentdbLookup.searchExistingFilament', { database: t('admin.filamentLookupFilaManDB') })
+    lookupScopeHint.textContent = t('filamentdbLookup.selectManufacturerToSearch', { database: t('admin.filamentLookupFilaManDB') })
     bindFilamentDbLookupToManufacturer(manufacturerSelect, lookupSearchAll, lookupSection, (scopedToManufacturer) => {
       lookupToast.style.display = 'none'
       return createFilamentDbLookup<any>({
         container: lookupContainer,
-        endpoint: config.endpoint,
+        endpoint: '/filamentdb/filaments',
         placeholder: t('filamentdbLookup.searchFilament'),
         extraParams: scopedToManufacturer ? { manufacturer_name: selectedManufacturerName() } : {},
         renderItem(item) {
@@ -585,8 +606,7 @@ export function createFilamentFormController(options: {
             .filter(Boolean)
             .map((value) => escapeHtml(String(value)))
             .join(' · ')
-          const spool = source === 'filamandb' ? '<span style="font-size:1.2rem;flex-shrink:0">&#x1F9F5;</span>' : ''
-          return `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div class="fdb-lookup-item-name">${escapeHtml(item.name || item.designation || '?')}</div><div class="fdb-lookup-item-sub">${details} ${colors}</div></div>${spool}</div>`
+          return `<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div class="fdb-lookup-item-name">${escapeHtml(item.name || item.designation || '?')}</div><div class="fdb-lookup-item-sub">${details} ${colors}</div></div><span style="font-size:1.2rem;flex-shrink:0">&#x1F9F5;</span></div>`
         },
         async onSelect(item) {
           try {
@@ -667,7 +687,12 @@ export function createFilamentFormController(options: {
                 allManufacturers.push({ id: manufacturerId, name: manufacturerName })
               }
               manufacturerSelect.value = String(manufacturerId)
-              manufacturerSelect.dispatchEvent(new Event('change', { bubbles: true }))
+              preserveDraftSpoolFields = true
+              try {
+                manufacturerSelect.dispatchEvent(new Event('change', { bubbles: true }))
+              } finally {
+                preserveDraftSpoolFields = false
+              }
             }
             if (item.diameter_mm == null) delete catalogData.diameter_mm
             const finishType = prefilled.finish_type
@@ -703,7 +728,7 @@ export function createFilamentFormController(options: {
 
   async function loadReferenceData(): Promise<void> {
     const filamentDbActive = await checkFilamentDbActive()
-    let source: FilamentLookupSource = 'filamandb'
+    let lookupSource = 'filamandb'
     try {
       const response = await fetch('/api/v1/app-settings/public-info', {
         credentials: 'include',
@@ -711,9 +736,7 @@ export function createFilamentFormController(options: {
       })
       if (response.ok) {
         const settings = await response.json()
-        if (['filamandb', 'disabled'].includes(settings.filament_lookup_source)) {
-          source = settings.filament_lookup_source
-        }
+        lookupSource = settings.filament_lookup_source ?? 'filamandb'
       }
     } catch (error) {
       if (!isAbortError(error)) console.error('Failed to load filament lookup source:', error)
@@ -775,8 +798,7 @@ export function createFilamentFormController(options: {
     entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
     renderSystemFields()
 
-    const lookupConfig = resolveFilamentLookupSource(source, filamentDbActive)
-    if (lookupConfig) bindCatalogLookup(lookupConfig, source)
+    if (lookupSource === 'filamandb' && filamentDbActive) bindCatalogLookup()
   }
 
   function setField(id: string, value: unknown): void {
@@ -787,9 +809,14 @@ export function createFilamentFormController(options: {
     const range = value && typeof value === 'object' && !Array.isArray(value)
       ? value as { min?: unknown; max?: unknown }
       : { min: value, max: value }
-    const start = range.min ?? range.max
-    setField(`${prefix}_value`, start)
-    setField(`${prefix}_to`, range.min != null && range.max != null && range.min !== range.max ? range.max : null)
+    const startInput = input(`${prefix}_value`)
+    startInput.dataset.openEndedRange = String(range.min != null && range.max == null)
+    setField(`${prefix}_value`, range.min)
+    if (range.min == null || range.max == null) {
+      setField(`${prefix}_to`, range.max)
+      return
+    }
+    setField(`${prefix}_to`, range.min !== range.max ? range.max : null)
   }
 
   function applyInitialData(data: InitialData, source: 'initial' | 'duplicate' | 'catalog' = 'initial'): void {
@@ -855,7 +882,7 @@ export function createFilamentFormController(options: {
       colorModeRadios.forEach((radio) => { radio.checked = radio.value === (data.color_mode || 'single') })
       syncColorMode()
     }
-    if (hasValue('multi_color_style')) setField('multi_color_style', data.multi_color_style)
+    if (hasValue('multi_color_style')) setField('multi_color_style', data.multi_color_style || 'striped')
     if (hasValue('colors') && Array.isArray(data.colors)) {
       selectedColorIds = [...data.colors]
         .sort((left, right) => (left.position ?? 0) - (right.position ?? 0))

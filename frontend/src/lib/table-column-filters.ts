@@ -519,6 +519,7 @@ function createFilterActions(
       event.preventDefault()
       applyFilter()
     } else if (event.key === 'Escape') {
+      event.preventDefault()
       event.stopPropagation()
       close()
       state.trigger.focus()

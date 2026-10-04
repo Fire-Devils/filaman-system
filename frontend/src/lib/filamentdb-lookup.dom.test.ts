@@ -71,13 +71,4 @@ describe('manufacturer filament lookup', () => {
     expect(createLookup).toHaveBeenLastCalledWith(true)
   })
 
-  it('selects exactly one configured filament lookup source', () => {
-    expect(filamentLookup.resolveFilamentLookupSource('filamandb', true)).toEqual({
-      endpoint: '/filamentdb/filaments',
-      labelKey: 'admin.filamentLookupFilaManDB',
-    })
-    expect(filamentLookup.resolveFilamentLookupSource('filamandb', false)).toBeNull()
-    expect(filamentLookup.resolveFilamentLookupSource('disabled', true)).toBeNull()
-    expect(filamentLookup.resolveFilamentLookupSource('ofd' as any, true)).toBeNull()
-  })
 })

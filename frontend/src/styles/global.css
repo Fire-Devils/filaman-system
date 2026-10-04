@@ -1711,7 +1711,6 @@ dialog.fm-modal-overlay:not([open]) {
   transform: scale(1);
 }
 
-.entity-extra-fields-overlay[hidden],
 .entity-extra-fields-dialog [hidden] { display: none; }
 .entity-extra-fields-dialog { width: min(56rem, calc(100vw - 2rem)); padding: 0; }
 .entity-extra-fields-dialog-header,

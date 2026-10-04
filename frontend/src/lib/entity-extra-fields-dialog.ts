@@ -21,11 +21,11 @@ interface DialogData {
 
 export function createEntityExtraFieldsDialog(options: DialogOptions) {
   const target = options.targetType === 'spool' ? 'spools' : 'filaments'
-  const overlay = document.createElement('div')
+  const overlay = document.createElement('dialog')
   overlay.className = 'fm-modal-overlay entity-extra-fields-overlay'
-  overlay.hidden = true
+  overlay.setAttribute('aria-labelledby', 'entity-extra-fields-title')
   overlay.innerHTML = `
-    <section class="fm-card entity-extra-fields-dialog" role="dialog" aria-modal="true" aria-labelledby="entity-extra-fields-title" tabindex="-1">
+    <section class="fm-card entity-extra-fields-dialog">
       <header class="entity-extra-fields-dialog-header">
         <h2 id="entity-extra-fields-title">${escapeHtml(t('common.extraFields'))}</h2>
         <button type="button" class="fm-btn fm-btn-outline" data-extra-fields-cancel aria-label="${escapeHtml(t('common.close'))}">×</button>
@@ -54,7 +54,6 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
     </section>`
   document.body.appendChild(overlay)
 
-  const panel = overlay.querySelector<HTMLElement>('[role="dialog"]')!
   const form = overlay.querySelector<HTMLFormElement>('form')!
   const systemSection = overlay.querySelector<HTMLElement>('.entity-extra-fields-system-section')!
   const systemGrid = overlay.querySelector<HTMLElement>('.entity-extra-fields-system-grid')!
@@ -69,32 +68,20 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   let returnFocus: HTMLElement | null = null
 
   function close(): void {
+    if (overlay.open) overlay.close()
     overlay.classList.remove('open')
-    overlay.hidden = true
     returnFocus?.focus()
+    returnFocus = null
   }
+  overlay.addEventListener('cancel', event => {
+    event.preventDefault()
+    close()
+  })
 
   overlay.querySelectorAll<HTMLButtonElement>('[data-extra-fields-cancel]')
     .forEach(button => button.addEventListener('click', close))
   overlay.addEventListener('click', event => {
     if (event.target === overlay) close()
-  })
-  overlay.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      close()
-    }
-    if (event.key !== 'Tab') return
-    const focusable = [...overlay.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')]
-      .filter(element => element.getClientRects().length > 0)
-    if (!focusable.length) return
-    if (event.shiftKey && document.activeElement === focusable[0]) {
-      event.preventDefault()
-      focusable.at(-1)?.focus()
-    } else if (!event.shiftKey && document.activeElement === focusable.at(-1)) {
-      event.preventDefault()
-      focusable[0].focus()
-    }
   })
   form.addEventListener('submit', async event => {
     event.preventDefault()
@@ -124,9 +111,8 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
       }).join('')
       editor.setData(values, data.customFieldDefinitions)
       error.hidden = true
-      overlay.hidden = false
+      overlay.showModal()
       overlay.classList.add('open')
-      panel.focus()
     },
   }
 }

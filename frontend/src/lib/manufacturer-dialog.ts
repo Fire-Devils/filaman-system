@@ -46,10 +46,8 @@ export function createManufacturerDialog(options: {
   filamentDbActive: boolean
   onSaved: (manufacturer: Manufacturer) => void | Promise<void>
 }): ManufacturerDialog {
-  const overlay = document.createElement('div')
+  const overlay = document.createElement('dialog')
   overlay.className = 'fm-modal-overlay'
-  overlay.setAttribute('role', 'dialog')
-  overlay.setAttribute('aria-modal', 'true')
   overlay.setAttribute('aria-labelledby', 'manufacturer-dialog-title')
   overlay.innerHTML = `
     <div class="fm-card" style="width:100%;max-width:480px;margin:16px;">
@@ -173,11 +171,16 @@ export function createManufacturerDialog(options: {
   }
 
   const close = () => {
+    if (overlay.open) overlay.close()
     overlay.classList.remove('open')
     destroyLookup()
     restoreFocus?.focus()
     restoreFocus = null
   }
+  overlay.addEventListener('cancel', event => {
+    event.preventDefault()
+    close()
+  })
 
   const open = (manufacturer: Manufacturer | null = null) => {
     current = manufacturer
@@ -214,6 +217,7 @@ export function createManufacturerDialog(options: {
       initLookup(manufacturer.name)
       dbLookup.style.display = ''
     }
+    overlay.showModal()
     overlay.classList.add('open')
     nameInput.focus()
   }
@@ -234,9 +238,6 @@ export function createManufacturerDialog(options: {
   overlay.querySelector('[data-manufacturer-cancel]')!.addEventListener('click', close)
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close()
-  })
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && overlay.classList.contains('open')) close()
   })
 
   form.addEventListener('submit', async (event) => {

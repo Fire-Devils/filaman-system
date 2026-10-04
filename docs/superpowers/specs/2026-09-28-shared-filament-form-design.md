@@ -4,7 +4,7 @@
 
 Make filament creation and editing use one shared form implementation so field names, ordering, catalog lookup, manufacturer creation, color selection, validation, and future changes cannot drift between the two pages.
 
-The Edit page must also gain the configured OFD/FilaManDB lookup and the color filter. Catalog results remain a draft until the user presses Save. Every edit that differs from the loaded filament is visibly marked as unsaved, including ordinary typing and catalog-applied changes.
+The Edit page must also gain the configured FilaManDB lookup and the color filter. Catalog-applied filament values remain a draft until the user presses Save. Every edit that differs from the loaded filament is visibly marked as unsaved, including ordinary typing and catalog-applied changes.
 
 ## Scope
 
@@ -14,7 +14,7 @@ In scope:
 - One shared client controller for reference-data loading, manufacturer creation, catalog lookup, color filtering and selection, field population, validation, extra fields, and payload collection.
 - Create- and edit-specific loading, persistence, button text, and redirects supplied by thin route wrappers.
 - Dirty-state tracking on Edit against the fully loaded original filament.
-- Existing configured lookup sources: OFD, FilaManDB, or disabled.
+- Existing configured lookup source: FilaManDB or disabled.
 - Existing duplicate-filament preload on Create.
 
 Out of scope:
@@ -22,7 +22,7 @@ Out of scope:
 - Changing backend filament create/update contracts.
 - Combining the existing create and edit URLs.
 - Automatic saving, navigation prompts, undo history, or per-field revert buttons.
-- OFD bulk import, edit-page taxonomy migration, or additional OFD trait storage.
+- Bulk import and additional catalog trait storage.
 
 ## Architecture
 
@@ -74,9 +74,11 @@ The separate persistence adapters preserve current backend behavior while every 
 
 ## Catalog Lookup Behavior
 
-Both modes use the app setting to select OFD, FilaManDB, or disabled. Selecting a manufacturer immediately displays the search field when lookup is enabled. There is no intermediate “Load” button.
+Both modes use the app setting to select FilaManDB or disabled. Selecting a manufacturer immediately displays the search field when lookup is enabled. There is no intermediate “Load” button.
 
-Selecting a catalog result applies its available values to the form only. It may update product/series name, base material, material variant, finish, diameter, colors, manufacturer color name, weight, density, spool defaults, price, or purchase URL. A missing catalog value never erases an existing draft value.
+Selecting a catalog result applies its available filament values to the form only. It may update product/series name, base material, material variant, finish, diameter, colors, manufacturer color name, weight, density, spool defaults, price, or purchase URL. A missing catalog value never erases an existing draft value, including when the result selects a different manufacturer.
+
+Reference-record exception: the existing FilaManDB preparation endpoint may create reusable manufacturer and color records as soon as a catalog result is selected. Canceling the form does not remove those reference records. The filament itself is not created or updated until Save.
 
 On Edit, these changes use the same dirty-state mechanism as manual edits. No request mutating the filament is sent until Save is submitted.
 
@@ -130,7 +132,7 @@ Retain the existing lookup, manufacturer-dialog, color-filter, locale-parity, fr
 
 - Both routes render the same shared form component and initialize the same shared controller.
 - Edit has the same source-selected catalog search and smart color filter as Create.
-- No catalog or manual edit is persisted before Save.
+- No catalog-applied or manual filament edit is persisted before Save; reference-record creation follows the exception above.
 - Every Edit value differing from its baseline is marked, and restoring it removes the mark.
 - Create duplication, Edit loading, extra fields, and existing persistence contracts continue to work.
 - Frontend tests, lint/type checks, and production build pass; focused backend tests remain green.

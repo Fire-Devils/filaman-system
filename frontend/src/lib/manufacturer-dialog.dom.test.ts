@@ -50,10 +50,14 @@ describe('shared manufacturer dialog', () => {
     })
 
     dialog.open()
+    expect(document.querySelector<HTMLDialogElement>('.fm-modal-overlay')?.tagName).toBe('DIALOG')
+    expect(document.querySelector<HTMLDialogElement>('.fm-modal-overlay')?.open).toBe(true)
 
     const name = document.querySelector<HTMLInputElement>('[data-manufacturer-name]')!
     expect(name.id).not.toBe('')
     expect(document.querySelector(`label[for="${name.id}"]`)).not.toBeNull()
+    document.querySelector<HTMLDialogElement>('.fm-modal-overlay')!.dispatchEvent(new Event('cancel', { cancelable: true }))
+    expect(document.querySelector<HTMLDialogElement>('.fm-modal-overlay')!.open).toBe(false)
   })
 
   it('creates a manufacturer and returns it to the host page', async () => {
@@ -88,7 +92,7 @@ describe('shared manufacturer dialog', () => {
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 
     await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith(created))
-    expect(document.querySelector('.fm-modal-overlay')?.classList.contains('open')).toBe(false)
+    expect(document.querySelector<HTMLDialogElement>('.fm-modal-overlay')?.open).toBe(false)
     expect(fetchStub).toHaveBeenCalledWith(
       '/api/v1/manufacturers',
       expect.objectContaining({

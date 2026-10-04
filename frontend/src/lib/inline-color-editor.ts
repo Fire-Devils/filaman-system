@@ -116,4 +116,5 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
       saveButton.disabled = false
     }
   })
+  return { close }
 }

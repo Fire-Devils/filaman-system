@@ -175,7 +175,7 @@ const { title } = Astro.props
     </div>
 
     <!-- Global confirm / alert modal -->
-    <div id="fm-confirm-overlay" class="fm-modal-overlay">
+    <dialog id="fm-confirm-overlay" class="fm-modal-overlay" aria-labelledby="fm-confirm-title">
       <div class="fm-modal">
         <h3 id="fm-confirm-title" class="fm-modal-title"></h3>
         <p id="fm-confirm-message" class="fm-modal-message"></p>
@@ -188,7 +188,7 @@ const { title } = Astro.props
           <button id="fm-confirm-ok" class="fm-btn fm-btn-danger"></button>
         </div>
       </div>
-    </div>
+    </dialog>
 
 
     <script>
@@ -215,7 +215,7 @@ const { title } = Astro.props
 
       /* ── Global confirm / alert modal ────────────────────────── */
       ;(function setupFmModal() {
-        const overlay = document.getElementById('fm-confirm-overlay')!
+        const overlay = document.getElementById('fm-confirm-overlay') as HTMLDialogElement
         const titleEl = document.getElementById('fm-confirm-title')!
         const messageEl = document.getElementById('fm-confirm-message')!
         const okBtn = document.getElementById('fm-confirm-ok')!
@@ -227,6 +227,7 @@ const { title } = Astro.props
 
         let resolveFn: ((v: any) => void) | null = null
         let checkboxMode = false
+        let returnFocus: HTMLElement | null = null
 
         function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox?: { label: string; checked?: boolean }): Promise<any> {
           titleEl.textContent = title
@@ -251,7 +252,10 @@ const { title } = Astro.props
             checkboxRow.style.display = 'none'
           }
 
+          returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+          overlay.showModal()
           overlay.classList.add('open')
+          okBtn.focus()
 
           return new Promise<any>(resolve => {
             resolveFn = resolve
@@ -259,7 +263,10 @@ const { title } = Astro.props
         }
 
         function closeModal(result: boolean) {
+          overlay.close()
           overlay.classList.remove('open')
+          returnFocus?.focus()
+          returnFocus = null
           if (resolveFn) {
             if (checkboxMode) {
               resolveFn(result ? { confirmed: true, checked: checkboxInput.checked } : { confirmed: false, checked: false })
@@ -275,8 +282,9 @@ const { title } = Astro.props
         overlay.addEventListener('click', (e) => {
           if (e.target === overlay) closeModal(false)
         })
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal(false)
+        overlay.addEventListener('cancel', (e) => {
+          e.preventDefault()
+          closeModal(false)
         })
 
         // fmConfirm(message, options?) – replacement for window.confirm()

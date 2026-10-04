@@ -119,28 +119,28 @@ const { mode, cancelHref } = Astro.props
         <section class="fm-card filament-spec-card" data-filament-section="temperatures">
           <h2 class="filament-spec-title" data-i18n="filaments.temperatures">Temperatures</h2>
           <div class="filament-form-section-body">
-            <div data-dirty-key="extruder_temp_range_c"><label class="fm-label" data-i18n="filaments.extruderTemperatureLabel">Extruder Temperature</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="extruder_temp_value" step="1" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Extruder temperature value" class="fm-input" /><input type="number" id="extruder_temp_to" step="1" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Extruder temperature upper value" class="fm-input" /></div><span>°C</span></div></div>
-            <div data-dirty-key="bed_temp_range_c"><label class="fm-label" data-i18n="filaments.bedTemperatureLabel">Bed Temperature</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="bed_temp_value" step="1" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Bed temperature value" class="fm-input" /><input type="number" id="bed_temp_to" step="1" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Bed temperature upper value" class="fm-input" /></div><span>°C</span></div></div>
-            <div data-dirty-key="chamber_temp_c"><label for="chamber_temp_c" class="fm-label" data-i18n="filaments.chamberTemperatureLabel">Chamber temperature</label><div class="filament-unit-input"><input type="number" id="chamber_temp_c" name="chamber_temp_c" step="1" class="fm-input" /><span>°C</span></div></div>
-            <div data-dirty-key="softening_temp_c"><label for="softening_temp_c" class="fm-label" data-i18n="filaments.softeningTemperatureLabel">Softening temperature</label><div class="filament-unit-input"><input type="number" id="softening_temp_c" name="softening_temp_c" step="1" class="fm-input" /><span>°C</span></div></div>
+            <div data-dirty-key="extruder_temp_range_c"><label class="fm-label" data-i18n="filaments.extruderTemperatureLabel">Extruder Temperature</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="extruder_temp_value" step="any" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Extruder temperature value" class="fm-input" /><input type="number" id="extruder_temp_to" step="any" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Extruder temperature upper value" class="fm-input" /></div><span>°C</span></div></div>
+            <div data-dirty-key="bed_temp_range_c"><label class="fm-label" data-i18n="filaments.bedTemperatureLabel">Bed Temperature</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="bed_temp_value" step="any" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Bed temperature value" class="fm-input" /><input type="number" id="bed_temp_to" step="any" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Bed temperature upper value" class="fm-input" /></div><span>°C</span></div></div>
+            <div data-dirty-key="chamber_temp_c"><label for="chamber_temp_c" class="fm-label" data-i18n="filaments.chamberTemperatureLabel">Chamber temperature</label><div class="filament-unit-input"><input type="number" id="chamber_temp_c" name="chamber_temp_c" step="any" class="fm-input" /><span>°C</span></div></div>
+            <div data-dirty-key="softening_temp_c"><label for="softening_temp_c" class="fm-label" data-i18n="filaments.softeningTemperatureLabel">Softening temperature</label><div class="filament-unit-input"><input type="number" id="softening_temp_c" name="softening_temp_c" step="any" class="fm-input" /><span>°C</span></div></div>
           </div>
         </section>
 
         <section class="fm-card filament-spec-card" data-filament-section="drying">
           <h2 class="filament-spec-title" data-i18n="filaments.dryingInfo">Drying</h2>
           <div class="filament-form-section-body">
-            <div data-dirty-key="drying_temp_c"><label for="drying_temp_c" class="fm-label" data-i18n="filaments.dryingTemperatureLabel">Drying temperature</label><div class="filament-unit-input"><input type="number" id="drying_temp_c" name="drying_temp_c" step="1" class="fm-input" /><span>°C</span></div></div>
-            <div data-dirty-key="drying_time_hours"><label for="drying_time_hours" class="fm-label" data-i18n="filaments.dryingTimeLabel">Drying time</label><div class="filament-unit-input"><input type="number" id="drying_time_hours" name="drying_time_hours" step="0.1" class="fm-input" /><span>h</span></div></div>
+            <div data-dirty-key="drying_temp_c"><label for="drying_temp_c" class="fm-label" data-i18n="filaments.dryingTemperatureLabel">Drying temperature</label><div class="filament-unit-input"><input type="number" id="drying_temp_c" name="drying_temp_c" step="any" class="fm-input" /><span>°C</span></div></div>
+            <div data-dirty-key="drying_time_hours"><label for="drying_time_hours" class="fm-label" data-i18n="filaments.dryingTimeLabel">Drying time</label><div class="filament-unit-input"><input type="number" id="drying_time_hours" name="drying_time_hours" step="any" class="fm-input" /><span>h</span></div></div>
           </div>
         </section>
 
         <section class="fm-card filament-spec-card" data-filament-section="printBehavior">
           <h2 class="filament-spec-title" data-i18n="filaments.printBehavior">Print behavior</h2>
           <div class="filament-form-section-body">
-            <div data-dirty-key="cooling_fan_range_percent"><label class="fm-label" data-i18n="filaments.coolingFanLabel">Cooling fan</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="cooling_fan_value" min="0" max="100" step="1" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Cooling fan value" class="fm-input" /><input type="number" id="cooling_fan_to" min="0" max="100" step="1" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Cooling fan upper value" class="fm-input" /></div><span>%</span></div></div>
-            <div data-dirty-key="max_volumetric_speed_mm3_s"><label for="max_volumetric_speed_mm3_s" class="fm-label" data-i18n="filaments.maxVolumetricSpeedLabel">Max volumetric speed</label><div class="filament-unit-input"><input type="number" id="max_volumetric_speed_mm3_s" name="max_volumetric_speed_mm3_s" step="0.1" class="fm-input" /><span>mm³/s</span></div></div>
-            <div data-dirty-key="flow_ratio"><label for="flow_ratio" class="fm-label" data-i18n="filaments.flowRatio">Flow ratio</label><input type="number" id="flow_ratio" name="flow_ratio" step="0.001" class="fm-input" /></div>
-            <div data-dirty-key="pressure_advance_k"><label for="pressure_advance_k" class="fm-label" data-i18n="filaments.pressureAdvance">Pressure advance (K)</label><input type="number" id="pressure_advance_k" name="pressure_advance_k" step="0.001" class="fm-input" /></div>
+            <div data-dirty-key="cooling_fan_range_percent"><label class="fm-label" data-i18n="filaments.coolingFanLabel">Cooling fan</label><div class="filament-unit-input"><div class="filament-range-inputs"><input type="number" id="cooling_fan_value" min="0" max="100" step="any" placeholder="Value" data-i18n-placeholder="filaments.temperatureValue" aria-label="Cooling fan value" class="fm-input" /><input type="number" id="cooling_fan_to" min="0" max="100" step="any" placeholder="To (optional)" data-i18n-placeholder="filaments.temperatureTo" aria-label="Cooling fan upper value" class="fm-input" /></div><span>%</span></div></div>
+            <div data-dirty-key="max_volumetric_speed_mm3_s"><label for="max_volumetric_speed_mm3_s" class="fm-label" data-i18n="filaments.maxVolumetricSpeedLabel">Max volumetric speed</label><div class="filament-unit-input"><input type="number" id="max_volumetric_speed_mm3_s" name="max_volumetric_speed_mm3_s" step="any" class="fm-input" /><span>mm³/s</span></div></div>
+            <div data-dirty-key="flow_ratio"><label for="flow_ratio" class="fm-label" data-i18n="filaments.flowRatio">Flow ratio</label><input type="number" id="flow_ratio" name="flow_ratio" step="any" class="fm-input" /></div>
+            <div data-dirty-key="pressure_advance_k"><label for="pressure_advance_k" class="fm-label" data-i18n="filaments.pressureAdvance">Pressure advance (K)</label><input type="number" id="pressure_advance_k" name="pressure_advance_k" step="any" class="fm-input" /></div>
           </div>
         </section>
 
@@ -217,7 +217,7 @@ const { mode, cancelHref } = Astro.props
       </dialog>
 
       <!-- System Fields -->
-      <div id="system-fields-container" class="fm-card filament-extra-fields-card" data-dirty-key="custom_fields" style="display: none;">
+      <div id="system-fields-container" class="fm-card filament-extra-fields-card" data-dirty-key="system_fields" style="display: none;">
         <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;" data-i18n="common.systemFields">System Fields</h3>
         <div id="system-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <!-- Dynamic system fields go here -->
@@ -225,7 +225,7 @@ const { mode, cancelHref } = Astro.props
       </div>
 
       <!-- Custom Fields -->
-      <div id="filament-custom-fields-card" class="fm-card filament-extra-fields-card" data-dirty-key="custom_fields">
+      <div id="filament-custom-fields-card" class="fm-card filament-extra-fields-card" data-dirty-key="entity_fields">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <label class="fm-label" style="margin: 0;" data-i18n="filaments.specificExtraFields">Filament-specific extra fields</label>
           <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
@@ -627,5 +627,14 @@ const { mode, cancelHref } = Astro.props
     outline-offset: 3px;
     border-radius: var(--radius-sm);
   }
+  :global(#filament-form .filament-dirty-indicator) {
+    display: inline-flex;
+    margin-inline-start: .45rem;
+    color: var(--accent);
+    font-size: .7rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  :global(#filament-form .filament-dirty-indicator[hidden]) { display: none; }
   :global(#filament-color-dialog [data-dirty-key].is-dirty) { outline: none; }
 </style>

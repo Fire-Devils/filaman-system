@@ -31,7 +31,9 @@ describe('header filter accessibility', () => {
     expect(document.querySelector('.fm-header-filter-operator')?.getAttribute('aria-label'))
       .toBe('Filteroperator für Name')
 
-    panel.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }))
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    panel.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
 
     expect(panel.classList.contains('open')).toBe(false)
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
