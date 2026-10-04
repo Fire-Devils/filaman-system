@@ -1,10 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  isBuiltInLabelField,
-  scopeLabelExtraField,
-  type LabelExtraFieldValue,
-} from './label-extra-fields'
-import { type SystemExtraFieldDef } from './extra-fields'
+import { isBuiltInLabelField, scopeLabelExtraField, type LabelExtraFieldValue } from './label-extra-fields'
+import { formatNumericRange, type SystemExtraFieldDef } from './extra-fields'
 import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 import {
   firstLabelValue,
@@ -127,16 +123,13 @@ export function buildFilamentLabelDataFromParams(id: string, params: URLSearchPa
   return data
 }
 
-function getLegacyTemperatureValue(
-  filament: any,
-  field: 'extruder_temp' | 'bed_temp',
-): string {
+function getLegacyTemperatureValue(filament: any, field: 'extruder_temp' | 'bed_temp'): string {
   const settingsField = `settings_${field}`
   const customFields = filament?.custom_fields as Record<string, unknown> | undefined
+  const standardValue = field === 'extruder_temp' ? filament?.extruder_temp_range_c : filament?.bed_temp_range_c
   return toLabelString(
-    filament?.[settingsField]
-      ?? customFields?.[field]
-      ?? customFields?.[settingsField],
+    formatNumericRange(standardValue) ||
+      (filament?.[settingsField] ?? customFields?.[field] ?? customFields?.[settingsField]),
   )
 }
 
@@ -208,17 +201,57 @@ export function buildFilamentPrintSearchParams(filament: any): URLSearchParams {
 // Standard labels are intentionally reduced to common, high-signal fields.
 // The advanced designer still receives the full filament data for token use.
 export const REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS: FilamentExtraFieldDefinition[] = [
-  { key: 'filament.diameter',      label: 'Diameter (mm)',      dataKey: 'diameter',      valueFromApi: f => toLabelString(f?.diameter_mm) },
-  { key: 'filament.density',       label: 'Density (g/cm³)',    dataKey: 'density',       valueFromApi: f => toLabelString(f?.density_g_cm3) },
-  { key: 'filament.weight',        label: 'Weight (g)',         dataKey: 'weight',        valueFromApi: f => toLabelString(f?.raw_material_weight_g ?? f?.weight) },
-  { key: 'filament.finish',        label: 'Finish',             dataKey: 'finish',        valueFromApi: f => toLabelString(f?.finish_type) },
-  { key: 'filament.price',         label: 'Price',              dataKey: 'price',         valueFromApi: f => toLabelString(f?.price) },
+  {
+    key: 'filament.extruder_temp',
+    label: 'Extruder temperature (°C)',
+    dataKey: 'extruder_temp',
+    valueFromApi: f => getLegacyTemperatureValue(f, 'extruder_temp'),
+  },
+  {
+    key: 'filament.bed_temp',
+    label: 'Bed temperature (°C)',
+    dataKey: 'bed_temp',
+    valueFromApi: f => getLegacyTemperatureValue(f, 'bed_temp'),
+  },
+  {
+    key: 'filament.diameter',
+    label: 'Diameter (mm)',
+    dataKey: 'diameter',
+    valueFromApi: f => toLabelString(f?.diameter_mm),
+  },
+  {
+    key: 'filament.density',
+    label: 'Density (g/cm³)',
+    dataKey: 'density',
+    valueFromApi: f => toLabelString(f?.density_g_cm3),
+  },
+  {
+    key: 'filament.weight',
+    label: 'Weight (g)',
+    dataKey: 'weight',
+    valueFromApi: f => toLabelString(f?.raw_material_weight_g ?? f?.weight),
+  },
+  {
+    key: 'filament.finish',
+    label: 'Finish',
+    dataKey: 'finish',
+    valueFromApi: f => toLabelString(f?.finish_type),
+  },
+  {
+    key: 'filament.price',
+    label: 'Price',
+    dataKey: 'price',
+    valueFromApi: f => toLabelString(f?.price),
+  },
 ]
 
 export function buildReducedStandardFilamentExtraFieldsFromLabelData(data: FilamentLabelData): FilamentExtraField[] {
-  return REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS
-    .map(def => ({ key: def.key, label: def.label, value: data[def.dataKey], source: 'filament' }))
-    .filter(field => hasDisplayValue(field.value))
+  return REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS.map(def => ({
+    key: def.key,
+    label: def.label,
+    value: data[def.dataKey],
+    source: 'filament',
+  })).filter(field => hasDisplayValue(field.value))
 }
 
 export function buildFilamentExtraFieldsForPrint(

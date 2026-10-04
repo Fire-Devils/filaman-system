@@ -13,6 +13,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from app.services.custom_field_identity import validate_custom_field_path
+from app.services.extra_field_validation import normalize_numeric_range
 from app.services.spoolman_contracts import (
     RepairFieldType,
     SpoolmanFieldCandidate,
@@ -106,17 +107,20 @@ def convert_spoolman_value(
         return value
 
     if field_type in {"integer_range", "float_range"}:
-        endpoints = _parse_range_endpoints(value)
-        if endpoints is None:
-            raise SpoolmanFieldError("expected a two-item range")
-        for item in endpoints:
+        if isinstance(value, dict) and set(value) != {"min", "max"}:
+            raise SpoolmanFieldError("expected a range with min and max")
+        try:
+            normalized = normalize_numeric_range(value)
+        except ValueError as exc:
+            raise SpoolmanFieldError(str(exc)) from exc
+        for item in normalized.values():
             if (
                 field_type == "integer_range"
                 and item is not None
                 and not isinstance(item, int)
             ):
                 raise SpoolmanFieldError("range endpoints must be integers or null")
-        return {"min": endpoints[0], "max": endpoints[1]}
+        return normalized
 
     if field_type == "boolean":
         if not isinstance(value, bool):
@@ -393,21 +397,20 @@ def _parse_range_endpoints(
     value: Any,
 ) -> tuple[int | float | None, int | float | None] | None:
     """Return validated range endpoints from legacy arrays or exact min/max objects."""
-    object_shape = isinstance(value, dict)
-    if isinstance(value, list) and len(value) == 2:
-        endpoints = (value[0], value[1])
-    elif object_shape and set(value) == {"min", "max"}:
-        endpoints = (value["min"], value["max"])
+    if (
+        isinstance(value, list)
+        and len(value) == 2
+        or isinstance(value, dict)
+        and set(value) == {"min", "max"}
+    ):
+        shaped_value = value
     else:
         return None
-
-    for item in endpoints:
-        valid_number = isinstance(item, int | float) and not isinstance(item, bool)
-        if item is not None and (
-            not valid_number or (object_shape and not math.isfinite(item))
-        ):
-            return None
-    return endpoints
+    try:
+        normalized = normalize_numeric_range(shaped_value)
+    except ValueError:
+        return None
+    return normalized["min"], normalized["max"]
 
 
 def _is_datetime(value: str) -> bool:

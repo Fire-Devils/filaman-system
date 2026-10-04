@@ -1,5 +1,7 @@
 import pytest
 
+from app.models import AppSettings
+
 
 class TestAppSettingsAdmin:
     @pytest.mark.asyncio
@@ -13,6 +15,61 @@ class TestAppSettingsAdmin:
         data = response.json()
         assert data["login_disabled"] is False
         assert data["rfid_display_colons"] is False
+        assert data["filament_lookup_source"] == "filamandb"
+
+    @pytest.mark.asyncio
+    async def test_filament_lookup_source_roundtrip_and_public_info(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"filament_lookup_source": "disabled"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["filament_lookup_source"] == "disabled"
+
+        public_response = await client.get("/api/v1/app-settings/public-info")
+        assert public_response.status_code == 200
+        assert public_response.json()["filament_lookup_source"] == "disabled"
+
+    @pytest.mark.asyncio
+    async def test_filament_lookup_source_rejects_unknown_value(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"filament_lookup_source": "both"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_filament_lookup_source_rejects_ofd_when_feature_is_absent(self, auth_client):
+        client, csrf_token = auth_client
+
+        response = await client.put(
+            "/api/v1/admin/app-settings/",
+            json={"filament_lookup_source": "ofd"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_legacy_ofd_setting_uses_filamandb_without_overwriting_it(self, auth_client, db_session):
+        client, _ = auth_client
+        db_session.add(AppSettings(id=1, filament_lookup_source="ofd"))
+        await db_session.commit()
+
+        admin_response = await client.get("/api/v1/admin/app-settings/")
+        public_response = await client.get("/api/v1/app-settings/public-info")
+
+        assert admin_response.json()["filament_lookup_source"] == "filamandb"
+        assert public_response.json()["filament_lookup_source"] == "filamandb"
+        assert (await db_session.get(AppSettings, 1)).filament_lookup_source == "ofd"
 
     @pytest.mark.asyncio
     async def test_put_app_settings_creates_row(self, auth_client):

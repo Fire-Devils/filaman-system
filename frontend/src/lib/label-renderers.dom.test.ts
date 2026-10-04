@@ -48,9 +48,9 @@ describe('label renderers', () => {
       element: document.querySelector<HTMLElement>('#label')!,
       data: {
         id: '1',
-        designation: 'Sample PLA',
+        designation: 'PET-G',
         manufacturer: 'FilaMan',
-        material: 'PLA',
+        material: 'PETG',
         colorName: 'Black',
         hexCode: '000000',
         colorHexes: '#000000',
@@ -74,6 +74,7 @@ describe('label renderers', () => {
     })
 
     expectNoBrowserPrintCss()
+    expect(document.querySelector('.label-designation')?.textContent).toBe('PET-G')
   })
 
   it('rejects legacy settings instead of retaining the old runtime renderer', async () => {

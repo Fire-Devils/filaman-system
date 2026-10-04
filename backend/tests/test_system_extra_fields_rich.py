@@ -10,9 +10,6 @@ Covers:
 """
 
 import pytest
-from pydantic import ValidationError
-from sqlalchemy import select
-
 from app.api.v1.schemas_system_extra_field import (
     VALID_FIELD_TYPES,
     SystemExtraFieldCreate,
@@ -35,6 +32,8 @@ from app.services.system_extra_field_compatibility import (
     is_existing_value_compatible,
     resolve_custom_field_value,
 )
+from pydantic import ValidationError
+from sqlalchemy import select
 
 # ──────────────────────────────────────────────────────────────
 # Schema / validator unit tests  (pure Pydantic, no DB, no HTTP)
@@ -44,9 +43,17 @@ from app.services.system_extra_field_compatibility import (
 class TestValidFieldTypes:
     def test_all_11_types_present(self):
         expected = {
-            "text", "number", "range",
-            "dropdown", "checkbox", "formula",
-            "date", "datetime", "url", "multiselect", "textarea",
+            "text",
+            "number",
+            "range",
+            "dropdown",
+            "checkbox",
+            "formula",
+            "date",
+            "datetime",
+            "url",
+            "multiselect",
+            "textarea",
         }
         assert VALID_FIELD_TYPES == expected
 
@@ -92,7 +99,9 @@ class TestSchemaValidation:
         SystemExtraFieldCreate(**self._base(field_type="textarea"))
 
     def test_valid_type_multiselect_with_options(self):
-        SystemExtraFieldCreate(**self._base(field_type="multiselect", options=["A", "B"]))
+        SystemExtraFieldCreate(
+            **self._base(field_type="multiselect", options=["A", "B"])
+        )
 
     def test_valid_type_dropdown_with_options(self):
         SystemExtraFieldCreate(**self._base(field_type="dropdown", options=["X", "Y"]))
@@ -126,31 +135,39 @@ class TestSchemaValidation:
     # ── range config bounds validation ──
 
     def test_range_valid_bounds(self):
-        SystemExtraFieldCreate(**self._base(
-            field_type="range",
-            config={"min_bound": 0, "max_bound": 100},
-        ))
+        SystemExtraFieldCreate(
+            **self._base(
+                field_type="range",
+                config={"min_bound": 0, "max_bound": 100},
+            )
+        )
 
     def test_range_min_equals_max_raises(self):
         with pytest.raises(ValidationError, match="min_bound must be less than"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="range",
-                config={"min_bound": 10, "max_bound": 10},
-            ))
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="range",
+                    config={"min_bound": 10, "max_bound": 10},
+                )
+            )
 
     def test_range_min_greater_than_max_raises(self):
         with pytest.raises(ValidationError, match="min_bound must be less than"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="range",
-                config={"min_bound": 50, "max_bound": 10},
-            ))
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="range",
+                    config={"min_bound": 50, "max_bound": 10},
+                )
+            )
 
     def test_number_min_greater_than_max_raises(self):
         with pytest.raises(ValidationError, match="min_bound must be less than"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="number",
-                config={"min_bound": 50, "max_bound": 10},
-            ))
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="number",
+                    config={"min_bound": 50, "max_bound": 10},
+                )
+            )
 
     def test_range_config_none_is_valid(self):
         """Range without config (no bounds) is allowed."""
@@ -158,69 +175,89 @@ class TestSchemaValidation:
 
     def test_range_partial_bounds_no_validation_error(self):
         """Only min_bound or only max_bound is fine — both needed to compare."""
-        SystemExtraFieldCreate(**self._base(
-            field_type="range",
-            config={"min_bound": 10, "max_bound": None},
-        ))
+        SystemExtraFieldCreate(
+            **self._base(
+                field_type="range",
+                config={"min_bound": 10, "max_bound": None},
+            )
+        )
 
     @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
     def test_number_rejects_non_finite_bounds(self, value):
         with pytest.raises(ValidationError, match="must be finite"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="number",
-                config={"min_bound": value},
-            ))
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="number",
+                    config={"min_bound": value},
+                )
+            )
 
     # ── config is optional for scalar types ──
 
     def test_number_config_with_unit_and_dp(self):
-        SystemExtraFieldCreate(**self._base(
-            field_type="number",
-            config={"unit": "mm", "decimal_places": 2},
-        ))
+        SystemExtraFieldCreate(
+            **self._base(
+                field_type="number",
+                config={"unit": "mm", "decimal_places": 2},
+            )
+        )
 
     def test_text_config_none(self):
         SystemExtraFieldCreate(**self._base(field_type="text", config=None))
 
     def test_text_rejects_numeric_config(self):
         with pytest.raises(ValidationError, match="Unsupported config keys"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="text",
-                config={"min_bound": 0},
-            ))
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="text",
+                    config={"min_bound": 0},
+                )
+            )
 
     def test_text_with_options_remains_accepted(self):
-        SystemExtraFieldCreate(**self._base(
-            field_type="text",
-            options=["unused"],
-        ))
+        SystemExtraFieldCreate(
+            **self._base(
+                field_type="text",
+                options=["unused"],
+            )
+        )
 
     def test_textarea_with_max_length(self):
-        SystemExtraFieldCreate(**self._base(
-            field_type="textarea",
-            config={"max_length": 500},
-        ))
+        SystemExtraFieldCreate(
+            **self._base(
+                field_type="textarea",
+                config={"max_length": 500},
+            )
+        )
 
     def test_number_rejects_non_numeric_bound(self):
         with pytest.raises(ValidationError, match="min_bound must be a number"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="number",
-                config={"min_bound": "low"},
-            ))
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="number",
+                    config={"min_bound": "low"},
+                )
+            )
 
     def test_textarea_rejects_invalid_max_length(self):
-        with pytest.raises(ValidationError, match="max_length must be a positive integer"):
-            SystemExtraFieldCreate(**self._base(
-                field_type="textarea",
-                config={"max_length": 0},
-            ))
+        with pytest.raises(
+            ValidationError, match="max_length must be a positive integer"
+        ):
+            SystemExtraFieldCreate(
+                **self._base(
+                    field_type="textarea",
+                    config={"max_length": 0},
+                )
+            )
 
     def test_response_allows_legacy_dropdown_without_options(self):
         """Existing invalid rows must not make the list endpoint fail after migration."""
-        response = SystemExtraFieldResponse.model_validate({
-            **self._base(field_type="dropdown", options=None),
-            "id": 1,
-        })
+        response = SystemExtraFieldResponse.model_validate(
+            {
+                **self._base(field_type="dropdown", options=None),
+                "id": 1,
+            }
+        )
         assert response.options is None
         assert "config" not in response.model_dump()
 
@@ -342,7 +379,9 @@ class TestExistingValueCompatibility:
             ("false", "checkbox", None, True),
             ("TRUE", "checkbox", None, False),
             ("yes", "checkbox", None, False),
-            ({"min": 10, "max": "20"}, "range", None, True),
+            ({"min": 10, "max": "20"}, "range", None, False),
+            ({"min": 20, "max": 10}, "range", None, False),
+            ({"min": 20, "max": 20}, "range", None, True),
             ([10, 20], "range", None, False),
             ("PLA", "dropdown", ["PLA", "PETG"], True),
             ("ABS", "dropdown", ["PLA", "PETG"], False),
@@ -590,8 +629,11 @@ class TestCreateRichFieldTypes:
     async def test_create_number_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf,
-            key="print_temp", label="Print Temp", field_type="number",
+            client,
+            csrf,
+            key="print_temp",
+            label="Print Temp",
+            field_type="number",
             config={"unit": "°C", "decimal_places": 1},
         )
         assert resp.status_code == 200
@@ -604,8 +646,11 @@ class TestCreateRichFieldTypes:
     async def test_create_range_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf,
-            key="temp_range", label="Temp Range", field_type="range",
+            client,
+            csrf,
+            key="temp_range",
+            label="Temp Range",
+            field_type="range",
             config={"unit": "°C", "min_bound": 0, "max_bound": 300},
         )
         assert resp.status_code == 200
@@ -618,7 +663,11 @@ class TestCreateRichFieldTypes:
     async def test_create_date_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf, key="expire_date", label="Expiry", field_type="date",
+            client,
+            csrf,
+            key="expire_date",
+            label="Expiry",
+            field_type="date",
         )
         assert resp.status_code == 200
         assert resp.json()["field_type"] == "date"
@@ -642,7 +691,11 @@ class TestCreateRichFieldTypes:
     async def test_create_url_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf, key="datasheet_url", label="Datasheet", field_type="url",
+            client,
+            csrf,
+            key="datasheet_url",
+            label="Datasheet",
+            field_type="url",
         )
         assert resp.status_code == 200
         assert resp.json()["field_type"] == "url"
@@ -651,8 +704,11 @@ class TestCreateRichFieldTypes:
     async def test_create_multiselect_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf,
-            key="tags", label="Tags", field_type="multiselect",
+            client,
+            csrf,
+            key="tags",
+            label="Tags",
+            field_type="multiselect",
             options=["PLA", "PETG", "ABS"],
         )
         assert resp.status_code == 200
@@ -664,8 +720,11 @@ class TestCreateRichFieldTypes:
     async def test_create_textarea_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf,
-            key="notes", label="Notes", field_type="textarea",
+            client,
+            csrf,
+            key="notes",
+            label="Notes",
+            field_type="textarea",
             config={"max_length": 500},
         )
         assert resp.status_code == 200
@@ -674,10 +733,16 @@ class TestCreateRichFieldTypes:
         assert data["config"]["max_length"] == 500
 
     @pytest.mark.asyncio
-    async def test_create_unknown_type_preserves_existing_api_behavior(self, auth_client):
+    async def test_create_unknown_type_preserves_existing_api_behavior(
+        self, auth_client
+    ):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf, key="bad_field", label="Bad", field_type="integer",
+            client,
+            csrf,
+            key="bad_field",
+            label="Bad",
+            field_type="integer",
         )
         assert resp.status_code == 200
         assert resp.json()["field_type"] == "integer"
@@ -686,8 +751,11 @@ class TestCreateRichFieldTypes:
     async def test_create_multiselect_without_options_returns_422(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf,
-            key="no_opts", label="No Options", field_type="multiselect",
+            client,
+            csrf,
+            key="no_opts",
+            label="No Options",
+            field_type="multiselect",
         )
         assert resp.status_code == 422
 
@@ -695,8 +763,11 @@ class TestCreateRichFieldTypes:
     async def test_create_range_invalid_bounds_returns_422(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf,
-            key="bad_range", label="Bad Range", field_type="range",
+            client,
+            csrf,
+            key="bad_range",
+            label="Bad Range",
+            field_type="range",
             config={"min_bound": 100, "max_bound": 10},
         )
         assert resp.status_code == 422
@@ -705,7 +776,11 @@ class TestCreateRichFieldTypes:
     async def test_config_null_for_text_field(self, auth_client):
         client, csrf = auth_client
         resp = await _create_field(
-            client, csrf, key="plain_text", label="Plain", field_type="text",
+            client,
+            csrf,
+            key="plain_text",
+            label="Plain",
+            field_type="text",
         )
         assert resp.status_code == 200
         assert "config" not in resp.json()
@@ -713,8 +788,12 @@ class TestCreateRichFieldTypes:
     @pytest.mark.asyncio
     async def test_duplicate_key_returns_400(self, auth_client):
         client, csrf = auth_client
-        await _create_field(client, csrf, key="dupe_key", label="First", field_type="text")
-        resp = await _create_field(client, csrf, key="dupe_key", label="Second", field_type="text")
+        await _create_field(
+            client, csrf, key="dupe_key", label="First", field_type="text"
+        )
+        resp = await _create_field(
+            client, csrf, key="dupe_key", label="Second", field_type="text"
+        )
         assert resp.status_code == 400
 
 
@@ -723,7 +802,11 @@ class TestFieldTypeUpdates:
     async def test_change_field_type_preserves_existing_api_behavior(self, auth_client):
         client, csrf = auth_client
         create_resp = await _create_field(
-            client, csrf, key="immutable_type", label="Immut", field_type="text",
+            client,
+            csrf,
+            key="immutable_type",
+            label="Immut",
+            field_type="text",
         )
         assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
@@ -769,7 +852,11 @@ class TestFieldTypeUpdates:
         """Sending the same field_type in an update remains supported."""
         client, csrf = auth_client
         create_resp = await _create_field(
-            client, csrf, key="same_type", label="Same", field_type="text",
+            client,
+            csrf,
+            key="same_type",
+            label="Same",
+            field_type="text",
         )
         assert create_resp.status_code == 200
         field_id = create_resp.json()["id"]
@@ -786,8 +873,11 @@ class TestFieldTypeUpdates:
     async def test_update_config_without_changing_type(self, auth_client):
         client, csrf = auth_client
         create_resp = await _create_field(
-            client, csrf,
-            key="upd_cfg", label="Update Config", field_type="number",
+            client,
+            csrf,
+            key="upd_cfg",
+            label="Update Config",
+            field_type="number",
             config={"unit": "mm", "decimal_places": 1},
         )
         assert create_resp.status_code == 200
@@ -807,8 +897,11 @@ class TestFieldTypeUpdates:
     async def test_update_invalid_range_config_returns_422(self, auth_client):
         client, csrf = auth_client
         create_resp = await _create_field(
-            client, csrf,
-            key="upd_range", label="Update Range", field_type="range",
+            client,
+            csrf,
+            key="upd_range",
+            label="Update Range",
+            field_type="range",
             config={"min_bound": 0, "max_bound": 100},
         )
         assert create_resp.status_code == 200
@@ -826,8 +919,11 @@ class TestFieldTypeUpdates:
     async def test_update_multiselect_options_cannot_be_cleared(self, auth_client):
         client, csrf = auth_client
         create_resp = await _create_field(
-            client, csrf,
-            key="upd_multi", label="Update Multi", field_type="multiselect",
+            client,
+            csrf,
+            key="upd_multi",
+            label="Update Multi",
+            field_type="multiselect",
             options=["A", "B"],
         )
         assert create_resp.status_code == 200
@@ -1025,8 +1121,11 @@ class TestGetReturnsConfigField:
     async def test_get_list_includes_config(self, auth_client):
         client, csrf = auth_client
         await _create_field(
-            client, csrf,
-            key="cfg_check", label="Config Check", field_type="number",
+            client,
+            csrf,
+            key="cfg_check",
+            label="Config Check",
+            field_type="number",
             config={"unit": "kg", "decimal_places": 3},
         )
         resp = await client.get(f"{_ENDPOINT}?target_type=filament")
@@ -1041,7 +1140,11 @@ class TestGetReturnsConfigField:
     async def test_get_returns_config_none_for_unset(self, auth_client):
         client, csrf = auth_client
         await _create_field(
-            client, csrf, key="no_cfg", label="No Config", field_type="text",
+            client,
+            csrf,
+            key="no_cfg",
+            label="No Config",
+            field_type="text",
         )
         resp = await client.get(f"{_ENDPOINT}?target_type=filament")
         assert resp.status_code == 200

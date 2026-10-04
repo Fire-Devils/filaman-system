@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Float,
     ForeignKey,
     Integer,
@@ -91,6 +92,35 @@ class Filament(Base, TimestampMixin):
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
     shop_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     density_g_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
+    extruder_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    bed_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    manufacturer_sku: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    datasheet_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_discontinued: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    drying_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drying_time_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    softening_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cooling_fan_range_percent: Mapped[dict[str, int | float | None] | None] = (
+        mapped_column(JSON, nullable=True)
+    )
+    chamber_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_volumetric_speed_mm3_s: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    flow_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pressure_advance_k: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ams_compatibility: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    build_plate_compatibility: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    price_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     color_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="single"

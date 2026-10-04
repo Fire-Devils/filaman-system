@@ -311,12 +311,16 @@ class PluginManager:
                     # canonical 255-0 / 255-1 rows exist, so AMS View and the
                     # printer page stop listing four External bays on H2C/H2D.
                     all_slots = (
-                        await db.execute(
-                            select(PrinterSlot).where(
-                                PrinterSlot.printer_id == printer_id
+                        (
+                            await db.execute(
+                                select(PrinterSlot).where(
+                                    PrinterSlot.printer_id == printer_id
+                                )
                             )
                         )
-                    ).scalars().all()
+                        .scalars()
+                        .all()
+                    )
                     active_indexes = {
                         (s.custom_fields or {}).get("slot_index")
                         for s in all_slots
@@ -405,7 +409,9 @@ class PluginManager:
                 if ams_info:
                     printer = await db.get(Printer, printer_id)
                     if printer:
-                        if active_spool_id_raw is not None and isinstance(ams_info, dict):
+                        if active_spool_id_raw is not None and isinstance(
+                            ams_info, dict
+                        ):
                             ams_info = {
                                 **ams_info,
                                 "active_spool_id": active_spool_id,
@@ -646,8 +652,7 @@ class PluginManager:
 
     def get_health(self) -> dict[int, dict[str, Any]]:
         self.health_status = {
-            printer_id: driver.health()
-            for printer_id, driver in self.drivers.items()
+            printer_id: driver.health() for printer_id, driver in self.drivers.items()
         }
         return dict(self.health_status)
 
@@ -901,6 +906,9 @@ class PluginManager:
 
         Uses legacy_renames from plugin.json to rename old field keys.
         Idempotent — upserts every entity/printer/parameter combination independently."""
+        if driver_key != "bambulab":
+            return
+
         # Load legacy_renames from plugin.json
         plugin_json = self._load_plugin_json(driver_key)
         if not plugin_json:

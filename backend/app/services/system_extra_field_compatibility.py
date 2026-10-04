@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Filament, Spool, SystemExtraField
+from app.services.extra_field_validation import normalize_numeric_range
 
 CustomFieldPathState = Literal["missing", "value", "collision"]
 _TARGET_MODELS = {
@@ -124,11 +125,7 @@ def definition_can_receive(receiver: Any, incoming: Any) -> bool:
 
 def field_paths_overlap(left: str, right: str) -> bool:
     """Return whether two custom-field paths are identical or nested."""
-    return (
-        left == right
-        or left.startswith(f"{right}.")
-        or right.startswith(f"{left}.")
-    )
+    return left == right or left.startswith(f"{right}.") or right.startswith(f"{left}.")
 
 
 def find_overlapping_definition(
@@ -206,13 +203,15 @@ def is_existing_value_compatible(
         )
 
     if field_type == "range":
-        if not isinstance(value, dict) or set(value) - {"min", "max"}:
+        if not isinstance(value, dict):
+            return False
+        try:
+            normalized = normalize_numeric_range(value)
+        except ValueError:
             return False
         return all(
-            endpoint is None
-            or endpoint == ""
-            or _number_within_bounds(endpoint, config)
-            for endpoint in value.values()
+            endpoint is None or _number_within_bounds(endpoint, config)
+            for endpoint in normalized.values()
         )
 
     if field_type == "dropdown":

@@ -86,132 +86,6 @@ import Layout from '../../layouts/Layout.astro'
 
   <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
 
-  <!-- Modal -->
-  <div id="modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
-    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
-      <h3 id="modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;" data-i18n="manufacturers.addManufacturer">Add Manufacturer</h3>
-
-      <!-- Mode toggle: DB lookup vs manual (create mode) -->
-      <div id="mfr-mode-toggle" class="fdb-mode-toggle" style="display: none;">
-        <label>
-          <input type="radio" name="mfr-mode" value="db" />
-          <span data-i18n="filamentdbLookup.fromDatabase">Create from FilaMan Database</span>
-        </label>
-        <label>
-          <input type="radio" name="mfr-mode" value="manual" checked />
-          <span data-i18n="filamentdbLookup.manualEntry">Create manually</span>
-        </label>
-      </div>
-
-      <!-- Edit mode: "Load from FilaManDB" button -->
-      <div id="mfr-edit-lookup-btn" style="display: none; margin-bottom: 12px;">
-        <button type="button" id="mfr-edit-lookup-toggle" class="fm-btn fm-btn-outline" style="width: 100%; font-size: 0.85rem;" data-i18n="filamentdbLookup.loadFromDb">
-          Load from FilaManDB
-        </button>
-      </div>
-
-      <!-- FilamentDB lookup section (hidden by default) -->
-      <div id="mfr-db-lookup" class="fdb-lookup-section" style="display: none;">
-        <div class="fdb-lookup-section-title" data-i18n="filamentdbLookup.loadFromDb">Load from FilaManDB</div>
-        <div id="mfr-lookup-container"></div>
-        <div id="mfr-lookup-toast" style="display: none;"></div>
-      </div>
-
-      <form id="modal-form" style="display: grid; gap: 16px;">
-        <input type="hidden" id="manufacturer-id" />
-        <div>
-          <label for="manufacturer-name" class="fm-label">
-            <span data-i18n="manufacturers.name">Name</span> *
-          </label>
-          <input
-            type="text"
-            id="manufacturer-name"
-            required
-            class="fm-input"
-            data-i18n-placeholder="manufacturers.namePlaceholder"
-            placeholder="e.g. Bambu Lab"
-          />
-        </div>
-        <div>
-          <label for="manufacturer-url" class="fm-label" data-i18n="manufacturers.url">
-            URL
-          </label>
-          <input
-            type="url"
-            id="manufacturer-url"
-            class="fm-input"
-            data-i18n-placeholder="manufacturers.urlPlaceholder"
-            placeholder="e.g. https://bambulab.com"
-          />
-        </div>
-        
-        <!-- Spool Defaults -->
-        <div class="fm-card" style="padding: 16px; margin-top: 8px;">
-          <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 16px; margin-top: 0; color: var(--text);">Spool Defaults</h3>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div>
-              <label for="manufacturer-empty-weight" class="fm-label" data-i18n="spools.emptySpoolWeight">
-                Empty Spool Weight (g)
-              </label>
-              <input
-                type="number"
-                step="1"
-                id="manufacturer-empty-weight"
-                class="fm-input"
-              />
-            </div>
-            <div>
-              <label for="manufacturer-material" class="fm-label" data-i18n="spools.spoolMaterial">
-                Spool Material
-              </label>
-              <select id="manufacturer-material" class="fm-select">
-                <option value="">-</option>
-                <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
-                <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
-                <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
-                <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
-              </select>
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-            <div>
-              <label for="manufacturer-outer-diameter" class="fm-label" data-i18n="spools.spoolOuterDiameter">
-                Spool Outer Diameter (mm)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                id="manufacturer-outer-diameter"
-                class="fm-input"
-              />
-            </div>
-            <div>
-              <label for="manufacturer-width" class="fm-label" data-i18n="spools.spoolWidth">
-                Spool Width (mm)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                id="manufacturer-width"
-                class="fm-input"
-              />
-            </div>
-          </div>
-        </div>
-        
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
-            Save
-          </button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <!-- Info Modal -->
   <div id="info-modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
     <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
@@ -246,16 +120,16 @@ import Layout from '../../layouts/Layout.astro'
       type HeaderFilterOption,
     } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive, fuzzyTokenScore } from '../../lib/filamentdb-lookup'
+    import { checkFilamentDbActive } from '../../lib/filamentdb-lookup'
+    import { createManufacturerDialog } from '../../lib/manufacturer-dialog'
     await initI18n()
     await initCurrency()
 
-    let mfrLookup: LookupInstance | null = null
     const filamentDbActive = await checkFilamentDbActive()
-
-    // Track FilamentDB logo info for download after create
-    let pendingLogoSlug: string | null = null
-    let pendingHasLabelLogo = false
+    const manufacturerDialog = createManufacturerDialog({
+      filamentDbActive,
+      onSaved: () => loadManufacturers(),
+    })
 
     let manufacturers: any[] = []
     let sortKey: string | null = 'name'
@@ -598,7 +472,7 @@ import Layout from '../../layouts/Layout.astro'
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
           const mf = JSON.parse(target.dataset.mf!)
-          openModal(mf)
+          manufacturerDialog.open(mf)
         })
       })
 
@@ -655,135 +529,6 @@ import Layout from '../../layouts/Layout.astro'
         })
       })
       renderPagination(sorted.length, currentPage)
-    }
-
-    function openModal(mf: any = null) {
-      const container = document.getElementById('modal-container')!
-      const title = document.getElementById('modal-title')!
-      const idInput = document.getElementById('manufacturer-id') as HTMLInputElement
-      const nameInput = document.getElementById('manufacturer-name') as HTMLInputElement
-      const urlInput = document.getElementById('manufacturer-url') as HTMLInputElement
-      const emptyWeightInput = document.getElementById('manufacturer-empty-weight') as HTMLInputElement
-      const materialInput = document.getElementById('manufacturer-material') as HTMLSelectElement
-      const outerDiameterInput = document.getElementById('manufacturer-outer-diameter') as HTMLInputElement
-      const widthInput = document.getElementById('manufacturer-width') as HTMLInputElement
-      const error = document.getElementById('modal-error')!
-
-      // Mode toggle: show only for create (not edit)
-      const modeToggle = document.getElementById('mfr-mode-toggle')!
-      const dbLookup = document.getElementById('mfr-db-lookup')!
-      const lookupContainer = document.getElementById('mfr-lookup-container')!
-      const lookupToast = document.getElementById('mfr-lookup-toast')!
-      const editLookupBtn = document.getElementById('mfr-edit-lookup-btn')!
-      const editLookupToggle = document.getElementById('mfr-edit-lookup-toggle')!
-
-      // Destroy previous lookup instance
-      if (mfrLookup) { mfrLookup.destroy(); mfrLookup = null }
-
-      // Reset state
-      dbLookup.style.display = 'none'
-      lookupToast.style.display = 'none'
-      pendingLogoSlug = null
-      pendingHasLabelLogo = false
-
-      // Shared renderItem & onSelect for both create & edit
-      const renderMfrItem = (item: any) => {
-        const website = item.website ? `<div class="fdb-lookup-item-sub">${item.website}</div>` : ''
-        const count = item.filament_count ? `<span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 8px;">${item.filament_count} filaments</span>` : ''
-        return `<div class="fdb-lookup-item-name">${item.name}${count}</div>${website}`
-      }
-      const onMfrSelect = (item: any) => {
-        nameInput.value = item.name || ''
-        urlInput.value = item.website || ''
-        pendingLogoSlug = (item.has_web_logo || item.has_label_logo) ? (item.slug || null) : null
-        pendingHasLabelLogo = item.has_label_logo || false
-        lookupToast.className = 'fdb-toast fdb-toast-success'
-        lookupToast.textContent = t('filamentdbLookup.prefillSuccess')
-        lookupToast.style.display = ''
-      }
-
-      if (mf) {
-        // Edit mode: hide create toggle, show lookup directly if FilamentDB active
-        modeToggle.style.display = 'none'
-        editLookupBtn.style.display = 'none'
-
-        if (filamentDbActive) {
-          // Create lookup with initial fuzzy search using current manufacturer name
-          mfrLookup = createFilamentDbLookup({
-            container: lookupContainer,
-            endpoint: '/filamentdb/manufacturers',
-            placeholder: t('filamentdbLookup.searchManufacturer'),
-            renderItem: renderMfrItem,
-            onSelect: onMfrSelect,
-            initialQuery: mf.name,
-            fuzzyScore: (item: any) => fuzzyTokenScore(item.name || '', mf.name || ''),
-          })
-          dbLookup.style.display = ''
-        }
-      } else {
-        // Create mode: show toggle only if FilamentDB plugin is active
-        editLookupBtn.style.display = 'none'
-        modeToggle.style.display = filamentDbActive ? 'flex' : 'none'
-        const manualRadio = modeToggle.querySelector('input[value="manual"]') as HTMLInputElement
-        manualRadio.checked = true
-
-        // Create lookup instance (lazy for create mode)
-        const initLookup = () => {
-          if (mfrLookup) return
-          mfrLookup = createFilamentDbLookup({
-            container: lookupContainer,
-            endpoint: '/filamentdb/manufacturers',
-            placeholder: t('filamentdbLookup.searchManufacturer'),
-            renderItem: renderMfrItem,
-            onSelect: onMfrSelect,
-          })
-        }
-
-        // Mode toggle event
-        modeToggle.querySelectorAll('input[name="mfr-mode"]').forEach(radio => {
-          radio.addEventListener('change', () => {
-            const mode = (modeToggle.querySelector('input[name="mfr-mode"]:checked') as HTMLInputElement).value
-            if (mode === 'db') {
-              initLookup()
-              dbLookup.style.display = ''
-              mfrLookup?.reset()
-            } else {
-              dbLookup.style.display = 'none'
-              pendingLogoSlug = null
-              pendingHasLabelLogo = false
-            }
-            lookupToast.style.display = 'none'
-          })
-        })
-      }
-
-      title.textContent = mf ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
-      idInput.value = mf ? String(mf.id) : ''
-      nameInput.value = mf ? mf.name : ''
-      urlInput.value = mf && mf.url ? mf.url : ''
-      
-      if (mf) {
-        emptyWeightInput.value = mf.empty_spool_weight_g != null ? String(mf.empty_spool_weight_g) : ''
-        materialInput.value = mf.spool_material || ''
-        outerDiameterInput.value = mf.spool_outer_diameter_mm != null ? String(mf.spool_outer_diameter_mm) : ''
-        widthInput.value = mf.spool_width_mm != null ? String(mf.spool_width_mm) : ''
-      } else {
-        // Default values for new manufacturer
-        emptyWeightInput.value = '250'
-        materialInput.value = ''
-        outerDiameterInput.value = '200'
-        widthInput.value = '65'
-      }
-      
-      error.classList.add('hidden')
-
-      container.style.display = 'flex'
-      nameInput.focus()
-    }
-
-    function closeModal() {
-      document.getElementById('modal-container')!.style.display = 'none'
-      if (mfrLookup) { mfrLookup.destroy(); mfrLookup = null }
     }
 
     function openInfoModal(mf: any) {
@@ -843,109 +588,15 @@ import Layout from '../../layouts/Layout.astro'
       document.getElementById('info-modal-container')!.style.display = 'none'
     }
 
-    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
+    document.getElementById('btn-new')?.addEventListener('click', () => manufacturerDialog.open())
     document.getElementById('info-modal-close')?.addEventListener('click', closeInfoModal)
 
-    // Close modals on backdrop click
-    document.getElementById('modal-container')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeModal()
-    })
     document.getElementById('info-modal-container')?.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) closeInfoModal()
     })
 
-    // Close modals on Escape key
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeModal()
-        closeInfoModal()
-      }
-    })
-
-    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-
-      const id = (document.getElementById('manufacturer-id') as HTMLInputElement).value
-      const name = (document.getElementById('manufacturer-name') as HTMLInputElement).value
-      const url = (document.getElementById('manufacturer-url') as HTMLInputElement).value || null
-      const emptyWeight = (document.getElementById('manufacturer-empty-weight') as HTMLInputElement).value
-      const material = (document.getElementById('manufacturer-material') as HTMLSelectElement).value || null
-      const outerDiameter = (document.getElementById('manufacturer-outer-diameter') as HTMLInputElement).value
-      const width = (document.getElementById('manufacturer-width') as HTMLInputElement).value
-      const error = document.getElementById('modal-error') as HTMLDivElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
-
-      const data: Record<string, any> = { 
-        name,
-        url,
-        empty_spool_weight_g: emptyWeight ? parseFloat(emptyWeight) : null,
-        spool_material: material,
-        spool_outer_diameter_mm: outerDiameter ? parseFloat(outerDiameter) : null,
-        spool_width_mm: width ? parseFloat(width) : null
-      }
-
-      error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.saving')
-
-      try {
-        const apiUrl = id ? `/api/v1/manufacturers/${id}` : '/api/v1/manufacturers'
-        const method = id ? 'PATCH' : 'POST'
-
-        const response = await fetch(apiUrl, {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': getCsrfToken(),
-          },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify(data),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
-        }
-
-        // Download logo from FilamentDB if a manufacturer was selected from FilaManDB
-        if (pendingLogoSlug) {
-          try {
-            let manufacturerId = id
-            if (!manufacturerId) {
-              const created = await response.json()
-              manufacturerId = created.id
-            }
-            await fetch(`/api/v1/manufacturers/${manufacturerId}/download-logo`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': getCsrfToken(),
-              },
-              credentials: 'include',
-              body: JSON.stringify({ slug: pendingLogoSlug, has_label_logo: pendingHasLabelLogo }),
-            })
-          } catch {
-            // Logo download failure is non-critical — don't block the save
-            console.warn('Logo download failed (non-critical)')
-          }
-          pendingLogoSlug = null
-          pendingHasLabelLogo = false
-        }
-
-        // Invalidate cache after successful save
-        invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
-        closeModal()
-        loadManufacturers()
-      } catch (err: any) {
-        if (isAbortError(err)) return
-        error.textContent = err.message
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.save')
-      }
+      if (e.key === 'Escape') closeInfoModal()
     })
 
     function setupHeaderFilters() {

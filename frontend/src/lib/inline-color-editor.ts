@@ -11,6 +11,7 @@ interface InlineColorEditorOptions {
   getCsrfToken: () => string
   isAbortError: (error: unknown) => boolean
   onCreated: (color: CreatedColor) => void
+  onOpenChange?: (open: boolean) => void
   translate: (key: string) => string
 }
 
@@ -21,15 +22,14 @@ function requiredElement<T extends HTMLElement>(id: string): T {
 }
 
 export function bindInlineColorEditor(options: InlineColorEditorOptions) {
+  const disclosure = requiredElement<HTMLDetailsElement>('new-color-disclosure')
   const form = requiredElement<HTMLDivElement>('new-color-form')
-  const toggle = requiredElement<HTMLDivElement>('new-color-toggle')
-  const addButton = requiredElement<HTMLButtonElement>('btn-add-new-color')
   const saveButton = requiredElement<HTMLButtonElement>('btn-save-new-color')
-  const cancelButton = requiredElement<HTMLButtonElement>('btn-cancel-new-color')
   const picker = requiredElement<HTMLInputElement>('new-color-picker')
   const hexInput = requiredElement<HTMLInputElement>('new-color-hex')
   const nameInput = requiredElement<HTMLInputElement>('new-color-name')
   const editorInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input'))
+  let reportedOpen = disclosure.open
 
   const colorControls = bindAlphaColorControls({
     picker,
@@ -43,8 +43,7 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
   })
 
   function close(): void {
-    form.classList.add('hidden')
-    toggle.classList.remove('hidden')
+    disclosure.open = false
     nameInput.value = ''
     colorControls.reset()
     editorInputs.forEach((input) => {
@@ -52,23 +51,27 @@ export function bindInlineColorEditor(options: InlineColorEditorOptions) {
     })
   }
 
-  addButton.addEventListener('click', () => {
+  disclosure.addEventListener('toggle', () => {
+    if (reportedOpen !== disclosure.open) {
+      reportedOpen = disclosure.open
+      options.onOpenChange?.(disclosure.open)
+    }
+    if (!disclosure.open) {
+      close()
+      return
+    }
     editorInputs.forEach((input) => {
       input.disabled = false
     })
-    form.classList.remove('hidden')
-    toggle.classList.add('hidden')
     colorControls.syncFromHex()
     nameInput.focus()
   })
-
-  cancelButton.addEventListener('click', close)
 
   saveButton.addEventListener('click', async () => {
     const name = nameInput.value.trim()
     const hex = normalizeHexCode(hexInput.value)
     if (!name) {
-      nameInput.focus()
+      nameInput.reportValidity()
       return
     }
     if (!hex) {
