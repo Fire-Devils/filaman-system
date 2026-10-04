@@ -326,14 +326,23 @@ def _promote_filamentdb_fields(
 ) -> dict[str, Any]:
     values: dict[str, Any] = {}
     candidates: dict[str, list[tuple[Any, tuple[str, ...]]]] = defaultdict(list)
+    nested = custom.get("spoolman_extra")
     if "sku" in custom and "sku" not in blocked_sources:
         candidates["manufacturer_sku"].append(
             (_text(custom["sku"], 255), ("sku",))
+        )
+    if isinstance(nested, dict) and "sku" in nested and "sku" not in blocked_sources:
+        candidates["manufacturer_sku"].append(
+            (_text(nested["sku"], 255), ("spoolman_extra", "sku"))
         )
 
     for source, target in _FILAMENTDB_NUMBER_FIELDS.items():
         if source in custom:
             candidates[target].append((_number(custom[source]), (source,)))
+        if isinstance(nested, dict) and source in nested:
+            candidates[target].append(
+                (_number(nested[source]), ("spoolman_extra", source))
+            )
 
     fan_keys = tuple(key for key in ("fan_speed_min", "fan_speed_max") if key in custom)
     if fan_keys:
@@ -348,11 +357,37 @@ def _promote_filamentdb_fields(
                 fan_keys,
             )
         )
+    if isinstance(nested, dict):
+        nested_fan_keys = tuple(
+            key for key in ("fan_speed_min", "fan_speed_max") if key in nested
+        )
+        if nested_fan_keys:
+            candidates["cooling_fan_range_percent"].append(
+                (
+                    _percentage_range(
+                        {
+                            "min": nested.get("fan_speed_min"),
+                            "max": nested.get("fan_speed_max"),
+                        }
+                    ),
+                    ("spoolman_extra", *nested_fan_keys),
+                )
+            )
 
     for source, target in system_aliases.items():
         if source in custom:
             candidates[target].append(
                 (_standard_value(target, custom[source]), (source,))
+            )
+        if isinstance(nested, dict) and source in nested:
+            raw = nested[source]
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except json.JSONDecodeError:
+                    pass
+            candidates[target].append(
+                (_standard_value(target, raw), ("spoolman_extra", source))
             )
 
     for target, target_candidates in candidates.items():
@@ -382,6 +417,8 @@ def _clean_system_definitions(
         set().union(*aliases.values())
         | {key for pairs in _PAIRS.values() for pair in pairs for key in pair}
         | extra_keys
+        | set(_FILAMENTDB_NUMBER_FIELDS)
+        | {"sku", "fan_speed_min", "fan_speed_max"}
     )
     for field in connection.execute(sa.select(system_fields)).mappings():
         if field["key"] not in recognized or field["target_type"] not in {

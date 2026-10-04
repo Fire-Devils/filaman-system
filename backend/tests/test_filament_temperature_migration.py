@@ -284,6 +284,30 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
                     "custom_fields": {"my_drying_temperature": 10**1000},
                     "custom_field_definitions": None,
                 },
+                {
+                    "id": 20,
+                    "custom_fields": {
+                        "spoolman_extra": {
+                            "my_drying_temperature": "58",
+                            "my_ams": '["AMS","AMS Lite"]',
+                            "keep_nested": "yes",
+                        }
+                    },
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 21,
+                    "custom_fields": {
+                        "spoolman_extra": {
+                            "dry_temp": "60",
+                            "flow_ratio": "0.96",
+                            "fan_speed_min": "20",
+                            "fan_speed_max": "70",
+                            "keep_nested": "untouched",
+                        }
+                    },
+                    "custom_field_definitions": None,
+                },
             ],
         )
         connection.execute(
@@ -480,6 +504,20 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
                     "label": "Datasheet URL",
                     "field_type": "url",
                 },
+                {
+                    "id": 22,
+                    "target_type": "filament",
+                    "key": "fan_speed_min",
+                    "label": "Fan Speed Min",
+                    "field_type": "number",
+                },
+                {
+                    "id": 23,
+                    "target_type": "filament",
+                    "key": "fan_speed_max",
+                    "label": "Fan Speed Max",
+                    "field_type": "number",
+                },
             ],
         )
 
@@ -560,6 +598,13 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         }
         assert rows[19].drying_temp_c is None
         assert rows[19].custom_fields == {"my_drying_temperature": 10**1000}
+        assert rows[20].drying_temp_c == 58
+        assert rows[20].ams_compatibility == ["AMS", "AMS Lite"]
+        assert rows[20].custom_fields == {"spoolman_extra": {"keep_nested": "yes"}}
+        assert rows[21].drying_temp_c == 60
+        assert rows[21].flow_ratio == 0.96
+        assert rows[21].cooling_fan_range_percent == {"min": 20, "max": 70}
+        assert rows[21].custom_fields == {"spoolman_extra": {"keep_nested": "untouched"}}
 
         migrated_spools = sa.Table("spools", sa.MetaData(), autoload_with=connection)
         spool_rows = {
