@@ -84,6 +84,19 @@ _STANDARD_FIELD_TYPES = {
     "build_plate_compatibility": {"multiselect", "text", "dropdown"},
     "price_currency": {"text", "dropdown"},
 }
+_STANDARD_UNITS = {
+    "extruder": {"°c", "c", "celsius"},
+    "bed": {"°c", "c", "celsius"},
+    "drying_temp_c": {"°c", "c", "celsius"},
+    "softening_temp_c": {"°c", "c", "celsius"},
+    "chamber_temp_c": {"°c", "c", "celsius"},
+    "drying_time_hours": {"h", "hr", "hrs", "hour", "hours"},
+    "cooling_fan_range_percent": {"%", "percent"},
+    "max_volumetric_speed_mm3_s": {"mm³/s", "mm3/s", "mm^3/s"},
+    "flow_ratio": {"ratio"},
+    "pressure_advance_k": {"k"},
+}
+_DIRECT_NUMERIC_TYPES = {"number", "float", "integer"}
 _DOWNGRADE_FIELDS = {
     "extruder_temp_range_c": ("Extruder temperature", "range", "°C"),
     "bed_temp_range_c": ("Bed temperature", "range", "°C"),
@@ -207,7 +220,10 @@ def _url(value: Any) -> str | None:
     normalized = _text(value, 500)
     if normalized is None:
         return None
-    parsed = urlparse(normalized)
+    try:
+        parsed = urlparse(normalized)
+    except ValueError:
+        return None
     return normalized if parsed.scheme in {"http", "https"} and parsed.netloc else None
 
 
@@ -234,7 +250,11 @@ def _currency(value: Any) -> str | None:
     if normalized is None:
         return None
     normalized = normalized.upper()
-    return normalized if len(normalized) == 3 and normalized.isalpha() else None
+    return (
+        normalized
+        if len(normalized) == 3 and normalized.isascii() and normalized.isalpha()
+        else None
+    )
 
 
 def _standard_value(target: str, value: Any) -> Any:
@@ -251,6 +271,27 @@ def _standard_value(target: str, value: Any) -> Any:
     if target == "price_currency":
         return _currency(value)
     return _text(value, 255)
+
+
+def _compatible_unit(target: str, config: Any) -> bool:
+    unit = config.get("unit") if isinstance(config, dict) else None
+    if unit is None or unit == "":
+        return True
+    return isinstance(unit, str) and unit.strip().lower() in _STANDARD_UNITS.get(
+        target, set()
+    )
+
+
+def _decoded_spoolman_value(value: Any, target: str) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return value
+    if target in {"manufacturer_sku", "datasheet_url", "image_url", "price_currency"}:
+        return decoded if isinstance(decoded, str) else value
+    return decoded
 
 
 def _find_value(
@@ -327,25 +368,50 @@ def _promote_filamentdb_fields(
     values: dict[str, Any] = {}
     candidates: dict[str, list[tuple[Any, tuple[str, ...]]]] = defaultdict(list)
     nested = custom.get("spoolman_extra")
-    if "sku" in custom and "sku" not in blocked_sources:
+
+    def direct_allowed(source: str, target: str) -> bool:
+        definition = definitions.get(source)
+        config = definition.get("config") if isinstance(definition, dict) else None
+        field_type = definition.get("field_type") if isinstance(definition, dict) else None
+        allowed_types = (
+            _DIRECT_NUMERIC_TYPES
+            if target in _STANDARD_NUMBER_LABELS
+            or target == "cooling_fan_range_percent"
+            else _STANDARD_FIELD_TYPES.get(target)
+        )
+        return (
+            source not in blocked_sources
+            and system_aliases.get(source, target) == target
+            and _compatible_unit(target, config)
+            and (field_type is None or field_type in (allowed_types or set()))
+        )
+
+    if "sku" in custom and direct_allowed("sku", "manufacturer_sku"):
         candidates["manufacturer_sku"].append(
             (_text(custom["sku"], 255), ("sku",))
         )
-    if isinstance(nested, dict) and "sku" in nested and "sku" not in blocked_sources:
+    if isinstance(nested, dict) and "sku" in nested and direct_allowed(
+        "sku", "manufacturer_sku"
+    ):
         candidates["manufacturer_sku"].append(
-            (_text(nested["sku"], 255), ("spoolman_extra", "sku"))
+            (
+                _text(_decoded_spoolman_value(nested["sku"], "manufacturer_sku"), 255),
+                ("spoolman_extra", "sku"),
+            )
         )
 
     for source, target in _FILAMENTDB_NUMBER_FIELDS.items():
-        if source in custom:
+        if source in custom and direct_allowed(source, target):
             candidates[target].append((_number(custom[source]), (source,)))
-        if isinstance(nested, dict) and source in nested:
+        if isinstance(nested, dict) and source in nested and direct_allowed(source, target):
             candidates[target].append(
                 (_number(nested[source]), ("spoolman_extra", source))
             )
 
     fan_keys = tuple(key for key in ("fan_speed_min", "fan_speed_max") if key in custom)
-    if fan_keys:
+    if fan_keys and all(
+        direct_allowed(key, "cooling_fan_range_percent") for key in fan_keys
+    ):
         candidates["cooling_fan_range_percent"].append(
             (
                 _percentage_range(
@@ -361,7 +427,10 @@ def _promote_filamentdb_fields(
         nested_fan_keys = tuple(
             key for key in ("fan_speed_min", "fan_speed_max") if key in nested
         )
-        if nested_fan_keys:
+        if nested_fan_keys and all(
+            direct_allowed(key, "cooling_fan_range_percent")
+            for key in nested_fan_keys
+        ):
             candidates["cooling_fan_range_percent"].append(
                 (
                     _percentage_range(
@@ -380,14 +449,11 @@ def _promote_filamentdb_fields(
                 (_standard_value(target, custom[source]), (source,))
             )
         if isinstance(nested, dict) and source in nested:
-            raw = nested[source]
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except json.JSONDecodeError:
-                    pass
             candidates[target].append(
-                (_standard_value(target, raw), ("spoolman_extra", source))
+                (
+                    _standard_value(target, _decoded_spoolman_value(nested[source], target)),
+                    ("spoolman_extra", source),
+                )
             )
 
     for target, target_candidates in candidates.items():
@@ -413,18 +479,25 @@ def _clean_system_definitions(
     promoted_sources: set[tuple[str, int, str]],
     extra_keys: set[str],
 ) -> None:
-    recognized = (
+    temperature_keys = (
         set().union(*aliases.values())
         | {key for pairs in _PAIRS.values() for pair in pairs for key in pair}
-        | extra_keys
+    )
+    filament_keys = (
+        extra_keys
         | set(_FILAMENTDB_NUMBER_FIELDS)
         | {"sku", "fan_speed_min", "fan_speed_max"}
     )
     for field in connection.execute(sa.select(system_fields)).mappings():
-        if field["key"] not in recognized or field["target_type"] not in {
+        if field["target_type"] not in {
             "filament",
             "spool",
         }:
+            continue
+        recognized = temperature_keys | (
+            filament_keys if field["target_type"] == "filament" else set()
+        )
+        if field["key"] not in recognized:
             continue
         table = filaments if field["target_type"] == "filament" else spools
         still_used = any(
@@ -507,6 +580,23 @@ def upgrade() -> None:
     for field in system_rows:
         if field["target_type"] not in aliases_by_target:
             continue
+        direct_target = _FILAMENTDB_NUMBER_FIELDS.get(field["key"])
+        if field["key"] == "sku":
+            direct_target = "manufacturer_sku"
+        elif field["key"] in {"fan_speed_min", "fan_speed_max"}:
+            direct_target = "cooling_fan_range_percent"
+        if field["target_type"] == "filament" and direct_target is not None:
+            direct_types = (
+                _DIRECT_NUMERIC_TYPES
+                if direct_target in _STANDARD_NUMBER_LABELS
+                or direct_target == "cooling_fan_range_percent"
+                else _STANDARD_FIELD_TYPES.get(direct_target, set())
+            )
+            if field["field_type"] not in direct_types or not _compatible_unit(
+                direct_target, field.get("config")
+            ):
+                blocked_system_aliases["filament"].add(field["key"])
+                continue
         numeric_type = field["field_type"] in {
             "range",
             "number",
@@ -519,9 +609,9 @@ def upgrade() -> None:
             "".join(char for char in str(field[value]).lower() if char.isalnum())
             for value in ("key", "label")
         }
-        matches: set[tuple[str, str]] = set()
+        potential: set[tuple[str, str]] = set()
         if numeric_type:
-            matches.update(
+            potential.update(
                 ("temperature", kind)
                 for kind, labels in _LABELS.items()
                 if names & labels
@@ -540,9 +630,14 @@ def upgrade() -> None:
                         and field["field_type"] in allowed_types
                     )
                 ):
-                    matches.add(("standard", target))
+                    potential.add(("standard", target))
+        matches = {
+            (match_type, target)
+            for match_type, target in potential
+            if _compatible_unit(target, field.get("config"))
+        }
         if len(matches) != 1:
-            if matches:
+            if potential:
                 blocked_system_aliases[field["target_type"]].add(field["key"])
             continue
         match_type, target = matches.pop()

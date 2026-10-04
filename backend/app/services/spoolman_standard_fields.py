@@ -41,10 +41,29 @@ _NUMBERS = {
 }
 _TEXT = {"manufacturer_sku", "datasheet_url", "image_url", "price_currency"}
 _LISTS = {"ams_compatibility", "build_plate_compatibility"}
+_UNITS = {
+    "drying_temp_c": {"°c", "c", "celsius"},
+    "softening_temp_c": {"°c", "c", "celsius"},
+    "chamber_temp_c": {"°c", "c", "celsius"},
+    "drying_time_hours": {"h", "hr", "hrs", "hour", "hours"},
+    "cooling_fan_range_percent": {"%", "percent"},
+    "max_volumetric_speed_mm3_s": {"mm³/s", "mm3/s", "mm^3/s"},
+    "flow_ratio": {"ratio"},
+    "pressure_advance_k": {"k"},
+}
 
 
 def _name(value: Any) -> str:
     return "".join(char for char in str(value).lower() if char.isalnum())
+
+
+def compatible_unit(target: str, unit: Any) -> bool:
+    """Absent units are unknown; explicit units must match native semantics."""
+    if unit is None or unit == "":
+        return True
+    if not isinstance(unit, str):
+        return False
+    return unit.strip().lower() in _UNITS.get(target, set())
 
 
 def standard_source_definitions(
@@ -77,7 +96,7 @@ def standard_source_definitions(
                 or (target in _LISTS and source_type in {"text", "choice"})
             )
         ]
-        if len(matches) == 1:
+        if len(matches) == 1 and compatible_unit(matches[0], definition.get("unit")):
             by_target[matches[0]].append((key, definition))
     return {
         sources[0][0]: (target, sources[0][1])
@@ -89,12 +108,15 @@ def standard_source_definitions(
 def standard_value(raw: Any, target: str, definition: dict[str, Any]) -> Any:
     """Convert a typed Spoolman value; reject values unsafe for its native column."""
     source_type = definition["field_type"]
-    value = convert_spoolman_value(
-        raw,
-        source_type,
-        definition.get("choices"),
-        definition.get("multi_choice") if source_type == "choice" else None,
-    )
+    try:
+        value = convert_spoolman_value(
+            raw,
+            source_type,
+            definition.get("choices"),
+            definition.get("multi_choice") if source_type == "choice" else None,
+        )
+    except OverflowError as exc:
+        raise SpoolmanFieldError("number is too large") from exc
     if target in _NUMBERS:
         try:
             finite = math.isfinite(value)
@@ -126,7 +148,10 @@ def standard_value(raw: Any, target: str, definition: dict[str, Any]) -> Any:
         raise SpoolmanFieldError("expected non-empty text")
     text = value.strip()
     if target in {"datasheet_url", "image_url"}:
-        parsed = urlparse(text)
+        try:
+            parsed = urlparse(text)
+        except ValueError as exc:
+            raise SpoolmanFieldError("expected a valid URL") from exc
         if (
             len(text) > 500
             or parsed.scheme not in {"http", "https"}
@@ -135,7 +160,7 @@ def standard_value(raw: Any, target: str, definition: dict[str, Any]) -> Any:
             raise SpoolmanFieldError("expected a URL of at most 500 characters")
     elif target == "price_currency":
         text = text.upper()
-        if len(text) != 3 or not text.isalpha():
+        if len(text) != 3 or not text.isascii() or not text.isalpha():
             raise SpoolmanFieldError("expected an ISO-style currency code")
     elif len(text) > 255:
         raise SpoolmanFieldError("text exceeds 255 characters")

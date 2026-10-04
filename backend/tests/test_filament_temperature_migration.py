@@ -23,6 +23,24 @@ def load_migration_module():
     return module
 
 
+def test_ambiguous_system_keys_are_not_promoted_by_direct_fallback():
+    migration = load_migration_module()
+    custom = {
+        "flow_ratio": 10,
+        "fan_speed_min": 20,
+        "fan_speed_max": 70,
+    }
+    values = migration._promote_filamentdb_fields(
+        custom,
+        {},
+        {},
+        {"flow_ratio", "fan_speed_min"},
+    )
+
+    assert values == {}
+    assert custom == {"flow_ratio": 10, "fan_speed_min": 20, "fan_speed_max": 70}
+
+
 def test_downgrade_preserves_standard_values_as_typed_custom_fields(
     tmp_path, monkeypatch
 ):
@@ -148,6 +166,7 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         sa.Column("key", sa.String(100), nullable=False),
         sa.Column("label", sa.String(200), nullable=False),
         sa.Column("field_type", sa.String(30), nullable=False),
+        sa.Column("config", sa.JSON),
     )
 
     with engine.begin() as connection:
@@ -307,6 +326,59 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
                         }
                     },
                     "custom_field_definitions": None,
+                },
+                {
+                    "id": 22,
+                    "custom_fields": {"spoolman_extra": {"sku": '"SKU-123"'}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 23,
+                    "custom_fields": {
+                        "spoolman_extra": {"my_datasheet": '"http://[bad"'}
+                    },
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 24,
+                    "custom_fields": {"spoolman_extra": {"my_currency": '"ÉUR"'}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 25,
+                    "custom_fields": {"my_drying_time": 90},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 26,
+                    "custom_fields": {"spoolman_extra": {"fahrenheit_bed": "130"}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 27,
+                    "custom_fields": {"dry_time_hours": 90},
+                    "custom_field_definitions": {
+                        "dry_time_hours": {"config": {"unit": "min"}}
+                    },
+                },
+                {
+                    "id": 28,
+                    "custom_fields": {"fan_speed_min": 120},
+                    "custom_field_definitions": {
+                        "fan_speed_min": {"config": {"unit": "rpm"}}
+                    },
+                },
+                {
+                    "id": 29,
+                    "custom_fields": {"spoolman_extra": {"sku": "12345"}},
+                    "custom_field_definitions": None,
+                },
+                {
+                    "id": 31,
+                    "custom_fields": {"dry_time_hours": "6"},
+                    "custom_field_definitions": {
+                        "dry_time_hours": {"field_type": "text"}
+                    },
                 },
             ],
         )
@@ -518,6 +590,41 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
                     "label": "Fan Speed Max",
                     "field_type": "number",
                 },
+                {
+                    "id": 24,
+                    "target_type": "spool",
+                    "key": "sku",
+                    "label": "Spool SKU",
+                    "field_type": "text",
+                },
+                {
+                    "id": 25,
+                    "target_type": "spool",
+                    "key": "fan_speed_min",
+                    "label": "Spool fan speed",
+                    "field_type": "number",
+                },
+            ],
+        )
+        connection.execute(
+            system_fields.insert(),
+            [
+                {
+                    "id": 26,
+                    "target_type": "filament",
+                    "key": "my_drying_time",
+                    "label": "Drying Time",
+                    "field_type": "number",
+                    "config": {"unit": "min"},
+                },
+                {
+                    "id": 27,
+                    "target_type": "filament",
+                    "key": "fahrenheit_bed",
+                    "label": "Bed Temperature",
+                    "field_type": "number",
+                    "config": {"unit": "°F"},
+                },
             ],
         )
 
@@ -605,6 +712,26 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         assert rows[21].flow_ratio == 0.96
         assert rows[21].cooling_fan_range_percent == {"min": 20, "max": 70}
         assert rows[21].custom_fields == {"spoolman_extra": {"keep_nested": "untouched"}}
+        assert rows[22].manufacturer_sku == "SKU-123"
+        assert rows[22].custom_fields is None
+        assert rows[23].datasheet_url is None
+        assert rows[23].custom_fields == {
+            "spoolman_extra": {"my_datasheet": '"http://[bad"'}
+        }
+        assert rows[24].price_currency is None
+        assert rows[24].custom_fields == {"spoolman_extra": {"my_currency": '"ÉUR"'}}
+        assert rows[25].drying_time_hours is None
+        assert rows[25].custom_fields == {"my_drying_time": 90}
+        assert rows[26].bed_temp_range_c is None
+        assert rows[26].custom_fields == {"spoolman_extra": {"fahrenheit_bed": "130"}}
+        assert rows[27].drying_time_hours is None
+        assert rows[27].custom_fields == {"dry_time_hours": 90}
+        assert rows[28].cooling_fan_range_percent is None
+        assert rows[28].custom_fields == {"fan_speed_min": 120}
+        assert rows[29].manufacturer_sku == "12345"
+        assert rows[29].custom_fields is None
+        assert rows[31].drying_time_hours is None
+        assert rows[31].custom_fields == {"dry_time_hours": "6"}
 
         migrated_spools = sa.Table("spools", sa.MetaData(), autoload_with=connection)
         spool_rows = {
@@ -637,6 +764,13 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
             ("filament", "settings_bed_temp"),
             ("spool", "extruder_temp"),
             ("filament", "my_cooling_fan"),
+            ("filament", "my_datasheet"),
+            ("filament", "my_currency"),
+            ("spool", "sku"),
+            ("spool", "fan_speed_min"),
+            ("filament", "my_drying_time"),
+            ("filament", "fahrenheit_bed"),
+            ("filament", "fan_speed_min"),
         }
 
     engine.dispose()

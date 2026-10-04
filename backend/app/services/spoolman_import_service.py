@@ -37,6 +37,7 @@ from app.services.spoolman_extra_field_planner import (
     SpoolmanExtraFieldPlanner,
 )
 from app.services.spoolman_standard_fields import (
+    compatible_unit,
     standard_fan_pair,
     standard_source_definitions,
     standard_value,
@@ -136,11 +137,15 @@ def _source_field_inputs(
             raw_key = raw.get("key")
             key = raw_key if isinstance(raw_key, str) else ""
             if target == "filament" and (
-                key in {"extruder", "bed"}
+                (
+                    key in {"extruder", "bed"}
+                    and compatible_unit("drying_temp_c", raw.get("unit"))
+                )
                 or key in native_keys
                 or (
                     key in {"fan_speed_min", "fan_speed_max"}
                     and raw.get("field_type") in {"integer", "float"}
+                    and compatible_unit("cooling_fan_range_percent", raw.get("unit"))
                 )
             ):
                 continue
@@ -425,6 +430,33 @@ class SpoolmanImportService:
         )
 
         # 5. Filaments importieren
+        native_overrides = {
+            (item.target_type.value, item.key): item.action for item in actions
+        }
+        native_sources = {
+            key: value
+            for key, value in standard_source_definitions(
+                preview.field_definitions.get("filament", [])
+            ).items()
+            if native_overrides.get(("filament", key), mode)
+            in {ImportStorageMode.SYSTEM, ImportStorageMode.LOCAL}
+        }
+        filament_definitions = preview.field_definitions.get("filament", [])
+        incompatible_temperature_keys = {
+            definition["key"].lower().replace(" ", "_")
+            for definition in filament_definitions
+            if isinstance(definition.get("key"), str)
+            and not compatible_unit("drying_temp_c", definition.get("unit"))
+        }
+        promote_fan_pair = all(
+            native_overrides.get(("filament", key), mode)
+            in {ImportStorageMode.SYSTEM, ImportStorageMode.LOCAL}
+            for key in ("fan_speed_min", "fan_speed_max")
+        ) and all(
+            compatible_unit("cooling_fan_range_percent", definition.get("unit"))
+            for definition in filament_definitions
+            if definition.get("key") in {"fan_speed_min", "fan_speed_max"}
+        )
         filament_map = await self._import_filaments(
             preview.filaments,
             manufacturer_map,
@@ -436,7 +468,9 @@ class SpoolmanImportService:
                 mode in {ImportStorageMode.SYSTEM, ImportStorageMode.LOCAL}
                 and "filament" not in preview.available_field_targets
             ),
-            standard_source_definitions(preview.field_definitions.get("filament", [])),
+            native_sources,
+            promote_fan_pair,
+            incompatible_temperature_keys,
         )
 
         # 6. Spools importieren
@@ -695,6 +729,35 @@ class SpoolmanImportService:
                     ),
                 }
             preview.append(item)
+        native_sources = standard_source_definitions(definitions.get("filament", []))
+        for key, (target, definition) in native_sources.items():
+            preview.append(
+                {
+                    "target_type": "filament",
+                    "key": key,
+                    "label": definition.get("name", key),
+                    "field_type": definition.get("field_type"),
+                    "status": "standard",
+                    "standard_field": target,
+                }
+            )
+        for definition in definitions.get("filament", []):
+            key = definition.get("key")
+            if (
+                key in {"fan_speed_min", "fan_speed_max"}
+                and definition.get("field_type") in {"integer", "float"}
+                and compatible_unit("cooling_fan_range_percent", definition.get("unit"))
+            ):
+                preview.append(
+                    {
+                        "target_type": "filament",
+                        "key": key,
+                        "label": definition.get("name", key),
+                        "field_type": definition.get("field_type"),
+                        "status": "standard",
+                        "standard_field": "cooling_fan_range_percent",
+                    }
+                )
         return preview
 
     async def _plan_import_extra_fields(
@@ -995,6 +1058,8 @@ class SpoolmanImportService:
         field_mappings: dict[tuple[str, str], dict[str, Any]],
         clean_unmapped_extra_values: bool = False,
         standard_sources: dict[str, tuple[str, dict[str, Any]]] | None = None,
+        promote_fan_pair: bool = False,
+        incompatible_temperature_keys: set[str] | None = None,
     ) -> dict[int, int]:
         """Filamente importieren. Gibt Spoolman-Filament-ID -> FilaMan-ID."""
         fil_map: dict[int, int] = {}
@@ -1092,10 +1157,14 @@ class SpoolmanImportService:
                         extra,
                         extracted_keys,
                         [
-                            "extruder",
-                            "extruder_temp",
-                            "nozzle_temp",
-                            "print_temp",
+                            key
+                            for key in (
+                                "extruder",
+                                "extruder_temp",
+                                "nozzle_temp",
+                                "print_temp",
+                            )
+                            if key not in (incompatible_temperature_keys or set())
                         ],
                     )
                 # Bed-Temp aus Extra
@@ -1104,9 +1173,9 @@ class SpoolmanImportService:
                         extra,
                         extracted_keys,
                         [
-                            "bed",
-                            "bed_temp",
-                            "heatbed_temp",
+                            key
+                            for key in ("bed", "bed_temp", "heatbed_temp")
+                            if key not in (incompatible_temperature_keys or set())
                         ],
                     )
                 for source_key, (target, definition) in (
@@ -1121,7 +1190,10 @@ class SpoolmanImportService:
                     except SpoolmanFieldError:
                         continue
                     extracted_keys.add(source_key)
-                if "cooling_fan_range_percent" not in standard_fields:
+                if (
+                    promote_fan_pair
+                    and "cooling_fan_range_percent" not in standard_fields
+                ):
                     try:
                         fan_pair = standard_fan_pair(extra)
                     except SpoolmanFieldError:
