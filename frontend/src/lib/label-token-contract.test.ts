@@ -20,6 +20,8 @@ import {
 } from './spool-label-lookups'
 import {
   buildSpoolLabelDataFromApi,
+  buildSpoolLabelDataFromParams,
+  buildSpoolPrintSearchParams,
   SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
 } from './spool-label-data'
 import { formatDateDisplay, formatDateTimeDisplay } from './extra-fields'
@@ -145,7 +147,9 @@ const legacyDesignerTokens = [
   '{filament.spool_width_mm}',
   '{filament.spool_material}',
   '{filament.shop_url}',
-  ...SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key }) => `{${key}}`),
+  ...SPOOL_BUILT_IN_LABEL_FIELD_DEFS
+    .filter(({ key }) => !['rfid_uid_2', 'purchase_currency'].includes(key))
+    .map(({ key }) => `{${key}}`),
 ]
 
 const nativeFields = [
@@ -170,6 +174,23 @@ const nativeFields = [
 const nativeFilament = { ...apiSpool.filament, ...Object.fromEntries(nativeFields.map(([key, value]) => [key, value])) }
 
 describe('spool label token contract', () => {
+  it.each(nativeFields)('roundtrips native filament.%s through spool query fallback', (key, _value, expected) => {
+    const spool = { ...apiSpool, filament: nativeFilament }
+    const fallback = buildSpoolLabelDataFromParams('42', buildSpoolPrintSearchParams(spool, lookups))
+    expect(fallback[key]).toBe(expected)
+    expect(renderTemplateText(`{filament.${key}}`, buildSpoolDesignerDataFromLabelData(fallback))).toBe(expected)
+  })
+
+  it('offers and renders spool-owned tokens in representative single and batch data', () => {
+    const spool = { ...apiSpool, rfid_uid_2: 'SECONDARY' }
+    const single = buildSpoolDesignerDataFromLabelData(buildSpoolLabelDataFromApi(spool, lookups, '', 'USD'))
+    const batch = buildSpoolDataFromApiSpool(spool, lookups, undefined, 'USD')
+    for (const [key, value] of Object.entries({ spool_material: 'Cardboard', spool_outer_diameter_mm: '200', spool_width_mm: '65', rfid_uid_2: 'SECONDARY', purchase_currency: 'USD' })) {
+      expect(SPOOL_TOKENS).toContainEqual(expect.objectContaining({ token: `{${key}}`, section: key === 'purchase_currency' ? 'purchase' : key === 'rfid_uid_2' ? 'identity' : 'physical' }))
+      expect(renderTemplateText(`{${key}}`, single)).toBe(value)
+      expect(renderTemplateText(`{${key}}`, batch)).toBe(value)
+    }
+  })
   it.each(nativeFields)('renders and offers canonical filament.%s through API and query fallbacks', (key, _value, expected) => {
     const spool = { ...apiSpool, filament: nativeFilament }
     const filamentQuery = buildFilamentLabelDataFromParams('8', buildFilamentPrintSearchParams(nativeFilament))

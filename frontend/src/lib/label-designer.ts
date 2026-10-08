@@ -71,6 +71,8 @@ export interface DesignerFlatLabelData {
   lot_number?: unknown
   external_id?: unknown
   rfid_uid?: unknown
+  rfid_uid_2?: unknown
+  purchase_currency?: unknown
   location?: unknown
   status?: unknown
   purchase_date?: unknown
@@ -149,6 +151,11 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     lot_number: toStringValue(data.lot_number),
     external_id: toStringValue(data.external_id),
     rfid_uid: toStringValue(data.rfid_uid),
+    rfid_uid_2: toStringValue(data.rfid_uid_2),
+    purchase_currency: toStringValue(data.purchase_currency),
+    spool_material: toStringValue(data.spool_material),
+    spool_outer_diameter_mm: toStringValue(data.spool_outer_diameter_mm),
+    spool_width_mm: toStringValue(data.spool_width_mm),
     location: toStringValue(data.location),
     status: toStringValue(data.status),
     purchase_date: toStringValue(data.purchase_date),
@@ -179,8 +186,9 @@ export function buildSpoolDataFromApiSpool(
   spool: unknown,
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
   fieldDefs?: SpoolExtraFieldDefinitionMap,
+  purchaseCurrency = '',
 ): SpoolData {
-  const data = buildSpoolLabelDataFromApi(spool, lookups)
+  const data = buildSpoolLabelDataFromApi(spool, lookups, '', purchaseCurrency)
   return buildSpoolDesignerDataFromLabelData({
     ...data,
     extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),

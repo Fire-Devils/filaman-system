@@ -98,6 +98,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     type EntityExtraFieldDefinitions,
   } from '../../lib/entity-extra-fields'
   import { t, initI18n } from '../../lib/i18n'
+  import { getCurrency, initCurrency } from '../../lib/format'
 
   const SETTINGS_KEY = 'filaman-label-settings'
   const DESIGNER_PRESETS_KEY = SPOOL_LABEL_PRESETS_KEY
@@ -242,7 +243,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   function getExtraFieldsForSpool(spool: ApiSpool): {key: string, label: string, value: string}[] {
     const result: {key: string, label: string, value: string}[] = []
-    const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+    const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
     const spoolRecordDefinitions = normalizeEntityExtraFieldDefinitions(
       spool.custom_field_definitions,
     )
@@ -301,7 +302,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   function buildStandardDataFromSpool(spool: ApiSpool) {
-    const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+    const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
     return buildStandardLabelDataFromFlat({
       id: data.id,
       designation: data.designation,
@@ -316,7 +317,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   function buildDesignerDataFromSpool(spool: ApiSpool) {
-    const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+    const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
     return buildSpoolDesignerDataFromLabelData({
       ...data,
       extraFields: buildDesignerExtraFieldsFromApiSpool(spool, getExtraFieldDefinitionMaps()),
@@ -328,7 +329,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     entityPath: 'spools',
     getId: spool => spool?.id,
     getLogoManufacturerId: spool => {
-      const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+      const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
       const id = Number(data.mfr_id || data.manufacturer_id)
       return Number.isFinite(id) && id > 0 ? id : null
     },
@@ -651,6 +652,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         return await r.json()
       })),
       loadSpoolLabelLookups(),
+      initCurrency(),
     ])
     labelLookups = loadedLookups
     spools = spoolResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiSpool>).value)

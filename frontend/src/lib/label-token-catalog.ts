@@ -54,6 +54,11 @@ export const FILAMENT_TOKENS: readonly LabelTokenChoice[] = [
 
 /** Spool-only choices share the Standard label field definitions. */
 const SPOOL_TOKEN_SECTIONS: Record<string, string> = {
+  spool_material: 'physical',
+  spool_outer_diameter_mm: 'physical',
+  spool_width_mm: 'physical',
+  rfid_uid_2: 'identity',
+  purchase_currency: 'purchase',
   lot_number: 'identity',
   external_id: 'identity',
   rfid_uid: 'identity',

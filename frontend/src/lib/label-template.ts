@@ -82,6 +82,11 @@ export interface SpoolData {
   lot_number?: string
   external_id?: string
   rfid_uid?: string
+  rfid_uid_2?: string
+  purchase_currency?: string
+  spool_material?: string
+  spool_outer_diameter_mm?: string
+  spool_width_mm?: string
   location?: string
   status?: string
   purchase_date?: string

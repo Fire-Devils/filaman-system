@@ -680,7 +680,7 @@ const { id } = Astro.params
       const efForPrint: LabelExtraFieldValue[] = []
 
       // ── Spool model fields (always included so they appear as label checkboxes) ──
-      const spoolModelFields = buildSpoolStandardModelFields(buildSpoolLabelDataFromApi(spool))
+      const spoolModelFields = buildSpoolStandardModelFields(buildSpoolLabelDataFromApi(spool, undefined, '', getCurrency()))
       for (const { key, label, value } of spoolModelFields) {
         efForPrint.push({ key, label, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
       }
