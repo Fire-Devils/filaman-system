@@ -316,7 +316,9 @@ const filamentId = Astro.url.searchParams.get('filament_id')
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
     import { toColorSwatchBackground } from '../../lib/colors'
+    import { initCurrency, suggestSpoolPurchasePrice } from '../../lib/format'
     await initI18n()
+    const appCurrency = await initCurrency()
 
     const filamentDbActive = await checkFilamentDbActive()
 
@@ -768,11 +770,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
       odInput.value = filament.spool_outer_diameter_mm != null ? String(filament.spool_outer_diameter_mm) : (filament.manufacturer?.spool_outer_diameter_mm != null ? String(filament.manufacturer.spool_outer_diameter_mm) : '')
       wInput.value = filament.spool_width_mm != null ? String(filament.spool_width_mm) : (filament.manufacturer?.spool_width_mm != null ? String(filament.manufacturer.spool_width_mm) : '')
       
-      if (filament.price != null) {
-        priceInput.value = String(filament.price)
-      } else {
-        priceInput.value = ''
-      }
+      priceInput.value = suggestSpoolPurchasePrice(filament.price, filament.price_currency, appCurrency)
     }
 
     
