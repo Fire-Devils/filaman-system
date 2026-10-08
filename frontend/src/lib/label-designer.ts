@@ -39,6 +39,23 @@ export interface DesignerFlatLabelData {
   multi_color_style?: unknown
   extruder_temp?: unknown
   bed_temp?: unknown
+  extruder_temp_range_c?: string
+  bed_temp_range_c?: string
+  manufacturer_sku?: string
+  datasheet_url?: string
+  image_url?: string
+  is_discontinued?: string
+  drying_temp_c?: string
+  drying_time_hours?: string
+  softening_temp_c?: string
+  cooling_fan_range_percent?: string
+  chamber_temp_c?: string
+  max_volumetric_speed_mm3_s?: string
+  flow_ratio?: string
+  pressure_advance_k?: string
+  ams_compatibility?: string
+  build_plate_compatibility?: string
+  price_currency?: string
   raw_material_weight_g?: unknown
   weight?: unknown
   diameter?: unknown
@@ -100,6 +117,23 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     'filament.manufacturer_id': toStringValue(data.manufacturer_id),
     'filament.extruder_temp': toStringValue(data.extruder_temp),
     'filament.bed_temp': toStringValue(data.bed_temp),
+    'filament.extruder_temp_range_c': toStringValue(data.extruder_temp_range_c),
+    'filament.bed_temp_range_c': toStringValue(data.bed_temp_range_c),
+    'filament.manufacturer_sku': toStringValue(data.manufacturer_sku),
+    'filament.datasheet_url': toStringValue(data.datasheet_url),
+    'filament.image_url': toStringValue(data.image_url),
+    'filament.is_discontinued': toStringValue(data.is_discontinued),
+    'filament.drying_temp_c': toStringValue(data.drying_temp_c),
+    'filament.drying_time_hours': toStringValue(data.drying_time_hours),
+    'filament.softening_temp_c': toStringValue(data.softening_temp_c),
+    'filament.cooling_fan_range_percent': toStringValue(data.cooling_fan_range_percent),
+    'filament.chamber_temp_c': toStringValue(data.chamber_temp_c),
+    'filament.max_volumetric_speed_mm3_s': toStringValue(data.max_volumetric_speed_mm3_s),
+    'filament.flow_ratio': toStringValue(data.flow_ratio),
+    'filament.pressure_advance_k': toStringValue(data.pressure_advance_k),
+    'filament.ams_compatibility': toStringValue(data.ams_compatibility),
+    'filament.build_plate_compatibility': toStringValue(data.build_plate_compatibility),
+    'filament.price_currency': toStringValue(data.price_currency),
     'filament.raw_material_weight_g': toStringValue(rawMaterialWeight),
     'filament.weight': toStringValue(rawMaterialWeight),
     'filament.diameter': toStringValue(data.diameter),

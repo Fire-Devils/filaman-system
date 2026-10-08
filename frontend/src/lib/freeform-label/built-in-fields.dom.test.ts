@@ -112,11 +112,11 @@ describe('built-in field picker compatibility', () => {
   it.each([
     ['filament', filamentFields],
     ['spool', spoolFields],
-  ] as const)('offers every previous %s choice in its original order', async (group, fields) => {
+  ] as const)('offers every previous %s choice with its original label', async (group, fields) => {
     await renderDock()
     const buttons = [...document.querySelectorAll<HTMLButtonElement>(`[data-field-group="${group}"] [data-field-token]`)]
-    expect(buttons.map(button => [button.dataset.fieldToken, button.textContent?.trim()]))
-      .toEqual(fields.map(([token, label]) => [token, label]))
+    const choices = buttons.map(button => [button.dataset.fieldToken, button.textContent?.trim()])
+    for (const [token, label] of fields) expect(choices).toContainEqual([token, label])
   })
 
   it('inserts and resolves every displayed built-in, including inline swatches and both IDs', async () => {

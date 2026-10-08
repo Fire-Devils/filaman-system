@@ -26,6 +26,23 @@ export interface FilamentLabelData {
   hex_code: string
   extruder_temp: string
   bed_temp: string
+  extruder_temp_range_c: string
+  bed_temp_range_c: string
+  manufacturer_sku: string
+  datasheet_url: string
+  image_url: string
+  is_discontinued: string
+  drying_temp_c: string
+  drying_time_hours: string
+  softening_temp_c: string
+  cooling_fan_range_percent: string
+  chamber_temp_c: string
+  max_volumetric_speed_mm3_s: string
+  flow_ratio: string
+  pressure_advance_k: string
+  ams_compatibility: string
+  build_plate_compatibility: string
+  price_currency: string
   raw_material_weight_g: string
   weight: string
   diameter: string
@@ -67,6 +84,23 @@ const LABEL_PARAM_MAP: { dataKey: keyof FilamentLabelData; param: string }[] = [
   { dataKey: 'hex_code', param: 'hex_code' },
   { dataKey: 'extruder_temp', param: 'extruder_temp' },
   { dataKey: 'bed_temp', param: 'bed_temp' },
+  { dataKey: 'extruder_temp_range_c', param: 'extruder_temp_range_c' },
+  { dataKey: 'bed_temp_range_c', param: 'bed_temp_range_c' },
+  { dataKey: 'manufacturer_sku', param: 'manufacturer_sku' },
+  { dataKey: 'datasheet_url', param: 'datasheet_url' },
+  { dataKey: 'image_url', param: 'image_url' },
+  { dataKey: 'is_discontinued', param: 'is_discontinued' },
+  { dataKey: 'drying_temp_c', param: 'drying_temp_c' },
+  { dataKey: 'drying_time_hours', param: 'drying_time_hours' },
+  { dataKey: 'softening_temp_c', param: 'softening_temp_c' },
+  { dataKey: 'cooling_fan_range_percent', param: 'cooling_fan_range_percent' },
+  { dataKey: 'chamber_temp_c', param: 'chamber_temp_c' },
+  { dataKey: 'max_volumetric_speed_mm3_s', param: 'max_volumetric_speed_mm3_s' },
+  { dataKey: 'flow_ratio', param: 'flow_ratio' },
+  { dataKey: 'pressure_advance_k', param: 'pressure_advance_k' },
+  { dataKey: 'ams_compatibility', param: 'ams_compatibility' },
+  { dataKey: 'build_plate_compatibility', param: 'build_plate_compatibility' },
+  { dataKey: 'price_currency', param: 'price_currency' },
   { dataKey: 'raw_material_weight_g', param: 'raw_material_weight_g' },
   { dataKey: 'weight', param: 'weight' },
   { dataKey: 'diameter', param: 'diameter' },
@@ -102,6 +136,23 @@ export function buildFilamentLabelDataFromParams(id: string, params: URLSearchPa
     hex_code: '',
     extruder_temp: '',
     bed_temp: '',
+    extruder_temp_range_c: '',
+    bed_temp_range_c: '',
+    manufacturer_sku: '',
+    datasheet_url: '',
+    image_url: '',
+    is_discontinued: '',
+    drying_temp_c: '',
+    drying_time_hours: '',
+    softening_temp_c: '',
+    cooling_fan_range_percent: '',
+    chamber_temp_c: '',
+    max_volumetric_speed_mm3_s: '',
+    flow_ratio: '',
+    pressure_advance_k: '',
+    ams_compatibility: '',
+    build_plate_compatibility: '',
+    price_currency: '',
     raw_material_weight_g: '',
     weight: '',
     diameter: '',
@@ -154,6 +205,23 @@ export function buildFilamentLabelDataFromApi(filament: any, fallbackId: string 
     hex_code: toLabelString(firstColor?.color?.hex_code),
     extruder_temp: getLegacyTemperatureValue(filament, 'extruder_temp'),
     bed_temp: getLegacyTemperatureValue(filament, 'bed_temp'),
+    extruder_temp_range_c: formatNumericRange(filament?.extruder_temp_range_c),
+    bed_temp_range_c: formatNumericRange(filament?.bed_temp_range_c),
+    manufacturer_sku: toLabelString(filament?.manufacturer_sku),
+    datasheet_url: toLabelString(filament?.datasheet_url),
+    image_url: toLabelString(filament?.image_url),
+    is_discontinued: toLabelString(filament?.is_discontinued),
+    drying_temp_c: toLabelString(filament?.drying_temp_c),
+    drying_time_hours: toLabelString(filament?.drying_time_hours),
+    softening_temp_c: toLabelString(filament?.softening_temp_c),
+    cooling_fan_range_percent: formatNumericRange(filament?.cooling_fan_range_percent),
+    chamber_temp_c: toLabelString(filament?.chamber_temp_c),
+    max_volumetric_speed_mm3_s: toLabelString(filament?.max_volumetric_speed_mm3_s),
+    flow_ratio: toLabelString(filament?.flow_ratio),
+    pressure_advance_k: toLabelString(filament?.pressure_advance_k),
+    ams_compatibility: toLabelString(filament?.ams_compatibility?.join(', ')),
+    build_plate_compatibility: toLabelString(filament?.build_plate_compatibility?.join(', ')),
+    price_currency: toLabelString(filament?.price_currency),
     raw_material_weight_g: toLabelString(filament?.raw_material_weight_g ?? filament?.weight),
     weight: toLabelString(filament?.raw_material_weight_g ?? filament?.weight),
     diameter: toLabelString(filament?.diameter_mm),

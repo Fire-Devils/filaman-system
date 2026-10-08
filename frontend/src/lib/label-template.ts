@@ -46,6 +46,23 @@ export interface SpoolData {
   'filament.multi_color_style': string
   'filament.extruder_temp': string | number
   'filament.bed_temp': string | number
+  'filament.extruder_temp_range_c'?: string
+  'filament.bed_temp_range_c'?: string
+  'filament.manufacturer_sku'?: string
+  'filament.datasheet_url'?: string
+  'filament.image_url'?: string
+  'filament.is_discontinued'?: string
+  'filament.drying_temp_c'?: string
+  'filament.drying_time_hours'?: string
+  'filament.softening_temp_c'?: string
+  'filament.cooling_fan_range_percent'?: string
+  'filament.chamber_temp_c'?: string
+  'filament.max_volumetric_speed_mm3_s'?: string
+  'filament.flow_ratio'?: string
+  'filament.pressure_advance_k'?: string
+  'filament.ams_compatibility'?: string
+  'filament.build_plate_compatibility'?: string
+  'filament.price_currency'?: string
   'filament.raw_material_weight_g': string | number
   /** @deprecated compatibility alias for filament.raw_material_weight_g */
   'filament.weight': string | number
@@ -195,7 +212,10 @@ function readTokenValue(
 ): { value: unknown; rawValue: unknown } {
   if (tokenKey.startsWith('extra.')) {
     const key = tokenKey.slice(6)
-    const value = data.extra?.[key]
+    // Saved picker tokens predate promotion of temperatures to native fields.
+    const value = key === 'filament.extruder_temp' || key === 'filament.bed_temp'
+      ? data[key] || data.extra?.[key]
+      : data.extra?.[key]
     return {
       value,
       rawValue: data.extraRaw?.[key] ?? value,
