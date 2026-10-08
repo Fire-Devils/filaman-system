@@ -158,7 +158,7 @@ const nativeFields = [
   ['manufacturer_sku', 'SKU-42', 'SKU-42'],
   ['datasheet_url', 'https://example.test/spec.pdf', 'https://example.test/spec.pdf'],
   ['image_url', 'https://example.test/photo.png', 'https://example.test/photo.png'],
-  ['is_discontinued', false, 'false'],
+  ['is_discontinued', false, 'no'],
   ['drying_temp_c', 55, '55'],
   ['drying_time_hours', 0, '0'],
   ['softening_temp_c', null, ''],
@@ -174,6 +174,25 @@ const nativeFields = [
 const nativeFilament = { ...apiSpool.filament, ...Object.fromEntries(nativeFields.map(([key, value]) => [key, value])) }
 
 describe('spool label token contract', () => {
+  it.each([
+    [true, 'yes'],
+    [false, 'no'],
+    [null, ''],
+    [undefined, ''],
+  ] as const)('renders discontinued value %s through API and filament/spool query roundtrips', (value, expected) => {
+    const filament = { ...apiSpool.filament, is_discontinued: value }
+    const spool = { ...apiSpool, filament }
+    const filamentData = buildFilamentLabelDataFromApi(filament)
+    const filamentFallback = buildFilamentLabelDataFromParams('8', buildFilamentPrintSearchParams(filament))
+    const spoolData = buildSpoolLabelDataFromApi(spool, lookups)
+    const spoolFallback = buildSpoolLabelDataFromParams('42', buildSpoolPrintSearchParams(spool, lookups))
+    for (const data of [filamentData, filamentFallback, spoolData, spoolFallback]) {
+      expect(data.is_discontinued).toBe(expected)
+      expect(renderTemplateText('{filament.is_discontinued}', buildSpoolDesignerDataFromLabelData(data))).toBe(expected)
+    }
+    expect(renderTemplateText('{filament.is_discontinued}', buildSpoolDataFromApiSpool(spool, lookups))).toBe(expected)
+  })
+
   it.each(nativeFields)('roundtrips native filament.%s through spool query fallback', (key, _value, expected) => {
     const spool = { ...apiSpool, filament: nativeFilament }
     const fallback = buildSpoolLabelDataFromParams('42', buildSpoolPrintSearchParams(spool, lookups))

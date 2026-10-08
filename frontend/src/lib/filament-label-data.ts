@@ -210,7 +210,7 @@ export function buildFilamentLabelDataFromApi(filament: any, fallbackId: string 
     manufacturer_sku: toLabelString(filament?.manufacturer_sku),
     datasheet_url: toLabelString(filament?.datasheet_url),
     image_url: toLabelString(filament?.image_url),
-    is_discontinued: toLabelString(filament?.is_discontinued),
+    is_discontinued: filament?.is_discontinued == null ? '' : filament.is_discontinued ? 'yes' : 'no',
     drying_temp_c: toLabelString(filament?.drying_temp_c),
     drying_time_hours: toLabelString(filament?.drying_time_hours),
     softening_temp_c: toLabelString(filament?.softening_temp_c),
