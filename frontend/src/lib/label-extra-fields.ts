@@ -88,9 +88,11 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
 ): void {
   const entityName = group.source === 'filament' ? 'Filament' : 'Spool'
   const translationRoot = `${group.source}s`
-  const groupElement = document.createElement('div')
+  const freeform = container.matches('.freeform-extra-fields')
+  const groupElement = document.createElement(freeform ? 'details' : 'div')
+  if (freeform) (groupElement as HTMLDetailsElement).open = true
   groupElement.className = 'ds-tokens-group'
-  const labelElement = document.createElement('div')
+  const labelElement = document.createElement(freeform ? 'summary' : 'div')
   const chipsElement = document.createElement('div')
   labelElement.className = 'ds-tokens-group-label'
   labelElement.textContent = group.origin === 'system'
@@ -102,7 +104,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
   const customLimit = 12
   const renderFields = () => {
     chipsElement.innerHTML = ''
-    const visibleFields = group.origin === 'custom' && !expanded
+    const visibleFields = !freeform && group.origin === 'custom' && !expanded
       ? group.fields.slice(0, customLimit)
       : group.fields
     for (const field of visibleFields) {
@@ -130,7 +132,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
       chipsElement.appendChild(empty)
     }
 
-    if (group.origin === 'custom' && group.fields.length > customLimit) {
+    if (!freeform && group.origin === 'custom' && group.fields.length > customLimit) {
       const toggle = document.createElement('button')
       toggle.className = 'ds-custom-fields-toggle'
       toggle.type = 'button'

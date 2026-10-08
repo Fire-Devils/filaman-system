@@ -109,6 +109,38 @@ async function renderDock() {
 }
 
 describe('built-in field picker compatibility', () => {
+  it('groups every expanded filament and spool choice by function', async () => {
+    await renderDock()
+    const filament = document.querySelector('#freeform-field-panel-filament')!
+    expect([...filament.querySelectorAll('summary')].map(node => node.textContent)).toEqual(['Identity', 'Material', 'Packaging', 'Temperatures', 'Drying', 'Print behavior', 'Compatibility'])
+    const spool = document.querySelector('#freeform-field-panel-spool')!
+    expect(new Set([...spool.querySelectorAll('summary')].map(node => node.textContent))).toEqual(new Set(['Identity', 'Inventory', 'Physical', 'Purchase', 'Lifecycle']))
+    for (const key of ['extruder_temp_range_c', 'bed_temp_range_c', 'manufacturer_sku', 'datasheet_url', 'image_url', 'is_discontinued', 'drying_temp_c', 'drying_time_hours', 'softening_temp_c', 'cooling_fan_range_percent', 'chamber_temp_c', 'max_volumetric_speed_mm3_s', 'flow_ratio', 'pressure_advance_k', 'ams_compatibility', 'build_plate_compatibility', 'price_currency']) {
+      expect(filament.querySelector(`[data-field-token="{filament.${key}}"]`)?.closest('details')).not.toBeNull()
+    }
+    for (const key of ['spool_material', 'spool_outer_diameter_mm', 'spool_width_mm', 'rfid_uid_2', 'purchase_currency']) {
+      expect(spool.querySelector(`[data-field-token="{${key}}"]`)?.closest('details')).not.toBeNull()
+    }
+    binding = bindFreeformEditorDom({ controller: createFreeformEditorController() })
+    await binding.ready
+    const tab = document.querySelector<HTMLButtonElement>('#freeform-field-tab-filament')!
+    tab.focus()
+    tab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement?.id).toBe('freeform-field-tab-spool')
+    expect(spool.hasAttribute('hidden')).toBe(false)
+    expect(filament.hasAttribute('hidden')).toBe(true)
+    const controller = createFreeformEditorController()
+    binding.destroy()
+    binding = bindFreeformEditorDom({ controller })
+    await binding.ready
+    for (const chip of document.querySelectorAll<HTMLButtonElement>('[data-field-token]')) {
+      controller.updateSelected({ template: '' })
+      controller.setTemplateSelection(0)
+      chip.click()
+      const selected = controller.getSelectedElement()
+      expect(selected?.type === 'text' && selected.template).toBe(chip.dataset.fieldToken)
+    }
+  })
   it.each([
     ['filament', filamentFields],
     ['spool', spoolFields],

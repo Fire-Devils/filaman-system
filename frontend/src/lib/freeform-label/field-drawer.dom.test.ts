@@ -3,6 +3,36 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import DesignerWorkspace from '../../components/freeform-label/DesignerWorkspace.astro'
 import { bindFreeformEditorDom, createFreeformEditorController } from './editor-controller'
+import FieldDock from '../../components/freeform-label/FieldDock.astro'
+import { bindFieldDrawer } from './field-drawer'
+
+it('searches functional groups and restores independent collapse states without moving focus', async () => {
+  const container = await AstroContainer.create()
+  document.body.innerHTML = await container.renderToString(FieldDock)
+  const binding = bindFieldDrawer(document)
+  binding.update('text', true)
+  try {
+    const groups = [...document.querySelectorAll<HTMLDetailsElement>('#freeform-field-panel-filament details')]
+    expect(groups.map(group => group.dataset.tokenSection)).toEqual(['identity', 'material', 'packaging', 'temperatures', 'drying', 'print_behavior', 'compatibility'])
+    groups[0].open = false
+    expect(groups[1].open).toBe(true)
+    const search = document.querySelector<HTMLInputElement>('#freeform-field-search')!
+    search.focus()
+    search.value = 'temp'
+    search.dispatchEvent(new Event('input'))
+    expect(groups.filter(group => !group.hidden).map(group => group.dataset.tokenSection)).toEqual(['temperatures', 'drying'])
+    expect(groups.filter(group => !group.hidden).every(group => group.open)).toBe(true)
+    expect(document.activeElement).toBe(search)
+    search.value = 'unmatched token'
+    search.dispatchEvent(new Event('input'))
+    expect(groups.every(group => group.hidden)).toBe(true)
+    search.value = ''
+    search.dispatchEvent(new Event('input'))
+    expect(groups.every(group => !group.hidden)).toBe(true)
+    expect(groups[0].open).toBe(false)
+    expect(groups.slice(1).every(group => group.open)).toBe(true)
+  } finally { binding.destroy() }
+})
 
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren() })
 
