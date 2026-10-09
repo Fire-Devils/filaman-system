@@ -31,7 +31,10 @@ const { title } = Astro.props
         // Sidebar state
         const s = localStorage.getItem('sidebar-collapsed');
         const isMobile = window.innerWidth <= 768;
-        if (s === 'true' || isMobile) {
+        const detailEditor = /^\/(?:filaments|spools)\/\d+\/?$/.test(window.location.pathname)
+          && new URLSearchParams(window.location.search).get('edit') === '1'
+          && new URLSearchParams(window.location.search).get('section') !== 'extra-fields';
+        if (s === 'true' || isMobile || detailEditor) {
           document.documentElement.classList.add('sidebar-collapsed');
         }
       })();
@@ -169,7 +172,7 @@ const { title } = Astro.props
       </aside>
       <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
-      <main style="padding: 32px; overflow-y: auto;">
+      <main class="fm-main" style="padding: 32px; overflow-y: auto;">
         <slot />
       </main>
     </div>
@@ -525,7 +528,7 @@ const { title } = Astro.props
         page.classList.add('collapsed')
       }
 
-      function setSidebarCollapsed(collapsed: boolean) {
+      function setSidebarCollapsed(collapsed: boolean, persist = true) {
         if (collapsed) {
           page.classList.add('collapsed')
           html.classList.add('sidebar-collapsed')
@@ -534,10 +537,15 @@ const { title } = Astro.props
           html.classList.remove('sidebar-collapsed')
         }
         // Only persist sidebar state on desktop
-        if (window.innerWidth > 768) {
+        if (persist && window.innerWidth > 768) {
           localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
         }
       }
+
+      window.addEventListener('fm:detail-edit', (event: Event) => {
+        const editing = (event as CustomEvent<{ editing: boolean }>).detail.editing
+        setSidebarCollapsed(editing || window.innerWidth <= 768 || localStorage.getItem('sidebar-collapsed') === 'true', false)
+      })
 
       // Update sidebar state
       sidebarToggle.addEventListener('click', () => {

@@ -462,6 +462,7 @@ const { id } = Astro.params
     function bindSpoolContentActions() {
       document.getElementById('btn-edit-spool')?.addEventListener('click', () => {
         editing = true
+        window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: true } }))
         renderSpool()
       })
       document.getElementById('btn-edit-extra-fields')?.addEventListener('click', event => {

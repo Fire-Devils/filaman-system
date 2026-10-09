@@ -2220,14 +2220,16 @@ dialog.fm-modal-overlay:not([open]) {
 
 .fm-page {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   transition: grid-template-columns var(--transition);
 }
 
 .fm-page.collapsed,
 html.sidebar-collapsed .fm-page {
-  grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+  grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
 }
+
+.fm-main { min-width: 0; container: detail-page / inline-size; }
 
 .fm-sidebar {
   border-right: 1px solid var(--border);
@@ -2342,7 +2344,7 @@ html.sidebar-collapsed .fm-logo-text {
 @media (max-width: 768px) {
   /* Grid always uses collapsed column on mobile */
   .fm-page {
-    grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+    grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
   }
 
   /* Expanded sidebar becomes fixed overlay on mobile */
@@ -2723,6 +2725,9 @@ html.sidebar-collapsed .fm-logo-text {
 .filament-color-dot { width: min(180px, 42vw); height: 38px; border: 2px solid color-mix(in srgb, var(--text) 24%, var(--border)); border-radius: 999px; background-clip: padding-box; flex: 0 0 auto; }
 .filament-color-name { color: var(--text-muted); font: .78rem/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .filament-spec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@container detail-page (max-width: 56rem) {
+  .filament-spec-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .filament-spec-card { padding: 0; overflow: hidden; }
 .filament-spec-title { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-soft); font-size: .92rem; font-weight: 700; }
 .filament-spec-rows { padding: 4px 16px; }

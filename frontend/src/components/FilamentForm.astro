@@ -246,7 +246,7 @@ const { mode, cancelHref } = Astro.props
     </form>
 
 <style>
-  .filament-editor-form { display: grid; gap: 12px; }
+  .filament-editor-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .filament-editor-hero { margin-bottom: 0; overflow: visible; }
   .filament-editor-hero::before { border-radius: inherit; }
   .filament-editor-heading { min-width: 0; }
@@ -596,8 +596,11 @@ const { mode, cancelHref } = Astro.props
   :global(.filament-change-pill.hidden) { display: none; }
   .filament-lookup-heading { margin-bottom: 6px; color: var(--text); font-size: .8rem; font-weight: 700; }
 
-  @media (max-width: 1499px) {
+  @container detail-page (max-width: 88rem) {
     .filament-form-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @container detail-page (max-width: 58rem) {
+    .filament-form-sections { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 820px) {
     .filament-editor-manufacturer { grid-template-columns: 1fr; width: 100%; }
