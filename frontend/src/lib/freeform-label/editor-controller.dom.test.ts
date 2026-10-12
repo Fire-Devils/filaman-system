@@ -110,7 +110,7 @@ beforeEach(() => {
 describe('freeform editor element operations', () => {
   it.each([
     ['de', 'Einen Feldwert einfügen.', 'Aktualisieren'],
-    ['fr', 'Insérer la valeur d’un champ.', 'Mettre à jour'],
+    ['fr', "Insérer la valeur d'un champ.", 'Mettre à jour'],
   ])('translates every syntax help description and example in %s without changing markup tokens', async (locale, fieldDescription, updateLabel) => {
     await renderRealDesignerEditor()
     const cells = Array.from(document.querySelectorAll('#freeform-syntax-section td'))
