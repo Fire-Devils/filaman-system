@@ -1209,6 +1209,13 @@ describe('freeform editor assets and async lifecycle', () => {
     expect(controller.getState().assetError).toBe('labelDesigner.imageLoadFailed')
   })
 
+  it('fills a new text element with the translated default text', () => {
+    const controller = makeController({
+      translate: (key, fallback) => key === 'labelDesigner.defaultText' ? 'Texte' : fallback,
+    })
+    expect(controller.addElement('text')).toMatchObject({ type: 'text', template: 'Texte' })
+  })
+
   it.each(['reset', 'history', 'replace', 'restore'] as const)('keeps a delayed upload from overwriting a later %s', async action => {
     await renderRealDesignerEditor()
     const pending = deferred<Awaited<ReturnType<LabelAssetClient['upload']>>>()

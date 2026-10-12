@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import type { LabelDesignElement, LabelDesignV2, LabelKind, LabelTextElement } from './types'
 
 /**
@@ -7,7 +8,10 @@ import type { LabelDesignElement, LabelDesignV2, LabelKind, LabelTextElement } f
  * bound to FilaMan records; no source spool data, logos, or QR URLs are bundled.
  */
 export interface StandardLabelPreset {
+  /** Stable identifier, also kept in saved sheet selections: never translated. */
   name: string
+  /** Translated name shown to the user. */
+  label: string
   data: { version: 2; design: LabelDesignV2 }
 }
 
@@ -56,21 +60,21 @@ function layout(width: number, height: number) {
 
 function createStandards(kind: LabelKind): StandardLabelPreset[] {
   const presets: StandardLabelPreset[] = []
-  const add = (name: string, l: ReturnType<typeof layout>) => presets.push({
-    name: `${name} (${l.design.label.widthMm} × ${l.design.label.heightMm} mm)`,
-    data: { version: 2, design: l.design },
-  })
+  const add = (name: string, labelKey: string, l: ReturnType<typeof layout>) => {
+    const size = ` (${l.design.label.widthMm} × ${l.design.label.heightMm} mm)`
+    presets.push({ name: `${name}${size}`, label: `${t(labelKey)}${size}`, data: { version: 2, design: l.design } })
+  }
 
   const slots: readonly DetailSlot[] = kind === 'spool'
     ? [
-        ['ID:', 'id', '{id}'],
-        ['Diameter:', 'filament.diameter', '{filament.diameter} mm'],
-        ['Stocked in:', 'stocked_in_at', '{stocked_in_at|date}'],
+        [t('labelDesigner.standardFieldId'), 'id', '{id}'],
+        [t('labelDesigner.standardFieldDiameter'), 'filament.diameter', '{filament.diameter} mm'],
+        [t('labelDesigner.standardFieldStockedIn'), 'stocked_in_at', '{stocked_in_at|date}'],
       ]
     : [
-        ['ID:', 'id', '{id}'],
-        ['Diameter:', 'filament.diameter', '{filament.diameter} mm'],
-        ['Weight:', 'filament.raw_material_weight_g', '{filament.raw_material_weight_g} g'],
+        [t('labelDesigner.standardFieldId'), 'id', '{id}'],
+        [t('labelDesigner.standardFieldDiameter'), 'filament.diameter', '{filament.diameter} mm'],
+        [t('labelDesigner.standardFieldWeight'), 'filament.raw_material_weight_g', '{filament.raw_material_weight_g} g'],
       ]
   const classic = layout(40, 30)
   classic.logo(14, 10, 372, 50)
@@ -78,7 +82,7 @@ function createStandards(kind: LabelKind): StandardLabelPreset[] {
   classic.text(`${color}[if={filament.color_hex}] · {filament.color_hex}[/if]`, 14, 100, 226, 80, 30, { fontWeight: 600, wrap: true })
   classic.rows(209, 95, slots)
   classic.qr(250, 150, 140)
-  add('Classic', classic)
+  add('Classic', 'labelDesigner.standardPresetClassic', classic)
 
   const qrFocused = layout(40, 30)
   qrFocused.text('{filament.manufacturer}', 14, 6, 372, 50, 42, { fontWeight: 700 })
@@ -88,16 +92,14 @@ function createStandards(kind: LabelKind): StandardLabelPreset[] {
   qrFocused.text(rgb, 14, 218, 188, 28, 22)
   qrFocused.text('#{id}', 14, 248, 188, 30, 24, { fontWeight: 600 })
   qrFocused.qr(206, 92, 190)
-  add('QR focused', qrFocused)
+  add('QR focused', 'labelDesigner.standardPresetQrFocused', qrFocused)
   return presets
 }
 
-const standards = {
-  spool: createStandards('spool'),
-  filament: createStandards('filament'),
-}
-
-/** A working copy prevents edits or account saves from changing release defaults. */
+/**
+ * Built on every call: the shown names and printed words follow the current language, and each
+ * caller gets its own copy, so edits or account saves never change the release defaults.
+ */
 export function getStandardLabelPresets(kind: LabelKind = 'spool'): StandardLabelPreset[] {
-  return structuredClone(standards[kind])
+  return createStandards(kind)
 }

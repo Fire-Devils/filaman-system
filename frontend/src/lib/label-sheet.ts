@@ -22,6 +22,8 @@ export type LabelDesignerPresetSource = LabelKind | 'builtin'
 export interface LabelDesignerPresetRef {
   source: LabelDesignerPresetSource
   name: string
+  /** Shown name when it differs from the stable `name` (translated standard presets). */
+  label?: string
   widthMm?: number
   heightMm?: number
 }
@@ -534,7 +536,7 @@ export function bindLabelSheetControls(
       const optgroup = document.createElement('optgroup')
       optgroup.label = group.label
       group.presets.forEach(preset => {
-        const option = createSelectOption(preset.name, `${preset.source}:${preset.name}`)
+        const option = createSelectOption(preset.label ?? preset.name, `${preset.source}:${preset.name}`)
         option.dataset.presetSource = preset.source
         option.dataset.presetName = preset.name
         if (Number.isFinite(preset.widthMm)) option.dataset.widthMm = String(preset.widthMm)

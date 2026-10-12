@@ -23,6 +23,11 @@ import type { LabelDesignerPresetData, LabelDesignV2 } from './types'
 
 export const FREEFORM_EDITOR_BREAKPOINT_PX = 600
 
+/** Standard presets show a translated label; their stable `name` stays in option values. */
+function presetLabel(preset: { name: string; label?: string }) {
+  return preset.label ?? preset.name
+}
+
 export async function initFreeformLabelDesignerEditor(
   options: FreeformLabelDesignerEditorOptions,
 ): Promise<FreeformLabelDesignerEditorController> {
@@ -182,14 +187,14 @@ export async function initFreeformLabelDesignerEditor(
     const own = readStoredPresets(options.presetsKey)
     const cross = options.crossPresetsKey ? readStoredPresets(options.crossPresetsKey) : []
     const groups: HTMLOptGroupElement[] = []
-    const appendGroup = (label: string, prefix: string, presets: StoredPreset[]) => {
+    const appendGroup = (label: string, prefix: string, presets: Array<StoredPreset & { label?: string }>) => {
       if (presets.length === 0) return
       const group = document.createElement('optgroup')
       group.label = label
       for (const preset of presets) {
         const item = document.createElement('option')
         item.value = `${prefix}:${preset.name}`
-        item.textContent = preset.name
+        item.textContent = presetLabel(preset)
         group.append(item)
       }
       groups.push(group)
@@ -264,10 +269,10 @@ export async function initFreeformLabelDesignerEditor(
     if (presetSelect) presetSelect.value = value
     loadedOwnPreset = value.startsWith('own:') ? preset.name : null
     cleanDesign = JSON.stringify(controller.getDesign())
-    cleanPresetName = preset.name
+    cleanPresetName = presetLabel(preset)
     persistFreeformLabelDesign(options.settingsKey, preset.data.design)
     lastPersisted = JSON.stringify(preset.data.design)
-    if (presetName) presetName.value = preset.name
+    if (presetName) presetName.value = presetLabel(preset)
     syncSidebarMutationControls()
     syncGeometry()
     domBinding?.sync()
@@ -285,12 +290,12 @@ export async function initFreeformLabelDesignerEditor(
             'You have unsaved changes to "{current}". Load "{name}" and discard those changes?',
           ) ?? 'You have unsaved changes to "{current}". Load "{name}" and discard those changes?')
             .replace('{current}', cleanPresetName)
-            .replace('{name}', preset.name)
+            .replace('{name}', presetLabel(preset))
         : (options.translate?.(
             'labelDesigner.confirmReplaceChangedLabel',
             'You have unsaved changes to the current label. Load "{name}" and discard those changes?',
           ) ?? 'You have unsaved changes to the current label. Load "{name}" and discard those changes?')
-            .replace('{name}', preset.name)
+            .replace('{name}', presetLabel(preset))
       if (!await confirmAction(message)) return
     }
     loadPreset()

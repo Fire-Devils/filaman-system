@@ -216,7 +216,7 @@ export async function initPrintDesignerEditor(options: FreeformLabelDesignerEdit
     groups.push({
       label: options.translate?.('labelDesigner.standardPresets', 'Standard presets') ?? 'Standard presets',
       presets: getStandardLabelPresets(kind).map(preset => ({
-        source: 'builtin', name: preset.name,
+        source: 'builtin', name: preset.name, label: preset.label,
         widthMm: preset.data.design.label.widthMm, heightMm: preset.data.design.label.heightMm,
       })),
     })
