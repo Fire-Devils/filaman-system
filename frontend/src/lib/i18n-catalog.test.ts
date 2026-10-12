@@ -73,6 +73,7 @@ describe('live page translation consumers', () => {
       '../components/freeform-label/ElementInspector.astro',
       '../components/freeform-label/FieldDock.astro',
       '../components/freeform-label/DesignerSidebar.astro',
+      '../components/freeform-label/CanvasTextToolbar.astro',
       '../components/PrintSidebar.astro',
       '../components/LabelSheetOutputSettings.astro',
     ].map(path => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))

@@ -22,13 +22,13 @@ const verticalAlignmentOptions = [
   { value: 'bottom', label: 'Bottom', icon: 'alignBottom', i18n: 'labelDesigner.alignBottom' },
 ] as const
 ---
-<div id="freeform-text-toolbar" class="freeform-text-toolbar" data-label-editor-chrome aria-label="Selected element controls" hidden>
+<div id="freeform-text-toolbar" class="freeform-text-toolbar" data-label-editor-chrome aria-label="Selected element controls" data-i18n-aria-label="labelDesigner.selectedElementControls" hidden>
   <div class="freeform-text-controls" data-element-section="text" hidden>
     <div class="freeform-context-row" role="toolbar" aria-label="Text formatting" data-i18n-aria-label="labelDesigner.textFormatting">
       <span class="freeform-font-label" data-i18n="labelDesigner.font">Font</span>
       <details class="freeform-font-menu">
         <summary aria-label="Font" data-i18n-aria-label="labelDesigner.font"><span data-font-current>Space Grotesk</span></summary>
-        <div class="freeform-font-options" role="group" aria-label="Fonts">
+        <div class="freeform-font-options" role="group" aria-label="Fonts" data-i18n-aria-label="labelDesigner.fonts">
           {LABEL_FONT_FAMILIES.map(family => <button type="button" data-font-choice={family} data-no-designer-tooltip style={`font-family: '${family}'`}>{family}</button>)}
         </div>
       </details>

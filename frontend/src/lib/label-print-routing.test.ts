@@ -787,6 +787,19 @@ function openSelectedDesigner(controls: LabelSheetControls) {
   return selectedDesign
 }
 
+describe('built-in label paper presets', () => {
+  it('shows a translated name for the Letter preset and keeps its stable id', async () => {
+    const container = await AstroContainer.create()
+    document.body.innerHTML = await container.renderToString(LabelSheetOutputSettings)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })))
+    bindLabelSheetControls(() => undefined, (key, fallback) =>
+      key === 'labelPrint.builtInLetter3x10' ? 'Lettre US 3 x 10' : fallback)
+    const letter = [...document.querySelectorAll<HTMLOptionElement>('#sheet-preset option')]
+      .find(option => option.value === 'builtin-letter-3x10')
+    expect(letter?.textContent).toBe('Lettre US 3 x 10')
+  })
+})
+
 describe('sheet label creation', () => {
   it('creates a correctly sized standard label', async () => {
     const { controls, editor, tabs } = await createSheetDesignerHarness()

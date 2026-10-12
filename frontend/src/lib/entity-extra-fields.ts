@@ -527,10 +527,10 @@ export function createEntityExtraFieldEditor(options: {
   function validateDialogResult(result: ExtraFieldDefinitionDialogResult, currentId?: number): void {
     const key = result.key.trim()
     if (isUnsafeExtraFieldPath(key)) {
-      throw new Error('Custom-field keys cannot contain empty or reserved path segments.')
+      throw new Error(t('admin.extraFieldKeyReserved'))
     }
     if (isSystemKey(key, systemKeys)) {
-      throw new Error('This key is already defined as a System Extra Field.')
+      throw new Error(t('admin.extraFieldKeySystemConflict'))
     }
     const overlap = drafts.find(
       (draft) =>
@@ -538,7 +538,7 @@ export function createEntityExtraFieldEditor(options: {
         (key === draft.key.trim() || key.startsWith(`${draft.key.trim()}.`) || draft.key.trim().startsWith(`${key}.`)),
     )
     if (overlap) {
-      throw new Error('Custom-field keys must be unique and cannot overlap nested paths.')
+      throw new Error(t('admin.extraFieldKeyOverlap'))
     }
   }
 
@@ -662,7 +662,7 @@ export function createEntityExtraFieldEditor(options: {
         const key = draft.key.trim()
         if (!key) continue
         if (isUnsafeExtraFieldPath(key)) {
-          return reportValidationError('Custom-field keys cannot contain empty or reserved path segments.')
+          return reportValidationError(t('admin.extraFieldKeyReserved'))
         }
         const overlapsLocalKey = [...seen].some(
           (existing) => key === existing || key.startsWith(`${existing}.`) || existing.startsWith(`${key}.`),
@@ -670,8 +670,8 @@ export function createEntityExtraFieldEditor(options: {
         if (overlapsLocalKey || isSystemKey(key, systemKeys)) {
           return reportValidationError(
             overlapsLocalKey
-              ? 'Custom-field keys must be unique and cannot overlap nested paths.'
-              : 'This key is already defined as a System Extra Field.',
+              ? t('admin.extraFieldKeyOverlap')
+              : t('admin.extraFieldKeySystemConflict'),
           )
         }
         seen.add(key)

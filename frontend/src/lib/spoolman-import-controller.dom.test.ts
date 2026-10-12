@@ -170,3 +170,44 @@ it("preserves detailed import and transparency result copy", () => {
   expect(repairHtml).toContain("Repaired 5 assignments");
   expect(repairHtml).toContain("Created 1; reused 2");
 });
+
+it("shows the number of transparency repairs on the button and in the confirmation", async () => {
+  document.body.innerHTML = importWorkflowFixtureHtml();
+  const api = fakeSpoolmanApi({
+    loadPreview: vi.fn(async () => ({
+      summary: { vendors: 0, filaments: 0, spools: 0, locations: 0, colors: 0 },
+      vendors: [],
+      filaments: [],
+      spools: [],
+      locations: [],
+      colors: [],
+      transparency_repair_candidates: 3,
+      transparency_repair_plan_digest: "digest",
+    })),
+  });
+  const deps = {
+    ...controllerDeps(api),
+    t: (key: string) =>
+      key === "spoolman.repairTransparency" ? en.spoolman.repairTransparency : key,
+  };
+  initSpoolmanImportController(deps);
+
+  document.querySelector<HTMLButtonElement>("#btn-test")!.click();
+  await vi.waitFor(() => expect(api.testConnection).toHaveBeenCalled());
+  document.querySelector<HTMLButtonElement>("#btn-preview")!.click();
+  const button = document.querySelector<HTMLButtonElement>(
+    "#btn-repair-transparency",
+  )!;
+  await vi.waitFor(() => expect(button.classList.contains("hidden")).toBe(false));
+
+  expect(button.textContent).toBe("Fix transparency hex (3)");
+  button.click();
+  await vi.waitFor(() => expect(deps.confirm).toHaveBeenCalled());
+  expect(deps.confirm).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      title: "Fix transparency hex (3)",
+      okLabel: "Fix transparency hex (3)",
+    }),
+  );
+});

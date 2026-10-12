@@ -42,12 +42,12 @@ import Layout from '../../layouts/Layout.astro'
         <input type="hidden" id="role-edit-id" />
         <div id="role-key-field">
           <label for="role-key" class="fm-label"><span data-i18n="admin.roleKey">Key</span> *</label>
-          <input type="text" id="role-key" required class="fm-input" pattern="[a-z][a-z0-9_]{1,48}[a-z0-9]" placeholder="e.g. editor" />
+          <input type="text" id="role-key" required class="fm-input" pattern="[a-z][a-z0-9_]{1,48}[a-z0-9]" placeholder="e.g. editor" data-i18n-placeholder="admin.roleKeyPlaceholder" />
           <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" data-i18n="admin.roleKeyHint">Unique identifier (lowercase, no spaces)</p>
         </div>
         <div>
           <label for="role-name" class="fm-label"><span data-i18n="admin.roleName">Name</span> *</label>
-          <input type="text" id="role-name-input" required class="fm-input" placeholder="e.g. Editor" />
+          <input type="text" id="role-name-input" required class="fm-input" placeholder="e.g. Editor" data-i18n-placeholder="admin.roleNamePlaceholder" />
         </div>
         <div>
           <label for="role-description" class="fm-label" data-i18n="admin.roleDescription">Description</label>
