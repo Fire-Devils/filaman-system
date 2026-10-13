@@ -2675,6 +2675,28 @@ describe('collection output binding', () => {
     expect(download).not.toHaveBeenCalled()
   })
 
+  it.each([
+    [new LabelOutputAssetError('Label image (standard-3) could not load. Decode failed', 'image'), 'Image non chargée.'],
+    [new LabelOutputAssetError(
+      'Label font "Fraunces" could not load. Reload the page before printing or exporting.', 'font', 'Fraunces',
+    ), 'Police « Fraunces » non chargée.'],
+  ])('translates the %# image or font load failure in the output alert', async (error, expected) => {
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const translations: Record<string, string> = {
+      'labelPrint.outputImageLoadFailed': 'Image non chargée.',
+      'labelPrint.outputFontLoadFailed': 'Police « {family} » non chargée.',
+    }
+    const { controls } = bindCollectionOutputs([1], {
+      capture: async () => { throw error },
+      getTranslation: (key, fallback) => translations[key] ?? fallback,
+    })
+    controls.pngButton.click()
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining(expected)))
+    expect(alert).not.toHaveBeenCalledWith(expect.stringContaining(error.message))
+  })
+
   it('creates PDF pages in collection order', async () => {
     const pdf = makePdfDocument()
     const capturedPages: LabelPdfPage[][] = []

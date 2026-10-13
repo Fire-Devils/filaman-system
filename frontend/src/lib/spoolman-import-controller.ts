@@ -370,9 +370,14 @@ export function initSpoolmanImportController(deps: SpoolmanControllerDeps): {
       actionRunning || !previewData?.extra_field_fingerprint;
     transparencyButton.disabled = actionRunning || transparencyCandidates === 0;
   };
+  const repairTransparencyLabel = () =>
+    deps
+      .t("spoolman.repairTransparency")
+      .replace("{count}", String(transparencyCandidates));
   const setTransparencyAction = (count: number, digest: string) => {
     transparencyCandidates = Math.max(0, Number(count) || 0);
     transparencyDigest = transparencyCandidates ? digest : "";
+    transparencyButton.textContent = repairTransparencyLabel();
     transparencyButton.classList.toggle("hidden", !transparencyCandidates);
     result("transparency-repair-note")?.classList.toggle(
       "hidden",
@@ -567,8 +572,8 @@ export function initSpoolmanImportController(deps: SpoolmanControllerDeps): {
     const confirmed = await deps.confirm(
       deps.t("spoolman.confirmRepairTransparency"),
       {
-        title: deps.t("spoolman.repairTransparency"),
-        okLabel: deps.t("spoolman.repairTransparency"),
+        title: repairTransparencyLabel(),
+        okLabel: repairTransparencyLabel(),
         isDanger: false,
       },
     );

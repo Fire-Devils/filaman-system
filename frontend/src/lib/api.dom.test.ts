@@ -37,3 +37,16 @@ it('retains JSON headers, explicit CSRF, and explicit cancellation for existing 
     signal: controller.signal,
   }))
 })
+
+it('keeps the detail object of an error response', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    detail: { code: 'label_asset_in_use', message: 'This image is still used by: A', preset_names: ['A'] },
+  }), { status: 409 })))
+
+  await expect(request('/me/label-assets/asset-1', { method: 'DELETE' })).rejects.toMatchObject({
+    status: 409,
+    code: 'label_asset_in_use',
+    message: 'This image is still used by: A',
+    detail: { preset_names: ['A'] },
+  })
+})

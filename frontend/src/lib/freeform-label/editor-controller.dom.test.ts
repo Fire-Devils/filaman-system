@@ -110,7 +110,7 @@ beforeEach(() => {
 describe('freeform editor element operations', () => {
   it.each([
     ['de', 'Einen Feldwert einfügen.', 'Aktualisieren'],
-    ['fr', 'Insérer la valeur d’un champ.', 'Mettre à jour'],
+    ['fr', "Insérer la valeur d'un champ.", 'Mettre à jour'],
   ])('translates every syntax help description and example in %s without changing markup tokens', async (locale, fieldDescription, updateLabel) => {
     await renderRealDesignerEditor()
     const cells = Array.from(document.querySelectorAll('#freeform-syntax-section td'))
@@ -1207,6 +1207,13 @@ describe('freeform editor assets and async lifecycle', () => {
 
     await expect(controller.loadAssets()).rejects.toThrow()
     expect(controller.getState().assetError).toBe('labelDesigner.imageLoadFailed')
+  })
+
+  it('fills a new text element with the translated default text', () => {
+    const controller = makeController({
+      translate: (key, fallback) => key === 'labelDesigner.defaultText' ? 'Texte' : fallback,
+    })
+    expect(controller.addElement('text')).toMatchObject({ type: 'text', template: 'Texte' })
   })
 
   it.each(['reset', 'history', 'replace', 'restore'] as const)('keeps a delayed upload from overwriting a later %s', async action => {

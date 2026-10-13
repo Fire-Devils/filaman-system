@@ -42,8 +42,22 @@ function outputFailureMessage(
         error.kind === 'label' ? 'labelPrint.rasterLabelTooLarge' : 'labelPrint.rasterBatchTooLarge',
         error.message,
       )
-    : error instanceof LabelOutputAssetError ? error.message : ''
+    : error instanceof LabelOutputAssetError ? outputAssetMessage(error, getTranslation) : ''
   return detail ? `${message}\n${detail}` : message
+}
+
+function outputAssetMessage(
+  error: LabelOutputAssetError,
+  getTranslation: (key: string, fallback: string) => string,
+) {
+  if (error.kind === 'image') return getTranslation('labelPrint.outputImageLoadFailed', 'Label image could not load.')
+  if (error.kind === 'font') {
+    return getTranslation(
+      'labelPrint.outputFontLoadFailed',
+      'Label font "{family}" could not load. Reload the page before printing or exporting.',
+    ).replace('{family}', error.family)
+  }
+  return error.message
 }
 import {
   bindTemporaryPdfPreview,

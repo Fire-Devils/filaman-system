@@ -33,7 +33,7 @@ const filamentId = Astro.url.searchParams.get('filament_id')
             </div>
             <div id="filament-dropdown-panel" style="display: none; position: absolute; z-index: 1000; top: calc(100% + 2px); left: 0; right: 0; background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
               <div style="padding: 8px; background: var(--input-bg); border-bottom: 1px solid var(--border);">
-                <input type="text" id="filament-dropdown-search" class="fm-input" style="height: 32px; font-size: 0.85rem; padding: 4px 10px;" placeholder="Search..." />
+                <input type="text" id="filament-dropdown-search" class="fm-input" style="height: 32px; font-size: 0.85rem; padding: 4px 10px;" placeholder="Search filament..." data-i18n-placeholder="filamentdbLookup.searchFilament" />
               </div>
               <div id="filament-dropdown-options" style="max-height: 280px; overflow-y: auto; padding: 4px 0;"></div>
             </div>

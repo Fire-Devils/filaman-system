@@ -275,7 +275,8 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   defaultRow.style.display = options.mode === 'system' ? 'block' : 'none'
   valueRow.style.display = options.mode === 'entity' ? 'block' : 'none'
   key.pattern = options.mode === 'system' ? '[a-zA-Z0-9_]+' : '[a-zA-Z0-9_.]+'
-  key.placeholder = options.mode === 'system' ? 'e.g. material_type' : 'e.g. drying.temperature'
+  key.placeholder = translate('admin.extraFieldKeyExample', 'e.g. {example}')
+    .replace('{example}', options.mode === 'system' ? 'material_type' : 'drying.temperature')
 
   function syncDefinition(): void {
     if (!draft) return

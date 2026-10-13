@@ -22,6 +22,8 @@ export type LabelDesignerPresetSource = LabelKind | 'builtin'
 export interface LabelDesignerPresetRef {
   source: LabelDesignerPresetSource
   name: string
+  /** Shown name when it differs from the stable `name` (translated standard presets). */
+  label?: string
   widthMm?: number
   heightMm?: number
 }
@@ -72,6 +74,8 @@ export type LabelSheetPresetSettings = Pick<
 export interface LabelSheetPreset {
   id: string
   name: string
+  /** Translation key for the displayed name of a built-in preset. */
+  nameKey?: string
   settings: LabelSheetPresetSettings
   builtin?: boolean
 }
@@ -220,6 +224,7 @@ const BUILT_IN_SHEET_PRESETS: LabelSheetPreset[] = [
   {
     id: 'builtin-letter-3x10',
     name: 'Letter 3 x 10 (2.625 x 1 in)',
+    nameKey: 'labelPrint.builtInLetter3x10',
     builtin: true,
     settings: normalizePresetSettings({
       paperSize: 'letter',
@@ -436,9 +441,12 @@ export function bindLabelSheetControls(
   let selectedPresetId = CUSTOM_PRESET_ID
   let loadedCustomPresetId: string | null = null
   let presetMutationInFlight = false
-  let loadedPresetName = [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset =>
+  const presetDisplayName = (preset: LabelSheetPreset) =>
+    preset.nameKey ? getTranslation(preset.nameKey, preset.name) : preset.name
+  const initialPreset = [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset =>
     Object.entries(preset.settings).every(([key, value]) => settings[key as keyof LabelSheetSettings] === value),
-  )?.name ?? ''
+  )
+  let loadedPresetName = initialPreset ? presetDisplayName(initialPreset) : ''
 
   const readStoredSource = (): LabelSheetSource => {
     try {
@@ -528,7 +536,7 @@ export function bindLabelSheetControls(
       const optgroup = document.createElement('optgroup')
       optgroup.label = group.label
       group.presets.forEach(preset => {
-        const option = createSelectOption(preset.name, `${preset.source}:${preset.name}`)
+        const option = createSelectOption(preset.label ?? preset.name, `${preset.source}:${preset.name}`)
         option.dataset.presetSource = preset.source
         option.dataset.presetName = preset.name
         if (Number.isFinite(preset.widthMm)) option.dataset.widthMm = String(preset.widthMm)
@@ -548,6 +556,10 @@ export function bindLabelSheetControls(
   }
 
   const findPreset = (id: string) => [...BUILT_IN_SHEET_PRESETS, ...customPresets].find(preset => preset.id === id)
+  const presetNameFor = (id: string) => {
+    const preset = findPreset(id)
+    return preset ? presetDisplayName(preset) : ''
+  }
   const canUpdatePreset = () => loadedCustomPresetId !== null
     && selectedPresetId === loadedCustomPresetId
     && presetName?.value.trim() === customPresets.find(preset => preset.id === loadedCustomPresetId)?.name
@@ -575,7 +587,7 @@ export function bindLabelSheetControls(
 
     const builtInGroup = document.createElement('optgroup')
     builtInGroup.label = getTranslation('labelPrint.builtInPaperPresets', 'Built-in presets')
-    BUILT_IN_SHEET_PRESETS.forEach(preset => builtInGroup.appendChild(createSelectOption(preset.name, preset.id)))
+    BUILT_IN_SHEET_PRESETS.forEach(preset => builtInGroup.appendChild(createSelectOption(presetDisplayName(preset), preset.id)))
     presetSelect.appendChild(builtInGroup)
 
     if (customPresets.length > 0) {
@@ -587,7 +599,7 @@ export function bindLabelSheetControls(
 
     selectedPresetId = findPreset(previousValue) ? previousValue : CUSTOM_PRESET_ID
     presetSelect.value = selectedPresetId
-    if (presetName) presetName.value = findPreset(selectedPresetId)?.name ?? ''
+    if (presetName) presetName.value = presetNameFor(selectedPresetId)
     syncPresetControls()
   }
 
@@ -695,7 +707,7 @@ export function bindLabelSheetControls(
 
   presetSelect?.addEventListener('change', () => {
     selectedPresetId = presetSelect.value
-    if (presetName) presetName.value = findPreset(selectedPresetId)?.name ?? ''
+    if (presetName) presetName.value = presetNameFor(selectedPresetId)
     syncPresetControls()
   })
   presetName?.addEventListener('input', syncPresetControls)
@@ -703,7 +715,7 @@ export function bindLabelSheetControls(
   loadPreset?.addEventListener('click', () => {
     const preset = findPreset(selectedPresetId)
     if (!preset) return
-    loadedPresetName = preset.name
+    loadedPresetName = presetDisplayName(preset)
     loadedCustomPresetId = preset.builtin ? null : preset.id
     const next = applyPresetSettings(readFormSettings(), preset.settings)
     setFormValues(next)

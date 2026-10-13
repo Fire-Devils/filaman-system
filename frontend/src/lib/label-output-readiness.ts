@@ -1,7 +1,12 @@
 import { LABEL_FONT_FAMILIES } from './freeform-label/types'
 import { initializeCroppedImage } from './freeform-label/cropped-image'
 
-export class LabelOutputAssetError extends Error {}
+/** `marked` errors carry text that is already translated; `image` and `font` are translated when shown. */
+export class LabelOutputAssetError extends Error {
+  constructor(message: string, readonly kind: 'marked' | 'image' | 'font' = 'marked', readonly family = '') {
+    super(message)
+  }
+}
 
 function assertNoMissingAssets(root: HTMLElement) {
   const missing = root.matches('[data-label-output-error]')
@@ -18,10 +23,10 @@ async function waitForImage(image: HTMLImageElement) {
     if (!image.complete) {
       await new Promise<void>((resolve, reject) => {
         image.addEventListener('load', () => resolve(), { once: true })
-        image.addEventListener('error', () => reject(new LabelOutputAssetError('Label image could not load.')), { once: true })
+        image.addEventListener('error', () => reject(new LabelOutputAssetError('Label image could not load.', 'image')), { once: true })
       })
     }
-    if (image.naturalWidth <= 0) throw new LabelOutputAssetError('Label image could not load.')
+    if (image.naturalWidth <= 0) throw new LabelOutputAssetError('Label image could not load.', 'image')
     initializeCroppedImage(image)
     return
   }
@@ -35,7 +40,7 @@ async function waitForImage(image: HTMLImageElement) {
       return
     }
     const asset = image.closest<HTMLElement>('[data-label-element-id]')?.dataset.labelElementId
-    throw new LabelOutputAssetError(`Label image${asset ? ` (${asset})` : ''} could not load. ${error instanceof Error ? error.message : ''}`)
+    throw new LabelOutputAssetError(`Label image${asset ? ` (${asset})` : ''} could not load. ${error instanceof Error ? error.message : ''}`, 'image')
   }
 }
 
@@ -59,7 +64,7 @@ export async function waitForLabelFonts(roots: HTMLElement[]) {
     try {
       if ((await fonts.load(font)).length === 0) throw new Error('Font unavailable')
     } catch {
-      throw new LabelOutputAssetError(`Label font "${family}" could not load. Reload the page before printing or exporting.`)
+      throw new LabelOutputAssetError(`Label font "${family}" could not load. Reload the page before printing or exporting.`, 'font', family)
     }
   }
 }

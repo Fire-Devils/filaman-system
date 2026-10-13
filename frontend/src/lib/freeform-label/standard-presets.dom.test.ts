@@ -1,11 +1,33 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest'
+import fr from '../../i18n/fr.json'
+import { setLang } from '../i18n'
 import { buildSpoolDataFromFlatLabel } from '../label-designer'
 import { getStandardLabelPresets } from './standard-presets'
 import { renderFreeformLabel } from './render'
 
 describe('standard label content', () => {
+  it('translates shown names and printed headings but keeps the stable English names', () => {
+    try {
+      setLang('fr')
+      const presets = getStandardLabelPresets('spool')
+      expect(presets.map(preset => preset.name)).toEqual(['Classic (40 × 30 mm)', 'QR focused (40 × 30 mm)'])
+      expect(presets.map(preset => preset.label)).toEqual([
+        `${fr.labelDesigner.standardPresetClassic} (40 × 30 mm)`,
+        `${fr.labelDesigner.standardPresetQrFocused} (40 × 30 mm)`,
+      ])
+      const classic = presets[0].data.design.elements
+        .filter(element => element.type === 'text')
+        .map(element => element.template)
+        .join('\n')
+      for (const heading of ['standardFieldId', 'standardFieldDiameter', 'standardFieldStockedIn'] as const) {
+        expect(classic).toContain(`]${fr.labelDesigner[heading]}[/if]`)
+      }
+      expect(classic).not.toMatch(/Diameter:|Stocked in:/)
+    } finally { setLang('en') }
+  })
+
   it('ships entity-appropriate Classic content in the same two 40 by 30 presets', () => {
     const spoolPresets = getStandardLabelPresets('spool')
     const filamentPresets = getStandardLabelPresets('filament')

@@ -13,12 +13,15 @@ type ApiRequestOptions = RequestInit & { csrfToken?: string | null }
 export class ApiError extends Error {
   status: number
   code: string
+  /** The `detail` object of the response, for codes that send extra fields (e.g. `preset_names`). */
+  detail?: Record<string, unknown>
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, detail?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.detail = detail
   }
 }
 
@@ -67,7 +70,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
       (typeof detail === 'string' ? detail : '') ||
       errorBody?.message ||
       `HTTP ${response.status}`
-    throw new ApiError(response.status, code, message)
+    throw new ApiError(response.status, code, message, typeof detail === 'object' && detail ? detail : undefined)
   }
 
   if (response.status === 204) {

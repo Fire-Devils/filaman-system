@@ -40,6 +40,7 @@ function createElement(
   design: LabelDesignV2,
   id: string,
   shape: LabelShape = 'rectangle',
+  text = 'Text',
 ): LabelDesignElement {
   const z = nextZ(design)
   const center = (w: number, h: number) => ({
@@ -55,7 +56,7 @@ function createElement(
         type,
         ...center(28, 8),
         z,
-        template: 'Text',
+        template: text,
         fontFamily: 'Space Grotesk',
         fontSizeMm: 3.2,
         fontWeight: 600,
@@ -204,7 +205,7 @@ export function createFreeformEditorController(
   }
 
   const addElement = (type: LabelElementType, shape: LabelShape = 'rectangle') => {
-    const element = createElement(type, design, createId(), shape)
+    const element = createElement(type, design, createId(), shape, translate('labelDesigner.defaultText', 'Text'))
     commitDesign({ ...design, elements: [...design.elements, element] }, element.id)
     return structuredClone(getSelectedElement()!)
   }
