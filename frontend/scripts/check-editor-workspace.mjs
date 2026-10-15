@@ -57,9 +57,9 @@ try {
       console.log(`Sheet round trip and visible-label JSON edit passed: ${path}`)
     }
     await page.locator('#freeform-canvas-host [data-label-element-id="text"]').first().click()
-    await page.locator('#freeform-field-dock-toggle').click()
-    for (const width of [390, 900, 1024, 1280, 1600]) {
-      await page.setViewportSize({ width, height: 900 })
+    if (await page.locator('#freeform-field-dock').getAttribute('data-open') !== 'true') await page.locator('#freeform-field-dock-toggle').click()
+    for (const [width, height] of [[390, 900], [900, 900], [1024, 900], [1280, 900], [1600, 900], [1600, 600], [1600, 1400], [390, 600]]) {
+      await page.setViewportSize({ width, height })
       for (const collapsed of width <= 768 ? [true] : [true, false, true]) {
         if (await page.locator('#fm-page').evaluate(node => node.classList.contains('collapsed')) !== collapsed) await page.locator('#sidebar-toggle').click()
         // Wait for the sidebar transition and the resulting container observers.
@@ -67,6 +67,10 @@ try {
           await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition).map(animation => animation.finished.catch(() => {})))
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
         })
+        if (await page.locator('#freeform-designer-workspace').getAttribute('data-editor-editable') === 'true') {
+          await page.locator('#freeform-canvas-host [data-label-element-id="text"]').first().click()
+          if (await page.locator('#freeform-field-dock').getAttribute('data-open') !== 'true') await page.locator('#freeform-field-dock-toggle').click()
+        }
         for (const zoom of [100, 200, 500]) {
           await page.locator('#preview-zoom-input').fill(String(zoom))
           await page.locator('#preview-zoom-input').press('Tab')
@@ -76,6 +80,12 @@ try {
             const workspace = document.querySelector('#freeform-designer-workspace')
             const region = document.querySelector('.freeform-canvas-region').getBoundingClientRect()
             const editable = workspace.dataset.editorEditable === 'true'
+            const dock = document.querySelector('#freeform-field-dock')
+            if (editable && dock.dataset.open === 'true') {
+              const clip = dock.querySelector('.freeform-field-dock-clip')
+              if (clip.scrollHeight > clip.clientHeight + 1) errors.push('token dock clips content instead of using workspace scroll')
+              if (getComputedStyle(dock).maxHeight !== 'none') errors.push('token dock has a height cap')
+            }
             const inside = (node, bounds) => {
               const rect = node.getBoundingClientRect()
               if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1) {
@@ -107,7 +117,10 @@ try {
             return errors
           })
           cases++
-          assert.deepEqual(errors, [], JSON.stringify({ path, width, collapsed, zoom }))
+          assert.deepEqual(errors, [], JSON.stringify({ path, width, height, collapsed, zoom }))
+          if (process.env.EDITOR_SCREENSHOT_DIR && path === '/spools/101/print' && zoom === 100 && collapsed && [600, 1400].includes(height)) {
+            await page.screenshot({ path: `${process.env.EDITOR_SCREENSHOT_DIR}/editor-${width}x${height}.png` })
+          }
         }
       }
     }

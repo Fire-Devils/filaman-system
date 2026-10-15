@@ -89,6 +89,7 @@ export function getStaticPaths() {
   import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
   import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
   import { consumeScopedLabelFields } from '../../../lib/label-print-session'
+  import { getCurrency, initCurrency } from '../../../lib/format'
 
   bindPrintPageSidebarCollapse()
 
@@ -523,12 +524,15 @@ export function getStaticPaths() {
   const [apiSpoolData, loadedLookups] = await Promise.all([
     fetchSpoolApiData(),
     loadSpoolLabelLookups(),
+    initCurrency(),
   ])
+  labelData.purchase_currency = getCurrency()
   if (apiSpoolData) {
     const apiLabelData = buildSpoolLabelDataFromApi(
       apiSpoolData,
       loadedLookups,
       id,
+      getCurrency(),
     )
     mergeMissingSpoolLabelData(
       apiLabelData,

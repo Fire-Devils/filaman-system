@@ -39,6 +39,23 @@ export interface DesignerFlatLabelData {
   multi_color_style?: unknown
   extruder_temp?: unknown
   bed_temp?: unknown
+  extruder_temp_range_c?: string
+  bed_temp_range_c?: string
+  manufacturer_sku?: string
+  datasheet_url?: string
+  image_url?: string
+  is_discontinued?: string
+  drying_temp_c?: string
+  drying_time_hours?: string
+  softening_temp_c?: string
+  cooling_fan_range_percent?: string
+  chamber_temp_c?: string
+  max_volumetric_speed_mm3_s?: string
+  flow_ratio?: string
+  pressure_advance_k?: string
+  ams_compatibility?: string
+  build_plate_compatibility?: string
+  price_currency?: string
   raw_material_weight_g?: unknown
   weight?: unknown
   diameter?: unknown
@@ -54,6 +71,8 @@ export interface DesignerFlatLabelData {
   lot_number?: unknown
   external_id?: unknown
   rfid_uid?: unknown
+  rfid_uid_2?: unknown
+  purchase_currency?: unknown
   location?: unknown
   status?: unknown
   purchase_date?: unknown
@@ -100,6 +119,23 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     'filament.manufacturer_id': toStringValue(data.manufacturer_id),
     'filament.extruder_temp': toStringValue(data.extruder_temp),
     'filament.bed_temp': toStringValue(data.bed_temp),
+    'filament.extruder_temp_range_c': toStringValue(data.extruder_temp_range_c),
+    'filament.bed_temp_range_c': toStringValue(data.bed_temp_range_c),
+    'filament.manufacturer_sku': toStringValue(data.manufacturer_sku),
+    'filament.datasheet_url': toStringValue(data.datasheet_url),
+    'filament.image_url': toStringValue(data.image_url),
+    'filament.is_discontinued': toStringValue(data.is_discontinued),
+    'filament.drying_temp_c': toStringValue(data.drying_temp_c),
+    'filament.drying_time_hours': toStringValue(data.drying_time_hours),
+    'filament.softening_temp_c': toStringValue(data.softening_temp_c),
+    'filament.cooling_fan_range_percent': toStringValue(data.cooling_fan_range_percent),
+    'filament.chamber_temp_c': toStringValue(data.chamber_temp_c),
+    'filament.max_volumetric_speed_mm3_s': toStringValue(data.max_volumetric_speed_mm3_s),
+    'filament.flow_ratio': toStringValue(data.flow_ratio),
+    'filament.pressure_advance_k': toStringValue(data.pressure_advance_k),
+    'filament.ams_compatibility': toStringValue(data.ams_compatibility),
+    'filament.build_plate_compatibility': toStringValue(data.build_plate_compatibility),
+    'filament.price_currency': toStringValue(data.price_currency),
     'filament.raw_material_weight_g': toStringValue(rawMaterialWeight),
     'filament.weight': toStringValue(rawMaterialWeight),
     'filament.diameter': toStringValue(data.diameter),
@@ -115,6 +151,11 @@ export function buildSpoolDataFromFlatLabel(data: DesignerFlatLabelData): SpoolD
     lot_number: toStringValue(data.lot_number),
     external_id: toStringValue(data.external_id),
     rfid_uid: toStringValue(data.rfid_uid),
+    rfid_uid_2: toStringValue(data.rfid_uid_2),
+    purchase_currency: toStringValue(data.purchase_currency),
+    spool_material: toStringValue(data.spool_material),
+    spool_outer_diameter_mm: toStringValue(data.spool_outer_diameter_mm),
+    spool_width_mm: toStringValue(data.spool_width_mm),
     location: toStringValue(data.location),
     status: toStringValue(data.status),
     purchase_date: toStringValue(data.purchase_date),
@@ -145,8 +186,9 @@ export function buildSpoolDataFromApiSpool(
   spool: unknown,
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
   fieldDefs?: SpoolExtraFieldDefinitionMap,
+  purchaseCurrency = '',
 ): SpoolData {
-  const data = buildSpoolLabelDataFromApi(spool, lookups)
+  const data = buildSpoolLabelDataFromApi(spool, lookups, '', purchaseCurrency)
   return buildSpoolDesignerDataFromLabelData({
     ...data,
     extraFields: buildDesignerExtraFieldsFromApiSpool(spool, fieldDefs),

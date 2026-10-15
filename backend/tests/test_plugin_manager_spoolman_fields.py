@@ -15,7 +15,7 @@ from app.models.filament import Filament
 from app.plugins.manager import PluginManager
 
 
-async def _run_bambu_migration(db_session, monkeypatch):
+async def _run_bambu_migration(db_session, monkeypatch, driver_key="bambulab"):
     class _SessionContext:
         async def __aenter__(self):
             return db_session
@@ -32,7 +32,39 @@ async def _run_bambu_migration(db_session, monkeypatch):
         "_load_plugin_json",
         lambda _driver_key: {"printer_params": {"migration": {"legacy_renames": {}}}},
     )
-    await manager._migrate_spoolman_bambu_fields("bambulab")
+    await manager._migrate_spoolman_bambu_fields(driver_key)
+
+
+async def test_non_bambu_driver_does_not_consume_bambu_fields(db_session, monkeypatch):
+    printer = Printer(name="Moonraker", driver_key="moonraker")
+    manufacturer = Manufacturer(name="Migration Guard Test")
+    db_session.add_all([printer, manufacturer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Guard PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        custom_fields={"settings_extruder_temp": 210},
+    )
+    db_session.add(filament)
+    await db_session.commit()
+
+    await _run_bambu_migration(db_session, monkeypatch, "moonraker")
+
+    assert (
+        not (
+            await db_session.execute(
+                select(FilamentPrinterParam).where(
+                    FilamentPrinterParam.filament_id == filament.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await db_session.refresh(filament)
+    assert filament.custom_fields == {"settings_extruder_temp": 210}
 
 
 def test_extract_bambu_params_reads_promoted_native_nozzle_range():
