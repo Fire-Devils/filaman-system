@@ -127,13 +127,13 @@ async def ensure_any_permission(
     db: AsyncSession,
     principal: Principal,
     *permission_keys: str,
-) -> None:
-    """Raise 403 unless the principal has at least one of the given permissions."""
+) -> set[str]:
+    """Return permitted requested keys, or raise 403 when none are allowed."""
     if principal.is_superadmin and (
         principal.scopes is None
         or any(key in principal.scopes for key in permission_keys)
     ):
-        return
+        return set(permission_keys) if principal.scopes is None else set(permission_keys).intersection(principal.scopes)
 
     if principal.auth_type == "device":
         if principal.scopes is None:
@@ -152,7 +152,7 @@ async def ensure_any_permission(
                     "message": f"One of {permission_keys} required",
                 },
             )
-        return
+        return set(permission_keys).intersection(principal.scopes)
 
     rbac_permissions = await resolve_user_permissions(db, principal.user_id)
     if principal.scopes is not None:
@@ -168,3 +168,4 @@ async def ensure_any_permission(
                 "message": f"One of {permission_keys} required",
             },
         )
+    return effective.intersection(permission_keys)

@@ -328,6 +328,27 @@ class TestDeviceScopeAuth:
 
 class TestApiKeyScopeRestriction:
     @pytest.mark.asyncio
+    async def test_empty_scopes_restrict_superadmin_api_key(self, client: AsyncClient, admin_user, db_session):
+        secret = generate_token_secret()
+        api_key = UserApiKey(
+            user_id=admin_user.id,
+            name="Restricted Superadmin Key",
+            key_hash=hash_token(secret),
+            scopes=[],
+        )
+        db_session.add(api_key)
+        await db_session.commit()
+        await db_session.refresh(api_key)
+
+        response = await client.get(
+            "/api/v1/labels/presets",
+            headers={"Authorization": f"ApiKey uak.{api_key.id}.{secret}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "forbidden"
+
+    @pytest.mark.asyncio
     async def test_empty_scopes_restrict_superadmin_api_key_for_any_permission(self, admin_user, db_session):
         principal = Principal(
             auth_type="api_key",
