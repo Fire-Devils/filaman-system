@@ -4,11 +4,11 @@ import { getQrModuleCount, getQrRecommendedSideMm } from './qr-readability'
 import { formatDesignerNumber } from './number-format'
 
 describe('QR print readability guidance', () => {
-  it('rounds the four-dot 300 DPI recommendation upward to the displayed hundredth', () => {
-    const recommended = getQrRecommendedSideMm(37)
-
-    expect(recommended).toBe(12.54)
-    expect(formatDesignerNumber(recommended!)).toBe('12.54')
+  it('rounds four-dot recommendations upward to a tenth for each printer resolution', () => {
+    expect(getQrRecommendedSideMm(37, 200)).toBe(18.8)
+    const recommended = getQrRecommendedSideMm(37, 300)
+    expect(recommended).toBe(12.6)
+    expect(formatDesignerNumber(recommended!)).toBe('12.6')
   })
 
   it('reads the actual encoded module count without trusting malformed QR models', () => {
@@ -20,7 +20,7 @@ describe('QR print readability guidance', () => {
   })
 
   it('does not invent a recommendation when the encoded model is unavailable', () => {
-    expect(getQrRecommendedSideMm(undefined)).toBeUndefined()
-    expect(getQrRecommendedSideMm(Number.NaN)).toBeUndefined()
+    expect(getQrRecommendedSideMm(undefined, 200)).toBeUndefined()
+    expect(getQrRecommendedSideMm(Number.NaN, 300)).toBeUndefined()
   })
 })

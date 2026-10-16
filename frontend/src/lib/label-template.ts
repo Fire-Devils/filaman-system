@@ -4,6 +4,7 @@
  * Template syntax:
  *   {token}                — simple dot-path substitution; resolves to "?" if missing
  *   {token|date}           — date-only rendering for date/datetime tokens
+ *   {token|date:%d.%m.%Y} — custom numeric date order/separators (default %Y/%m/%d)
  *   {prefix{token}suffix}  — optional block: rendered as prefix+value+suffix if token is not "?"
  *                            omitted entirely when token resolves to "?"
  *   [if={token}]text[/if]  — optional phrase retaining its named condition as fields are edited
@@ -25,7 +26,7 @@
  * extra-field values keyed by field key.
  */
 
-import { formatDateDisplay } from './extra-fields'
+import { formatLabelDate } from './label-date'
 import { toOpaqueRgbHex } from './colors'
 import { templateMarkupMatches, parseTemplateMarkup, templateFieldRanges } from './freeform-label/template-markup'
 
@@ -80,6 +81,8 @@ export interface SpoolData {
   extra?: Record<string, string>
   /** Unformatted values used by token modifiers such as |date. */
   extraRaw?: Record<string, unknown>
+  /** Raw built-in values retained when their display values are preformatted. */
+  rawValues?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -180,12 +183,13 @@ interface TemplateCharacterSource {
   start: number
   end: number
   atomic?: boolean
+  literal?: boolean
 }
 
-function splitDateModifier(token: string): { key: string; dateOnly: boolean } {
-  const match = token.trim().match(/^(.*?)\|date$/i)
+function splitDateModifier(token: string): { key: string; dateOnly: boolean; format?: string } {
+  const match = token.trim().match(/^(.*?)\|date(?::([^{}]*))?$/i)
   return match
-    ? { key: match[1].trim(), dateOnly: true }
+    ? { key: match[1].trim(), dateOnly: true, format: match[2] }
     : { key: token.trim(), dateOnly: false }
 }
 
@@ -202,7 +206,11 @@ function readTokenValue(
     }
   }
   const value = (data as Record<string, unknown>)[tokenKey]
-  return { value, rawValue: value }
+  return { value, rawValue: data.rawValues?.[tokenKey] ?? value }
+}
+
+export function hasLiteralTemplateValue(token: string, data?: SpoolData | null): boolean {
+  return !!data && readTokenValue(token.trim(), data).value !== undefined
 }
 
 /** Resolve a dot-path token against the spool data object. */
@@ -210,15 +218,17 @@ function resolveToken(token: string, data: SpoolData): string {
   const literalKey = token.trim()
   let { value, rawValue } = readTokenValue(literalKey, data)
   let dateOnly = false
+  let dateFormat: string | undefined
   if (value === undefined) {
     const modified = splitDateModifier(literalKey)
     if (modified.dateOnly) {
       ;({ value, rawValue } = readTokenValue(modified.key, data))
       dateOnly = true
+      dateFormat = modified.format
     }
   }
   if (value === undefined || value === null || value === '') return '?'
-  return dateOnly ? formatDateDisplay(rawValue) : String(value)
+  return dateOnly ? formatLabelDate(rawValue, dateFormat) : String(value)
 }
 
 /** Expand {token} and {prefix{token}suffix} placeholders to plain text. */
@@ -227,7 +237,7 @@ export function renderTemplateText(template: string, data: SpoolData): string {
 }
 
 /** Track UTF-16 offsets alongside expansion, before markup hides its delimiters. */
-function expandTemplate(template: string, data: SpoolData, selectable: boolean): {
+export function expandTemplate(template: string, data: SpoolData, selectable: boolean): {
   text: string
   sources?: TemplateCharacterSource[]
 } {
@@ -242,11 +252,12 @@ function expandTemplate(template: string, data: SpoolData, selectable: boolean):
       yield { text: boundedTemplate.slice(last, field.start), start: last, end: field.start }
       last = field.end
       const token = field.condition ?? boundedTemplate.slice(field.innerStart, field.innerEnd)
-      const resolved = renderColorSwatchMarker(token, data) ?? resolveToken(token, data)
+      const swatch = renderColorSwatchMarker(token, data)
+      const resolved = swatch ?? resolveToken(token, data)
       if (!field.token) {
         if (resolved !== '?' && resolved !== '') yield* parts(field.innerStart, field.innerEnd)
       } else {
-        if (resolved !== '?') yield { text: resolved, start: field.start, end: field.end, atomic: true }
+        if (resolved !== '?') yield { text: resolved, start: field.start, end: field.end, atomic: true, literal: swatch === null }
       }
     }
     yield { text: boundedTemplate.slice(last, to), start: last, end: to }
@@ -269,14 +280,14 @@ function expandTemplate(template: string, data: SpoolData, selectable: boolean):
     for (let offset = 0; offset < part.text.length; offset++) {
       const character = part.text[offset]
       const source = selectable && (caps ?? output).text.length < limit
-        ? { start: part.atomic ? part.start : part.start + offset, end: part.atomic ? part.end : part.start + offset + 1, atomic: part.atomic }
+        ? { start: part.atomic ? part.start : part.start + offset, end: part.atomic ? part.end : part.start + offset + 1, atomic: part.atomic, literal: part.literal }
         : undefined
-      if (character === '^' && !caret) {
+      if (character === '^' && !part.literal && !caret) {
         caret = true
         caretSource = source
         continue
       }
-      if (character === '^') {
+      if (character === '^' && !part.literal) {
         caret = false
         if (!caps) {
           caps = buffer()
@@ -313,11 +324,11 @@ function expandTemplate(template: string, data: SpoolData, selectable: boolean):
 }
 
 /** Apply inline markup to rendered template text. */
-function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: SpoolData, sources?: TemplateCharacterSource[], sourceOffset = 0): void {
+function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: SpoolData, sources: TemplateCharacterSource[], sourceOffset = 0, selectable = true): void {
   let last = 0
 
   const appendPlainText = (raw: string, container: DocumentFragment | HTMLElement, offset: number) => {
-    if (sources) {
+    if (selectable) {
       let cursor = 0
       while (cursor < raw.length) {
         const source = sources[sourceOffset + offset + cursor]
@@ -348,14 +359,19 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
     })
   }
 
-  for (const match of templateMarkupMatches(text, { swatches: true })) {
+  // Hide field characters only while finding markup boundaries. Keep UTF-16
+  // offsets intact so template styling and editor selections still surround
+  // the complete literal value, even when it contains closing delimiters.
+  const markupText = text.split('').map((character, index) => sources[sourceOffset + index].literal ? '\uFFFC' : character).join('')
+  for (const match of templateMarkupMatches(markupText, { swatches: true })) {
     // Text before this match
     if (match.index > last) {
       appendPlainText(text.slice(last, match.index), frag, last)
     }
 
-    const part = match[0]
-    const markup = parseTemplateMarkup(part)
+    const part = text.slice(match.index, match.index + match[0].length)
+    const markup = parseTemplateMarkup(match[0])
+    if (markup) markup.inner = part.slice(markup.opening.length, part.length - markup.closing.length)
 
     const swatch = part.match(SWATCH_MARKER_RE)
     if (swatch) {
@@ -369,7 +385,7 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
       el.style.border = '1px solid rgba(0,0,0,0.28)'
       el.style.verticalAlign = 'baseline'
       el.style.margin = '0 0.2ch'
-      if (sources) {
+      if (selectable) {
         el.dataset.templateStart = String(sources[sourceOffset + match.index].start)
         el.dataset.templateEnd = String(sources[sourceOffset + match.index + part.length - 1].end)
         el.dataset.templateAtomic = 'true'
@@ -378,43 +394,43 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
     } else if (markup?.kind === 'font') {
       const el = document.createElement('span')
       el.style.fontFamily = `"${markup.font}", sans-serif`
-      applyMarkup(markup.inner, el, data, sources, sourceOffset + match.index + markup.opening.length)
+      applyMarkup(markup.inner, el, data, sources, sourceOffset + match.index + markup.opening.length, selectable)
       frag.appendChild(el)
     } else if (markup?.kind === 'size') {
       const el = document.createElement('span')
       el.style.fontSize = `${markup.sizePercent}%`
-      applyMarkup(markup.inner, el, data, sources, sourceOffset + match.index + markup.opening.length)
+      applyMarkup(markup.inner, el, data, sources, sourceOffset + match.index + markup.opening.length, selectable)
       frag.appendChild(el)
     } else if (markup?.opening.toLowerCase() === '[b]' || markup?.opening.toLowerCase() === '[i]') {
       const el = document.createElement(markup.opening.toLowerCase() === '[b]' ? 'strong' : 'em')
-      applyMarkup(markup.inner, el, data, sources, sourceOffset + match.index + markup.opening.length)
+      applyMarkup(markup.inner, el, data, sources, sourceOffset + match.index + markup.opening.length, selectable)
       frag.appendChild(el)
-    } else if (part.startsWith('***') && part.endsWith('***')) {
+    } else if (markup?.opening === '***') {
       const strong = document.createElement('strong')
       const emphasis = document.createElement('em')
-      applyMarkup(part.slice(3, -3), emphasis, data, sources, sourceOffset + match.index + 3)
+      applyMarkup(part.slice(3, -3), emphasis, data, sources, sourceOffset + match.index + 3, selectable)
       strong.append(emphasis)
       frag.append(strong)
-    } else if (part.startsWith('**') && part.endsWith('**')) {
+    } else if (markup?.opening === '**') {
       const inner = part.slice(2, -2)
       const el = document.createElement('strong')
-      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2)
+      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2, selectable)
       frag.appendChild(el)
-    } else if (part.startsWith('__') && part.endsWith('__')) {
+    } else if (markup?.opening === '__') {
       const inner = part.slice(2, -2)
       const el = document.createElement('u')
-      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2)
+      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2, selectable)
       frag.appendChild(el)
-    } else if (part.startsWith('==') && part.endsWith('==')) {
+    } else if (markup?.opening === '==') {
       const inner = part.slice(2, -2)
       const el = document.createElement('span')
       el.style.backgroundColor = '#000'
       el.style.color = '#fff'
       el.style.padding = '0 0.6mm'
       el.style.display = 'inline-block'
-      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2)
+      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2, selectable)
       frag.appendChild(el)
-    } else if (part.startsWith('@@') && part.endsWith('@@')) {
+    } else if (markup?.opening === '@@') {
       const inner = part.slice(2, -2)
       const theme = getFilamentColorTheme(data)
       const el = document.createElement('span')
@@ -422,12 +438,12 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
       el.style.color = theme.foreground
       el.style.padding = '0 0.6mm'
       el.style.display = 'inline-block'
-      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2)
+      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 2, selectable)
       frag.appendChild(el)
-    } else if (part.startsWith('*') && part.endsWith('*')) {
+    } else if (markup?.opening === '*') {
       const inner = part.slice(1, -1)
       const el = document.createElement('em')
-      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 1)
+      applyMarkup(inner, el, data, sources, sourceOffset + match.index + 1, selectable)
       frag.appendChild(el)
     } else appendPlainText(part, frag, match.index)
 
@@ -445,13 +461,13 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
  * ready to append into the DOM.
  */
 export function parseTemplate(template: string, data: SpoolData): DocumentFragment {
-  const plainText = expandTemplate(template, data, false).text
+  const { text: plainText, sources } = expandTemplate(template, data, true)
   const frag = document.createDocumentFragment()
   if (plainText.length > MAX_MARKUP_CHARS) {
     frag.appendChild(document.createTextNode(plainText.slice(0, MAX_MARKUP_CHARS)))
     return frag
   }
-  applyMarkup(plainText, frag, data)
+  applyMarkup(plainText, frag, data, sources!, 0, false)
   return frag
 }
 
@@ -479,7 +495,7 @@ export function renderSelectableTemplate(template: string, data: SpoolData): Doc
       i = end
     }
   } else {
-    applyMarkup(text, frag, data, sources)
+    applyMarkup(text, frag, data, sources!)
   }
   return frag
 }

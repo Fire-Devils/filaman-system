@@ -790,6 +790,20 @@ describe('source range formatting', () => {
     expect(formatTemplateRange(result.template, result.start, result.end, 'date').template).toBe('On {purchase_date} today')
     expect(formatTemplateRange('Hello world', 0, 11, 'date').template).toBe('Hello world')
   })
+  it('recognizes custom date formats and preserves them when enabling a mixed selection', () => {
+    const custom = '{purchase_date|date:%d.%m.%Y}'
+    expect(isTemplateModifierActive(custom, 0, custom.length, 'date')).toBe(true)
+    expect(formatTemplateRange(custom, 0, custom.length, 'date').template).toBe('{purchase_date}')
+    const mixed = custom + ' {created_at}'
+    expect(formatTemplateRange(mixed, 0, mixed.length, 'date').template)
+      .toBe(custom + ' {created_at|date}')
+  })
+  it('does not remove a date-like suffix from a literal field name', () => {
+    const source = '{extra.spool.note|date:%Y}'
+    const literal = { ...data, extra: { 'spool.note|date:%Y': 'literal' } }
+    expect(isTemplateModifierActive(source, 0, source.length, 'date', literal)).toBe(false)
+    expect(formatTemplateRange(source, 0, source.length, 'date', literal).template).toBe(source)
+  })
 })
 
 

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Label rendering checks</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#eff3f1;color:#172e28;font:16px system-ui,sans-serif}
+  main{max-width:1480px;margin:auto;padding:32px}h1{margin:6px 0 12px;font-size:32px}p{max-width:1000px;line-height:1.55}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;color:#356b58}header{margin-bottom:24px}
+  .controls{display:flex;flex-wrap:wrap;gap:18px;align-items:end;background:white;padding:20px;border:1px solid #ccd8d1;border-radius:12px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:14px}label.check{flex-direction:row;align-items:center;padding-bottom:9px}
+  select,input,button{font:inherit;padding:8px;border:1px solid #a9bfb3;border-radius:6px}input[type=number]{width:95px}button{cursor:pointer;background:#164d3b;color:white}
+  #status{padding:16px 0;font-weight:650;min-height:55px}#status.error{color:#a02424}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:white;border:1px solid #ccd8d1;border-radius:12px;padding:16px;min-width:0}
+  h2{font-size:16px;margin:0 0 4px}.caption{font-size:12px;color:#53675f;min-height:35px;margin:0 0 16px}.image{width:100%;aspect-ratio:4/3;background:#e3e9e6;display:flex;justify-content:center;align-items:center;overflow:hidden}
+  .image canvas,.image img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}.info{font:12px ui-monospace,monospace;margin-top:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+  details{margin-top:24px;padding:16px;background:#e0eae4;border-radius:10px}pre{white-space:pre-wrap;font-size:13px}
+  @media(max-width:1050px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.grid{grid-template-columns:1fr}main{padding:16px}}
+</style>
+<main>
+  <header><div class="eyebrow">SVG VERIFICATION · V2 PRESETS · LOCAL FIXTURES</div>
+  <h1>One label layout. Two runtimes.</h1>
+  <p>The browser and Node independently render the same label. Compare actual mono1 pixels in thermal mode and RGBA in color mode.</p></header>
+  <section class="controls" aria-label="Render settings">
+    <label>V2 preset<select id="fixture"></select></label>
+    <label>DPI<select id="dpi"><option>203</option><option>300</option></select></label>
+    <label>Output<select id="output"><option value="thermal">Thermal mono1</option><option value="normal">Normal color / decorated QR</option></select></label>
+    <label>Threshold<input id="threshold" type="number" min="1" max="255" value="200"></label>
+    <label>Info width (mm)<input id="width" type="number" min="5" max="38" value="38" step="1"></label>
+    <label>Min font (mm)<input id="minimum" type="number" min="0.265" max="10" step="0.1" placeholder="preset"></label>
+    <label class="check"><input id="wrap" type="checkbox" checked>Wrap text</label>
+    <label class="check"><input id="fit" type="checkbox" checked>Scale font to fit</label>
+    <label class="check"><input id="no-logo" type="checkbox">No manufacturer logo</label>
+    <button id="render" type="button">Render comparison</button>
+  </section>
+  <div id="status" role="status">Loading the shared renderer…</div>
+  <p id="source"></p>
+  <section class="grid">
+    <article class="card"><h2>Shared SVG · browser</h2><p class="caption">Local layout + WASM · selected output mode</p><div class="image"><canvas id="browser"></canvas></div><div id="browser-info" class="info"></div></article>
+    <article class="card"><h2>Shared SVG · server</h2><p class="caption">Node layout + WASM · selected output mode</p><div class="image"><canvas id="server"></canvas></div><div id="server-info" class="info"></div></article>
+  </section>
+  <details open><summary>What this verifies</summary><p>Matching SVG, RGBA pixels, mono1 bytes and errors across browser and Node. Fixtures cover fonts, mixed styles, umlauts, wrapping, fitting, drawings, images and QR codes. These checks do not replace physical print and scan testing.</p><pre id="layout"></pre></details>
+</main>
+<script type="module" src="./client.mjs"></script>
+</html>

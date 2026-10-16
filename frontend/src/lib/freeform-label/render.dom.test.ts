@@ -45,6 +45,7 @@ const design: LabelDesignV2 = {
 
 class FakeQrCode {
   static CorrectLevel = { H: 'H' }
+  _oQRCode = { getModuleCount: () => 37 }
 
   constructor(root: HTMLElement, options: { text: string }) {
     const node = document.createElement('span')
@@ -64,6 +65,19 @@ afterEach(() => {
 })
 
 describe('freeform label rendering', () => {
+  it('renders an opaque QR above overlapping non-QR content even from an older preset', async () => {
+    const root = document.querySelector<HTMLElement>('#label')!
+    await renderFreeformLabel({ element: root, design: { ...design, elements: [
+      { ...design.elements[1], x: 2, y: 2 },
+      { ...design.elements.find(element => element.type === 'shape')!, x: 2, y: 2, w: 20, h: 20, fill: '#000000' },
+    ] }, data })
+    const qr = root.querySelector<HTMLElement>('[data-label-element-id="qr"]')!
+    const shape = root.querySelector<HTMLElement>('[data-label-element-id="shape"]')!
+    expect(Number(qr.style.zIndex)).toBeGreaterThan(Number(shape.style.zIndex))
+    expect(qr.style.backgroundColor).toBe('white')
+    expect(qr.style.boxShadow).toBe(`0 0 0 ${16 * 4 / 37}mm white`)
+    expect(qr.style.width).toBe('16mm')
+  })
   it('collapses a missing v1 logo without moving bottom-aligned QR artwork', async () => {
     const root = document.querySelector<HTMLElement>('#label')!
     const legacyDesign = normalizeLabelDesign({ ...design, elements: [

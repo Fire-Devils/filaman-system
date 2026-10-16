@@ -1,4 +1,3 @@
-export const QR_RECOMMENDED_DPI = 300
 export const QR_RECOMMENDED_DOTS_PER_MODULE = 4
 export const QR_QUIET_ZONE_MODULES = 4
 
@@ -20,8 +19,8 @@ export function getQrModuleCount(value: unknown): number | undefined {
   }
 }
 
-export function getQrRecommendedSideMm(moduleCount: unknown): number | undefined {
+export function getQrRecommendedSideMm(moduleCount: unknown, dpi: 200 | 300): number | undefined {
   if (!validModuleCount(moduleCount)) return undefined
-  const rawMm = moduleCount * QR_RECOMMENDED_DOTS_PER_MODULE * 25.4 / QR_RECOMMENDED_DPI
-  return Math.ceil(rawMm * 100) / 100
+  const rawMm = moduleCount * QR_RECOMMENDED_DOTS_PER_MODULE * 25.4 / dpi
+  return Math.ceil(rawMm * 10) / 10
 }

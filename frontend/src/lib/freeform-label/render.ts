@@ -6,10 +6,10 @@ import {
   renderSelectableTemplate,
   type SpoolData,
 } from '../label-template'
-import { canvasToQrImage, decorateQrCenter, ensureQrCodeLoaded, getQrCodeConstructor } from '../qr-code'
+import { buildQrUrl, canvasToQrImage, decorateQrCenter, ensureQrCodeLoaded, getQrCodeConstructor } from '../qr-code'
 import { normalizeLabelDesign } from './normalize'
 import { prepareCroppedImage } from './cropped-image'
-import { getQrModuleCount } from './qr-readability'
+import { getQrModuleCount, QR_QUIET_ZONE_MODULES } from './qr-readability'
 import { fitLabelText, type TextFitTarget } from './text-fit'
 import { t } from '../i18n'
 import type { LabelDesignElement, LabelDesignV2 } from './types'
@@ -24,6 +24,7 @@ export interface RenderFreeformLabelOptions {
   interactive?: boolean
   isStale?: () => boolean
   entityPath?: 'spools' | 'filaments'
+  thermalQr?: boolean
 }
 
 function applyGeometry(node: HTMLElement, element: LabelDesignElement) {
@@ -96,25 +97,7 @@ function showImagePlaceholder(node: HTMLElement, assetId: string) {
   node.setAttribute('aria-label', node.dataset.labelOutputError)
 }
 
-function buildQrUrl(
-  linkMode: 'spool' | 'url',
-  templateBase: string,
-  entityId: string | number,
-  entityPath: 'spools' | 'filaments',
-) {
-  if (linkMode === 'url' && templateBase.trim()) {
-    try {
-      const url = new URL(templateBase.trim())
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('invalid protocol')
-      return `${url.origin}${url.pathname.replace(/\/+$/, '')}/${entityPath}/${encodeURIComponent(String(entityId))}`
-    } catch {
-      // Use the current FilaMan origin below.
-    }
-  }
-  return `${window.location.origin}/${entityPath}/${encodeURIComponent(String(entityId))}`
-}
-
-function renderText(node: HTMLElement, element: Extract<LabelDesignElement, { type: 'text' }>, data: SpoolData, interactive = false) {
+export function renderText(node: HTMLElement, element: Extract<LabelDesignElement, { type: 'text' }>, data: SpoolData, interactive = false) {
   node.style.fontFamily = `"${element.fontFamily}", sans-serif`
   node.style.fontSize = `${element.fontSizeMm}mm`
   node.style.fontWeight = String(element.fontWeight)
@@ -163,13 +146,20 @@ async function renderQr(
   element: Extract<LabelDesignElement, { type: 'qr' }>,
   data: SpoolData,
   entityPath: 'spools' | 'filaments',
+  thermal = false,
 ) {
   const QRCode = getQrCodeConstructor()
+  node.style.backgroundColor = 'white'
   if (!QRCode) throw new Error('QRCode is not available')
   const entityId = entityPath === 'filaments' ? data['filament.id'] : data.id
+  const url = buildQrUrl(element.linkMode, element.urlTemplate, entityId, entityPath)
+  if (thermal) {
+    node.dataset.thermalQrUrl = url
+    return
+  }
   const qrPx = Math.min(1024, Math.max(256, Math.round(element.w * (600 / 25.4))))
   const qrCode = new QRCode(node, {
-    text: buildQrUrl(element.linkMode, element.urlTemplate, entityId, entityPath),
+    text: url,
     width: qrPx,
     height: qrPx,
     colorDark: '#000000',
@@ -177,7 +167,10 @@ async function renderQr(
     correctLevel: QRCode.CorrectLevel.H,
   })
   const moduleCount = getQrModuleCount(qrCode)
-  if (moduleCount !== undefined) node.dataset.qrModuleCount = String(moduleCount)
+  if (moduleCount !== undefined) {
+    node.dataset.qrModuleCount = String(moduleCount)
+    node.style.boxShadow = `0 0 0 ${element.w * QR_QUIET_ZONE_MODULES / moduleCount}mm white`
+  }
   const canvas = node.querySelector<HTMLCanvasElement>('canvas')
   if (canvas && element.mode !== 'simple') {
     await decorateQrCenter(canvas, qrPx, element.mode === 'colorLogo')
@@ -260,13 +253,12 @@ export async function renderFreeformLabel(options: RenderFreeformLabelOptions) {
         if (element.fitToWidth || element.legacyTextRole === 'title' && !element.wrap) fittingText.push({
           node,
           minimumMm: element.minFontSizeMm ?? (element.wrap ? 2 : 0.265),
-          maxLines: element.wrap ? Math.max(2, element.template.split(/\r\n|\r|\n/).length) : 1,
           legacyTitle: element.legacyTextRole === 'title' && !element.wrap,
           fitToWidth: element.fitToWidth === true,
         })
         break
       case 'qr':
-        await renderQr(node, element, options.data, options.entityPath ?? 'spools')
+        await renderQr(node, element, options.data, options.entityPath ?? 'spools', options.thermalQr)
         break
       case 'manufacturerLogo':
         if (options.logoUrl) {

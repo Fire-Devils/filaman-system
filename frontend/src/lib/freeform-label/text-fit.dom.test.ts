@@ -64,9 +64,9 @@ it.each(['top', 'middle', 'bottom'] as const)('shrinks wrapped text to its box h
   // metrics miss content overflowing above a middle/bottom-aligned box.
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100)
   vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(100)
-  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(40)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(26)
   vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
-    if (this.parentElement?.dataset.labelElementType !== 'text') return 40
+    if (this.parentElement?.dataset.labelElementType !== 'text') return 26
     const size = Number.parseFloat(this.parentElement.style.fontSize)
     return (size > 2 ? 3 : 2) * size * (96 / 25.4) * 1.15
   })
@@ -111,7 +111,7 @@ it('does not count explicit line breaks as extra wrapped overflow', async () => 
   expect(rendered.style.fontSize).toBe('3mm')
 })
 
-it('keeps the minimum font size and blocks output when wrapped text cannot fit in two lines', async () => {
+it('keeps the minimum font size and blocks output when wrapped text exceeds the box height', async () => {
   const design = migrateV1PresetData({ settings: {
     label: { width: 40, height: 20 },
     logo: { show: false }, qr: { show: false }, info: { show: false }, info2: { show: false },
@@ -121,7 +121,7 @@ it('keeps the minimum font size and blocks output when wrapped text cannot fit i
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100)
   vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(100)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100)
-  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100)
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(120)
   vi.spyOn(Range.prototype, 'getClientRects').mockReturnValue(
     [0, 20, 40].map(top => new DOMRect(0, top, 100, 19)) as unknown as DOMRectList,
   )
@@ -129,4 +129,23 @@ it('keeps the minimum font size and blocks output when wrapped text cannot fit i
   await renderFreeformLabel({ element: output, design, data: {} as SpoolData })
   expect(output.querySelector<HTMLElement>('[data-label-element-type="text"]')!.style.fontSize).toBe('2mm')
   await expect(waitForLabelOutputAssets([output])).rejects.toThrow('Text cannot fit')
+})
+
+it('allows more wrapped lines than template lines when they fit in the box', async () => {
+  const design = createDefaultLabelDesign('filament')
+  const text = design.elements.find(element => element.type === 'text')!
+  Object.assign(text, { template: 'One long line', fontSizeMm: 3, minFontSizeMm: 2, fitToWidth: true, wrap: true })
+  design.elements = [text]
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100)
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(100)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100)
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(80)
+  vi.spyOn(Range.prototype, 'getClientRects').mockReturnValue(
+    [0, 20, 40, 60].map(top => new DOMRect(0, top, 100, 19)) as unknown as DOMRectList,
+  )
+  const output = document.createElement('div')
+  await renderFreeformLabel({ element: output, design, data: {} as SpoolData })
+  const rendered = output.querySelector<HTMLElement>('[data-label-element-type="text"]')!
+  expect(rendered.dataset.labelOutputError).toBeUndefined()
+  expect(rendered.style.fontSize).toBe('3mm')
 })

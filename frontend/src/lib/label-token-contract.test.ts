@@ -188,9 +188,9 @@ describe('spool label token contract', () => {
     expect(renderTemplateText('{extra.spool.certified_at}', data))
       .toBe(formatDateTimeDisplay(raw))
     expect(renderTemplateText('{extra.spool.certified_at|date}', data))
-      .toBe(formatDateDisplay(raw))
+      .toBe('2026/07/25')
     expect(renderTemplateText('{Certified: {extra.spool.certified_at|date}}', data))
-      .toBe(`Certified: ${formatDateDisplay(raw)}`)
+      .toBe('Certified: 2026/07/25')
   })
 
   it('keeps timestamp precision while allowing the date-only modifier', () => {
@@ -201,11 +201,13 @@ describe('spool label token contract', () => {
     expect(single.purchase_date).toBe(formatDateDisplay(canonical.purchase_date))
     expect(batch.purchase_date).toBe(single.purchase_date)
 
-    for (const key of ['stocked_in_at', 'last_used_at', 'created_at'] as const) {
+    for (const [key, expected] of [
+      ['stocked_in_at', '2026/01/03'], ['last_used_at', '2026/01/04'], ['created_at', '2026/01/01'],
+    ] as const) {
       expect(single[key]).toBe(canonical[key])
       expect(batch[key]).toBe(single[key])
       expect(single[key]).toContain(':')
-      expect(renderTemplateText(`{${key}|date}`, single)).toBe(formatDateDisplay(canonical[key]))
+      expect(renderTemplateText(`{${key}|date}`, single)).toBe(expected)
     }
   })
 

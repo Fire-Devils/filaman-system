@@ -57,6 +57,7 @@ describe('live page translation consumers', () => {
     for (const key of [
       'labelSheets', 'sheetSource', 'designedLabel', 'editDesignedLabel',
       'workspaceTabs', 'designedLabelPreset', 'paperLayout', 'paperGeometryGuide',
+      'pcPrintTitle',
     ]) {
       expect(resolveCatalogValue(en, `labelPrint.${key}`)).toEqual(expect.any(String))
       expect(resolveCatalogValue(de, `labelPrint.${key}`)).toEqual(expect.any(String))

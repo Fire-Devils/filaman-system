@@ -1,4 +1,5 @@
 export { renderSelectableTemplate } from '../label-template'
+import { hasLiteralTemplateValue, type SpoolData } from '../label-template'
 import { TEMPLATE_TEXT_MODIFIER_DELIMITERS, type TemplateTextModifier } from './text-modifiers'
 import { LABEL_FONT_FAMILIES, type LabelFontFamily } from './types'
 import { templateMarkupMatches, parseTemplateMarkup, resolveTemplateFont, templateFieldRanges, type TemplateFieldRange } from './template-markup'
@@ -6,6 +7,8 @@ export type { TemplateTextModifier } from './text-modifiers'
 
 export interface TemplateSourceRange { start: number; end: number }
 export interface FormattedTemplateRange extends TemplateSourceRange { template: string }
+
+const dateModifierSuffix = /\|date(?::[^{}]*)?\s*\}$/i
 
 const sourceSelector = '[data-template-start][data-template-end]'
 
@@ -314,12 +317,13 @@ function matchesModifier(range: SyntaxRange, modifier: TemplateTextModifier): bo
 }
 
 /** A mixed selection is off; clicking its button applies the style throughout. */
-export function isTemplateModifierActive(template: string, start: number, end: number, modifier: TemplateTextModifier): boolean {
+export function isTemplateModifierActive(template: string, start: number, end: number, modifier: TemplateTextModifier, data?: SpoolData | null): boolean {
   if (end <= start) return false
   const ranges = syntaxRanges(template)
   if (modifier === 'date') {
-    const tokens = ranges.filter(range => range.token && range.end > start && range.start < end)
-    return tokens.length > 0 && tokens.every(range => /\|date\s*\}$/i.test(template.slice(range.start, range.end)))
+    const tokens = ranges.filter(range => range.token && range.end > start && range.start < end
+      && !isLiteralDateToken(template.slice(range.start, range.end), data))
+    return tokens.length > 0 && tokens.every(range => dateModifierSuffix.test(template.slice(range.start, range.end)))
   }
   const styled = ranges.filter(range => matchesModifier(range, modifier))
   return isTemplateRangeStyled(ranges, styled, start, end)
@@ -471,18 +475,23 @@ function snapTemplateRange(template: string, start: number, end: number, ranges:
   return { start, end }
 }
 
+function isLiteralDateToken(token: string, data?: SpoolData | null): boolean {
+  return dateModifierSuffix.test(token) && hasLiteralTemplateValue(token.slice(1, -1), data)
+}
+
 /** Format selected source characters, preserving every neighboring style. */
-export function formatTemplateRange(template: string, start: number, end: number, modifier: TemplateTextModifier): FormattedTemplateRange {
+export function formatTemplateRange(template: string, start: number, end: number, modifier: TemplateTextModifier, data?: SpoolData | null): FormattedTemplateRange {
   const ranges = syntaxRanges(template)
   ;({ start, end } = snapTemplateRange(template, start, end, ranges))
   if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) return { template, start, end }
   if (modifier === 'date') {
-    const tokens = ranges.filter(range => range.token && range.start >= start && range.end <= end)
-    const remove = tokens.length > 0 && tokens.every(range => /\|date\s*\}$/i.test(template.slice(range.start, range.end)))
+    const tokens = ranges.filter(range => range.token && range.start >= start && range.end <= end
+      && !isLiteralDateToken(template.slice(range.start, range.end), data))
+    const remove = tokens.length > 0 && tokens.every(range => dateModifierSuffix.test(template.slice(range.start, range.end)))
     let delta = 0
     for (const token of tokens.sort((a, b) => b.start - a.start)) {
       const original = template.slice(token.start, token.end)
-      const replacement = remove ? original.replace(/\|date\s*\}$/i, '}') : /\|date\s*\}$/i.test(original) ? original : `${original.slice(0, -1)}|date}`
+      const replacement = remove ? original.replace(dateModifierSuffix, '}') : dateModifierSuffix.test(original) ? original : `${original.slice(0, -1)}|date}`
       template = template.slice(0, token.start) + replacement + template.slice(token.end)
       delta += replacement.length - original.length
     }
