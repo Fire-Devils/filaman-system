@@ -4,6 +4,7 @@
  * node scripts/check-editor-workspace.mjs http://127.0.0.1:4321
  */
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -11,21 +12,27 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true })
 try {
   const page = await browser.newPage()
+  page.on('pageerror', error => console.error(error))
+  const logo = await readFile(new URL('../public/logo-qr.png', import.meta.url))
   await page.addInitScript(() => {
     const design = { version: 2, label: { widthMm: 60, heightMm: 40, marginMm: 2, border: false }, elements: [
       { id: 'text', type: 'text', x: 3, y: 3, w: 54, h: 20, z: 0, template: '{filament.name}', fontFamily: 'Space Grotesk', fontSizeMm: 3, fontWeight: 400, italic: false, underline: false, align: 'left', color: '#000000', wrap: false, fitToWidth: false, minFontSizeMm: 2 },
+      { id: 'logo', type: 'manufacturerLogo', x: 3, y: 27, w: 25, h: 8, z: 1, objectFit: 'contain', collapseWhenEmpty: true },
+      { id: 'qr', type: 'qr', x: 41, y: 22, w: 15, h: 15, z: 2, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
     ] }
     for (const entity of ['spool', 'filament']) localStorage.setItem(`filaman-${entity}-label-designer-v1`, JSON.stringify({ version: 2, design }))
     localStorage.setItem('sidebar-collapsed', 'true')
+    localStorage.setItem('filaman-label-active-tab', location.search.includes('ids=') ? 'designer' : 'standard')
   })
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname
-    const filament = { id: 10, designation: 'Ocean Blue PLA', material: 'PLA', color_name: 'Ocean Blue', color_hex: '0088cc', custom_fields: {} }
+    const filament = { id: 10, manufacturer_id: 1, manufacturer: { id: 1, name: 'Logo maker' }, designation: 'Ocean Blue PLA', material: 'PLA', color_name: 'Ocean Blue', color_hex: '0088cc', custom_fields: {} }
     let data = []
     if (path.endsWith('/me')) data = { id: 1, email: 'layout@example.test', display_name: 'Layout check', language: 'en', roles: ['user'], permissions: [] }
     if (/\/filaments\/\d+$/.test(path)) data = { ...filament, id: Number(path.split('/').at(-1)) }
     if (/\/spools\/\d+$/.test(path)) data = { id: Number(path.split('/').at(-1)), filament_id: 10, filament, custom_fields: {} }
     if (path.endsWith('/events/stream')) return route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' })
+    if (path.endsWith('/label-logo')) return route.fulfill({ contentType: 'image/png', body: logo })
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) })
   })
   let cases = 0
@@ -33,11 +40,43 @@ try {
     console.log(`Checking ${path}`)
     await page.setViewportSize({ width: 1600, height: 900 })
     await page.goto(new URL(path, process.argv[2] || 'http://127.0.0.1:4321').href)
-    await page.locator('#tab-btn-designer').click()
+    if (!path.includes('?ids=')) {
+      await page.locator('#label-preview .label-designation').waitFor({ state: 'attached' })
+      await page.locator('#tab-btn-designer').click()
+    }
+    await page.locator('#freeform-canvas-host [data-label-svg-raster]').first().waitFor().catch(async error => {
+      console.error(await page.locator('[data-label-output-error]').evaluateAll(nodes => nodes.map(node => node.dataset.labelOutputError)))
+      throw error
+    })
+    assert.equal(await page.locator('#freeform-canvas-host [data-label-output-error]').count(), 0)
+    if (path.includes('?ids=')) {
+      const surface = page.locator('#freeform-canvas-host .label-preview').first()
+      assert.equal(await page.evaluate(() => typeof window.QRCode), 'undefined')
+      await surface.locator('[data-label-element-id="logo"]').waitFor()
+      await surface.locator('[data-label-element-id="qr"]').click()
+      await page.waitForFunction(() => document.querySelector('#freeform-qr-readability-recommendation')?.textContent.includes('200 DPI:'))
+      assert.equal(await page.locator('#freeform-qr-readability-warning').isVisible(), true)
+      console.log(`Direct Designer load with cached logo and QR guidance passed: ${path}`)
+    }
     await page.locator('#preview-zoom-input').fill('100')
     await page.locator('#preview-zoom-input').press('Tab')
+    const surface = page.locator('#freeform-canvas-host .label-preview').first()
+    await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const anchor = await surface.boundingBox()
+    for (const editing of [true, false]) {
+      if (editing) await surface.locator('[data-label-element-id="text"]').click()
+      else await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } })
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      assert.equal(await page.locator('#freeform-element-inspector').isVisible(), editing)
+      const current = await surface.boundingBox()
+      assert.ok(Math.abs(current.x - anchor.x) <= 1 && Math.abs(current.y - anchor.y) <= 1,
+        `${path}: ${editing ? 'showing' : 'hiding'} edit controls moved the label`)
+    }
     if (path.includes('?ids=')) {
+      const previous = await page.locator('.is-designer-representative').getAttribute('id')
       await page.locator('[data-preview-step="1"]').click()
+      await page.waitForFunction(id => document.querySelector('.is-designer-representative')?.id !== id, previous)
       const representative = await page.locator('.is-designer-representative').getAttribute('id')
       for (let pass = 0; pass < 2; pass++) {
         await page.locator('#tab-btn-sheets').click()
@@ -86,12 +125,14 @@ try {
             const label = document.querySelector('#freeform-canvas-host').getBoundingClientRect()
             const inspector = document.querySelector('#freeform-element-inspector')
             const sideBySide = inspector.checkVisibility() && !document.querySelector('.freeform-canvas-row').classList.contains('is-geometry-below')
-            const groupRight = sideBySide ? inspector.getBoundingClientRect().right : label.right
+            if (sideBySide) {
+              const geometry = inspector.querySelector('.freeform-geometry-grid').getBoundingClientRect()
+              if (geometry.width > 171) errors.push(`geometry inputs stretched with guidance (${geometry.width.toFixed(1)}px)`)
+            }
             const centered = (left, right) => Math.abs((left + right) / 2 - (region.left + region.right) / 2) <= 1
-            if (groupRight - label.left <= region.width - 36 && !centered(label.left, groupRight)) {
-              const row = document.querySelector('.freeform-canvas-row').getBoundingClientRect()
-              const inspectorRect = inspector.getBoundingClientRect()
-              errors.push(`label and inspector group off center (${label.left.toFixed(1)}–${groupRight.toFixed(1)} vs ${region.left.toFixed(1)}–${region.right.toFixed(1)}; row ${row.left.toFixed(1)}–${row.right.toFixed(1)}, inspector ${inspectorRect.left.toFixed(1)}–${inspectorRect.right.toFixed(1)})`)
+            // Controls occupy spare space; they must not re-center the label as a group.
+            if (label.width <= region.width - 36 && !centered(label.left, label.right)) {
+              errors.push(`label off center (${label.left.toFixed(1)}–${label.right.toFixed(1)} vs ${region.left.toFixed(1)}–${region.right.toFixed(1)})`)
             }
             if (label.left < region.left - 1) errors.push('label left edge unreachable')
             for (const selector of ['.freeform-text-toolbar', '#freeform-field-dock', '#freeform-element-inspector']) {

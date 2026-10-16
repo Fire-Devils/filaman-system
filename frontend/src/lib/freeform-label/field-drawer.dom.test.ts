@@ -78,6 +78,9 @@ it('opens the selected text template in a manual editor with shared syntax help'
     expect(help).toContain(syntax)
   }
   expect(help).toContain('Wrap and Scale font to fit')
+  for (const example of ['YYYY/MM/DD', '{created_at|date:%d.%m.%Y}', '28.04.2026', '%m/%d/%y', '%Y', '%y', '%m', '%d', '%%']) {
+    expect(help).toContain(example)
+  }
   for (const example of ['{filament.color_hex}', '{color_swatch[1]}', '[b]__{filament.name}__[/b]', '[b][i]{filament.name}[/i][/b]', 'Blue uses white text', 'Yellow uses black text']) {
     expect(help).toContain(example)
   }

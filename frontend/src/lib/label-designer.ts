@@ -13,7 +13,6 @@ export function getDesignerLabelDimensions(design: LabelDesignV2) {
 }
 
 export interface RenderDesignerLabelOptions {
-  thermalQr?: boolean
   element: HTMLElement
   design: LabelDesignV2
   data: SpoolData
@@ -30,7 +29,6 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     throw new Error('A version 2 label design is required')
   }
   await renderSvgDesignerLabel({
-    thermalQr: options.thermalQr,
     element: options.element,
     design: options.design,
     data: options.data,

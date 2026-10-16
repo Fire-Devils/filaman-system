@@ -26,10 +26,26 @@ import type {
   LabelSheetSource,
 } from './label-sheet'
 import { t } from './i18n'
+import { refreshLabelPresetStorage } from './label-preset-storage'
 
 function editorPresetSource(source: LabelDesignerPresetSource | undefined, kind: LabelKind) {
   if (!source || source === 'builtin') return source
   return source === kind ? 'own' : 'cross'
+}
+
+export async function loadRequestedPrintLabel(
+  editor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null,
+  presetsKey: string,
+  presetId: number | null,
+  entity: Record<string, unknown> | null,
+) {
+  if (!entity) throw new Error(t('labelDesigner.requestedDataUnavailable'))
+  if (presetId === null) return
+  await refreshLabelPresetStorage()
+  const preset = readStoredPresets(presetsKey).find(item => item.databaseId === presetId)
+  if (!preset || !editor) throw new Error('Selected label preset is unavailable')
+  editor.refreshPresetList(preset.name)
+  if (!editor.loadPreset(preset.name, false)) throw new Error('Selected label preset is unavailable')
 }
 
 export interface SingleLabelPreviewRuntimeOptions {

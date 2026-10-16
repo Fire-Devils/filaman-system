@@ -255,7 +255,9 @@ was physically printed.
 Unsupported preset data is rejected with `422` before queueing. The browser refreshes
 an explicitly requested preset from the server. If that refresh fails or the preset
 is unavailable, printing and export are blocked; FilaMan does not use a stale cached
-copy or substitute Standard. Automatic tab selection does not change the
+copy or substitute Standard. The requested spool or filament must also load
+successfully, including for Default labels. If it is unavailable, printing and
+export stay blocked; reload the page to retry. Automatic tab selection does not change the
 user's saved workspace tab.
 Opening an explicitly requested preset also leaves the browser's working designer
 draft intact, including while editing the one-off label. A normal print-page visit

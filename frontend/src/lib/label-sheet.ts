@@ -7,7 +7,6 @@ import {
   bindFixedPreviewToolbar,
   prepareLabelOutputClone,
 } from './label-preview-dom'
-import { prepareCroppedImages } from './freeform-label/cropped-image'
 import { getTransientPresetCache, setTransientPresetCache } from './freeform-label/editor-storage'
 import type { LabelKind } from './freeform-label/types'
 import { t } from './i18n'
@@ -995,7 +994,6 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
       const clone = sourceLabel.cloneNode(true) as HTMLElement
       bindSvgClone(sourceLabel, clone)
       prepareLabelOutputClone(clone)
-      prepareCroppedImages(clone)
       clone.style.zoom = '1'
       clone.style.transform = 'none'
       clone.style.transformOrigin = 'unset'

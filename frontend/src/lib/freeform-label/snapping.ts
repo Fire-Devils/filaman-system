@@ -92,9 +92,49 @@ export function snapElementGeometry(
   label: { widthMm: number; heightMm: number; marginMm: number },
   thresholdMm: number,
   operation: SnapOperation,
+  quietZoneRatio = 0,
 ): { geometry: SnapBox; guides: SnapGuide[] } {
   const xTargets = targetsFor(label.widthMm, label.marginMm)
   const yTargets = targetsFor(label.heightMm, label.marginMm)
+
+  if (quietZoneRatio > 0) {
+    const padding = box.w * quietZoneRatio
+    if (operation.type === 'move') {
+      const result = snapElementGeometry({
+        x: box.x - padding, y: box.y - padding, w: box.w + 2 * padding, h: box.h + 2 * padding,
+      }, label, thresholdMm, operation)
+      return { geometry: { ...box, x: result.geometry.x + padding, y: result.geometry.y + padding }, guides: result.guides }
+    }
+    const candidates: Candidate[] = []
+    const minimum = Math.max(operation.minimumWidth, operation.minimumHeight)
+    const maximum = Math.min(operation.maximumWidth, operation.maximumHeight)
+    for (const [axis, start, size, targets, startActive, endActive] of [
+      ['x', box.x, box.w, xTargets, operation.edges.left, operation.edges.right],
+      ['y', box.y, box.h, yTargets, operation.edges.top, operation.edges.bottom],
+    ] as const) {
+      for (const target of targets) {
+        for (const edge of ['start', 'end'] as const) {
+          if (!(edge === 'start' ? startActive : endActive)) continue
+          const nextSize = (edge === 'start' ? start + size - target : target - start) / (1 + quietZoneRatio)
+          if (nextSize < minimum || nextSize > maximum) continue
+          candidates.push({
+            delta: target - (edge === 'start' ? start - padding : start + size + padding),
+            size: nextSize, guide: { axis, edge, value: target },
+          })
+        }
+      }
+    }
+    const snap = nearestCandidate(candidates, thresholdMm)
+    if (snap?.size === undefined) return { geometry: { ...box }, guides: [] }
+    return {
+      geometry: {
+        x: operation.edges.left ? box.x + box.w - snap.size : box.x,
+        y: operation.edges.top ? box.y + box.h - snap.size : box.y,
+        w: snap.size, h: snap.size,
+      },
+      guides: [snap.guide],
+    }
+  }
 
   if (operation.type === 'move') {
     const xSnap = nearestCandidate(moveCandidates('x', box.x, box.w, xTargets, label.widthMm / 2), thresholdMm)

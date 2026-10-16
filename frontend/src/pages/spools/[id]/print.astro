@@ -28,6 +28,7 @@ export function getStaticPaths() {
     createSingleLabelPreviewRuntime,
     getPrintDesignerDesign,
     initPrintDesignerEditor,
+    loadRequestedPrintLabel,
   } from '../../../lib/label-print-workspace'
   import {
     buildSpoolDesignerDataFromLabelData,
@@ -38,6 +39,8 @@ export function getStaticPaths() {
   import { bindLabelSheetControls, createLabelSheetPdf } from '../../../lib/label-sheet'
   import {
     buildStandardLabelDataFromFlat,
+    API_DEFAULT_LABEL_SETTINGS,
+    apiDefaultExtraFields,
     getStandardLabelDimensions,
     renderStandardLabel,
     type StandardExtraField,
@@ -45,6 +48,7 @@ export function getStaticPaths() {
   import {
     LABEL_EXPORT_PIXEL_RATIO,
     applySingleLabelPreviewZoom,
+    applyStandardLabelSettings,
     bindLabelOutputPreview,
     bindLabelOutputs,
     bindLabelPreviewZoom,
@@ -97,6 +101,12 @@ export function getStaticPaths() {
 
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
   const params = new URLSearchParams(window.location.search)
+  const requestedPresetId = Number(params.get('preset_id'))
+  const hasRequestedPreset = Number.isSafeInteger(requestedPresetId) && requestedPresetId > 0
+  const isPrintRequest = hasRequestedPreset || params.get('scale_print') === '1'
+  let requestedLabelReady = !isPrintRequest
+  const apiDefaultRequest = params.get('scale_print') === '1'
+    && !hasRequestedPreset
   const labelData = buildSpoolLabelDataFromParams(id, params)
 
   async function fetchSpoolApiData() {
@@ -158,7 +168,7 @@ export function getStaticPaths() {
 
   // --- Tab switching ---
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
-  const initialMode = readPrintWorkspaceMode(ACTIVE_MODE_KEY)
+  let initialMode = readPrintWorkspaceMode(ACTIVE_MODE_KEY)
   let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
   let labelLogoUrl: string | null = null
   let labelLogoLoaded = false
@@ -233,7 +243,7 @@ export function getStaticPaths() {
     onChange: () => syncOutputPreview(true),
     getTranslation: translate,
   })
-  syncOutputPreview = bindLabelOutputPreview({
+  const updateOutputPreview = bindLabelOutputPreview({
     previewRoot,
     sheetControls,
     outputControls,
@@ -246,6 +256,9 @@ export function getStaticPaths() {
     },
     onSheetCancelled: () => tabControls.activate('standard'),
   })
+  syncOutputPreview = zoomOnly => {
+    if (requestedLabelReady) updateOutputPreview(zoomOnly)
+  }
 
 
   // Try to load the manufacturer's label-logo
@@ -270,7 +283,7 @@ export function getStaticPaths() {
   const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')!
   const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
 
-  const parsedClassicSettings = parseJsonOrNull<LabelSettingsState>(readStorageValue(LABEL_SETTINGS_KEY))
+  const parsedClassicSettings = apiDefaultRequest ? null : parseJsonOrNull<LabelSettingsState>(readStorageValue(LABEL_SETTINGS_KEY))
   const savedExtraFieldSettings = parsedClassicSettings?.extraFields
     && typeof parsedClassicSettings.extraFields === 'object'
     ? parsedClassicSettings.extraFields as Record<string, boolean>
@@ -343,6 +356,7 @@ export function getStaticPaths() {
   }
 
   function saveSettings() {
+    if (apiDefaultRequest) return
     const settings: LabelSettingsState = {
       ...captureLabelSettings(settingsControls),
       extraFields: Object.fromEntries(
@@ -353,6 +367,10 @@ export function getStaticPaths() {
   }
 
   function loadSettings() {
+    if (apiDefaultRequest) {
+      applyStandardLabelSettings(settingsControls, API_DEFAULT_LABEL_SETTINGS)
+      return
+    }
     const s = parseJsonOrNull<LabelSettingsState>(readStorageValue(LABEL_SETTINGS_KEY))
     if (!s || typeof s !== 'object') return
     restoreLabelSettings(settingsControls, s)
@@ -420,7 +438,7 @@ export function getStaticPaths() {
   }
 
   async function renderStandardPreview(isStale = () => false) {
-    if (isStale()) return
+    if (!requestedLabelReady || isStale()) return
 
     labelPreview.style.border = 'none'
     labelPreview.style.padding = ''
@@ -448,7 +466,7 @@ export function getStaticPaths() {
   // ─── Designer preview ─────────────────────────────────────────────────────
 
   async function renderDesignerPreview(isStale = () => false) {
-    if (isStale()) return
+    if (!requestedLabelReady || isStale()) return
 
     await renderDesignerLabel({
       element: labelPreview,
@@ -481,7 +499,10 @@ export function getStaticPaths() {
     controls: outputControls,
     collection: {
       getItems: workspace.getOutputItems,
-      prepare: () => previewRenders.settle(),
+      prepare: () => {
+        if (!requestedLabelReady) throw new Error('Label data or selected preset is unavailable')
+        return previewRenders.settle()
+      },
       capture: labelElement => captureLabelElement(labelElement, {
         pixelRatio: LABEL_EXPORT_PIXEL_RATIO,
         resetTransform: true,
@@ -512,10 +533,13 @@ export function getStaticPaths() {
   })
 
   function resetStandardSettings() {
-    removeStorageValue(LABEL_SETTINGS_KEY)
-    resetLabelSettings(settingsControls)
+    if (apiDefaultRequest) applyStandardLabelSettings(settingsControls, API_DEFAULT_LABEL_SETTINGS)
+    else {
+      removeStorageValue(LABEL_SETTINGS_KEY)
+      resetLabelSettings(settingsControls)
+    }
     for (const ef of extraFieldChecks) {
-      ef.checkbox.checked = false
+      ef.checkbox.checked = apiDefaultRequest && ef.key === 'api.remaining'
     }
     singlePreview.refresh()
   }
@@ -537,9 +561,28 @@ export function getStaticPaths() {
     Object.assign(labelData, apiLabelData)
   }
 
-  // Initialize: load logo then render the persisted workspace.
-  loadLabelLogo().then(() => {
-    tabControls.activate(readPrintWorkspaceMode(ACTIVE_MODE_KEY))
+  // A PC print request can open this page with the requested preset.
+  if (isPrintRequest) {
+    try {
+      await loadRequestedPrintLabel(designerEditor, DESIGNER_PRESETS_KEY, hasRequestedPreset ? requestedPresetId : null, apiSpoolData)
+      requestedLabelReady = true
+      initialMode = hasRequestedPreset ? 'designer' : 'standard'
+    } catch (error) {
+      for (const button of [outputControls.printButton, exportPngBtn, exportPdfBtn, exportAmlBtn]) button.disabled = true
+      window.alert(error instanceof Error ? error.message : 'Could not load requested label')
+    }
+  }
+
+  if (apiDefaultRequest) {
+    for (const field of apiDefaultExtraFields(labelData.remaining_weight_g)) {
+      addExtraFieldCheckbox({ key: 'api.remaining', ...field })
+      extraFieldChecks.at(-1)!.checkbox.checked = true
+    }
+  }
+
+  // Initialize: load logo then render the selected workspace.
+  if (requestedLabelReady) loadLabelLogo().then(() => {
+    tabControls.activate(initialMode, false)
   })
 
   // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),

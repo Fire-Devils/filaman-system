@@ -462,6 +462,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     extraFields: [],
     entityType: labelAdapter.entityType,
     batchMode: true,
+    getQrEntityIds: () => workspace.getOutputItems().map(filament => String(filament.id ?? '')),
     translate: (key, fallback) => t(key) || fallback,
     getPreviewData: () => {
       const filament = workspace.getState().representativeItem

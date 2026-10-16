@@ -5,6 +5,10 @@ import { create } from 'fontkit'
 import { initWasm, layoutText, renderLabel, rasterize } from '../../../tests/label-rendering/render.mjs'
 import { fixtures, data } from '../../../tests/label-rendering/fixtures.mjs'
 import { LABEL_FONT_FAMILIES, LABEL_FONT_WEIGHTS } from '../freeform-label/types'
+import { migrateV1PresetData } from '../freeform-label/migrate-v1'
+import { resizeLabelDesign } from '../freeform-label/geometry'
+import { getStandardLabelPresets } from '../freeform-label/standard-presets'
+import { buildSpoolDataFromFlatLabel } from '../label-designer'
 
 const font = create(readFileSync('node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-400-normal.woff2'))
 const box = { w: 22, h: 35, fontSizeMm: 3, minFontSizeMm: 1.5, wrap: true, fitToWidth: false }
@@ -41,6 +45,85 @@ describe('shared SVG text layout', () => {
 })
 
 describe('V2 raster semantics', () => {
+  it('wraps long built-in color names without dropping text or wrapping the material band', () => {
+    const preset = getStandardLabelPresets().find(preset => preset.name === 'Classic (40 × 30 mm)')!.data
+    const name = 'Midnight Blue and Purple Galaxy'
+    const result = renderLabel(preset, buildSpoolDataFromFlatLabel({ id: 1, type: 'PETG', color: name }), {}, fonts, 203, 'https://fila.test', { thermal: false })
+    const color = result.text.find((row: { text: string }) => row.text === name)!
+    expect(color.lines.length).toBeGreaterThan(1)
+    expect(color.lines.join(' ')).toBe(name)
+    expect(result.text.find((row: { text: string }) => row.text === 'PETG')?.lines).toEqual(['PETG'])
+  })
+
+  it('scales migrated manual logo artwork and collapsed title margins with the label', () => {
+    const preset = migrateV1PresetData({ settings: {
+      label: { width: 60, height: 40, marginMm: 1, border: false },
+      logo: { show: true, spaceMm: 12, scaleToFit: false, manualSizeMm: 4, align: 'left' },
+      title: { show: false }, title2: { show: false },
+      qr: { show: false }, info: { show: false }, info2: { show: false },
+    } }, 'spool')
+    const png = rasterize('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="black"/></svg>').png
+    const logo = { dataUrl: `data:image/png;base64,${Buffer.from(png).toString('base64')}`, width: 10, height: 10 }
+    for (const [width, height, expected] of [[60, 40, 3.96875], [120, 80, 7.9375]]) {
+      const result = renderLabel({ ...preset, design: resizeLabelDesign(preset.design, width, height) }, data, { logo }, fonts, 203)
+      expect(result.svg).toContain(`width="${expected}" height="${expected}" viewBox="0 0 10 10"`)
+    }
+    const empty = migrateV1PresetData({ settings: {
+      label: { width: 60, height: 40, marginMm: 1, border: false }, logo: { show: false },
+      title: { template: '{filament.color}', sizeMm: 4, marginMm: 1, dividerBelow: false },
+      title2: { show: false }, qr: { show: false },
+      info: { template: 'Visible info', marginMm: 0 }, info2: { show: false },
+    } }, 'spool')
+    for (const [width, height, top] of [[60, 40, 1], [120, 80, 2]]) {
+      const result = renderLabel({ ...empty, design: resizeLabelDesign(empty.design, width, height) }, {}, {}, fonts, 203)
+      expect(result.text).toHaveLength(1)
+      expect(result.text[0]).toMatchObject({ text: 'Visible info', y: top })
+    }
+  })
+
+  it.each(['{unknown_token}', '**{unknown_token}**', '{color_swatch[8]}'])('collapses a migrated empty title and its lower divider: %s', template => {
+    const preset = migrateV1PresetData({ settings: {
+      logo: { show: false }, qr: { show: false },
+      title: { template, dividerAbove: true, dividerBelow: true }, title2: { show: false },
+      info: { template: 'PLA' }, info2: { show: false },
+    } }, 'spool')
+    const result = renderLabel(preset, {}, {}, fonts, 203)
+    const title = preset.design.elements.find(e => e.type === 'text' && e.legacyTextRole === 'title')!
+    expect(result.boxes.find((box: { id: string }) => box.id === title.id).hidden).toBe(true)
+    const rules = result.boxes.filter((box: { id: string }) => preset.design.elements.find(e => e.id === box.id)?.type === 'shape')
+    expect(rules.map((box: { hidden: boolean }) => box.hidden)).toEqual([false, true])
+    expect(result.text[0].y).toBeCloseTo(preset.design.label.marginMm + 25.4 / 96)
+  })
+
+  it('keeps swatch-only migrated titles visible and removes missing logo dividers', () => {
+    const preset = migrateV1PresetData({ settings: {
+      logo: { show: true, spaceMm: 7 }, qr: { show: false },
+      title: { show: false, dividerBelow: true }, title2: { show: false },
+      info: { template: 'PLA' }, info2: { show: false },
+    } }, 'spool')
+    const result = renderLabel(preset, data, {}, fonts, 203)
+    expect(result.boxes.filter((box: { hidden: boolean }) => box.hidden)).toHaveLength(2)
+    expect(result.text[0].y).toBeCloseTo(preset.design.label.marginMm)
+    const swatch = migrateV1PresetData({ settings: {
+      logo: { show: false }, qr: { show: false },
+      title: { template: '**{color_swatch[8]}**', fitToWidth: false, dividerBelow: true },
+      title2: { show: false }, info: { template: 'PLA' }, info2: { show: false },
+    } }, 'spool')
+    const painted = renderLabel(swatch, { ...data, 'filament.color_hex': '#FF0000', 'filament.color_hexes': '#FF0000' }, {}, fonts, 203)
+    expect(painted.boxes.every((box: { hidden: boolean }) => !box.hidden)).toBe(true)
+    expect(painted.svg).toContain('#FF0000')
+  })
+
+  it('paints migrated inverse titles across the full row, not just behind glyphs', () => {
+    const preset = migrateV1PresetData({ settings: {
+      label: { width: 40, height: 30, marginMm: 1, border: false }, logo: { show: false },
+      title: { template: '==PLA==', sizeMm: 4, align: 'center', dividerBelow: false }, title2: { show: false },
+      qr: { show: false }, info: { show: false }, info2: { show: false },
+    } }, 'spool')
+    const output = rasterize(renderLabel(preset, data, {}, fonts, 203).svg)
+    // Both ends of the band are far from the centered letters.
+    for (const x of [16, 304]) expect(output.pixels[(24 * 320 + x) * 4]).toBe(0)
+  })
   it('keeps native inverse text inline instead of introducing a full-width legacy band', () => {
     const preset = { version: 2, design: { version: 2, label: { widthMm: 40, heightMm: 30 }, elements: [
       { id: 'title', type: 'text', x: 1, y: 1, w: 38, h: 6, template: '==PLA==', fontSizeMm: 3, fontWeight: 700, align: 'center' },

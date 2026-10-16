@@ -6,6 +6,7 @@ import { renderDesignerLabel, buildSpoolDataFromFlatLabel } from '../label-desig
 import { renderSvgElementOutput, redrawSvgGesture, bindSvgClone, prepareSvgPrintImages } from './browser'
 import type { LabelDesignV2 } from '../freeform-label/types'
 import { renderStandardLabel, API_DEFAULT_LABEL_SETTINGS } from '../label-standard'
+import { getTemplateSelectionRange } from '../freeform-label/template-selection'
 
 vi.mock('./runtime.mjs', async importOriginal => {
   const module = await importOriginal<typeof import('./runtime.mjs')>()
@@ -22,6 +23,22 @@ function design(): LabelDesignV2 {
   ] as LabelDesignV2['elements'] }
 }
 function root() { const node = document.createElement('div'); document.body.append(node); return node }
+
+it('keeps field selection on the editing overlay and omits it from printable output', async () => {
+  const element = root(), value = design()
+  value.elements = [{ ...value.elements.find(e => e.id === 'info')!, template: '**{filament.name}**' } as LabelDesignV2['elements'][number]]
+  await renderDesignerLabel({ element, design: value, data: { ...data, 'filament.name': 'Galaxy PLA' }, interactive: true })
+  const token = element.querySelector('[data-template-atomic]')!
+  expect(token.textContent).toBe('Galaxy PLA')
+  const range = document.createRange()
+  range.setStart(token.firstChild!, 1)
+  range.setEnd(token.firstChild!, 4)
+  expect(getTemplateSelectionRange(element, range)).toEqual({ start: 2, end: 17 })
+  const pixels = element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src
+  await renderDesignerLabel({ element, design: value, data: { ...data, 'filament.name': 'Galaxy PLA' }, interactive: false })
+  expect(element.querySelector('[data-label-editor-chrome], [data-template-start]')).toBeNull()
+  expect(element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toBe(pixels)
+})
 
 it.each(['spools', 'filaments'] as const)('renders cached embedded batch logos for %s through preview and export', async entityPath => {
   const element = root()

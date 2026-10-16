@@ -1626,6 +1626,7 @@
     "jsonTypeImmutable": "Le type de l'élément ne peut pas être modifié",
     "jsonUnsupportedType": "Le type de l'élément n'est pas pris en charge",
     "imageLoadFailed": "Impossible de charger les images d'étiquette",
+    "requestedDataUnavailable": "Les données de l'étiquette sont indisponibles. Rechargez la page pour réessayer.",
     "imageUploadUnavailable": "L'envoi d'images d'étiquette n'est pas disponible",
     "imageUploadFailed": "Échec de l'envoi",
     "imageDeleteUnavailable": "La suppression d'images d'étiquette n'est pas disponible",
@@ -1657,6 +1658,7 @@
   "labelPrint": {
     "pcPrintTitle": "Demande d’impression",
     "pcPrintPrompt": "Imprimer l’étiquette de la bobine n° {id} sur ce PC ?",
+    "pcPrintFilamentPrompt": "Imprimer l’étiquette du filament n° {id} sur ce PC ?",
     "openPcPrint": "Ouvrir la fenêtre d’impression",
     "pageTitle": "FilaMan - Impression d'étiquettes",
     "backToOverview": "Retour à la vue d'ensemble",

@@ -1626,6 +1626,7 @@
     "jsonTypeImmutable": "Element type cannot be changed",
     "jsonUnsupportedType": "Element type is not supported",
     "imageLoadFailed": "Could not load label images",
+    "requestedDataUnavailable": "Label data is unavailable. Reload the page to try again.",
     "imageUploadUnavailable": "Label image uploads are unavailable",
     "imageUploadFailed": "Upload failed",
     "imageDeleteUnavailable": "Label image deletion is unavailable",
@@ -1657,6 +1658,7 @@
   "labelPrint": {
     "pcPrintTitle": "Print request",
     "pcPrintPrompt": "Print label for spool #{id} on this PC?",
+    "pcPrintFilamentPrompt": "Print label for filament #{id} on this PC?",
     "openPcPrint": "Open print window",
     "pageTitle": "FilaMan - Label Print",
     "backToOverview": "Back to Overview",

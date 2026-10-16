@@ -1627,6 +1627,7 @@
     "jsonTypeImmutable": "Der Elementtyp kann nicht geändert werden",
     "jsonUnsupportedType": "Der Elementtyp wird nicht unterstützt",
     "imageLoadFailed": "Etikettenbilder konnten nicht geladen werden",
+    "requestedDataUnavailable": "Die Etikettendaten sind nicht verfügbar. Lade die Seite neu, um es erneut zu versuchen.",
     "imageUploadUnavailable": "Das Hochladen von Etikettenbildern ist nicht verfügbar",
     "imageUploadFailed": "Hochladen fehlgeschlagen",
     "imageDeleteUnavailable": "Das Löschen von Etikettenbildern ist nicht verfügbar",
@@ -1658,6 +1659,7 @@
   "labelPrint": {
     "pcPrintTitle": "Druckanfrage",
     "pcPrintPrompt": "Etikett für Spule #{id} auf diesem PC drucken?",
+    "pcPrintFilamentPrompt": "Etikett für Filament #{id} auf diesem PC drucken?",
     "openPcPrint": "Druckfenster öffnen",
     "pageTitle": "FilaMan - Label-Druck",
     "backToOverview": "Zurück zur Übersicht",

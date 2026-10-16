@@ -5,7 +5,7 @@ import type { SvgInput, SvgOutput, SvgRuntime, SvgAsset, SvgBox } from './types'
 import type { RenderDesignerLabelOptions } from '../label-designer'
 import type { LabelDesignV2 } from '../freeform-label/types'
 import { normalizeLabelDesign } from '../freeform-label/normalize'
-import { renderText } from '../freeform-label/render'
+import { renderEditableText } from '../freeform-label/editable-text'
 import { LabelOutputAssetError } from '../label-output-readiness'
 import { assertLabelRasterBudget, LabelRasterBudgetError, MAX_BATCH_RASTER_PIXELS } from '../label-export'
 
@@ -17,7 +17,6 @@ interface Context {
   runtime?: SvgRuntime
   pending: Promise<void>
   invalid: boolean
-  revision: number
   frame?: number
 }
 
@@ -105,7 +104,7 @@ function hitTargets(options: RenderDesignerLabelOptions, input: SvgInput, output
     if (element.type === 'text') {
       // Temporary editing surface only; shared pixels remain the output.
       const text = output?.text.find((row: { id: string }) => row.id === element.id)
-      renderText(node, { ...element, fontSizeMm: text?.size ?? element.fontSizeMm }, input.data, true)
+      renderEditableText(node, { ...element, fontSizeMm: text?.size ?? element.fontSizeMm }, input.data)
       const content = node.firstElementChild as HTMLElement | null
       if (content) content.style.visibility = 'hidden'
     }
@@ -127,8 +126,8 @@ export async function renderSvgDesignerLabel(options: RenderDesignerLabelOptions
   const root = options.element, design = normalizeLabelDesign(options.design)
   const input: SvgInput = { preset: { version: 2, design }, data: structuredClone(options.data), assets: {},
     origin: location.origin, entityPath: options.entityPath === 'filaments' ? 'filaments' : 'spools',
-    pixelWidth: Math.round(design.label.widthMm * 300 / 25.4), pixelHeight: Math.round(design.label.heightMm * 300 / 25.4), thermal: !!options.thermalQr }
-  const state: Context = { owner: root, input, revision: (contexts.get(root)?.revision ?? 0) + 1, invalid: true, pending: Promise.resolve() }
+    pixelWidth: Math.round(design.label.widthMm * 300 / 25.4), pixelHeight: Math.round(design.label.heightMm * 300 / 25.4), thermal: false }
+  const state: Context = { owner: root, input, invalid: true, pending: Promise.resolve() }
   contexts.set(root, state)
   const current = () => contexts.get(root) === state && !options.isStale?.()
   state.pending = (async () => {
