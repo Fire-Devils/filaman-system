@@ -99,6 +99,7 @@ from app.services.label_asset_service import (
     set_label_preset_asset_references,
     validate_canonical_label_image,
 )
+from app.services.label_preset_v1 import convert_label_preset_data
 from app.services.plugin_service import PluginInstallError, PluginInstallService
 
 logger = logging.getLogger(__name__)
@@ -1683,6 +1684,7 @@ async def _import_backup_row(
     if model is LabelPreset and isinstance(attr_data.get("name"), str):
         attr_data["name"] = normalize_label_preset_name(attr_data["name"])
         attr_data["name_key"] = label_preset_name_key(attr_data["name"])
+        attr_data["data"] = convert_label_preset_data(attr_data.get("data"), attr_data.get("preset_type"))
     elif model is LabelAsset:
         canonical = await run_in_threadpool(
             validate_canonical_label_image, attr_data.get("content", b"")

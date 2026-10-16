@@ -11,6 +11,7 @@ from app.models.filament import (
 )
 from app.models.label_asset import LabelAsset, LabelPresetAsset
 from app.models.label_preset import LabelPreset
+from app.models.label_print_request import LabelPrintRequest
 from app.models.location import Location
 from app.models.oidc_settings import OIDCAuthState, OIDCSettings
 from app.models.plugin import InstalledPlugin
@@ -40,6 +41,7 @@ __all__ = [
     "InstalledPlugin",
     "LabelAsset",
     "LabelPreset",
+    "LabelPrintRequest",
     "LabelPresetAsset",
     "Location",
     "Manufacturer",

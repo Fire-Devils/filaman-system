@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { migrateV1PresetData, normalizeDesignerPresetData } from './migrate-v1'
 import { createDefaultLabelDesign } from './defaults'
 import { LEGACY_DESIGNER_DEFAULTS } from './legacy-v1'
+import migrationCases from '../../../../backend/tests/fixtures/label_preset_v1_v2.json'
+
+it.each(migrationCases)('matches the frozen cross-runtime contract: $name', testCase => {
+  let id = 0
+  expect(migrateV1PresetData(testCase.input, testCase.kind as 'spool' | 'filament', () => `v1-${++id}`))
+    .toEqual(testCase.expected)
+})
 
 function barePreset() {
   const settings = structuredClone(LEGACY_DESIGNER_DEFAULTS)
@@ -38,15 +45,15 @@ describe('v1 label designer migration', () => {
       'manufacturerLogo',
       'text',
       'shape',
-      'qr',
       'text',
+      'qr',
     ])
     expect(preset.design.elements.map(element => element.id)).toEqual([
       'logo',
       'title',
       'divider',
-      'qr',
       'info',
+      'qr',
     ])
     expect(preset.design.elements.filter(element => element.type === 'text').map(element => element.template)).toEqual([
       '{filament.name}',
@@ -151,7 +158,7 @@ describe('existing v1 preset options', () => {
     settings.qr = { show: true, mode: 'colorLogo', sizeMm: 18, position, vAlign, linkMode: 'url', urlTemplate: 'https://example.test/{id}' }
     settings.info.show = true
     settings.info.template = '{filament.type}'
-    const [qr, info] = migrateV1PresetData({ settings }, 'spool').design.elements
+    const [info, qr] = migrateV1PresetData({ settings }, 'spool').design.elements
     expect(qr).toMatchObject({ type: 'qr', x, y, w: 18, h: 18, mode: 'colorLogo', linkMode: 'url', urlTemplate: 'https://example.test/{id}' })
     expect(info).toMatchObject({ type: 'text', x: position === 'left' ? 20.5 : 1, w: 38.5 })
   })
@@ -212,7 +219,7 @@ describe('existing v1 preset options', () => {
     const first = elements.find(element => element.type === 'text' && element.template === 'First')!
     const second = elements.find(element => element.type === 'text' && element.template === 'Second')!
     const separator = elements.find(element => element.type === 'shape')!
-    expect(elements[0].x).toBeCloseTo(1.6)
+    expect(elements.find(element => element.type === 'qr')!.x).toBeCloseTo(1.6)
     expect(second.x).toBeLessThan(separator.x)
     expect(separator.x).toBeLessThan(first.x)
   })

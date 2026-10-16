@@ -17,9 +17,9 @@ describe('freeform label defaults', () => {
     })
     expect(design.elements.map(element => element.id)).toEqual([
       'text-1',
-      'qr-1',
       'logo-1',
       'swatch-1',
+      'qr-1',
     ])
     expect(new Set(design.elements.map(element => element.id)).size).toBe(4)
     expect(design.elements.every(element => (
@@ -32,6 +32,15 @@ describe('freeform label defaults', () => {
 })
 
 describe('freeform label normalization', () => {
+  it('pins QR codes above other content while preserving order within both groups', () => {
+    const normalized = normalizeLabelDesign({ elements: [
+      { id: 'qr-a', type: 'qr' }, { id: 'text', type: 'text' },
+      { id: 'qr-b', type: 'qr' }, { id: 'shape', type: 'shape' },
+    ] })
+    expect(normalized.elements.map(({ id, z }) => [id, z])).toEqual([
+      ['text', 0], ['shape', 1], ['qr-a', 2], ['qr-b', 3],
+    ])
+  })
   it('preserves a valid thin legacy title row for flow-compatible rendering', () => {
     const normalized = normalizeLabelDesign({
       version: 2,
@@ -158,9 +167,9 @@ describe('freeform label normalization', () => {
     })
 
     expect(normalized.elements).toMatchObject([
-      { id: 'qr', x: 0, y: 0, w: 10, h: 10 },
       { id: 'logo', x: 0, y: 0, w: 20, h: 6 },
       { id: 'swatch', x: 0, y: 0, w: 20, h: 6 },
+      { id: 'qr', x: 0, y: 0, w: 10, h: 10 },
     ])
     expect(normalized.elements.every(element => element.x >= 0 && element.y >= 0)).toBe(true)
   })
@@ -258,11 +267,11 @@ describe('freeform label normalization', () => {
     })
 
     expect(design.elements).toEqual([
-      { id: 'qr', type: 'qr', x: 2, y: 3, w: 12, h: 12, z: 0, mode: 'colorLogo', linkMode: 'url', urlTemplate: 'https://example.test' },
-      { id: 'logo', type: 'manufacturerLogo', x: 1, y: 1, w: 30, h: 6, z: 1, objectFit: 'contain' },
-      { id: 'image', type: 'image', x: 4, y: 4, w: 20, h: 10, z: 2, assetId: 'asset-1', objectFit: 'contain' },
-      { id: 'swatch', type: 'swatch', x: 5, y: 30, w: 50, h: 5, z: 3, radiusMm: 2.5 },
-      { id: 'shape', type: 'shape', x: 0, y: 0, w: 60, h: 40, z: 4, shape: 'rectangle', fill: '#ABCDEF', stroke: '#123456', strokeWidthMm: 10, radiusMm: 0 },
+      { id: 'logo', type: 'manufacturerLogo', x: 1, y: 1, w: 30, h: 6, z: 0, objectFit: 'contain' },
+      { id: 'image', type: 'image', x: 4, y: 4, w: 20, h: 10, z: 1, assetId: 'asset-1', objectFit: 'contain' },
+      { id: 'swatch', type: 'swatch', x: 5, y: 30, w: 50, h: 5, z: 2, radiusMm: 2.5 },
+      { id: 'shape', type: 'shape', x: 0, y: 0, w: 60, h: 40, z: 3, shape: 'rectangle', fill: '#ABCDEF', stroke: '#123456', strokeWidthMm: 10, radiusMm: 0 },
+      { id: 'qr', type: 'qr', x: 2, y: 3, w: 12, h: 12, z: 4, mode: 'colorLogo', linkMode: 'url', urlTemplate: 'https://example.test' },
     ])
   })
 

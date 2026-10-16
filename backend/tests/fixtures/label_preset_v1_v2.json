@@ -1,0 +1,785 @@
+[
+  {
+    "name": "defaults",
+    "kind": "spool",
+    "input": {
+      "version": 1,
+      "settings": {}
+    },
+    "expected": {
+      "version": 2,
+      "design": {
+        "version": 2,
+        "label": {
+          "widthMm": 60,
+          "heightMm": 40,
+          "marginMm": 1,
+          "border": false
+        },
+        "elements": [
+          {
+            "id": "v1-1",
+            "type": "manufacturerLogo",
+            "x": 1,
+            "y": 1,
+            "w": 58,
+            "h": 6.085416666666666,
+            "z": 0,
+            "objectFit": "contain",
+            "align": "left",
+            "collapseWhenEmpty": true
+          },
+          {
+            "id": "v1-2",
+            "type": "text",
+            "x": 1,
+            "y": 7.585416666666666,
+            "w": 58,
+            "h": 4,
+            "z": 1,
+            "template": "{filament.name}",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 4,
+            "fontWeight": 700,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "color": "#000000",
+            "wrap": false,
+            "fitToWidth": true,
+            "legacyTextRole": "title",
+            "legacyTitleMarginMm": 0,
+            "legacyDividerBelow": true
+          },
+          {
+            "id": "v1-3",
+            "type": "shape",
+            "x": 1,
+            "y": 11.585416666666667,
+            "w": 58,
+            "h": 0.26458333333333334,
+            "z": 2,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-5",
+            "type": "text",
+            "x": 1,
+            "y": 11.85,
+            "w": 38.5,
+            "h": 27.15,
+            "z": 3,
+            "template": "{filament.type}\n{filament.color}\nDiameter: {filament.diameter} mm",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 2.5,
+            "fontWeight": 400,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "verticalAlign": "bottom",
+            "color": "#000000",
+            "wrap": true,
+            "legacyTextRole": "info"
+          },
+          {
+            "id": "v1-4",
+            "type": "qr",
+            "x": 41,
+            "y": 21,
+            "w": 18,
+            "h": 18,
+            "z": 4,
+            "mode": "logo",
+            "linkMode": "spool",
+            "urlTemplate": "",
+            "legacyVAlign": "bottom"
+          }
+        ]
+      },
+      "legacy_v1": {}
+    }
+  },
+  {
+    "name": "null and numeric strings",
+    "kind": "filament",
+    "input": {
+      "settings": {
+        "label": {
+          "width": "40",
+          "height": "30",
+          "marginMm": null
+        },
+        "logo": {
+          "spaceMm": "",
+          "scaleToFit": false,
+          "manualSizeMm": "4",
+          "align": "right"
+        },
+        "title": {
+          "marginMm": null
+        },
+        "qr": {
+          "mode": "none"
+        }
+      }
+    },
+    "expected": {
+      "version": 2,
+      "design": {
+        "version": 2,
+        "label": {
+          "widthMm": 40,
+          "heightMm": 30,
+          "marginMm": 0,
+          "border": false
+        },
+        "elements": [
+          {
+            "id": "v1-1",
+            "type": "manufacturerLogo",
+            "x": 0,
+            "y": 0,
+            "w": 40,
+            "h": 3,
+            "z": 0,
+            "objectFit": "contain",
+            "align": "right",
+            "manualSizeMm": 4,
+            "collapseWhenEmpty": true
+          },
+          {
+            "id": "v1-2",
+            "type": "text",
+            "x": 0,
+            "y": 2.6166666666666663,
+            "w": 40,
+            "h": 4,
+            "z": 1,
+            "template": "{filament.name}",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 4,
+            "fontWeight": 700,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "color": "#000000",
+            "wrap": false,
+            "fitToWidth": true,
+            "legacyTextRole": "title",
+            "legacyTitleMarginMm": 0,
+            "legacyDividerBelow": true
+          },
+          {
+            "id": "v1-3",
+            "type": "shape",
+            "x": 0,
+            "y": 6.616666666666666,
+            "w": 40,
+            "h": 0.26458333333333334,
+            "z": 2,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-4",
+            "type": "text",
+            "x": 0,
+            "y": 6.88125,
+            "w": 40,
+            "h": 23.11875,
+            "z": 3,
+            "template": "{filament.type}\n{filament.color}\nDiameter: {filament.diameter} mm",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 2.5,
+            "fontWeight": 400,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "verticalAlign": "bottom",
+            "color": "#000000",
+            "wrap": true,
+            "legacyTextRole": "info"
+          }
+        ]
+      },
+      "legacy_v1": {
+        "label": {
+          "width": "40",
+          "height": "30",
+          "marginMm": null
+        },
+        "logo": {
+          "spaceMm": "",
+          "scaleToFit": false,
+          "manualSizeMm": "4",
+          "align": "right"
+        },
+        "title": {
+          "marginMm": null
+        },
+        "qr": {
+          "mode": "none"
+        }
+      }
+    }
+  },
+  {
+    "name": "two columns left QR",
+    "kind": "spool",
+    "input": {
+      "label": {
+        "width": 40,
+        "height": 30,
+        "border": true
+      },
+      "logo": {
+        "show": false
+      },
+      "title": {
+        "template": "=={filament.name}==",
+        "marginMm": -1,
+        "dividerAbove": true
+      },
+      "title2": {
+        "show": true,
+        "template": "[b]Second[/b]",
+        "marginMm": 2,
+        "dividerBelow": true
+      },
+      "info": {
+        "template": "{color_swatch[8]}\n{id}",
+        "vAlign": "top"
+      },
+      "info2": {
+        "show": true,
+        "vsep": true,
+        "template": "Other",
+        "vAlign": "center"
+      },
+      "qr": {
+        "position": "left",
+        "vAlign": "center",
+        "mode": "icon",
+        "colorLogo": true
+      }
+    },
+    "expected": {
+      "version": 2,
+      "design": {
+        "version": 2,
+        "label": {
+          "widthMm": 40,
+          "heightMm": 30,
+          "marginMm": 1,
+          "border": true
+        },
+        "elements": [
+          {
+            "id": "v1-1",
+            "type": "shape",
+            "x": 1.6,
+            "y": 1.6,
+            "w": 36.8,
+            "h": 0.26458333333333334,
+            "z": 0,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-2",
+            "type": "text",
+            "x": 1.6,
+            "y": 0.8645833333333335,
+            "w": 36.8,
+            "h": 4,
+            "z": 1,
+            "template": "=={filament.name}==",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 4,
+            "fontWeight": 700,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "color": "#000000",
+            "wrap": false,
+            "fitToWidth": true,
+            "legacyTextRole": "title",
+            "legacyTitleMarginMm": -1,
+            "legacyDividerBelow": true
+          },
+          {
+            "id": "v1-3",
+            "type": "shape",
+            "x": 1.6,
+            "y": 3.8645833333333335,
+            "w": 36.8,
+            "h": 0.26458333333333334,
+            "z": 2,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-4",
+            "type": "text",
+            "x": 1.6,
+            "y": 6.129166666666666,
+            "w": 36.8,
+            "h": 3.5,
+            "z": 3,
+            "template": "[b]Second[/b]",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 3.5,
+            "fontWeight": 700,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "color": "#000000",
+            "wrap": false,
+            "fitToWidth": true,
+            "legacyTextRole": "title",
+            "legacyTitleMarginMm": 2,
+            "legacyDividerBelow": true
+          },
+          {
+            "id": "v1-5",
+            "type": "shape",
+            "x": 1.6,
+            "y": 11.629166666666666,
+            "w": 36.8,
+            "h": 0.26458333333333334,
+            "z": 4,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-7",
+            "type": "text",
+            "x": 31.382291666666667,
+            "y": 11.893749999999999,
+            "w": 7.017708333333331,
+            "h": 16.50625,
+            "z": 5,
+            "template": "{color_swatch[8]}\n{id}",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 2.5,
+            "fontWeight": 400,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "verticalAlign": "top",
+            "color": "#000000",
+            "wrap": true,
+            "legacyTextRole": "info"
+          },
+          {
+            "id": "v1-8",
+            "type": "text",
+            "x": 21.1,
+            "y": 11.893749999999999,
+            "w": 7.017708333333331,
+            "h": 16.50625,
+            "z": 6,
+            "template": "Other",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 2.5,
+            "fontWeight": 400,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "verticalAlign": "middle",
+            "color": "#000000",
+            "wrap": true,
+            "legacyTextRole": "info"
+          },
+          {
+            "id": "v1-9",
+            "type": "shape",
+            "x": 29.617708333333333,
+            "y": 11.893749999999999,
+            "w": 0.26458333333333334,
+            "h": 16.50625,
+            "z": 7,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-6",
+            "type": "qr",
+            "x": 1.6000000000000014,
+            "y": 11.146875,
+            "w": 18,
+            "h": 18,
+            "z": 8,
+            "mode": "colorLogo",
+            "linkMode": "spool",
+            "urlTemplate": "",
+            "legacyVAlign": "center"
+          }
+        ]
+      },
+      "legacy_v1": {
+        "label": {
+          "width": 40,
+          "height": 30,
+          "border": true
+        },
+        "logo": {
+          "show": false
+        },
+        "title": {
+          "template": "=={filament.name}==",
+          "marginMm": -1,
+          "dividerAbove": true
+        },
+        "title2": {
+          "show": true,
+          "template": "[b]Second[/b]",
+          "marginMm": 2,
+          "dividerBelow": true
+        },
+        "info": {
+          "template": "{color_swatch[8]}\n{id}",
+          "vAlign": "top"
+        },
+        "info2": {
+          "show": true,
+          "vsep": true,
+          "template": "Other",
+          "vAlign": "center"
+        },
+        "qr": {
+          "position": "left",
+          "vAlign": "center",
+          "mode": "icon",
+          "colorLogo": true
+        }
+      }
+    }
+  },
+  {
+    "name": "short label and overflow",
+    "kind": "filament",
+    "input": {
+      "version": 1,
+      "settings": {
+        "label": {
+          "width": 20,
+          "height": 10,
+          "marginMm": 6
+        },
+        "logo": {
+          "spaceMm": 20
+        },
+        "title": {
+          "sizeMm": 20,
+          "marginMm": 4
+        },
+        "info2": {
+          "show": true,
+          "vsep": true
+        },
+        "qr": {
+          "sizeMm": 40,
+          "vAlign": "top"
+        }
+      }
+    },
+    "expected": {
+      "version": 2,
+      "design": {
+        "version": 2,
+        "label": {
+          "widthMm": 20,
+          "heightMm": 10,
+          "marginMm": 6,
+          "border": false
+        },
+        "elements": [
+          {
+            "id": "v1-1",
+            "type": "manufacturerLogo",
+            "x": 6,
+            "y": 6,
+            "w": 8,
+            "h": 10,
+            "z": 0,
+            "objectFit": "contain",
+            "align": "left",
+            "collapseWhenEmpty": true
+          },
+          {
+            "id": "v1-2",
+            "type": "text",
+            "x": 6,
+            "y": 9.9,
+            "w": 8,
+            "h": 10,
+            "z": 1,
+            "template": "{filament.name}",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 20,
+            "fontWeight": 700,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "color": "#000000",
+            "wrap": false,
+            "fitToWidth": true,
+            "legacyTextRole": "title",
+            "legacyTitleMarginMm": 4,
+            "legacyDividerBelow": true
+          },
+          {
+            "id": "v1-3",
+            "type": "shape",
+            "x": 6,
+            "y": 9.9,
+            "w": 8,
+            "h": 0.26458333333333334,
+            "z": 2,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-5",
+            "type": "text",
+            "x": 6,
+            "y": 1,
+            "w": 0,
+            "h": 3,
+            "z": 3,
+            "template": "{filament.type}\n{filament.color}\nDiameter: {filament.diameter} mm",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 2.5,
+            "fontWeight": 400,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "verticalAlign": "bottom",
+            "color": "#000000",
+            "wrap": true,
+            "legacyTextRole": "info"
+          },
+          {
+            "id": "v1-6",
+            "type": "text",
+            "x": 9.264583333333334,
+            "y": 1,
+            "w": 0,
+            "h": 3,
+            "z": 4,
+            "template": "",
+            "fontFamily": "Space Grotesk",
+            "fontSizeMm": 2.5,
+            "fontWeight": 400,
+            "italic": false,
+            "underline": false,
+            "align": "left",
+            "verticalAlign": "bottom",
+            "color": "#000000",
+            "wrap": true,
+            "legacyTextRole": "info"
+          },
+          {
+            "id": "v1-7",
+            "type": "shape",
+            "x": 7.5,
+            "y": 1,
+            "w": 0.26458333333333334,
+            "h": 3,
+            "z": 5,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          },
+          {
+            "id": "v1-4",
+            "type": "qr",
+            "x": 10.764583333333334,
+            "y": 1,
+            "w": 40,
+            "h": 40,
+            "z": 6,
+            "mode": "logo",
+            "linkMode": "spool",
+            "urlTemplate": "",
+            "legacyVAlign": "top"
+          }
+        ]
+      },
+      "legacy_v1": {
+        "label": {
+          "width": 20,
+          "height": 10,
+          "marginMm": 6
+        },
+        "logo": {
+          "spaceMm": 20
+        },
+        "title": {
+          "sizeMm": 20,
+          "marginMm": 4
+        },
+        "info2": {
+          "show": true,
+          "vsep": true
+        },
+        "qr": {
+          "sizeMm": 40,
+          "vAlign": "top"
+        }
+      }
+    }
+  },
+  {
+    "name": "logo divider hidden titles",
+    "kind": "spool",
+    "input": {
+      "settings": {
+        "title": {
+          "show": false
+        },
+        "info": {
+          "show": false
+        },
+        "qr": {
+          "show": false
+        },
+        "logo": {
+          "spaceMm": 12,
+          "scaleToFit": false,
+          "manualSizeMm": 4
+        }
+      }
+    },
+    "expected": {
+      "version": 2,
+      "design": {
+        "version": 2,
+        "label": {
+          "widthMm": 60,
+          "heightMm": 40,
+          "marginMm": 1,
+          "border": false
+        },
+        "elements": [
+          {
+            "id": "v1-1",
+            "type": "manufacturerLogo",
+            "x": 1,
+            "y": 1,
+            "w": 58,
+            "h": 11.906249999999998,
+            "z": 0,
+            "objectFit": "contain",
+            "align": "left",
+            "manualSizeMm": 4,
+            "collapseWhenEmpty": true
+          },
+          {
+            "id": "v1-2",
+            "type": "shape",
+            "x": 1,
+            "y": 13.906249999999998,
+            "w": 58,
+            "h": 0.26458333333333334,
+            "z": 1,
+            "legacyLogoDivider": true,
+            "shape": "rectangle",
+            "fill": "#000000",
+            "stroke": "",
+            "strokeWidthMm": 0,
+            "radiusMm": 0
+          }
+        ]
+      },
+      "legacy_v1": {
+        "title": {
+          "show": false
+        },
+        "info": {
+          "show": false
+        },
+        "qr": {
+          "show": false
+        },
+        "logo": {
+          "spaceMm": 12,
+          "scaleToFit": false,
+          "manualSizeMm": 4
+        }
+      }
+    }
+  },
+  {
+    "name": "hidden sections",
+    "kind": "filament",
+    "input": {
+      "settings": {
+        "logo": {
+          "show": false
+        },
+        "title": {
+          "show": false
+        },
+        "info": {
+          "show": false
+        },
+        "qr": {
+          "mode": "none"
+        }
+      }
+    },
+    "expected": {
+      "version": 2,
+      "design": {
+        "version": 2,
+        "label": {
+          "widthMm": 60,
+          "heightMm": 40,
+          "marginMm": 1,
+          "border": false
+        },
+        "elements": []
+      },
+      "legacy_v1": {
+        "logo": {
+          "show": false
+        },
+        "title": {
+          "show": false
+        },
+        "info": {
+          "show": false
+        },
+        "qr": {
+          "mode": "none"
+        }
+      }
+    }
+  }
+]

@@ -4,13 +4,14 @@ import type {
   LabelKind,
 } from './types'
 import { createLabelElementId } from './id'
+import { normalizeLabelDesign } from './normalize'
 
 export function createDefaultLabelDesign(
   kind: LabelKind,
   createId: LabelElementIdFactory = createLabelElementId,
 ): LabelDesignV2 {
   const subjectId = kind === 'filament' ? 'filament.id' : 'id'
-  return {
+  return normalizeLabelDesign({
     version: 2,
     label: {
       widthMm: 60,
@@ -71,5 +72,5 @@ export function createDefaultLabelDesign(
         radiusMm: 1,
       },
     ],
-  }
+  })
 }
