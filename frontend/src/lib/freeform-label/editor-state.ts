@@ -277,13 +277,15 @@ export function createFreeformEditorController(
     if (!selectedId) return false
     const elements = [...design.elements]
     const index = elements.findIndex(element => element.id === selectedId)
-    if (index < 0) return false
+    if (index < 0 || elements[index].type === 'qr') return false
+    const front = elements.findIndex(element => element.type === 'qr')
+    const lastMovable = front < 0 ? elements.length - 1 : front - 1
     const target = direction === 'front'
-      ? elements.length - 1
+      ? lastMovable
       : direction === 'backmost'
         ? 0
         : direction === 'forward'
-          ? Math.min(elements.length - 1, index + 1)
+          ? Math.min(lastMovable, index + 1)
           : Math.max(0, index - 1)
     if (target === index) return false
     const [element] = elements.splice(index, 1)

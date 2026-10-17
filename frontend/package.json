@@ -3,6 +3,8 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
+    "build:label-svg": "node scripts/build-label-svg.mjs",
+    "test:label-rendering:serve": "node tests/label-rendering/server.mjs",
     "dev": "astro dev",
     "build": "sh -c 'echo \"export const VERSION=\\\"$(cat ./version.txt)\\\"\" > src/version.js && astro build'",
     "preview": "astro preview",
@@ -14,14 +16,18 @@
     "test:labels": "vitest run src/lib/label-token-contract.test.ts",
     "check:label-layout": "node scripts/check-label-layout.mjs",
     "check:editor-workspace": "node scripts/check-editor-workspace.mjs",
-    "check:browser": "npm run check:label-layout && npm run check:editor-workspace"
+    "check:pc-print-prompt": "node scripts/check-pc-print-prompt.mjs",
+    "check:browser": "npm run check:label-layout && npm run check:editor-workspace && npm run check:pc-print-prompt"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
+    "@resvg/resvg-wasm": "2.6.2",
     "eslint": "^9.26.0",
     "eslint-plugin-astro": "^1.3.0",
+    "fontkit": "2.0.4",
     "happy-dom": "^18.0.1",
     "playwright-core": "1.61.1",
+    "qrcode": "1.5.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.32.0",
     "vitest": "^3.2.4"

@@ -37,3 +37,7 @@ jobs:
       - run: npm run check:browser
         env:
           CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
+      - run: npx astro build
+      - run: node scripts/check-api-default-print.mjs
+        env:
+          CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome

@@ -243,5 +243,7 @@ export function normalizeLabelDesign(
     }
     usedIds.add(id)
   }
+  elements.sort((a, b) => Number(a.type === 'qr') - Number(b.type === 'qr'))
+  elements.forEach((element, index) => { element.z = index })
   return { version: 2, label, elements }
 }

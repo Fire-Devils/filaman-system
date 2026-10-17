@@ -1,6 +1,7 @@
 import type { LabelDesignElement, LabelDesignV2 } from './types'
 import { clampElementPosition, clampFinite, getElementMinimumSize, isProportionalElement } from './geometry'
 import { snapElementGeometry, type SnapGuide, type SnapOperation } from './snapping'
+import { QR_QUIET_ZONE_MODULES } from './qr-readability'
 
 type InteractionEvent = {
   dx?: number
@@ -106,6 +107,20 @@ function resizesHorizontally(element: LabelDesignElement): boolean {
   return element.type === 'shape' && element.shape === 'line'
 }
 
+function qrQuietZoneRatio(node: HTMLElement, element: LabelDesignElement) {
+  const modules = Number(node.dataset.qrModuleCount)
+  return element.type === 'qr' && Number.isInteger(modules) && modules > 0 ? QR_QUIET_ZONE_MODULES / modules : 0
+}
+
+function boundDisplayedGeometry(node: HTMLElement, element: LabelDesignElement, box: LabelGeometry, label: LabelDesignV2['label']): LabelGeometry {
+  if (element.type !== 'qr') return { ...box, ...clampElementPosition(box, label) }
+  const ratio = qrQuietZoneRatio(node, element)
+  const side = Math.min(box.w, box.h, Math.min(label.widthMm, label.heightMm) / (1 + 2 * ratio))
+  const padding = side * ratio
+  return { x: clampFinite(box.x, padding, label.widthMm - side - padding, padding),
+    y: clampFinite(box.y, padding, label.heightMm - side - padding, padding), w: side, h: side }
+}
+
 async function loadInteractJs(): Promise<InteractFactory> {
   const module = await import('interactjs')
   return module.default as unknown as InteractFactory
@@ -151,13 +166,15 @@ export async function bindLabelInteractions(
     return widthPx > 0 && widthMm > 0 ? widthPx / widthMm : 96 / 25.4
   }
   const storeRawGesture = (
-    id: string,
+    node: HTMLElement,
+    element: LabelDesignElement,
     next: LabelGeometry,
     label: LabelDesignV2['label'],
   ) => {
+    const id = element.id
     const offset = renderedOffset.get(id) ?? { x: 0, y: 0, w: 0, h: 0 }
     const displayed = addGeometry(next, offset)
-    const boundedDisplayed = { ...displayed, ...clampElementPosition(displayed, label) }
+    const boundedDisplayed = boundDisplayedGeometry(node, element, displayed, label)
     rawGesture = { id, geometry: subtractGeometry(boundedDisplayed, offset) }
     return next
   }
@@ -257,12 +274,19 @@ export async function bindLabelInteractions(
       maximumWidth: operation.maximumWidth + offset.w,
       maximumHeight: operation.maximumHeight + offset.h,
     }
+    const quietZoneRatio = qrQuietZoneRatio(node, element)
     const snapped = bypassSnap
       ? { geometry: displayed, guides: [] }
-      : snapElementGeometry(displayed, label, SNAP_DISTANCE_PX / scale, displayedOperation)
-    const committedDisplayed = { ...snapped.geometry, ...clampElementPosition(snapped.geometry, label) }
+      : snapElementGeometry(displayed, label, SNAP_DISTANCE_PX / scale, displayedOperation, quietZoneRatio)
+    const committedDisplayed = boundDisplayedGeometry(node, element, snapped.geometry, label)
     const committed = subtractGeometry(committedDisplayed, offset)
-    showSnapGuides(guidesMatching(committedDisplayed, snapped.guides), label, scale)
+    const padding = committedDisplayed.w * quietZoneRatio
+    const outline = {
+      x: committedDisplayed.x - padding, y: committedDisplayed.y - padding,
+      w: committedDisplayed.w + 2 * padding, h: committedDisplayed.h + 2 * padding,
+    }
+    showSnapGuides(guidesMatching(outline, snapped.guides), label, scale)
+    if (quietZoneRatio) node.style.boxShadow = `0 0 0 ${padding}mm white`
     geometry.set(id, committed)
     node.style.left = `${committedDisplayed.x}mm`
     node.style.top = `${committedDisplayed.y}mm`
@@ -292,7 +316,7 @@ export async function bindLabelInteractions(
       const label = getLabel()
       const scale = pxPerMm(label)
       if (!resize) {
-        const next = storeRawGesture(element.id, {
+        const next = storeRawGesture(node, element, {
           ...rawCurrent,
           x: clampFinite(rawCurrent.x + Number(event.dx ?? 0) / scale, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY, rawCurrent.x),
           y: clampFinite(rawCurrent.y + Number(event.dy ?? 0) / scale, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY, rawCurrent.y),
@@ -310,7 +334,7 @@ export async function bindLabelInteractions(
         const minimum = getElementMinimumSize(element)
         const w = clampFinite(width, minimum, label.widthMm, rawCurrent.w)
         const x = edges.left ? rawCurrent.x + rawCurrent.w - w : rawCurrent.x
-        const next = storeRawGesture(element.id, { ...rawCurrent, x, w }, label)
+        const next = storeRawGesture(node, element, { ...rawCurrent, x, w }, label)
         commitGeometry(node, element, next, label, scale, {
           type: 'resize', edges, proportional: false,
           minimumWidth: minimum, minimumHeight: minimum,
@@ -328,7 +352,7 @@ export async function bindLabelInteractions(
         size = clampFinite(size, minimum, maximum, rawCurrent.w)
         const right = rawCurrent.x + rawCurrent.w
         const bottom = rawCurrent.y + rawCurrent.h
-        const next = storeRawGesture(element.id, {
+        const next = storeRawGesture(node, element, {
           x: edges.left ? right - size : rawCurrent.x,
           y: edges.top ? bottom - size : rawCurrent.y,
           w: size,
@@ -347,7 +371,7 @@ export async function bindLabelInteractions(
       const bottom = rawCurrent.y + rawCurrent.h
       const w = clampFinite(width, minimum, label.widthMm, rawCurrent.w)
       const h = clampFinite(height, minimum, label.heightMm, rawCurrent.h)
-      const next = storeRawGesture(element.id, {
+      const next = storeRawGesture(node, element, {
         x: edges.left ? right - w : rawCurrent.x,
         y: edges.top ? bottom - h : rawCurrent.y,
         w,

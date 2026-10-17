@@ -17,7 +17,7 @@ import {
   persistStoredPresetMutation,
   type StoredPreset,
 } from './editor-storage'
-import { deleteLabelPreset, saveLabelPreset } from '../label-preset-storage'
+import { deleteLabelPreset, saveLabelPreset, selectLabelPreset } from '../label-preset-storage'
 import { appendLabelExtraFieldCatalogGroup, buildLabelExtraFieldCatalogGroups } from '../label-extra-fields'
 import type { LabelDesignerPresetData, LabelDesignV2 } from './types'
 
@@ -38,6 +38,7 @@ export async function initFreeformLabelDesignerEditor(
     kind: entityType,
   })
   let lastPersisted = JSON.stringify(initialDesign)
+  let persistWorkingDesign = true
   let lastLabel = JSON.stringify(initialDesign.label)
   let extraFields = options.extraFields ?? []
   let domBinding: ReturnType<typeof bindFreeformEditorDom> | null = null
@@ -55,7 +56,7 @@ export async function initFreeformLabelDesignerEditor(
       const serialized = JSON.stringify(state.design)
       if (serialized !== lastPersisted) {
         lastPersisted = serialized
-        persistFreeformLabelDesign(options.settingsKey, state.design)
+        if (persistWorkingDesign) persistFreeformLabelDesign(options.settingsKey, state.design)
       }
     },
     render: options.onChange,
@@ -92,6 +93,7 @@ export async function initFreeformLabelDesignerEditor(
   let cleanDesign = lastPersisted
   let cleanPresetName: string | null = null
   let presetMutationTail: Promise<void> = Promise.resolve()
+  let latestPresetAction = 0
 
   const destroy = () => {
     if (destroyed) return
@@ -260,17 +262,28 @@ export async function initFreeformLabelDesignerEditor(
     if (control) listen(control, 'change', () => updateGeometry({ [property]: Number(control.value) }))
   }
   if (border) listen(border, 'change', () => updateGeometry({ border: border.checked }))
-  const loadPreset = (name?: string, source?: 'own' | 'cross' | 'builtin') => {
+  const loadPreset = (name?: string, sourceOrSync?: 'own' | 'cross' | 'builtin' | boolean) => {
+    const source = typeof sourceOrSync === 'string' ? sourceOrSync : undefined
+    const syncSelection = sourceOrSync !== false
     const value = name === undefined
       ? presetSelect?.value ?? ''
       : `${source ?? (readStoredPresets(options.presetsKey).some(preset => preset.name === name) ? 'own' : 'builtin')}:${name}`
+    const selectedSource = value.split(':', 1)[0]
     const preset = selectedPreset(value)
-    if (!preset || !controller.reset(preset.data.design)) return false
+    if (!preset) return false
+    const previouslyPersistent = persistWorkingDesign
+    // One-off API labels must not overwrite the browser's working draft, including later edits.
+    persistWorkingDesign = syncSelection
+    if (!controller.reset(preset.data.design)) {
+      persistWorkingDesign = previouslyPersistent
+      return false
+    }
+    const action = ++latestPresetAction
     if (presetSelect) presetSelect.value = value
     loadedOwnPreset = value.startsWith('own:') ? preset.name : null
     cleanDesign = JSON.stringify(controller.getDesign())
     cleanPresetName = presetLabel(preset)
-    persistFreeformLabelDesign(options.settingsKey, preset.data.design)
+    if (persistWorkingDesign) persistFreeformLabelDesign(options.settingsKey, preset.data.design)
     lastPersisted = JSON.stringify(preset.data.design)
     if (presetName) presetName.value = presetLabel(preset)
     syncSidebarMutationControls()
@@ -278,6 +291,23 @@ export async function initFreeformLabelDesignerEditor(
     domBinding?.sync()
     void domBinding?.refresh()
     setStatus(options.translate?.('labelDesigner.presetLoaded', 'Preset loaded.') ?? 'Preset loaded.')
+    if (!syncSelection || !['own', 'builtin', 'cross'].includes(selectedSource)) return true
+    const showSelectionFailure = () => {
+      if (action === latestPresetAction) {
+        setStatus(options.translate?.(
+          'labelDesigner.presetSelectionFailed',
+          'Preset loaded, but selection synchronization failed. Load it again to retry.',
+        ) ?? 'Preset loaded, but selection synchronization failed. Load it again to retry.')
+      }
+    }
+    void enqueuePresetMutation(async () => {
+      if (selectedSource !== 'own') return selectLabelPreset(null, entityType)
+      const databaseId = readStoredPresets(options.presetsKey)
+        .find(candidate => candidate.name === preset.name)?.databaseId
+      return databaseId ? selectLabelPreset(databaseId, entityType) : false
+    }).then(synced => {
+      if (!synced) showSelectionFailure()
+    }, showSelectionFailure)
     return true
   }
   listen<MouseEvent>(presetLoad, 'click', async () => {
@@ -317,6 +347,8 @@ export async function initFreeformLabelDesignerEditor(
     }
     const design = controller.getDesign()
     const replacementVersion = controller.getReplacementVersion()
+    const action = ++latestPresetAction
+    let selectionSynced = true
     return enqueuePresetMutation(async () => {
       const presets = readStoredPresets(options.presetsKey)
       const index = presets.findIndex(candidate => candidate.name === name)
@@ -326,13 +358,19 @@ export async function initFreeformLabelDesignerEditor(
       const preset: StoredPreset = { name, data }
       if (index >= 0) presets[index] = preset
       else presets.push(preset)
-      return persistStoredPresetMutation(
+      const saved = await persistStoredPresetMutation(
         options.presetsKey,
         presets,
         () => asNew
           ? saveLabelPreset(options.presetsKey, preset, undefined, true)
           : saveLabelPreset(options.presetsKey, preset),
       )
+      if (saved) {
+        selectionSynced = preset.databaseId
+          ? await selectLabelPreset(preset.databaseId, entityType)
+          : false
+      }
+      return saved
     }).then(saved => {
       if (saved && presetName?.value.trim() === name && controller.getReplacementVersion() === replacementVersion) {
         loadedOwnPreset = name
@@ -340,13 +378,22 @@ export async function initFreeformLabelDesignerEditor(
         cleanPresetName = name
       }
       refreshPresetList(saved ? name : undefined)
-      setStatus(saved
-        ? (options.translate?.('labelDesigner.presetSaved', 'Preset saved.') ?? 'Preset saved.')
-        : (options.translate?.('labelDesigner.presetSaveFailed', 'Preset save failed.') ?? 'Preset save failed.'))
+      if (action === latestPresetAction) {
+        setStatus(saved
+          ? selectionSynced
+            ? (options.translate?.('labelDesigner.presetSaved', 'Preset saved.') ?? 'Preset saved.')
+            : (options.translate?.(
+                'labelDesigner.presetSavedSelectionFailed',
+                'Preset saved, but selection synchronization failed. Load it again to retry.',
+              ) ?? 'Preset saved, but selection synchronization failed. Load it again to retry.')
+          : (options.translate?.('labelDesigner.presetSaveFailed', 'Preset save failed.') ?? 'Preset save failed.'))
+      }
       return saved ? name : null
     }, () => {
       refreshPresetList()
-      setStatus(options.translate?.('labelDesigner.presetSaveFailed', 'Preset save failed.') ?? 'Preset save failed.')
+      if (action === latestPresetAction) {
+        setStatus(options.translate?.('labelDesigner.presetSaveFailed', 'Preset save failed.') ?? 'Preset save failed.')
+      }
       return null
     })
   }
@@ -364,18 +411,23 @@ export async function initFreeformLabelDesignerEditor(
       'Delete preset "{name}"? This cannot be undone.',
     ) ?? 'Delete preset "{name}"? This cannot be undone.').replace('{name}', name)
     if (!await confirmAction(message)) return
+    const action = ++latestPresetAction
     void enqueuePresetMutation(() => persistStoredPresetMutation(
       options.presetsKey,
       readStoredPresets(options.presetsKey).filter(preset => preset.name !== name),
       () => deleteLabelPreset(options.presetsKey, name),
     )).then(deleted => {
       refreshPresetList()
-      setStatus(deleted
-        ? (options.translate?.('labelDesigner.presetDeleted', 'Preset deleted.') ?? 'Preset deleted.')
-        : (options.translate?.('labelDesigner.presetDeleteFailed', 'Preset delete failed.') ?? 'Preset delete failed.'))
+      if (action === latestPresetAction) {
+        setStatus(deleted
+          ? (options.translate?.('labelDesigner.presetDeleted', 'Preset deleted.') ?? 'Preset deleted.')
+          : (options.translate?.('labelDesigner.presetDeleteFailed', 'Preset delete failed.') ?? 'Preset delete failed.'))
+      }
     }, () => {
       refreshPresetList()
-      setStatus(options.translate?.('labelDesigner.presetDeleteFailed', 'Preset delete failed.') ?? 'Preset delete failed.')
+      if (action === latestPresetAction) {
+        setStatus(options.translate?.('labelDesigner.presetDeleteFailed', 'Preset delete failed.') ?? 'Preset delete failed.')
+      }
     })
   })
 
@@ -412,6 +464,8 @@ export async function initFreeformLabelDesignerEditor(
       loadInteract: options.loadInteract,
       translate: options.translate,
       getPreviewData: options.getPreviewData,
+      getQrEntityIds: options.getQrEntityIds,
+      entityPath: entityType === 'filament' ? 'filaments' : 'spools',
     })
     await domBinding.ready
     if (entityType === 'spool') spoolTab?.click()

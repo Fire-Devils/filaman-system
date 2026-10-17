@@ -174,6 +174,18 @@ const { title } = Astro.props
       </main>
     </div>
 
+    <div id="pc-print-prompt" class="fm-alert-info pc-print-prompt hidden" role="status" aria-live="polite">
+      <span class="pc-print-prompt-icon" aria-hidden="true">
+        <svg width="23" height="23" fill="currentColor"><use href="/icons.svg#icon-printers"></use></svg>
+      </span>
+      <div class="pc-print-prompt-copy">
+        <strong class="pc-print-prompt-title"></strong>
+        <p class="pc-print-prompt-message"></p>
+      </div>
+      <button type="button" class="fm-btn fm-btn-primary pc-print-prompt-open"></button>
+      <button type="button" class="fm-btn fm-btn-outline pc-print-prompt-close">×</button>
+    </div>
+
     <!-- Global confirm / alert modal -->
     <div id="fm-confirm-overlay" class="fm-modal-overlay">
       <div class="fm-modal">
@@ -195,6 +207,7 @@ const { title } = Astro.props
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
       import { getAbortSignal } from '../lib/abort'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
+      import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
       import { navHrefFor } from '../lib/plugin-nav'
       import {
         isAutoOpenEnabled,
@@ -506,6 +519,8 @@ const { title } = Astro.props
         if (bestNavMatch) (bestNavMatch as Element).classList.add('active')
       }
       highlightActiveNav()
+
+      setupPcPrintPrompt()
 
       /* ── Sidebar toggle ──────────────────────────────────────── */
       const page = document.getElementById('fm-page')!

@@ -29,6 +29,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "qrcode>=8,<9",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
 ]

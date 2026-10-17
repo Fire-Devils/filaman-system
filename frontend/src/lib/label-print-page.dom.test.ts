@@ -39,6 +39,7 @@ import {
 } from './label-print-page'
 import type { LabelPdfDocument, LabelPdfPage } from './label-export'
 import * as labelPrintPage from './label-print-page'
+import { API_DEFAULT_LABEL_SETTINGS } from './label-standard'
 import {
   bindTemporaryPdfPreview,
   type TemporaryPdfPreviewController,
@@ -188,7 +189,9 @@ describe('print workspace modes', () => {
       onChange: mode => changes.push(mode),
     })
 
-    binding.activate('sheets')
+    localStorage.setItem('workspace-mode', 'designer')
+    binding.activate('sheets', false)
+    expect(localStorage.getItem('workspace-mode')).toBe('designer')
     const sidebar = document.querySelector<HTMLElement>('.print-sidebar')!
     expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(true)
     expect(document.querySelector<HTMLElement>('#sheets')!.hidden).toBe(false)
@@ -204,7 +207,8 @@ describe('print workspace modes', () => {
     expect(changes).toEqual(['sheets', 'designer'])
     expect(binding.getActiveMode()).toBe('designer')
     binding.activate('sheets')
-    binding.activate('standard')
+    document.querySelector<HTMLButtonElement>('[data-workspace-mode="standard"]')!.click()
+    expect(localStorage.getItem('workspace-mode')).toBe('standard')
     expect(sidebar.classList.contains('sidebar-sheets-wide')).toBe(false)
     expect(sidebar.classList.contains('sidebar-wide')).toBe(false)
   })
@@ -596,6 +600,17 @@ function renderPrintPageControls() {
     <button id="btn-export-pdf">PDF</button>
   `
 }
+
+it('restores API Default controls without inheriting or writing browser settings', () => {
+  renderPrintPageControls()
+  const controls = getLabelSettingsControls()
+  const saved = JSON.stringify({ width: 100, height: 50, showQR: false, extraFields: { secret: true } })
+  localStorage.setItem('filaman-label-settings', saved)
+  restoreLabelSettings(controls, JSON.parse(saved))
+  labelPrintPage.applyStandardLabelSettings(controls, API_DEFAULT_LABEL_SETTINGS)
+  expect(getStandardLabelSettings(controls)).toMatchObject({ widthMm: 60, heightMm: 40, showQR: true, qrSizeMm: 18, showColorHex: false })
+  expect(localStorage.getItem('filaman-label-settings')).toBe(saved)
+})
 
 function bindDeferredCapture(
   kind: 'single-label' | 'batch',

@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
+
+vi.mock('./label-svg/runtime.mjs', async importOriginal => {
+  const module = await importOriginal<typeof import('./label-svg/runtime.mjs')>()
+  return { createSvgRuntime: () => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`)) }
+})
 
 import {
   getDesignerLabelDimensions,
@@ -151,7 +157,9 @@ describe('label renderers', () => {
     })
 
     expect(root.style.width).toBe('72mm')
-    expect(root.querySelector('[data-label-element-id="title"]')?.textContent).toBe('Freeform PLA')
+    expect(root.querySelector('[data-label-svg-raster]')).not.toBeNull()
+    expect(root.hasAttribute('data-label-output-error')).toBe(false)
+    expect(root.querySelector('[data-label-element-id="title"]')).toBeNull()
     expectNoBrowserPrintCss()
   })
 })

@@ -1,6 +1,28 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { renderDesignerLabel, buildSpoolDataFromFlatLabel } from './label-designer'
+import { createDefaultLabelDesign } from './freeform-label/defaults'
+import { renderSvgElementOutput, pngDataUrl } from './label-svg/browser'
+
+vi.mock('./label-svg/runtime.mjs', async importOriginal => {
+  const module = await importOriginal<typeof import('./label-svg/runtime.mjs')>()
+  return { createSvgRuntime: () => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`)) }
+})
+
+it('exports exact shared 600 DPI pixels without capturing DOM, zoom or editing handles', async () => {
+  const element = document.createElement('div')
+  document.body.append(element)
+  await renderDesignerLabel({ element, design: createDefaultLabelDesign('spool'),
+    data: buildSpoolDataFromFlatLabel({ id: 295, designation: 'Ä Ö Ü ß', type: 'PLA' }), interactive: true })
+  element.style.zoom = '5'
+  const expected = await renderSvgElementOutput(element, 1417, 945, false)
+  expect(await captureLabelElement(element)).toBe(pngDataUrl(expected.png))
+  expect(imageMock.toCanvas).not.toHaveBeenCalled()
+  const clone = element.cloneNode(true) as HTMLElement
+  await expect(captureLabelElement(clone)).rejects.toThrow(/context|changed/i)
+})
 
 const imageMock = vi.hoisted(() => ({
   toCanvas: vi.fn(),

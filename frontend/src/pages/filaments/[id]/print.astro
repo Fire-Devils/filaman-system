@@ -27,6 +27,7 @@ export function getStaticPaths() {
     createSingleLabelPreviewRuntime,
     getPrintDesignerDesign,
     initPrintDesignerEditor,
+    loadRequestedPrintLabel,
   } from '../../../lib/label-print-workspace'
   import {
     buildSpoolDataFromFlatLabel,
@@ -37,6 +38,7 @@ export function getStaticPaths() {
   import { bindLabelSheetControls, createLabelSheetPdf } from '../../../lib/label-sheet'
   import {
     buildStandardLabelDataFromFlat,
+    API_DEFAULT_LABEL_SETTINGS,
     getStandardLabelDimensions,
     renderStandardLabel,
     type StandardExtraField,
@@ -50,6 +52,7 @@ export function getStaticPaths() {
   import {
     LABEL_EXPORT_PIXEL_RATIO,
     applySingleLabelPreviewZoom,
+    applyStandardLabelSettings,
     bindLabelOutputPreview,
     bindLabelOutputs,
     bindLabelPreviewZoom,
@@ -96,6 +99,11 @@ export function getStaticPaths() {
   const id = window.location.pathname.split('/').filter(Boolean).slice(-2, -1)[0]
 
   const params = new URLSearchParams(window.location.search)
+  const requestedPresetId = Number(params.get('preset_id'))
+  const hasRequestedPreset = Number.isSafeInteger(requestedPresetId) && requestedPresetId > 0
+  const isPrintRequest = hasRequestedPreset || params.get('scale_print') === '1'
+  let requestedLabelReady = !isPrintRequest
+  const apiDefaultRequest = params.get('scale_print') === '1' && !hasRequestedPreset
   const labelData = buildFilamentLabelDataFromParams(id, params)
 
   let extraFields: FilamentExtraField[] = []
@@ -146,7 +154,7 @@ export function getStaticPaths() {
 
   // --- Tab switching ---
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null
-  const initialMode = readPrintWorkspaceMode(ACTIVE_TAB_KEY)
+  let initialMode = readPrintWorkspaceMode(ACTIVE_TAB_KEY)
   let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
   let labelLogoUrl: string | null = null
   let labelLogoLoaded = false
@@ -222,7 +230,7 @@ export function getStaticPaths() {
     onChange: () => syncOutputPreview(true),
     getTranslation: translate,
   })
-  syncOutputPreview = bindLabelOutputPreview({
+  const updateOutputPreview = bindLabelOutputPreview({
     previewRoot,
     sheetControls,
     outputControls,
@@ -235,6 +243,9 @@ export function getStaticPaths() {
     },
     onSheetCancelled: () => tabControls.activate('standard'),
   })
+  syncOutputPreview = zoomOnly => {
+    if (requestedLabelReady) updateOutputPreview(zoomOnly)
+  }
 
   async function loadLabelLogo() {
     if (!labelData.mfr_id) return
@@ -257,7 +268,7 @@ export function getStaticPaths() {
   const extraFieldsCheckboxes = document.getElementById('extra-fields-checkboxes')!
   const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
 
-  const parsedClassicSettings = readVersionedLabelSettings<SavedLabelSettings>(
+  const parsedClassicSettings = apiDefaultRequest ? null : readVersionedLabelSettings<SavedLabelSettings>(
     LABEL_SETTINGS_KEY,
     LABEL_SETTINGS_VERSION,
   )
@@ -283,6 +294,7 @@ export function getStaticPaths() {
   }
 
   function saveSettings() {
+    if (apiDefaultRequest) return
     const settings: SavedLabelSettings = {
       ...captureLabelSettings(settingsControls),
       _v: LABEL_SETTINGS_VERSION,
@@ -294,6 +306,10 @@ export function getStaticPaths() {
   }
 
   function loadSettings() {
+    if (apiDefaultRequest) {
+      applyStandardLabelSettings(settingsControls, API_DEFAULT_LABEL_SETTINGS)
+      return
+    }
     if (!parsedClassicSettings) return
     restoreLabelSettings(settingsControls, parsedClassicSettings)
     getStandardLabelSettings(settingsControls, { normalizeInputs: true })
@@ -354,7 +370,7 @@ export function getStaticPaths() {
   }
 
   async function renderStandardPreview(isStale = () => false) {
-    if (isStale()) return
+    if (!requestedLabelReady || isStale()) return
 
     labelPreview.style.border = 'none'
     labelPreview.style.padding = ''
@@ -382,7 +398,7 @@ export function getStaticPaths() {
   // ─── Designer preview ─────────────────────────────────────────────────────
 
   async function renderDesignerPreview(isStale = () => false) {
-    if (isStale()) return
+    if (!requestedLabelReady || isStale()) return
 
     await renderDesignerLabel({
       element: labelPreview,
@@ -413,8 +429,11 @@ export function getStaticPaths() {
   }
 
   function resetStandardSettings() {
-    removeStorageValue(LABEL_SETTINGS_KEY)
-    resetLabelSettings(settingsControls)
+    if (apiDefaultRequest) applyStandardLabelSettings(settingsControls, API_DEFAULT_LABEL_SETTINGS)
+    else {
+      removeStorageValue(LABEL_SETTINGS_KEY)
+      resetLabelSettings(settingsControls)
+    }
     for (const ef of extraFieldChecks) {
       ef.checkbox.checked = false
     }
@@ -491,15 +510,30 @@ export function getStaticPaths() {
       }
     }
 
-    await loadLabelLogo()
-    tabControls.activate(readPrintWorkspaceMode(ACTIVE_TAB_KEY))
+    if (isPrintRequest) {
+      try {
+        await loadRequestedPrintLabel(designerEditor, DESIGNER_PRESETS_KEY, hasRequestedPreset ? requestedPresetId : null, apiFilament)
+        requestedLabelReady = true
+        initialMode = hasRequestedPreset ? 'designer' : 'standard'
+      } catch (error) {
+        for (const button of [outputControls.printButton, exportPngBtn, exportPdfBtn, exportAmlBtn]) button.disabled = true
+        window.alert(error instanceof Error ? error.message : 'Could not load requested label')
+      }
+    }
+    if (requestedLabelReady) {
+      await loadLabelLogo()
+      tabControls.activate(initialMode, false)
+    }
   })()
 
   bindLabelOutputs({
     controls: outputControls,
     collection: {
       getItems: workspace.getOutputItems,
-      prepare: () => previewRenders.settle(),
+      prepare: () => {
+        if (!requestedLabelReady) throw new Error('Label data or selected preset is unavailable')
+        return previewRenders.settle()
+      },
       capture: labelElement => captureLabelElement(labelElement, {
         pixelRatio: LABEL_EXPORT_PIXEL_RATIO,
         resetTransform: true,

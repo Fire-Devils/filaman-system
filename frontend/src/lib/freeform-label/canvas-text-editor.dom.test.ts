@@ -51,6 +51,13 @@ function editor(source: string, delayed = false) {
 }
 
 describe('canvas text editing', () => {
+  it('clears the composition guard when leaving the temporary editing surface', () => {
+    const e = editor('Hi')
+    e.node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    expect(e.node.hasAttribute('data-label-composing')).toBe(true)
+    e.binding.handleKeydown(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }))
+    expect(e.node.hasAttribute('data-label-composing')).toBe(false)
+  })
   it('applies an inline font to highlighted visible text', async () => {
     const e = editor('Hello world')
     const text = e.node.querySelector('[data-template-leaf]')!.firstChild!

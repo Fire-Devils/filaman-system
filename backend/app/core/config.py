@@ -28,11 +28,8 @@ class Settings(BaseSettings):
     @classmethod
     def resolve_relative_db_path(cls, v: str) -> str:
         """Resolve relative sqlite paths against PROJECT_ROOT."""
-        if v and (v.startswith("sqlite:///") or v.startswith("sqlite+aiosqlite:///")):
-            # Check for relative path indicator ./
-            if "/./" in v:
-                # Replace /./ with /<PROJECT_ROOT>/
-                return v.replace("/./", f"/{PROJECT_ROOT}/")
+        if v and v.startswith(("sqlite:///", "sqlite+aiosqlite:///")) and "/./" in v:
+            return v.replace("/./", f"/{PROJECT_ROOT}/")
         return v
 
     admin_email: str | None = None

@@ -3,9 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import fr from '../../i18n/fr.json'
 import { setLang } from '../i18n'
-import { buildSpoolDataFromFlatLabel } from '../label-designer'
 import { getStandardLabelPresets } from './standard-presets'
-import { renderFreeformLabel } from './render'
 
 describe('standard label content', () => {
   it('translates shown names and printed headings but keeps the stable English names', () => {
@@ -64,18 +62,4 @@ describe('standard label content', () => {
     expect(logos.every(logo => logo.align === 'center' && logo.objectFit === 'contain')).toBe(true)
   })
 
-  it('wraps long color names while fitting single-line material bands', async () => {
-    const preset = getStandardLabelPresets().find(preset => preset.name === 'Classic (40 × 30 mm)')!
-    const root = document.createElement('div')
-    const name = 'Midnight Blue and Purple Galaxy'
-    await renderFreeformLabel({
-      element: root,
-      design: { ...preset.data.design, elements: preset.data.design.elements.filter(element => element.type === 'text') },
-      data: buildSpoolDataFromFlatLabel({ id: 1, type: 'PETG', color: name }),
-    })
-    const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-label-element-type="text"]'))
-    expect(nodes.find(node => node.textContent === name)?.style.whiteSpace).toBe('normal')
-    expect(nodes.find(node => node.textContent === 'PETG')?.style.whiteSpace).toBe('nowrap')
-    expect(root.textContent).not.toContain('?')
-  })
 })

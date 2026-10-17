@@ -1,5 +1,5 @@
-from typing import Annotated
 import logging
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import async_session_maker
 from app.core.security import Principal
-from app.models import Device, Role, User
+from app.models import Role, User
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,9 @@ def RequirePermission(permission_key: str):
                 },
             )
 
-        if principal.is_superadmin:
+        if principal.is_superadmin and (
+            principal.scopes is None or permission_key in principal.scopes
+        ):
             return principal
 
         if principal.auth_type == "device":
@@ -125,10 +127,13 @@ async def ensure_any_permission(
     db: AsyncSession,
     principal: Principal,
     *permission_keys: str,
-) -> None:
-    """Raise 403 unless the principal has at least one of the given permissions."""
-    if principal.is_superadmin:
-        return
+) -> set[str]:
+    """Return permitted requested keys, or raise 403 when none are allowed."""
+    if principal.is_superadmin and (
+        principal.scopes is None
+        or any(key in principal.scopes for key in permission_keys)
+    ):
+        return set(permission_keys) if principal.scopes is None else set(permission_keys).intersection(principal.scopes)
 
     if principal.auth_type == "device":
         if principal.scopes is None:
@@ -147,7 +152,7 @@ async def ensure_any_permission(
                     "message": f"One of {permission_keys} required",
                 },
             )
-        return
+        return set(permission_keys).intersection(principal.scopes)
 
     rbac_permissions = await resolve_user_permissions(db, principal.user_id)
     if principal.scopes is not None:
@@ -163,3 +168,4 @@ async def ensure_any_permission(
                 "message": f"One of {permission_keys} required",
             },
         )
+    return effective.intersection(permission_keys)

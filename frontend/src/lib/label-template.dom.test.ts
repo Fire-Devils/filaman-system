@@ -7,6 +7,31 @@ import { copyTemplateRange, getTemplateFontForRange, getTemplateSelectionRange, 
 
 describe('balanced inline markup', () => {
   it.each([
+    '==PLA== **not bold** {id}', '[b]literal[/b] [font=Fraunces]font[/font]',
+    '^^Mixed Straße^^ __text__ @@color@@ [size=200]size[/size]',
+    '[[FM_SWATCH|1|bands|#FF0000]]',
+  ])('keeps field markup literal while preserving template styling: %s', value => {
+    const data = buildSpoolDataFromFlatLabel({ id: 42, designation: value })
+    for (const render of [parseTemplate, renderSelectableTemplate]) {
+      const plain = render('{filament.name}', data)
+      expect(plain.textContent).toBe(value)
+      expect(plain.querySelector('strong, em, u, [style]')).toBeNull()
+      const styled = render('[b]=={filament.name}==[/b]', data)
+      expect(styled.textContent).toBe(value)
+      expect(styled.querySelector('strong > [style*="background"]')?.textContent).toBe(value)
+    }
+  })
+
+  it('does not join template and field delimiters into new markup', () => {
+    const data = { ...buildSpoolDataFromFlatLabel({ id: 42 }), extra: { open: '*', close: '*' } }
+    for (const render of [parseTemplate, renderSelectableTemplate]) {
+      const result = render('*{extra.open}word{extra.close}*', data)
+      expect(result.textContent).toBe('*word*') // template italics surround literal field asterisks
+      expect(result.querySelector('strong')).toBeNull()
+      expect(result.querySelector('em')?.textContent).toBe('*word*')
+    }
+  })
+  it.each([
     ['[b]', '[/b]'], ['[i]', '[/i]'], ['[b][i]', '[/i][/b]'],
     ['[b][if={id}]', '[/if][/b]'], ['[font=Fraunces]', '[/font]'], ['[size=120]', '[/size]'],
   ])('handles maximum-length balanced nesting in %s', (opening, closing) => {
@@ -91,7 +116,7 @@ describe('bounded token expansion', () => {
   it.each([
     ['^^{filament.name}^^', 'Straße'.repeat(25000), 'STRASSE'.repeat(1714) + 'ST'],
     ['^^{filament.name}', 'lower'.repeat(30000), '^^' + 'lower'.repeat(2399) + 'low'],
-    ['{filament.name}', '^^^^'.repeat(40000) + 'Straße', 'Straße'],
+    ['{filament.name}', '^^^^'.repeat(40000) + 'Straße', '^'.repeat(12000)],
     ['{filament.name}', '**' + 'X'.repeat(132600) + '**', '**' + 'X'.repeat(11998)],
   ])('retains caps and plain-text overflow semantics for %s', (template, value, expected) => {
     const data = buildSpoolDataFromFlatLabel({ id: 1, designation: value })
@@ -102,14 +127,14 @@ describe('bounded token expansion', () => {
     }
   })
 
-  it('maps Unicode caps expansions when delimiters cross token boundaries', () => {
+  it('maps Unicode caps expansions with template-authored delimiters', () => {
     const root = document.createElement('div')
-    root.append(renderSelectableTemplate('^{extra.open}{filament.name}{extra.close}^', {
+    root.append(renderSelectableTemplate('^^{filament.name}^^', {
       ...buildSpoolDataFromFlatLabel({ id: 1, designation: 'Straße😀' }), extra: { open: '^', close: '^' },
     }))
     expect(root.textContent).toBe('STRASSE😀')
     const selection = document.createRange()
     selection.selectNodeContents(root)
-    expect(getTemplateSelectionRange(root, selection)).toEqual({ start: 13, end: 28 })
+    expect(getTemplateSelectionRange(root, selection)).toEqual({ start: 2, end: 17 })
   })
 })

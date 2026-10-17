@@ -1,11 +1,11 @@
 import asyncio
-from contextlib import asynccontextmanager
 import fcntl
 import json as _json
 import os
-from pathlib import Path
 import tempfile
 import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +17,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
+from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
@@ -116,8 +116,9 @@ def run_migrations() -> None:
     automatisch ein synchroner DB-Treiber verwendet, auch wenn die App
     asynchron konfiguriert ist.
     """
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option(
@@ -184,9 +185,10 @@ async def _cleanup_stale_label_assets() -> None:
 
 async def _watchdog_health_check() -> None:
     """Primary worker: restart dead drivers and start missing ones."""
-    from app.models.printer import Printer
-    from app.models.plugin import InstalledPlugin
     from sqlalchemy import select
+
+    from app.models.plugin import InstalledPlugin
+    from app.models.printer import Printer
 
     health = plugin_manager.get_health()
 
@@ -526,10 +528,23 @@ async def allow_iframe_embedding(request, call_next):
 # Cache-Control Middleware for static files
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
-    response = await call_next(request)
     path = request.url.path
     is_api = path.startswith("/api/") or path.startswith("/auth/")
-    if not is_api and (
+    is_label_render = path.startswith(("/api/v1/labels/spool/", "/api/v1/labels/filament/")) and path.rstrip("/").endswith("/render")
+    try:
+        response = await call_next(request)
+    except Exception:
+        if not is_label_render:
+            raise
+        logger.exception("Unhandled label render error")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"},
+            headers={"Cache-Control": "no-store"},
+        )
+    if is_label_render:
+        response.headers["Cache-Control"] = "no-store"
+    elif not is_api and (
         path.startswith("/_astro/")
         or path.startswith("/img/")
         or path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))
@@ -558,8 +573,9 @@ mount_deferred_plugin_routers(app)
 @app.get("/plugin-page/{plugin_slug:path}")
 async def serve_plugin_page(plugin_slug: str):
     from fastapi import HTTPException
-    from app.models.plugin import InstalledPlugin
     from sqlalchemy import select
+
+    from app.models.plugin import InstalledPlugin
 
     if not PLUGINS_DIR.is_dir():
         raise HTTPException(status_code=404, detail="Plugin page not found")
@@ -631,7 +647,7 @@ async def health_ready():
 # In Docker the canonical location is /app/data/uploads; during local
 # development we fall back to <PROJECT_ROOT>/data/uploads.
 # ---------------------------------------------------------------------------
-from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+from fastapi.staticfiles import StaticFiles as _StaticFiles
 
 _uploads_dir = Path("/app/data/uploads")
 if not _uploads_dir.is_dir():

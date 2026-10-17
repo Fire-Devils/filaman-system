@@ -4,12 +4,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import DBSession, PrincipalDep
+from app.api.deps import DBSession, PrincipalDep, ensure_any_permission
 from app.core.security import Principal
 from app.models import LabelPreset, User
 from app.models.label_preset import (
@@ -22,6 +22,7 @@ from app.services.label_asset_service import (
     extract_label_asset_ids,
     set_label_preset_asset_references,
 )
+from app.services.label_preset_v1 import convert_label_preset_data
 
 router = APIRouter(prefix="/me/label-presets", tags=["me"])
 
@@ -64,6 +65,11 @@ class LabelPresetMigrationRequest(BaseModel):
     presets: list[LabelPresetMigrationInput] = Field(
         max_length=MAX_PRESETS_PER_TYPE * 3
     )
+
+
+class LabelPresetSelectionInput(BaseModel):
+    preset_id: int | None = Field(default=None, ge=1)
+    preset_type: Literal["spool", "filament"] = "spool"
 
 
 class LabelPresetResponse(BaseModel):
@@ -140,6 +146,25 @@ async def _lock_user_presets(db: DBSession, user_id: int) -> None:
     await db.execute(select(User.id).where(User.id == user_id).with_for_update())
 
 
+async def _set_selected_preset(
+    db: DBSession,
+    user_id: int,
+    preset: LabelPreset | None,
+    preset_type: Literal["spool", "filament"],
+) -> None:
+    await db.execute(
+        update(LabelPreset)
+        .where(
+            LabelPreset.user_id == user_id,
+            LabelPreset.preset_type == preset_type,
+            LabelPreset.selected.is_(True),
+        )
+        .values(selected=False)
+    )
+    if preset is not None:
+        preset.selected = True
+
+
 @asynccontextmanager
 async def _preset_transaction(db: DBSession) -> AsyncIterator[None]:
     try:
@@ -189,6 +214,34 @@ async def list_label_presets(
     return await _list_presets(db, _require_user_id(principal), preset_type)
 
 
+@router.put("/selection", status_code=status.HTTP_204_NO_CONTENT)
+async def select_label_preset(
+    body: LabelPresetSelectionInput,
+    db: DBSession,
+    principal: PrincipalDep,
+):
+    await ensure_any_permission(db, principal, f"{body.preset_type}s:read")
+    user_id = _require_user_id(principal)
+    async with _preset_transaction(db):
+        await _lock_user_presets(db, user_id)
+        preset = None
+        if body.preset_id is not None:
+            preset = await db.scalar(
+                select(LabelPreset).where(
+                    LabelPreset.id == body.preset_id,
+                    LabelPreset.user_id == user_id,
+                    LabelPreset.preset_type == body.preset_type,
+                )
+            )
+            if preset is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Label preset not found",
+                )
+        await _set_selected_preset(db, user_id, preset, body.preset_type)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.put("/{preset_type}/item", response_model=LabelPresetResponse)
 async def upsert_label_preset(
     preset_type: LabelPresetType,
@@ -208,6 +261,7 @@ async def upsert_label_preset(
     user_id = _require_user_id(principal)
     async with _preset_transaction(db):
         _validate_presets([body])
+        body.data = convert_label_preset_data(body.data, preset_type)
         asset_ids = extract_label_asset_ids(body.data)
         await _lock_user_presets(db, user_id)
 
@@ -343,6 +397,8 @@ async def migrate_label_presets(
             grouped.setdefault(preset.preset_type, []).append(preset)
         for presets in grouped.values():
             _validate_presets(presets, reject_duplicates=False)
+        for preset in body.presets:
+            preset.data = convert_label_preset_data(preset.data, preset.preset_type)
         preset_asset_ids = [extract_label_asset_ids(preset.data) for preset in body.presets]
 
         await _lock_user_presets(db, user_id)

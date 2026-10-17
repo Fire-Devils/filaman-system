@@ -1,11 +1,13 @@
 import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import tailwindcss from '@tailwindcss/vite';
+import { buildLabelSvg } from './scripts/build-label-svg.mjs';
 
 const isStatic = process.env.BUILD_MODE === 'static';
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
 
 export default defineConfig({
+  integrations: [{ name: 'label-svg-bundle', hooks: { 'astro:build:done': () => buildLabelSvg() } }],
   output: isStatic ? 'static' : 'server',
   adapter: isStatic ? undefined : node({
     mode: 'standalone',
