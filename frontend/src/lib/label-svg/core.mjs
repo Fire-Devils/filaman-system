@@ -226,7 +226,8 @@ function textSvg(element, data, fonts) {
     }
     lineTop += rowHeight;
   });
-  const { runs: shapedRuns, ...metrics } = layout;
+  const metrics = { ...layout };
+  delete metrics.runs;
   return { svg: parts.join(''), layout: { id: element.id, x: element.x, y: element.y, ...metrics, text: runs.map(run => run.text).join('') } };
 }
 

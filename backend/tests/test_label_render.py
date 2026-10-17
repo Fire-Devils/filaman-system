@@ -1,6 +1,6 @@
 import hashlib
 import struct
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from unittest.mock import AsyncMock
 
@@ -260,7 +260,7 @@ async def test_pc_print_request_is_claimed_once(
     expired = LabelPrintRequest(
         spool_id=spool.id,
         user_id=admin_user.id,
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=6),
+        created_at=datetime.now(UTC) - timedelta(minutes=6),
     )
     db_session.add(expired)
     await db_session.commit()

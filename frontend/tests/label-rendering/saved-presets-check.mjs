@@ -34,7 +34,8 @@ try {
     if (result.svg) await writeFile(`${prefix}.svg`, result.svg);
     if (result.mono) await writeFile(`${prefix}.mono1`, Buffer.from(result.mono, 'base64'));
     if (dpi === 203 && !noLogo) await page.screenshot({ path: `${prefix}-comparison.png`, fullPage: true });
-    const { svg, mono, assets, browserPng, serverPng, ...summary } = result;
+    const summary = { ...result };
+    for (const key of ['svg', 'mono', 'assets', 'browserPng', 'serverPng']) delete summary[key];
     rows.push({ id, ...summary });
   }
   // Explicitly separate a proposed setting change from untouched exports above.
@@ -55,7 +56,8 @@ try {
   await page.locator('#source').evaluate(node => { node.textContent = 'MODIFIED COMPARISON COPY: tester 4 with Scale font to fit enabled and 1.5 mm minimum, shared across all renderers. Original export unchanged. Representative data and synthetic logo.'; });
   await page.screenshot({ path: `${directory}/tester-4-fit-enabled-comparison.png`, fullPage: true });
   await writeFile(`${directory}/tester-4-fit-enabled.png`, Buffer.from(fitted.browserPng, 'base64'));
-  const { svg, mono, assets, browserPng, serverPng, ...fitSummary } = fitted;
+  const fitSummary = { ...fitted };
+  for (const key of ['svg', 'mono', 'assets', 'browserPng', 'serverPng']) delete fitSummary[key];
   await writeFile(`${directory}/tester-4-fit-enabled.json`, JSON.stringify(fitSummary, null, 2));
   await writeFile(`${directory}/saved-presets-results.json`, JSON.stringify(rows, null, 2));
   console.log(JSON.stringify({ comparisons: rows.length, rendered: rows.filter(r => !r.error).length,

@@ -1,5 +1,5 @@
-from typing import Annotated
 import logging
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import async_session_maker
 from app.core.security import Principal
-from app.models import Device, Role, User
+from app.models import Role, User
 
 logger = logging.getLogger(__name__)
 

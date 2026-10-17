@@ -14,7 +14,7 @@ import tempfile
 import time
 from collections.abc import AsyncIterator, Mapping
 from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, BinaryIO, Literal, cast
 
@@ -1529,13 +1529,13 @@ async def export_backup(
     ]
 
     metadata = BackupMetadata(
-        export_date=datetime.now(timezone.utc).isoformat(),
+        export_date=datetime.now(UTC).isoformat(),
         app_version=app_version,
         schema_version=schema_version,
         plugins=backup_plugins if backup_plugins else None,
     )
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     path = _temporary_backup_path()
     try:
         path = await _write_backup_file(
@@ -1582,12 +1582,12 @@ async def export_inventory_backup(
     app_version = _read_installed_version()
 
     metadata = BackupMetadata(
-        export_date=datetime.now(timezone.utc).isoformat(),
+        export_date=datetime.now(UTC).isoformat(),
         app_version=app_version,
         schema_version=schema_version,
     )
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     path = _temporary_backup_path()
     try:
         path = await _write_backup_file(
@@ -1617,13 +1617,13 @@ async def _create_auto_backup(db: DBSession) -> Path:
     backup_dir = _get_backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     backup_path = backup_dir / f"auto_backup_before_import_{timestamp}.jsonl"
     schema_version = await _get_schema_version(db)
     app_version = _read_installed_version()
 
     metadata = {
-        "export_date": datetime.now(timezone.utc).isoformat(),
+        "export_date": datetime.now(UTC).isoformat(),
         "app_version": app_version,
         "schema_version": schema_version,
         "auto_backup": True,
@@ -2277,7 +2277,7 @@ async def list_sqlite_backups(
                 filename=f.name,
                 size_bytes=stat.st_size,
                 created_at=datetime.fromtimestamp(
-                    stat.st_mtime, tz=timezone.utc
+                    stat.st_mtime, tz=UTC
                 ).isoformat(),
             )
         )
@@ -2342,7 +2342,7 @@ async def restore_sqlite_backup(
 
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         auto_backup_name = f"auto_before_restore_{timestamp}.db"
         auto_backup_path = backup_dir / auto_backup_name
         shutil.copy2(str(db_path), str(auto_backup_path))

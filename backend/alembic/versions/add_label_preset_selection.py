@@ -1,6 +1,7 @@
 """add selected spool label preset marker"""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "add_label_preset_selection"

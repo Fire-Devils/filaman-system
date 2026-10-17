@@ -5,7 +5,12 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.api.deps import ensure_any_permission, resolve_user_permissions
-from app.core.security import Principal, generate_token_secret, hash_password, hash_token
+from app.core.security import (
+    Principal,
+    generate_token_secret,
+    hash_password,
+    hash_token,
+)
 from app.core.seeds import USER_PERMISSIONS
 from app.models import Device, Role, User, UserApiKey, UserRole, UserSession
 from tests.test_devices import (

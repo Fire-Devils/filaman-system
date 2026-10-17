@@ -5,6 +5,7 @@ Revises: merge_labels_tags_20260916
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "add_label_print_requests"

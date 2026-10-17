@@ -6,6 +6,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
+
 from app.models import LabelPrintRequest
 
 

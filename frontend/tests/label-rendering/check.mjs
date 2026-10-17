@@ -31,7 +31,8 @@ try {
     }
     await writeFile(`${prefix}.mono1`, Buffer.from(result.mono, 'base64'));
     await writeFile(`${prefix}.svg`, result.svg);
-    const { svg, mono, assets, browserPng, serverPng, ...summary } = result;
+    const summary = { ...result };
+    for (const key of ['svg', 'mono', 'assets', 'browserPng', 'serverPng']) delete summary[key];
     rows.push({ id, ...summary });
     if (dpi === 203 && threshold === 200) await page.screenshot({ path: `${directory}/${id}-comparison.png`, fullPage: true });
   }

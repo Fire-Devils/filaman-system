@@ -1,7 +1,7 @@
 """Labels for clients that cannot run the browser label designer."""
 
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Literal
 
@@ -122,7 +122,7 @@ async def _enqueue_pc_print(db, principal, kind: Literal["spool", "filament"], e
         _validated_preset_size(preset.data)
     await db.execute(
         delete(LabelPrintRequest).where(
-            LabelPrintRequest.created_at < datetime.now(timezone.utc) - timedelta(minutes=5)
+            LabelPrintRequest.created_at < datetime.now(UTC) - timedelta(minutes=5)
         )
     )
     print_request = LabelPrintRequest(**{f"{kind}_id": entity_id}, user_id=principal.user_id, preset_id=preset_id)
@@ -147,7 +147,7 @@ async def pending_pc_print(
 ):
     if principal.user_id is None:
         raise HTTPException(status_code=403, detail="Use a user session for PC print prompts")
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    cutoff = datetime.now(UTC) - timedelta(minutes=5)
     print_request = await db.scalar(
         select(LabelPrintRequest)
         .where(
@@ -176,7 +176,7 @@ async def claim_pc_print(
         .where(
             LabelPrintRequest.id == request_id,
             LabelPrintRequest.user_id == principal.user_id,
-            LabelPrintRequest.created_at >= datetime.now(timezone.utc) - timedelta(minutes=5),
+            LabelPrintRequest.created_at >= datetime.now(UTC) - timedelta(minutes=5),
             await _permitted_print_targets(db, principal),
         )
         .execution_options(synchronize_session=False)
