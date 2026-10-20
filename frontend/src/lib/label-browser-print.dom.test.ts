@@ -162,12 +162,10 @@ describe('createLabelBrowserPrintJob', () => {
 })
 
 describe('printLabelBrowserJob', () => {
-  it('waits for and initializes cropped images in the actual print clone', async () => {
+  it('decodes images in the actual print clone before opening print', async () => {
     const source = makeIndividualPage()
     source.querySelector('.label-preview')!.insertAdjacentHTML('beforeend', `
-      <div data-label-image-crop-viewport style="visibility: hidden">
-        <img src="asset.png" data-label-image-crop-aspect-factor="0.5">
-      </div>
+      <img src="asset.png">
     `)
     const originalDecode = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'decode')
     Object.defineProperty(HTMLImageElement.prototype, 'decode', {
@@ -179,17 +177,17 @@ describe('printLabelBrowserJob', () => {
         })
       },
     })
-    vi.spyOn(window, 'print').mockImplementation(() => undefined)
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {
+      const image = document.querySelector<HTMLImageElement>('#filaman-label-print-host img')!
+      expect(image.naturalWidth).toBe(1200)
+      expect(image.naturalHeight).toBe(600)
+    })
 
     try {
       await printLabelBrowserJob({
         kind: 'individual', widthMm: 48, heightMm: 30, pages: [source], printGrid: false,
       })
-      const cloneViewport = document.querySelector<HTMLElement>(
-        '#filaman-label-print-host [data-label-image-crop-viewport]',
-      )!
-      expect(cloneViewport.style.getPropertyValue('--label-image-crop-aspect')).toBe('1')
-      expect(cloneViewport.style.visibility).toBe('visible')
+      expect(print).toHaveBeenCalledOnce()
     } finally {
       if (originalDecode) {
         Object.defineProperty(HTMLImageElement.prototype, 'decode', originalDecode)

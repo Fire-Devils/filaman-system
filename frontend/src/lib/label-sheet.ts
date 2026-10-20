@@ -7,10 +7,10 @@ import {
   bindFixedPreviewToolbar,
   prepareLabelOutputClone,
 } from './label-preview-dom'
-import { prepareCroppedImages } from './freeform-label/cropped-image'
 import { getTransientPresetCache, setTransientPresetCache } from './freeform-label/editor-storage'
 import type { LabelKind } from './freeform-label/types'
 import { t } from './i18n'
+import { bindSvgClone } from './label-svg/browser'
 
 export const LABEL_SHEET_SETTINGS_KEY = 'filaman-label-sheet-settings-v1'
 export const LABEL_SHEET_PRESETS_KEY = 'filaman-label-sheet-presets-v1'
@@ -992,8 +992,8 @@ export function renderLabelSheetPreview(options: LabelSheetPreviewOptions) {
     const sourceLabel = getSourceLabel(source)
     if (sourceLabel) {
       const clone = sourceLabel.cloneNode(true) as HTMLElement
+      bindSvgClone(sourceLabel, clone)
       prepareLabelOutputClone(clone)
-      prepareCroppedImages(clone)
       clone.style.zoom = '1'
       clone.style.transform = 'none'
       clone.style.transformOrigin = 'unset'

@@ -1,14 +1,218 @@
 import json
 
 import pytest
-from app.models import LabelPreset
-from app.models.label_preset import label_preset_name_key
 from sqlalchemy import delete, func, select
 
+from app.models import LabelPreset
+from app.models.label_preset import label_preset_name_key
 from tests.support.backup import export_backup_data
 
 
 class TestLabelPresets:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("format", ["json", "jsonl"])
+    async def test_restore_converts_legacy_presets(self, auth_client, db_session, admin_user, tmp_path, monkeypatch, format):
+        from app.api.v1 import system
+        monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
+        preset = LabelPreset(user_id=admin_user.id, preset_type="spool", name="Old", name_key=label_preset_name_key("Old"),
+            selected=True, data={"settings": {"label": {"width": 40, "height": 30}}})
+        db_session.add(preset)
+        await db_session.commit()
+        preset_id = preset.id
+        client, csrf = auth_client
+        exported = await client.get(f"/api/v1/admin/system/backup/export?format={format}")
+        assert exported.status_code == 200
+        response = await client.post("/api/v1/admin/system/backup/import", files={
+            "file": (f"backup.{format}", exported.content, exported.headers["content-type"])},
+            headers={"X-CSRF-Token": csrf})
+        assert response.status_code == 200, response.text
+        db_session.expire_all()
+        restored = await db_session.get(LabelPreset, preset_id)
+        assert restored.selected is True
+        assert restored.data["version"] == 2
+        assert restored.data["design"]["label"]["widthMm"] == 40
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["put", "migrate"])
+    async def test_legacy_input_is_persisted_as_v2(self, auth_client, db_session, method):
+        client, csrf = auth_client
+        source = {"version": 1, "settings": {"label": {"width": 40, "height": 30}}}
+        body = {"name": "Legacy", "data": source}
+        response = await client.put("/api/v1/me/label-presets/spool/item", json=body,
+            headers={"X-CSRF-Token": csrf}) if method == "put" else await client.post(
+                "/api/v1/me/label-presets/migrate", json={"presets": [{**body, "preset_type": "spool"}]},
+                headers={"X-CSRF-Token": csrf})
+        assert response.status_code == 200
+        item = response.json() if method == "put" else response.json()[0]
+        assert item["data"]["version"] == 2
+        assert item["data"]["legacy_v1"] == source["settings"]
+        stored = await db_session.get(LabelPreset, item["id"])
+        assert stored.data == item["data"]
+
+    @pytest.mark.asyncio
+    async def test_spool_preset_selection_is_user_scoped(
+        self, auth_client, db_session, admin_user, normal_user
+    ):
+        client, csrf_token = auth_client
+        first = LabelPreset(
+            user_id=admin_user.id,
+            preset_type="spool",
+            name="First",
+            name_key=label_preset_name_key("First"),
+            data={},
+        )
+        second = LabelPreset(
+            user_id=admin_user.id,
+            preset_type="spool",
+            name="Second",
+            name_key=label_preset_name_key("Second"),
+            data={},
+        )
+        foreign = LabelPreset(
+            user_id=normal_user.id,
+            preset_type="spool",
+            name="Foreign",
+            name_key=label_preset_name_key("Foreign"),
+            data={},
+        )
+        filament = LabelPreset(
+            user_id=admin_user.id,
+            preset_type="filament",
+            name="Filament",
+            name_key=label_preset_name_key("Filament"),
+            data={},
+        )
+        db_session.add_all([first, second, foreign, filament])
+        await db_session.commit()
+
+        selection_path = "/api/v1/me/label-presets/selection"
+        response = await client.put(
+            selection_path,
+            json={"preset_id": first.id},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 204
+        assert (await client.get("/api/v1/labels/presets")).json() == [
+            {"id": first.id, "name": first.name, "selected": True, "width_mm": None, "height_mm": None},
+            {"id": second.id, "name": second.name, "selected": False, "width_mm": None, "height_mm": None},
+        ]
+
+        for preset_id in (foreign.id, filament.id, 999_999):
+            response = await client.put(
+                selection_path,
+                json={"preset_id": preset_id},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            assert response.status_code == 404
+
+        after_rejections = await client.get("/api/v1/labels/presets")
+        assert next(
+            item for item in after_rejections.json() if item["id"] == first.id
+        )["selected"] is True
+
+        response = await client.put(
+            selection_path,
+            json={"preset_id": None},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 204
+        assert all(
+            not item["selected"]
+            for item in (await client.get("/api/v1/labels/presets")).json()
+        )
+
+    @pytest.mark.asyncio
+    async def test_spool_preset_selection_requires_spool_read_scope(
+        self, client, db_session, normal_user
+    ):
+        from app.core.middleware import invalidate_auth_caches
+        from app.core.security import generate_token_secret, hash_token
+        from app.models import UserApiKey
+
+        preset = LabelPreset(
+            user_id=normal_user.id,
+            preset_type="spool",
+            name="Restricted",
+            name_key=label_preset_name_key("Restricted"),
+            data={},
+        )
+        secret = generate_token_secret()
+        api_key = UserApiKey(
+            user_id=normal_user.id,
+            name="Restricted scale",
+            key_hash=hash_token(secret),
+            scopes=[],
+        )
+        db_session.add_all([preset, api_key])
+        await db_session.commit()
+        headers = {"Authorization": f"ApiKey uak.{api_key.id}.{secret}"}
+
+        denied = await client.put(
+            "/api/v1/me/label-presets/selection",
+            json={"preset_id": preset.id},
+            headers=headers,
+        )
+
+        assert denied.status_code == 403
+        await db_session.refresh(preset)
+        assert preset.selected is False
+
+        api_key.scopes = ["spools:read"]
+        await db_session.commit()
+        invalidate_auth_caches()
+        allowed = await client.put(
+            "/api/v1/me/label-presets/selection",
+            json={"preset_id": preset.id},
+            headers=headers,
+        )
+        assert allowed.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_spool_upsert_preserves_selection_and_delete_restores_default(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        first = await client.put(
+            "/api/v1/me/label-presets/spool/item",
+            json={"name": "First", "data": {}},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        second = await client.put(
+            "/api/v1/me/label-presets/spool/item",
+            json={"name": "Second", "data": {}},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert first.status_code == second.status_code == 200
+
+        selected = await client.put(
+            "/api/v1/me/label-presets/selection",
+            json={"preset_id": first.json()["id"]},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert selected.status_code == 204
+        updated = await client.put(
+            "/api/v1/me/label-presets/spool/item",
+            json={"name": "Second", "data": {"settings": {"width": 72}}},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert updated.status_code == 200
+
+        first_row = await db_session.get(LabelPreset, first.json()["id"])
+        second_row = await db_session.get(LabelPreset, second.json()["id"])
+        await db_session.refresh(first_row)
+        await db_session.refresh(second_row)
+        assert first_row.selected is True
+        assert second_row.selected is False
+
+        response = await client.delete(
+            "/api/v1/me/label-presets/spool/item?name=First",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 204
+        assert (await client.get("/api/v1/labels/presets")).json() == [
+            {"id": second_row.id, "name": second_row.name, "selected": False, "width_mm": None, "height_mm": None}
+        ]
+
     @pytest.mark.asyncio
     async def test_upsert_and_list_presets(self, auth_client):
         client, csrf_token = auth_client

@@ -1,6 +1,7 @@
 import { toCanvas } from 'html-to-image'
 import { prepareLabelOutputClone } from './label-preview-dom'
 import { waitForLabelOutputAssets } from './label-output-readiness'
+import { renderSvgElementOutput, pngDataUrl, prepareSvgPrintImages } from './label-svg/browser'
 
 export const LABEL_EXPORT_DPI = 600
 export const LABEL_EXPORT_CSS_DPI = 96
@@ -16,6 +17,8 @@ const LABEL_CAPTURE_SCAN_ROWS = 64
 
 export interface LabelCaptureOptions {
   pixelRatio?: number
+  canvasWidth?: number
+  canvasHeight?: number
   resetZoom?: boolean
   resetTransform?: boolean
 }
@@ -151,6 +154,8 @@ async function renderCaptureCanvas(
 ) {
   return withCaptureTimerFrames(() => toCanvas(captureElement, {
     pixelRatio: options.pixelRatio ?? LABEL_EXPORT_PIXEL_RATIO,
+    canvasWidth: options.canvasWidth,
+    canvasHeight: options.canvasHeight,
     backgroundColor: '#ffffff',
     // Manufacturer logos can be object URLs; cache-busting would make blob: URLs invalid.
     cacheBust: false,
@@ -172,6 +177,15 @@ async function renderCaptureCanvas(
 }
 
 export async function captureLabelElement(element: HTMLElement, options: LabelCaptureOptions = {}) {
+  if (element.hasAttribute('data-label-svg')) {
+    const widthMm = Number.parseFloat(element.style.width), heightMm = Number.parseFloat(element.style.height)
+    assertLabelRasterBudget({ widthMm, heightMm })
+    const ratio = options.pixelRatio ?? LABEL_EXPORT_PIXEL_RATIO
+    const width = Math.round((options.canvasWidth ?? widthMm * LABEL_EXPORT_CSS_DPI / 25.4) * ratio)
+    const height = Math.round((options.canvasHeight ?? heightMm * LABEL_EXPORT_CSS_DPI / 25.4) * ratio)
+    return pngDataUrl((await renderSvgElementOutput(element, width, height, false)).png)
+  }
+  await prepareSvgPrintImages([element], LABEL_EXPORT_DPI)
   for (let attempt = 1; attempt <= LABEL_CAPTURE_ATTEMPTS; attempt += 1) {
     const captureElement = createOffscreenCaptureClone(element)
     hidePreviewChromeForCapture(captureElement)

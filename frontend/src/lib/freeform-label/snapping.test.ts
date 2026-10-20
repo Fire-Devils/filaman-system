@@ -5,6 +5,22 @@ import { snapElementGeometry } from './snapping'
 const label = { widthMm: 60, heightMm: 40, marginMm: 1 }
 
 describe('snapElementGeometry', () => {
+  it('snaps the outside QR white outline to the label margin without resizing the pattern', () => {
+    const result = snapElementGeometry({ x: 3.1, y: 10, w: 18.5, h: 18.5 }, label, 0.5, { type: 'move' }, 4 / 37)
+    expect(result.geometry).toEqual({ x: 3, y: 10, w: 18.5, h: 18.5 })
+    expect(result.guides).toContainEqual({ axis: 'x', edge: 'start', value: 1 })
+  })
+
+  it('snaps a QR resize by its growing outline while preserving the opposite pattern edge', () => {
+    const result = snapElementGeometry({ x: 36.9, y: 5, w: 20, h: 20 }, label, 0.5, {
+      type: 'resize', edges: { right: true }, proportional: true,
+      minimumWidth: 3, minimumHeight: 3, maximumWidth: 40, maximumHeight: 40,
+    }, 4 / 37)
+    expect(result.geometry.x).toBe(36.9)
+    expect(result.geometry.w).toBeCloseTo(19.943902439)
+    expect(result.geometry.x + result.geometry.w * (1 + 4 / 37)).toBeCloseTo(59)
+    expect(result.guides).toEqual([{ axis: 'x', edge: 'end', value: 59 }])
+  })
   it('snaps the nearest moving edge and resolves equal distances deterministically', () => {
     expect(snapElementGeometry(
       { x: 0.5, y: 10, w: 20, h: 5 },

@@ -97,7 +97,7 @@ describe('designer tooltips', () => {
     expect(fit.getAttribute('aria-label')).toBe('Scale font to fit')
     wrap.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
     vi.advanceTimersByTime(300)
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Wrap this text element within its width; Wrap alone doesn't shrink the font. With Scale font to fit, use at most two lines.")
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Wrap text within this box. Wrap alone doesn't shrink the font; Scale font to fit adjusts it to the box width and height, down to the minimum size.")
     unbind()
     vi.useRealTimers()
   })

@@ -67,6 +67,41 @@ beforeEach(() => {
 })
 
 describe('freeform label interaction adapter', () => {
+  it.each([false, true])('keeps QR white clearance inside every edge when dragging (bypass snap=%s)', async altKey => {
+    const root = document.querySelector<HTMLElement>('#root')!
+    const node = root.querySelector<HTMLElement>('[data-label-element-id="qr"]')!
+    node.dataset.qrModuleCount = '25'
+    const { factory, bindings } = createInteractMock()
+    const controller = await bindLabelInteractions({ root, getDesign: makeDesign, getSelectedId: () => 'qr', editable: true,
+      onSelect: () => {}, onGeometryChange: () => {}, loadInteract: async () => factory })
+    const drag = bindings.get('frame:qr')!.drag!.listeners
+    drag.start({})
+    drag.move({ dx: 10000, dy: 10000, altKey })
+    expect(Number.parseFloat(node.style.left)).toBeCloseTo(42.6)
+    expect(Number.parseFloat(node.style.top)).toBeCloseTo(22.6)
+    drag.move({ dx: -10000, dy: -10000, altKey })
+    expect(Number.parseFloat(node.style.left)).toBeCloseTo(2.4)
+    expect(Number.parseFloat(node.style.top)).toBeCloseTo(2.4)
+    // The outline, not the QR grabber, touches zero; the label margin stays usable.
+    drag.end({})
+    controller.destroy()
+  })
+
+  it('limits QR resizing to the label including its white clearance', async () => {
+    const root = document.querySelector<HTMLElement>('#root')!
+    const node = root.querySelector<HTMLElement>('[data-label-element-id="qr"]')!
+    node.dataset.qrModuleCount = '25'
+    const { factory, bindings } = createInteractMock()
+    const controller = await bindLabelInteractions({ root, getDesign: makeDesign, getSelectedId: () => 'qr', editable: true,
+      onSelect: () => {}, onGeometryChange: () => {}, loadInteract: async () => factory })
+    bindings.get('frame:qr')!.resize!.listeners.move({ rect: { width: 1000, height: 1000 }, edges: { right: true, bottom: true }, altKey: true })
+    const side = Number.parseFloat(node.style.width), pad = side * 4 / 25
+    expect(side).toBeCloseTo(40 / 1.32)
+    expect(Number.parseFloat(node.style.top)).toBeCloseTo(pad)
+    expect(Number.parseFloat(node.style.left) + side + pad).toBeCloseTo(60)
+    controller.destroy()
+  })
+
   it('does not place a selection frame over artwork for a collapsed legacy element', async () => {
     const root = document.querySelector<HTMLElement>('#root')!
     root.querySelector<HTMLElement>('[data-label-element-id="text"]')!.style.display = 'none'

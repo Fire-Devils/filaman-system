@@ -1,4 +1,5 @@
 import type { LabelDesignElement, LabelFontFamily } from './types'
+import type { SpoolData } from '../label-template'
 import {
   formatTemplateRange,
   formatTemplateFontRange,
@@ -16,6 +17,7 @@ import {
 
 interface CanvasTextEditorOptions {
   root: ParentNode
+  getPreviewData?(): SpoolData | null | undefined
   getSelected(): LabelDesignElement | null
   getTemplateRange(): TemplateSourceRange
   setTemplateRange?(range: TemplateSourceRange): void
@@ -149,6 +151,12 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     for (const node of canvas?.querySelectorAll<HTMLElement>('[data-label-element-id]') ?? []) {
       const editing = node.dataset.labelElementId === editingId
       node.toggleAttribute('data-label-text-editing', editing)
+      if (!editing) node.removeAttribute('data-label-composing')
+      if (node.hasAttribute('data-label-svg-target')) {
+        const content = node.firstElementChild as HTMLElement | null
+        if (content) content.style.visibility = editing ? 'visible' : 'hidden'
+        node.style.background = editing ? 'white' : 'transparent'
+      }
       if (editing) node.contentEditable = 'true'
       else node.removeAttribute('contenteditable')
       for (const [index, token] of [...node.querySelectorAll<HTMLElement>('[data-template-atomic]')].entries()) {
@@ -202,7 +210,7 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     const range = source.end > source.start ? source : { start: 0, end: selected?.type === 'text' ? selected.template.length : 0 }
     toolbar?.querySelectorAll<HTMLButtonElement>('[data-text-modifier]').forEach(button => {
       button.setAttribute('aria-pressed', String(selected?.type === 'text' && isTemplateModifierActive(
-        selected.template, range.start, range.end, button.dataset.textModifier as TemplateTextModifier,
+        selected.template, range.start, range.end, button.dataset.textModifier as TemplateTextModifier, options.getPreviewData?.(),
       )))
     })
     if (selected?.type === 'text') {
@@ -303,7 +311,7 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     const highlighted = highlightedRange()
     if (!highlighted && !wholeIfEmpty) return false
     const range = highlighted ?? { start: 0, end: selected.template.length }
-    return commitFormatting(selected, formatTemplateRange(selected.template, range.start, range.end, modifier), highlighted, canvasRange !== null || editingId !== null)
+    return commitFormatting(selected, formatTemplateRange(selected.template, range.start, range.end, modifier, options.getPreviewData?.()), highlighted, canvasRange !== null || editingId !== null)
   }
 
   const formatFont = (family: LabelFontFamily): boolean => {
@@ -379,10 +387,12 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
   listen<CompositionEvent>(canvas, 'compositionstart', () => {
     if (!editingId) return
     rememberCanvasRange()
+    selectedNode()?.setAttribute('data-label-composing', '')
     const selected = options.getSelected()
     if (selected?.type === 'text') compositionRange = canvasRange ?? { start: selected.template.length, end: selected.template.length }
   })
   listen<CompositionEvent>(canvas, 'compositionend', event => {
+    selectedNode()?.removeAttribute('data-label-composing')
     const range = compositionRange
     compositionRange = null
     if (range) edit(event.data, range)
@@ -534,7 +544,7 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
       canvas?.querySelectorAll('[data-template-token-caption]').forEach(caption => caption.remove())
       captionTokens = []
       canvas?.querySelectorAll('[data-label-text-editing]').forEach(node => {
-        node.removeAttribute('data-label-text-editing'); node.removeAttribute('contenteditable')
+        node.removeAttribute('data-label-text-editing'); node.removeAttribute('contenteditable'); node.removeAttribute('data-label-composing')
         node.querySelectorAll('[data-template-atomic]').forEach(token => { token.removeAttribute('contenteditable'); token.removeAttribute('draggable'); token.removeAttribute('data-template-token-chip'); token.removeAttribute('data-template-token-active'); token.removeAttribute('title') })
       })
       if (toolbar) toolbar.hidden = true

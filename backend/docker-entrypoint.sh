@@ -4,6 +4,7 @@ set -e
 if [ ! -d "/app/data" ]; then
   mkdir -p /app/data
 fi
+chmod 700 /app/data
 
 # Load .env but don't override existing environment variables
 # Docker -e variables take precedence over .env file

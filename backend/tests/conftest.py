@@ -1,17 +1,16 @@
 import asyncio
-from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.models import Base
+from app.core.security import generate_token_secret, hash_password, hash_token
 from app.core.seeds import run_all_seeds
 from app.main import app
-from app.core.security import hash_password, hash_token, generate_token_secret
-
+from app.models import Base
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -112,7 +111,6 @@ async def client(db_session, db_engine):
 @pytest_asyncio.fixture
 async def admin_user(db_session):
     from app.models import User
-    from sqlalchemy import select
 
     result = await db_session.execute(
         select(User).where(User.email == "test-admin@example.com")
@@ -136,8 +134,7 @@ async def admin_user(db_session):
 
 @pytest_asyncio.fixture
 async def normal_user(db_session):
-    from app.models import User, UserRole, Role
-    from sqlalchemy import select
+    from app.models import Role, User, UserRole
 
     user = User(
         email="test-user@example.com",
@@ -183,4 +180,9 @@ async def auth_client(client, admin_user, db_session):
     return client, csrf_token
 
 
-from sqlalchemy import select
+@pytest.fixture
+def label_render_runtime():
+    from pathlib import Path
+
+    frontend = Path(__file__).resolve().parents[2] / "frontend/dist"
+    assert (frontend / "label-svg/render.mjs").is_file(), "Build the frontend before API rendering tests"

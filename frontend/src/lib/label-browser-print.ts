@@ -10,6 +10,8 @@ import {
   prepareLabelOutputClone,
 } from './label-preview-dom'
 import { waitForLabelOutputAssets } from './label-output-readiness'
+import { prepareSvgPrintImages } from './label-svg/browser'
+import { LABEL_EXPORT_DPI } from './label-export'
 
 const PRINT_HOST_ID = 'filaman-label-print-host'
 const PRINT_STYLE_ID = 'filaman-label-print-style'
@@ -264,6 +266,8 @@ export async function printLabelBrowserJob(
 ): Promise<void> {
   assertValidJob(job)
   cleanupLabelBrowserPrint()
+
+  await prepareSvgPrintImages(job.pages, LABEL_EXPORT_DPI)
 
   const style = createPrintStyle(job)
   const host = createPrintHost(job)

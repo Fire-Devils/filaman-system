@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canvasToQrImage, ensureQrCodeLoaded, getQrCodeConstructor } from './qr-code'
 import { LABEL_EXPORT_DPI } from './label-export'
+import { clearSvgDesignerLabel } from './label-svg/browser'
 import {
   buildFilamentSwatchBackground,
   getFilamentSwatchColors,
@@ -55,6 +56,16 @@ export interface RenderStandardLabelOptions {
   settings: StandardLabelSettings
   logoUrl?: string | null
   isStale?: () => boolean
+}
+
+export const API_DEFAULT_LABEL_SETTINGS: Readonly<StandardLabelSettings> = {
+  widthMm: 60, heightMm: 40, fontScale: 1, qrSizeMm: 18,
+  showLogo: true, showQR: true, showID: true, showManufacturer: true,
+  showMaterial: true, showColor: true, showColorSwatch: true, showColorHex: false,
+}
+
+export function apiDefaultExtraFields(remainingWeight: string | undefined): StandardExtraField[] {
+  return remainingWeight ? [{ label: 'Remaining', value: `${remainingWeight} g` }] : []
 }
 
 function toStringValue(value: unknown) {
@@ -157,6 +168,7 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
   if (options.isStale?.()) return
 
   const { element: container, data, settings } = options
+  clearSvgDesignerLabel(container)
   ensureStandardLabelLayout(container)
 
   const widthMm = settings.widthMm
@@ -264,6 +276,8 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
     if (options.isStale?.()) return
     qrElement.innerHTML = ''
     const url = data.qrUrl ?? `${window.location.origin}/spools/${encodeURIComponent(String(data.id))}`
+    qrElement.style.width = `${qrSizeMm}mm`
+    qrElement.style.height = `${qrSizeMm}mm`
     const QRCode = getQrCodeConstructor()
     if (!QRCode) throw new Error('QRCode is not available')
     new QRCode(qrElement, {
@@ -274,8 +288,6 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
       colorLight: '#fff',
       correctLevel: QRCode.CorrectLevel.H,
     })
-    qrElement.style.width = `${qrSizeMm}mm`
-    qrElement.style.height = `${qrSizeMm}mm`
     const canvas = qrElement.querySelector('canvas') as HTMLCanvasElement | null
     if (canvas) {
       qrElement.innerHTML = ''

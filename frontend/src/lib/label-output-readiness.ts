@@ -1,5 +1,4 @@
 import { LABEL_FONT_FAMILIES } from './freeform-label/types'
-import { initializeCroppedImage } from './freeform-label/cropped-image'
 
 /** `marked` errors carry text that is already translated; `image` and `font` are translated when shown. */
 export class LabelOutputAssetError extends Error {
@@ -27,16 +26,13 @@ async function waitForImage(image: HTMLImageElement) {
       })
     }
     if (image.naturalWidth <= 0) throw new LabelOutputAssetError('Label image could not load.', 'image')
-    initializeCroppedImage(image)
     return
   }
   try {
     await image.decode()
-    initializeCroppedImage(image)
   } catch (error) {
     // complete is also true for failed downloads. Only decoded pixels prove success.
     if (image.complete && image.naturalWidth > 0) {
-      initializeCroppedImage(image)
       return
     }
     const asset = image.closest<HTMLElement>('[data-label-element-id]')?.dataset.labelElementId

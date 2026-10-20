@@ -126,17 +126,15 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
   .freeform-designer-workspace.is-active .freeform-canvas-area { display: block; isolation: isolate; min-height: 0; min-width: 0; position: relative; }
   .freeform-designer-workspace.is-active .freeform-canvas-region { background: var(--bg); display: block; inset: 0; isolation: isolate; overflow: auto; overscroll-behavior: contain; position: absolute; scrollbar-gutter: stable both-edges; }
   .freeform-designer-workspace.is-active .freeform-canvas-stage { align-items: safe center; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; min-height: 100%; min-width: 100%; padding: 0 18px 48px; width: 100%; }
-  .freeform-canvas-row { align-items: start; display: grid; grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) 178px minmax(0, 1fr); grid-template-rows: minmax(82px, max-content) auto auto; min-width: 0; width: 100%; }
+  .freeform-canvas-row { align-items: start; display: grid; grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) minmax(0, 1fr); grid-template-rows: minmax(82px, max-content) auto auto; min-width: 0; width: 100%; }
   .freeform-canvas-row :global(.freeform-text-toolbar) { align-self: center; grid-column: 1 / -1; grid-row: 1; justify-self: center; max-width: 100%; min-width: 0; width: max-content; }
   .freeform-canvas-row .freeform-canvas-host, .freeform-canvas-row :global(.freeform-element-inspector) { grid-row: 2; }
   .freeform-canvas-row .freeform-canvas-host { grid-column: 2; justify-self: safe center; }
-  .freeform-canvas-row :global(.freeform-element-inspector) { grid-column: 3; justify-self: end; }
+  .freeform-canvas-row :global(.freeform-element-inspector) { grid-column: 3; justify-self: start; margin-left: 8px; }
   .freeform-canvas-row :global(.freeform-field-dock) { grid-column: 1 / -1; grid-row: 3; justify-self: center; }
-  .freeform-canvas-row.is-geometry-narrow { grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) 112px minmax(0, 1fr); }
-  .freeform-canvas-row:not(.has-geometry-inspector) { grid-template-columns: minmax(0, 1fr) var(--freeform-label-width, auto) minmax(0, 1fr); }
   .freeform-canvas-row.is-geometry-below { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   .freeform-canvas-row.is-geometry-below .freeform-canvas-host { grid-column: 1; }
-  .freeform-canvas-row.is-geometry-below :global(.freeform-element-inspector) { grid-column: 1; grid-row: 3; justify-self: center; }
+  .freeform-canvas-row.is-geometry-below :global(.freeform-element-inspector) { grid-column: 1; grid-row: 3; justify-self: center; margin-left: 0; }
   .freeform-canvas-row.is-geometry-below :global(.freeform-field-dock) { grid-column: 1; grid-row: 4; }
   .freeform-designer-workspace.is-active :global(.is-designer-output-only) { left: -100000px; pointer-events: none; position: fixed; top: 0; }
   .freeform-canvas-host { display: block; flex: none; outline: none; position: relative; }

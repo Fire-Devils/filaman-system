@@ -2,6 +2,7 @@ import hashlib
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -50,6 +51,7 @@ class LabelPreset(Base, TimestampMixin):
     )
     name_key: Mapped[str] = mapped_column(String(64), nullable=False)
     data: Mapped[dict[str, Any]] = mapped_column(nullable=False)
+    selected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="label_presets")
 
