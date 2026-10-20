@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Spulen- und Filamentetiketten lassen sich jetzt auch per API als PNG oder Schwarzweiß-Bitmap (z. B. für Thermodrucker) abrufen, inklusive Auflösung, Schwellwert und Ausrichtung. Browser-Druckaufträge können über die API angestoßen werden. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Vorschau, Druck, PDF und PNG nutzen jetzt dieselbe Etiketten-Darstellung. Der Designer bietet kompakte Größen- und Lesbarkeitsregler sowie eine Hilfe zu Datumsformaten; QR-Codes bleiben über dem Inhalt. Die zuletzt gewählte Vorlage wird für Spulen und Filamente getrennt gemerkt. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "API-Schlüssel von Superadmins halten jetzt ihre eingestellten Berechtigungsbereiche ein." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Spool and filament labels can now also be fetched via the API as PNG or monochrome bitmap (e.g. for thermal printers), including resolution, threshold and orientation. Browser print jobs can be triggered through the API. (Contributed by akira69)" },
+          { "type": "improved", "text": "Preview, print, PDF and PNG now share the same label rendering. The designer offers compact size and readability controls and help for date formats; QR codes stay above the content. The last selected preset is remembered separately for spools and filaments. (Contributed by akira69)" },
+          { "type": "fix", "text": "Superadmin API keys now respect their configured permission scopes." }
+        ]
+      }
+    },
+    {
       "version": "1.4.1",
       "date": "",
       "changes": {
