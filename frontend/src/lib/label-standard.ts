@@ -212,7 +212,11 @@ export async function renderStandardLabel(options: RenderStandardLabelOptions) {
   }
 
   const designationElement = requiredElement<HTMLElement>(container, '.label-designation')
-  const fullDesignation = [data.designation, settings.showMaterial ? data.material : ''].filter(Boolean).join(' ')
+  const [designation, material] = [data.designation, data.material].map(value =>
+    value.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}\p{M}]/gu, ''),
+  )
+  const sameAsMaterial = /[\p{L}\p{N}]/u.test(designation) && designation === material
+  const fullDesignation = [data.designation, settings.showMaterial && !sameAsMaterial ? data.material : ''].filter(Boolean).join(' ')
   designationElement.textContent = fullDesignation
   designationElement.style.cssText = `font-size:${fontScale * 12}pt;display:${fullDesignation ? 'block' : 'none'}`
 

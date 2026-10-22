@@ -1,3 +1,6 @@
+import { buildEntityExtraFieldsForPrint, getExtraFieldValue } from './entity-extra-fields'
+import { isUnsafeExtraFieldPath, renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
+
 export type LabelExtraFieldSource = 'spool' | 'filament'
 export type LabelExtraFieldOrigin = 'system' | 'custom'
 
@@ -6,6 +9,7 @@ export interface LabelExtraFieldCatalogItem {
   label?: string
   source?: string
   origin?: LabelExtraFieldOrigin
+  legacyAlias?: boolean
 }
 
 export interface LabelExtraFieldValue extends LabelExtraFieldCatalogItem {
@@ -13,6 +17,112 @@ export interface LabelExtraFieldValue extends LabelExtraFieldCatalogItem {
   value: unknown
   rawValue?: unknown
   fieldType?: string
+}
+
+function sameFieldValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length
+      && left.every((value, index) => sameFieldValue(value, right[index]))
+  }
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false
+  const a = left as Record<string, unknown>, b = right as Record<string, unknown>
+  return Object.keys(a).length === Object.keys(b).length
+    && Object.keys(a).every(key => Object.hasOwn(b, key) && sameFieldValue(a[key], b[key]))
+}
+
+function definitionMeaning(definition: Record<string, unknown>) {
+  return Object.fromEntries(['label', 'field_type', 'options', 'config', 'default_value']
+    .filter(key => definition[key] != null).map(key => [key, definition[key]]))
+}
+
+export function buildLegacyLabelAliases(
+  record: Record<string, unknown>,
+  filament: Record<string, unknown>,
+  source: LabelExtraFieldSource,
+  systemFields: Record<string, SystemExtraFieldDef> = {},
+): (LabelExtraFieldValue & { value: string })[] {
+  const aliases = record.label_field_aliases
+  const definitions = { ...record.custom_field_definitions as Record<string, unknown> | undefined }
+  if (aliases && typeof aliases === 'object' && !Array.isArray(aliases)) {
+    for (const [key, alias] of Object.entries(aliases)) {
+      if (!isUnsafeExtraFieldPath(key) && alias && typeof alias === 'object'
+        && alias.definition && !Object.hasOwn(definitions, key)) definitions[key] = alias.definition
+    }
+  }
+  const fields = new Map<string, LabelExtraFieldValue & { value: string }>(buildEntityExtraFieldsForPrint(
+    record.custom_fields as Record<string, unknown> | undefined,
+    definitions,
+    systemFields,
+  ).filter(field => isBuiltInLabelField(source, field.key, field.label))
+    .map(field => [field.key, { ...scopeLabelExtraField(field, source), legacyAlias: true }]))
+  if (!aliases || typeof aliases !== 'object' || Array.isArray(aliases)) return [...fields.values()]
+  const localDefinitions = record.custom_field_definitions as Record<string, SystemExtraFieldDef> | null
+  for (const [key, alias] of Object.entries(aliases)) {
+    const target = typeof alias === 'string' ? alias : alias?.target
+    if (typeof target !== 'string' || isUnsafeExtraFieldPath(key)) continue
+    const wire = typeof alias === 'object' && alias ? alias.wire : undefined
+    const definition = typeof alias === 'object' && alias ? alias.definition ?? wire?.definition : undefined
+    const sourcePath = Array.isArray(wire?.source)
+      && (wire.source.length === 1 || (wire.source.length === 2 && wire.source[0] === 'spoolman_extra'))
+      && wire.source.every((part: unknown) =>
+      typeof part === 'string' && !isUnsafeExtraFieldPath(part)) ? wire.source as string[] : null
+    const custom = record.custom_fields as Record<string, unknown> | null
+    const current = sourcePath
+      ? sourcePath.reduce<unknown>((value, part) => value && typeof value === 'object' && Object.hasOwn(value, part)
+          ? (value as Record<string, unknown>)[part] : undefined, custom)
+      : custom ? getExtraFieldValue(custom, key) : undefined
+    const sourceKey = sourcePath?.at(-1) ?? key.replace(/^spoolman_extra\./, '')
+    const currentDefinition = systemFields[key] ?? systemFields[sourceKey]
+      ?? localDefinitions?.[key] ?? localDefinitions?.[sourceKey]
+    const capturedDefinition = wire?.definition ?? definition
+    const owned = wire?.retained === true && sameFieldValue(current, wire.value)
+      && (!currentDefinition || (capturedDefinition && sameFieldValue(
+        definitionMeaning(currentDefinition as unknown as Record<string, unknown>), definitionMeaning(capturedDefinition),
+      )))
+    const independent = current !== undefined && !owned
+    const displayDefinition = independent ? currentDefinition ?? definition : definition
+    // Promoted scalar temperatures follow the whole range when its minimum is cleared.
+    const scalar = ['number', 'float', 'integer'].includes(displayDefinition?.field_type)
+    const nativeTarget = !independent && scalar
+      && typeof wire?.target === 'string' && target === `${wire.target}.min` ? wire.target : target
+    let rawValue = independent ? current : getExtraFieldValue(filament, nativeTarget)
+    if (!independent && scalar && rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue) && ('min' in rawValue || 'max' in rawValue)) {
+      const range = rawValue as { min?: unknown; max?: unknown }
+      rawValue = range.min ?? range.max
+    }
+    fields.set(key, { key: `${source}.${key}`, label: displayDefinition?.label || key, source, legacyAlias: true,
+      value: displayDefinition && typeof displayDefinition === 'object'
+        ? renderFieldPlainText({ ...displayDefinition, key, label: displayDefinition.label || key }, rawValue)
+        : renderUnknownFieldPlainText(rawValue), rawValue, fieldType: displayDefinition?.field_type })
+  }
+  return [...fields.values()]
+}
+
+/** One value per scoped key: a projected retained alias must replace its snapshot. */
+export function buildLabelExtraFields(
+  record: Record<string, unknown>,
+  filament: Record<string, unknown>,
+  source: LabelExtraFieldSource,
+  systemFields: Record<string, SystemExtraFieldDef> = {},
+  includeEmptyDefinitions = false,
+): (LabelExtraFieldValue & { value: string })[] {
+  const aliases = buildLegacyLabelAliases(record, filament, source, systemFields)
+  const aliasKeys = new Set(aliases.map(field => field.key))
+  return [...aliases, ...buildEntityExtraFieldsForPrint(
+    record.custom_fields as Record<string, unknown> | undefined,
+    record.custom_field_definitions as Record<string, unknown> | undefined,
+    systemFields, includeEmptyDefinitions,
+  ).filter(field => !isBuiltInLabelField(source, field.key, field.label))
+    .map(field => scopeLabelExtraField(field, source)).filter(field => !aliasKeys.has(field.key))]
+}
+
+/** Historical choices stay available only while their saved selection is enabled. */
+export function standardLabelExtraFields<T extends LabelExtraFieldCatalogItem>(
+  fields: T[], selected: Record<string, unknown>, defaultSource: LabelExtraFieldSource = 'filament',
+): T[] {
+  return dedupeLabelExtraFields(fields, defaultSource)
+    .filter(field => !field.legacyAlias || selected[field.key] === true)
 }
 
 export interface LabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatalogItem = LabelExtraFieldCatalogItem> {
@@ -61,6 +171,7 @@ export function buildLabelExtraFieldCatalogGroups<T extends LabelExtraFieldCatal
     for (const source of sources) {
       const unique = new Map<string, T>()
       for (const field of fields) {
+        if (field.legacyAlias) continue
         const fieldSource = field.source === 'spool' || field.source === 'filament'
           ? field.source
           : options.entityType
@@ -88,9 +199,11 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
 ): void {
   const entityName = group.source === 'filament' ? 'Filament' : 'Spool'
   const translationRoot = `${group.source}s`
-  const groupElement = document.createElement('div')
+  const freeform = container.matches('.freeform-extra-fields')
+  const groupElement = document.createElement(freeform ? 'details' : 'div')
+  if (freeform) (groupElement as HTMLDetailsElement).open = true
   groupElement.className = 'ds-tokens-group'
-  const labelElement = document.createElement('div')
+  const labelElement = document.createElement(freeform ? 'summary' : 'div')
   const chipsElement = document.createElement('div')
   labelElement.className = 'ds-tokens-group-label'
   labelElement.textContent = group.origin === 'system'
@@ -102,7 +215,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
   const customLimit = 12
   const renderFields = () => {
     chipsElement.innerHTML = ''
-    const visibleFields = group.origin === 'custom' && !expanded
+    const visibleFields = !freeform && group.origin === 'custom' && !expanded
       ? group.fields.slice(0, customLimit)
       : group.fields
     for (const field of visibleFields) {
@@ -130,7 +243,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
       chipsElement.appendChild(empty)
     }
 
-    if (group.origin === 'custom' && group.fields.length > customLimit) {
+    if (!freeform && group.origin === 'custom' && group.fields.length > customLimit) {
       const toggle = document.createElement('button')
       toggle.className = 'ds-custom-fields-toggle'
       toggle.type = 'button'
@@ -164,6 +277,9 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
 
 const BUILT_IN_FIELD_NAMES: Record<LabelExtraFieldSource, Set<string>> = {
   filament: new Set([
+    'settings_extruder_temp',
+    'settings_bed_temp',
+    'nozzle_temperature',
     'color_swatch',
     'id',
     'filament_id',
@@ -188,6 +304,10 @@ const BUILT_IN_FIELD_NAMES: Record<LabelExtraFieldSource, Set<string>> = {
     'finish_type',
     'density',
     'density_g_cm3',
+    'extruder_temp',
+    'extruder_temp_range_c',
+    'bed_temp',
+    'bed_temp_range_c',
     'price',
     'default_spool_weight_g',
     'spool_outer_diameter_mm',
@@ -196,6 +316,14 @@ const BUILT_IN_FIELD_NAMES: Record<LabelExtraFieldSource, Set<string>> = {
     'shop_url',
   ]),
   spool: new Set([
+    'settings_extruder_temp',
+    'settings_bed_temp',
+    'nozzle_temperature',
+    'spool_material',
+    'spool_outer_diameter_mm',
+    'spool_width_mm',
+    'rfid_uid_2',
+    'purchase_currency',
     'lot_number',
     'external_id',
     'ext_id',
@@ -228,6 +356,7 @@ export function normalizeLabelFieldName(value: string) {
     .replace(/^(spool|filament)\./i, '')
     .trim()
     .toLowerCase()
+    .replace(/^spoolman_extra\./, '')
     .replace(/[\s-]+/g, '_')
     .replace(/[^a-z0-9_.]/g, '')
 }

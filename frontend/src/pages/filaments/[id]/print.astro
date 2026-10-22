@@ -24,6 +24,7 @@ export function getStaticPaths() {
   import { labelAssetContentUrl } from '../../../lib/freeform-label/assets'
   import {
     bindLabelPrintWorkspaceTabs,
+    createLabelDataReadiness,
     createSingleLabelPreviewRuntime,
     getPrintDesignerDesign,
     initPrintDesignerEditor,
@@ -46,6 +47,7 @@ export function getStaticPaths() {
   import {
     buildCanonicalFilamentLabelData,
     buildFilamentLabelDataFromParams,
+    buildFilamentExtraFieldsForPrint,
     buildReducedStandardFilamentExtraFieldsFromLabelData,
     type FilamentExtraField,
   } from '../../../lib/filament-label-data'
@@ -75,16 +77,16 @@ export function getStaticPaths() {
     type LabelSettingsState,
   } from '../../../lib/label-print-page'
   import {
+    buildLegacyLabelAliases,
     dedupeLabelExtraFields,
     isBuiltInLabelField,
-    scopeLabelExtraField,
+    standardLabelExtraFields,
   } from '../../../lib/label-extra-fields'
   import {
     FILAMENT_LABEL_PRESETS_KEY,
     hydrateLabelPresetStorage,
     SPOOL_LABEL_PRESETS_KEY,
   } from '../../../lib/label-preset-storage'
-  import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
   import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
   import { consumeScopedLabelFields } from '../../../lib/label-print-session'
 
@@ -103,10 +105,12 @@ export function getStaticPaths() {
   const hasRequestedPreset = Number.isSafeInteger(requestedPresetId) && requestedPresetId > 0
   const isPrintRequest = hasRequestedPreset || params.get('scale_print') === '1'
   let requestedLabelReady = !isPrintRequest
+  const labelDataReadiness = createLabelDataReadiness()
   const apiDefaultRequest = params.get('scale_print') === '1' && !hasRequestedPreset
   const labelData = buildFilamentLabelDataFromParams(id, params)
 
   let extraFields: FilamentExtraField[] = []
+  let legacyAliases: FilamentExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<FilamentExtraField>('filaman-filament-label-extra-fields', id)
     if (Array.isArray(parsed)) {
@@ -134,7 +138,8 @@ export function getStaticPaths() {
       ...labelData,
       filament_id: labelData.id,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
-      extraFields,
+      // API aliases retain migrated units/precision over reduced Standard-label fields.
+      extraFields: [...extraFields, ...legacyAliases],
     })
   }
 
@@ -178,6 +183,7 @@ export function getStaticPaths() {
   }
 
   const singlePreview = createSingleLabelPreviewRuntime({
+    isReady: labelDataReadiness.isReady,
     label: labelPreview,
     getSource: workspace.getSource,
     renderStandard: isStale => previewRenders.run(() => renderStandardPreview(isStale)),
@@ -199,7 +205,7 @@ export function getStaticPaths() {
   // ─── Label Designer ────────────────────────────────────────────────────────
 
   function getDesignerExtraFields() {
-    return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'filament', ef.key, ef.label))
+    return extraFields.filter(ef => !ef.legacyAlias && !isBuiltInLabelField(ef.source ?? 'filament', ef.key, ef.label))
   }
 
   designerEditor = await initPrintDesignerEditor({
@@ -276,6 +282,9 @@ export function getStaticPaths() {
     && typeof parsedClassicSettings.extraFields === 'object'
     ? parsedClassicSettings.extraFields as Record<string, boolean>
     : {}
+
+  legacyAliases = extraFields.filter(field => field.legacyAlias)
+  extraFields = standardLabelExtraFields([...extraFields, ...legacyAliases], savedExtraFieldSettings, 'filament')
 
   if (extraFields.length > 0) {
     extraFieldsTitle.style.display = ''
@@ -449,10 +458,11 @@ export function getStaticPaths() {
       if (filRes.ok) {
         apiFilament = await filRes.json() as Record<string, unknown>
         Object.assign(labelData, buildCanonicalFilamentLabelData(apiFilament, labelData, id))
+        legacyAliases = buildLegacyLabelAliases(apiFilament, apiFilament, 'filament')
       }
     } catch { /* retain query fallbacks when the API is unavailable */ }
 
-    if (extraFields.length === 0) {
+    {
       let definitions: unknown = []
       try {
         const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' })
@@ -471,43 +481,27 @@ export function getStaticPaths() {
             { ...definition, field_type: definition.field_type || 'text' },
           ]),
       ) as Record<string, SystemExtraFieldDef>
-      const customPrintFields = apiFilament
-        ? buildEntityExtraFieldsForPrint(
-            apiFilament.custom_fields as Record<string, unknown> | undefined,
-            apiFilament.custom_field_definitions as Record<string, unknown> | undefined,
-            systemDefinitions,
-            true,
-          ).filter(field => !isBuiltInLabelField('filament', field.key, field.label))
-        : []
-      const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
-
-      if (standardFilamentFields.length > 0 || customPrintFields.length > 0) {
-        function makeEfCheckbox(ef: FilamentExtraField) {
-          extraFields.push({ ...ef, source: ef.source ?? 'filament' })
-          const cb = appendLabelSettingsCheckbox({
-            container: extraFieldsCheckboxes,
-            id: `check-ef-${ef.key}`,
-            label: ef.label,
-            checked: savedExtraFieldSettings[ef.key] || false,
-            onChange: singlePreview.refresh,
-          })
-          extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
-        }
-
-        for (const sfd of standardFilamentFields) {
-          makeEfCheckbox(sfd)
-        }
-
-        for (const field of customPrintFields) {
-          makeEfCheckbox(scopeLabelExtraField(field, 'filament'))
-        }
-
-        extraFieldsTitle.style.display = ''
-        extraFieldsCheckboxes.style.display = ''
-        document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
-
-        designerEditor.refreshExtraFields(getDesignerExtraFields())
+      if (apiFilament) legacyAliases = buildLegacyLabelAliases(apiFilament, apiFilament, 'filament', systemDefinitions)
+      const selected = { ...savedExtraFieldSettings, ...Object.fromEntries(
+        extraFieldChecks.map(field => [field.key, field.checkbox.checked]),
+      ) }
+      extraFields = standardLabelExtraFields([
+        ...(apiFilament ? buildFilamentExtraFieldsForPrint(apiFilament, systemDefinitions)
+          : buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)),
+        ...extraFields,
+      ], selected)
+      extraFieldsCheckboxes.innerHTML = ''
+      extraFieldChecks.length = 0
+      for (const ef of extraFields) {
+        const checkbox = appendLabelSettingsCheckbox({
+          container: extraFieldsCheckboxes, id: `check-ef-${ef.key}`, label: ef.label,
+          checked: selected[ef.key] === true, onChange: singlePreview.refresh,
+        })
+        extraFieldChecks.push({ ...ef, checkbox })
       }
+      extraFieldsTitle.style.display = extraFields.length ? '' : 'none'
+      extraFieldsCheckboxes.style.display = extraFields.length ? '' : 'none'
+      designerEditor.refreshExtraFields(getDesignerExtraFields())
     }
 
     if (isPrintRequest) {
@@ -520,17 +514,17 @@ export function getStaticPaths() {
         window.alert(error instanceof Error ? error.message : 'Could not load requested label')
       }
     }
-    if (requestedLabelReady) {
-      await loadLabelLogo()
-      tabControls.activate(initialMode, false)
-    }
+    if (requestedLabelReady) await loadLabelLogo()
+    labelDataReadiness.markReady()
+    if (requestedLabelReady) tabControls.activate(isPrintRequest ? initialMode : tabControls.getActiveMode(), false)
   })()
 
   bindLabelOutputs({
     controls: outputControls,
     collection: {
       getItems: workspace.getOutputItems,
-      prepare: () => {
+      prepare: async () => {
+        await labelDataReadiness.wait()
         if (!requestedLabelReady) throw new Error('Label data or selected preset is unavailable')
         return previewRenders.settle()
       },

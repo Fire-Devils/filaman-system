@@ -25,6 +25,7 @@ export function getStaticPaths() {
   import { labelAssetContentUrl } from '../../../lib/freeform-label/assets'
   import {
     bindLabelPrintWorkspaceTabs,
+    createLabelDataReadiness,
     createSingleLabelPreviewRuntime,
     getPrintDesignerDesign,
     initPrintDesignerEditor,
@@ -72,9 +73,11 @@ export function getStaticPaths() {
     type LabelSettingsState,
   } from '../../../lib/label-print-page'
   import {
+    buildLegacyLabelAliases,
     dedupeLabelExtraFields,
     isBuiltInLabelField,
-    scopeLabelExtraField,
+    buildLabelExtraFields,
+    standardLabelExtraFields,
     type LabelExtraFieldValue,
   } from '../../../lib/label-extra-fields'
   import {
@@ -90,9 +93,9 @@ export function getStaticPaths() {
     buildSpoolLabelDataFromParams,
     mergeMissingSpoolLabelData,
   } from '../../../lib/spool-label-data'
-  import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
   import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
   import { consumeScopedLabelFields } from '../../../lib/label-print-session'
+  import { getCurrency, initCurrency } from '../../../lib/format'
 
   bindPrintPageSidebarCollapse()
 
@@ -105,6 +108,7 @@ export function getStaticPaths() {
   const hasRequestedPreset = Number.isSafeInteger(requestedPresetId) && requestedPresetId > 0
   const isPrintRequest = hasRequestedPreset || params.get('scale_print') === '1'
   let requestedLabelReady = !isPrintRequest
+  const labelDataReadiness = createLabelDataReadiness()
   const apiDefaultRequest = params.get('scale_print') === '1'
     && !hasRequestedPreset
   const labelData = buildSpoolLabelDataFromParams(id, params)
@@ -123,6 +127,7 @@ export function getStaticPaths() {
 
   type SingleSpoolExtraField = LabelExtraFieldValue & { value: string }
   let extraFields: SingleSpoolExtraField[] = []
+  let legacyAliases: SingleSpoolExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<SingleSpoolExtraField>('filaman-label-extra-fields', id)
     if (Array.isArray(parsed)) {
@@ -130,7 +135,11 @@ export function getStaticPaths() {
         parsed.filter((item) => {
           if (!item || typeof item.key !== 'string' || typeof item.label !== 'string' || typeof item.value !== 'string') return false
           const source = item.source === 'filament' ? 'filament' : 'spool'
-          return !(item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label))
+          if (item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label)) {
+            legacyAliases.push({ ...item, legacyAlias: true })
+            return false
+          }
+          return true
         }),
         'spool',
       )
@@ -143,7 +152,7 @@ export function getStaticPaths() {
     return buildSpoolDesignerDataFromLabelData({
       ...labelData,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
-      extraFields,
+      extraFields: [...extraFields, ...legacyAliases],
     })
   }
 
@@ -192,6 +201,7 @@ export function getStaticPaths() {
   }
 
   const singlePreview = createSingleLabelPreviewRuntime({
+    isReady: labelDataReadiness.isReady,
     label: labelPreview,
     getSource: workspace.getSource,
     renderStandard: isStale => previewRenders.run(() => renderStandardPreview(isStale)),
@@ -212,7 +222,7 @@ export function getStaticPaths() {
   // ─── Label Designer ────────────────────────────────────────────────────────
 
   function getDesignerExtraFields() {
-    return extraFields.filter(ef => !isBuiltInLabelField(ef.source ?? 'spool', ef.key, ef.label))
+    return extraFields.filter(ef => !ef.legacyAlias && !isBuiltInLabelField(ef.source ?? 'spool', ef.key, ef.label))
   }
 
   designerEditor = await initPrintDesignerEditor({
@@ -288,6 +298,8 @@ export function getStaticPaths() {
     && typeof parsedClassicSettings.extraFields === 'object'
     ? parsedClassicSettings.extraFields as Record<string, boolean>
     : {}
+
+  extraFields = standardLabelExtraFields([...extraFields, ...legacyAliases], savedExtraFieldSettings, 'spool')
 
   const scopeAttr = (() => {
     const existing = document.querySelector('.fm-checkbox-group')
@@ -499,7 +511,8 @@ export function getStaticPaths() {
     controls: outputControls,
     collection: {
       getItems: workspace.getOutputItems,
-      prepare: () => {
+      prepare: async () => {
+        await labelDataReadiness.wait()
         if (!requestedLabelReady) throw new Error('Label data or selected preset is unavailable')
         return previewRenders.settle()
       },
@@ -547,12 +560,21 @@ export function getStaticPaths() {
   const [apiSpoolData, loadedLookups] = await Promise.all([
     fetchSpoolApiData(),
     loadSpoolLabelLookups(),
+    initCurrency(),
   ])
+  labelData.purchase_currency = getCurrency()
   if (apiSpoolData) {
+    const filament = apiSpoolData.filament ?? {}
+    legacyAliases = dedupeLabelExtraFields([
+      ...buildLegacyLabelAliases(apiSpoolData, filament, 'spool'),
+      ...buildLegacyLabelAliases(filament, filament, 'filament'),
+      ...legacyAliases,
+    ], 'spool')
     const apiLabelData = buildSpoolLabelDataFromApi(
       apiSpoolData,
       loadedLookups,
       id,
+      getCurrency(),
     )
     mergeMissingSpoolLabelData(
       apiLabelData,
@@ -580,19 +602,13 @@ export function getStaticPaths() {
     }
   }
 
-  // Initialize: load logo then render the selected workspace.
-  if (requestedLabelReady) loadLabelLogo().then(() => {
-    tabControls.activate(initialMode, false)
-  })
-
-  // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),
-  // fetch definitions from the API and rebuild the extra-fields UI.
-  if (extraFields.length === 0) {
-    ;(async () => {
+  // Saved range tokens still need global definitions when a session handoff exists.
+  {
+    await (async () => {
       try {
         const [spoolDefs, filamentDefs] = await Promise.all([
-          fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
-          fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+          fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
         ])
         const toDefinitionMap = (definitions: unknown): Record<string, SystemExtraFieldDef> => (
           Object.fromEntries(
@@ -609,27 +625,31 @@ export function getStaticPaths() {
         const sd = apiSpoolData ?? await fetchSpoolApiData()
         if (!sd) return
 
-        // Populate extraFields and rebuild UI.
-        const fallbackFields = [
-          ...buildEntityExtraFieldsForPrint(
-            sd.custom_fields,
-            sd.custom_field_definitions,
-            spoolSystemDefinitions,
-            true,
-          ).map(field => scopeLabelExtraField(field, 'spool')),
-          ...buildEntityExtraFieldsForPrint(
-            sd.filament?.custom_fields,
-            sd.filament?.custom_field_definitions,
-            filamentSystemDefinitions,
-            true,
-          ).map(field => scopeLabelExtraField(field, 'filament')),
-        ].filter(field => !isBuiltInLabelField(field.source, field.key, field.label))
-        if (fallbackFields.length === 0) return
-
-        for (const field of fallbackFields) {
-          extraFields.push(field)
-          addExtraFieldCheckbox(field)
+        legacyAliases = [
+          ...buildLegacyLabelAliases(sd, sd.filament ?? {}, 'spool', spoolSystemDefinitions),
+          ...buildLegacyLabelAliases(sd.filament ?? {}, sd.filament ?? {}, 'filament', filamentSystemDefinitions),
+        ]
+        if (apiDefaultRequest) { singlePreview.refresh(); return }
+        const selected = { ...savedExtraFieldSettings, ...Object.fromEntries(
+          extraFieldChecks.map(field => [field.key, field.checkbox.checked]),
+        ) }
+        extraFields = standardLabelExtraFields([
+          ...buildLabelExtraFields(sd, sd.filament ?? {}, 'spool', spoolSystemDefinitions, true),
+          ...buildLabelExtraFields(sd.filament ?? {}, sd.filament ?? {}, 'filament', filamentSystemDefinitions, true),
+          ...extraFields,
+        ], selected, 'spool')
+        for (const group of extraFieldGroups.values()) {
+          if (group.container !== extraFieldsCheckboxes) { group.title.remove(); group.container.remove() }
         }
+        extraFieldGroups.clear()
+        extraFieldsCheckboxes.innerHTML = ''
+        extraFieldChecks.length = 0
+        for (const field of extraFields) {
+          addExtraFieldCheckbox(field)
+          extraFieldChecks.at(-1)!.checkbox.checked = selected[field.key] === true
+        }
+        extraFieldsTitle.style.display = extraFields.length ? '' : 'none'
+        extraFieldsCheckboxes.style.display = extraFields.length ? '' : 'none'
 
         // Rebuild token areas in the designer so extra-field chips appear.
         designerEditor.refreshExtraFields(getDesignerExtraFields())
@@ -638,4 +658,7 @@ export function getStaticPaths() {
       } catch { /* ignore */ }
     })()
   }
+  if (requestedLabelReady) await loadLabelLogo()
+  labelDataReadiness.markReady()
+  if (requestedLabelReady) tabControls.activate(isPrintRequest ? initialMode : tabControls.getActiveMode(), false)
 </script>

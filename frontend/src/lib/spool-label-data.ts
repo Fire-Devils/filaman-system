@@ -2,11 +2,9 @@ import {
   buildFilamentLabelDataFromApi,
   type FilamentLabelData,
 } from './filament-label-data'
-import { buildEntityExtraFieldsForPrint } from './entity-extra-fields'
 import { firstLabelValue, toLabelString } from './label-entity-data'
 import {
-  isBuiltInLabelField,
-  scopeLabelExtraField,
+  buildLabelExtraFields,
   type LabelExtraFieldSource,
   type LabelExtraFieldValue,
 } from './label-extra-fields'
@@ -23,6 +21,8 @@ export interface SpoolLabelData extends FilamentLabelData {
   lot_number: string
   external_id: string
   rfid_uid: string
+  rfid_uid_2: string
+  purchase_currency: string
   location: string
   status: string
   purchase_date: string
@@ -38,13 +38,18 @@ export interface SpoolLabelData extends FilamentLabelData {
 }
 
 export type SpoolBuiltInLabelFieldDefinition = {
-  key: Exclude<keyof SpoolLabelData, keyof FilamentLabelData | 'filament_id'>
+  key: Exclude<keyof SpoolLabelData, keyof FilamentLabelData | 'filament_id'> | 'spool_material' | 'spool_outer_diameter_mm' | 'spool_width_mm'
   label: string
   tokenLabel: string
   dateOnly?: boolean
 }
 
 export const SPOOL_BUILT_IN_LABEL_FIELD_DEFS: SpoolBuiltInLabelFieldDefinition[] = [
+  { key: 'spool_material', label: 'Spool Material', tokenLabel: 'spool_material' },
+  { key: 'spool_outer_diameter_mm', label: 'Spool Outer Diameter (mm)', tokenLabel: 'spool_outer_diameter_mm' },
+  { key: 'spool_width_mm', label: 'Spool Width (mm)', tokenLabel: 'spool_width_mm' },
+  { key: 'rfid_uid_2', label: 'Secondary RFID UID', tokenLabel: 'rfid_uid_2' },
+  { key: 'purchase_currency', label: 'Purchase Currency', tokenLabel: 'purchase_currency' },
   { key: 'lot_number',             label: 'Lot Number',                tokenLabel: 'lot_number' },
   { key: 'external_id',            label: 'External ID',               tokenLabel: 'external_id' },
   { key: 'rfid_uid',               label: 'RFID UID',                  tokenLabel: 'rfid_uid' },
@@ -114,6 +119,25 @@ const SPOOL_LABEL_PARAM_MAP: SpoolLabelParam[] = [
   { dataKey: 'lot_number', params: ['lot'] },
   { dataKey: 'external_id', params: ['ext_id'] },
   { dataKey: 'rfid_uid', params: ['rfid'] },
+  { dataKey: 'rfid_uid_2', params: ['rfid_uid_2'] },
+  { dataKey: 'purchase_currency', params: ['purchase_currency'] },
+  { dataKey: 'extruder_temp_range_c', params: ['extruder_temp_range_c'] },
+  { dataKey: 'bed_temp_range_c', params: ['bed_temp_range_c'] },
+  { dataKey: 'manufacturer_sku', params: ['manufacturer_sku'] },
+  { dataKey: 'datasheet_url', params: ['datasheet_url'] },
+  { dataKey: 'image_url', params: ['image_url'] },
+  { dataKey: 'is_discontinued', params: ['is_discontinued'] },
+  { dataKey: 'drying_temp_c', params: ['drying_temp_c'] },
+  { dataKey: 'drying_time_hours', params: ['drying_time_hours'] },
+  { dataKey: 'softening_temp_c', params: ['softening_temp_c'] },
+  { dataKey: 'cooling_fan_range_percent', params: ['cooling_fan_range_percent'] },
+  { dataKey: 'chamber_temp_c', params: ['chamber_temp_c'] },
+  { dataKey: 'max_volumetric_speed_mm3_s', params: ['max_volumetric_speed_mm3_s'] },
+  { dataKey: 'flow_ratio', params: ['flow_ratio'] },
+  { dataKey: 'pressure_advance_k', params: ['pressure_advance_k'] },
+  { dataKey: 'ams_compatibility', params: ['ams_compatibility'] },
+  { dataKey: 'build_plate_compatibility', params: ['build_plate_compatibility'] },
+  { dataKey: 'price_currency', params: ['price_currency'] },
   { dataKey: 'location', params: ['location'] },
   { dataKey: 'status', params: ['status'] },
   { dataKey: 'purchase_date', params: ['purchase_date'] },
@@ -135,6 +159,8 @@ function emptySpoolLabelData(id: string): SpoolLabelData {
     lot_number: '',
     external_id: '',
     rfid_uid: '',
+    rfid_uid_2: '',
+    purchase_currency: '',
     location: '',
     status: '',
     purchase_date: '',
@@ -162,6 +188,7 @@ export function buildSpoolLabelDataFromApi(
   spool: unknown,
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
   fallbackId: string | number = '',
+  purchaseCurrency = '',
 ): SpoolLabelData {
   const record = spool && typeof spool === 'object'
     ? spool as Record<string, unknown>
@@ -187,6 +214,8 @@ export function buildSpoolLabelDataFromApi(
     lot_number: toLabelString(record.lot_number),
     external_id: toLabelString(record.external_id),
     rfid_uid: toLabelString(record.rfid_uid),
+    rfid_uid_2: toLabelString(record.rfid_uid_2),
+    purchase_currency: toLabelString(purchaseCurrency),
     location: relations.location,
     status: relations.status,
     purchase_date: toLabelString(record.purchase_date),
@@ -220,8 +249,9 @@ export function buildSpoolLabelDataFromApi(
 export function buildSpoolPrintSearchParams(
   spool: unknown,
   lookups: SpoolLabelLookups = EMPTY_SPOOL_LABEL_LOOKUPS,
+  purchaseCurrency = '',
 ): URLSearchParams {
-  const data = buildSpoolLabelDataFromApi(spool, lookups)
+  const data = buildSpoolLabelDataFromApi(spool, lookups, '', purchaseCurrency)
   const params = new URLSearchParams()
   for (const { dataKey, params: names } of SPOOL_LABEL_PARAM_MAP) {
     if (toLabelString(data[dataKey]) !== '') params.set(names[0], data[dataKey])
@@ -248,28 +278,7 @@ export function buildDesignerExtraFieldsFromApiSpool(
     ? record.filament as Record<string, unknown>
     : {}
   return [
-    ...buildDesignerExtraFields(
-      record.custom_fields as Record<string, unknown> | undefined,
-      record.custom_field_definitions as Record<string, unknown> | undefined,
-      fieldDefs?.spool,
-      'spool',
-    ),
-    ...buildDesignerExtraFields(
-      filament.custom_fields as Record<string, unknown> | undefined,
-      filament.custom_field_definitions as Record<string, unknown> | undefined,
-      fieldDefs?.filament,
-      'filament',
-    ),
+    ...buildLabelExtraFields(record, filament, 'spool', fieldDefs?.spool),
+    ...buildLabelExtraFields(filament, filament, 'filament', fieldDefs?.filament),
   ]
-}
-
-function buildDesignerExtraFields(
-  values: Record<string, unknown> | undefined,
-  entityDefinitions: Record<string, unknown> | undefined,
-  systemDefinitions: Record<string, SystemExtraFieldDef> | undefined,
-  source: LabelExtraFieldSource,
-): SpoolDesignerExtraField[] {
-  return buildEntityExtraFieldsForPrint(values, entityDefinitions, systemDefinitions)
-    .filter(field => !isBuiltInLabelField(source, field.key, field.label))
-    .map(field => scopeLabelExtraField(field, source))
 }
