@@ -109,7 +109,36 @@ try {
   for (const [id, value] of Object.entries(floats)) assert.equal(writes[0].body[id], value)
   for (const [prefix, value] of Object.entries(ranges)) assert.deepEqual(writes[0].body[`${prefix}_range_${prefix === 'cooling_fan' ? 'percent' : 'c'}`], value)
   assert.equal(writes[0].body.multi_color_style, 'striped')
-  console.log('PASS production filament form: native modal tooltip hover/focus paint order, float precision, nullable pattern, manufacturer Cancel/focus, nested filter Escape, inline editor cleanup, native Enter submission; all API writes intercepted')
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.locator('#filament-color-launcher').click()
+    await page.locator('[name="color_mode"][value="single"]').check()
+    await page.locator('#color-grid button[aria-label="Blue (#0000FF)"]').click()
+    await page.locator('[name="color_mode"][value="multi"]').check()
+    await page.locator('#color-grid button[aria-label="Red (#FF0000)"]').click()
+    assert.equal(await page.locator('#color-grid button.selected').count(), 2)
+    const layout = await page.locator('.filament-color-dialog').evaluate(dialog => {
+      const bounds = dialog.getBoundingClientRect()
+      return {
+        overflow: dialog.scrollWidth - dialog.clientWidth,
+        controls: ['multi_color_style', 'filament-color-dialog-close', 'filament-color-dialog-done'].map(id => {
+          const control = document.getElementById(id)
+          const rect = control.getBoundingClientRect()
+          return { id, visible: rect.width > 0 && rect.height > 0 && rect.left >= bounds.left && rect.right <= bounds.right && rect.top >= 0 && rect.bottom <= innerHeight }
+        }),
+      }
+    })
+    assert.ok(layout.overflow <= 1, `${width}: color dialog must not overflow horizontally (${layout.overflow}px)`)
+    for (const control of layout.controls) assert.equal(control.visible, true, `${width}: ${control.id} must be visible without horizontal scrolling`)
+    await page.locator('#multi_color_style').selectOption('gradient')
+    assert.equal(await page.locator('#multi_color_style').inputValue(), 'gradient')
+    await page.locator('#filament-color-dialog-done').click()
+    assert.equal(await page.locator('#filament-color-dialog').evaluate(el => el.open), false)
+    await page.locator('#filament-color-launcher').click()
+    await page.locator('#filament-color-dialog-close').click()
+    assert.equal(await page.locator('#filament-color-dialog').evaluate(el => el.open), false)
+  }
+  console.log('PASS production filament form: native modal tooltip hover/focus paint order, float precision, nullable pattern, manufacturer Cancel/focus, nested filter Escape, inline editor cleanup, native Enter submission, mobile color dialog pattern/Close reachability; all API writes intercepted')
 } catch (error) {
   console.error(error)
   throw error

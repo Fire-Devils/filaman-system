@@ -30,11 +30,8 @@ const { title } = Astro.props
         
         // Sidebar state
         const s = localStorage.getItem('sidebar-collapsed');
-        const isMobile = window.innerWidth <= 768;
-        const detailEditor = /^\/(?:filaments|spools)\/\d+\/?$/.test(window.location.pathname)
-          && new URLSearchParams(window.location.search).get('edit') === '1'
-          && new URLSearchParams(window.location.search).get('section') !== 'extra-fields';
-        if (s === 'true' || isMobile || detailEditor) {
+        const isCompact = window.innerWidth < 1280;
+        if (s === 'true' || isCompact) {
           document.documentElement.classList.add('sidebar-collapsed');
         }
       })();
@@ -43,11 +40,12 @@ const { title } = Astro.props
   <body>
     <div id="fm-page" class="fm-page" style="visibility: hidden;">
       <aside class="fm-sidebar fm-surface">
-        <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar" data-i18n-aria-label="nav.toggleSidebar">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar" data-i18n-aria-label="nav.toggleSidebar" aria-controls="sidebar-content" aria-expanded="true">
+          <svg class="sidebar-chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          <svg class="sidebar-menu-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16 M4 12h16 M4 18h16"/></svg>
         </button>
 
-        <div class="fm-sidebar-content">
+        <div id="sidebar-content" class="fm-sidebar-content">
           <!-- Logo -->
           <div class="fm-logo-container">
             <img src="/logo.png" alt="FilaMan" style="width: 42px; height: 42px; border-radius: 14px; flex-shrink: 0;" />
@@ -172,7 +170,7 @@ const { title } = Astro.props
       </aside>
       <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
-      <main class="fm-main" style="padding: 32px; overflow-y: auto;">
+      <main class="fm-main">
         <slot />
       </main>
     </div>
@@ -555,10 +553,10 @@ const { title } = Astro.props
       const sidebarToggle = document.getElementById('sidebar-toggle')!
       const html = document.documentElement
 
-      // Sync fm-page class with html class on load
-      if (html.classList.contains('sidebar-collapsed')) {
-        page.classList.add('collapsed')
-      }
+      const mobileSidebar = window.matchMedia('(max-width: 599px)')
+      const compactSidebar = window.matchMedia('(max-width: 1279px)')
+      const main = document.querySelector<HTMLElement>('main')!
+      const sidebarContent = document.getElementById('sidebar-content')!
 
       function setSidebarCollapsed(collapsed: boolean, persist = true) {
         if (collapsed) {
@@ -568,15 +566,35 @@ const { title } = Astro.props
           page.classList.remove('collapsed')
           html.classList.remove('sidebar-collapsed')
         }
+        sidebarToggle.setAttribute('aria-expanded', String(!collapsed))
+        sidebarContent.inert = mobileSidebar.matches && collapsed
+        main.inert = mobileSidebar.matches && !collapsed
         // Only persist sidebar state on desktop
-        if (persist && window.innerWidth > 768) {
+        if (persist && !mobileSidebar.matches) {
           localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
         }
       }
+      setSidebarCollapsed(html.classList.contains('sidebar-collapsed'), false)
 
-      window.addEventListener('fm:detail-edit', (event: Event) => {
-        const editing = (event as CustomEvent<{ editing: boolean }>).detail.editing
-        setSidebarCollapsed(editing || window.innerWidth <= 768 || localStorage.getItem('sidebar-collapsed') === 'true', false)
+      const syncSidebarWidth = () => setSidebarCollapsed(compactSidebar.matches || localStorage.getItem('sidebar-collapsed') === 'true', false)
+      mobileSidebar.addEventListener('change', syncSidebarWidth)
+      compactSidebar.addEventListener('change', syncSidebarWidth)
+
+      document.addEventListener('keydown', (event) => {
+        if (!mobileSidebar.matches || html.classList.contains('sidebar-collapsed')) return
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setSidebarCollapsed(true, false)
+          sidebarToggle.focus()
+        } else if (event.key === 'Tab') {
+          const controls = [...document.querySelectorAll<HTMLElement>('.fm-sidebar button, .fm-sidebar a[href]')]
+            .filter(element => !element.matches(':disabled') && element.getClientRects().length)
+          const next = event.shiftKey ? controls.at(-1) : controls[0]
+          if (document.activeElement === (event.shiftKey ? controls[0] : controls.at(-1))) {
+            event.preventDefault()
+            next?.focus()
+          }
+        }
       })
 
       // Update sidebar state
@@ -589,6 +607,7 @@ const { title } = Astro.props
       const sidebarBackdrop = document.getElementById('sidebar-backdrop')!
       sidebarBackdrop.addEventListener('click', () => {
         setSidebarCollapsed(true)
+        sidebarToggle.focus()
       })
 
       /* ── SSE live-update connection ──────────────────────────── */
