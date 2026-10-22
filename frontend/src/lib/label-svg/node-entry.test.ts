@@ -10,9 +10,9 @@ import { fontFiles } from './core.mjs'
 const input = () => ({ payload: { spool: { id: 295, filament: { designation: 'Grüße ÄÖÜ ß', type: 'PLA' } },
   preset: { version: 2, design: createDefaultLabelDesign('spool') }, fieldDefinitions: { spool: {}, filament: {} },
   assets: {}, pixelWidth: 480, pixelHeight: 320, thermal: false }, origin: 'https://fila.test', assets: {} })
-const run = (value: unknown, entry = 'dist/label-svg/render.mjs') => {
+const run = (value: unknown, entry = 'dist/label-svg/render.mjs', env = process.env) => {
   const result = spawnSync(process.env.LABEL_NODE_EXECUTABLE || process.execPath, [entry],
-    { input: typeof value === 'string' ? value : JSON.stringify(value), encoding: 'utf8', timeout: 30000 })
+    { input: typeof value === 'string' ? value : JSON.stringify(value), encoding: 'utf8', timeout: 30000, env })
   expect(result.error).toBeUndefined()
   expect(result.status).toBe(0)
   return JSON.parse(result.stdout)
@@ -22,6 +22,40 @@ it('runs the built renderer without Vite and returns an exact-size PNG', () => {
   expect(png.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
   expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([480, 320])
   expect(run({ ...input(), payload: { ...input().payload, preset: null } }).png).toBeTruthy()
+})
+
+it.each(['spool', 'filament'] as const)('renders %s dates identically across locales and timezones', kind => {
+  const raw = '2026-04-20T00:30:45.123+14:00'
+  const value = input()
+  const fields = ['inspected', 'certified']
+  const template = [
+    ...(kind === 'spool' ? ['{purchase_date}'] : []),
+    ...fields.flatMap(key => [`{extra.${kind}.${key}}`, `{extra.${kind}.${key}|date}`, `{extra.${kind}.${key}|date:%d/%m/%Y}`]),
+  ].join('\n')
+  const text = { id: 'dates', type: 'text' as const, x: 1, y: 1, w: 38, h: 28, z: 0,
+    template, fontFamily: 'Space Grotesk', fontWeight: 400 as const, fontSizeMm: 1.5,
+    wrap: true, fitToWidth: true, minFontSizeMm: 1, italic: false, underline: false,
+    align: 'left' as const, color: '#000000' }
+  const payload = { ...value.payload, spool: undefined,
+    [kind]: { id: 1, purchase_date: '2026-04-20',
+      custom_fields: { inspected: raw, certified: raw },
+      custom_field_definitions: { inspected: { field_type: 'datetime' } } },
+    fieldDefinitions: { [kind]: { certified: { id: 1, key: 'certified', label: 'Certified', field_type: 'datetime' } } },
+    preset: { version: 2, design: { ...value.payload.preset.design, elements: [text] } },
+  }
+  const literal = [...(kind === 'spool' ? ['2026/04/20'] : []),
+    ...fields.flatMap(() => [raw, '2026/04/20', '20/04/2026'])].join('\n')
+  const expected = run({ ...value, payload: { ...payload,
+    preset: { version: 2, design: { ...payload.preset.design, elements: [{ ...text, template: literal }] } },
+  } }).png
+  expect(expected).toBeTruthy()
+  const hash = (png: string) => createHash('sha256').update(png).digest('hex')
+  for (const [locale, timezone] of [['C.UTF-8', 'UTC'], ['en_GB.UTF-8', 'Pacific/Honolulu'], ['de_DE.UTF-8', 'Pacific/Kiritimati']]) {
+    const actual = run({ ...value, payload }, undefined,
+      { ...process.env, LANG: locale, LC_ALL: locale, TZ: timezone })
+    expect(actual.error).toBeUndefined()
+    expect(hash(actual.png)).toBe(hash(expected))
+  }
 })
 
 it('loads only used faces, including nested bold fonts and the QR brand, without changing pixels', () => {

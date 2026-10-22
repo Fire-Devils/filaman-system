@@ -14,7 +14,6 @@ import {
   buildSpoolLabelDataFromApi,
   SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
 } from './spool-label-data'
-import { formatDateDisplay, formatDateTimeDisplay } from './extra-fields'
 
 const apiSpool = {
   id: 42,
@@ -181,12 +180,12 @@ describe('spool label token contract', () => {
     expect(renderTemplateText('{Status: {status}}', data)).toBe('')
   })
 
-  it('supports a date-only modifier while retaining compact datetime by default', () => {
+  it('supports a date-only modifier while retaining the stored datetime by default', () => {
     const raw = apiSpool.custom_fields.certified_at
     const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
 
     expect(renderTemplateText('{extra.spool.certified_at}', data))
-      .toBe(formatDateTimeDisplay(raw))
+      .toBe(raw)
     expect(renderTemplateText('{extra.spool.certified_at|date}', data))
       .toBe('2026/07/25')
     expect(renderTemplateText('{Certified: {extra.spool.certified_at|date}}', data))
@@ -198,7 +197,7 @@ describe('spool label token contract', () => {
     const single = buildSpoolDesignerDataFromLabelData(canonical)
     const batch = buildSpoolDataFromApiSpool(apiSpool, lookups)
 
-    expect(single.purchase_date).toBe(formatDateDisplay(canonical.purchase_date))
+    expect(single.purchase_date).toBe('2026/01/02')
     expect(batch.purchase_date).toBe(single.purchase_date)
 
     for (const [key, expected] of [
