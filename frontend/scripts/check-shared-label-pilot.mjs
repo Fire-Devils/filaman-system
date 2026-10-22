@@ -19,9 +19,18 @@ const design = { version: 2, label: { widthMm: 60, heightMm: 40, marginMm: 1, bo
 ] };
 const filament = { id: 8, designation: 'Matte Charcoal 11101', material_type: 'PLA', diameter_mm: 1.75, manufacturer_id: 1, manufacturer: { id: 1, name: 'Bambu Lab' }, extra: {} };
 const spool = { id: 295, filament_id: 8, filament, remaining_weight_g: 432, purchase_date: '2026-10-05', extra: {} };
+const migratedFilament = { ...filament, drying_temp_c: 55, bed_temp_range_c: { min: 60, max: 70 },
+  label_field_aliases: { my_dryer: 'drying_temp_c' } };
+const migratedSpool = { ...spool, filament: migratedFilament, label_field_aliases: { bed: 'bed_temp_range_c' } };
+let migrated = false;
+let entityResponseGate = null;
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  async function openDesigner() {
+    await page.locator('#label-preview .label-designation, #freeform-canvas-host [data-label-svg-raster]').first().waitFor({ state: 'attached' });
+    await page.locator('#tab-btn-designer').click();
+  }
   page.setDefaultTimeout(30_000);
   page.on('dialog', async dialog => { console.error(dialog.message()); await dialog.dismiss(); });
   await page.addInitScript(design => {
@@ -31,20 +40,75 @@ try {
     }
     localStorage.setItem('sidebar-collapsed', 'true');
   }, design);
-  await page.route('**/api/**', route => {
+  await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.includes('/label-assets/') && path.endsWith('/content') || path.endsWith('/label-logo')) return route.fulfill({ contentType: 'image/png', body: logo });
     let data = [];
     if (path.endsWith('/me')) data = { id: 1, email: 'label@example.test', language: 'en', roles: ['user'], permissions: [] };
-    if (path.endsWith('/filaments/8')) data = filament;
-    if (path.endsWith('/spools/295')) data = spool;
+    if (/\/filaments\/[89]$/.test(path)) data = { ...(migrated ? migratedFilament : filament), id: Number(path.split('/').at(-1)) };
+    if (/\/spools\/29[56]$/.test(path)) data = { ...(migrated ? migratedSpool : spool), id: Number(path.split('/').at(-1)) };
+    if (/\/(filaments\/[89]|spools\/29[56])$/.test(path)) {
+      await entityResponseGate;
+    }
     if (path.endsWith('/label-assets')) data = [{ id: design.elements[1].assetId, display_name: 'Fixture logo', width: 100, height: 50 }];
     if (path.endsWith('/events/stream')) return route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' });
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
   });
+  // A late entity response must not reset a tab the user already selected.
+  for (const url of ['/spools/295/print', '/filaments/8/print', '/spools/print?ids=295,296', '/filaments/print?ids=8,9']) {
+    console.log(`Checking pending-data Designer selection: ${url}`);
+    let release;
+    entityResponseGate = new Promise(resolve => { release = resolve; });
+    const requested = page.waitForRequest(request => /\/api\/v1\/(spools\/295|filaments\/8)$/.test(new URL(request.url()).pathname));
+    await page.goto(`${origin}${url}`, { waitUntil: 'domcontentloaded' });
+    await requested;
+    assert.equal(new URL(page.url()).pathname, url.split('?')[0]);
+    await page.locator('#tab-btn-designer').click();
+    assert.equal(await page.locator('#tab-btn-designer').getAttribute('aria-selected'), 'true');
+    release();
+    entityResponseGate = null;
+    await page.locator('#freeform-canvas-host [data-label-svg-raster]').first().waitFor();
+    await page.waitForFunction(() => document.querySelector('#freeform-canvas-host [data-label-element-id="text"]')?.textContent.includes('Matte Charcoal 11101'));
+    assert.equal(await page.locator('#tab-btn-designer').getAttribute('aria-selected'), 'true');
+    await page.evaluate(() => {
+      localStorage.removeItem('filaman-label-active-tab');
+      localStorage.removeItem('filaman-filament-label-active-tab');
+    });
+  }
+  console.log('Single/batch labels: early Designer selection survives pending entity data');
+  // Saved dynamic tokens render after promotion, but never become picker choices.
+  migrated = true;
+  for (const handoff of [false, true]) for (const entity of ['spools', 'filaments']) {
+    const id = entity === 'spools' ? 295 : 8;
+    await page.goto(`${origin}/${entity}/${id}/print`);
+    await openDesigner();
+    await page.evaluate(({ entity, id, handoff, design }) => {
+      const kind = entity === 'spools' ? 'spool' : 'filament';
+      localStorage.setItem(`filaman-${kind}-label-designer-v1`, JSON.stringify({ version: 2, design: {
+        ...design, elements: [{ ...design.elements[0], template: 'Dryer={extra.filament.my_dryer}; Bed={extra.spool.bed}', w: 56, h: 30 }],
+      } }));
+      if (handoff) sessionStorage.setItem(kind === 'spool' ? 'filaman-label-extra-fields' : 'filaman-filament-label-extra-fields', JSON.stringify({
+        entityId: String(id), fields: [{ key: `${kind}.note`, label: 'Note', source: kind, value: 'Keep dry' }],
+      }));
+    }, { entity, id, handoff, design });
+    await page.reload();
+    await openDesigner();
+    await page.locator('#freeform-canvas-host [data-label-svg-raster]').waitFor();
+    await page.waitForFunction(expected => document.querySelector('#freeform-canvas-host [data-label-element-id="text"]')?.textContent === expected,
+      entity === 'spools' ? 'Dryer=55; Bed=60–70' : 'Dryer=55; Bed=');
+    assert.equal(await page.locator('[data-field-token="{extra.filament.my_dryer}"], [data-field-token="{extra.spool.bed}"]').count(), 0);
+    assert.equal(await page.locator('[id="check-ef-filament.my_dryer"], [id="check-ef-spool.bed"]').count(), 0);
+  }
+  migrated = false;
+  await page.evaluate(design => {
+    for (const entity of ['spool', 'filament']) localStorage.setItem(`filaman-${entity}-label-designer-v1`, JSON.stringify({ version: 2, design }));
+    localStorage.removeItem('filaman-label-active-tab');
+    localStorage.removeItem('filaman-filament-label-active-tab');
+  }, design);
+  console.log('Single labels: migrated aliases render with/without session handoff and stay hidden from pickers');
   for (const entity of ['spools', 'filaments']) {
     await page.goto(`${origin}/${entity}/${entity === 'spools' ? 295 : 8}/print`);
-    await page.locator('#tab-btn-designer').click();
+    await openDesigner();
     const surface = page.locator('#freeform-canvas-host .label-preview').first();
     await surface.locator('[data-label-svg-raster]').waitFor();
     assert.equal(await surface.locator('[data-label-output-error]').count(), 0);
@@ -93,7 +157,7 @@ try {
     await writeFile(`${directory}/${entity}-shared-preview.png`, Buffer.from(raster.split(',')[1], 'base64'));
     const beforeReload = await page.evaluate(entity => localStorage.getItem(`filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`), entity);
     await page.reload();
-    await page.locator('#tab-btn-designer').click();
+    await openDesigner();
     await surface.locator('[data-label-svg-raster]').waitFor();
     assert.equal(await page.evaluate(entity => localStorage.getItem(`filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`), entity), beforeReload);
     await page.waitForFunction(async () => {

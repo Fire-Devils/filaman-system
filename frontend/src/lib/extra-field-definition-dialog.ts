@@ -100,7 +100,7 @@ export function extraFieldDefinitionFromDialogDraft(
 }
 
 export function createExtraFieldDefinitionDialog(options: DialogOptions) {
-  const overlay = document.createElement('div')
+  const overlay = document.createElement('dialog')
   overlay.className = 'fm-modal-overlay'
   overlay.innerHTML = `
     <style>
@@ -503,8 +503,15 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
     })
   }
 
+  let returnFocus: HTMLElement | null = null
+  let parentDialog: HTMLDialogElement | null = null
   function close(): void {
+    overlay.close()
     overlay.classList.remove('open')
+    if (returnFocus?.isConnected) returnFocus.focus()
+    else parentDialog?.querySelector<HTMLElement>('button, input, select')?.focus()
+    returnFocus = null
+    parentDialog = null
     current = null
     draft = null
   }
@@ -543,6 +550,10 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
     })
   }
   cancel.addEventListener('click', close)
+  overlay.addEventListener('cancel', event => {
+    event.preventDefault()
+    close()
+  })
   overlay.addEventListener('click', event => {
     if (event.target === overlay) close()
   })
@@ -603,6 +614,9 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
 
   return {
     open(openOptions: OpenDialogOptions): void {
+      overlay.setAttribute('aria-label', openOptions.title)
+      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      parentDialog = returnFocus?.closest('dialog') ?? null
       current = openOptions
       draft = {
         ...openOptions.draft,
@@ -634,6 +648,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
       fieldType.disabled = Boolean(openOptions.lockType)
       error.classList.add('hidden')
       renderTypeUi()
+      overlay.showModal()
       overlay.classList.add('open')
       requestAnimationFrame(() => (openOptions.lockIdentity ? label : key).focus())
     },

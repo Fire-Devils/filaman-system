@@ -23,6 +23,7 @@ from app.api.v1.schemas_spool import SpoolResponse
 from app.api.v1.schemas_system_extra_field import SystemExtraFieldResponse
 from app.core.config import MANUFACTURER_LOGO_DIR
 from app.models import (
+    AppSettings,
     Filament,
     FilamentColor,
     LabelAsset,
@@ -480,11 +481,13 @@ async def _render_label(
             entity_data["location"] = {"name": entity.location.name} if entity.location else None
         else:
             entity_data = FilamentDetailResponse.model_validate(entity).model_dump(mode="json")
+        purchase_currency = await db.scalar(select(AppSettings.currency).where(AppSettings.id == 1))
         payload = {
             preset_type: entity_data, "preset": preset_data, "fieldDefinitions": definitions,
             "assets": asset_urls, "logoUrl": logo_url,
             "pixelWidth": label_width, "pixelHeight": label_height,
             "thermal": format == "mono1",
+            "purchaseCurrency": purchase_currency or "EUR",
         }
         png = await render_svg_png(payload, str(request.base_url).rstrip("/"), assets)
         image = await to_thread.run_sync(_decode_raster, png)

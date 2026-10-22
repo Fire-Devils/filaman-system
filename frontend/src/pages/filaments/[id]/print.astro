@@ -75,6 +75,7 @@ export function getStaticPaths() {
     type LabelSettingsState,
   } from '../../../lib/label-print-page'
   import {
+    buildLegacyLabelAliases,
     dedupeLabelExtraFields,
     isBuiltInLabelField,
     scopeLabelExtraField,
@@ -107,6 +108,7 @@ export function getStaticPaths() {
   const labelData = buildFilamentLabelDataFromParams(id, params)
 
   let extraFields: FilamentExtraField[] = []
+  let legacyAliases: FilamentExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<FilamentExtraField>('filaman-filament-label-extra-fields', id)
     if (Array.isArray(parsed)) {
@@ -134,7 +136,7 @@ export function getStaticPaths() {
       ...labelData,
       filament_id: labelData.id,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
-      extraFields,
+      extraFields: [...extraFields, ...legacyAliases],
     })
   }
 
@@ -449,6 +451,7 @@ export function getStaticPaths() {
       if (filRes.ok) {
         apiFilament = await filRes.json() as Record<string, unknown>
         Object.assign(labelData, buildCanonicalFilamentLabelData(apiFilament, labelData, id))
+        legacyAliases = buildLegacyLabelAliases(apiFilament, apiFilament, 'filament')
       }
     } catch { /* retain query fallbacks when the API is unavailable */ }
 
@@ -522,7 +525,7 @@ export function getStaticPaths() {
     }
     if (requestedLabelReady) {
       await loadLabelLogo()
-      tabControls.activate(initialMode, false)
+      tabControls.activate(isPrintRequest ? initialMode : tabControls.getActiveMode(), false)
     }
   })()
 

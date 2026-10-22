@@ -7,6 +7,9 @@ import type { ApiLabelRenderPayload } from './prepare-api'
 import { readFile } from 'node:fs/promises'
 import { createSvgRuntime } from './runtime.mjs'
 import { renderSvgLabel } from './core.mjs'
+import { renderTemplateText } from '../label-template'
+import { buildLabelExtraFieldCatalogGroups } from '../label-extra-fields'
+import { buildDesignerExtraFieldsFromApiSpool } from '../spool-label-data'
 
 export const payload: ApiLabelRenderPayload = {
   spool: { id: 295, remaining_weight_g: 432, purchase_date: '2026-10-05',
@@ -15,6 +18,42 @@ export const payload: ApiLabelRenderPayload = {
   preset: null, fieldDefinitions: { spool: {}, filament: {} }, assets: {},
   pixelWidth: 480, pixelHeight: 320, thermal: false,
 }
+
+it('passes configured currency to saved label tokens without converting the price', () => {
+  const result = prepareSvgApiInput({ ...payload, purchaseCurrency: 'USD',
+    spool: { ...payload.spool as object, purchase_price: 12.5 } }, 'https://fila.test', {})
+  expect(renderTemplateText('{purchase_price} {purchase_currency}', result.data)).toBe('12.5 USD')
+})
+
+it.each([1, 2])('preserves V%s preset tokens using live promoted values without rewriting the preset', version => {
+  const template = '{extra.filament.min_temp}/{extra.filament.max_temp}/{extra.filament.my_dryer}/{extra.spool.bed}'
+  const design = createDefaultLabelDesign('spool')
+  const text = design.elements.find(element => element.type === 'text')!
+  text.template = template
+  const preset = version === 1 ? { version, settings: { title: { template } } } : { version, design }
+  const before = structuredClone(preset)
+  const filament = {
+    id: 8, extruder_temp_range_c: { min: 210.5, max: 230.5 }, drying_temp_c: 55,
+    bed_temp_range_c: { min: 60, max: 70 },
+    label_field_aliases: { min_temp: 'extruder_temp_range_c.min', max_temp: 'extruder_temp_range_c.max', my_dryer: 'drying_temp_c' },
+  }
+  const value = { ...payload, preset, spool: { id: 42, filament,
+    label_field_aliases: { bed: 'bed_temp_range_c' } } }
+  const result = prepareSvgApiInput(value, 'https://fila.test', {})
+  const savedText = result.preset.design.elements.find(element => element.type === 'text' && element.template === template)
+  expect(savedText?.type).toBe('text')
+  if (savedText?.type === 'text') expect(renderTemplateText(savedText.template, result.data)).toBe('210.5/230.5/55/60–70')
+  filament.drying_temp_c = 65
+  expect(renderTemplateText('{extra.filament.my_dryer}', prepareSvgApiInput(value, 'https://fila.test', {}).data)).toBe('65')
+  expect(preset).toEqual(before)
+  expect(buildLabelExtraFieldCatalogGroups(buildDesignerExtraFieldsFromApiSpool(value.spool),
+    { entityType: 'spool', batchMode: false }).flatMap(group => group.fields)).toEqual([])
+  const filamentResult = prepareSvgApiInput({ ...payload, spool: undefined, filament, preset }, 'https://fila.test', {})
+  expect(renderTemplateText('{extra.filament.my_dryer}', filamentResult.data)).toBe('65')
+  // A retained/reintroduced extra remains authoritative for that record.
+  Object.assign(filament, { custom_fields: { my_dryer: 'Fahrenheit text' } })
+  expect(renderTemplateText('{extra.filament.my_dryer}', prepareSvgApiInput(value, 'https://fila.test', {}).data)).toBe('Fahrenheit text')
+})
 
 it.each([null, { version: 1, settings: { label: { width: 40, height: 30 } } },
   { version: 2, design: createDefaultLabelDesign('spool') }])('prepares Default, V1 and V2 without changing input', preset => {

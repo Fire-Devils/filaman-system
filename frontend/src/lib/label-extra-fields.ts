@@ -1,3 +1,6 @@
+import { getExtraFieldValue } from './entity-extra-fields'
+import { isUnsafeExtraFieldPath, renderUnknownFieldPlainText } from './extra-fields'
+
 export type LabelExtraFieldSource = 'spool' | 'filament'
 export type LabelExtraFieldOrigin = 'system' | 'custom'
 
@@ -6,6 +9,7 @@ export interface LabelExtraFieldCatalogItem {
   label?: string
   source?: string
   origin?: LabelExtraFieldOrigin
+  legacyAlias?: boolean
 }
 
 export interface LabelExtraFieldValue extends LabelExtraFieldCatalogItem {
@@ -13,6 +17,23 @@ export interface LabelExtraFieldValue extends LabelExtraFieldCatalogItem {
   value: unknown
   rawValue?: unknown
   fieldType?: string
+}
+
+export function buildLegacyLabelAliases(
+  record: Record<string, unknown>,
+  filament: Record<string, unknown>,
+  source: LabelExtraFieldSource,
+): (LabelExtraFieldValue & { value: string })[] {
+  const aliases = record.label_field_aliases
+  if (!aliases || typeof aliases !== 'object' || Array.isArray(aliases)) return []
+  return Object.entries(aliases).flatMap(([key, target]) => {
+    if (typeof target !== 'string' || isUnsafeExtraFieldPath(key)) return []
+    const custom = record.custom_fields as Record<string, unknown> | null
+    if (custom && getExtraFieldValue(custom, key) !== undefined) return []
+    const rawValue = getExtraFieldValue(filament, target)
+    return [{ key: `${source}.${key}`, label: key, source, legacyAlias: true,
+      value: renderUnknownFieldPlainText(rawValue), rawValue }]
+  })
 }
 
 export interface LabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatalogItem = LabelExtraFieldCatalogItem> {
@@ -61,6 +82,7 @@ export function buildLabelExtraFieldCatalogGroups<T extends LabelExtraFieldCatal
     for (const source of sources) {
       const unique = new Map<string, T>()
       for (const field of fields) {
+        if (field.legacyAlias) continue
         const fieldSource = field.source === 'spool' || field.source === 'filament'
           ? field.source
           : options.entityType
@@ -88,9 +110,11 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
 ): void {
   const entityName = group.source === 'filament' ? 'Filament' : 'Spool'
   const translationRoot = `${group.source}s`
-  const groupElement = document.createElement('div')
+  const freeform = container.matches('.freeform-extra-fields')
+  const groupElement = document.createElement(freeform ? 'details' : 'div')
+  if (freeform) (groupElement as HTMLDetailsElement).open = true
   groupElement.className = 'ds-tokens-group'
-  const labelElement = document.createElement('div')
+  const labelElement = document.createElement(freeform ? 'summary' : 'div')
   const chipsElement = document.createElement('div')
   labelElement.className = 'ds-tokens-group-label'
   labelElement.textContent = group.origin === 'system'
@@ -102,7 +126,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
   const customLimit = 12
   const renderFields = () => {
     chipsElement.innerHTML = ''
-    const visibleFields = group.origin === 'custom' && !expanded
+    const visibleFields = !freeform && group.origin === 'custom' && !expanded
       ? group.fields.slice(0, customLimit)
       : group.fields
     for (const field of visibleFields) {
@@ -130,7 +154,7 @@ export function appendLabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatal
       chipsElement.appendChild(empty)
     }
 
-    if (group.origin === 'custom' && group.fields.length > customLimit) {
+    if (!freeform && group.origin === 'custom' && group.fields.length > customLimit) {
       const toggle = document.createElement('button')
       toggle.className = 'ds-custom-fields-toggle'
       toggle.type = 'button'
@@ -188,6 +212,10 @@ const BUILT_IN_FIELD_NAMES: Record<LabelExtraFieldSource, Set<string>> = {
     'finish_type',
     'density',
     'density_g_cm3',
+    'extruder_temp',
+    'extruder_temp_range_c',
+    'bed_temp',
+    'bed_temp_range_c',
     'price',
     'default_spool_weight_g',
     'spool_outer_diameter_mm',
@@ -196,6 +224,11 @@ const BUILT_IN_FIELD_NAMES: Record<LabelExtraFieldSource, Set<string>> = {
     'shop_url',
   ]),
   spool: new Set([
+    'spool_material',
+    'spool_outer_diameter_mm',
+    'spool_width_mm',
+    'rfid_uid_2',
+    'purchase_currency',
     'lot_number',
     'external_id',
     'ext_id',
