@@ -4,7 +4,7 @@ import copy
 import logging
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
 import httpx
@@ -14,6 +14,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
+from app.services.extra_field_validation import normalize_numeric_range
+from app.services.filamentdb_field_mapping import standard_filamentdb_fields
 from app.utils.search import FUZZY_MATCH_THRESHOLD, fuzzy_token_score
 
 logger = logging.getLogger(__name__)
@@ -149,6 +151,36 @@ class ImportResult:
     logos_failed: int = 0
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+
+def _temperature_ranges(
+    data: dict[str, Any],
+) -> tuple[dict[str, dict[str, int | float | None]], set[str]]:
+    ranges: dict[str, dict[str, int | float | None]] = {}
+    migrated: set[str] = set()
+    nozzle = {
+        "min": data.get("temp_nozzle_min"),
+        "max": data.get("temp_nozzle_max"),
+    }
+    if nozzle != {"min": None, "max": None}:
+        try:
+            ranges["extruder_temp_range_c"] = normalize_numeric_range(nozzle)
+        except ValueError:
+            pass
+        else:
+            migrated.update(
+                key
+                for key in ("temp_nozzle_min", "temp_nozzle_max")
+                if data.get(key) is not None
+            )
+    if data.get("temp_bed") is not None:
+        try:
+            ranges["bed_temp_range_c"] = normalize_numeric_range(data["temp_bed"])
+        except ValueError:
+            pass
+        else:
+            migrated.add("temp_bed")
+    return ranges, migrated
 
 
 class FilamentDBImportService:
@@ -521,7 +553,7 @@ class FilamentDBImportService:
     # ------------------------------------------------------------------ #
 
     # Felder, die verglichen werden (FDB-Feld -> FilaMan-Feld)
-    _DIFF_FIELDS: list[tuple[str, str, str]] = [
+    _DIFF_FIELDS: ClassVar[list[tuple[str, str, str]]] = [
         # (fdb_key, filaman_attr, label)
         ("designation", "designation", "designation"),
         ("material_subtype", "material_subgroup", "material_subgroup"),
@@ -529,6 +561,7 @@ class FilamentDBImportService:
         ("color_name", "manufacturer_color_name", "manufacturer_color_name"),
         ("nominal_weight_g", "raw_material_weight_g", "raw_material_weight_g"),
         ("price", "price", "price"),
+        ("shop_url", "shop_url", "shop_url"),
         ("density_g_cm3", "density_g_cm3", "density_g_cm3"),
         ("color_mode", "color_mode", "color_mode"),
     ]
@@ -749,6 +782,30 @@ class FilamentDBImportService:
                         "new": fdb_val,
                     }
                 )
+
+            for column, fdb_val in _temperature_ranges(fdb_f)[0].items():
+                local_val = getattr(local, column, None)
+                if fdb_val != local_val:
+                    changes.append(
+                        {
+                            "field": column,
+                            "old": local_val,
+                            "new": fdb_val,
+                        }
+                    )
+
+            for column, fdb_val in standard_filamentdb_fields(
+                fdb_f, base_url=FILAMENTDB_URL
+            ).items():
+                local_val = getattr(local, column, None)
+                if fdb_val != local_val:
+                    changes.append(
+                        {
+                            "field": column,
+                            "old": local_val,
+                            "new": fdb_val,
+                        }
+                    )
 
             # SpoolProfile-Felder vergleichen
             sp_nested = fdb_f.get("spool_profile")
@@ -1328,29 +1385,28 @@ class FilamentDBImportService:
 
             # Custom-Fields fuer nicht gemappte Daten
             custom: dict[str, Any] = {}
+            temperature_ranges, migrated_temperature_keys = _temperature_ranges(
+                fil_data
+            )
+            standard_fields = standard_filamentdb_fields(
+                fil_data, base_url=FILAMENTDB_URL
+            )
             if fdb_id:
                 custom["filamentdb_id"] = fdb_id
-            sku = fil_data.get("sku")
-            if sku:
-                custom["sku"] = sku
-            # Temperatur-Daten als Custom-Fields
+            if fil_data.get("currency") is not None and "price_currency" not in standard_fields:
+                custom["currency"] = fil_data["currency"]
             for temp_key in (
                 "temp_nozzle_min",
                 "temp_nozzle_max",
                 "temp_bed",
-                "fan_speed_min",
-                "fan_speed_max",
-                "chamber_temp",
-                "max_volumetric_speed",
-                "flow_ratio",
-                "k_value",
-                "dry_temp",
-                "dry_time_hours",
-                "softening_temp",
             ):
                 val = fil_data.get(temp_key)
-                if val is not None:
+                if val is not None and temp_key not in migrated_temperature_keys:
                     custom[temp_key] = val
+            if "cooling_fan_range_percent" not in standard_fields:
+                for fan_key in ("fan_speed_min", "fan_speed_max"):
+                    if fil_data.get(fan_key) is not None:
+                        custom[fan_key] = fil_data[fan_key]
 
             new_fil = Filament(
                 manufacturer_id=filaman_mfr_id,
@@ -1367,6 +1423,8 @@ class FilamentDBImportService:
                 price=fil_data.get("price"),
                 shop_url=fil_data.get("shop_url"),
                 density_g_cm3=fil_data.get("density_g_cm3"),
+                **temperature_ranges,
+                **standard_fields,
                 color_mode=color_mode,
                 multi_color_style=multi_color_style,
                 custom_fields=custom if custom else None,
@@ -1420,11 +1478,22 @@ class FilamentDBImportService:
             if fil_data.get("price") is not None
             else existing.price
         )
+        existing.shop_url = (
+            fil_data.get("shop_url")
+            if fil_data.get("shop_url") is not None
+            else existing.shop_url
+        )
         existing.density_g_cm3 = (
             fil_data.get("density_g_cm3")
             if fil_data.get("density_g_cm3") is not None
             else existing.density_g_cm3
         )
+        temperature_ranges, migrated_temperature_keys = _temperature_ranges(fil_data)
+        for column, value in temperature_ranges.items():
+            setattr(existing, column, value)
+        standard_fields = standard_filamentdb_fields(fil_data, base_url=FILAMENTDB_URL)
+        for column, value in standard_fields.items():
+            setattr(existing, column, value)
         existing.color_mode = fil_data.get("color_mode", existing.color_mode)
         existing.multi_color_style = (
             fil_data.get("multi_color_style") or existing.multi_color_style
@@ -1463,26 +1532,21 @@ class FilamentDBImportService:
         # Custom-Fields aktualisieren (temp/print-settings)
         # Copy before mutation so JSON changes survive the colors helper's flush.
         custom = dict(existing.custom_fields or {})
-        sku = fil_data.get("sku")
-        if sku:
-            custom["sku"] = sku
+        # Field names alone do not prove catalog ownership; retain existing user extras.
+        if fil_data.get("currency") is not None and "price_currency" not in standard_fields:
+            custom.setdefault("currency", fil_data["currency"])
         for temp_key in (
             "temp_nozzle_min",
             "temp_nozzle_max",
             "temp_bed",
-            "fan_speed_min",
-            "fan_speed_max",
-            "chamber_temp",
-            "max_volumetric_speed",
-            "flow_ratio",
-            "k_value",
-            "dry_temp",
-            "dry_time_hours",
-            "softening_temp",
         ):
             val = fil_data.get(temp_key)
-            if val is not None:
-                custom[temp_key] = val
+            if val is not None and temp_key not in migrated_temperature_keys:
+                custom.setdefault(temp_key, val)
+        if "cooling_fan_range_percent" not in standard_fields:
+            for fan_key in ("fan_speed_min", "fan_speed_max"):
+                if fil_data.get(fan_key) is not None:
+                    custom.setdefault(fan_key, fil_data[fan_key])
         existing.custom_fields = custom
 
         # FilamentColors neu aufbauen (Helper raeumt alte Zuordnungen defensiv auf)

@@ -1,18 +1,18 @@
 import logging
-from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, or_, select, literal_column
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission
-from app.api.v1.printers import pick_bambuddy_driver, _is_primary_worker, _proxy_to_primary
-from app.core.cache import response_cache
-from app.core.db_utils import get_next_available_id
+from app.api.v1.printers import (
+    _is_primary_worker,
+    _proxy_to_primary,
+    pick_bambuddy_driver,
+)
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_filament import (
     BulkFilamentDeleteRequest,
@@ -20,20 +20,21 @@ from app.api.v1.schemas_filament import (
     ColorCreate,
     ColorResponse,
     ColorUpdate,
-    FilamentColorEntry,
     FilamentColorResponse,
     FilamentColorsReplace,
     FilamentCreate,
     FilamentDetailResponse,
     FilamentResponse,
-    ResolveFilamentFromTagRequest,
-    ResolveFilamentFromTagResponse,
     FilamentUpdate,
     ManufacturerCreate,
     ManufacturerResponse,
     ManufacturerUpdate,
+    ResolveFilamentFromTagRequest,
+    ResolveFilamentFromTagResponse,
 )
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
+from app.core.cache import response_cache
+from app.core.config import MANUFACTURER_LOGO_DIR, settings
+from app.core.db_utils import get_next_available_id
 from app.core.event_bus import event_bus
 from app.models import (
     Color,
@@ -42,7 +43,6 @@ from app.models import (
     Manufacturer,
     Spool,
     SpoolStatus,
-    SystemExtraField,
 )
 from app.utils.colors import normalize_hex_color
 from app.utils.query_params import parse_multi_int, parse_multi_str
@@ -558,22 +558,34 @@ async def delete_color(
 router_filaments = APIRouter(prefix="/filaments", tags=["filaments"])
 
 
-def _parse_temp_value(value: int | float | str | None) -> int | None:
+def _parse_temp_value(value: float | str | None) -> int | None:
     if value is None:
         return None
     if isinstance(value, int):
         return value
     if isinstance(value, float):
-        return int(round(value))
+        try:
+            return int(round(value))
+        except (ValueError, OverflowError):
+            return None
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
             return None
         try:
             return int(round(float(stripped)))
-        except ValueError:
+        except (ValueError, OverflowError):
             return None
     return None
+
+
+def _tag_temperature_range(filament: Filament) -> dict[str, int | float | None]:
+    temperature_range = dict(filament.extruder_temp_range_c or {})
+    for key, endpoint in (("min_temp", "min"), ("max_temp", "max")):
+        legacy = _parse_temp_value((filament.custom_fields or {}).get(key))
+        if legacy is not None:
+            temperature_range[endpoint] = legacy
+    return temperature_range
 
 
 def _parse_diameter_value(value: float | str | None) -> float | None:
@@ -592,38 +604,6 @@ def _parse_diameter_value(value: float | str | None) -> float | None:
     return None
 
 
-async def _ensure_filament_temp_fields(db: DBSession) -> list[str]:
-    created_keys: list[str] = []
-    required_fields = [
-        {
-            "target_type": "filament",
-            "key": "min_temp",
-            "label": "Min Temp",
-            "field_type": "number",
-        },
-        {
-            "target_type": "filament",
-            "key": "max_temp",
-            "label": "Max Temp",
-            "field_type": "number",
-        },
-    ]
-
-    for field in required_fields:
-        result = await db.execute(
-            select(SystemExtraField).where(
-                SystemExtraField.target_type == field["target_type"],
-                SystemExtraField.key == field["key"],
-            )
-        )
-        existing = result.scalar_one_or_none()
-        if existing is None:
-            db.add(SystemExtraField(**field))
-            created_keys.append(field["key"])
-
-    return created_keys
-
-
 @router_filaments.post(
     "/resolve-from-tag",
     response_model=ResolveFilamentFromTagResponse,
@@ -640,7 +620,10 @@ async def resolve_filament_from_tag(
     if not material_type_raw:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "validation_error", "message": "Tag field 'type' is required"},
+            detail={
+                "code": "validation_error",
+                "message": "Tag field 'type' is required",
+            },
         )
 
     brand_name = brand_raw or "Generic"
@@ -686,7 +669,8 @@ async def resolve_filament_from_tag(
             .where(
                 or_(
                     func.upper(Color.hex_code) == target_color_hex,
-                    func.upper(func.substr(Color.hex_code, 1, 7)) == target_color_hex[:7],
+                    func.upper(func.substr(Color.hex_code, 1, 7))
+                    == target_color_hex[:7],
                 )
             )
             .order_by(Filament.id.asc())
@@ -729,12 +713,15 @@ async def resolve_filament_from_tag(
 
         if target_color_hex:
             color_match = await db.execute(
-                select(Color).where(
+                select(Color)
+                .where(
                     or_(
                         func.upper(Color.hex_code) == target_color_hex,
-                        func.upper(func.substr(Color.hex_code, 1, 7)) == target_color_hex[:7],
+                        func.upper(func.substr(Color.hex_code, 1, 7))
+                        == target_color_hex[:7],
                     )
-                ).limit(1)
+                )
+                .limit(1)
             )
             matched_color = color_match.scalar_one_or_none()
             if matched_color is None:
@@ -750,23 +737,35 @@ async def resolve_filament_from_tag(
     else:
         designation = filament.designation
 
-    custom_fields = dict(filament.custom_fields or {})
-    before_custom_fields = dict(custom_fields)
-    if min_temp is not None:
-        custom_fields["min_temp"] = min_temp
-    if max_temp is not None:
-        custom_fields["max_temp"] = max_temp
-    if custom_fields != before_custom_fields:
-        filament.custom_fields = custom_fields
-        filament_updated = True
-
-    created_system_fields: list[str] = []
     if min_temp is not None or max_temp is not None:
-        created_system_fields = await _ensure_filament_temp_fields(db)
-
-    if created_system_fields:
-        response_cache.delete("extra_fields:filament:all")
-        response_cache.delete("extra_fields:all:all")
+        current_range = _tag_temperature_range(filament)
+        temperature_range = {
+            "min": min_temp if min_temp is not None else current_range.get("min"),
+            "max": max_temp if max_temp is not None else current_range.get("max"),
+        }
+        custom_fields = dict(filament.custom_fields or {})
+        if (
+            temperature_range["min"] is not None
+            and temperature_range["max"] is not None
+            and temperature_range["max"] < temperature_range["min"]
+        ):
+            # Legacy tag partial updates may cross; keep the native range valid.
+            custom_fields.update(
+                min_temp=temperature_range["min"], max_temp=temperature_range["max"]
+            )
+        else:
+            if filament.extruder_temp_range_c != temperature_range:
+                filament.extruder_temp_range_c = temperature_range
+                filament_updated = True
+            for key, supplied in (("min_temp", min_temp), ("max_temp", max_temp)):
+                if (
+                    supplied is not None
+                    or _parse_temp_value(custom_fields.get(key)) is not None
+                ):
+                    custom_fields.pop(key, None)
+        if custom_fields != (filament.custom_fields or {}):
+            filament.custom_fields = custom_fields or None
+            filament_updated = True
 
     await db.commit()
     await db.refresh(filament)
@@ -777,7 +776,7 @@ async def resolve_filament_from_tag(
         await event_bus.publish({"event": "filaments_changed"})
         response_cache.delete("filament_types")
 
-    final_custom_fields = filament.custom_fields or {}
+    temperature_range = _tag_temperature_range(filament)
     return ResolveFilamentFromTagResponse(
         filament_id=filament.id,
         filament_created=filament_created,
@@ -787,9 +786,9 @@ async def resolve_filament_from_tag(
         manufacturer_created=manufacturer_created,
         material_type=material_type_raw,
         designation=filament.designation,
-        min_temp=final_custom_fields.get("min_temp"),
-        max_temp=final_custom_fields.get("max_temp"),
-        system_extra_fields_created=created_system_fields,
+        min_temp=_parse_temp_value(temperature_range.get("min")),
+        max_temp=_parse_temp_value(temperature_range.get("max")),
+        system_extra_fields_created=[],
     )
 
 

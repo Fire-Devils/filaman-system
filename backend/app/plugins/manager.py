@@ -3,6 +3,7 @@ import importlib
 import inspect
 import json
 import logging
+import math
 import shutil
 import sys
 from collections.abc import Callable
@@ -311,12 +312,16 @@ class PluginManager:
                     # canonical 255-0 / 255-1 rows exist, so AMS View and the
                     # printer page stop listing four External bays on H2C/H2D.
                     all_slots = (
-                        await db.execute(
-                            select(PrinterSlot).where(
-                                PrinterSlot.printer_id == printer_id
+                        (
+                            await db.execute(
+                                select(PrinterSlot).where(
+                                    PrinterSlot.printer_id == printer_id
+                                )
                             )
                         )
-                    ).scalars().all()
+                        .scalars()
+                        .all()
+                    )
                     active_indexes = {
                         (s.custom_fields or {}).get("slot_index")
                         for s in all_slots
@@ -405,7 +410,9 @@ class PluginManager:
                 if ams_info:
                     printer = await db.get(Printer, printer_id)
                     if printer:
-                        if active_spool_id_raw is not None and isinstance(ams_info, dict):
+                        if active_spool_id_raw is not None and isinstance(
+                            ams_info, dict
+                        ):
                             ams_info = {
                                 **ams_info,
                                 "active_spool_id": active_spool_id,
@@ -646,8 +653,7 @@ class PluginManager:
 
     def get_health(self) -> dict[int, dict[str, Any]]:
         self.health_status = {
-            printer_id: driver.health()
-            for printer_id, driver in self.drivers.items()
+            printer_id: driver.health() for printer_id, driver in self.drivers.items()
         }
         return dict(self.health_status)
 
@@ -901,6 +907,9 @@ class PluginManager:
 
         Uses legacy_renames from plugin.json to rename old field keys.
         Idempotent — upserts every entity/printer/parameter combination independently."""
+        if driver_key != "bambulab":
+            return
+
         # Load legacy_renames from plugin.json
         plugin_json = self._load_plugin_json(driver_key)
         if not plugin_json:
@@ -972,10 +981,13 @@ class PluginManager:
             printer_ids = [p.id for p in printers]
 
             # --- Filaments ---
-            result = await db.execute(
-                select(Filament).where(Filament.custom_fields.isnot(None))
-            )
+            result = await db.execute(select(Filament))
             filaments = result.scalars().all()
+            if any(f.extruder_temp_range_c or f.bed_temp_range_c for f in filaments):
+                await db.commit()
+                # Native defaults must not hide inherited calibration on unstarted printers.
+                for printer_id in printer_ids:
+                    await self._copy_params_to_new_printer(driver_key, printer_id)
             migrated_filaments = 0
 
             for filament in filaments:
@@ -984,7 +996,8 @@ class PluginManager:
                         filament.custom_fields, KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
                     )
                 )
-                if not bambu_params:
+                native_temperatures = self._native_bambu_temperature_params(filament)
+                if not bambu_params and not native_temperatures:
                     continue
 
                 await self._upsert_bambu_params(
@@ -995,12 +1008,14 @@ class PluginManager:
                     "filament_id",
                     printer_ids,
                     bambu_params,
+                    fallback_params=native_temperatures,
                 )
-                self._clean_bambu_keys_from_cf(
-                    filament,
-                    KEEP_IN_CUSTOM_FIELDS,
-                    preserve_nozzle_temperature=preserve_invalid_nozzle_range,
-                )
+                if bambu_params:
+                    self._clean_bambu_keys_from_cf(
+                        filament,
+                        KEEP_IN_CUSTOM_FIELDS,
+                        preserve_nozzle_temperature=preserve_invalid_nozzle_range,
+                    )
                 migrated_filaments += 1
 
             # --- Spools ---
@@ -1096,13 +1111,22 @@ class PluginManager:
         entity_id_field: str,
         printer_ids: list[int],
         params: dict[str, str],
+        *,
+        fallback_params: dict[str, str] | None = None,
     ) -> None:
         """Persist every desired entity/printer/parameter value before cleanup."""
+        desired_params = {**(fallback_params or {}), **params}
+        nozzle_opposites = {
+            "bambu_nozzle_temp_min": "bambu_nozzle_temp_max",
+            "bambu_nozzle_temp_max": "bambu_nozzle_temp_min",
+        }
         existing_result = await db.execute(
             select(param_model).where(
                 entity_column == entity_id,
                 param_model.printer_id.in_(printer_ids),
-                param_model.param_key.in_(list(params)),
+                param_model.param_key.in_(
+                    list(desired_params.keys() | nozzle_opposites.keys())
+                ),
             )
         )
         existing_params = {
@@ -1111,11 +1135,34 @@ class PluginManager:
         }
 
         for printer_id in printer_ids:
-            for param_key, param_value in params.items():
+            for param_key, param_value in desired_params.items():
                 existing = existing_params.get((printer_id, param_key))
                 if existing is not None:
-                    existing.param_value = param_value
+                    if param_key in params:
+                        existing.param_value = param_value
                     continue
+                if param_key not in params and param_key in nozzle_opposites:
+                    opposite_key = nozzle_opposites[param_key]
+                    opposite = existing_params.get((printer_id, opposite_key))
+                    opposite_value = params.get(opposite_key)
+                    if opposite_value is None and opposite is not None:
+                        opposite_value = opposite.param_value
+                    try:
+                        opposite_temp = float(opposite_value)
+                    except (TypeError, ValueError):
+                        pass
+                    else:
+                        if math.isfinite(opposite_temp) and (
+                            (
+                                param_key.endswith("_min")
+                                and float(param_value) > opposite_temp
+                            )
+                            or (
+                                param_key.endswith("_max")
+                                and float(param_value) < opposite_temp
+                            )
+                        ):
+                            continue
                 db.add(
                     param_model(
                         **{
@@ -1129,6 +1176,34 @@ class PluginManager:
 
         # Do not remove source values until every desired row has passed DB validation.
         await db.flush()
+
+    @staticmethod
+    def _native_bambu_temperature_params(filament: Filament) -> dict[str, str]:
+        """Use native temperatures only below legacy fields and printer overrides."""
+        params = {}
+        for raw_range, min_key, max_key in (
+            (
+                filament.extruder_temp_range_c,
+                "bambu_nozzle_temp_min",
+                "bambu_nozzle_temp_max",
+            ),
+            (filament.bed_temp_range_c, "bambu_bed_temp", None),
+        ):
+            if not isinstance(raw_range, dict):
+                continue
+            try:
+                temperature_range = convert_spoolman_value(raw_range, "float_range")
+            except SpoolmanFieldError:
+                continue
+            minimum, maximum = temperature_range["min"], temperature_range["max"]
+            # Bambu has one bed target; prefer the lower available endpoint.
+            if max_key is None and minimum is None:
+                minimum = maximum
+            if minimum is not None:
+                params[min_key] = str(minimum).removesuffix(".0")
+            if max_key is not None and maximum is not None:
+                params[max_key] = str(maximum).removesuffix(".0")
+        return params
 
     @staticmethod
     def _extract_bambu_params(

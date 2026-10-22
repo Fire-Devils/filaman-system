@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, FiniteFloat, computed_field
 
 from app.core.config import settings
 
@@ -55,14 +55,14 @@ class SpoolCreate(BaseModel):
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
-    purchase_price: float | None = None
+    purchase_price: FiniteFloat | None = None
     stocked_in_at: datetime | None = None
-    initial_total_weight_g: float | None = None
-    empty_spool_weight_g: float | None = None
-    spool_core_weight_g: float | None = None
-    remaining_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    initial_total_weight_g: FiniteFloat | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_core_weight_g: FiniteFloat | None = None
+    remaining_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     low_weight_threshold_g: int = 100
     custom_fields: dict[str, Any] | None = None
@@ -83,12 +83,12 @@ class SpoolUpdate(BaseModel):
     external_id: str | None = None
     location_id: int | None = None
     purchase_date: datetime | None = None
-    purchase_price: float | None = None
-    initial_total_weight_g: float | None = None
-    empty_spool_weight_g: float | None = None
-    spool_core_weight_g: float | None = None
-    spool_outer_diameter_mm: float | None = None
-    spool_width_mm: float | None = None
+    purchase_price: FiniteFloat | None = None
+    initial_total_weight_g: FiniteFloat | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_core_weight_g: FiniteFloat | None = None
+    spool_outer_diameter_mm: FiniteFloat | None = None
+    spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
     low_weight_threshold_g: int | None = None
     custom_fields: dict[str, Any] | None = None
@@ -98,6 +98,7 @@ class SpoolUpdate(BaseModel):
 
 
 class SpoolResponse(BaseModel):
+    label_field_aliases: dict[str, str | dict[str, Any]] | None = None
     id: int
     filament_id: int
     status_id: int
@@ -138,21 +139,21 @@ class SpoolResponse(BaseModel):
 
 
 class MeasurementRequest(BaseModel):
-    measured_weight_g: float
+    measured_weight_g: FiniteFloat
     event_at: datetime | None = None
     note: str | None = None
 
 
 class AdjustmentRequest(BaseModel):
     adjustment_type: str
-    delta_weight_g: float | None = None
-    measured_weight_g: float | None = None
+    delta_weight_g: FiniteFloat | None = None
+    measured_weight_g: FiniteFloat | None = None
     event_at: datetime | None = None
     note: str | None = None
 
 
 class ConsumptionRequest(BaseModel):
-    delta_weight_g: float
+    delta_weight_g: FiniteFloat
     event_at: datetime | None = None
     note: str | None = None
 
@@ -176,10 +177,10 @@ class BulkSpoolUpdateRequest(BaseModel):
     clear_location: bool = False
     status_id: int | None = None
     low_weight_threshold_g: int | None = None
-    empty_spool_weight_g: float | None = None
-    spool_core_weight_g: float | None = None
+    empty_spool_weight_g: FiniteFloat | None = None
+    spool_core_weight_g: FiniteFloat | None = None
     clear_spool_core_weight: bool = False
-    purchase_price: float | None = None
+    purchase_price: FiniteFloat | None = None
 
 
 class BulkSpoolDeleteRequest(BaseModel):
@@ -227,5 +228,5 @@ class SpoolEventResponse(BaseModel):
 class DeviceMeasurementRequest(BaseModel):
     rfid_uid: str | None = None
     external_id: str | None = None
-    measured_weight_g: float
+    measured_weight_g: FiniteFloat
     event_at: datetime | None = None
