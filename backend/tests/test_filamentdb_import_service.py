@@ -1,18 +1,15 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sqlalchemy import delete, select
-
 import pytest
-
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.services.filamentdb_import_service import (
-    SYNC_CACHE_KEY,
     FilamentDBImportService,
+    ImportResult,
     SyncSnapshot,
     _material_type_from_fdb,
 )
-
+from sqlalchemy import delete, select
 
 # ------------------------------------------------------------------ #
 #  Fixtures
@@ -191,6 +188,263 @@ async def test_fetch_sync_data_returns_deepcopy(db_session):
 # ------------------------------------------------------------------ #
 #  Regression: stale filament_colors rows
 # ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("currency", "expected"),
+    [("usd", "USD"), (" eUr ", "EUR"), ("EURO", None), (123, None)],
+    ids=["lowercase", "whitespace", "invalid-code", "invalid-type"],
+)
+async def test_catalog_currency_import_and_update_remain_readable(
+    db_session, auth_client, currency, expected
+):
+    client, _ = auth_client
+    manufacturer = Manufacturer(name="Currency Manufacturer")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    service = FilamentDBImportService(db_session)
+    record = {"id": 71, "manufacturer_id": 5, "material_id": 6,
+              "designation": "Currency PLA", "currency": currency}
+    args = ([record], {6: "PLA"}, {5: manufacturer.id}, {}, {}, "filament")
+    await service._import_filaments(*args, ImportResult())
+    await db_session.commit()
+    filament = await db_session.scalar(select(Filament))
+    response = await client.get(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 200
+    assert response.json()["price_currency"] == expected
+    if expected is None:
+        assert response.json()["custom_fields"]["currency"] == currency
+    filament.price_currency = "GBP"
+    await db_session.commit()
+    await service._import_filaments(*args, ImportResult(), update_filament_ids=[71])
+    await db_session.commit()
+    response = await client.get(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 200
+    assert response.json()["price_currency"] == (expected or "GBP")
+    if expected is None:
+        assert response.json()["custom_fields"]["currency"] == currency
+    else:
+        assert "currency" not in response.json()["custom_fields"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("currency", ["USD", "EURO"], ids=["native", "unsupported"])
+async def test_catalog_update_preserves_unrelated_custom_fields(db_session, currency):
+    manufacturer = Manufacturer(name="Custom field owner")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    custom = {
+        "filamentdb_id": 71, "currency": False, "datasheet_url": "Internal note",
+        "temp_nozzle_min": "Lab minimum", "temp_nozzle_max": "Lab maximum",
+        "temp_bed": False, "fan_speed_min": False, "fan_speed_max": True,
+    }
+    definitions = {
+        "currency": {"label": "Payment verified", "field_type": "checkbox"},
+        "datasheet_url": {"label": "Internal reference", "field_type": "text"},
+        "temp_nozzle_min": {"label": "Lab note", "field_type": "text"},
+        "fan_speed_min": {"label": "Fan verified", "field_type": "checkbox"},
+    }
+    native = currency == "USD"
+    filament = Filament(
+        manufacturer_id=manufacturer.id, designation="Custom PLA", material_type="PLA",
+        diameter_mm=1.75, price_currency="GBP", custom_fields=custom, custom_field_definitions=definitions,
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await FilamentDBImportService(db_session)._import_filaments(
+        [{"id": 71, "manufacturer_id": 5, "material_id": 6,
+          "designation": "Custom PLA", "currency": currency,
+          "datasheet_url": "https://example.test/catalog.pdf",
+          "temp_nozzle_min": 190 if native else "Unavailable", "temp_nozzle_max": 220,
+          "temp_bed": 60 if native else "Unavailable",
+          "fan_speed_min": 20 if native else False, "fan_speed_max": 80}],
+        {6: "PLA"}, {5: manufacturer.id}, {}, {}, "filament", ImportResult(),
+        update_filament_ids=[71],
+    )
+    await db_session.commit()
+    await db_session.refresh(filament)
+    assert filament.price_currency == ("USD" if currency == "USD" else "GBP")
+    assert filament.datasheet_url == "https://example.test/catalog.pdf"
+    assert filament.extruder_temp_range_c == ({"min": 190, "max": 220} if native else None)
+    assert filament.bed_temp_range_c == ({"min": 60, "max": 60} if native else None)
+    assert filament.cooling_fan_range_percent == ({"min": 20, "max": 80} if native else None)
+    assert filament.custom_fields == custom
+    assert filament.custom_field_definitions == definitions
+
+
+@pytest.mark.asyncio
+async def test_import_and_update_use_standard_temperature_ranges(db_session):
+    manufacturer = Manufacturer(name="Temperature Manufacturer")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    service = FilamentDBImportService(db_session)
+    base = {
+        "id": 71,
+        "manufacturer_id": 5,
+        "material_id": 6,
+        "designation": "Temperature PLA",
+        "temp_nozzle_min": 190,
+        "temp_nozzle_max": 230,
+        "temp_bed": 60,
+        "sku": "PLA-42",
+        "datasheet_url": "https://example.com/pla.pdf",
+        "discontinued": True,
+        "dry_temp": 55,
+        "dry_time_hours": 6,
+        "softening_temp": 65,
+        "fan_speed_min": 40,
+        "fan_speed_max": 80,
+        "chamber_temp": 35,
+        "max_volumetric_speed": 18,
+        "flow_ratio": 0.97,
+        "k_value": 0.025,
+        "ams_compatible": "ams,ams-2-pro",
+        "build_plates": "pei,textured-pei",
+        "currency": "EUR",
+        "shop_url": "https://example.com/pla",
+    }
+
+    await service._import_filaments(
+        [base],
+        {6: "PLA"},
+        {5: manufacturer.id},
+        {},
+        {},
+        "filament",
+        ImportResult(),
+    )
+    filament = await db_session.scalar(select(Filament))
+    assert filament is not None
+    assert filament.extruder_temp_range_c == {"min": 190, "max": 230}
+    assert filament.bed_temp_range_c == {"min": 60, "max": 60}
+    assert filament.manufacturer_sku == "PLA-42"
+    assert filament.datasheet_url == "https://example.com/pla.pdf"
+    assert filament.is_discontinued is True
+    assert filament.drying_temp_c == 55
+    assert filament.drying_time_hours == 6
+    assert filament.softening_temp_c == 65
+    assert filament.cooling_fan_range_percent == {"min": 40, "max": 80}
+    assert filament.chamber_temp_c == 35
+    assert filament.max_volumetric_speed_mm3_s == 18
+    assert filament.flow_ratio == 0.97
+    assert filament.pressure_advance_k == 0.025
+    assert filament.ams_compatibility == ["ams", "ams-2-pro"]
+    assert filament.build_plate_compatibility == ["pei", "textured-pei"]
+    assert filament.price_currency == "EUR"
+    assert filament.shop_url == "https://example.com/pla"
+    for key in (
+        "sku",
+        "dry_temp",
+        "dry_time_hours",
+        "softening_temp",
+        "fan_speed_min",
+        "fan_speed_max",
+        "chamber_temp",
+        "max_volumetric_speed",
+        "flow_ratio",
+        "k_value",
+    ):
+        assert key not in filament.custom_fields
+    assert "temp_nozzle_min" not in filament.custom_fields
+    assert "temp_nozzle_max" not in filament.custom_fields
+    assert "temp_bed" not in filament.custom_fields
+
+    filament.custom_fields = {
+        **filament.custom_fields,
+        "temp_nozzle_min": 190,
+        "temp_nozzle_max": 230,
+        "temp_bed": 60,
+    }
+    await db_session.commit()
+
+    await service._import_filaments(
+        [
+            {
+                **base,
+                "temp_nozzle_min": 200,
+                "temp_nozzle_max": 240,
+                "temp_bed": 70,
+                "shop_url": "https://example.com/pla-v2",
+            }
+        ],
+        {6: "PLA"},
+        {5: manufacturer.id},
+        {},
+        {},
+        "filament",
+        ImportResult(),
+        update_filament_ids=[71],
+    )
+    await db_session.refresh(filament)
+    assert filament.extruder_temp_range_c == {"min": 200, "max": 240}
+    assert filament.bed_temp_range_c == {"min": 70, "max": 70}
+    assert filament.shop_url == "https://example.com/pla-v2"
+    # Reintroduced record extras are not proof of catalog ownership.
+    assert filament.custom_fields == {
+        "filamentdb_id": 71, "temp_nozzle_min": 190, "temp_nozzle_max": 230, "temp_bed": 60,
+    }
+
+
+@pytest.mark.asyncio
+async def test_diff_offers_standard_field_backfill_for_linked_filament(db_session):
+    manufacturer = Manufacturer(name="Temperature Manufacturer")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    db_session.add(
+        Filament(
+            manufacturer_id=manufacturer.id,
+            designation="Temperature PLA",
+            material_type="PLA",
+            diameter_mm=1.75,
+            color_mode="single",
+            custom_fields={"filamentdb_id": 71},
+        )
+    )
+    await db_session.flush()
+
+    service = FilamentDBImportService(db_session)
+    service._fetch_sync_data = AsyncMock(
+        return_value=SyncSnapshot(
+            snapshot_id="temperatures",
+            synced_at=None,
+            data={
+                "manufacturers": [{"id": 5, "name": manufacturer.name}],
+                "materials": [{"id": 6, "key": "PLA"}],
+                "spool_profiles": [],
+                "filaments": [
+                    {
+                        "id": 71,
+                        "manufacturer_id": 5,
+                        "material_id": 6,
+                        "designation": "Temperature PLA",
+                        "diameter_mm": 1.75,
+                        "color_mode": "single",
+                        "temp_nozzle_min": 190,
+                        "temp_nozzle_max": 230,
+                        "temp_bed": 60,
+                        "sku": "TEMP-PLA",
+                        "dry_temp": 55,
+                        "fan_speed_min": 40,
+                        "fan_speed_max": 80,
+                        "ams_compatible": ["ams"],
+                        "shop_url": "https://example.com/temperature-pla",
+                    }
+                ],
+            },
+        )
+    )
+
+    [result] = (await service.diff_filaments([71])).results
+    assert {change["field"] for change in result["changes"]} == {
+        "extruder_temp_range_c",
+        "bed_temp_range_c",
+        "manufacturer_sku",
+        "drying_temp_c",
+        "cooling_fan_range_percent",
+        "ams_compatibility",
+        "shop_url",
+    }
 
 
 @pytest.mark.asyncio

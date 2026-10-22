@@ -124,11 +124,7 @@ def definition_can_receive(receiver: Any, incoming: Any) -> bool:
 
 def field_paths_overlap(left: str, right: str) -> bool:
     """Return whether two custom-field paths are identical or nested."""
-    return (
-        left == right
-        or left.startswith(f"{right}.")
-        or right.startswith(f"{left}.")
-    )
+    return left == right or left.startswith(f"{right}.") or right.startswith(f"{left}.")
 
 
 def find_overlapping_definition(

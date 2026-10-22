@@ -3,9 +3,11 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.api.v1.devices import _device_url
+from app.api.v1.devices import _build_extended_data, _device_url
 from app.core.security import hash_password, hash_token, verify_password_async
 from app.models import Device, Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.models.printer import Printer
+from app.models.printer_params import FilamentPrinterParam
 
 
 async def _create_device(
@@ -98,6 +100,51 @@ async def _create_spool(
     await db_session.commit()
     await db_session.refresh(spool)
     return spool
+
+
+@pytest.mark.parametrize(
+    ("temperature", "expected"),
+    [
+        ("9007199254740993", ("9007199254740993", "9007199254740993")),
+        ("9" * 400, ("9" * 400, "9" * 400)),
+        ("215.0", ("215", "215")),
+        ("215.25", ("215", "215")),
+        ("215.75", ("216", "216")),
+        ("invalid", ("180", "230")),
+        ("nan", ("180", "230")),
+        ("inf", ("180", "230")),
+        ("-inf", ("180", "230")),
+    ],
+)
+async def test_rfid_temperature_projection_preserves_parameter_precision(
+    db_session, temperature, expected
+):
+    manufacturer = await _create_manufacturer(db_session)
+    filament = await _create_filament(db_session, manufacturer.id)
+    status = await _get_status(db_session, "active")
+    spool = await _create_spool(db_session, filament.id, status.id)
+    spool.filament = filament
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add(printer)
+    await db_session.flush()
+    params = [
+        FilamentPrinterParam(
+            filament_id=filament.id,
+            printer_id=printer.id,
+            param_key=f"bambu_nozzle_temp_{endpoint}",
+            param_value=temperature,
+        )
+        for endpoint in ("min", "max")
+    ]
+    db_session.add_all(params)
+    await db_session.commit()
+
+    tag = await _build_extended_data(db_session, spool, "bambu")
+
+    assert (tag["min_temp"], tag["max_temp"]) == expected
+    for param in params:
+        await db_session.refresh(param)
+        assert param.param_value == temperature
 
 
 async def _create_location(db_session, name: str = "Shelf A", identifier: str | None = None) -> Location:

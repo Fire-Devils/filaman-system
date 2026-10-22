@@ -1,8 +1,11 @@
+import json
 import math
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
+from app.api.v1.devices import _build_extended_data
 from app.models import (
     FilamentPrinterParam,
     Manufacturer,
@@ -12,10 +15,13 @@ from app.models import (
     SpoolStatus,
 )
 from app.models.filament import Filament
+from app.plugins.base import BaseDriver
 from app.plugins.manager import PluginManager
+from app.services.spoolman_import_service import SpoolmanImportService
+from tests.support.spoolman_fixture_server import SpoolmanFixtureServer
 
 
-async def _run_bambu_migration(db_session, monkeypatch):
+def _bambu_manager(db_session, monkeypatch):
     class _SessionContext:
         async def __aenter__(self):
             return db_session
@@ -32,7 +38,45 @@ async def _run_bambu_migration(db_session, monkeypatch):
         "_load_plugin_json",
         lambda _driver_key: {"printer_params": {"migration": {"legacy_renames": {}}}},
     )
-    await manager._migrate_spoolman_bambu_fields("bambulab")
+    return manager
+
+
+async def _run_bambu_migration(db_session, monkeypatch, driver_key="bambulab"):
+    await _bambu_manager(db_session, monkeypatch)._migrate_spoolman_bambu_fields(
+        driver_key
+    )
+
+
+async def test_non_bambu_driver_does_not_consume_bambu_fields(db_session, monkeypatch):
+    printer = Printer(name="Moonraker", driver_key="moonraker")
+    manufacturer = Manufacturer(name="Migration Guard Test")
+    db_session.add_all([printer, manufacturer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Guard PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        custom_fields={"settings_extruder_temp": 210},
+    )
+    db_session.add(filament)
+    await db_session.commit()
+
+    await _run_bambu_migration(db_session, monkeypatch, "moonraker")
+
+    assert (
+        not (
+            await db_session.execute(
+                select(FilamentPrinterParam).where(
+                    FilamentPrinterParam.filament_id == filament.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await db_session.refresh(filament)
+    assert filament.custom_fields == {"settings_extruder_temp": 210}
 
 
 def test_extract_bambu_params_reads_promoted_native_nozzle_range():
@@ -203,6 +247,397 @@ async def test_invalid_native_nozzle_object_is_retained(
         "nozzle_temperature": invalid_range,
         "notes": "keep",
     }
+
+
+@pytest.mark.parametrize(
+    ("mode", "temperature", "param_value", "tag_value"),
+    [
+        ("system", 215, "215", "215"),
+        ("preserve", 215.0, "215", "215"),
+        ("system", 215.25, "215.25", "215"),
+        ("preserve", 215.75, "215.75", "216"),
+    ],
+)
+async def test_imported_settings_temperatures_reach_bambu_rfid_tag(
+    db_session, monkeypatch, mode, temperature, param_value, tag_value
+):
+    data = json.loads(
+        (Path(__file__).parent / "fixtures/spoolman/rich_fields.json").read_text()
+    )
+    data["filament"][0].update(
+        settings_extruder_temp=temperature, settings_bed_temp=60.0
+    )
+    db_session.add(Printer(name="Bambu", driver_key="bambulab"))
+    await db_session.commit()
+    server = SpoolmanFixtureServer(data)
+    service = SpoolmanImportService(db_session, client_factory=server.client_factory)
+    preview = await service.preview("http://spoolman")
+    result = await service.execute(
+        "http://spoolman", preview.extra_field_fingerprint, extra_field_mode=mode
+    )
+    assert result.errors == []
+    spool = await db_session.scalar(
+        select(Spool).where(Spool.external_id == "spoolman:20")
+    )
+    filament = await db_session.get(Filament, spool.filament_id)
+    spool.filament = filament
+    assert filament.extruder_temp_range_c == {"min": temperature, "max": temperature}
+    assert filament.bed_temp_range_c == {"min": 60.0, "max": 60.0}
+    assert "settings_extruder_temp" not in (filament.custom_fields or {})
+    assert "settings_bed_temp" not in (filament.custom_fields or {})
+
+    await _run_bambu_migration(db_session, monkeypatch)
+
+    params = await db_session.scalars(
+        select(FilamentPrinterParam).where(
+            FilamentPrinterParam.filament_id == filament.id
+        )
+    )
+    temperatures = {
+        item.param_key: item.param_value for item in params if "temp" in item.param_key
+    }
+    assert temperatures == {
+        "bambu_nozzle_temp_min": param_value,
+        "bambu_nozzle_temp_max": param_value,
+        "bambu_bed_temp": "60",
+    }
+    tag = await _build_extended_data(db_session, spool, "bambu")
+    assert (tag["min_temp"], tag["max_temp"]) == (tag_value, tag_value)
+    await db_session.refresh(filament)
+    assert filament.extruder_temp_range_c == {"min": temperature, "max": temperature}
+
+
+@pytest.mark.parametrize(
+    ("nozzle", "bed", "expected"),
+    [
+        (
+            {"min": 190, "max": 230},
+            {"min": 55, "max": 65},
+            {
+                "bambu_nozzle_temp_min": "190",
+                "bambu_nozzle_temp_max": "230",
+                "bambu_bed_temp": "55",
+            },
+        ),
+        (
+            {"min": 0, "max": None},
+            {"min": 0, "max": 60},
+            {"bambu_nozzle_temp_min": "0", "bambu_bed_temp": "0"},
+        ),
+        (
+            {"min": None, "max": 230},
+            {"min": None, "max": 60},
+            {"bambu_nozzle_temp_max": "230", "bambu_bed_temp": "60"},
+        ),
+        ({"min": True, "max": 230}, {"min": 80, "max": 60}, {}),
+        ({"min": 190, "max": math.inf}, {"min": 50}, {}),
+        ({"min": None, "max": None}, None, {}),
+    ],
+)
+async def test_native_temperature_fallback_preserves_printer_overrides_and_profiles(
+    db_session, monkeypatch, nozzle, bed, expected
+):
+    manufacturer = Manufacturer(name="Native Range Test")
+    printers = [Printer(name=name, driver_key="bambulab") for name in ("A", "B")]
+    db_session.add_all([manufacturer, *printers])
+    await db_session.flush()
+    profile_metadata = {
+        "spoolman_extra": {
+            "bambu_profile_base_name": "Generic PLA",
+            "bambu_profiles_by_model": {"X1": "PLA profile"},
+        },
+        "notes": "keep",
+    }
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Native PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c=nozzle,
+        bed_temp_range_c=bed,
+        custom_fields=profile_metadata,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    overrides = {
+        "bambu_nozzle_temp_min": "205",
+        "bambu_nozzle_temp_max": "250",
+        "bambu_bed_temp": "77",
+    }
+    db_session.add_all(
+        [
+            FilamentPrinterParam(
+                filament_id=filament.id,
+                printer_id=printers[0].id,
+                param_key=key,
+                param_value=value,
+            )
+            for key, value in overrides.items()
+        ]
+    )
+    db_session.add(
+        FilamentPrinterParam(
+            filament_id=filament.id,
+            printer_id=printers[1].id,
+            param_key="bambu_k_value",
+            param_value="0.031",
+        )
+    )
+    await db_session.commit()
+
+    for _ in range(2):
+        await _run_bambu_migration(db_session, monkeypatch)
+        params = (
+            await db_session.scalars(
+                select(FilamentPrinterParam).where(
+                    FilamentPrinterParam.filament_id == filament.id
+                )
+            )
+        ).all()
+        for printer, values in zip(
+            printers,
+            [{**expected, **overrides}, {**expected, "bambu_k_value": "0.031"}],
+        ):
+            assert {
+                p.param_key: p.param_value for p in params if p.printer_id == printer.id
+            } == values
+        await db_session.refresh(filament)
+        assert filament.extruder_temp_range_c == nozzle
+        assert filament.bed_temp_range_c == bed
+        assert filament.custom_fields == profile_metadata
+
+
+@pytest.mark.parametrize(
+    ("custom_fields", "expected", "remaining"),
+    [
+        (
+            {"settings_extruder_temp": 210, "settings_bed_temp": 50},
+            {
+                "bambu_nozzle_temp_min": "210",
+                "bambu_nozzle_temp_max": "210",
+                "bambu_bed_temp": "50",
+            },
+            None,
+        ),
+        (
+            {"nozzle_temperature": [195, 225], "settings_extruder_temp": 210},
+            {
+                "bambu_nozzle_temp_min": "195",
+                "bambu_nozzle_temp_max": "225",
+                "bambu_bed_temp": "60",
+            },
+            None,
+        ),
+        (
+            {
+                "bambu_nozzle_temp_min": 205,
+                "bambu_bed_temp": 70,
+                "settings_extruder_temp": 210,
+                "spoolman_extra": {
+                    "bambu_nozzle_temp_min": 200,
+                    "bambu_nozzle_temp_max": 240,
+                },
+            },
+            {
+                "bambu_nozzle_temp_min": "205",
+                "bambu_nozzle_temp_max": "240",
+                "bambu_bed_temp": "70",
+            },
+            None,
+        ),
+        (
+            {"bambu_nozzle_temp": 205},
+            {
+                "bambu_nozzle_temp_min": "205",
+                "bambu_nozzle_temp_max": "230",
+                "bambu_bed_temp": "60",
+            },
+            None,
+        ),
+        (
+            {"nozzle_temperature": {"min": True, "max": 240}},
+            {
+                "bambu_nozzle_temp_min": "190",
+                "bambu_nozzle_temp_max": "230",
+                "bambu_bed_temp": "60",
+            },
+            {"nozzle_temperature": {"min": True, "max": 240}},
+        ),
+    ],
+)
+async def test_legacy_temperature_precedence_above_native_fallback(
+    db_session, monkeypatch, custom_fields, expected, remaining
+):
+    manufacturer = Manufacturer(name="Legacy Precedence Test")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Legacy PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        custom_fields=custom_fields,
+        extruder_temp_range_c={"min": 190, "max": 230},
+        bed_temp_range_c={"min": 60, "max": 60},
+    )
+    db_session.add(filament)
+    await db_session.commit()
+
+    await _run_bambu_migration(db_session, monkeypatch)
+
+    params = await db_session.scalars(
+        select(FilamentPrinterParam).where(
+            FilamentPrinterParam.filament_id == filament.id
+        )
+    )
+    assert {p.param_key: p.param_value for p in params} == expected
+    await db_session.refresh(filament)
+    assert filament.custom_fields == remaining
+
+
+@pytest.mark.parametrize("legacy_temperature", [None, 210])
+async def test_existing_printer_start_copies_calibration_before_native_defaults(
+    db_session, monkeypatch, legacy_temperature
+):
+    class OfflineDriver(BaseDriver):
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+    manufacturer = Manufacturer(name="Startup Migration Test")
+    source = Printer(name="Existing Bambu", driver_key="bambulab")
+    target = Printer(name="New Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, source, target])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Startup PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 215, "max": 215},
+        custom_fields={"settings_extruder_temp": legacy_temperature}
+        if legacy_temperature is not None
+        else None,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            FilamentPrinterParam(
+                filament_id=filament.id,
+                printer_id=source.id,
+                param_key=key,
+                param_value=value,
+            )
+            for key, value in {
+                "bambu_setting_id": "saved-profile",
+                "bambu_k_value": "0.035",
+                "bambu_nozzle_temp_min": "225",
+            }.items()
+        ]
+    )
+    await db_session.commit()
+    manager = _bambu_manager(db_session, monkeypatch)
+    monkeypatch.setattr(manager, "load_driver", lambda _key: OfflineDriver)
+
+    assert await manager.start_printer(source)
+    expected = {
+        "bambu_setting_id": "saved-profile",
+        "bambu_k_value": "0.035",
+        "bambu_nozzle_temp_min": "225" if legacy_temperature is None else "210",
+    }
+    if legacy_temperature is not None:
+        expected["bambu_nozzle_temp_max"] = "210"
+    for printer in (target, source):
+        params = await db_session.scalars(
+            select(FilamentPrinterParam).where(
+                FilamentPrinterParam.filament_id == filament.id,
+                FilamentPrinterParam.printer_id == printer.id,
+            )
+        )
+        assert {p.param_key: p.param_value for p in params} == expected
+    assert await manager.start_printer(target)
+    params = await db_session.scalars(
+        select(FilamentPrinterParam).where(
+            FilamentPrinterParam.filament_id == filament.id,
+            FilamentPrinterParam.printer_id == target.id,
+        )
+    )
+    assert {p.param_key: p.param_value for p in params} == expected
+
+
+@pytest.mark.parametrize(
+    ("native", "override_key", "override_value", "expected"),
+    [
+        (
+            {"min": 215, "max": 215},
+            "bambu_nozzle_temp_min",
+            "225",
+            {"bambu_nozzle_temp_min": "225"},
+        ),
+        (
+            {"min": 215, "max": 215},
+            "bambu_nozzle_temp_max",
+            "200",
+            {"bambu_nozzle_temp_max": "200"},
+        ),
+        (
+            {"min": 215, "max": 230},
+            "bambu_nozzle_temp_min",
+            "225",
+            {"bambu_nozzle_temp_min": "225", "bambu_nozzle_temp_max": "230"},
+        ),
+        (
+            {"min": 215, "max": None},
+            "bambu_nozzle_temp_max",
+            "200",
+            {"bambu_nozzle_temp_max": "200"},
+        ),
+        (
+            {"min": 215, "max": 230},
+            "bambu_nozzle_temp_min",
+            "invalid",
+            {"bambu_nozzle_temp_min": "invalid", "bambu_nozzle_temp_max": "230"},
+        ),
+    ],
+)
+async def test_native_fallback_does_not_invert_explicit_printer_range(
+    db_session, monkeypatch, native, override_key, override_value, expected
+):
+    manufacturer = Manufacturer(name="Native Conflict Test")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Conflict PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c=native,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        FilamentPrinterParam(
+            filament_id=filament.id,
+            printer_id=printer.id,
+            param_key=override_key,
+            param_value=override_value,
+        )
+    )
+    await db_session.commit()
+
+    await _run_bambu_migration(db_session, monkeypatch)
+
+    params = await db_session.scalars(
+        select(FilamentPrinterParam).where(
+            FilamentPrinterParam.filament_id == filament.id
+        )
+    )
+    assert {p.param_key: p.param_value for p in params} == expected
 
 
 async def test_rfid_tags_stay_in_custom_fields_and_misfiled_params_are_restored(

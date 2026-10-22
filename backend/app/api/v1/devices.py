@@ -74,6 +74,18 @@ _MATERIAL_TEMP_DEFAULTS: dict[str, tuple[int, int]] = {
 _DEFAULT_TEMP = (190, 230)
 
 
+def _rfid_temperature(value: str | None, default: int) -> int:
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return round(float(value))
+        except (ValueError, OverflowError):
+            return default
+
+
 async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> dict:
     """Baut das Extended-Data-Dict für RFID-Tags aus den Spulen-/Filamentdaten."""
     filament = spool.filament
@@ -115,16 +127,8 @@ async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> di
             )
         )
         params = {row.param_key: row.param_value for row in param_result.all()}
-        if "bambu_nozzle_temp_min" in params and params["bambu_nozzle_temp_min"]:
-            try:
-                min_temp = int(params["bambu_nozzle_temp_min"])
-            except ValueError:
-                pass
-        if "bambu_nozzle_temp_max" in params and params["bambu_nozzle_temp_max"]:
-            try:
-                max_temp = int(params["bambu_nozzle_temp_max"])
-            except ValueError:
-                pass
+        min_temp = _rfid_temperature(params.get("bambu_nozzle_temp_min"), min_temp)
+        max_temp = _rfid_temperature(params.get("bambu_nozzle_temp_max"), max_temp)
 
     return {
         "protocol": protocol,

@@ -16,9 +16,11 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.api.deps import DBSession, PrincipalDep
-from app.core.config import settings, MANUFACTURER_LOGO_DIR
-from app.models import Color, FilamentColor, Manufacturer
+from app.core.config import MANUFACTURER_LOGO_DIR, settings
+from app.models import Color, Manufacturer
 from app.models.plugin import InstalledPlugin
+from app.services.extra_field_validation import normalize_numeric_range
+from app.services.filamentdb_field_mapping import standard_filamentdb_fields
 from app.utils.search import (
     FUZZY_MATCH_THRESHOLD,
     fuzzy_token_score,
@@ -197,7 +199,10 @@ async def _search_with_fuzzy_fallback(
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             probe_data_list = await asyncio.wait_for(
                 asyncio.gather(
-                    *(fetch_probe(client, probe_params) for probe_params in probe_params_list)
+                    *(
+                        fetch_probe(client, probe_params)
+                        for probe_params in probe_params_list
+                    )
                 ),
                 timeout=_FUZZY_FALLBACK_TIMEOUT,
             )
@@ -379,12 +384,32 @@ class PrepareFilamentRequest(BaseModel):
     material_key: str | None = None
     material_name: str | None = None
     material_subtype: str | None = None
+    manufacturer_color_name: str | None = None
     diameter_mm: float = 1.75
     density_g_cm3: float | None = None
+    temp_nozzle_min: float | None = None
+    temp_nozzle_max: float | None = None
+    temp_bed: float | None = None
     nominal_weight_g: int | None = None
     price: float | None = None
     currency: str | None = None
     shop_url: str | None = None
+    sku: str | None = None
+    datasheet_url: str | None = None
+    image_url: str | None = None
+    image_file: str | None = None
+    discontinued: bool | None = None
+    dry_temp: float | None = None
+    dry_time_hours: float | None = None
+    softening_temp: float | None = None
+    fan_speed_min: float | None = None
+    fan_speed_max: float | None = None
+    chamber_temp: float | None = None
+    max_volumetric_speed: float | None = None
+    flow_ratio: float | None = None
+    k_value: float | None = None
+    ams_compatible: str | list[str] | None = None
+    build_plates: str | list[str] | None = None
     color_mode: str = "single"
     multi_color_style: str | None = None
 
@@ -421,6 +446,22 @@ async def prepare_filament(
     2. Find or create each color locally (hex_code match).
     3. Return local IDs + pre-filled form data.
     """
+    temperature_ranges: dict[str, Any] = {}
+    if data.temp_nozzle_min is not None or data.temp_nozzle_max is not None:
+        try:
+            temperature_ranges["extruder_temp_range_c"] = normalize_numeric_range(
+                {"min": data.temp_nozzle_min, "max": data.temp_nozzle_max}
+            )
+        except ValueError:
+            pass
+    if data.temp_bed is not None:
+        try:
+            temperature_ranges["bed_temp_range_c"] = normalize_numeric_range(
+                data.temp_bed
+            )
+        except ValueError:
+            pass
+
     # ── 1. Manufacturer ─────────────────────────────────────────────
     manufacturer_created = False
     stmt = select(Manufacturer).where(
@@ -547,12 +588,17 @@ async def prepare_filament(
         "color_mode": data.color_mode,
         "multi_color_style": data.multi_color_style,
         "material_subgroup": data.material_subtype,
+        "manufacturer_color_name": data.manufacturer_color_name,
         "default_spool_weight_g": data.spool_profile_empty_weight_g,
         "spool_outer_diameter_mm": data.spool_profile_outer_diameter_mm,
         "spool_width_mm": data.spool_profile_width_mm,
         "spool_material": data.spool_profile_material,
         "color_ids": color_ids,
     }
+    prefilled.update(temperature_ranges)
+    prefilled.update(
+        standard_filamentdb_fields(data.model_dump(), base_url=settings.filamentdb_url)
+    )
 
     return PrepareFilamentResponse(
         manufacturer_id=manufacturer.id,

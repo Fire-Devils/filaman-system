@@ -1337,6 +1337,39 @@ async def test_import_entities_without_extra_objects(db_session):
     assert spool.custom_field_definitions is None
 
 
+@pytest.mark.parametrize("raw", ['"warm"', '"60"', "60"])
+@pytest.mark.parametrize("mode", ["legacy", "local", "system"])
+@pytest.mark.parametrize("key", ["bed", "fan_speed_min"])
+async def test_authoritative_text_standard_value_is_retained(db_session, raw, mode, key):
+    service = SpoolmanImportService(db_session)
+    service.preview = AsyncMock(
+        return_value=ImportPreview(
+            available_field_targets={"filament"},
+            extra_field_fingerprint="stable",
+            filaments=[
+                {"id": 1, "name": "Text field", "material": "PLA", "extra": {key: raw}}
+            ],
+            field_definitions={
+                "filament": [source_definition(key=key, field_type="text")]
+            },
+        )
+    )
+    preview = await service.preview("http://spoolman")
+    result = await service.execute(
+        "http://spoolman", preview.extra_field_fingerprint, mode
+    )
+    assert result.errors == []
+    filament = await db_session.scalar(select(Filament))
+    assert filament.bed_temp_range_c is None
+    assert filament.cooling_fan_range_percent is None
+    if mode == "legacy":
+        assert filament.custom_fields["spoolman_extra"][key] == raw.strip('"')
+    else:
+        assert filament.custom_fields[key] == raw.strip('"')
+        if mode == "local":
+            assert filament.custom_field_definitions[key]["field_type"] == "text"
+
+
 class TestSpoolmanImportShopUrl:
     """Spoolman has no URL field, so article_number must not become one."""
 

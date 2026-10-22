@@ -21,6 +21,15 @@ from . import schemas
 logger = logging.getLogger(__name__)
 
 
+def _temperature_scalar(native: dict | None, legacy: Any) -> int | None:
+    if native is None:
+        return legacy
+    value = native.get("min")
+    if value is None:
+        value = native.get("max")
+    return int(round(value)) if value is not None else None  # noqa: RUF046 -- match tag projection
+
+
 def _weight_to_length_mm(
     weight_g: float, diameter_mm: float, density_g_cm3: float
 ) -> float:
@@ -253,9 +262,9 @@ class SpoolmanService:
         if data.comment is not None:
             custom_fields["comment"] = data.comment
         if data.settings_extruder_temp is not None:
-            custom_fields["settings_extruder_temp"] = data.settings_extruder_temp
+            custom_fields.pop("settings_extruder_temp", None)
         if data.settings_bed_temp is not None:
-            custom_fields["settings_bed_temp"] = data.settings_bed_temp
+            custom_fields.pop("settings_bed_temp", None)
         if data.external_id is not None:
             custom_fields["external_id"] = data.external_id
 
@@ -269,6 +278,14 @@ class SpoolmanService:
             raw_material_weight_g=data.weight,
             default_spool_weight_g=data.spool_weight,
             price=data.price,
+            extruder_temp_range_c=(
+                {"min": data.settings_extruder_temp, "max": data.settings_extruder_temp}
+                if data.settings_extruder_temp is not None else None
+            ),
+            bed_temp_range_c=(
+                {"min": data.settings_bed_temp, "max": data.settings_bed_temp}
+                if data.settings_bed_temp is not None else None
+            ),
             color_mode=color_mode,
             multi_color_style=data.multi_color_direction,
             custom_fields=custom_fields or None,
@@ -320,18 +337,6 @@ class SpoolmanService:
                 custom_fields.pop("comment", None)
             else:
                 custom_fields["comment"] = payload["comment"]
-        if "settings_extruder_temp" in payload:
-            if payload["settings_extruder_temp"] is None:
-                custom_fields.pop("settings_extruder_temp", None)
-            else:
-                custom_fields["settings_extruder_temp"] = payload[
-                    "settings_extruder_temp"
-                ]
-        if "settings_bed_temp" in payload:
-            if payload["settings_bed_temp"] is None:
-                custom_fields.pop("settings_bed_temp", None)
-            else:
-                custom_fields["settings_bed_temp"] = payload["settings_bed_temp"]
         if "external_id" in payload:
             if payload["external_id"] is None:
                 custom_fields.pop("external_id", None)
@@ -339,6 +344,18 @@ class SpoolmanService:
                 custom_fields["external_id"] = payload["external_id"]
         if "extra" in payload and payload["extra"]:
             custom_fields.update(payload["extra"])
+
+        for wire_key, native_key in (
+            ("settings_extruder_temp", "extruder_temp_range_c"),
+            ("settings_bed_temp", "bed_temp_range_c"),
+        ):
+            if wire_key in payload:
+                value = payload[wire_key]
+                setattr(
+                    filament, native_key,
+                    {"min": value, "max": value} if value is not None else None,
+                )
+                custom_fields.pop(wire_key, None)
 
         filament.custom_fields = custom_fields or None
 
@@ -809,8 +826,12 @@ class SpoolmanService:
         custom_fields = dict(filament.custom_fields or {})
         article_number = custom_fields.pop("article_number", None)
         comment = custom_fields.pop("comment", None)
-        settings_extruder_temp = custom_fields.pop("settings_extruder_temp", None)
-        settings_bed_temp = custom_fields.pop("settings_bed_temp", None)
+        settings_extruder_temp = _temperature_scalar(
+            filament.extruder_temp_range_c, custom_fields.pop("settings_extruder_temp", None)
+        )
+        settings_bed_temp = _temperature_scalar(
+            filament.bed_temp_range_c, custom_fields.pop("settings_bed_temp", None)
+        )
         external_id = custom_fields.pop("external_id", None)
 
         return schemas.Filament(
