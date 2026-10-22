@@ -103,7 +103,7 @@ const { id } = Astro.params
     import { renderDetailExtraFieldRows } from '../../../lib/entity-extra-fields'
     import { createEntityExtraFieldsDialog } from '../../../lib/entity-extra-fields-dialog'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
-    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors } from '../../../lib/filament-detail'
+    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
     import { createFilamentFormController } from '../../../lib/filament-form'
     import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
@@ -362,7 +362,7 @@ const { id } = Astro.params
       })
       const sectionsHtml = sections.map(section => `<section class="fm-card filament-spec-card">
         <h2 class="filament-spec-title">${t(section.titleKey)}</h2>
-        <div class="filament-spec-rows">${section.rows.map(renderSpecRow).join('')}</div>
+        <div class="filament-spec-rows">${section.rows.map(renderSpecRow).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(f.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div>
       </section>`).join('')
 
       const extraFieldRows = renderDetailExtraFieldRows(

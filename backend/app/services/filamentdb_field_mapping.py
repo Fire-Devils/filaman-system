@@ -1,3 +1,4 @@
+import re
 from pathlib import PurePath
 from typing import Any
 
@@ -17,6 +18,14 @@ DIRECT_FIELDS = {
 }
 
 
+def normalize_spool_image_file(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > 500 or '..' in value or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', value):
+        raise ValueError('Invalid spool image filename')
+    return value
+
+
 def _list_value(value: Any) -> list[str] | None:
     if isinstance(value, str):
         values = [item.strip() for item in value.split(",") if item.strip()]
@@ -31,6 +40,20 @@ def standard_filamentdb_fields(
     data: dict[str, Any], *, base_url: str | None = None
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {}
+    profile = data.get('spool_profile')
+    if not isinstance(profile, dict) and 'spool_profile_image_file' in data:
+        profile = {'id': data.get('spool_profile_id'), 'image_file': data['spool_profile_image_file']}
+    if isinstance(profile, dict):
+        profile_id = profile.get('id')
+        if type(profile_id) is int and profile_id > 0:
+            fields['filamentdb_spool_profile_id'] = profile_id
+        elif profile_id is None:
+            fields['filamentdb_spool_profile_id'] = None
+    if isinstance(profile, dict) and 'image_file' in profile:
+        try:
+            fields['filamentdb_spool_image_file'] = normalize_spool_image_file(profile['image_file'])
+        except ValueError:
+            fields['filamentdb_spool_image_file'] = None
     for source, target in DIRECT_FIELDS.items():
         value = data.get(source)
         if value is None:
