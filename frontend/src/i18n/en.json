@@ -29,6 +29,7 @@
     "dark": "Dark"
   },
   "common": {
+    "default": "Default",
     "save": "Save",
     "select": "Select...",
     "cancel": "Cancel",
@@ -403,7 +404,7 @@
     "amsCompatibility": "AMS compatibility",
     "buildPlateCompatibility": "Build plate compatibility",
     "temperatureValue": "Value",
-    "temperatureTo": "To (optional)",
+    "temperatureTo": "To",
     "shopUrl": "Product / Purchase URL",
     "shopUrlPlaceholder": "e.g. https://shop.example.com/filament",
     "noColorsAvailable": "No colors available. Add one below.",

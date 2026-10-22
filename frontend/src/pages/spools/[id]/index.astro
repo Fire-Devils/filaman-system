@@ -175,19 +175,20 @@ const { id } = Astro.params
       border: 2px solid #ef4444 !important;
     }
     .spool-edit-input { width: min(12rem, 100%); min-width: 5.5ch; padding: 5px 8px; text-align: right; }
-    .spool-edit-input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+    .spool-edit-input[type="number"] { width: calc(8ch + 18px); flex: 0 0 auto; appearance: textfield; -moz-appearance: textfield; }
     .spool-edit-input[type="number"]::-webkit-inner-spin-button,
     .spool-edit-input[type="number"]::-webkit-outer-spin-button { margin: 0; appearance: none; }
     select.spool-edit-input { padding-right: 2.2rem; text-align: left; }
     .spool-edit-field { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-    .spool-input-unit { display: inline-flex; align-items: stretch; gap: 6px; width: min(12rem, 100%); min-width: 6.5rem; }
-    .spool-input-unit .spool-edit-input { flex: 1 1 auto; min-width: 5.5ch; }
+    .spool-input-unit { display: inline-flex; align-items: stretch; gap: 6px; }
     .spool-input-unit > span { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 0 5px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text-muted); font-size: .75rem; font-weight: 650; white-space: nowrap; }
     .spool-core-row { grid-template-columns: 1fr; align-items: start; gap: 6px; }
-    .spool-core-edit { width: 100%; max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(6.5rem, 11rem); align-items: center; gap: 8px 16px; text-align: left; }
-    .spool-core-edit .spool-input-unit { width: 100%; }
-    .spool-core-edit .spool-edit-input { width: 100%; }
-    .spool-core-edit small { grid-column: 1 / -1; max-width: 44rem; }
+    .spool-core-edit { width: 100%; max-width: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; text-align: left; }
+    .spool-core-edit > span:first-child { white-space: normal; }
+    .spool-core-edit small { flex-basis: 100%; max-width: 44rem; }
+    .filament-spec-row:has(> .spool-input-unit, > input[type="number"]) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+    .filament-spec-row:has(> .spool-input-unit, > input[type="number"]) > .filament-spec-label { flex: 1 1 8rem; }
+    .filament-spec-row > .spool-input-unit, .filament-spec-row > input[type="number"] { margin-left: auto; }
     .spool-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .spool-extra-fields-card { grid-column: 1 / -1; }
     .spool-extra-fields-editor { padding-bottom: 16px; }
@@ -202,12 +203,12 @@ const { id } = Astro.params
     .spool-detail-heading h2 { margin: 0; font-size: 1.05rem; }
     .spool-detail-heading > a { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
     .spool-filament-panel .spool-detail-heading { margin: 0 0 12px; }
+    @container (max-width: 28rem) {
+      .filament-spec-row:has(> .spool-edit-input:not([type="number"])) { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 6px; }
+      .spool-edit-input:not([type="number"]) { width: 100%; min-width: 0; }
+    }
     @media (max-width: 640px) {
       .spool-system-fields-editor { grid-template-columns: 1fr; }
-      .spool-edit-field { align-items: stretch; flex-direction: column; }
-      .spool-core-edit { grid-template-columns: 1fr; }
-      .spool-core-edit small { grid-column: auto; }
-      .spool-edit-input { width: 100%; }
     }
   </style>
 
@@ -406,9 +407,9 @@ const { id } = Astro.params
       if (row.key === 'spool_core_weight_g') {
         const enabled = rawValue !== 0
         return `<span class="filament-spec-value spool-edit-field spool-core-edit">
-          <span style="font-size: .75rem; font-weight: 500; white-space: nowrap;"><input id="uses_spool_core" type="checkbox" aria-label="${t('spools.usesSpoolCore')}" ${enabled ? 'checked' : ''}> ${t('spools.usesSpoolCore')}</span>
-          <span class="spool-input-unit"><input class="fm-input spool-edit-input" name="${row.key}" type="number" step="1" min="0" placeholder="${escapeExtraFieldHtml(t('spools.spoolCoreWeightPlaceholder'))}" value="${enabled && rawValue != null ? escapeExtraFieldHtml(String(rawValue)) : ''}" ${enabled ? '' : 'disabled'}><span>g</span></span>
-          <small style="display: block; color: var(--text-muted); font-size: .72rem; font-weight: 400; line-height: 1.35;">${escapeExtraFieldHtml(t('spools.spoolCoreWeightHint'))}</small>
+          <span style="font-size: .75rem; font-weight: 500;"><input id="uses_spool_core" type="checkbox" aria-label="${t('spools.usesSpoolCore')}" ${enabled ? 'checked' : ''}> ${t('spools.usesSpoolCore')}</span>
+          <span class="spool-input-unit"><input class="fm-input spool-edit-input" name="${row.key}" aria-label="${escapeExtraFieldHtml(t(row.labelKey))}" aria-describedby="spool-core-weight-help" type="number" step="1" min="0" placeholder="${escapeExtraFieldHtml(t('common.default'))}" title="${escapeExtraFieldHtml(t('spools.spoolCoreWeightPlaceholder'))}" value="${enabled && rawValue != null ? escapeExtraFieldHtml(String(rawValue)) : ''}" ${enabled ? '' : 'disabled'}><span>g</span></span>
+          <small id="spool-core-weight-help" style="display: block; color: var(--text-muted); font-size: .72rem; font-weight: 400; line-height: 1.35;">${escapeExtraFieldHtml(t('spools.spoolCoreWeightHint'))}</small>
         </span>`
       }
       if (row.field.type === 'select') {
@@ -630,7 +631,11 @@ const { id } = Astro.params
       const spoolProfileLookupHtml = editing ? `<div id="spool-profile-lookup-section" class="spool-profile-lookup hidden"><div id="spool-profile-lookup-container"></div><div id="spool-profile-lookup-toast" class="fdb-toast" style="display: none;"></div></div>` : ''
       const spoolSectionsHtml = spoolSections.map((section) => `<section class="fm-card filament-spec-card${section.key === 'spool' ? ' spool-profile-card' : ''}">
         <h2 class="filament-spec-title spool-section-heading"><span>${t(section.titleKey)}</span>${editing && section.key === 'spool' ? `<button id="btn-spool-profile-lookup" type="button" class="fm-btn fm-btn-outline" style="font-size: .72rem; padding: 3px 8px;">${t('filamentdbLookup.loadFromDb')}</button>` : ''}</h2>
-        <div class="filament-spec-rows">${section.rows.map((row) => `${editing && section.key === 'spool' && row.key === 'spool_material' ? spoolProfileLookupHtml : ''}<label class="filament-spec-row${editing && row.key === 'spool_core_weight_g' ? ' spool-core-row' : ''}"><span class="filament-spec-label">${t(row.labelKey)}</span>${renderSpoolField(row)}</label>`).join('')}</div>
+        <div class="filament-spec-rows">${section.rows.map((row) => {
+          const core = editing && row.key === 'spool_core_weight_g'
+          const tag = core ? 'div' : 'label'
+          return `${editing && section.key === 'spool' && row.key === 'spool_material' ? spoolProfileLookupHtml : ''}<${tag} class="filament-spec-row${core ? ' spool-core-row' : ''}"><span class="filament-spec-label">${t(row.labelKey)}</span>${renderSpoolField(row)}</${tag}>`
+        }).join('')}</div>
       </section>`).join('')
       const filamentSections = buildFilamentDetailSections(spool.filament || {}, {
         price: spool.filament?.price == null ? undefined : formatPrice(spool.filament.price, spool.filament.price_currency || getCurrency()),
@@ -672,7 +677,7 @@ const { id } = Astro.params
             <div id="printer-slots-inline" class="spool-printer-overview"></div>
             <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
             <button id="btn-rfid" type="button" class="detail-icon-button" style="${(spool.rfid_uid || spool.rfid_uid_2) ? 'color: #10b981;' : 'color: var(--text);'}" aria-label="${t('rfid.writeTag')}" title="${t('rfid.writeTag')}">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" aria-hidden="true"><path d="M13 5C2 14 2 34 13 43 M35 5c11 9 11 29 0 38 M17 11c-8 7-8 19 0 26 M31 11c8 7 8 19 0 26 M21 17c-4 4-4 10 0 14 M27 17c4 4 4 10 0 14"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" aria-hidden="true"><g transform="rotate(-60 24 24)" stroke-dasharray="4 2"><circle cx="24" cy="24" r="20" pathLength="12"/><circle cx="24" cy="24" r="14" pathLength="12"/><circle cx="24" cy="24" r="8" pathLength="12"/></g><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg>
             </button>
             <button id="btn-edit-spool" type="button" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}" aria-pressed="${editing}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></button>
             ${editing ? `<button type="submit" form="spool-inline-form" class="fm-btn fm-btn-primary" disabled>${t('common.save')}</button><button id="btn-cancel-edit" type="button" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>` : `<button id="btn-duplicate-spool" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button><button id="btn-delete" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>`}

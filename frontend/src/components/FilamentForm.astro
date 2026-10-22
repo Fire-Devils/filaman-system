@@ -70,7 +70,7 @@ type InputAttributes = HTMLAttributes<'input'>
                   style: field.key === 'price_currency' ? 'text-transform: uppercase;' : undefined,
                 }
                 return (
-                  <Tag class:list={{ 'filament-required-field': field.required, 'filament-form-wide': field.key === 'designation', 'filament-form-check': field.kind === 'checkbox' }} data-dirty-key={field.key}>
+                  <Tag class:list={{ 'filament-required-field': field.required, 'filament-form-wide': field.key === 'designation', 'filament-form-check': field.kind === 'checkbox', 'filament-form-number': field.kind === 'number' || field.kind === 'range' }} data-dirty-key={field.key}>
                     {field.kind === 'checkbox' ? (
                       <><input id={id} name={id} type="checkbox" class="fm-checkbox" /><span data-i18n={field.labelKey}>{t(field.labelKey)}</span></>
                     ) : (
@@ -376,6 +376,16 @@ type InputAttributes = HTMLAttributes<'input'>
     font-weight: 650;
     white-space: nowrap;
   }
+  .filament-form-section-body > .filament-form-number {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+  .filament-form-number > .fm-label { flex: 1 1 8rem; }
+  .filament-form-number > .filament-unit-input { flex: 0 0 auto; margin-left: auto; }
+  .filament-form-number input[type="number"] { flex: 0 0 auto; width: calc(8ch + 16px); text-align: right; }
+  .filament-form-number > input[type="number"] { margin-left: auto; }
+  .filament-range-inputs input[type="number"] { width: calc(6ch + 16px); }
 
   .filament-color-dialog-overlay { padding: 16px; }
   .filament-color-dialog-overlay .filament-color-dialog {
@@ -575,16 +585,20 @@ type InputAttributes = HTMLAttributes<'input'>
     }
   }
   @media (max-width: 640px) {
+    .filament-color-meta-row { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+    .filament-color-mode-group { grid-template-columns: minmax(0, 1fr); }
     .filament-form-section-body > [data-dirty-key],
     #custom-type-wrapper { grid-template-columns: 1fr; gap: 5px; padding: 8px 0; }
-    .filament-form-check input,
-    .filament-form-check span { grid-column: auto; grid-row: auto; }
   }
 
   :global(#filament-form [data-dirty-key].is-dirty) {
-    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
-    outline-offset: 3px;
-    border-radius: var(--radius-sm);
+    outline: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: -1px;
+    border-radius: 6px;
+  }
+  :global(#filament-form .filament-form-section-body > [data-dirty-key].is-dirty) {
+    margin-inline: -6px;
+    padding-inline: 6px;
   }
   :global(#filament-form .filament-dirty-indicator) {
     display: inline-flex;

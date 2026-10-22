@@ -2277,7 +2277,7 @@ html.sidebar-collapsed .fm-page {
   grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
 }
 
-.fm-main { min-width: 0; container: detail-page / inline-size; }
+.fm-main { --page-gutter: clamp(10px, 3vw, 32px); min-width: 0; container: detail-page / inline-size; padding: var(--page-block-gutter, var(--page-gutter)) var(--page-gutter) var(--page-gutter); overflow-y: auto; }
 
 .fm-sidebar {
   border-right: 1px solid var(--border);
@@ -2354,6 +2354,7 @@ html.sidebar-collapsed .fm-nav-icon {
   color: var(--accent);
   transform: scale(1.1);
 }
+.fm-sidebar-toggle .sidebar-menu-icon { display: none; }
 
 .fm-page.collapsed .fm-sidebar-toggle svg,
 html.sidebar-collapsed .fm-sidebar-toggle svg {
@@ -2390,22 +2391,26 @@ html.sidebar-collapsed .fm-logo-text {
 
 /* Media query for mobile */
 @media (max-width: 768px) {
-  /* Grid always uses collapsed column on mobile */
-  .fm-page {
-    grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
+  .fm-page, .fm-page.collapsed, html.sidebar-collapsed .fm-page {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  /* Expanded sidebar becomes fixed overlay on mobile */
-  html:not(.sidebar-collapsed) .fm-sidebar {
+  .fm-main { --page-block-gutter: 64px; }
+  .fm-sidebar {
     position: fixed;
-    left: 0;
+    left: calc(-1 * var(--sidebar-width));
     top: 0;
     width: var(--sidebar-width);
-    height: 100vh;
+    height: 100dvh;
     z-index: 1000;
-    box-shadow: var(--shadow-lg);
     background: var(--bg-elevated);
   }
+  html:not(.sidebar-collapsed) .fm-sidebar { left: 0; box-shadow: var(--shadow-lg); }
+  html.sidebar-collapsed .fm-sidebar-content { visibility: hidden; }
+  .fm-sidebar-toggle { top: 12px; right: 12px; width: 40px; height: 40px; }
+  .fm-sidebar-toggle .sidebar-chevron-icon { display: none; }
+  .fm-sidebar-toggle .sidebar-menu-icon { display: block; }
+  html.sidebar-collapsed .fm-sidebar-toggle { right: -48px; }
 
   /* Show backdrop when sidebar is expanded on mobile */
   html:not(.sidebar-collapsed) .fm-sidebar-backdrop {
@@ -2694,8 +2699,8 @@ html.sidebar-collapsed .fm-logo-text {
 
 /* Shared filament/spool detail layout */
 .fm-main:has(> .detail-page-toolbar) { height: 100dvh; scroll-padding-top: 5rem; }
-/* Offset the main scrollport's 32px padding so content cannot peek above the bar. */
-.detail-page-toolbar { position: sticky; top: -32px; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -32px -32px 16px; padding: 12px 32px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
+/* Offset the scrollport's responsive padding so content cannot peek above the bar. */
+.detail-page-toolbar { position: sticky; top: calc(-1 * var(--page-block-gutter, var(--page-gutter))); z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: calc(-1 * var(--page-block-gutter, var(--page-gutter))) calc(-1 * var(--page-gutter)) 16px; padding: 12px var(--page-gutter); background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
 .detail-toolbar-back { display: flex; align-items: center; min-width: 0; gap: 10px; }
 .detail-back-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); text-decoration: none; }
 .detail-toolbar-back .filament-change-pill { flex: 0 0 auto; }
@@ -2704,7 +2709,7 @@ html.sidebar-collapsed .fm-logo-text {
 .detail-page-toolbar .fm-btn-primary:disabled,
 .entity-extra-fields-dialog-footer .fm-btn-primary:disabled { background: var(--bg-soft); border-color: var(--border); color: var(--text-muted); box-shadow: none; cursor: not-allowed; transform: none; }
 .spool-printer-overview:not(:empty) { margin-bottom: 16px; }
-.detail-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-soft); color: var(--text); cursor: pointer; text-decoration: none; }
+.detail-icon-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; aspect-ratio: 1; width: 44px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-soft); color: var(--text); cursor: pointer; text-decoration: none; }
 .detail-icon-button:hover { border-color: var(--accent); color: var(--accent); }
 .detail-icon-button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-text); }
 .detail-icon-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -2783,7 +2788,7 @@ html.sidebar-collapsed .fm-logo-text {
 @container detail-page (max-width: 56rem) {
   .filament-spec-grid { grid-template-columns: minmax(0, 1fr); }
 }
-.filament-spec-card { padding: 0; overflow: hidden; }
+.filament-spec-card { padding: 0; overflow: hidden; container-type: inline-size; }
 .filament-spec-title { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-soft); font-size: .92rem; font-weight: 700; }
 .filament-spec-rows { padding: 4px 16px; }
 .filament-spec-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border); }
@@ -2791,7 +2796,6 @@ html.sidebar-collapsed .fm-logo-text {
 .filament-spec-label { color: var(--text-muted); font-size: .8rem; }
 .filament-spec-value { min-width: 0; max-width: 16rem; text-align: right; font-size: .88rem; font-weight: 650; overflow-wrap: anywhere; }
 .filament-spec-value a { color: var(--accent); }
-.filament-spec-card:has(.filament-spool-image) { container-type: inline-size; }
 .filament-spec-rows:has(> .filament-spool-image) { --spool-photo-size: 64px; position: relative; padding-right: calc(16px + var(--spool-photo-size) + 12px); }
 .filament-spool-image { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: var(--spool-photo-size); margin: 0; text-align: center; }
 .filament-spool-image a { display: block; }
@@ -2810,17 +2814,29 @@ html.sidebar-collapsed .fm-logo-text {
 .spool-totals strong { margin-left: 4px; color: var(--text); }
 .spool-totals span:first-child strong { color: var(--accent); }
 
+@media (max-width: 768px) {
+  .detail-page-toolbar { min-height: 64px; gap: 6px; padding: 8px var(--page-gutter) 8px 60px; }
+}
 @media (max-width: 640px) {
-  .detail-page-toolbar { gap: 6px; padding: 8px 12px; }
   .detail-toolbar-back { gap: 4px; }
   .detail-back-link { font-size: .78rem; }
   .detail-page-toolbar .detail-page-actions { gap: 4px; }
-  .detail-page-toolbar .fm-btn { padding: 6px 8px; font-size: .75rem; white-space: nowrap; }
-  .detail-page-toolbar .detail-icon-button { width: 32px; height: 32px; }
+  .detail-page-toolbar .fm-btn { min-height: 40px; padding: 6px 8px; font-size: .75rem; white-space: nowrap; }
+  .detail-page-toolbar .detail-icon-button { width: 40px; height: 40px; }
   .detail-page-toolbar #btn-rfid svg { width: 26px; height: 26px; }
   .filament-spec-grid { grid-template-columns: 1fr; }
   .filament-hero { padding: 18px; }
+  .detail-hero-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); width: 100%; gap: 6px; margin-top: 8px; }
+  .detail-hero-stat { min-width: 0; gap: 6px; padding: 8px; }
+  #actions-section .detail-quick-action-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #actions-section .detail-quick-action-buttons .fm-btn { padding-inline: 8px; }
   .filament-hero-logo { flex-basis: 112px; width: 112px; height: 44px; }
+  .filament-hero-title-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 18px; }
+  .filament-hero-title-copy { display: contents; }
+  .filament-hero-title-row h1 { display: grid; grid-area: 1 / 1 / 3 / -1; grid-template: subgrid / subgrid; }
+  .filament-hero-title-row .detail-record-id { grid-area: 1 / 1; margin: 0; }
+  .filament-hero-title-row .detail-record-name { grid-area: 2 / 1 / auto / -1; overflow-wrap: anywhere; }
+  .filament-hero-title-row .filament-hero-logo { grid-area: 1 / 2; }
   .detail-page-actions { justify-content: flex-start; }
   .detail-quick-actions:not(#actions-section) .detail-quick-action-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .spools-heading { align-items: flex-start; flex-direction: column; }
