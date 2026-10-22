@@ -30,6 +30,7 @@
   },
   "common": {
     "manageFields": "Gérer les champs",
+    "default": "Par défaut",
     "save": "Enregistrer",
     "select": "Sélectionner…",
     "cancel": "Annuler",
@@ -405,7 +406,7 @@
     "amsCompatibility": "Compatibilité AMS",
     "buildPlateCompatibility": "Compatibilité des plateaux",
     "temperatureValue": "Valeur",
-    "temperatureTo": "À (facultatif)",
+    "temperatureTo": "À",
     "shopUrl": "URL du produit / d'achat",
     "shopUrlPlaceholder": "ex. https://boutique.exemple.com/filament",
     "noColorsAvailable": "Aucune couleur disponible. Ajoutez-en une ci-dessous.",

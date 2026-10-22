@@ -30,6 +30,7 @@
   },
   "common": {
     "manageFields": "Felder verwalten",
+    "default": "Standard",
     "save": "Speichern",
     "select": "Auswählen...",
     "cancel": "Abbrechen",
@@ -406,7 +407,7 @@
     "amsCompatibility": "AMS-Kompatibilität",
     "buildPlateCompatibility": "Druckplatten-Kompatibilität",
     "temperatureValue": "Wert",
-    "temperatureTo": "Bis (optional)",
+    "temperatureTo": "Bis",
     "shopUrl": "Produkt-/Kauf-URL",
     "shopUrlPlaceholder": "z.B. https://shop.example.com/filament",
     "noColorsAvailable": "Keine Farben vorhanden. Unten eine anlegen.",
