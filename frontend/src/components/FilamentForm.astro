@@ -56,6 +56,12 @@ type InputAttributes = HTMLAttributes<'input'>
           <section class:list={['fm-card', 'filament-spec-card', { 'filament-form-primary-section': section.key === 'material' }]} data-filament-section={section.key}>
             <h2 class="filament-spec-title" data-i18n={section.titleKey}>{t(section.titleKey)}</h2>
             <div class="filament-form-section-body">
+              {section.key === 'spool' && <div id="filament-spool-profile" class="filament-spool-profile" hidden data-dirty-key="filamentdb_spool_profile_id filamentdb_spool_image_file">
+                <div class="spool-profile-heading"><span class="fm-label" data-i18n="filamentdbLookup.spoolType">Spool type</span><button type="button" class="fm-btn spool-profile-choose" aria-expanded="false" aria-controls="filament-spool-profile-lookup" data-i18n="filamentdbLookup.chooseSpoolType">Choose spool type</button></div>
+                <div class="spool-profile-summary"><span role="status" aria-live="polite"></span><span class="spool-profile-preview"></span><button type="button" class="fm-btn spool-profile-clear" hidden data-i18n="filamentdbLookup.matchSpoolType">Match entered values</button></div>
+                <div id="filament-spool-profile-lookup" class="spool-profile-lookup" hidden></div>
+              </div>}
+
               {section.fields.map(field => {
                 const id = field.id ?? field.key
                 const Tag = field.kind === 'checkbox' ? 'label' : 'div'
@@ -322,6 +328,7 @@ type InputAttributes = HTMLAttributes<'input'>
     padding: 3px 0;
     border-bottom: 1px solid var(--border);
   }
+  .filament-form-section-body > .filament-spool-profile { display: block; }
   .filament-form-section-body > [data-dirty-key]:last-child { border-bottom: 0; }
   .filament-form-section-body .fm-label { margin: 0; font-size: .8rem; }
   .filament-required { color: var(--error-text); }

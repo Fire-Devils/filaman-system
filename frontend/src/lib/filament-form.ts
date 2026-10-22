@@ -14,6 +14,7 @@ import {
 } from './filamentdb-lookup'
 import { buildFilamentHeroStyle, buildFilamentSwatchStyle } from './filament-detail'
 import { t } from './i18n'
+import { createSpoolProfilePicker } from './filament-spool-profile'
 import { bindInlineColorEditor } from './inline-color-editor'
 import {
   ADD_MANUFACTURER_VALUE,
@@ -160,6 +161,14 @@ export function createFilamentFormController(options: {
   let submitting = false
   let hasChanges = mode === 'create'
   submitButton.disabled = !hasChanges
+  let spoolImageFile: string | null | undefined
+  let spoolProfileId: number | null | undefined
+  const spoolProfilePicker = form.querySelector('#filament-spool-profile')
+    ? createSpoolProfilePicker(form, (id, image) => {
+      spoolProfileId = id
+      spoolImageFile = image
+      updateDirtyState()
+    }) : null
 
   const entityExtraFields = createEntityExtraFieldEditor({
     container: customFieldsContainer,
@@ -271,6 +280,16 @@ export function createFilamentFormController(options: {
     return Number.isFinite(parsed) ? parsed : null
   }
 
+  function listValue(id: string): string[] | null {
+    const value = input(id).value.trim()
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) return parsed
+    } catch { /* Plain comma-separated text remains supported. */ }
+    const values = value.split(',').map(item => item.trim()).filter(Boolean)
+    return values.length ? values : null
+  }
+
   function rangeValue(prefix: string): number | { min: number | null; max: number | null } | null {
     const startInput = input(`${prefix}_value`)
     const endInput = input(`${prefix}_to`)
@@ -318,10 +337,12 @@ export function createFilamentFormController(options: {
       max_volumetric_speed_mm3_s: serialize(numberValue('max_volumetric_speed_mm3_s')),
       flow_ratio: serialize(numberValue('flow_ratio')),
       pressure_advance_k: serialize(numberValue('pressure_advance_k')),
-      ams_compatibility: serialize(input('ams_compatibility').value.split(',').map((value) => value.trim()).filter(Boolean)),
-      build_plate_compatibility: serialize(input('build_plate_compatibility').value.split(',').map((value) => value.trim()).filter(Boolean)),
+      ams_compatibility: serialize(listValue('ams_compatibility')),
+      build_plate_compatibility: serialize(listValue('build_plate_compatibility')),
       is_discontinued: serialize(input('is_discontinued').checked),
       default_spool_weight_g: serialize(numberValue('default_spool_weight_g')),
+      filamentdb_spool_image_file: serialize(spoolImageFile ?? null),
+      filamentdb_spool_profile_id: serialize(spoolProfileId ?? null),
       spool_material: serialize(select('spool_material').value),
       spool_outer_diameter_mm: serialize(numberValue('spool_outer_diameter_mm')),
       spool_width_mm: serialize(numberValue('spool_width_mm')),
@@ -335,7 +356,7 @@ export function createFilamentFormController(options: {
   function updateDirtyState(): void {
     if (!baseline || mode !== 'edit') return
     const current = readSnapshot()
-    let anyDirty = false
+    let anyDirty = baseline.filamentdb_spool_image_file !== current.filamentdb_spool_image_file || baseline.filamentdb_spool_profile_id !== current.filamentdb_spool_profile_id
     for (const wrapper of dirtyWrappers) {
       const keys = (wrapper.dataset.dirtyKey || '').split(/\s+/).filter(Boolean)
       const dirty = keys.some((key) => baseline?.[key] !== current[key])
@@ -496,6 +517,8 @@ export function createFilamentFormController(options: {
       const field = byId<HTMLInputElement | HTMLSelectElement>(id)
       field.value = value == null ? '' : String(value)
     }
+    // Initial data may replace these defaults before its saved link is restored.
+    queueMicrotask(() => { if (!destroyed) spoolProfilePicker?.match() })
   }
 
   colorModeRadios.forEach((radio) => radio.addEventListener('change', syncColorMode))
@@ -524,7 +547,10 @@ export function createFilamentFormController(options: {
     event.preventDefault()
     closeColorDialog()
   })
-  const handleDraftChange = () => {
+  const handleDraftChange = (event?: Event | MutationRecord[]) => {
+    if (event instanceof Event && (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) {
+      if (['default_spool_weight_g', 'spool_material', 'spool_outer_diameter_mm', 'spool_width_mm'].includes((event.target as HTMLInputElement).name)) spoolProfilePicker?.match()
+    }
     syncHeroPreview()
     updateDirtyState()
   }
@@ -629,7 +655,7 @@ export function createFilamentFormController(options: {
                 ams_compatible: item.ams_compatible ?? null,
                 build_plates: item.build_plates ?? null,
                 nominal_weight_g: item.nominal_weight_g || null,
-                price: item.price || null,
+                price: item.price ?? null,
                 currency: item.currency || null,
                 shop_url: item.shop_url || null,
                 color_mode: (item.colors || []).length > 1 ? 'multi' : 'single',
@@ -639,10 +665,12 @@ export function createFilamentFormController(options: {
                   color_name: color.color_name || color.name || '',
                   position: color.position || index + 1,
                 })),
-                spool_profile_empty_weight_g: item.spool_profile?.empty_weight_g || null,
+                spool_profile_empty_weight_g: item.spool_profile?.empty_weight_g ?? null,
                 spool_profile_outer_diameter_mm: item.spool_profile?.outer_diameter_mm || null,
                 spool_profile_width_mm: item.spool_profile?.width_mm || null,
                 spool_profile_material: item.spool_profile?.spool_material || null,
+                spool_profile_image_file: item.spool_profile?.image_file ?? null,
+                spool_profile_id: item.spool_profile?.id ?? null,
               }),
             })
             if (!response.ok) {
@@ -782,6 +810,7 @@ export function createFilamentFormController(options: {
     renderSystemFields()
 
     if (lookupSource === 'filamandb' && filamentDbActive) bindCatalogLookup()
+    if (filamentDbActive) void spoolProfilePicker?.load()
   }
 
   function setField(id: string, value: unknown): void {
@@ -803,6 +832,8 @@ export function createFilamentFormController(options: {
   }
 
   function applyInitialData(data: InitialData, source: 'initial' | 'duplicate' | 'catalog' = 'initial'): void {
+    if (Object.hasOwn(data, 'filamentdb_spool_image_file')) spoolImageFile = data.filamentdb_spool_image_file ?? null
+    if (Object.hasOwn(data, 'filamentdb_spool_profile_id')) spoolProfileId = data.filamentdb_spool_profile_id ?? null
     const hasValue = (key: string): boolean => {
       if (!Object.hasOwn(data, key)) return false
       if (source !== 'catalog') return true
@@ -858,7 +889,12 @@ export function createFilamentFormController(options: {
       if (hasValue(key)) setRange(prefix, data[key])
     }
     for (const key of ['ams_compatibility', 'build_plate_compatibility'] as const) {
-      if (hasValue(key)) setField(key, Array.isArray(data[key]) ? data[key].join(', ') : data[key])
+      if (!hasValue(key)) continue
+      const value = data[key]
+      const simpleCsv = Array.isArray(value) && value.length > 0
+        && value.every(item => typeof item === 'string' && item !== '' && item === item.trim() && !/[,\r\n]/.test(item))
+        && !value[0].startsWith('[')
+      setField(key, Array.isArray(value) ? simpleCsv ? value.join(', ') : JSON.stringify(value) : value)
     }
     if (hasValue('is_discontinued')) input('is_discontinued').checked = !!data.is_discontinued
     if (hasValue('color_mode')) {
@@ -878,6 +914,8 @@ export function createFilamentFormController(options: {
       renderSystemFields(flattenObject(fields), fields)
       entityExtraFields.setData(fields, data.custom_field_definitions)
     }
+    spoolProfilePicker?.setLink(spoolProfileId ?? null, spoolImageFile ?? null)
+    if (mode === 'create' || source === 'catalog') spoolProfilePicker?.match()
     syncHeroPreview()
     updateDirtyState()
   }
@@ -897,6 +935,8 @@ export function createFilamentFormController(options: {
       diameter_mm: Number(formData.get('diameter_mm')),
       color_mode: colorMode,
     }
+    if (spoolImageFile !== undefined) scalar.filamentdb_spool_image_file = spoolImageFile
+    if (spoolProfileId !== undefined) scalar.filamentdb_spool_profile_id = spoolProfileId
     const optionalText = [
       'material_subgroup', 'finish_type', 'manufacturer_color_name', 'spool_material', 'shop_url',
       'manufacturer_sku', 'datasheet_url', 'image_url',
@@ -925,8 +965,8 @@ export function createFilamentFormController(options: {
     const priceCurrency = String(formData.get('price_currency') || '').trim().toUpperCase()
     if (mode === 'edit' || priceCurrency) scalar.price_currency = priceCurrency || null
     for (const key of ['ams_compatibility', 'build_plate_compatibility']) {
-      const values = String(formData.get(key) || '').split(',').map((value) => value.trim()).filter(Boolean)
-      if (mode === 'edit' || values.length) scalar[key] = values.length ? values : null
+      const values = listValue(key)
+      if (mode === 'edit' || values !== null) scalar[key] = values
     }
     scalar.is_discontinued = formData.get('is_discontinued') === 'on'
     if (mode === 'edit' || colorMode === 'multi') {
@@ -982,12 +1022,15 @@ export function createFilamentFormController(options: {
       const listView = colorListToggle.checked
       form.reset()
       colorListToggle.checked = listView
+      spoolImageFile = undefined
+      spoolProfileId = undefined
       for (const prefix of ['extruder_temp', 'bed_temp', 'cooling_fan']) setRange(prefix, null)
       applyInitialData({ colors: [], color_mode: 'single', custom_fields: {}, custom_field_definitions: {}, ...data }, 'initial')
     },
     captureBaseline() {
       if (mode !== 'edit') return
       baseline = readSnapshot()
+      spoolProfilePicker?.match()
       updateDirtyState()
     },
     collectPayload,
@@ -999,6 +1042,7 @@ export function createFilamentFormController(options: {
       form.removeEventListener('submit', handleSubmit)
       form.removeEventListener('input', handleDraftChange)
       form.removeEventListener('change', handleDraftChange)
+      spoolProfilePicker?.destroy()
       manufacturerDialog?.close()
       closeColorDialog()
       inlineColorEditor.close()

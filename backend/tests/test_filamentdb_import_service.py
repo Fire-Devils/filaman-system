@@ -1,6 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import delete, select
+
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.services.filamentdb_import_service import (
@@ -9,7 +11,6 @@ from app.services.filamentdb_import_service import (
     SyncSnapshot,
     _material_type_from_fdb,
 )
-from sqlalchemy import delete, select
 
 # ------------------------------------------------------------------ #
 #  Fixtures
@@ -43,6 +44,22 @@ def _clear_cache():
     response_cache.clear()
     yield
     response_cache.clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('target', ['filament', 'both', 'spool'])
+async def test_import_retains_filament_spool_image_for_every_packaging_target(db_session, target):
+    manufacturer = Manufacturer(name='Photo Brand')
+    db_session.add(manufacturer)
+    await db_session.flush()
+    service = FilamentDBImportService(db_session)
+    record = {'id': 71, 'manufacturer_id': 5, 'material_id': 6, 'designation': 'PLA', 'spool_profile_id': 735}
+    await service._import_filaments([record], {6: 'PLA'}, {5: manufacturer.id}, {}, {735: {'id': 735, 'image_file': '735.png', 'empty_weight_g': 170}}, target, ImportResult())
+    filament = await db_session.scalar(select(Filament))
+    assert filament.filamentdb_spool_image_file == '735.png'
+    await service._import_filaments([record], {6: 'PLA'}, {5: manufacturer.id}, {}, {735: {'id': 735, 'image_file': None}}, target, ImportResult(), update_filament_ids=[71])
+    await db_session.refresh(filament)
+    assert filament.filamentdb_spool_image_file is None
 
 
 # ------------------------------------------------------------------ #
@@ -411,7 +428,7 @@ async def test_diff_offers_standard_field_backfill_for_linked_filament(db_sessio
             data={
                 "manufacturers": [{"id": 5, "name": manufacturer.name}],
                 "materials": [{"id": 6, "key": "PLA"}],
-                "spool_profiles": [],
+                "spool_profiles": [{"id": 735, "image_file": "735.png"}],
                 "filaments": [
                     {
                         "id": 71,
@@ -424,6 +441,7 @@ async def test_diff_offers_standard_field_backfill_for_linked_filament(db_sessio
                         "temp_nozzle_max": 230,
                         "temp_bed": 60,
                         "sku": "TEMP-PLA",
+                        "spool_profile_id": 735,
                         "dry_temp": 55,
                         "fan_speed_min": 40,
                         "fan_speed_max": 80,
@@ -444,6 +462,8 @@ async def test_diff_offers_standard_field_backfill_for_linked_filament(db_sessio
         "cooling_fan_range_percent",
         "ams_compatibility",
         "shop_url",
+        "filamentdb_spool_image_file",
+        "filamentdb_spool_profile_id",
     }
 
 

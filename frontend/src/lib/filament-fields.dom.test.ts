@@ -46,7 +46,7 @@ describe('filament view/edit field coverage', () => {
     expect(document.querySelector('#custom-fields-container')).not.toBeNull()
     expect([...document.querySelectorAll('[data-filament-section] [data-dirty-key]')].map(row => row.getAttribute('data-dirty-key'))).toEqual([
       'material_type', 'diameter_mm', 'material_subgroup', 'finish_type', 'designation', 'density_g_cm3', 'is_discontinued',
-      'raw_material_weight_g', 'default_spool_weight_g', 'spool_material', 'spool_outer_diameter_mm', 'spool_width_mm', 'price', 'price_currency',
+      'filamentdb_spool_profile_id filamentdb_spool_image_file', 'raw_material_weight_g', 'default_spool_weight_g', 'spool_material', 'spool_outer_diameter_mm', 'spool_width_mm', 'price', 'price_currency',
       'extruder_temp_range_c', 'bed_temp_range_c', 'chamber_temp_c', 'softening_temp_c', 'drying_temp_c', 'drying_time_hours',
       'cooling_fan_range_percent', 'max_volumetric_speed_mm3_s', 'flow_ratio', 'pressure_advance_k',
       'ams_compatibility', 'build_plate_compatibility', 'manufacturer_sku', 'shop_url', 'datasheet_url', 'image_url',

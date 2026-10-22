@@ -1,4 +1,5 @@
 import pytest
+
 from app.api.v1 import filamentdb_proxy
 from app.services.filamentdb_field_mapping import standard_filamentdb_fields
 
@@ -16,6 +17,43 @@ def test_prepare_request_accepts_missing_discontinued_value():
         discontinued=None,
     )
     assert request.discontinued is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_preserves_spool_image_separately_from_product_image(db_session):
+    result = await filamentdb_proxy.prepare_filament(
+        filamentdb_proxy.PrepareFilamentRequest(
+            manufacturer_name='Spool Photo Brand', designation='PLA',
+            image_file='product.png', spool_profile_image_file='735.png',
+        ), db_session, None,
+    )
+    assert result.prefilled['filamentdb_spool_image_file'] == '735.png'
+    assert result.prefilled['image_url'].endswith('/uploads/filaments/product.png')
+
+
+def test_bad_catalog_spool_image_clears_a_previous_photo_instead_of_reusing_it():
+    assert standard_filamentdb_fields({'spool_profile_image_file': '../unsafe.png'})['filamentdb_spool_image_file'] is None
+
+
+@pytest.mark.asyncio
+async def test_spool_image_proxy_sandboxes_catalog_content_when_opened_directly(monkeypatch):
+    import httpx
+
+    class CatalogClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url):
+            assert url.endswith('/uploads/spool-profiles/735.png')
+            return httpx.Response(200, content=b'<script>bad()</script>', headers={'content-type': 'text/html'}, request=httpx.Request('GET', url))
+
+    monkeypatch.setattr(filamentdb_proxy.httpx, 'AsyncClient', lambda **kwargs: CatalogClient())
+    response = await filamentdb_proxy.proxy_spool_profile_image(None, '735.png')
+    assert response.headers['content-security-policy'] == 'sandbox'
+    assert response.headers['x-content-type-options'] == 'nosniff'
 
 
 @pytest.mark.asyncio
@@ -302,3 +340,10 @@ async def test_prepare_filament_preserves_manufacturer_color_name(auth_client):
 
     assert response.status_code == 200
     assert response.json()["prefilled"]["manufacturer_color_name"] == "Bambu Green"
+
+
+def test_catalog_spool_profile_id_is_retained_and_invalid_values_ignored():
+    assert standard_filamentdb_fields({'spool_profile': {'id': 735, 'image_file': '735.png'}})['filamentdb_spool_profile_id'] == 735
+    assert standard_filamentdb_fields({'spool_profile_id': 735, 'spool_profile_image_file': '735.png'})['filamentdb_spool_profile_id'] == 735
+    for value in [True, 0, -1, '735']:
+        assert 'filamentdb_spool_profile_id' not in standard_filamentdb_fields({'spool_profile': {'id': value}})
