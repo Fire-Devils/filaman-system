@@ -1,14 +1,12 @@
 /**
  * Run against a local Astro server; API data stays inside the browser fixture.
- * PLAYWRIGHT_MODULE=/path/to/playwright-core CHROME_EXECUTABLE_PATH=/path/to/chrome \
+ * CHROME_EXECUTABLE_PATH=/path/to/chrome \
  * node scripts/check-editor-workspace.mjs http://127.0.0.1:4321
  */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
+import { chromium } from 'playwright-core'
 
-const require = createRequire(import.meta.url)
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true })
 try {
   const page = await browser.newPage()
@@ -97,15 +95,23 @@ try {
     }
     await page.locator('#freeform-canvas-host [data-label-element-id="text"]').first().click()
     if (await page.locator('#freeform-field-dock').getAttribute('data-open') !== 'true') await page.locator('#freeform-field-dock-toggle').click()
-    for (const [width, height] of [[390, 900], [900, 900], [1024, 900], [1280, 900], [1600, 900], [1600, 600], [1600, 1400], [390, 600]]) {
+    // Shared workspace geometry gets full single/batch coverage on the spool routes.
+    const viewports = path.startsWith('/spools')
+      ? [[390, 900], [900, 900], [1024, 900], [1280, 900], [1600, 900], [1600, 600], [1600, 1400], [390, 600]]
+      : [[390, 900], [1600, 900]]
+    for (const [width, height] of viewports) {
       await page.setViewportSize({ width, height })
-      for (const collapsed of width <= 768 ? [true] : [true, false, true]) {
+      // Media-query listeners must run before deciding whether to toggle the sidebar.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      if (width === 390 && path.includes('?ids=')) assert.equal(await page.locator('[data-shape-menu-trigger] .freeform-tool-label').isVisible(), false, `${path}: Shape collapses with the compact add tools`)
+      for (const collapsed of width < 600 ? [true] : width === 1600 && height === 900 ? [true, false, true] : [true, false]) {
         if (await page.locator('#fm-page').evaluate(node => node.classList.contains('collapsed')) !== collapsed) await page.locator('#sidebar-toggle').click()
         // Wait for the sidebar transition and the resulting container observers.
         await page.evaluate(async () => {
           await Promise.all(document.getAnimations().filter(animation => animation instanceof CSSTransition).map(animation => animation.finished.catch(() => {})))
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
         })
+        assert.equal(await page.locator('#fm-page').evaluate(node => node.classList.contains('collapsed')), collapsed, 'Sidebar reaches the requested state after responsive changes')
         if (await page.locator('#freeform-designer-workspace').getAttribute('data-editor-editable') === 'true') {
           await page.locator('#freeform-canvas-host [data-label-element-id="text"]').first().click()
           if (await page.locator('#freeform-field-dock').getAttribute('data-open') !== 'true') await page.locator('#freeform-field-dock-toggle').click()
@@ -165,6 +171,13 @@ try {
         }
       }
     }
+    await page.locator('#tab-btn-print').click()
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.locator('#btn-print').waitFor()
+    assert.ok(await page.locator('.action-buttons .fm-btn').evaluateAll(buttons => buttons.length > 0 && buttons.every(button => {
+      const bounds = button.getBoundingClientRect()
+      return bounds.width >= 44 && bounds.height >= 44
+    })), `${path}: mobile output actions remain touch-sized`)
   }
   console.log(`Editor workspace: ${cases}/${cases} cases passed`)
 } finally {
