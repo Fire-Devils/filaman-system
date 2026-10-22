@@ -226,7 +226,7 @@ const { id } = Astro.params
     import { cachedFetchAllPages, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
-    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors } from '../../../lib/filament-detail'
+    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
     import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, type SpoolDetailRow } from '../../../lib/spool-detail'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
@@ -637,7 +637,7 @@ const { id } = Astro.params
         translate: t,
         spoolTitleKey: 'filaments.packagingDefaults',
       })
-      const filamentSectionsHtml = filamentSections.map((section) => `<section class="fm-card filament-spec-card"><h3 class="filament-spec-title">${t(section.titleKey)}</h3><div class="filament-spec-rows">${section.rows.map(renderFilamentDetailRow).join('')}</div></section>`).join('')
+      const filamentSectionsHtml = filamentSections.map((section) => `<section class="fm-card filament-spec-card"><h3 class="filament-spec-title">${t(section.titleKey)}</h3><div class="filament-spec-rows">${section.rows.map(renderFilamentDetailRow).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(spool.filament?.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div></section>`).join('')
       const filamentExtraFieldRows = renderDetailExtraFieldRows(
         spool.filament?.custom_fields ?? {},
         spool.filament?.custom_field_definitions ?? {},

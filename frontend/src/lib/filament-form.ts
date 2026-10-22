@@ -161,6 +161,7 @@ export function createFilamentFormController(options: {
   let submitting = false
   let hasChanges = mode === 'create'
   submitButton.disabled = !hasChanges
+  let spoolImageFile: string | null | undefined
 
   const entityExtraFields = createEntityExtraFieldEditor({
     container: customFieldsContainer,
@@ -319,6 +320,7 @@ export function createFilamentFormController(options: {
       build_plate_compatibility: serialize(input('build_plate_compatibility').value.split(',').map((value) => value.trim()).filter(Boolean)),
       is_discontinued: serialize(input('is_discontinued').checked),
       default_spool_weight_g: serialize(numberValue('default_spool_weight_g')),
+      filamentdb_spool_image_file: serialize(spoolImageFile ?? null),
       spool_material: serialize(select('spool_material').value),
       spool_outer_diameter_mm: serialize(numberValue('spool_outer_diameter_mm')),
       spool_width_mm: serialize(numberValue('spool_width_mm')),
@@ -332,7 +334,7 @@ export function createFilamentFormController(options: {
   function updateDirtyState(): void {
     if (!baseline || mode !== 'edit') return
     const current = readSnapshot()
-    let anyDirty = false
+    let anyDirty = baseline.filamentdb_spool_image_file !== current.filamentdb_spool_image_file
     for (const wrapper of dirtyWrappers) {
       const keys = (wrapper.dataset.dirtyKey || '').split(/\s+/).filter(Boolean)
       const dirty = keys.some((key) => baseline?.[key] !== current[key])
@@ -665,6 +667,7 @@ export function createFilamentFormController(options: {
                 spool_profile_outer_diameter_mm: item.spool_profile?.outer_diameter_mm || null,
                 spool_profile_width_mm: item.spool_profile?.width_mm || null,
                 spool_profile_material: item.spool_profile?.spool_material || null,
+                spool_profile_image_file: item.spool_profile?.image_file ?? null,
               }),
             })
             if (!response.ok) {
@@ -824,6 +827,7 @@ export function createFilamentFormController(options: {
   }
 
   function applyInitialData(data: InitialData, source: 'initial' | 'duplicate' | 'catalog' = 'initial'): void {
+    if (Object.hasOwn(data, 'filamentdb_spool_image_file')) spoolImageFile = data.filamentdb_spool_image_file ?? null
     const hasValue = (key: string): boolean => {
       if (!Object.hasOwn(data, key)) return false
       if (source !== 'catalog') return true
@@ -919,6 +923,7 @@ export function createFilamentFormController(options: {
       diameter_mm: Number(formData.get('diameter_mm')),
       color_mode: colorMode,
     }
+    if (spoolImageFile !== undefined) scalar.filamentdb_spool_image_file = spoolImageFile
     const optionalText = [
       'material_subgroup', 'finish_type', 'manufacturer_color_name', 'spool_material', 'shop_url',
       'manufacturer_sku', 'datasheet_url', 'image_url',

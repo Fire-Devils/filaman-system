@@ -1487,6 +1487,7 @@
     "noResults": "Keine Ergebnisse gefunden",
     "loading": "Suche...",
     "loadFromDb": "Aus FilaManDB laden",
+    "spoolImage": "FilaManDB-Bild",
     "manufacturerCreated": "Hersteller \"{name}\" wurde automatisch erstellt",
     "colorsCreated": "{count} Farbe(n) wurden automatisch erstellt",
     "prefillSuccess": "Formular wurde mit Daten aus der FilaManDB befüllt",

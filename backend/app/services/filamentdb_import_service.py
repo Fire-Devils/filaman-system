@@ -52,6 +52,13 @@ def _resolve_mfr_id(fil: dict[str, Any]) -> int | None:
     return None
 
 
+def _resolve_spool_profile(data: dict[str, Any], profiles: dict[int, dict[str, Any]]) -> dict[str, Any] | None:
+    nested = data.get('spool_profile')
+    profile_id = nested.get('id') if isinstance(nested, dict) else data.get('spool_profile_id')
+    profile = profiles.get(profile_id) if isinstance(profile_id, int) else None
+    return profile if profile is not None else nested if isinstance(nested, dict) else None
+
+
 class FilamentDBImportError(Exception):
     """Fehler beim FilamentDB-Import."""
 
@@ -737,8 +744,9 @@ class FilamentDBImportService:
                         }
                     )
 
+            sp_data = _resolve_spool_profile(fdb_f, sp_map)
             for column, fdb_val in standard_filamentdb_fields(
-                fdb_f, base_url=FILAMENTDB_URL
+                {**fdb_f, 'spool_profile': sp_data}, base_url=FILAMENTDB_URL
             ).items():
                 local_val = getattr(local, column, None)
                 if fdb_val != local_val:
@@ -751,14 +759,6 @@ class FilamentDBImportService:
                     )
 
             # SpoolProfile-Felder vergleichen
-            sp_nested = fdb_f.get("spool_profile")
-            sp_id = None
-            if isinstance(sp_nested, dict):
-                sp_id = sp_nested.get("id")
-            elif fdb_f.get("spool_profile_id"):
-                sp_id = fdb_f["spool_profile_id"]
-
-            sp_data = sp_map.get(sp_id) if sp_id else None
             if sp_data:
                 spool_fields = [
                     (
@@ -1245,20 +1245,12 @@ class FilamentDBImportService:
             spool_width: float | None = None
             spool_material: str | None = None
 
-            if spool_detail_target in ("filament", "both"):
-                sp_nested = fil_data.get("spool_profile")
-                sp_id = None
-                if isinstance(sp_nested, dict):
-                    sp_id = sp_nested.get("id")
-                elif fil_data.get("spool_profile_id"):
-                    sp_id = fil_data["spool_profile_id"]
-
-                sp_data = spool_profile_map.get(sp_id) if sp_id else None
-                if sp_data:
-                    spool_weight_g = sp_data.get("empty_weight_g")
-                    spool_diameter = sp_data.get("outer_diameter_mm")
-                    spool_width = sp_data.get("width_mm")
-                    spool_material = sp_data.get("spool_material")
+            sp_data = _resolve_spool_profile(fil_data, spool_profile_map)
+            if spool_detail_target in ("filament", "both") and sp_data:
+                spool_weight_g = sp_data.get("empty_weight_g")
+                spool_diameter = sp_data.get("outer_diameter_mm")
+                spool_width = sp_data.get("width_mm")
+                spool_material = sp_data.get("spool_material")
 
             # Farb-Modus
             color_mode = fil_data.get("color_mode", "single")
@@ -1270,7 +1262,7 @@ class FilamentDBImportService:
                 fil_data
             )
             standard_fields = standard_filamentdb_fields(
-                fil_data, base_url=FILAMENTDB_URL
+                {**fil_data, 'spool_profile': sp_data}, base_url=FILAMENTDB_URL
             )
             if fdb_id:
                 custom["filamentdb_id"] = fdb_id
@@ -1370,7 +1362,8 @@ class FilamentDBImportService:
         temperature_ranges, migrated_temperature_keys = _temperature_ranges(fil_data)
         for column, value in temperature_ranges.items():
             setattr(existing, column, value)
-        standard_fields = standard_filamentdb_fields(fil_data, base_url=FILAMENTDB_URL)
+        sp_data = _resolve_spool_profile(fil_data, spool_profile_map)
+        standard_fields = standard_filamentdb_fields({**fil_data, 'spool_profile': sp_data}, base_url=FILAMENTDB_URL)
         for column, value in standard_fields.items():
             setattr(existing, column, value)
         existing.color_mode = fil_data.get("color_mode", existing.color_mode)
@@ -1379,34 +1372,25 @@ class FilamentDBImportService:
         )
 
         # SpoolProfile-Daten
-        if spool_detail_target in ("filament", "both"):
-            sp_nested = fil_data.get("spool_profile")
-            sp_id = None
-            if isinstance(sp_nested, dict):
-                sp_id = sp_nested.get("id")
-            elif fil_data.get("spool_profile_id"):
-                sp_id = fil_data["spool_profile_id"]
-
-            sp_data = spool_profile_map.get(sp_id) if sp_id else None
-            if sp_data:
-                existing.default_spool_weight_g = (
-                    sp_data.get("empty_weight_g")
-                    if sp_data.get("empty_weight_g") is not None
-                    else existing.default_spool_weight_g
-                )
-                existing.spool_outer_diameter_mm = (
-                    sp_data.get("outer_diameter_mm")
-                    if sp_data.get("outer_diameter_mm") is not None
-                    else existing.spool_outer_diameter_mm
-                )
-                existing.spool_width_mm = (
-                    sp_data.get("width_mm")
-                    if sp_data.get("width_mm") is not None
-                    else existing.spool_width_mm
-                )
-                existing.spool_material = (
-                    sp_data.get("spool_material") or existing.spool_material
-                )
+        if spool_detail_target in ("filament", "both") and sp_data:
+            existing.default_spool_weight_g = (
+                sp_data.get("empty_weight_g")
+                if sp_data.get("empty_weight_g") is not None
+                else existing.default_spool_weight_g
+            )
+            existing.spool_outer_diameter_mm = (
+                sp_data.get("outer_diameter_mm")
+                if sp_data.get("outer_diameter_mm") is not None
+                else existing.spool_outer_diameter_mm
+            )
+            existing.spool_width_mm = (
+                sp_data.get("width_mm")
+                if sp_data.get("width_mm") is not None
+                else existing.spool_width_mm
+            )
+            existing.spool_material = (
+                sp_data.get("spool_material") or existing.spool_material
+            )
 
         # Custom-Fields aktualisieren (temp/print-settings)
         custom = dict(existing.custom_fields or {})

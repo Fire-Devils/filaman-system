@@ -1486,6 +1486,7 @@
     "noResults": "No results found",
     "loading": "Searching...",
     "loadFromDb": "Load from FilaManDB",
+    "spoolImage": "FilaManDB image",
     "manufacturerCreated": "Manufacturer \"{name}\" was automatically created",
     "colorsCreated": "{count} color(s) were automatically created",
     "prefillSuccess": "Form was filled with catalog data",

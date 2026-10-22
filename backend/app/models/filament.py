@@ -90,6 +90,7 @@ class Filament(Base, TimestampMixin):
     spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    filamentdb_spool_image_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
     shop_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     density_g_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
     extruder_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(

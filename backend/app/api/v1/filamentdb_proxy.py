@@ -362,7 +362,11 @@ async def proxy_spool_profile_image(
     return Response(
         content=resp.content,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Security-Policy": "sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -418,6 +422,7 @@ class PrepareFilamentRequest(BaseModel):
     # e.g. [{"hex_code": "#FF0000", "color_name": "Red", "position": 1}]
 
     # Spool profile info (for spool defaults)
+    spool_profile_image_file: str | None = None
     spool_profile_empty_weight_g: float | None = None
     spool_profile_outer_diameter_mm: float | None = None
     spool_profile_width_mm: float | None = None

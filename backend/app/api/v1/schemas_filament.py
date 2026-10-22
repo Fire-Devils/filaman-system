@@ -7,6 +7,7 @@ from app.api.v1.schemas_entity_extra_field import (
     optional_entity_definitions_field,
 )
 from app.services.extra_field_validation import normalize_numeric_range
+from app.services.filamentdb_field_mapping import normalize_spool_image_file
 from app.utils.colors import normalize_hex_color_if_valid
 
 # mypy does not support decorators stacked above @property.
@@ -151,6 +152,13 @@ class FilamentColorsReplace(BaseModel):
 
 
 class FilamentStandardProperties(BaseModel):
+    filamentdb_spool_image_file: str | None = None
+
+    @field_validator('filamentdb_spool_image_file')
+    @classmethod
+    def validate_spool_image_file(cls, value: str | None) -> str | None:
+        return normalize_spool_image_file(value)
+
     manufacturer_sku: str | None = None
     datasheet_url: str | None = None
     image_url: str | None = None
@@ -257,6 +265,7 @@ class FilamentUpdate(FilamentStandardProperties):
 
 class FilamentResponse(FilamentStandardProperties):
     label_field_aliases: dict[str, str] | None = None
+    filamentdb_spool_image_file: str | None = Field(None, exclude_if=lambda value: value is None)
     id: int
     manufacturer_id: int
     designation: str

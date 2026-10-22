@@ -242,6 +242,16 @@ describe('shared filament form controller', () => {
     expect(save.disabled).toBe(true)
     controller.destroy()
   })
+  it('preserves the catalog spool image through weight edits and clears it for a new imageless catalog selection', async () => {
+    const { controller } = await createLoadedController('edit')
+    controller.applyInitialData({ manufacturer_id: 7, designation: 'PLA', material_type: 'PLA', colors: [{ color_id: 11, position: 1 }], default_spool_weight_g: 170, filamentdb_spool_image_file: '735.png' })
+    document.querySelector<HTMLInputElement>('#default_spool_weight_g')!.value = '164'
+    expect(controller.collectPayload().scalar.filamentdb_spool_image_file).toBe('735.png')
+    controller.applyInitialData({ filamentdb_spool_image_file: null }, 'catalog')
+    expect(controller.collectPayload().scalar.filamentdb_spool_image_file).toBeNull()
+    expect(document.querySelector<HTMLInputElement>('#default_spool_weight_g')!.value).toBe('164')
+    controller.destroy()
+  })
   it.each(['create', 'edit'] as const)('keeps the external %s toolbar submit usable after a failed save', async mode => {
     const form = renderForm()
     const button = document.querySelector<HTMLButtonElement>('#submit-btn')!

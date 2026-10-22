@@ -1,7 +1,8 @@
 import pytest
+from sqlalchemy import select
+
 from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
-from sqlalchemy import select
 
 
 async def _create_manufacturer(
@@ -66,6 +67,40 @@ async def _create_spool(db_session, filament_id, status_id, **kwargs) -> Spool:
     await db_session.commit()
     await db_session.refresh(spool)
     return spool
+
+
+@pytest.mark.asyncio
+async def test_filament_catalog_spool_image_survives_weight_overrides_and_can_be_cleared(auth_client, db_session):
+    client, csrf = auth_client
+    manufacturer = await _create_manufacturer(db_session)
+    response = await client.post('/api/v1/filaments', headers={'X-CSRF-Token': csrf}, json={
+        'manufacturer_id': manufacturer.id, 'designation': 'Catalog PLA',
+        'material_type': 'PLA', 'diameter_mm': 1.75,
+        'default_spool_weight_g': 170, 'filamentdb_spool_image_file': '735.png',
+    })
+    assert response.status_code == 201
+    filament_id = response.json()['id']
+    assert response.json()['filamentdb_spool_image_file'] == '735.png'
+    response = await client.patch(f'/api/v1/filaments/{filament_id}', headers={'X-CSRF-Token': csrf}, json={'default_spool_weight_g': 164})
+    assert response.json()['filamentdb_spool_image_file'] == '735.png'
+    status = await _get_status(db_session, 'new')
+    spool = await _create_spool(db_session, filament_id, status.id)
+    response = await client.patch(f'/api/v1/spools/{spool.id}', headers={'X-CSRF-Token': csrf}, json={'empty_spool_weight_g': 200})
+    assert response.status_code == 200
+    response = await client.get(f'/api/v1/spools/{spool.id}')
+    assert response.json()['filament']['filamentdb_spool_image_file'] == '735.png'
+    assert response.json()['filament']['default_spool_weight_g'] == 164
+    response = await client.patch(f'/api/v1/filaments/{filament_id}', headers={'X-CSRF-Token': csrf}, json={'filamentdb_spool_image_file': None})
+    assert response.status_code == 200
+    assert 'filamentdb_spool_image_file' not in response.json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('filename', ['../735.png', 'a/b.png', 'a\\b.png', 'https://example.com/image.png', 'x" onerror="alert(1).png'])
+async def test_filament_rejects_unsafe_catalog_spool_image_filenames(auth_client, filename):
+    client, csrf = auth_client
+    response = await client.patch('/api/v1/filaments/1', headers={'X-CSRF-Token': csrf}, json={'filamentdb_spool_image_file': filename})
+    assert response.status_code == 422
 
 
 class TestManufacturerCRUD:
