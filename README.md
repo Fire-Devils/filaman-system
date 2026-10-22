@@ -16,6 +16,7 @@ FilaMan is a comprehensive filament management system for 3D printing. It helps 
 ### Documentation
 The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
 See the [label rendering and print-request API](docs/label-api.md) for device and client integration.
+[Read-only spool metrics](docs/spool-metrics.md) documents percentage/estimated metres, optional table columns and the native API contract.
 
 ### 💡 Hardware Extension: FilaMan ESP32 Scale
 To unlock the full potential of this system, we highly recommend our companion hardware project:
@@ -42,11 +43,17 @@ as an official Bambu RFID spool.
 
 ## Features
 - **Spool Management:** Track remaining weight, location, and status.
+- **Filament and Spool Details:** Consistent product and inventory pages with manufacturer logos, multicolor swatches, quick actions, and sticky edit/save controls. Once the hero name scrolls out of view, a compact ID/name line with a small color swatch fades in beneath the actions. Filament Create and Edit share one responsive form.
+- **Standard Filament Properties:** Manage temperature ranges, drying, cooling, print behavior, compatibility, product links, and default spool dimensions alongside typed system and record-specific extra fields.
+- **Catalogs and Imports:** Search FilaManDB for filament data and spool profiles, including available packaging photos. Import Spoolman inventory and promote compatible recognized extras into standard properties while preserving incompatible or ambiguous values.
+- **[Spool types and catalog photos](docs/spool-types.md)** — choose a reel with thumbnails, match manual reel properties, and retain saved links in backups.
+- **Purchase Tracking:** Record spool purchase prices in one app currency. Filament catalog prices retain their source currency; mismatched currencies are not automatically converted or suggested for new spool purchases.
 - **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
 - **Multi-User:** Role-based access control and tenant support.
 - **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
 - **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
-- **Printable Labels:** Print and export spool or filament labels with QR codes, custom label designer layouts, and label-paper sheet output.
+- **Printable Labels:** Design spool or filament labels on a freeform canvas with text, QR codes, images, and shapes. Use grouped, searchable native and extra-field tokens, reusable presets, PNG/PDF exports, and label-paper sheet output.
+- **Label API:** Render spool or filament labels and submit print requests for supported devices using the same SVG renderer as the browser designer. See [the API guide](docs/label-api.md).
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
 - **Responsive UI:** Modern design with light, dark, and brand themes.
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) via OpenID Connect for existing users.
@@ -91,11 +98,15 @@ See [API documentation](docs/label-api.md).
 ```bash
 git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 
+# On a fresh checkout, create .env from .env.example before building.
+# Keep an existing .env; configure secrets and admin credentials as needed.
+test -e .env || cp .env.example .env
+
 # Build image
 docker build -t filaman-system:latest .
 
-# Or with docker-compose
-docker-compose up --build
+# Or build and run with Docker Compose (PORT is the host port)
+PORT=8083 docker compose -f docker-compose.build.yml up --build -d
 
 # Start container
 docker run -d \
@@ -111,17 +122,35 @@ docker run -d \
   filaman-system:latest
 ```
 
+The build Compose file uses a host bind mount at `/home/docker/filaman`;
+adjust it to your data directory before running. To run the published image
+instead, use `PORT=8083 docker compose up -d`. The standalone `docker run`
+example above uses a named volume.
+
 ## Local Development
 
 #### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 22+ (or 20.3+); the shared label-rendering bundle targets Node 20
 - uv (Python Package Manager)
+
+#### Configure Local Development
+From the repository root, create `.env` from `.env.example` if it does not
+already exist. For local SQLite development, replace the Docker-only
+`/app/data/filaman.db` path with:
+
+```dotenv
+DATABASE_URL=sqlite+aiosqlite:///./filaman.db
+```
+
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` for the initial account.
+Relative SQLite paths are resolved from the repository root. Startup applies
+database migrations automatically.
 
 #### Start Backend
 ```bash
 cd backend
-uv sync
+uv sync --frozen
 uv run uvicorn app.main:app --reload
 ```
 The API will be available at `http://localhost:8000`.
@@ -129,17 +158,32 @@ The API will be available at `http://localhost:8000`.
 #### Start Frontend
 ```bash
 cd frontend
-npm install
+npm ci
+npm run build:label-svg
 npm run dev
 ```
 The frontend will be available at `http://localhost:4321`.
+Keep the backend running in another terminal. The development server proxies
+API and authentication requests to `http://localhost:8000`; set `BACKEND_URL`
+when using a different backend address.
+
+`build:label-svg` generates the Node/fonts/WASM bundle required by backend
+label rendering. Rebuild it after changing the shared renderer. Without the
+bundle, render endpoints return `503`. See [renderer setup](docs/label-api.md#shared-svg-rendering).
+
+For backend tests, install development dependencies with
+`uv sync --frozen --extra dev` from `backend`.
 
 #### Build Frontend for Production
 ```bash
 cd frontend
-npm run build
+BUILD_MODE=static npm exec astro build
 ```
-The static files will be in `frontend/dist/`.
+The static files and shared label-rendering bundle will be in `frontend/dist/`.
+This matches the Docker frontend build mode without rewriting version metadata.
+Without `BUILD_MODE=static`, Astro defaults to a standalone Node server build,
+not static output. Docker packages the static output with the backend; see
+the Docker build instructions above for a complete deployment.
 
 ## Configuration (Environment Variables)
 Create a `.env` file in the project root directory. Use `.env.example` as a template:
@@ -150,10 +194,10 @@ Create a `.env` file in the project root directory. Use `.env.example` as a temp
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
 
 # MySQL:
-# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+# DATABASE_URL=mysql+aiomysql://username:password@hostname:3306/database
 
 # PostgreSQL:
-# DATABASE_URL=asyncpg://username:password@hostname:5432/database
+# DATABASE_URL=postgresql+asyncpg://username:password@hostname:5432/database
 ```
 
 #### Generate Secrets
@@ -191,18 +235,21 @@ WEB_CONCURRENCY=1
 /
 ├── backend/
 │   ├── app/
+│   │   ├── api/           # HTTP routes and schemas
 │   │   ├── core/          # Config, database, security
-│   │   ├── modules/       # Domain modules
-│   │   └── plugins/       # Printer plugins
+│   │   ├── models/        # Database models
+│   │   ├── services/      # Imports and shared domain logic
+│   │   └── plugins/       # Plugin integration
 │   ├── alembic/           # Database migrations
 │   └── tests/             # Backend tests
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/         # Astro pages
 │   │   ├── layouts/       # Page layouts
-│   │   └── components/    # UI components
+│   │   ├── components/    # UI components
+│   │   └── lib/           # Shared UI and label-rendering code
 │   └── dist/              # Production build
-└── spec/                  # Project specifications
+└── docs/                  # API and development documentation
 ```
 
 ## Technology
@@ -214,7 +261,8 @@ WEB_CONCURRENCY=1
 
 **Frontend:**
 - Astro + Tailwind CSS
-- Static Build
+- Static Docker build; standalone Node server output by default for source builds
+- Shared SVG/WASM label rendering in the browser and Node runtime
 
 ## License
 MIT
