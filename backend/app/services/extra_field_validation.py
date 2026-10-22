@@ -8,6 +8,7 @@ from app.services.custom_field_identity import validate_custom_field_path
 __all__ = [
     "CONFIG_KEYS_BY_TYPE",
     "VALID_FIELD_TYPES",
+    "normalize_numeric_range",
     "validate_custom_field_path",
     "validate_field_type_config",
 ]
@@ -33,6 +34,37 @@ CONFIG_KEYS_BY_TYPE = {
     "range": {"unit", "decimal_places", "min_bound", "max_bound"},
     "textarea": {"max_length"},
 }
+
+
+def normalize_numeric_range(value: Any) -> dict[str, int | float | None]:
+    """Return the canonical JSON range shape, accepting a scalar shorthand."""
+    if isinstance(value, bool):
+        raise ValueError("range values must be numbers")  # noqa: TRY004
+    if isinstance(value, int | float):
+        endpoints = (value, value)
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        endpoints = (value[0], value[1])
+    elif isinstance(value, dict) and set(value) <= {"min", "max"}:
+        endpoints = (value.get("min"), value.get("max"))
+    else:
+        raise ValueError("expected a number or range with min and max")
+
+    for endpoint in endpoints:
+        if endpoint is not None and (
+            isinstance(endpoint, bool)
+            or not isinstance(endpoint, int | float)
+            or not math.isfinite(endpoint)
+        ):
+            raise ValueError("range endpoints must be finite numbers or null")
+    if endpoints == (None, None):
+        raise ValueError("range must contain at least one endpoint")
+    if (
+        endpoints[0] is not None
+        and endpoints[1] is not None
+        and endpoints[0] > endpoints[1]
+    ):
+        raise ValueError("range min must be less than or equal to max")
+    return {"min": endpoints[0], "max": endpoints[1]}
 
 
 def validate_field_type_config(
@@ -71,7 +103,9 @@ def validate_field_type_config(
 
     max_length = config.get("max_length")
     if max_length is not None and (
-        isinstance(max_length, bool) or not isinstance(max_length, int) or max_length < 1
+        isinstance(max_length, bool)
+        or not isinstance(max_length, int)
+        or max_length < 1
     ):
         raise ValueError("config.max_length must be a positive integer")
 

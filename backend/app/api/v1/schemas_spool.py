@@ -96,6 +96,7 @@ class SpoolUpdate(BaseModel):
 
 
 class SpoolResponse(BaseModel):
+    label_field_aliases: dict[str, str] | None = None
     id: int
     filament_id: int
     status_id: int

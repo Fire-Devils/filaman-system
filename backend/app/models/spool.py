@@ -30,6 +30,7 @@ class SpoolStatus(Base, TimestampMixin):
 
 class Spool(Base, TimestampMixin):
     __tablename__ = "spools"
+    label_field_aliases: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     filament_id: Mapped[int] = mapped_column(

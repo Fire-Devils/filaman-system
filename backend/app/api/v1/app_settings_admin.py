@@ -19,6 +19,7 @@ class AppSettingsResponse(BaseModel):
     rfid_display_colons: bool = False
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: str = "generic"
+    filament_lookup_source: str = "filamandb"
 
 
 class AppSettingsUpdate(BaseModel):
@@ -46,6 +47,11 @@ class AppSettingsUpdate(BaseModel):
     rfid_display_colons: bool | None = None
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: Literal["generic", "bambu"] | None = None
+    filament_lookup_source: Literal["filamandb", "disabled"] | None = None
+
+
+def _available_lookup_source(value: str) -> str:
+    return value if value in ("filamandb", "disabled") else "filamandb"
 
 
 @router.get("/", response_model=AppSettingsResponse)
@@ -62,6 +68,7 @@ async def get_app_settings(
             rfid_extended_data_enabled=False,
             rfid_protocol="openspool",
             rfid_display_colons=False,
+            filament_lookup_source="filamandb",
         )
 
     return AppSettingsResponse(
@@ -72,6 +79,7 @@ async def get_app_settings(
         rfid_display_colons=settings_row.rfid_display_colons,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
         bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
+        filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
     )
 
 
@@ -106,6 +114,7 @@ async def update_app_settings(
         rfid_display_colons=settings_row.rfid_display_colons,
         default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
         bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
+        filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
     )
 
 
@@ -127,6 +136,7 @@ async def get_public_app_settings(db: DBSession):
             rfid_extended_data_enabled=False,
             rfid_protocol="openspool",
             rfid_display_colons=False,
+            filament_lookup_source="filamandb",
         )
     else:
         resp = AppSettingsResponse(
@@ -137,6 +147,7 @@ async def get_public_app_settings(db: DBSession):
             rfid_display_colons=settings_row.rfid_display_colons,
             default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
             bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
+            filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
         )
 
     response_cache.set("app_settings_public", resp, ttl=300)
