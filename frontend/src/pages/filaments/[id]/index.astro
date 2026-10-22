@@ -138,6 +138,7 @@ const { id } = Astro.params
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal }),
         ])
 
+        if (!sysFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
         if (sysFieldsRes.ok) {
           const defs: any[] = await sysFieldsRes.json()
           systemFieldMap = {}
