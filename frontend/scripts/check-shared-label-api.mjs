@@ -6,11 +6,12 @@ import { chromium } from 'playwright-core';
 const evidence = process.env.LABEL_EVIDENCE_DIR;
 if (!evidence) throw new Error('Set LABEL_EVIDENCE_DIR to the API fixture evidence');
 const fixtures = JSON.parse(await readFile(`${evidence}/api-parity.json`, 'utf8'));
+const origin = process.argv[2] || 'http://127.0.0.1:4321';
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true });
 try {
   const page = await browser.newPage();
-  await page.route('**/shared-parity', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Local renderer parity</title>' }));
-  await page.goto('http://127.0.0.1:4408/shared-parity');
+  await page.route(new URL('/shared-parity', origin).href, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Local renderer parity</title>' }));
+  await page.goto(new URL('/shared-parity', origin).href);
   for (const row of fixtures.cases) {
     const result = await page.evaluate(async ({ payload, origin, assets, threshold }) => {
       const { createSvgRuntime } = await import('/src/lib/label-svg/runtime.mjs');

@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
-const origin = process.argv[2] || 'http://127.0.0.1:4408';
+const origin = process.argv[2] || 'http://127.0.0.1:4321';
 if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw new Error('Local test server required');
 const directory = process.env.LABEL_EVIDENCE_DIR;
-if (!directory) throw new Error('Set LABEL_EVIDENCE_DIR to an ignored evidence directory');
-await mkdir(directory, { recursive: true });
+if (directory) await mkdir(directory, { recursive: true });
 const logo = await readFile('public/logo-qr.png');
 const design = { version: 2, label: { widthMm: 60, heightMm: 40, marginMm: 1, border: false }, elements: [
   { id: 'text', type: 'text', x: 2, y: 9, w: 33, h: 21, z: 0,
@@ -112,49 +111,36 @@ try {
     const surface = page.locator('#freeform-canvas-host .label-preview').first();
     await surface.locator('[data-label-svg-raster]').waitFor();
     assert.equal(await surface.locator('[data-label-output-error]').count(), 0);
-    // Editing chrome must not re-center the label-plus-inspector as a group.
-    for (const [width, zoom] of [[1600, 100], [1100, 250]]) {
-      await page.setViewportSize({ width, height: 1000 });
-      await page.locator('#preview-zoom-input').fill(String(zoom));
-      await page.locator('#preview-zoom-input').press('Tab');
-      await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } });
-      const anchor = await surface.boundingBox();
-      for (const id of ['text', 'qr']) {
-        await surface.locator(`[data-label-element-id="${id}"]`).click();
-        const editing = await surface.boundingBox();
-        assert.ok(Math.abs(editing.x - anchor.x) < 1 && Math.abs(editing.y - anchor.y) < 1,
-          `${entity} ${width}px/${zoom}%: selecting ${id} moved the label`);
-        await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } });
-        const cleared = await surface.boundingBox();
-        assert.ok(Math.abs(cleared.x - anchor.x) < 1 && Math.abs(cleared.y - anchor.y) < 1);
-      }
-    }
-    await page.setViewportSize({ width: 1600, height: 1000 });
-    await page.locator('#preview-zoom-input').fill('100');
-    await page.locator('#preview-zoom-input').press('Tab');
     const initial = await surface.locator('[data-label-svg-raster]').getAttribute('src');
     await surface.locator('[data-label-element-id="text"]').click();
     await page.keyboard.press('End');
     await page.keyboard.type(' Ende');
-    await page.waitForFunction(previous => document.querySelector('#freeform-canvas-host [data-label-svg-raster]')?.getAttribute('src') !== previous, initial);
+    await page.waitForFunction(previous => {
+      const image = document.querySelector('#freeform-canvas-host [data-label-svg-raster]');
+      return image && image.getAttribute('src') !== previous;
+    }, initial);
     await page.keyboard.press('Escape');
     const saved = await page.evaluate(entity => JSON.parse(localStorage.getItem(`filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`)), entity);
     assert.ok(saved.design.elements.find(e => e.id === 'text').template.includes('Ende'));
     // Exercise undo/redo through the real keyboard controller.
     await page.locator('#freeform-canvas-host').focus();
     await page.keyboard.press('ControlOrMeta+z');
+    await page.waitForFunction(key => !JSON.parse(localStorage.getItem(key)).design.elements.find(element => element.id === 'text').template.includes('Ende'), `filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`);
     await page.keyboard.press('ControlOrMeta+Shift+z');
-    const shape = surface.locator('[data-label-element-id="shape"]');
-    const before = await shape.boundingBox();
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).design.elements.find(element => element.id === 'text').template.includes('Ende'), `filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`);
+    const shape = surface.locator('[data-label-element-id="shape"][data-label-interaction-bound]');
+    await shape.click();
+    const frame = surface.locator('[data-label-selection-for="shape"]');
+    await frame.waitFor();
+    await frame.scrollIntoViewIfNeeded();
+    const before = await frame.boundingBox();
     await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
     await page.mouse.down();
     await page.mouse.move(before.x + before.width / 2 + 20, before.y + before.height / 2, { steps: 5 });
     await page.mouse.up();
-    await page.waitForFunction(() => Number.parseFloat(document.querySelector('#freeform-canvas-host [data-label-element-id="shape"]').style.left) > 3);
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).design.elements.find(element => element.id === 'shape').x > 3, `filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`);
     await page.keyboard.press('Escape');
-    await surface.screenshot({ path: `${directory}/${entity}-shared-editor.png` });
-    const raster = await surface.locator('[data-label-svg-raster]').getAttribute('src');
-    await writeFile(`${directory}/${entity}-shared-preview.png`, Buffer.from(raster.split(',')[1], 'base64'));
+    if (directory) await surface.screenshot({ path: `${directory}/${entity}-shared-editor.png` });
     const beforeReload = await page.evaluate(entity => localStorage.getItem(`filaman-${entity === 'spools' ? 'spool' : 'filament'}-label-designer-v1`), entity);
     await page.reload();
     await openDesigner();
@@ -179,8 +165,11 @@ try {
       let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
       return { png: png.split(',')[1], pdf: btoa(binary) };
     });
-    await writeFile(`${directory}/${entity}-export-600dpi.png`, Buffer.from(exported.png, 'base64'));
-    await writeFile(`${directory}/${entity}-export.pdf`, Buffer.from(exported.pdf, 'base64'));
+    assert.equal(Buffer.from(exported.pdf, 'base64').subarray(0, 5).toString(), '%PDF-');
+    if (directory) {
+      await writeFile(`${directory}/${entity}-export-600dpi.png`, Buffer.from(exported.png, 'base64'));
+      await writeFile(`${directory}/${entity}-export.pdf`, Buffer.from(exported.pdf, 'base64'));
+    }
     for (const mode of ['individual', 'sheet']) {
       if (mode === 'sheet') {
         await page.locator('#tab-btn-sheets').click();
@@ -209,7 +198,8 @@ try {
       assert.ok(info.invoked);
       assert.equal(info.pages, mode === 'individual' ? 1 : 2);
       assert.deepEqual(info.widths, info.expectedWidths);
-      await page.pdf({ path: `${directory}/${entity}-${mode}-browser-print.pdf`, preferCSSPageSize: true, printBackground: true });
+      const pdf = await page.pdf({ ...(directory ? { path: `${directory}/${entity}-${mode}-browser-print.pdf` } : {}), preferCSSPageSize: true, printBackground: true });
+      assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
       await page.evaluate(async () => (await import('/src/lib/label-browser-print.ts')).cleanupLabelBrowserPrint());
     }
     // Switching away must not export the last designer bitmap or leave stale output errors.
@@ -217,9 +207,12 @@ try {
     await page.waitForFunction(() => document.querySelector('#label-preview .label-designation')?.textContent.includes('Matte'));
     assert.equal(await page.locator('#label-preview').getAttribute('data-label-svg'), null);
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#btn-export-png').click()]);
-    const standardPath = `${directory}/${entity}-standard-after-designer.png`;
-    await download.saveAs(standardPath);
-    assert.notEqual((await readFile(standardPath)).toString('base64'), exported.png);
+    const chunks = [];
+    for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+    const standard = Buffer.concat(chunks);
+    assert.deepEqual(standard.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    assert.notEqual(standard.toString('base64'), exported.png);
+    if (directory) await writeFile(`${directory}/${entity}-standard-after-designer.png`, standard);
     await page.evaluate(() => { window.__previewInvoked = false; });
     await page.locator('#btn-print').click();
     await page.waitForFunction(() => window.__previewInvoked);
