@@ -41,12 +41,15 @@ auch in Bambu Studio bereit. Damit erhalten eigene und Drittanbieter-Filamente
 nahezu denselben nahtlosen Ablauf wie eine originale Bambu RFID-Spule.
 
 ## Features
-- **Spulen-Verwaltung:** Tracking von Restgewicht, Lagerort und Status.
+- **Spulen-Verwaltung:** Restgewicht, geschätzte Restlänge und Restmenge in Prozent, Lagerort und Status verfolgen.
+- **Filament- und Spulendetails:** Einheitliche, responsive Seiten mit Schnellaktionen und Bearbeitung direkt auf der Detailseite.
+- **Standard-Filamenteigenschaften:** Temperaturbereiche, Trocknungsempfehlungen, Druckeinstellungen und Abmessungen neben typisierten Zusatzfeldern.
+- **Kataloge und Import:** Filamentdaten in FilaManDB suchen und vorhandenen Bestand aus Spoolman importieren.
 - **Zwei RFID-Tags:** Zwei RFID-Tag-UIDs pro Spule speichern, sodass eine Spule mit Tags auf beiden Seiten über jede Seite als derselbe Bestandseintrag erkannt wird.
 - **Mandantenfähigkeit:** Multi-User-Unterstützung mit Rollensystem.
 - **Drucker-Integration:** Plugin-System zur Anbindung von 3D-Druckern und AMS-Einheiten.
 - **Bambuddy Integration:** Spulenbestand und AMS-Zuweisungen synchronisieren, Filamentverbrauch erfassen und eigene Bambu Cloud Slicer-Profile automatisch anwenden.
-- **Druckbare Labels:** Spulen- und Filament-Labels mit QR-Codes, eigenem Label-Designer und Etikettenbogen-Ausgabe drucken und exportieren.
+- **Druckbare Labels:** Spulen- und Filament-Labels mit QR-Codes, eigenen Layouts, gruppierten und durchsuchbaren Feld-Tokens sowie Etikettenbogen-Ausgabe drucken und exportieren.
 - **Datenbank-Support:** Kompatibel mit SQLite (Standard), MySQL und PostgreSQL.
 - **Responsive UI:** Modernes Design (Hell, Dunkel und Brand-Theme).
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) über OpenID Connect für bestehende Benutzer.
@@ -93,11 +96,14 @@ Siehe [API-Dokumentation](docs/label-api.md).
 ```bash
 git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 
+# .env bei Bedarf erstellen und anschließend konfigurieren.
+test -e .env || cp .env.example .env
+
 # Image bauen
 docker build -t filaman-system:latest .
 
-# Oder mit docker-compose
-docker-compose up --build
+# Oder Docker Compose verwenden (vorher den Daten-Volume-Pfad anpassen)
+PORT=8083 docker compose -f docker-compose.build.yml up --build
 
 # Container starten
 docker run -d \
@@ -117,7 +123,7 @@ docker run -d \
 
 #### Voraussetzungen
 - Python 3.11+
-- Node.js 18+
+- Node.js 20.3+
 - uv (Python Package Manager)
 
 #### Backend starten
@@ -139,7 +145,7 @@ Das Frontend ist unter `http://localhost:4321` verfügbar.
 #### Frontend für Produktion bauen
 ```bash
 cd frontend
-npm run build
+BUILD_MODE=static npx astro build
 ```
 Die statischen Dateien liegen in `frontend/dist/`.
 
@@ -152,10 +158,10 @@ Erstelle eine `.env` Datei im Projektverzeichnis. Verwende `.env.example` als Vo
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
 
 # MySQL:
-# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+# DATABASE_URL=mysql+aiomysql://username:password@hostname:3306/database
 
 # PostgreSQL:
-# DATABASE_URL=asyncpg://username:password@hostname:5432/database
+# DATABASE_URL=postgresql+asyncpg://username:password@hostname:5432/database
 ```
 
 #### Secrets generieren
@@ -194,7 +200,8 @@ WEB_CONCURRENCY=1
 ├── backend/
 │   ├── app/
 │   │   ├── core/          # Konfiguration, Datenbank, Sicherheit
-│   │   ├── modules/       # Domain-Module
+│   │   ├── models/        # Datenbankmodelle
+│   │   ├── services/      # Gemeinsame Fachlogik
 │   │   └── plugins/       # Drucker-Plugins
 │   ├── alembic/           # Datenbank-Migrationen
 │   └── tests/             # Backend-Tests
@@ -204,7 +211,7 @@ WEB_CONCURRENCY=1
 │   │   ├── layouts/       # Seiten-Layouts
 │   │   └── components/    # UI-Komponenten
 │   └── dist/              # Produktions-Build
-└── spec/                  # Projektspezifikationen
+└── docs/                  # Projektdokumentation
 ```
 
 ## Technologie
@@ -216,7 +223,7 @@ WEB_CONCURRENCY=1
 
 **Frontend:**
 - Astro + Tailwind CSS
-- Statischer Build
+- Statischer Docker-Build; Node-Server-Ausgabe bei Quellcode-Builds
 
 ## Lizenz
 MIT

@@ -41,12 +41,15 @@ Studio, giving custom and third-party filament much the same seamless workflow
 as an official Bambu RFID spool.
 
 ## Features
-- **Spool Management:** Track remaining weight, location, and status.
+- **Spool Management:** Track remaining weight, estimated metres and percentage, location, and status.
+- **Filament and Spool Details:** Consistent, responsive pages with quick actions and in-place editing.
+- **Standard Filament Properties:** Temperature ranges, drying recommendations, print settings, and dimensions alongside typed extra fields.
+- **Catalogs and Imports:** Search FilaManDB for filament specifications and import existing inventory from Spoolman.
 - **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
 - **Multi-User:** Role-based access control and tenant support.
 - **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
 - **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
-- **Printable Labels:** Print and export spool or filament labels with QR codes, custom label designer layouts, and label-paper sheet output.
+- **Printable Labels:** Print and export spool or filament labels with QR codes, custom layouts, grouped and searchable field tokens, and label-paper sheet output.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.
 - **Responsive UI:** Modern design with light, dark, and brand themes.
 - **OIDC (OAuth2) Login:** Single Sign-On (SSO) via OpenID Connect for existing users.
@@ -91,11 +94,14 @@ See [API documentation](docs/label-api.md).
 ```bash
 git clone https://github.com/Fire-Devils/filaman-system.git && cd filaman-system
 
+# Create .env if needed, then configure it.
+test -e .env || cp .env.example .env
+
 # Build image
 docker build -t filaman-system:latest .
 
-# Or with docker-compose
-docker-compose up --build
+# Or use Docker Compose (adjust its data-volume path first)
+PORT=8083 docker compose -f docker-compose.build.yml up --build
 
 # Start container
 docker run -d \
@@ -115,7 +121,7 @@ docker run -d \
 
 #### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 20.3+
 - uv (Python Package Manager)
 
 #### Start Backend
@@ -137,7 +143,7 @@ The frontend will be available at `http://localhost:4321`.
 #### Build Frontend for Production
 ```bash
 cd frontend
-npm run build
+BUILD_MODE=static npx astro build
 ```
 The static files will be in `frontend/dist/`.
 
@@ -150,10 +156,10 @@ Create a `.env` file in the project root directory. Use `.env.example` as a temp
 DATABASE_URL=sqlite+aiosqlite:///./filaman.db
 
 # MySQL:
-# DATABASE_URL=aiomysql://username:password@hostname:3306/database
+# DATABASE_URL=mysql+aiomysql://username:password@hostname:3306/database
 
 # PostgreSQL:
-# DATABASE_URL=asyncpg://username:password@hostname:5432/database
+# DATABASE_URL=postgresql+asyncpg://username:password@hostname:5432/database
 ```
 
 #### Generate Secrets
@@ -192,7 +198,8 @@ WEB_CONCURRENCY=1
 ├── backend/
 │   ├── app/
 │   │   ├── core/          # Config, database, security
-│   │   ├── modules/       # Domain modules
+│   │   ├── models/        # Database models
+│   │   ├── services/      # Shared domain logic
 │   │   └── plugins/       # Printer plugins
 │   ├── alembic/           # Database migrations
 │   └── tests/             # Backend tests
@@ -202,7 +209,7 @@ WEB_CONCURRENCY=1
 │   │   ├── layouts/       # Page layouts
 │   │   └── components/    # UI components
 │   └── dist/              # Production build
-└── spec/                  # Project specifications
+└── docs/                  # Project documentation
 ```
 
 ## Technology
@@ -214,7 +221,7 @@ WEB_CONCURRENCY=1
 
 **Frontend:**
 - Astro + Tailwind CSS
-- Static Build
+- Static Docker build; Node server output for source builds
 
 ## License
 MIT
