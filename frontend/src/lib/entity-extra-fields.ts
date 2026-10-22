@@ -316,6 +316,7 @@ export interface EntityExtraFieldEditor {
     definitions?: EntityExtraFieldDefinitions | null,
   ) => void
   setSystemFieldKeys: (keys: string[]) => void
+  getSnapshot: () => string
   getPayload: () => EntityExtraFieldPayload | null
 }
 
@@ -532,6 +533,7 @@ export function createEntityExtraFieldEditor(options: {
   container: HTMLElement
   addButton: HTMLElement
   emptyText?: string
+  onChange?: () => void
 }): EntityExtraFieldEditor {
   const { container, addButton } = options
   let drafts: DraftField[] = []
@@ -603,6 +605,7 @@ export function createEntityExtraFieldEditor(options: {
   function render(): void {
     if (!drafts.length) {
       container.innerHTML = `<div style="color:var(--text-muted);font-size:0.85rem">${escapeHtml(options.emptyText ?? '')}</div>`
+      options.onChange?.()
       return
     }
 
@@ -654,6 +657,7 @@ export function createEntityExtraFieldEditor(options: {
         addButton.focus()
       })
     })
+    options.onChange?.()
   }
 
   addButton.addEventListener('click', openAddDialog)
@@ -685,6 +689,9 @@ export function createEntityExtraFieldEditor(options: {
       systemKeys = new Set(keys)
       drafts = drafts.filter((draft) => !isSystemKey(draft.key.trim(), systemKeys))
       render()
+    },
+    getSnapshot() {
+      return JSON.stringify(drafts.map(draft => ({ ...draft, id: undefined })).sort((a, b) => a.key.localeCompare(b.key)))
     },
     getPayload() {
       const values: Record<string, unknown> = {}

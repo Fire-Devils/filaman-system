@@ -15,7 +15,7 @@ const hexId = `${idPrefix}-hex`
 
 <div class="fm-color-editor-fields">
   <div>
-    <label for={nameId} class="fm-label" data-i18n="filaments.colorNameLabel">Name *</label>
+    <label for={nameId} class="fm-label" data-i18n="filaments.colorNameLabel">Color Name</label>
     <input
       type="text"
       id={nameId}
@@ -25,6 +25,7 @@ const hexId = `${idPrefix}-hex`
       data-i18n-placeholder="filaments.colorNamePlaceholder"
       class="fm-input"
     />
+    <p class="fm-field-hint" data-i18n="filaments.colorLibraryNameHint">Used to identify this reusable swatch throughout Filaman.</p>
   </div>
 
   <div class="fm-color-editor-value-row">
