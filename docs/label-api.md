@@ -179,8 +179,10 @@ when written in the template. Native wrapped text breaks long identifiers;
 migrated information keeps legacy word wrapping. Missing logos and empty/fitted
 legacy titles collapse their rows. Enable **Scale font to fit** to shrink text
 down to its configured minimum; wrapping alone does not enable shrinking.
-Unmodified datetime fields retain their time; their display can depend on locale
-and timezone.
+Label dates do not depend on the browser/container locale or timezone. Purchase
+dates and Standard Label date-only fields use `YYYY/MM/DD`. Unmodified datetime
+tokens, including custom and system extra fields, retain the stored timestamp
+with its time, precision and timezone offset; no local-time conversion is applied.
 Date-only modifiers are consistent across editor and API: `{created_at|date}` prints
 `2026/04/28`, independently of the container/browser locale. Customize the order
 and separators with `{created_at|date:%d.%m.%Y}` (`28.04.2026`),
@@ -189,8 +191,8 @@ and separators with `{created_at|date:%d.%m.%Y}` (`28.04.2026`),
 Supported codes are `%Y`, `%y`, `%m`, `%d`, and `%%` (a literal percent).
 Other codes remain literal. The modifier uses the stored calendar date without
 timezone conversion; invalid date values remain visible unchanged.
-The same modifiers work with date/datetime extra fields. Raw values are retained
-even when the unmodified field has a localized display value.
+The same modifiers work with date/datetime extra fields and remove the time.
+Use them for compact dates on small labels; the unmodified timestamp can be longer.
 
 To share a preset for troubleshooting, sign in and open
 `/api/v1/me/label-presets?preset_type=spool` on the same FilaMan server. Save the

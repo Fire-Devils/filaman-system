@@ -10,7 +10,8 @@ import {
   type LabelExtraFieldSource,
   type LabelExtraFieldValue,
 } from './label-extra-fields'
-import { formatDateDisplay, type SystemExtraFieldDef } from './extra-fields'
+import type { SystemExtraFieldDef } from './extra-fields'
+import { formatLabelDate } from './label-date'
 import {
   EMPTY_SPOOL_LABEL_LOOKUPS,
   resolveSpoolLabelRelations,
@@ -66,7 +67,7 @@ export function buildSpoolStandardModelFields(data: SpoolLabelData) {
     key: definition.key,
     label: definition.label,
     value: definition.dateOnly
-      ? formatDateDisplay(data[definition.key])
+      ? formatLabelDate(data[definition.key])
       : data[definition.key],
   }))
 }

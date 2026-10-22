@@ -582,8 +582,6 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
     }
     case 'multiselect':
       return Array.isArray(value) ? value.map(String).join(', ') : String(value)
-    case 'datetime':
-      return formatDateTimeDisplay(value)
     case 'checkbox':
       return value === true || value === 'true' ? '✓' : '✗'
     default:

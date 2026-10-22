@@ -8,7 +8,7 @@ import {
   EMPTY_SPOOL_LABEL_LOOKUPS,
   type SpoolLabelLookups,
 } from './spool-label-lookups'
-import { formatDateDisplay } from './extra-fields'
+import { formatLabelDate } from './label-date'
 import type { LabelExtraFieldValue } from './label-extra-fields'
 import { buildFilamentLabelDataFromApi, buildDesignerExtraFieldsFromFilament } from './filament-label-data'
 
@@ -129,7 +129,7 @@ export function buildSpoolDesignerDataFromLabelData(
 ): SpoolData {
   const result = buildSpoolDataFromFlatLabel({
     ...data,
-    purchase_date: formatDateDisplay(data.purchase_date),
+    purchase_date: formatLabelDate(data.purchase_date),
   })
   result.rawValues = { purchase_date: data.purchase_date }
   return result
