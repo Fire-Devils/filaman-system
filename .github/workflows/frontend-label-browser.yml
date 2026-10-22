@@ -38,6 +38,8 @@ jobs:
         env:
           CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
       - run: npx astro build
+      - name: Run frontend regression tests
+        run: npm test
       - run: node scripts/check-api-default-print.mjs
         env:
           CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
