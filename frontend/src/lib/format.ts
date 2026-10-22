@@ -9,6 +9,11 @@ export function getCurrency(): string {
   return localStorage.getItem('currency') || 'EUR';
 }
 
+export function suggestSpoolPurchasePrice(price: number | null | undefined, sourceCurrency: string | null | undefined, appCurrency: string): string {
+  if (price == null || (sourceCurrency && sourceCurrency.toUpperCase() !== appCurrency.toUpperCase())) return '';
+  return String(price);
+}
+
 export async function initCurrency(): Promise<string> {
   try {
     const res = await fetch('/api/v1/app-settings/public-info');
