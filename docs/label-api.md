@@ -329,6 +329,10 @@ and [myphomemo](https://github.com/DeepCoreSystem/myphomemo) are examples of
 device-side integration; they do not define the API contract.
 # Designer preset compatibility
 
+Saved extra-field tokens for promoted standard fields follow the native value,
+retaining their original units, precision and checkbox symbols. These compatibility
+aliases do not appear as new token choices.
+
 Upgrades automatically convert supported legacy V1 designer presets to V2 in
 place. IDs, selection, ownership and timestamps remain unchanged. Saving old
 presets, importing browser presets, and restoring JSON/JSONL backups use the same
