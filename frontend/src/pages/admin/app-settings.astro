@@ -63,6 +63,17 @@ import Layout from '../../layouts/Layout.astro'
       </div>
     </div>
 
+    <!-- Filament Lookup Card (full width) -->
+    <div class="fm-card" style="padding: 20px;">
+      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.filamentLookupTitle">Filament Lookup</h2>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 12px;" data-i18n="admin.filamentLookupDesc">Choose the catalog used to search while creating a filament. This does not affect bulk imports.</p>
+      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="filament-lookup-source" data-i18n="admin.filamentLookupLabel">Search source</label>
+      <select id="filament-lookup-source" class="fm-select" style="max-width: 320px;">
+        <option value="filamandb" data-i18n="admin.filamentLookupFilaManDB">FilaManDB</option>
+        <option value="disabled" data-i18n="admin.filamentLookupDisabled">Disabled</option>
+      </select>
+    </div>
+
     <!-- RFID Extended Data Card (full width) -->
     <div class="fm-card" style="padding: 20px;">
       <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 16px;" data-i18n="admin.rfidSettingsTitle">RFID Settings</h2>
@@ -152,7 +163,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { getAbortSignal } from '../../lib/abort'
     import { initCurrency } from '../../lib/format'
 
     async function init() {
@@ -176,6 +187,7 @@ import Layout from '../../layouts/Layout.astro'
       const rfidDisplayColonsInput = document.getElementById('rfid-display-colons') as HTMLInputElement
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
+      const filamentLookupSourceSelect = document.getElementById('filament-lookup-source') as HTMLSelectElement
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
@@ -210,6 +222,7 @@ import Layout from '../../layouts/Layout.astro'
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
+          filamentLookupSourceSelect.value = data.filament_lookup_source === 'disabled' ? 'disabled' : 'filamandb'
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
         }
@@ -233,6 +246,7 @@ import Layout from '../../layouts/Layout.astro'
           rfid_display_colons: rfidDisplayColonsInput.checked,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
+          filament_lookup_source: filamentLookupSourceSelect.value,
         }
 
         try {
