@@ -96,6 +96,17 @@ try {
   await page.locator('#btn-edit-extra-fields').click()
   const parent = page.locator('.entity-extra-fields-overlay')
   const child = page.locator('dialog').filter({ has: page.locator('.extra-field-dialog-form') })
+  const expectChildClosed = async () => {
+    try {
+      await child.waitFor({ state: 'hidden' })
+    } catch (error) {
+      console.error('Extra-field dialog remained open:', await child.evaluate(dialog => ({
+        text: dialog.textContent,
+        controls: [...dialog.querySelectorAll('input, select')].map(input => ({ name: input.className, value: input.value, disabled: input.disabled, validation: input.validationMessage })),
+      })))
+      throw error
+    }
+  }
   await parent.locator('[data-extra-fields-add]').click()
   await page.locator('.extra-field-dialog-key').fill('new_field')
   assert.equal(await page.locator('.extra-field-dialog-key').evaluate(el => el === document.activeElement), true)
@@ -106,7 +117,7 @@ try {
   await page.locator('.extra-field-dialog-key').fill('new_field')
   await page.locator('.extra-field-dialog-label').fill('New Field')
   await page.locator('.extra-field-dialog-submit').click()
-  await child.waitFor({ state: 'hidden' })
+  await expectChildClosed()
   assert.match(await parent.textContent(), /new_field/)
   await parent.locator('.entity-extra-edit').first().click()
   await page.locator('.extra-field-dialog-label').fill('Changed inspection')
@@ -115,7 +126,7 @@ try {
   await parent.locator('.entity-extra-edit').first().click()
   await page.locator('.extra-field-dialog-label').fill('Updated inspection')
   await page.locator('.extra-field-dialog-submit').click()
-  await child.waitFor({ state: 'hidden' })
+  await expectChildClosed()
   assert.match(await parent.textContent(), /Updated inspection/)
   assert.equal(await parent.evaluate(el => el.contains(document.activeElement)), true)
   await parent.locator('.entity-extra-remove').first().click()

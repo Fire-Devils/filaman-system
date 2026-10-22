@@ -2,7 +2,6 @@
 import { createServer } from 'vite';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
 import { Resvg } from '@resvg/resvg-wasm';
 import { fixtures, data } from './fixtures.mjs';
 
@@ -12,24 +11,6 @@ const server = await createServer({ configFile: false, root: frontend,
   plugins: [{ name: 'svg-probe', configureServer: vite => { vite.middlewares.use(handle); } }],
   server: { host: '127.0.0.1', port: 4407, strictPort: true, fs: { allow: [root] } } });
 const core = await server.ssrLoadModule('/tests/label-rendering/render.mjs');
-const { normalizeDesignerPresetData } = await server.ssrLoadModule('/src/lib/freeform-label/migrate-v1.ts');
-const testerDirectory = process.env.LABEL_TESTER_PRESETS_DIR;
-if (testerDirectory) for (const file of ['presets.json', 'presets_tiny_qr.json']) {
-  const bytes = await readFile(`${testerDirectory}/${file}`);
-  for (const record of JSON.parse(bytes)) {
-    let id = 0;
-    fixtures.push({ id: `tester-${record.id}`, title: `Tester ${record.id}: ${record.name}`,
-      preset: normalizeDesignerPresetData(record.data, record.preset_type, () => `import-${++id}`),
-      entityPath: record.preset_type === 'filament' ? 'filaments' : 'spools',
-      provenance: { file, sha256: createHash('sha256').update(bytes).digest('hex'), originalVersion: record.data.version ?? 1,
-        note: 'Original exported layout; representative spool data and synthetic manufacturer logo (not included in export).' },
-      data: { ...data, 'filament.name': 'Matte - Charcoal (11101)', 'filament.manufacturer': 'Bambu Lab',
-        'filament.manufacturer_color_name': 'Charcoal (11101)', 'filament.finish': 'Matte', 'filament.diameter': 1.75,
-        created_at: '2026-10-05T22:16:10Z', stocked_in_at: '2026-09-22T12:31:48Z', empty_spool_weight_g: 250,
-        extra: { 'spool.article_number': '11101' } },
-    });
-  }
-}
 const wasm = await readFile(`${frontend}/node_modules/@resvg/resvg-wasm/index_bg.wasm`);
 await core.initWasm(wasm);
 const fontBytes = await Promise.all(core.fontFiles.map(({ file }) => readFile(`${frontend}/node_modules/${file}`)));

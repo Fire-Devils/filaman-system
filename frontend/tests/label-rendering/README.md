@@ -28,30 +28,27 @@ servers first: they share Vite's dependency cache.
 In another terminal, from `frontend`:
 
 ```sh
-export CHROME_EXECUTABLE_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-export LABEL_EVIDENCE_DIR=/tmp/label-rendering-evidence
+export CHROME_EXECUTABLE_PATH=/path/to/chrome
 node tests/label-rendering/check.mjs
 node tests/label-rendering/compatibility-check.mjs
 ```
 
-Use the path to your installed test browser. Evidence includes PNGs, SVGs,
-packed `.mono1` files and JSON results; keep it outside version control.
+Use the path to your installed test browser. To also save PNGs, SVGs, packed
+`.mono1` files and JSON results, set `LABEL_EVIDENCE_DIR` to a temporary directory
+outside version control. Artifacts are optional, not a prerequisite for testing.
 Chromium is only a test browser, not an application rendering dependency.
 
-To check the tester's original exports, start the server with
-`LABEL_TESTER_PRESETS_DIR` pointing to a directory containing `presets.json` and
-`presets_tiny_qr.json`, then run `node tests/label-rendering/saved-presets-check.mjs`.
-This optional suite expects the original tester IDs (including 3, 4 and 5).
-Inputs are read-only and hash-recorded. Labels use representative data and a
-synthetic logo; they are not reproductions of the tester's physical prints.
+All cases use committed synthetic fixtures. Saved V1/V2 preset compatibility is
+covered by the frontend migration tests and backend preset tests; no personal
+database, preset export, or particular record ID is required.
 
 ## Application and authenticated API checks
 
 Stop the parity server, run `npm run build:label-svg`, then start Astro with
-`node_modules/.bin/astro dev --host 127.0.0.1 --port 4408`.
-With the browser/evidence variables above set, run
-`node scripts/check-shared-label-pilot.mjs` to exercise spool/filament editing,
-PNG/PDF exports and sheet composition. API responses and `window.print` are stubbed.
+`npm run dev -- --host 127.0.0.1` (port 4321).
+With the browser variable above set, run `npm run check:label-output` to exercise
+spool/filament editing, PNG/PDF exports and sheet composition. API responses and
+`window.print` are stubbed. This check is also part of `npm run check:browser`.
 
 For actual API wire comparisons, from `backend` run:
 
@@ -61,10 +58,11 @@ LABEL_RENDER_NODE_EXECUTABLE=/path/to/node20 \
 .venv/bin/pytest tests/test_shared_label_pilot.py -q
 ```
 
-This uses an isolated database. Then run `node scripts/check-shared-label-api.mjs`
+This uses an isolated database. Then run `npm run check:label-api-parity`
 from `frontend` with `LABEL_EVIDENCE_DIR=/tmp/label-api-evidence` and the browser
 path set. It compares browser output with API bytes across DPI, threshold,
-padding, rotation and rejected layouts. `LABEL_TESTER_PRESETS_DIR` is optional.
+padding, rotation and thresholds. Unlike the ordinary browser suite, this
+cross-language check requires the fixture JSON produced by pytest above.
 
 Pixel parity does not prove physical print quality or QR scan reliability.
 Container checks must use an isolated database, never a live Compose data mount.
