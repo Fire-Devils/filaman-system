@@ -30,8 +30,10 @@ try {
     else if (path.endsWith('/spools/statuses')) json = [{ id: 1, key: 'opened', label: 'Opened' }]
     else if (path.endsWith('/filaments')) json = { items: [filament, { ...filament, id: 11, designation: 'Other PLA' }], total: 2 }
     else if (path.endsWith('/locations')) json = { items: [], total: 0 }
-    else if (path.endsWith('/public-info')) json = { filament_lookup_source: 'disabled' }
-    else if (path.endsWith('/status')) json = { active: false }
+    else if (path.endsWith('/public-info')) json = { currency: 'USD', filament_lookup_source: 'disabled' }
+    else if (path.endsWith('/system-extra-fields') && new URL(request.url()).searchParams.get('target_type') === 'spool') json = [{ id: 1, key: 'storage_note', label: 'Storage note', field_type: 'text' }]
+    else if (path.endsWith('/spool-profiles')) json = { items: [{ name: 'Fixture spool profile', empty_weight_g: 333, spool_material: 'Plastic', outer_diameter_mm: 205, width_mm: 70 }], total: 1 }
+    else if (path.endsWith('/status')) json = { active: true }
     await route.fulfill({ json })
   })
   const goto = async suffix => {
@@ -101,11 +103,39 @@ try {
     await page.locator('#btn-edit-spool').waitFor()
   }
   await goto('?edit=1')
+  const save = page.locator('[form="spool-inline-form"][type="submit"]')
+  assert.equal(await save.isDisabled(), true, 'Clean spool Save is disabled')
+  await page.locator('#spool-inline-form').evaluate(form => form.requestSubmit())
+  assert.equal(writes.filter(write => write.path === '/api/v1/spools/16').length, 0, 'Clean programmatic submit cannot write')
+  await page.locator('#uses_spool_core').uncheck()
+  assert.equal(await save.isEnabled(), true, 'Core checkbox change enables Save')
+  await page.locator('#uses_spool_core').check()
+  assert.equal(await save.isDisabled(), true, 'Undoing core checkbox restores clean state')
+  const systemNote = page.locator('#spool-system-fields-editor .system-field-input[data-key="storage_note"]')
+  await systemNote.fill('Keep dry')
+  assert.equal(await save.isEnabled(), true, 'System extra-field input enables Save')
+  await systemNote.fill('')
+  assert.equal(await save.isDisabled(), true, 'Undoing system extra-field input restores clean state')
+  for (const [label, disabled] of [['Updated inspection', false], ['Inspection', true]]) {
+    await page.locator('#spool-custom-fields-editor .entity-extra-edit').first().click()
+    await page.locator('.extra-field-dialog-label').fill(label)
+    await page.locator('.extra-field-dialog-submit').click()
+    await child.waitFor({ state: 'hidden' })
+    await page.waitForFunction(expected => document.querySelector('[form="spool-inline-form"][type="submit"]').disabled === expected, disabled)
+  }
+  await page.locator('#btn-spool-profile-lookup').click()
+  await page.locator('#spool-profile-lookup-container input').focus()
+  assert.equal(await save.isDisabled(), true, 'Opening catalog search does not dirty the spool')
+  await page.getByText('Fixture spool profile', { exact: true }).click()
+  assert.equal(await save.isEnabled(), true, 'Catalog-applied spool fields enable Save')
+  assert.equal(await page.locator('[name="empty_spool_weight_g"]').inputValue(), '333')
+  await page.locator('#btn-cancel-edit').click()
+  await goto('?edit=1')
   await page.locator('[name="filament_id"]').selectOption('11')
   await page.locator('[name="rfid_uid"]').fill(' aa:bb:cc:dd ')
   await page.locator('[name="rfid_uid_2"]').fill('')
   await page.locator('[form="spool-inline-form"][type="submit"]').click()
-  await page.locator('#btn-edit-spool').waitFor()
+  await page.locator('#btn-edit-spool[aria-pressed="false"]').waitFor()
   assert.equal(new URL(page.url()).searchParams.has('edit'), false)
   const payload = writes.filter(write => write.path === '/api/v1/spools/16').at(-1).body
   assert.deepEqual(payload, {
@@ -116,14 +146,19 @@ try {
   await page.locator('#btn-edit-spool').click()
   await page.locator('[name="rfid_uid_2"]').fill(' 55:66:77:88 ')
   await page.locator('[form="spool-inline-form"][type="submit"]').click()
-  await page.locator('#btn-edit-spool').waitFor()
+  await page.locator('#btn-edit-spool[aria-pressed="false"]').waitFor()
   const secondPayload = writes.filter(write => write.path === '/api/v1/spools/16').at(-1).body
   assert.equal(secondPayload.filament_id, 10)
   assert.equal(secondPayload.rfid_uid, 'AABBCCDD')
   assert.equal(secondPayload.rfid_uid_2, '55:66:77:88')
   assert.equal(await page.evaluate(() => localStorage.getItem('sidebar-collapsed')), 'false')
   assert.equal(await page.evaluate(() => document.documentElement.classList.contains('sidebar-collapsed')), false)
-  console.log('PASS extra-field Add/Edit/Delete/cancel/focus, global confirmation, spool reassignment/RFID, legacy edit exit, responsive controls')
+  await page.locator('#btn-print-label[href*="designation="]').waitFor()
+  await page.goto(new URL(await page.locator('#btn-print-label').getAttribute('href'), page.url()).href)
+  await page.locator('[id="check-ef-purchase_currency"]').check()
+  await page.waitForFunction(() => document.querySelector('#label-preview')?.textContent.includes('USD'))
+  assert.match(await page.locator('#label-preview').textContent(), /USD/, 'Standard labels initialize purchase currency from app settings')
+  console.log('PASS extra-field Add/Edit/Delete/cancel/focus, global confirmation, spool reassignment/RFID, legacy edit exit, responsive controls and purchase currency on Standard labels')
 } finally {
   await browser.close()
 }

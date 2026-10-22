@@ -6,10 +6,9 @@ import { t } from '../lib/i18n'
 
 interface Props {
   mode: 'create' | 'edit'
-  cancelHref: string
 }
 
-const { mode, cancelHref } = Astro.props
+const { mode } = Astro.props
 type InputAttributes = HTMLAttributes<'input'>
 ---
 
@@ -48,17 +47,6 @@ type InputAttributes = HTMLAttributes<'input'>
               <code id="filament-editor-color-name" class="filament-color-name" data-i18n="filaments.chooseColors">Choose colors</code>
               <span class="filament-color-edit-icon" aria-hidden="true">✎</span>
             </button>
-          </div>
-          <div class="filament-hero-actions">
-            <button
-              type="submit"
-              id="submit-btn"
-              class="fm-btn fm-btn-primary"
-              data-i18n={mode === 'create' ? 'filaments.createFilament' : 'filaments.saveFilament'}
-            >
-              {mode === 'create' ? 'Create Filament' : 'Save Filament'}
-            </button>
-            <a id="filament-form-cancel" href={cancelHref} class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</a>
           </div>
         </div>
       </header>

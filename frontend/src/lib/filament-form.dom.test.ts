@@ -196,6 +196,80 @@ afterEach(() => {
 })
 
 describe('shared filament form controller', () => {
+  it('tracks metadata-only extra-field changes and their reversal', async () => {
+    const { controller } = await createLoadedController('edit')
+    controller.applyInitialData({ manufacturer_id: 7, designation: 'Basic', material_type: 'PLA', colors: [{ color_id: 11, position: 1 }], custom_fields: { sample: 5 }, custom_field_definitions: { sample: { label: 'Sample', field_type: 'number', config: { unit: 'g' } } } })
+    controller.captureBaseline()
+    const save = document.querySelector<HTMLButtonElement>('#submit-btn')!
+    expect(save.disabled).toBe(true)
+    for (const [unit, disabled] of [['kg', false], ['g', true]] as const) {
+      document.querySelector<HTMLButtonElement>('.entity-extra-edit')!.click()
+      document.querySelector<HTMLInputElement>('.extra-field-dialog-unit')!.value = unit
+      document.querySelector<HTMLFormElement>('.extra-field-dialog-form')!.dispatchEvent(new Event('submit', { cancelable: true }))
+      await vi.waitFor(() => expect(save.disabled).toBe(disabled))
+    }
+    controller.destroy()
+  })
+  it('keeps Edit saves disabled until a change, including undo and edits during a pending save', async () => {
+    let rejectSave!: (error: Error) => void
+    const onSubmit = vi.fn(() => new Promise<void>((_, reject) => { rejectSave = reject }))
+    const { controller } = await createLoadedController('edit', onSubmit)
+    controller.applyInitialData({ manufacturer_id: 7, designation: 'Basic', material_type: 'PLA', colors: [{ color_id: 11, position: 1 }] })
+    controller.captureBaseline()
+    const form = document.querySelector<HTMLFormElement>('#filament-form')!
+    const save = document.querySelector<HTMLButtonElement>('#submit-btn')!
+    const designation = document.querySelector<HTMLInputElement>('#designation')!
+    expect(save.disabled).toBe(true)
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    designation.value = 'Changed'
+    designation.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(save.disabled).toBe(false)
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    designation.value = 'Basic'
+    designation.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(save.disabled).toBe(true)
+    designation.value = 'Changed again'
+    designation.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(save.disabled).toBe(true)
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    rejectSave(new Error('Save failed'))
+    await vi.waitFor(() => expect(save.disabled).toBe(false))
+    designation.value = 'Basic'
+    designation.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(save.disabled).toBe(true)
+    controller.destroy()
+  })
+  it.each(['create', 'edit'] as const)('keeps the external %s toolbar submit usable after a failed save', async mode => {
+    const form = renderForm()
+    const button = document.querySelector<HTMLButtonElement>('#submit-btn')!
+    button.setAttribute('form', 'filament-form')
+    form.before(button)
+    let rejectSave!: (error: Error) => void
+    const controller = createFilamentFormController({
+      form,
+      mode,
+      onSubmit: () => new Promise<void>((_, reject) => { rejectSave = reject }),
+    })
+    await controller.loadReferenceData()
+    controller.applyInitialData({ manufacturer_id: 7, designation: 'Basic', material_type: 'PLA', diameter_mm: 1.75, colors: [{ color_id: 11, position: 1 }] })
+    if (mode === 'edit') {
+      controller.captureBaseline()
+      const diameter = document.querySelector<HTMLInputElement>('#diameter_mm')!
+      diameter.value = '2.85'
+      diameter.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(button.disabled).toBe(true))
+    rejectSave(new Error('Save failed'))
+    await vi.waitFor(() => expect(document.querySelector('#error-message')?.textContent).toBe('Save failed'))
+    expect(button.disabled).toBe(false)
+    expect(document.querySelector<HTMLInputElement>('#designation')!.value).toBe('Basic')
+    controller.destroy()
+  })
+
   it('preserves draft packaging when Add Manufacturer is canceled', async () => {
     const { controller } = await createLoadedController()
     controller.applyInitialData({ manufacturer_id: 7, default_spool_weight_g: 237, spool_material: 'Cardboard', spool_outer_diameter_mm: 203, spool_width_mm: 69 })

@@ -267,6 +267,7 @@ const { id } = Astro.params
     let extraFieldsDialog: ReturnType<typeof createEntityExtraFieldsDialog> | null = null
     let detailActionHandlersBound = false
     let spoolProfileLookup: LookupInstance | null = null
+    let spoolDraftObserver: MutationObserver | null = null
 
     // -- Bambu cloud profile picker (Option A) --
     let currentDriverKey = ''
@@ -464,8 +465,11 @@ const { id } = Astro.params
 
     function bindSpoolContentActions() {
       document.getElementById('btn-edit-spool')?.addEventListener('click', () => {
-        editing = true
-        window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: true } }))
+        if (editing) exitEditMode()
+        else {
+          editing = true
+          window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: true } }))
+        }
         renderSpool()
       })
       document.getElementById('btn-edit-extra-fields')?.addEventListener('click', event => {
@@ -517,18 +521,33 @@ const { id } = Astro.params
       spoolExtraFieldEditor.setSystemFieldKeys(Object.keys(spoolSystemFieldMap))
       spoolExtraFieldEditor.setData(spool.custom_fields, spool.custom_field_definitions)
       const usesCore = document.getElementById('uses_spool_core') as HTMLInputElement | null
+      const submit = document.querySelector('[form="spool-inline-form"][type="submit"]') as HTMLButtonElement
+      let submitting = false
+      const readSnapshot = () => JSON.stringify([
+        buildSpoolUpdatePayload(new FormData(form), usesCore?.checked ?? true),
+        Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.system-field-input, .system-field-input-multi'), field => field instanceof HTMLInputElement && field.type === 'checkbox' ? field.checked : field.value),
+        spoolExtraFieldEditor.getSnapshot(),
+      ])
+      const baseline = readSnapshot()
+      const updateSaveState = () => { submit.disabled = submitting || readSnapshot() === baseline }
       usesCore?.addEventListener('change', () => {
         const input = form.elements.namedItem('spool_core_weight_g') as HTMLInputElement
         input.disabled = !usesCore.checked
       })
+      form.addEventListener('input', updateSaveState)
+      form.addEventListener('change', updateSaveState)
+      spoolDraftObserver = new MutationObserver(updateSaveState)
+      spoolDraftObserver.observe(customFieldsContainer, { childList: true, subtree: true })
+      updateSaveState()
       form.addEventListener('submit', async (event) => {
         event.preventDefault()
-        const submit = document.querySelector('[form="spool-inline-form"][type="submit"]') as HTMLButtonElement
+        if (submitting || readSnapshot() === baseline) return
         const error = document.getElementById('spool-edit-error')!
         error.classList.add('hidden')
         const extraFields = collectExtraFieldPayload(document.getElementById('spool-system-fields-editor')!, spoolExtraFieldEditor)
         if (!extraFields) return
-        submit.disabled = true
+        submitting = true
+        updateSaveState()
         try {
           const payload = buildSpoolUpdatePayload(new FormData(form), usesCore?.checked ?? true)
           Object.assign(payload, {
@@ -551,7 +570,9 @@ const { id } = Astro.params
         } catch (err) {
           error.textContent = err instanceof Error ? err.message : t('spools.failedUpdate')
           error.classList.remove('hidden')
-          submit.disabled = false
+        } finally {
+          submitting = false
+          updateSaveState()
         }
       })
 
@@ -580,6 +601,7 @@ const { id } = Astro.params
               const input = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null
               if (input && value != null) input.value = String(value)
             }
+            updateSaveState()
             const toast = document.getElementById('spool-profile-lookup-toast')!
             toast.className = 'fdb-toast fdb-toast-success'
             toast.textContent = t('filamentdbLookup.spoolProfileLoaded')
@@ -590,6 +612,7 @@ const { id } = Astro.params
     }
     
     function renderSpool() {
+      spoolDraftObserver?.disconnect()
       spoolProfileLookup?.destroy()
       spoolProfileLookup = null
       const remaining = spool.remaining_weight_g == null ? '—' : `${Number(spool.remaining_weight_g).toFixed(0)} g`
@@ -646,12 +669,13 @@ const { id } = Astro.params
             </div>
           </div>
           <div>
-            <div id="printer-slots-inline"></div>
+            <div id="printer-slots-inline" class="spool-printer-overview"></div>
             <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
             <button id="btn-rfid" type="button" class="detail-icon-button" style="${(spool.rfid_uid || spool.rfid_uid_2) ? 'color: #10b981;' : 'color: var(--text);'}" aria-label="${t('rfid.writeTag')}" title="${t('rfid.writeTag')}">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" aria-hidden="true"><path d="M13 5C2 14 2 34 13 43 M35 5c11 9 11 29 0 38 M17 11c-8 7-8 19 0 26 M31 11c8 7 8 19 0 26 M21 17c-4 4-4 10 0 14 M27 17c4 4 4 10 0 14"/><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg>
             </button>
-            ${editing ? `<button type="submit" form="spool-inline-form" class="fm-btn fm-btn-primary">${t('common.save')}</button><button id="btn-cancel-edit" type="button" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>` : `<button id="btn-edit-spool" type="button" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></button><button id="btn-duplicate-spool" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button><button id="btn-delete" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>`}
+            <button id="btn-edit-spool" type="button" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}" aria-pressed="${editing}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></button>
+            ${editing ? `<button type="submit" form="spool-inline-form" class="fm-btn fm-btn-primary" disabled>${t('common.save')}</button><button id="btn-cancel-edit" type="button" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>` : `<button id="btn-duplicate-spool" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button><button id="btn-delete" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>`}
             </div>
           </div>
         </header>
@@ -664,7 +688,7 @@ const { id } = Astro.params
       `
       const toolbar = document.querySelector('.detail-page-toolbar')!
       const pageActions = spoolContent.querySelector('.detail-page-actions')!
-      pageActions.prepend(spoolContent.querySelector('#printer-slots-inline')!)
+      spoolContent.querySelector('.filament-hero')!.insertAdjacentElement('afterend', spoolContent.querySelector('#printer-slots-inline')!)
       toolbar.querySelector('.detail-page-actions, #spool-page-actions')!.replaceWith(pageActions)
       spoolContent.querySelector('.filament-hero-layout > div:last-child')?.remove()
       spoolContent.querySelector('.filament-hero')!.insertAdjacentElement('afterend', quickActions)
@@ -1835,7 +1859,7 @@ const { id } = Astro.params
 
           if (i > 0) html += `<div style="border-top:1px solid var(--border);margin:6px 0;"></div>`
 
-          html += `<div style="display:flex;align-items:center;gap:12px;">`
+          html += `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;">`
           // Printer name + slot count
           html += `<div style="min-width:80px;">` +
             `<div style="font-size:0.8rem;font-weight:600;white-space:nowrap;">${printer.name}</div>` +

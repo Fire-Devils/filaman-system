@@ -59,13 +59,31 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   const systemGrid = overlay.querySelector<HTMLElement>('.entity-extra-fields-system-grid')!
   const error = overlay.querySelector<HTMLElement>('.entity-extra-fields-error')!
   const submit = overlay.querySelector<HTMLButtonElement>('[type="submit"]')!
+  let baseline: string | null = null
+  let saving = false
   const editor = createEntityExtraFieldEditor({
     container: overlay.querySelector<HTMLElement>('.entity-extra-fields-custom-grid')!,
     addButton: overlay.querySelector<HTMLElement>('[data-extra-fields-add]')!,
     emptyText: t(`${target}.noSpecificExtraFields`),
+    onChange: updateSaveState,
   })
   editor.setSystemFieldKeys(Object.keys(options.systemFields))
   let returnFocus: HTMLElement | null = null
+
+  function getSnapshot(): string {
+    const values = Array.from(
+      systemGrid.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea'),
+      input => input instanceof HTMLInputElement && input.type === 'checkbox' ? input.checked : input.value,
+    )
+    return JSON.stringify([values, editor.getSnapshot()])
+  }
+
+  function updateSaveState(): void {
+    submit.disabled = saving || baseline === null || getSnapshot() === baseline
+  }
+
+  form.addEventListener('input', updateSaveState)
+  form.addEventListener('change', updateSaveState)
 
   function close(): void {
     if (overlay.open) overlay.close()
@@ -85,10 +103,12 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   })
   form.addEventListener('submit', async event => {
     event.preventDefault()
+    if (submit.disabled) return
     error.hidden = true
     const payload = collectExtraFieldPayload(systemGrid, editor)
     if (!payload) return
-    submit.disabled = true
+    saving = true
+    updateSaveState()
     try {
       await options.onSave(payload)
       close()
@@ -96,7 +116,8 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
       error.textContent = cause instanceof Error ? cause.message : String(cause)
       error.hidden = false
     } finally {
-      submit.disabled = false
+      saving = false
+      updateSaveState()
     }
   })
 
@@ -110,6 +131,8 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
         return `<div>${field.field_type === 'checkbox' ? control : `<label class="fm-label">${escapeHtml(field.label)}</label>${control}`}</div>`
       }).join('')
       editor.setData(values, data.customFieldDefinitions)
+      baseline = getSnapshot()
+      updateSaveState()
       error.hidden = true
       overlay.showModal()
       overlay.classList.add('open')

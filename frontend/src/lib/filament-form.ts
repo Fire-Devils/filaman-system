@@ -128,7 +128,7 @@ export function createFilamentFormController(options: {
   const colorLauncher = byId<HTMLButtonElement>('filament-color-launcher')
   const existingColorPicker = byId<HTMLElement>('existing-color-picker')
   const errorMessage = byId<HTMLDivElement>('error-message')
-  const submitButton = byId<HTMLButtonElement>('submit-btn')
+  const submitButton = form.elements.namedItem('submit-btn') as HTMLButtonElement
   const systemFieldsContainer = byId<HTMLDivElement>('system-fields-container')
   const systemFieldsGrid = byId<HTMLDivElement>('system-fields-grid')
   const lookupSection = byId<HTMLDivElement>('fil-fdb-section')
@@ -158,6 +158,9 @@ export function createFilamentFormController(options: {
   let newColorEditorOpen = false
   let destroyed = false
   let baseline: FormSnapshot | null = null
+  let submitting = false
+  let hasChanges = mode === 'create'
+  submitButton.disabled = !hasChanges
 
   const entityExtraFields = createEntityExtraFieldEditor({
     container: customFieldsContainer,
@@ -277,7 +280,6 @@ export function createFilamentFormController(options: {
 
   function readSnapshot(): FormSnapshot {
     const systemValues = collectSystemFieldValues(systemFieldsGrid)
-    const entityValues = entityExtraFields.getPayload()
     const fallbackExtraFields = Array.from(
       form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
         '#system-fields-grid input, #system-fields-grid select, #system-fields-grid textarea',
@@ -323,7 +325,7 @@ export function createFilamentFormController(options: {
       price: serialize(numberValue('price')),
       shop_url: serialize(input('shop_url').value.trim()),
       system_fields: serialize(systemValues ?? fallbackExtraFields),
-      entity_fields: serialize(entityValues ?? customFieldsContainer.textContent),
+      entity_fields: entityExtraFields.getSnapshot(),
     }
   }
 
@@ -345,6 +347,8 @@ export function createFilamentFormController(options: {
       'colors',
     ].some((key) => baseline?.[key] !== current[key]))
     unsavedStatus?.classList.toggle('hidden', !anyDirty)
+    hasChanges = anyDirty
+    submitButton.disabled = submitting || !hasChanges
   }
 
   function syncColorSortButtons(): void {
@@ -961,10 +965,11 @@ export function createFilamentFormController(options: {
   }
 
   function setSubmitting(active: boolean): void {
-    submitButton.disabled = active
+    submitting = active
+    submitButton.disabled = active || !hasChanges
     submitButton.textContent = active
       ? t(mode === 'create' ? 'common.creating' : 'common.saving')
-      : t(mode === 'create' ? 'filaments.createFilament' : 'filaments.saveFilament')
+      : t(mode === 'create' ? 'filaments.createFilament' : 'common.save')
   }
 
   function showError(message: string): void {
@@ -974,6 +979,7 @@ export function createFilamentFormController(options: {
 
   async function handleSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault()
+    if (submitting || !hasChanges) return
     errorMessage.classList.add('hidden')
     try {
       const payload = collectPayload()

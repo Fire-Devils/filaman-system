@@ -1,14 +1,16 @@
 ---
 import FilamentForm from '../../components/FilamentForm.astro'
+import FilamentFormActions from '../../components/FilamentFormActions.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - New Filament">
-  <div style="margin-bottom: 24px;">
-    <a href="/filaments" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+  <div class="detail-page-toolbar">
+    <a href="/filaments" class="detail-back-link">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+    <FilamentFormActions mode="create" cancelHref="/filaments" />
   </div>
 
-  <FilamentForm mode="create" cancelHref="/filaments" />
+  <FilamentForm mode="create" />
 
   <script>
     import { getAbortSignal, isAbortError } from '../../lib/abort'

@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
 import FilamentForm from '../../../components/FilamentForm.astro'
+import FilamentFormActions from '../../../components/FilamentFormActions.astro'
 
 export function getStaticPaths() {
   return [
@@ -16,6 +17,7 @@ const { id } = Astro.params
     <div class="detail-toolbar-back"><a href="/filaments" class="detail-back-link">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
       <span id="unsaved-changes-status" class="filament-change-pill hidden" role="status" aria-live="polite" data-i18n="filaments.changed">Changed</span></div>
     <div id="filament-page-actions"></div>
+    <div id="filament-form-actions" class="hidden"><FilamentFormActions mode="edit" cancelHref="/filaments" /></div>
   </div>
   
   <div id="filament-content">
@@ -23,7 +25,7 @@ const { id } = Astro.params
   </div>
 
   <div id="filament-editor" class="hidden">
-    <FilamentForm mode="edit" cancelHref="/filaments" />
+    <FilamentForm mode="edit" />
   </div>
 
   <div id="slicer-profile-section" class="hidden" style="margin-top: 32px;">
@@ -193,6 +195,7 @@ const { id } = Astro.params
       const form = document.getElementById('filament-form') as HTMLFormElement
       const cancel = document.getElementById('filament-form-cancel') as HTMLAnchorElement
       cancel.href = `/filaments/${id}`
+      document.getElementById('btn-edit-filament')!.addEventListener('click', () => cancel.click())
       const controller = createFilamentFormController({
         form,
         mode: 'edit',
@@ -234,6 +237,7 @@ const { id } = Astro.params
       controller.captureBaseline()
       document.getElementById('filament-content')!.classList.add('hidden')
       document.getElementById('filament-editor')!.classList.remove('hidden')
+      document.getElementById('filament-form-actions')!.classList.remove('hidden')
     }
 
     function openFilamentExtraFields(filament: any, trigger?: HTMLElement): void {

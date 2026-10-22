@@ -2693,13 +2693,20 @@ html.sidebar-collapsed .fm-logo-text {
 }
 
 /* Shared filament/spool detail layout */
-.detail-page-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-.detail-toolbar-back { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.detail-back-link { color: var(--accent); text-decoration: none; }
+.fm-main:has(> .detail-page-toolbar) { height: 100dvh; scroll-padding-top: 5rem; }
+/* Offset the main scrollport's 32px padding so content cannot peek above the bar. */
+.detail-page-toolbar { position: sticky; top: -32px; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -32px -32px 16px; padding: 12px 32px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); }
+.detail-toolbar-back { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.detail-back-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); text-decoration: none; }
+.detail-toolbar-back .filament-change-pill { flex: 0 0 auto; }
 .detail-back-link:hover { text-decoration: underline; }
-.detail-page-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.detail-page-actions { display: flex; align-items: center; justify-content: flex-end; flex: 0 0 auto; gap: 8px; margin-left: auto; }
+.detail-page-toolbar .fm-btn-primary:disabled,
+.entity-extra-fields-dialog-footer .fm-btn-primary:disabled { background: var(--bg-soft); border-color: var(--border); color: var(--text-muted); box-shadow: none; cursor: not-allowed; transform: none; }
+.spool-printer-overview:not(:empty) { margin-bottom: 16px; }
 .detail-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-soft); color: var(--text); cursor: pointer; text-decoration: none; }
 .detail-icon-button:hover { border-color: var(--accent); color: var(--accent); }
+.detail-icon-button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-text); }
 .detail-icon-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .detail-icon-button svg, .detail-quick-action-buttons svg, .detail-hero-stat svg { display: block; width: 20px; height: 20px; flex: 0 0 auto; }
 #btn-rfid svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2.6px; stroke-linecap: round; }
@@ -2790,6 +2797,13 @@ html.sidebar-collapsed .fm-logo-text {
 .spool-totals span:first-child strong { color: var(--accent); }
 
 @media (max-width: 640px) {
+  .detail-page-toolbar { gap: 6px; padding: 8px 12px; }
+  .detail-toolbar-back { gap: 4px; }
+  .detail-back-link { font-size: .78rem; }
+  .detail-page-toolbar .detail-page-actions { gap: 4px; }
+  .detail-page-toolbar .fm-btn { padding: 6px 8px; font-size: .75rem; white-space: nowrap; }
+  .detail-page-toolbar .detail-icon-button { width: 32px; height: 32px; }
+  .detail-page-toolbar #btn-rfid svg { width: 26px; height: 26px; }
   .filament-spec-grid { grid-template-columns: 1fr; }
   .filament-hero { padding: 18px; }
   .filament-hero-logo { flex-basis: 112px; width: 112px; height: 44px; }
