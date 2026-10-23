@@ -4,8 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
 const directory = process.env.LABEL_EVIDENCE_DIR;
-if (!directory) throw new Error('Set LABEL_EVIDENCE_DIR to an ignored artifact directory');
-await mkdir(directory, { recursive: true });
+if (directory) await mkdir(directory, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } });
@@ -73,7 +72,7 @@ try {
     if (row.name === 'Umlauts, shrink to fit' || row.fontCase?.includes('fit')) assert.ok(row.text[0].size < 3 && row.text[0].size >= 1, row.name);
     if (row.name === 'Umlauts, wrapped' || row.fontCase === 'wrap') assert.ok(row.text[0].lines.length > 1, row.name);
   }
-  await writeFile(`${directory}/compatibility-results.json`, JSON.stringify(results, null, 2));
+  if (directory) await writeFile(`${directory}/compatibility-results.json`, JSON.stringify(results, null, 2));
   console.log(JSON.stringify({ cases: results.rows.length, rendered: results.rows.filter(r => r.status === 'rendered').length,
     rows: results.rows.filter(r => r.dpi === 203 && r.threshold === 200).map(({ name, status, error }) => ({ name, status, error })) }, null, 2));
 } finally { await browser.close(); }

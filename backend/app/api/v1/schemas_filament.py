@@ -1,16 +1,28 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from app.api.v1.schemas_entity_extra_field import (
     EntityExtraFieldDefinitions,
     optional_entity_definitions_field,
 )
+from app.services.extra_field_validation import normalize_numeric_range
+from app.services.filamentdb_field_mapping import normalize_spool_image_file
 from app.utils.colors import normalize_hex_color_if_valid
 
 # mypy does not support decorators stacked above @property.
 # pydantic still supports this usage at runtime.
 # mypy: disable-error-code=prop-decorator
+
+
+class NumericRange(BaseModel):
+    min: int | float | None = None
+    max: int | float | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize(cls, value: Any) -> dict[str, int | float | None]:
+        return normalize_numeric_range(value)
 
 
 class ManufacturerCreate(BaseModel):
@@ -139,7 +151,42 @@ class FilamentColorsReplace(BaseModel):
     colors: list[FilamentColorEntry] = []
 
 
-class FilamentCreate(BaseModel):
+class FilamentStandardProperties(BaseModel):
+    filamentdb_spool_image_file: str | None = None
+
+    @field_validator('filamentdb_spool_image_file')
+    @classmethod
+    def validate_spool_image_file(cls, value: str | None) -> str | None:
+        return normalize_spool_image_file(value)
+
+    manufacturer_sku: str | None = None
+    datasheet_url: str | None = None
+    image_url: str | None = None
+    is_discontinued: bool = False
+    drying_temp_c: float | None = None
+    drying_time_hours: float | None = None
+    softening_temp_c: float | None = None
+    cooling_fan_range_percent: NumericRange | None = None
+    chamber_temp_c: float | None = None
+    max_volumetric_speed_mm3_s: float | None = None
+    flow_ratio: float | None = None
+    pressure_advance_k: float | None = None
+    ams_compatibility: list[str] | None = None
+    build_plate_compatibility: list[str] | None = None
+    price_currency: str | None = Field(None, pattern="^[A-Z]{3}$")
+
+    @field_validator("cooling_fan_range_percent")
+    @classmethod
+    def validate_fan_range(cls, value: NumericRange | None) -> NumericRange | None:
+        if value is not None and any(
+            endpoint is not None and not 0 <= endpoint <= 100
+            for endpoint in (value.min, value.max)
+        ):
+            raise ValueError("fan percentage must be between 0 and 100")
+        return value
+
+
+class FilamentCreate(FilamentStandardProperties):
     manufacturer_id: int
     designation: str
     material_type: str
@@ -155,6 +202,8 @@ class FilamentCreate(BaseModel):
     price: float | None = None
     shop_url: str | None = None
     density_g_cm3: float | None = None
+    extruder_temp_range_c: NumericRange | None = None
+    bed_temp_range_c: NumericRange | None = None
     color_mode: str = "single"
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
@@ -188,7 +237,7 @@ class ResolveFilamentFromTagResponse(BaseModel):
     system_extra_fields_created: list[str] = []
 
 
-class FilamentUpdate(BaseModel):
+class FilamentUpdate(FilamentStandardProperties):
     manufacturer_id: int | None = None
     designation: str | None = None
     material_type: str | None = None
@@ -204,6 +253,8 @@ class FilamentUpdate(BaseModel):
     price: float | None = None
     shop_url: str | None = None
     density_g_cm3: float | None = None
+    extruder_temp_range_c: NumericRange | None = None
+    bed_temp_range_c: NumericRange | None = None
     color_mode: str | None = None
     multi_color_style: str | None = None
     custom_fields: dict[str, Any] | None = None
@@ -212,7 +263,9 @@ class FilamentUpdate(BaseModel):
     )
 
 
-class FilamentResponse(BaseModel):
+class FilamentResponse(FilamentStandardProperties):
+    label_field_aliases: dict[str, str] | None = None
+    filamentdb_spool_image_file: str | None = Field(None, exclude_if=lambda value: value is None)
     id: int
     manufacturer_id: int
     designation: str
@@ -229,6 +282,8 @@ class FilamentResponse(BaseModel):
     price: float | None
     shop_url: str | None
     density_g_cm3: float | None
+    extruder_temp_range_c: NumericRange | None = None
+    bed_temp_range_c: NumericRange | None = None
     color_mode: str
     multi_color_style: str | None
     custom_fields: dict[str, Any] | None

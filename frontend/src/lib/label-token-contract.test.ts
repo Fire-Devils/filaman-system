@@ -4,7 +4,15 @@ import {
   buildSpoolDesignerDataFromLabelData,
   buildSpoolDataFromApiSpool,
 } from './label-designer'
-import { REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS } from './filament-label-data'
+import {
+  buildCanonicalFilamentLabelData,
+  buildDesignerExtraFieldsFromFilament,
+  buildFilamentLabelDataFromApi,
+  buildFilamentLabelDataFromParams,
+  buildFilamentPrintSearchParams,
+  REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS,
+} from './filament-label-data'
+import { FILAMENT_TOKENS, SPOOL_TOKENS } from './label-token-catalog'
 import { renderTemplateText } from './label-template'
 import {
   createSpoolLabelLookups,
@@ -12,9 +20,34 @@ import {
 } from './spool-label-lookups'
 import {
   buildSpoolLabelDataFromApi,
+  buildSpoolLabelDataFromParams,
+  buildSpoolPrintSearchParams,
+  buildSpoolStandardModelFields,
   SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
 } from './spool-label-data'
+import { isBuiltInLabelField } from './label-extra-fields'
 import { formatDateDisplay, formatDateTimeDisplay } from './extra-fields'
+
+describe('saved extra temperature spellings', () => {
+  it.each([
+    [{ custom_fields: { extruder_temp: 215, bed_temp: 60 } }, '215 / 60'],
+    [{ extruder_temp_range_c: { min: 210, max: 220 }, bed_temp_range_c: { min: 60, max: 60 }, custom_fields: { extruder_temp: 999, bed_temp: 999 } }, '210–220 / 60'],
+    [{}, ' / '],
+  ])('renders API and query data for filament and spool single/batch: %j', (filament, expected) => {
+    const spool = { id: 42, filament }
+    const sources = [
+      buildFilamentLabelDataFromApi(filament),
+      buildFilamentLabelDataFromParams('8', buildFilamentPrintSearchParams(filament)),
+      buildSpoolLabelDataFromApi(spool),
+      buildSpoolLabelDataFromParams('42', buildSpoolPrintSearchParams(spool)),
+    ]
+    for (const data of sources) {
+      expect(renderTemplateText('{extra.filament.extruder_temp} / {extra.filament.bed_temp}', buildSpoolDesignerDataFromLabelData(data))).toBe(expected)
+    }
+    expect(renderTemplateText('{extra.filament.extruder_temp} / {extra.filament.bed_temp}', buildSpoolDataFromApiSpool(spool))).toBe(expected)
+    expect(buildDesignerExtraFieldsFromFilament(filament).map(field => field.key)).not.toContain('filament.extruder_temp')
+  })
+})
 
 const apiSpool = {
   id: 42,
@@ -56,6 +89,8 @@ const apiSpool = {
     diameter_mm: 1.75,
     finish_type: 'Glossy',
     density_g_cm3: 1.24,
+    extruder_temp_range_c: { min: 200, max: 220 },
+    bed_temp_range_c: { min: 60, max: 60 },
     price: 22.5,
     default_spool_weight_g: 250,
     spool_outer_diameter_mm: 200,
@@ -114,16 +149,130 @@ const legacyDesignerTokens = [
   '{filament.spool_width_mm}',
   '{filament.spool_material}',
   '{filament.shop_url}',
-  ...SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key }) => `{${key}}`),
+  ...SPOOL_BUILT_IN_LABEL_FIELD_DEFS
+    .filter(({ key }) => !['rfid_uid_2', 'purchase_currency'].includes(key))
+    .map(({ key }) => `{${key}}`),
 ]
 
+const nativeFields = [
+  ['extruder_temp_range_c', { min: 200, max: 220 }, '200–220'],
+  ['bed_temp_range_c', { min: 60, max: null }, '60'],
+  ['manufacturer_sku', 'SKU-42', 'SKU-42'],
+  ['datasheet_url', 'https://example.test/spec.pdf', 'https://example.test/spec.pdf'],
+  ['image_url', 'https://example.test/photo.png', 'https://example.test/photo.png'],
+  ['is_discontinued', false, 'no'],
+  ['drying_temp_c', 55, '55'],
+  ['drying_time_hours', 0, '0'],
+  ['softening_temp_c', null, ''],
+  ['cooling_fan_range_percent', { min: 0, max: 100 }, '0–100'],
+  ['chamber_temp_c', 0, '0'],
+  ['max_volumetric_speed_mm3_s', 12.5, '12.5'],
+  ['flow_ratio', 0.98, '0.98'],
+  ['pressure_advance_k', 0, '0'],
+  ['ams_compatibility', ['AMS', 'AMS 2 Pro'], 'AMS, AMS 2 Pro'],
+  ['build_plate_compatibility', ['Textured PEI', 'Smooth PEI'], 'Textured PEI, Smooth PEI'],
+  ['price_currency', 'EUR', 'EUR'],
+] as const
+const nativeFilament = { ...apiSpool.filament, ...Object.fromEntries(nativeFields.map(([key, value]) => [key, value])) }
+
 describe('spool label token contract', () => {
+  it('keeps model fields in Standard checkboxes without advertising duplicate extra tokens', () => {
+    const fields = buildSpoolStandardModelFields(buildSpoolLabelDataFromApi(apiSpool))
+    expect(fields.map(field => field.key)).toEqual(expect.arrayContaining([
+      'spool_material', 'spool_outer_diameter_mm', 'spool_width_mm', 'rfid_uid_2', 'purchase_currency',
+    ]))
+    expect(fields.filter(field => !isBuiltInLabelField('spool', field.key, field.label))).toEqual([])
+  })
+
+  it.each([
+    ['spool_material', 'Cardboard'],
+    ['spool_outer_diameter_mm', '200'],
+    ['spool_width_mm', '65'],
+    ['rfid_uid_2', 'SECONDARY'],
+    ['purchase_currency', 'USD'],
+  ])('renders saved extra.%s after session data is consumed', (key, expected) => {
+    const spool = { ...apiSpool, rfid_uid_2: 'SECONDARY' }
+    const single = buildSpoolDesignerDataFromLabelData(buildSpoolLabelDataFromApi(spool, lookups, '', 'USD'))
+    const batch = buildSpoolDataFromApiSpool(spool, lookups, undefined, 'USD')
+    for (const data of [single, batch]) {
+      expect(renderTemplateText(`{${key}}|{extra.${key}}`, data)).toBe(`${expected}|${expected}`)
+    }
+    expect(renderTemplateText(`{extra.${key}}`, { ...single, extra: { [key]: 'Explicit value' } })).toBe('Explicit value')
+  })
+
+  it.each([
+    [true, 'yes'],
+    [false, 'no'],
+    [null, ''],
+    [undefined, ''],
+  ] as const)('renders discontinued value %s through API and filament/spool query roundtrips', (value, expected) => {
+    const filament = { ...apiSpool.filament, is_discontinued: value }
+    const spool = { ...apiSpool, filament }
+    const filamentData = buildFilamentLabelDataFromApi(filament)
+    const filamentFallback = buildFilamentLabelDataFromParams('8', buildFilamentPrintSearchParams(filament))
+    const spoolData = buildSpoolLabelDataFromApi(spool, lookups)
+    const spoolFallback = buildSpoolLabelDataFromParams('42', buildSpoolPrintSearchParams(spool, lookups))
+    for (const data of [filamentData, filamentFallback, spoolData, spoolFallback]) {
+      expect(data.is_discontinued).toBe(expected)
+      expect(renderTemplateText('{filament.is_discontinued}', buildSpoolDesignerDataFromLabelData(data))).toBe(expected)
+    }
+    expect(renderTemplateText('{filament.is_discontinued}', buildSpoolDataFromApiSpool(spool, lookups))).toBe(expected)
+  })
+
+  it.each(nativeFields)('roundtrips native filament.%s through spool query fallback', (key, _value, expected) => {
+    const spool = { ...apiSpool, filament: nativeFilament }
+    const fallback = buildSpoolLabelDataFromParams('42', buildSpoolPrintSearchParams(spool, lookups))
+    expect(fallback[key]).toBe(expected)
+    expect(renderTemplateText(`{filament.${key}}`, buildSpoolDesignerDataFromLabelData(fallback))).toBe(expected)
+  })
+
+  it('offers and renders spool-owned tokens in representative single and batch data', () => {
+    const spool = { ...apiSpool, rfid_uid_2: 'SECONDARY' }
+    const single = buildSpoolDesignerDataFromLabelData(buildSpoolLabelDataFromApi(spool, lookups, '', 'USD'))
+    const batch = buildSpoolDataFromApiSpool(spool, lookups, undefined, 'USD')
+    for (const [key, value] of Object.entries({ spool_material: 'Cardboard', spool_outer_diameter_mm: '200', spool_width_mm: '65', rfid_uid_2: 'SECONDARY', purchase_currency: 'USD' })) {
+      expect(SPOOL_TOKENS).toContainEqual(expect.objectContaining({ token: `{${key}}`, section: key === 'purchase_currency' ? 'purchase' : key === 'rfid_uid_2' ? 'identity' : 'physical' }))
+      expect(renderTemplateText(`{${key}}`, single)).toBe(value)
+      expect(renderTemplateText(`{${key}}`, batch)).toBe(value)
+    }
+  })
+  it.each(nativeFields)('renders and offers canonical filament.%s through API and query fallbacks', (key, _value, expected) => {
+    const spool = { ...apiSpool, filament: nativeFilament }
+    const filamentQuery = buildFilamentLabelDataFromParams('8', buildFilamentPrintSearchParams(nativeFilament))
+    const canonical = buildCanonicalFilamentLabelData({}, filamentQuery, '8')
+    const current = buildCanonicalFilamentLabelData(nativeFilament, buildFilamentLabelDataFromParams('8', new URLSearchParams({ [key]: 'Stale query' })), '8')
+    const token = `{filament.${key}}`
+    for (const data of [
+      buildSpoolDataFromApiSpool(spool, lookups),
+      buildSpoolDesignerDataFromLabelData(canonical),
+    ]) expect(renderTemplateText(token, data)).toBe(expected)
+    expect(current[key]).toBe(expected || 'Stale query')
+    expect(FILAMENT_TOKENS.map(choice => choice.token)).toContain(token)
+  })
+
+  it('omits all unset native values and optional wrappers without serializing nulls', () => {
+    for (const value of [undefined, null]) {
+      const filament = Object.fromEntries(nativeFields.map(([key]) => [key, value]))
+      const data = buildSpoolDesignerDataFromLabelData(buildFilamentLabelDataFromApi(filament))
+      for (const [key] of nativeFields) {
+        expect(renderTemplateText(`{filament.${key}}`, data)).toBe('')
+        expect(renderTemplateText(`{Value: {filament.${key}}}`, data)).toBe('')
+      }
+    }
+  })
+
+  it('gives every picker choice a section and hides the legacy temperature aliases', () => {
+    for (const choice of [...FILAMENT_TOKENS, ...SPOOL_TOKENS]) expect(choice.section).toBeTruthy()
+    expect(FILAMENT_TOKENS.map(choice => choice.token)).not.toContain('{filament.extruder_temp}')
+    expect(FILAMENT_TOKENS.map(choice => choice.token)).not.toContain('{filament.bed_temp}')
+  })
+
   it('keeps Standard fields focused while retaining complete spool timestamps and weights', () => {
     const spoolKeys = SPOOL_BUILT_IN_LABEL_FIELD_DEFS.map(({ key }) => key)
     const standardKeys = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS.map(({ key }) => key)
 
-    expect(standardKeys).not.toContain('filament.extruder_temp')
-    expect(standardKeys).not.toContain('filament.bed_temp')
+    expect(standardKeys).toContain('filament.extruder_temp')
+    expect(standardKeys).toContain('filament.bed_temp')
 
     expect(spoolKeys).toContain('spool_core_weight_g')
     expect(spoolKeys).toContain('stocked_in_at')
@@ -133,7 +282,7 @@ describe('spool label token contract', () => {
   it('continues resolving legacy temperature tokens in saved templates', () => {
     const data = buildSpoolDataFromApiSpool(apiSpool, lookups)
 
-    expect(renderTemplateText('{filament.extruder_temp}', data)).toBe('215')
+    expect(renderTemplateText('{filament.extruder_temp}', data)).toBe('200–220')
     expect(renderTemplateText('{filament.bed_temp}', data)).toBe('60')
   })
 

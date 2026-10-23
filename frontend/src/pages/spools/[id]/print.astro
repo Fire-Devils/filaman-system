@@ -72,6 +72,7 @@ export function getStaticPaths() {
     type LabelSettingsState,
   } from '../../../lib/label-print-page'
   import {
+    buildLegacyLabelAliases,
     dedupeLabelExtraFields,
     isBuiltInLabelField,
     scopeLabelExtraField,
@@ -93,6 +94,7 @@ export function getStaticPaths() {
   import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
   import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
   import { consumeScopedLabelFields } from '../../../lib/label-print-session'
+  import { getCurrency, initCurrency } from '../../../lib/format'
 
   bindPrintPageSidebarCollapse()
 
@@ -123,6 +125,7 @@ export function getStaticPaths() {
 
   type SingleSpoolExtraField = LabelExtraFieldValue & { value: string }
   let extraFields: SingleSpoolExtraField[] = []
+  let legacyAliases: SingleSpoolExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<SingleSpoolExtraField>('filaman-label-extra-fields', id)
     if (Array.isArray(parsed)) {
@@ -143,7 +146,7 @@ export function getStaticPaths() {
     return buildSpoolDesignerDataFromLabelData({
       ...labelData,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
-      extraFields,
+      extraFields: [...extraFields, ...legacyAliases],
     })
   }
 
@@ -547,12 +550,20 @@ export function getStaticPaths() {
   const [apiSpoolData, loadedLookups] = await Promise.all([
     fetchSpoolApiData(),
     loadSpoolLabelLookups(),
+    initCurrency(),
   ])
+  labelData.purchase_currency = getCurrency()
   if (apiSpoolData) {
+    const filament = apiSpoolData.filament ?? {}
+    legacyAliases = [
+      ...buildLegacyLabelAliases(apiSpoolData, filament, 'spool'),
+      ...buildLegacyLabelAliases(filament, filament, 'filament'),
+    ]
     const apiLabelData = buildSpoolLabelDataFromApi(
       apiSpoolData,
       loadedLookups,
       id,
+      getCurrency(),
     )
     mergeMissingSpoolLabelData(
       apiLabelData,
@@ -582,7 +593,7 @@ export function getStaticPaths() {
 
   // Initialize: load logo then render the selected workspace.
   if (requestedLabelReady) loadLabelLogo().then(() => {
-    tabControls.activate(initialMode, false)
+    tabControls.activate(isPrintRequest ? initialMode : tabControls.getActiveMode(), false)
   })
 
   // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),

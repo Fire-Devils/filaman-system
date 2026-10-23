@@ -4,8 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
 const directory = process.env.LABEL_EVIDENCE_DIR;
-if (!directory) throw new Error('Set LABEL_EVIDENCE_DIR to an ignored artifact directory');
-await mkdir(directory, { recursive: true });
+if (directory) await mkdir(directory, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true });
 const rows = [];
 try {
@@ -25,16 +24,18 @@ try {
     assert.equal(result.preset.version, 2);
     assert.equal(result.width, dpi === 203 ? 320 : 472);
     assert.equal(result.height, dpi === 203 ? 240 : 354);
-    const prefix = `${directory}/${id}-${dpi}-${threshold}`;
-    for (const [name, key] of [['browser', 'browserPng'], ['server', 'serverPng']]) {
-      await writeFile(`${prefix}-${name}.png`, Buffer.from(result[key], 'base64'));
+    if (directory) {
+      const prefix = `${directory}/${id}-${dpi}-${threshold}`;
+      for (const [name, key] of [['browser', 'browserPng'], ['server', 'serverPng']]) {
+        await writeFile(`${prefix}-${name}.png`, Buffer.from(result[key], 'base64'));
+      }
+      await writeFile(`${prefix}.mono1`, Buffer.from(result.mono, 'base64'));
+      await writeFile(`${prefix}.svg`, result.svg);
+      if (dpi === 203 && threshold === 200) await page.screenshot({ path: `${directory}/${id}-comparison.png`, fullPage: true });
     }
-    await writeFile(`${prefix}.mono1`, Buffer.from(result.mono, 'base64'));
-    await writeFile(`${prefix}.svg`, result.svg);
     const summary = { ...result };
     for (const key of ['svg', 'mono', 'assets', 'browserPng', 'serverPng']) delete summary[key];
     rows.push({ id, ...summary });
-    if (dpi === 203 && threshold === 200) await page.screenshot({ path: `${directory}/${id}-comparison.png`, fullPage: true });
   }
   // Check actual controls: narrowing a box changes the shared wrap, not just a screenshot.
   await page.selectOption('#fixture', 'wrapped');
@@ -50,6 +51,6 @@ try {
   await page.click('#render');
   await page.waitForFunction(() => window.probeResult && !document.querySelector('#render').disabled);
   assert.match((await page.evaluate(() => window.probeResult)).error, /fit/i);
-  await writeFile(`${directory}/results.json`, JSON.stringify(rows, null, 2));
+  if (directory) await writeFile(`${directory}/results.json`, JSON.stringify(rows, null, 2));
   console.log(`${rows.length} independent browser/server comparisons: SVG, RGBA and mono1 identical. Wrap and overflow controls passed.`);
 } finally { await browser.close(); }
