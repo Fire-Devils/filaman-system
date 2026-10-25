@@ -1,5 +1,34 @@
 export type InlinePdfSupport = 'supported' | 'unsupported' | 'unknown'
 
+export const LABEL_PRINT_PDF_MODE_KEY = 'filaman-label-print-pdf-v1'
+
+export function getPrintPdfPreference(): boolean {
+  try { return localStorage.getItem(LABEL_PRINT_PDF_MODE_KEY) === 'true' }
+  catch { return false }
+}
+
+/** The caller reserves this window synchronously during the user's click. */
+export function showPrintPdfWindow(
+  popup: Window, blob: Blob, filename: string,
+  getTranslation: (key: string, fallback: string) => string,
+) {
+  const popupUrl = (popup as Window & { URL: typeof URL }).URL
+  const url = popupUrl.createObjectURL(blob)
+  popup.addEventListener('pagehide', () => popupUrl.revokeObjectURL(url), { once: true })
+  const doc = popup.document
+  const object = createPdfObject(doc, url, getTranslation)
+  object.style.cssText = 'width:100%;flex:1;min-height:0;border:0'
+  const download = doc.createElement('a')
+  download.href = url
+  download.download = filename
+  download.textContent = getTranslation('labelPrint.downloadPdf', 'Download PDF')
+  download.style.cssText = 'padding:8px;font:14px system-ui'
+  doc.title = filename
+  doc.documentElement.style.height = '100%'
+  doc.body.style.cssText = 'display:flex;flex-direction:column;height:100%;margin:0'
+  doc.body.replaceChildren(download, object)
+}
+
 export interface TemporaryPdfPreviewDocument {
   blob: Blob
   filename: string
@@ -122,21 +151,7 @@ export function bindTemporaryPdfPreview(
       return
     }
 
-    const popupUrl = (popup as Window & { URL: typeof URL }).URL
-    const url = popupUrl.createObjectURL(currentDocumentBlob())
-    popup.addEventListener('pagehide', () => {
-      popupUrl.revokeObjectURL(url)
-    }, { once: true })
-    const popupDocument = popup.document
-    const object = createPdfObject(popupDocument, url, options.getTranslation)
-    object.style.width = '100%'
-    object.style.height = '100%'
-    object.style.border = '0'
-    popupDocument.title = download.download
-    popupDocument.documentElement.style.height = '100%'
-    popupDocument.body.style.height = '100%'
-    popupDocument.body.style.margin = '0'
-    popupDocument.body.replaceChildren(object)
+    showPrintPdfWindow(popup, currentDocumentBlob(), download.download, options.getTranslation)
   }
 
   const onPageHide = () => dispose()

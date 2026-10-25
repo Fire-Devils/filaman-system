@@ -137,9 +137,10 @@ async def test_filament_print_request_selects_own_preset_and_is_claimed_once(aut
                              (f"?preset_id={presets[1].id}", presets[1].id)):
         response = await client.post(path + query, headers=headers)
         assert response.status_code == 201, response.text
-        expected = {"id": response.json()["id"], "filament_id": filament.id, "preset_id": preset_id}
+        expected = {"id": response.json()["id"], "filament_id": filament.id, "preset_id": preset_id,
+                    "created_at": response.json()["created_at"], "expires_at": response.json()["expires_at"]}
         assert response.json() == expected
-        assert (await client.get("/api/v1/labels/print-requests/pending")).json() == expected
+        assert (await client.get("/api/v1/labels/print-requests/pending")).json() == {**expected, "has_more": False}
         claim = f"/api/v1/labels/print-requests/{expected['id']}/claim"
         assert (await client.post(claim, headers=headers)).status_code == 204
         assert (await client.post(claim, headers=headers)).status_code == 409
@@ -174,7 +175,7 @@ async def test_filament_print_request_defaults_without_selection_and_expires(aut
     assert response.status_code == 201, response.text
     assert response.json()["preset_id"] is None
     queued = await db_session.get(LabelPrintRequest, response.json()["id"])
-    queued.created_at = datetime.now(UTC) - timedelta(minutes=6)
+    queued.created_at = datetime.now(UTC) - timedelta(minutes=61)
     await db_session.commit()
     assert (await client.get("/api/v1/labels/print-requests/pending")).json() is None
     assert (await client.post(f"/api/v1/labels/print-requests/{queued.id}/claim", headers={"X-CSRF-Token": csrf})).status_code == 409
@@ -206,7 +207,7 @@ async def test_print_request_queue_filters_by_scope_and_owner(client, db_session
     assert response.status_code == 201, response.text
     request_id = response.json()["id"]
     pending = "/api/v1/labels/print-requests/pending"
-    assert (await client.get(pending, headers=headers["filament"])).json() == response.json()
+    assert (await client.get(pending, headers=headers["filament"])).json() == {**response.json(), "has_more": False}
     assert (await client.get(pending, headers=headers["spool"])).json()["spool_id"] == spool.id
     assert (await client.get(pending, headers=headers["other"])).json() is None
     assert (await client.get(pending, headers=headers["none"])).status_code == 403

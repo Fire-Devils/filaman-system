@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import TemporaryPdfPreview from '../components/TemporaryPdfPreview.astro'
 import { setLang, t, translatePage } from './i18n'
-import { bindTemporaryPdfPreview, detectInlinePdfSupport } from './label-pdf-preview'
+import { bindTemporaryPdfPreview, detectInlinePdfSupport, showPrintPdfWindow } from './label-pdf-preview'
 
 function renderHost() {
   document.body.innerHTML = `
@@ -42,6 +42,20 @@ describe('detectInlinePdfSupport', () => {
     expect(detectInlinePdfSupport({ pdfViewerEnabled: false })).toBe('unsupported')
     expect(detectInlinePdfSupport({})).toBe('unknown')
   })
+})
+
+it('keeps a usable PDF download outside the embedded viewer', () => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:print-pdf')
+  const popupDocument = document.implementation.createHTMLDocument('PDF')
+  const popup = Object.assign(new EventTarget(), { document: popupDocument, URL })
+  showPrintPdfWindow(popup as unknown as Window, blob, 'label.pdf', key => t(key))
+
+  const link = popupDocument.querySelector<HTMLAnchorElement>('body > a')!
+  expect(link).not.toBeNull()
+  expect(link.href).toBe('blob:print-pdf')
+  expect(link.download).toBe('label.pdf')
+  expect(link.textContent).toBe('Download PDF')
+  expect(popupDocument.querySelector('object')?.data).toBe(link.href)
 })
 
 describe('TemporaryPdfPreview toolbar', () => {

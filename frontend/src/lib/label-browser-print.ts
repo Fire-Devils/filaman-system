@@ -9,9 +9,10 @@ import {
   resetPreviewSurface,
   prepareLabelOutputClone,
 } from './label-preview-dom'
-import { waitForLabelOutputAssets } from './label-output-readiness'
+import { LabelOutputAssetError, waitForLabelOutputAssets } from './label-output-readiness'
 import { prepareSvgPrintImages } from './label-svg/browser'
 import { LABEL_EXPORT_DPI } from './label-export'
+import { t } from './i18n'
 
 const PRINT_HOST_ID = 'filaman-label-print-host'
 const PRINT_STYLE_ID = 'filaman-label-print-style'
@@ -19,6 +20,7 @@ const PRINTING_CLASS = 'filaman-label-printing'
 const PRINT_CLEANUP_DELAY_MS = 60_000
 const FRAME_FALLBACK_DELAY_MS = 50
 
+let printing = false
 let cleanupTimer: ReturnType<typeof setTimeout> | undefined
 
 export interface LabelBrowserPrintJob {
@@ -250,6 +252,7 @@ function waitForTimerBackedAnimationFrame() {
 }
 
 export function cleanupLabelBrowserPrint() {
+  printing = false
   if (cleanupTimer !== undefined) {
     clearTimeout(cleanupTimer)
     cleanupTimer = undefined
@@ -263,22 +266,27 @@ export function cleanupLabelBrowserPrint() {
 
 export async function printLabelBrowserJob(
   job: LabelBrowserPrintJob,
+  canPrint?: () => boolean,
 ): Promise<void> {
   assertValidJob(job)
+  if (printing) throw new LabelOutputAssetError(t('labelPrint.browserPrintBusy'))
   cleanupLabelBrowserPrint()
-
-  await prepareSvgPrintImages(job.pages, LABEL_EXPORT_DPI)
-
-  const style = createPrintStyle(job)
-  const host = createPrintHost(job)
-  document.head.appendChild(style)
-  document.body.appendChild(host)
-  document.body.classList.add(PRINTING_CLASS)
+  printing = true
 
   try {
+    await prepareSvgPrintImages(job.pages, LABEL_EXPORT_DPI)
+    const style = createPrintStyle(job)
+    const host = createPrintHost(job)
+    document.head.appendChild(style)
+    document.body.appendChild(host)
+    document.body.classList.add(PRINTING_CLASS)
     await waitForLabelOutputAssets([...job.pages, host])
     await waitForTimerBackedAnimationFrame()
     await waitForTimerBackedAnimationFrame()
+    if (canPrint && !canPrint()) {
+      cleanupLabelBrowserPrint()
+      return
+    }
     window.addEventListener('afterprint', cleanupLabelBrowserPrint, {
       once: true,
     })

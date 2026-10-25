@@ -38,6 +38,7 @@ try {
       return route.fulfill({ status: entityStatus, json: { detail: 'Entity unavailable' } })
     }
     let json = []
+    if (path.endsWith('/preview')) return route.fulfill({ status: 503, json: { detail: 'Preview unavailable in Edit smoke test' } })
     if (path.endsWith('/pending')) json = pending
     else if (path.endsWith('/claim')) { pending = null; return route.fulfill({ status: 204 }) }
     else if (path.endsWith('/me')) json = { id: 1, username: 'Reviewer', display_name: 'Reviewer', email: 'review@example.test', language: 'en', roles: ['Admin'], is_superuser: true, is_superadmin: true, permissions: ['*'] }
@@ -67,14 +68,15 @@ try {
     const prefix = kind === 'spool' ? 'filaman-label' : 'filaman-filament-label'
     const expectedSettings = kind === 'spool' ? saved : JSON.stringify({ ...JSON.parse(saved), _v: 2 })
     const getSettings = page => page.evaluate(key => localStorage.getItem(key), `${prefix}-settings`)
-    pending = { id: 18, [`${kind}_id`]: 73, preset_id: null }
+    pending = { id: 18, [`${kind}_id`]: 73, preset_id: null,
+      created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600000).toISOString() }
     const page = await context.newPage()
     page.on('pageerror', error => console.error(error.message))
     await page.goto(`${origin}/${kind}s`)
     await page.locator('#pc-print-prompt').waitFor({ state: 'visible' })
     const [request] = await Promise.all([
       context.waitForEvent('page'),
-      page.locator('.pc-print-prompt-open').click(),
+      page.locator('.pc-print-prompt-edit').click(),
     ])
     await request.waitForURL(`${origin}/${kind}s/73/print?scale_print=1`)
     await request.waitForLoadState()

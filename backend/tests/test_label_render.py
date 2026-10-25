@@ -243,7 +243,7 @@ async def test_pc_print_request_is_claimed_once(
     )
     assert response.status_code == 201
     request_id = response.json()["id"]
-    assert (await client.get(pending_path)).json() == {"id": request_id, "spool_id": spool.id, "preset_id": None}
+    assert (await client.get(pending_path)).json() == {**response.json(), "has_more": False}
 
     # Claiming stays portable by relying only on DELETE rowcount.
     @event.listens_for(db_engine.sync_engine, "before_cursor_execute")
@@ -260,7 +260,7 @@ async def test_pc_print_request_is_claimed_once(
     expired = LabelPrintRequest(
         spool_id=spool.id,
         user_id=admin_user.id,
-        created_at=datetime.now(UTC) - timedelta(minutes=6),
+        created_at=datetime.now(UTC) - timedelta(minutes=61),
     )
     db_session.add(expired)
     await db_session.commit()
@@ -674,9 +674,11 @@ def test_pc_print_json_contract_is_available_to_api_clients():
     assert {"type": "null"} in pending["anyOf"]
     filament = paths["/api/v1/labels/filament/{filament_id}/print-request"]["post"]["responses"]["201"]["content"]["application/json"]["schema"]
     filament_model = schema["components"]["schemas"][filament["$ref"].split("/")[-1]]
-    assert set(filament_model["properties"]) == {"id", "filament_id", "preset_id"}
+    assert set(filament_model["properties"]) == {"id", "filament_id", "preset_id", "created_at", "expires_at"}
     assert filament_model["properties"]["filament_id"]["type"] == "integer"
-    assert filament in pending["anyOf"]
+    pending_models = [schema['components']['schemas'][entry['$ref'].split('/')[-1]] for entry in pending['anyOf'] if '$ref' in entry]
+    assert all(model['properties']['has_more']['type'] == 'boolean' for model in pending_models)
+    assert any('filament_id' in model['properties'] for model in pending_models)
     presets = paths["/api/v1/labels/presets"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert presets["type"] == "array"
     preset = schema["components"]["schemas"][presets["items"]["$ref"].split("/")[-1]]

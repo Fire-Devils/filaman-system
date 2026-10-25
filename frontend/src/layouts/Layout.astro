@@ -174,16 +174,32 @@ const { title } = Astro.props
       </main>
     </div>
 
-    <div id="pc-print-prompt" class="fm-alert-info pc-print-prompt hidden" role="status" aria-live="polite">
-      <span class="pc-print-prompt-icon" aria-hidden="true">
-        <svg width="23" height="23" fill="currentColor"><use href="/icons.svg#icon-printers"></use></svg>
-      </span>
-      <div class="pc-print-prompt-copy">
-        <strong class="pc-print-prompt-title"></strong>
+    <div class="pc-print-prompt-stack">
+      <div id="pc-print-prompt" class="pc-print-prompt hidden" role="status" aria-live="polite">
+        <div class="pc-print-prompt-header">
+          <strong class="pc-print-prompt-title"></strong>
+          <span class="pc-print-prompt-age" hidden></span>
+        </div>
+        <img class="pc-print-prompt-preview" alt="" hidden />
         <p class="pc-print-prompt-message"></p>
+        <p class="pc-print-prompt-error" role="alert" hidden></p>
+        <div class="pc-print-prompt-actions">
+          <button type="button" class="fm-btn fm-btn-primary pc-print-prompt-print" disabled>
+            <svg aria-hidden="true" fill="currentColor"><use href="/icons.svg#icon-printers"></use></svg><span></span>
+          </button>
+          <a class="fm-btn fm-btn-primary pc-print-prompt-download" download="label.pdf" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14" /></svg><span></span>
+          </a>
+          <button type="button" class="fm-btn fm-btn-outline pc-print-prompt-edit">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-12 12H4v-5zM14 5l5 5" /></svg><span></span>
+          </button>
+          <button type="button" class="fm-btn fm-btn-outline pc-print-prompt-close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg>
+          </button>
+        </div>
+        <small class="pc-print-prompt-note"></small>
       </div>
-      <button type="button" class="fm-btn fm-btn-primary pc-print-prompt-open"></button>
-      <button type="button" class="fm-btn fm-btn-outline pc-print-prompt-close">×</button>
+      <div id="pc-print-prompt-waiting" role="status" hidden></div>
     </div>
 
     <!-- Global confirm / alert modal -->

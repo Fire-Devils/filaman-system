@@ -499,3 +499,28 @@ describe('printLabelBrowserJob', () => {
     expect(document.querySelector('#filaman-label-print-style')).toBeNull()
   })
 })
+
+it('rejects overlapping editor/card jobs without replacing the active label, then permits retry', async () => {
+  let finishFonts!: () => void
+  setFontsReady(new Promise<void>(resolve => { finishFonts = resolve }))
+  const pageA = document.createElement('div')
+  pageA.textContent = 'Label A'
+  const pageB = document.createElement('div')
+  pageB.textContent = 'Label B'
+  const job = (page: HTMLElement) => ({ kind: 'individual' as const, widthMm: 40, heightMm: 30, pages: [page], printGrid: false })
+  const printed: string[] = []
+  vi.spyOn(window, 'print').mockImplementation(() => {
+    printed.push(document.getElementById('filaman-label-print-host')!.textContent!)
+  })
+  const first = printLabelBrowserJob(job(pageA))
+  await Promise.resolve()
+  const second = printLabelBrowserJob(job(pageB)).then(() => null, error => error)
+  finishFonts()
+  await first
+  expect(await second).toBeInstanceOf(Error)
+  expect(printed).toEqual(['Label A'])
+  await expect(printLabelBrowserJob(job(pageB))).rejects.toThrow(/print/i)
+  window.dispatchEvent(new Event('afterprint'))
+  await printLabelBrowserJob(job(pageB))
+  expect(printed).toEqual(['Label A', 'Label B'])
+})
