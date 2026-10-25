@@ -40,18 +40,31 @@ from app.services.label_asset_service import (
 from app.services.label_svg_renderer import label_render_slot, render_svg_png
 
 router = APIRouter(prefix="/labels", tags=["labels"])
+PRINT_REQUEST_LIFETIME = timedelta(hours=1)
 
 
 class LabelPrintRequestResponse(BaseModel):
     id: int
     spool_id: int
     preset_id: int | None
+    created_at: datetime
+    expires_at: datetime
 
 
 class FilamentPrintRequestResponse(BaseModel):
     id: int
     filament_id: int
     preset_id: int | None
+    created_at: datetime
+    expires_at: datetime
+
+
+class PendingSpoolPrintRequestResponse(LabelPrintRequestResponse):
+    has_more: bool
+
+
+class PendingFilamentPrintRequestResponse(FilamentPrintRequestResponse):
+    has_more: bool
 
 
 class ScaleLabelPresetResponse(BaseModel):
@@ -96,7 +109,8 @@ async def request_filament_pc_print(
 
 def _print_request_response(print_request: LabelPrintRequest) -> dict:
     target = {"spool_id": print_request.spool_id} if print_request.spool_id is not None else {"filament_id": print_request.filament_id}
-    return {"id": print_request.id, **target, "preset_id": print_request.preset_id}
+    return {"id": print_request.id, **target, "preset_id": print_request.preset_id,
+            "created_at": print_request.created_at, "expires_at": print_request.created_at + PRINT_REQUEST_LIFETIME}
 
 
 async def _enqueue_pc_print(db, principal, kind: Literal["spool", "filament"], entity_id: int, preset_id: int | None):
@@ -122,7 +136,7 @@ async def _enqueue_pc_print(db, principal, kind: Literal["spool", "filament"], e
         _validated_preset_size(preset.data)
     await db.execute(
         delete(LabelPrintRequest).where(
-            LabelPrintRequest.created_at < datetime.now(UTC) - timedelta(minutes=5)
+            LabelPrintRequest.created_at <= datetime.now(UTC) - PRINT_REQUEST_LIFETIME
         )
     )
     print_request = LabelPrintRequest(**{f"{kind}_id": entity_id}, user_id=principal.user_id, preset_id=preset_id)
@@ -140,27 +154,27 @@ async def _permitted_print_targets(db, principal):
     ) if permission in permitted))
 
 
-@router.get("/print-requests/pending", response_model=LabelPrintRequestResponse | FilamentPrintRequestResponse | None)
+@router.get("/print-requests/pending", response_model=PendingSpoolPrintRequestResponse | PendingFilamentPrintRequestResponse | None)
 async def pending_pc_print(
     db: DBSession,
     principal: PrincipalDep,
 ):
     if principal.user_id is None:
         raise HTTPException(status_code=403, detail="Use a user session for PC print prompts")
-    cutoff = datetime.now(UTC) - timedelta(minutes=5)
-    print_request = await db.scalar(
+    cutoff = datetime.now(UTC) - PRINT_REQUEST_LIFETIME
+    requests = (await db.scalars(
         select(LabelPrintRequest)
         .where(
             LabelPrintRequest.user_id == principal.user_id,
-            LabelPrintRequest.created_at >= cutoff,
+            LabelPrintRequest.created_at > cutoff,
             await _permitted_print_targets(db, principal),
         )
         .order_by(LabelPrintRequest.id)
-        .limit(1)
-    )
-    if print_request is None:
+        .limit(2)
+    )).all()
+    if not requests:
         return None
-    return _print_request_response(print_request)
+    return {**_print_request_response(requests[0]), "has_more": len(requests) > 1}
 
 
 @router.post("/print-requests/{request_id}/claim", status_code=204)
@@ -176,7 +190,7 @@ async def claim_pc_print(
         .where(
             LabelPrintRequest.id == request_id,
             LabelPrintRequest.user_id == principal.user_id,
-            LabelPrintRequest.created_at >= datetime.now(UTC) - timedelta(minutes=5),
+            LabelPrintRequest.created_at > datetime.now(UTC) - PRINT_REQUEST_LIFETIME,
             await _permitted_print_targets(db, principal),
         )
         .execution_options(synchronize_session=False)
@@ -185,6 +199,25 @@ async def claim_pc_print(
         raise HTTPException(status_code=409, detail="Print request already claimed or missing")
     await db.commit()
     return Response(status_code=204)
+
+
+@router.get("/print-requests/{request_id}/preview", response_class=Response,
+            responses={200: {"content": {"image/png": {}}, "description": "Print-quality label preview"}})
+async def preview_pc_print(request_id: int, request: Request, db: DBSession, principal: PrincipalDep):
+    if principal.user_id is None:
+        raise HTTPException(status_code=403, detail="Use a user session for PC print prompts")
+    pending = await db.scalar(select(LabelPrintRequest).where(
+        LabelPrintRequest.id == request_id,
+        LabelPrintRequest.user_id == principal.user_id,
+        LabelPrintRequest.created_at > datetime.now(UTC) - PRINT_REQUEST_LIFETIME,
+        await _permitted_print_targets(db, principal),
+    ))
+    if pending is None:
+        raise HTTPException(status_code=409, detail="Print request already claimed or missing")
+    kind = "spool" if pending.spool_id is not None else "filament"
+    entity_id = pending.spool_id if kind == "spool" else pending.filament_id
+    return await _render_label(kind, entity_id, request, db, "png", 0, 600, "left",
+                               "original", pending.preset_id or 0, "color", 200, principal, print_preview=True)
 
 
 @router.get("/presets", response_model=list[ScaleLabelPresetResponse])
@@ -315,9 +348,9 @@ def _finish_raster(image, label_width, label_height, width, rotated, align, form
     return Response(output.getvalue(), media_type="image/png", headers=headers)
 
 
-def _decode_raster(png: bytes) -> Image.Image:
+def _decode_raster(png: bytes, print_preview: bool = False) -> Image.Image:
     with Image.open(BytesIO(png)) as source:
-        if source.width > 2048 or source.height > 2048:
+        if (source.width * source.height > 8_000_000 if print_preview else source.width > 2048 or source.height > 2048):
             raise HTTPException(status_code=422, detail="Rendered label exceeds the image limit")
         return source.convert("RGB")
 
@@ -366,7 +399,7 @@ async def render_filament_label(
 
 async def _render_label(
     preset_type, entity_id, request, db, format, width, dpi, align,
-    orientation, preset_id, color, threshold, principal,
+    orientation, preset_id, color, threshold, principal, *, print_preview=False,
 ):
     if format == "mono1" and color == "color":
         raise HTTPException(status_code=422, detail="mono1 is always monochrome")
@@ -440,9 +473,13 @@ async def _render_label(
             label_width = width
             label_height = round(width * height_mm / width_mm)
         content_width, content_height = (label_height, label_width) if rotated else (label_width, label_height)
+        if print_preview:
+            if label_width * label_height > 8_000_000:
+                raise HTTPException(422, "This label is too large to export safely at 600 DPI. Reduce its dimensions.")
+            width = content_width
         if content_width > width:
             raise HTTPException(status_code=422, detail="Label is wider than the requested print area")
-        if content_height > 2048:
+        if not print_preview and content_height > 2048:
             raise HTTPException(status_code=422, detail="Preset is too tall for the requested width")
         if design is not None:
             image_uses = Counter(
@@ -487,7 +524,10 @@ async def _render_label(
             "thermal": format == "mono1",
         }
         png = await render_svg_png(payload, str(request.base_url).rstrip("/"), assets)
-        image = await to_thread.run_sync(_decode_raster, png)
-        return await to_thread.run_sync(
+        image = await to_thread.run_sync(_decode_raster, png, print_preview)
+        response = await to_thread.run_sync(
             _finish_raster, image, label_width, label_height, width, rotated, align, format, color, preset_id, threshold,
         )
+        if print_preview:
+            response.headers.update({"X-Label-Width-Mm": str(width_mm), "X-Label-Height-Mm": str(height_mm)})
+        return response

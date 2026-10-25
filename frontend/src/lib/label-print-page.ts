@@ -17,7 +17,6 @@ import {
   type LabelDownloadFile,
 } from './label-file-export'
 import {
-  cleanupLabelBrowserPrint,
   createLabelBrowserPrintJob,
   printLabelBrowserJob,
   type LabelBrowserPrintJob,
@@ -61,13 +60,15 @@ function outputAssetMessage(
 }
 import {
   bindTemporaryPdfPreview,
+  LABEL_PRINT_PDF_MODE_KEY,
+  getPrintPdfPreference,
   type TemporaryPdfPreviewController,
 } from './label-pdf-preview'
 import { type StandardLabelSettings } from './label-standard'
 
 export { LABEL_EXPORT_DPI, LABEL_EXPORT_PIXEL_RATIO } from './label-export'
 
-export const LABEL_PRINT_PDF_MODE_KEY = 'filaman-label-print-pdf-v1'
+export { LABEL_PRINT_PDF_MODE_KEY } from './label-pdf-preview'
 
 export interface PdfOutputActionsOptions {
   pdfButton: HTMLButtonElement
@@ -247,7 +248,6 @@ function bindSelectablePrintAction(
             await options.createBrowserPrintJob(),
           )
         } catch (error) {
-          cleanupLabelBrowserPrint()
           window.alert(outputFailureMessage(options.getTranslation(
             'labelPrint.browserPrintFailed',
             'Browser printing failed.',
@@ -321,7 +321,7 @@ export function bindPrintPageSidebarCollapse() {
 }
 
 export function bindPrintPdfPreference(checkbox: HTMLInputElement) {
-  checkbox.checked = readStorageValue(LABEL_PRINT_PDF_MODE_KEY) === 'true'
+  checkbox.checked = getPrintPdfPreference()
   checkbox.addEventListener('change', () => {
     writeStorageValue(
       LABEL_PRINT_PDF_MODE_KEY,

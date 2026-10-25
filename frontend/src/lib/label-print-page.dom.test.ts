@@ -1907,7 +1907,7 @@ describe('single and batch PDF factory reuse', () => {
     await vi.waitFor(() => {
       expect(alert).toHaveBeenCalledWith('Browser printing failed.')
     })
-    expect(cleanupLabelBrowserPrint).toHaveBeenCalledOnce()
+    expect(cleanupLabelBrowserPrint).not.toHaveBeenCalled()
     expect(open).not.toHaveBeenCalled()
     expect([printButton, pngButton, amlButton, pdfButton]
       .every(button => !button.disabled)).toBe(true)

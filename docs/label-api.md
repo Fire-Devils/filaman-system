@@ -229,7 +229,7 @@ The response is:
 201 Created
 Content-Type: application/json
 
-{"id": 42, "spool_id": 123, "preset_id": 7}
+{"id": 42, "spool_id": 123, "preset_id": 7, "created_at": "2026-10-24T12:00:00Z", "expires_at": "2026-10-24T13:00:00Z"}
 ```
 
 For a filament label without a spool, use a key with `filaments:read`:
@@ -239,18 +239,34 @@ POST /api/v1/labels/filament/123/print-request?preset_id=8
 Authorization: ApiKey <key>
 ```
 
-This returns `201 Created` with `{"id": 43, "filament_id": 123, "preset_id": 8}`
-and opens `/filaments/123/print`. The spool endpoint requires `spools:read`
-and keeps its existing response format. Presets must belong to the key's user
+This returns `201 Created` with `id`, `filament_id`, `preset_id`, `created_at`
+and `expires_at`. The spool endpoint requires `spools:read` and returns
+`spool_id` instead of `filament_id`. Presets must belong to the key's user
 and match the requested type; wrong-type or unowned presets return `404`.
 
 `preset_id` is optional. When omitted, the user's selected preset is resolved
 for that label type when the request is queued, with Default as the fallback. Send `preset_id=0` to
-request Default explicitly. The request lasts five minutes and appears only in
-an open FilaMan tab signed in as the API key's user.
-The person can dismiss it or open the label page and choose **Print** or
-**Export PDF**. A `201` confirms that the request was queued, not that anything
-was physically printed.
+request Default explicitly. The request lasts **one hour from submission** and
+appears in a FilaMan tab signed in as the API key's user, including when they log
+in during that hour. A compact notification shows the rendered label and its size.
+The preview fits within 260 × 200 CSS pixels without changing the label's aspect
+ratio or printed dimensions. Its age badge appears after one minute, turns red
+at 55 minutes, and the notification closes at expiry. A small strip beneath the
+card indicates another waiting request; queued labels render only when shown.
+
+**Print** prints that preview at the preset's physical dimensions, using the
+browser's saved **Print PDF** preference from the print page. With that preference
+off, it opens the system print dialog; with it on, it prepares a PDF and shows a
+**Download PDF** link inside the same label card. The preview stays visible until
+dismissed or expired; no separate PDF window opens.
+The preference is browser-wide, not part of a preset. This prints one individual
+label; it does not reuse sheet layouts or batch copy counts. **Edit** opens the
+corresponding spool or filament print page. The red trash button dismisses only
+the request. Each action claims the request so another tab cannot process it.
+Browser print jobs share a busy guard: if another label is printing, finish or
+close its dialog and retry. The current request remains available.
+A `201` confirms queueing, not physical printing. Cancelling a print dialog does
+not requeue the request.
 
 Unsupported preset data is rejected with `422` before queueing. The browser refreshes
 an explicitly requested preset from the server. If that refresh fails or the preset
@@ -269,15 +285,24 @@ call them directly:
 
 ```text
 GET  /api/v1/labels/print-requests/pending
+GET  /api/v1/labels/print-requests/{id}/preview
 POST /api/v1/labels/print-requests/{id}/claim
 ```
 
 Pending returns the oldest unexpired request owned by the signed-in user that
-their permissions allow, or `null`. A request contains either `spool_id` or
+their permissions allow, or `null`. Its `has_more` flag indicates another
+unexpired request available to the same user and permissions. A request contains either `spool_id` or
 `filament_id`, never both. Claiming requires the corresponding read permission
 and consumes the request exactly once (`204`); an expired, missing, already
 claimed, unowned, or inaccessible request returns `409`. Neither scope returns
 `403`. Clients scoped only to `spools:read` never receive filament requests.
+
+Preview requires the same ownership, expiry and entity read permission checks.
+It returns a color PNG at 600 DPI, without thermal-printer padding, and
+`X-Label-Width-Mm` / `X-Label-Height-Mm` headers for physical output size.
+It does not consume the request. Outputs above eight megapixels return `422`,
+matching the editor's print-resolution limit. The browser renders once per
+request and uses the same pixels for its preview and print/PDF output.
 
 ## Errors
 
