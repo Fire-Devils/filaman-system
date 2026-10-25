@@ -860,12 +860,11 @@ describe('renderFieldPlainText', () => {
       .toBe('Matte, Silk')
   })
 
-  it('prints datetimes compactly without seconds or timezone metadata', () => {
+  it('keeps stored datetimes lossless for labels without localizing them', () => {
     const raw = '2026-07-25T14:30:45.123Z'
     const result = renderFieldPlainText(field({ field_type: 'datetime' }), raw)
 
-    expect(result).toBe(formatDateTimeDisplay(raw))
-    expect(result).not.toContain('T14:30:45.123Z')
+    expect(result).toBe(raw)
   })
 })
 
