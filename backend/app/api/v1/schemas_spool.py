@@ -97,8 +97,15 @@ class SpoolUpdate(BaseModel):
     )
 
 
+class SpoolMetrics(BaseModel):
+    remaining_percent: float | None
+    remaining_length_m: float | None
+    effective_remaining_weight_g: float | None
+
+
 class SpoolResponse(BaseModel):
-    label_field_aliases: dict[str, str | dict[str, Any]] | None = None
+    metrics: SpoolMetrics | None = Field(None, exclude_if=lambda value: value is None)
+    label_field_aliases: dict[str, str | dict[str, Any]] | None = Field(None, exclude_if=lambda value: value is None)
     id: int
     filament_id: int
     status_id: int

@@ -75,12 +75,18 @@ function rgba(hex: string, alpha: number): string {
 }
 
 type FilamentColors = {
-  colors?: Array<{ color?: { hex_code?: string | null } | null }>
+  color_mode?: string | null
+  colors?: Array<{ position?: number; color?: { hex_code?: string | null } | null }>
   multi_color_style?: string | null
 } | null | undefined
 
-function getColors(filament: FilamentColors): string[] {
-  return (filament?.colors || [])
+function orderedColors<T extends { position?: number }>(filament: { colors?: T[]; color_mode?: string | null } | null | undefined): T[] {
+  const colors = [...(filament?.colors || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+  return filament?.color_mode === 'single' ? colors.slice(0, 1) : colors
+}
+
+export function getFilamentColors(filament: FilamentColors): string[] {
+  return orderedColors(filament)
     .map((entry) => normalizeHexCode(entry.color?.hex_code))
     .filter(Boolean)
 }
@@ -88,7 +94,7 @@ function getColors(filament: FilamentColors): string[] {
 export function buildFilamentHeroStyle(
   filament: FilamentColors,
 ): string {
-  const colors = getColors(filament)
+  const colors = getFilamentColors(filament)
 
   if (!colors.length) return 'background: var(--bg-soft); border: 1px solid var(--border)'
 
@@ -117,7 +123,7 @@ export function buildFilamentHeroStyle(
 }
 
 export function buildFilamentSwatchStyle(filament: FilamentColors): string {
-  const colors = getColors(filament)
+  const colors = getFilamentColors(filament)
   if (!colors.length) return ''
 
   const cssColors = colors.map((color) => toCssColor(color))
@@ -134,6 +140,7 @@ export function buildFilamentSwatchStyle(filament: FilamentColors): string {
 }
 
 interface FilamentHeaderData {
+  color_mode?: string | null
   multi_color_style?: string | null
   manufacturer?: { name?: string | null } | null
   material_type?: string | null
@@ -141,6 +148,7 @@ interface FilamentHeaderData {
   designation?: string | null
   manufacturer_color_name?: string | null
   colors?: Array<{
+    position?: number
     display_name_override?: string | null
     color?: { name?: string | null; hex_code?: string | null } | null
   }>
@@ -165,7 +173,7 @@ export function buildFilamentHeaderName(filament: FilamentHeaderData): string {
 }
 
 export function renderFilamentHeaderColors(filament: FilamentHeaderData, soldAsLabel: string): string {
-  const colors = (filament.colors || []).filter(entry => entry.color)
+  const colors = orderedColors(filament).filter(entry => entry.color)
   if (!colors.length) return ''
   const names = colors.map(entry => entry.display_name_override?.trim() || entry.color?.name?.trim() || normalizeHexCode(entry.color?.hex_code) || '—')
   const hexes = colors.map(entry => `<code>${escapeHtml(normalizeHexCode(entry.color?.hex_code) || '—')}</code>`).join('')

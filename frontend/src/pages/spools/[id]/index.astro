@@ -24,7 +24,7 @@ const { id } = Astro.params
   </div>
   
   <div id="actions-section" class="detail-quick-actions hidden">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.quickActions">Quick Actions</h2>
+    <h2 data-i18n="spools.quickActions">Quick Actions</h2>
     <div class="detail-quick-action-buttons">
       <button id="btn-measurement" class="fm-btn fm-btn-primary" style="background: var(--accent);">
         <svg aria-hidden="true"><use href="/icons.svg?v=detail4#icon-record-weight"></use></svg><span data-i18n="spools.recordWeight">Record Weight</span>
@@ -215,7 +215,7 @@ const { id } = Astro.params
   </style>
 
   <script>
-    import { t, initI18n } from '../../../lib/i18n'
+    import { t, getLang, initI18n } from '../../../lib/i18n'
     import { escapeHtml as escapeExtraFieldHtml, renderFieldInput } from '../../../lib/extra-fields'
     import { createEntityExtraFieldsDialog } from '../../../lib/entity-extra-fields-dialog'
     import {
@@ -231,7 +231,8 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
-    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
+    import { formatSpoolMetrics, renderSpoolReel, spoolRemainingWeight } from '../../../lib/spool-reel'
+    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
     import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, type SpoolDetailRow } from '../../../lib/spool-detail'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
@@ -296,7 +297,7 @@ const { id } = Astro.params
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [spoolRes, statusesRes, locationsData, sysFieldsRes, filamentSysFieldsRes] = await fetchSequential([
-          () => fetch(`/api/v1/spools/${id}`, { credentials: 'include', signal: getAbortSignal() }),
+          () => fetch(`/api/v1/spools/${id}?include_metrics=true`, { credentials: 'include', signal: getAbortSignal() }),
           () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() }),
           () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').then(d => d.items).catch(() => []),
           () => fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() }),
@@ -624,11 +625,85 @@ const { id } = Astro.params
       })
     }
     
+    function renderRemainingSummary() {
+      const weight = spoolRemainingWeight(spool)
+      const remaining = weight == null ? '—' : `${weight.toFixed(0)} g`
+      const metrics = formatSpoolMetrics(spool.metrics, getLang())
+      return `<span class="spool-remaining-label">${t('spools.remaining')}</span>
+        <div class="spool-remaining-amount"><strong class="spool-remaining-grams">${escapeExtraFieldHtml(remaining)}</strong>${metrics.percentText !== null ? `<span class="spool-remaining-percent" style="${metrics.pillStyle}">${metrics.percentText}</span>` : ''}</div>
+        <span class="spool-remaining-length">${metrics.lengthText !== null ? t('spools.estimatedMetresRemaining', { value: metrics.lengthText }) : '—'}</span>`
+    }
+
+    let remainingRequest = 0
+    async function refreshRemainingWeight() {
+      const request = ++remainingRequest
+      try {
+        const response = await fetch(`/api/v1/spools/${id}?include_metrics=true`, { credentials: 'include', signal: getAbortSignal() })
+        if (!response.ok) return
+        const latest = await response.json()
+        if (request !== remainingRequest || !spool || latest.id !== spool.id) return
+        if (JSON.stringify([spool.remaining_weight_g, spool.metrics]) === JSON.stringify([latest.remaining_weight_g, latest.metrics])) return
+        spool.remaining_weight_g = latest.remaining_weight_g
+        spool.metrics = latest.metrics
+        // Update only read-only output; replacing the form would discard drafts and focus.
+        const hero = document.querySelector('.spool-hero')
+        if (!hero) return
+        hero.querySelector('.spool-hero-summary')!.innerHTML = renderRemainingSummary()
+        const metrics = formatSpoolMetrics(spool.metrics, getLang())
+        hero.querySelector('.spool-reel-corner')!.outerHTML = renderSpoolReel(metrics.fraction, getFilamentColors(spool.filament || {}), spool.filament?.multi_color_style === 'gradient' ? 'gradient' : 'striped')
+        updateSpoolPrintData()
+      } catch (error) {
+        if (!isAbortError(error)) console.error('Failed to refresh remaining spool weight:', error)
+      }
+    }
+
+    function updateSpoolPrintData() {
+      const printParams = buildSpoolPrintSearchParams(spool)
+      const printUrl = `/spools/${spool.id}/print?${printParams.toString()}`
+
+      // Store extra fields for label printing (spool + filament).
+      // Iterate ALL system-defined fields so they appear in the designer even when
+      // the spool hasn't had a value set for a field yet.
+      const efForPrint: LabelExtraFieldValue[] = []
+
+      // ── Spool model fields (always included so they appear as label checkboxes) ──
+      const spoolModelFields = buildSpoolStandardModelFields(buildSpoolLabelDataFromApi(spool, undefined, '', getCurrency()))
+      for (const { key, label, value } of spoolModelFields) {
+        efForPrint.push({ key, label, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
+      }
+
+      for (const field of buildEntityExtraFieldsForPrint(
+        spool.custom_fields,
+        spool.custom_field_definitions,
+        spoolSystemFieldMap,
+        true,
+      )) {
+        if (isBuiltInLabelField('spool', field.key, field.label)) continue
+        efForPrint.push(scopeLabelExtraField(field, 'spool'))
+      }
+      for (const field of buildEntityExtraFieldsForPrint(
+        spool.filament?.custom_fields,
+        spool.filament?.custom_field_definitions,
+        filamentSystemFieldMap,
+        true,
+      )) {
+        if (isBuiltInLabelField('filament', field.key, field.label)) continue
+        efForPrint.push(scopeLabelExtraField(field, 'filament'))
+      }
+      writeScopedLabelFields('filaman-label-extra-fields', spool.id, efForPrint)
+
+      const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
+      if (printBtn) printBtn.href = printUrl
+    }
+
     function renderSpool() {
       spoolDraftObserver?.disconnect()
       spoolProfileLookup?.destroy()
       spoolProfileLookup = null
-      const remaining = spool.remaining_weight_g == null ? '—' : `${Number(spool.remaining_weight_g).toFixed(0)} g`
+      const remainingWeight = spoolRemainingWeight(spool)
+      const remaining = remainingWeight == null ? '—' : `${remainingWeight.toFixed(0)} g`
+      const metrics = formatSpoolMetrics(spool.metrics, getLang())
+      const colors = getFilamentColors(spool.filament || {})
       const spoolSections = buildSpoolDetailSections({
         ...spool,
         status: getStatusLabel(spool.status_id),
@@ -667,7 +742,8 @@ const { id } = Astro.params
       quickActions.remove()
       
       spoolContent.innerHTML = `
-        <header class="filament-hero" style="${buildFilamentHeroStyle(spool.filament)}">
+        <header class="filament-hero spool-hero" style="${buildFilamentHeroStyle(spool.filament)}">
+          ${renderSpoolReel(metrics.fraction, colors, spool.filament?.multi_color_style === 'gradient' ? 'gradient' : 'striped')}
           <div class="filament-hero-layout">
           <div class="filament-hero-identity">
             <div class="filament-hero-title-row">
@@ -678,11 +754,8 @@ const { id } = Astro.params
             </div>
             <div class="filament-hero-body">
               ${renderFilamentHeaderColors(spool.filament || {}, t('filaments.soldAs'))}
-              <div class="detail-hero-stats">
-                <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-status"></use></svg><div><span>${t('spools.status')}</span><strong>${escapeExtraFieldHtml(getStatusLabel(spool.status_id))}</strong></div></div>
-                <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail3#icon-balance"></use></svg><div><span>${t('spools.remaining')}</span><strong>${escapeExtraFieldHtml(remaining)}</strong></div></div>
-                <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-location"></use></svg><div><span>${t('spools.location')}</span><strong>${escapeExtraFieldHtml(getLocationName(spool.location_id))}</strong></div></div>
-              </div>
+              <div class="spool-hero-facts"><span>${escapeExtraFieldHtml(getStatusLabel(spool.status_id))}</span><span aria-hidden="true">·</span><span>${escapeExtraFieldHtml(getLocationName(spool.location_id))}</span></div>
+              <div class="spool-hero-summary">${renderRemainingSummary()}</div>
             </div>
           </div>
           <div>
@@ -705,53 +778,20 @@ const { id } = Astro.params
       `
       const toolbar = document.querySelector('.detail-page-toolbar')!
       const pageActions = spoolContent.querySelector('.detail-page-actions')!
-      spoolContent.querySelector('.filament-hero')!.insertAdjacentElement('afterend', spoolContent.querySelector('#printer-slots-inline')!)
+      const actionPanels = document.createElement('div')
+      actionPanels.className = 'spool-action-panels'
+      actionPanels.append(spoolContent.querySelector('#printer-slots-inline')!, quickActions)
       toolbar.querySelector('.detail-page-actions, #spool-page-actions')!.replaceWith(pageActions)
       spoolContent.querySelector('.filament-hero-layout > div:last-child')?.remove()
-      spoolContent.querySelector('.filament-hero')!.insertAdjacentElement('afterend', quickActions)
+      spoolContent.querySelector('.filament-hero')!.insertAdjacentElement('afterend', actionPanels)
       updateScrollIdentity(spoolContent.querySelector<HTMLElement>('.filament-hero')!, t('spools.spoolId', { id: formatHeaderId(spool.id) }))
 
       bindSpoolContentActions()
-      loadPrinterSlotOverview()
+      queueOverviewReload({ weight: false })
       if (editing) setupInlineEditor()
       
-      const printParams = buildSpoolPrintSearchParams(spool)
-      const printUrl = `/spools/${spool.id}/print?${printParams.toString()}`
+      updateSpoolPrintData()
 
-      // Store extra fields for label printing (spool + filament).
-      // Iterate ALL system-defined fields so they appear in the designer even when
-      // the spool hasn't had a value set for a field yet.
-      const efForPrint: LabelExtraFieldValue[] = []
-
-      // ── Spool model fields (always included so they appear as label checkboxes) ──
-      const spoolModelFields = buildSpoolStandardModelFields(buildSpoolLabelDataFromApi(spool, undefined, '', getCurrency()))
-      for (const { key, label, value } of spoolModelFields) {
-        efForPrint.push({ key, label, value: value !== undefined && value !== null ? String(value) : '', source: 'spool' })
-      }
-
-      for (const field of buildEntityExtraFieldsForPrint(
-        spool.custom_fields,
-        spool.custom_field_definitions,
-        spoolSystemFieldMap,
-        true,
-      )) {
-        if (isBuiltInLabelField('spool', field.key, field.label)) continue
-        efForPrint.push(scopeLabelExtraField(field, 'spool'))
-      }
-      for (const field of buildEntityExtraFieldsForPrint(
-        spool.filament?.custom_fields,
-        spool.filament?.custom_field_definitions,
-        filamentSystemFieldMap,
-        true,
-      )) {
-        if (isBuiltInLabelField('filament', field.key, field.label)) continue
-        efForPrint.push(scopeLabelExtraField(field, 'filament'))
-      }
-      writeScopedLabelFields('filaman-label-extra-fields', spool.id, efForPrint)
-
-      const printBtn = document.getElementById('btn-print-label') as HTMLAnchorElement
-      if (printBtn) printBtn.href = printUrl
-      
       quickActions.classList.toggle('hidden', editing)
       
       // Delete Modal Logic
@@ -1785,7 +1825,7 @@ const { id } = Astro.params
         )
 
         const onlinePrinters = healthResults
-          .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value != null && r.value.health?.connected)
+          .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value != null && r.value.health?.connected && r.value.health.slots?.length > 0)
           .map(r => r.value)
 
         // Force a direct Moonraker status refresh via backend before loading
@@ -1819,7 +1859,8 @@ const { id } = Astro.params
         const container = document.getElementById('printer-slots-inline')
         if (onlinePrinters.length === 0 || !container) return
 
-        let html = `<div class="fm-card" style="padding:10px 14px;">`
+        container.classList.toggle('has-multiple-printers', onlinePrinters.length > 1)
+        let html = `<h2>${t('spools.printerSlots')}</h2><div class="printer-slot-cards">`
 
         for (let i = 0; i < onlinePrinters.length; i++) {
           const { printer, health } = onlinePrinters[i]
@@ -1875,9 +1916,7 @@ const { id } = Astro.params
             }
           }
 
-          if (i > 0) html += `<div style="border-top:1px solid var(--border);margin:6px 0;"></div>`
-
-          html += `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;">`
+          html += `<div class="fm-card" style="padding:10px 14px;"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;">`
           // Printer name + slot count
           html += `<div style="min-width:80px;">` +
             `<div style="font-size:0.8rem;font-weight:600;white-space:nowrap;">${printer.name}</div>` +
@@ -1911,7 +1950,7 @@ const { id } = Astro.params
             html += `</div>`
           }
 
-          html += `</div>`
+          html += `</div></div>`
         }
 
         html += `</div>`
@@ -2059,13 +2098,13 @@ const { id } = Astro.params
       const { slotIndex, printerId } = pendingSlotAssign
       clearPendingSlotAssign()
       const dot = getSlotDot(slotIndex, printerId)
-      if (!dot) { loadPrinterSlotOverview(); return }
+      if (!dot) { queueOverviewReload({ weight: false }); return }
       clearSlotRingState(dot)
       if (status === 'success') {
         dot.classList.add('slot-success')
         setTimeout(async () => {
           if (dot) clearSlotRingState(dot)
-          await loadPrinterSlotOverview()
+          queueOverviewReload({ weight: false })
         }, 2000)
       } else {
         dot.classList.add('slot-error')
@@ -2312,11 +2351,31 @@ const { id } = Astro.params
     // --- SSE Auto-Update (via shared Layout.astro connection) ---
     let pendingOverviewReload: number | null = null
     let overviewIntervalId: number | null = null
-    function queueOverviewReload() {
-      if (pendingOverviewReload != null) return
+    let overviewRefreshing = false
+    let weightPending = false
+    let printersPending = false
+    let overviewDisposed = false
+    function queueOverviewReload({ weight = true, printers = true } = {}) {
+      if (overviewDisposed) return
+      weightPending ||= weight
+      printersPending ||= printers
+      if (pendingOverviewReload != null || overviewRefreshing) return
       pendingOverviewReload = window.setTimeout(async () => {
         pendingOverviewReload = null
-        await loadPrinterSlotOverview()
+        overviewRefreshing = true
+        const refreshWeight = weightPending
+        const refreshPrinters = printersPending && !pendingSlotAssign
+        weightPending = printersPending = false
+        try {
+          await Promise.allSettled([
+            ...(refreshWeight ? [refreshRemainingWeight()] : []),
+            ...(refreshPrinters ? [loadPrinterSlotOverview()] : []),
+          ])
+        } finally {
+          overviewRefreshing = false
+          // Keep one trailing refresh for events received while requests were pending.
+          if (weightPending || printersPending) queueOverviewReload({ weight: weightPending, printers: printersPending })
+        }
       }, 200)
     }
 
@@ -2328,22 +2387,25 @@ const { id } = Astro.params
           resolveSlotAssign('success')
         } else if (!pendingSlotAssign) {
           // No pending assign — just reload slot overview as usual
-          queueOverviewReload()
+          queueOverviewReload({ weight: false })
         }
         // If pending but wrong printer_id → ignore, let polling handle it
+      } else if (data.event === 'spools_changed') {
+        queueOverviewReload({ printers: false })
       } else if (data.event === 'printer_update' && !pendingSlotAssign) {
-        // Slot assignments or active spool state may have changed.
-        queueOverviewReload()
+        queueOverviewReload({ weight: false })
       }
     })
 
-    // Multi-worker fallback: ensure slot/active-spool view stays fresh even
+    // Multi-worker fallback: keep slots and remaining values fresh even
     // if SSE events are handled by another worker process.
     overviewIntervalId = window.setInterval(() => {
-      if (!pendingSlotAssign) queueOverviewReload()
+      queueOverviewReload()
     }, 15000)
 
     window.addEventListener('pagehide', () => {
+      overviewDisposed = true
+      if (pendingOverviewReload != null) window.clearTimeout(pendingOverviewReload)
       if (overviewIntervalId != null) {
         window.clearInterval(overviewIntervalId)
         overviewIntervalId = null

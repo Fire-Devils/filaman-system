@@ -159,3 +159,22 @@ async def test_compatibility_create_sets_native_ranges(adapter, db_session):
     assert (wire.settings_extruder_temp, wire.settings_bed_temp) == (210, 60)
     assert wire.extra == {"note": "keep"}
     assert filament.custom_fields == {"note": "keep"}
+
+
+@pytest.mark.parametrize("remaining", [500, 0, -5])
+def test_spool_lengths_keep_legacy_millimetres_and_negative_values(adapter, monkeypatch, remaining):
+    from app.models.spool import Spool
+
+    schemas = sys.modules[f"{type(adapter).__module__.rsplit('.', 1)[0]}.schemas"]
+    monkeypatch.setattr(schemas, "Spool", WireFilament, raising=False)
+    filament = Filament(id=1, designation="PLA", manufacturer=None, filament_colors=[],
+                        diameter_mm=1.75, density_g_cm3=1.24, custom_fields={})
+    spool = Spool(id=1, filament=filament, initial_total_weight_g=1250,
+                  empty_spool_weight_g=250, remaining_weight_g=remaining,
+                  spool_core_weight_g=40, custom_fields={}, location=None, status=None)
+    wire = adapter._spool_to_schema(spool)
+    expected_per_gram_mm = 335.2836194167644
+    assert wire.remaining_length == pytest.approx(remaining * expected_per_gram_mm)
+    assert wire.used_length == pytest.approx((1000 - remaining) * expected_per_gram_mm)
+    assert wire.remaining_weight == remaining
+    assert wire.initial_weight == 1000

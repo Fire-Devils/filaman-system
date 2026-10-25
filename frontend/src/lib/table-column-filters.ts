@@ -41,6 +41,7 @@ export type HeaderFilterDefinition = {
   label: string
   columnSelector: string
   type: ColumnFilterValue['type']
+  numberOperators?: NumberFilterOperator[]
   multiDisplay?: 'default' | 'colors'
   searchable?: boolean
   autocomplete?: boolean
@@ -300,7 +301,7 @@ export function isColumnFilterActive(value: ColumnFilterValue | null | undefined
 
 export function sanitizeColumnFilters(
   saved: unknown,
-  definitions: Array<Pick<HeaderFilterDefinition, 'key' | 'type'>>,
+  definitions: Array<Pick<HeaderFilterDefinition, 'key' | 'type' | 'numberOperators'>>,
 ): Record<string, ColumnFilterValue> {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
   const types = new Map(definitions.map(({ key, type }) => [key, type]))
@@ -328,6 +329,8 @@ export function sanitizeColumnFilters(
     }
     if (type !== 'multi' && type !== 'color' && (!('operator' in value) || !('value' in value) || typeof value.value !== 'string')) return
     const savedOperator = (value as { operator?: unknown }).operator
+    const allowedNumbers = definitions.find(definition => definition.key === key)?.numberOperators
+    if (type === 'number' && allowedNumbers && !allowedNumbers.some(operator => operator === savedOperator)) return
     if (type === 'text' && !TEXT_OPERATORS.some(({ value: operator }) => operator === savedOperator)) return
     if (type === 'number' && !NUMBER_OPERATORS.some(({ value: operator }) => operator === savedOperator)) return
     if (type === 'date' && !DATE_OPERATORS.some(({ value: operator }) => operator === savedOperator)) return
@@ -1478,7 +1481,7 @@ function buildTypedControls(state: FilterState) {
   const operators = state.def.type === 'text'
     ? TEXT_OPERATORS
     : state.def.type === 'number'
-      ? NUMBER_OPERATORS
+      ? NUMBER_OPERATORS.filter(item => !state.def.numberOperators || state.def.numberOperators.includes(item.value))
       : DATE_OPERATORS
   operator.innerHTML = operators.map((item) => `<option value="${item.value}">${t(item.labelKey)}</option>`).join('')
 
