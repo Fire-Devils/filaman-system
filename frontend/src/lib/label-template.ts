@@ -27,7 +27,8 @@
  */
 
 import { formatLabelDate } from './label-date'
-import { toOpaqueRgbHex } from './colors'
+import { getReadableTextColor, getReadableTextColorForColors, toOpaqueRgbHex } from './colors'
+export { getReadableTextColor, getReadableTextColorForColors } from './colors'
 import { templateMarkupMatches, parseTemplateMarkup, templateFieldRanges } from './freeform-label/template-markup'
 
 export interface SpoolData {
@@ -150,32 +151,6 @@ export function buildFilamentSwatchBackground(colors: string[], style: unknown):
   return `linear-gradient(${direction}, ${stops.join(', ')})`
 }
 
-export function getReadableTextColor(backgroundHex: string | null): '#000' | '#fff' {
-  if (!backgroundHex) return '#fff'
-  const hex = backgroundHex.replace('#', '')
-  const rgb = [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
-  const linear = rgb.map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
-  const luminance = (0.2126 * linear[0]) + (0.7152 * linear[1]) + (0.0722 * linear[2])
-  const contrastWithBlack = (luminance + 0.05) / 0.05
-  const contrastWithWhite = 1.05 / (luminance + 0.05)
-  return contrastWithBlack >= contrastWithWhite ? '#000' : '#fff'
-}
-
-export function getReadableTextColorForColors(colors: string[]): '#000' | '#fff' {
-  if (colors.length === 0) return '#fff'
-  const totals = colors.reduce<[number, number, number]>((sum, color) => {
-    const hex = color.replace('#', '')
-    return [
-      sum[0] + Number.parseInt(hex.slice(0, 2), 16),
-      sum[1] + Number.parseInt(hex.slice(2, 4), 16),
-      sum[2] + Number.parseInt(hex.slice(4, 6), 16),
-    ]
-  }, [0, 0, 0])
-  const averageHex = totals
-    .map(total => Math.round(total / colors.length).toString(16).padStart(2, '0'))
-    .join('')
-  return getReadableTextColor(`#${averageHex}`)
-}
 
 export function getFilamentColorTheme(data: SpoolData): { background: string; foreground: '#000' | '#fff' } {
   const colors = getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex'])

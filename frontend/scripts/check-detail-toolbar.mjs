@@ -59,13 +59,13 @@ try {
           const { left, right, top, bottom, width } = element.getBoundingClientRect()
           return { left, right, top, bottom, width }
         }
-        return { row: bounds(row), id: bounds(row.querySelector('.detail-record-id')), name: bounds(row.querySelector('.detail-record-name')), logo: bounds(row.querySelector('.filament-hero-logo')), overflow: document.documentElement.scrollWidth > innerWidth }
+        return { hero: bounds(row.closest('.filament-hero')), row: bounds(row), id: bounds(row.querySelector('.detail-record-id')), name: bounds(row.querySelector('.detail-record-name')), logo: bounds(row.querySelector('.filament-hero-logo')), overflow: document.documentElement.scrollWidth > innerWidth }
       })
       assert.equal(hero.overflow, false, `${width} ${url}: long product name and logo do not overflow`)
       if (width <= 390) {
         assert.ok(Math.abs(hero.name.width - hero.row.width) < 1, `${width} ${url}: product name uses the full hero row: ${JSON.stringify(hero)}`)
         assert.ok(hero.name.top >= Math.max(hero.id.bottom, hero.logo.bottom) - 1, `${width} ${url}: product name sits below ID and logo`)
-        assert.ok(hero.id.right <= hero.logo.left && Math.abs(hero.logo.right - hero.row.right) < 1 && hero.logo.top < hero.id.bottom, `${width} ${url}: logo stays top-right beside ID`)
+        assert.ok(hero.id.right <= hero.logo.left && hero.logo.right >= hero.row.right - 1 && hero.logo.right < hero.hero.right && hero.logo.top < hero.id.bottom, `${width} ${url}: logo stays top-right inside the hero beside ID`)
       } else {
         assert.ok(hero.name.right < hero.logo.left && hero.name.top < hero.logo.bottom, `${url}: desktop keeps the product name beside the logo`)
       }

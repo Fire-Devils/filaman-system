@@ -110,6 +110,8 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
           <th data-i18n="spools.status" data-sort="status" class="sortable col-status">Status</th>
           <th data-i18n="spools.remaining" data-sort="remaining_weight_g" class="sortable col-remaining">Remaining</th>
+          <th data-i18n="spools.colRemainingPercent" data-sort="remaining_percent" class="sortable col-remaining_percent">Remaining %</th>
+          <th data-i18n="spools.colRemainingLength" data-sort="remaining_length_m" class="sortable col-remaining_length_m">Estimated remaining length (m)</th>
           <th data-i18n="spools.location" data-sort="location_id" class="sortable col-location">Location</th>
           <th data-i18n="spools.colPrice" data-sort="purchase_price" class="sortable col-price">Price</th>
           <th data-i18n="spools.colMfrColor" data-sort="mfr_color" class="sortable col-mfr_color">Mfr. Color</th>
@@ -123,7 +125,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="spools-table">
         <tr>
-          <td colspan="17" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="20" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -205,7 +207,8 @@ import Layout from '../../layouts/Layout.astro'
   </div>
 
   <script>
-    import { t, initI18n, translatePage } from '../../lib/i18n'
+    import { formatSpoolMetrics, spoolRemainingWeight } from '../../lib/spool-reel'
+    import { t, getLang, initI18n, translatePage } from '../../lib/i18n'
     import { cachedFetch, CACHE_KEYS, fetchSequential, invalidateCache } from '../../lib/cache'
     import { assignableLocations } from '../../lib/driver-managed-locations'
     import { filamentColorValues, toColorSwatchBackground } from '../../lib/colors'
@@ -383,6 +386,7 @@ import Layout from '../../layouts/Layout.astro'
     function getSortValue(item: any, key: string): any {
       if (key === 'filament_id') return getFilamentName(item)
       if (key === 'status') return getStatusLabel(item.status_id)
+      if (key === 'remaining_weight_g') return spoolRemainingWeight(item)
       if (key === 'location_id') return getLocationName(item.location_id)
       if (key === 'manufacturer') return getManufacturerName(item)
       if (key === 'material') return getMaterialType(item)
@@ -392,6 +396,7 @@ import Layout from '../../layouts/Layout.astro'
         const cfKey = key.slice(3)
         return item.custom_fields?.[cfKey] ?? ''
       }
+      if (key === 'remaining_percent' || key === 'remaining_length_m') return item.metrics?.[key]
       return item[key]
     }
 
@@ -401,6 +406,10 @@ import Layout from '../../layouts/Layout.astro'
       return [...spools].sort((a, b) => {
         const aVal = getSortValue(a, sortBy)
         const bVal = getSortValue(b, sortBy)
+        if (sortBy === 'remaining_percent' || sortBy === 'remaining_length_m' || sortBy === 'remaining_weight_g') {
+          if (aVal == null || bVal == null) return aVal == null ? (bVal == null ? a.id - b.id : 1) : -1
+          return (aVal - bVal) * (sortDirection === 'asc' ? 1 : -1) || a.id - b.id
+        }
         let cmp = 0
         if (aVal == null && bVal == null) cmp = 0
         else if (aVal == null) cmp = 1
@@ -427,7 +436,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function hasLocalColumnFilters(): boolean {
-      const serverKeys = new Set(['status', 'location', 'manufacturer', 'material'])
+      const serverKeys = new Set(['status', 'location', 'manufacturer', 'material', 'remaining_percent', 'remaining_length_m'])
       return Object.entries(columnFilters).some(([key, value]) => isColumnFilterActive(value) && !serverKeys.has(key))
     }
 
@@ -443,7 +452,8 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'material') return filament?.material_type
       if (key === 'colors') return filamentColorValues(filament, 'name')
       if (key === 'status') return String(spool.status_id)
-      if (key === 'remaining') return spool.remaining_weight_g
+      if (key === 'remaining') return spoolRemainingWeight(spool)
+      if (key === 'remaining_percent' || key === 'remaining_length_m') return spool.metrics?.[key]
       if (key === 'location') return spool.location_id == null ? '' : String(spool.location_id)
       if (key === 'price') return spool.purchase_price
       if (key === 'mfr_color') return filament?.manufacturer_color_name
@@ -642,7 +652,19 @@ import Layout from '../../layouts/Layout.astro'
       const isArchivedSelected = !!archivedStatus && statusIds.includes(String(archivedStatus.id))
 
       // Build query params for backend
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ include_metrics: 'true' })
+      for (const key of ['remaining_percent', 'remaining_length_m']) {
+        const filter = columnFilters[key]
+        if (filter?.type !== 'number' || !isColumnFilterActive(filter)) continue
+        const value = Number(filter.value), upper = Number(filter.valueTo)
+        if (!Number.isFinite(value) || (filter.operator === 'between' && !Number.isFinite(upper))) continue
+        if (filter.operator === 'eq' || filter.operator === 'gte') params.set(`${key}_min`, String(value))
+        if (filter.operator === 'eq' || filter.operator === 'lte') params.set(`${key}_max`, String(value))
+        if (filter.operator === 'between') {
+          params.set(`${key}_min`, String(Math.min(value, upper)))
+          params.set(`${key}_max`, String(Math.max(value, upper)))
+        }
+      }
       statusIds.forEach((id) => params.append('status_id', id))
       if (isArchivedSelected) params.set('include_archived', 'true')
       manufacturerIds.forEach((id) => params.append('manufacturer_id', id))
@@ -651,7 +673,7 @@ import Layout from '../../layouts/Layout.astro'
       materials.forEach((item) => params.append('type', item))
       if (search) params.set('search', search)
       if (sortKey && sortDirection && sortKey !== 'colors' && sortKey !== 'status') {
-        params.set('sort_by', sortKey)
+        params.set('sort_by', sortKey === 'remaining_weight_g' ? 'effective_remaining_weight_g' : sortKey)
         params.set('sort_order', sortDirection)
       }
 
@@ -709,7 +731,7 @@ import Layout from '../../layouts/Layout.astro'
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
-            <td colspan="17" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
+            <td colspan="20" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
           </tr>
         `
       }
@@ -756,10 +778,12 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function renderSpoolRow(s: any): string {
-      const isLow = s.remaining_weight_g !== null && 
-                    s.remaining_weight_g > 0 && 
-                    s.remaining_weight_g <= s.low_weight_threshold_g
-      const isEmpty = s.remaining_weight_g !== null && s.remaining_weight_g <= 0
+      const metrics = formatSpoolMetrics(s.metrics, getLang())
+      const remainingWeight = spoolRemainingWeight(s)
+      const isLow = remainingWeight !== null &&
+                    remainingWeight > 0 &&
+                    remainingWeight <= s.low_weight_threshold_g
+      const isEmpty = remainingWeight !== null && remainingWeight <= 0
       
       let weightStyle = ''
       if (isEmpty) weightStyle = 'color: var(--error-text); font-weight: 500;'
@@ -797,8 +821,10 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-colors" style="padding: 12px;">${colorDots || '-'}</td>
           <td class="col-status" style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
           <td class="col-remaining" style="padding: 12px; font-family: monospace; ${weightStyle}">
-            ${s.remaining_weight_g !== null ? s.remaining_weight_g.toFixed(0) + 'g' : '-'}
+            ${remainingWeight !== null ? remainingWeight.toFixed(0) + 'g' : '-'}
           </td>
+          <td class="col-remaining_percent" style="padding: 12px; font-family: monospace;">${metrics.percentText ?? '—'}</td>
+          <td class="col-remaining_length_m" style="padding: 12px; font-family: monospace;">${metrics.lengthText ?? '—'}</td>
           <td class="col-location" style="padding: 12px;">${getLocationName(s.location_id)}</td>
           <td class="col-price" style="padding: 12px; font-family: monospace;">${s.purchase_price != null ? formatPrice(s.purchase_price, currency) : '-'}</td>
           <td class="col-mfr_color" style="padding: 12px; color: var(--text-muted);">${fil?.manufacturer_color_name || '-'}</td>
@@ -824,7 +850,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
-            <td colspan="17" style="text-align: center; color: var(--text-muted);">
+            <td colspan="20" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
@@ -846,7 +872,7 @@ import Layout from '../../layouts/Layout.astro'
         const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
           <tr>
-            <td colspan="17" style="text-align: center; color: var(--text-muted);">
+            <td colspan="20" style="text-align: center; color: var(--text-muted);">
               ${hasFilters ? t('spools.noResults') : `${t('spools.noSpools')} <a href="/spools/new" style="color: var(--accent);">${t('spools.addOne')}</a>.`}
             </td>
           </tr>
@@ -879,7 +905,7 @@ import Layout from '../../layouts/Layout.astro'
         const gid = `group-${groupIdx}`
         html += `
           <tr data-group="${gid}" style="background: var(--group-header-bg); font-weight: 600; cursor: pointer; user-select: none; border-left: 3px solid var(--group-header-border);" onmouseenter="this.style.background='var(--group-header-bg-hover)'" onmouseleave="this.style.background='var(--group-header-bg)'">
-            <td colspan="17" style="padding: 10px 12px; color: var(--text);">
+            <td colspan="20" style="padding: 10px 12px; color: var(--text);">
               <span data-toggle="${gid}" style="display: inline-block;">&#9660; ${group.colorDots} ${group.label}</span>
               <span style="margin-left: 12px; font-weight: 400; color: var(--text-muted); font-size: 0.85rem;">${group.manufacturer} &middot; ${group.material} &middot; ${t('spools.spoolsInGroup', { count: group.spools.length })}</span>
             </td>
@@ -1084,6 +1110,15 @@ import Layout from '../../layouts/Layout.astro'
           initialValue: columnFilters.remaining,
           onApply: (value) => applyColumnFilter('remaining', value),
         },
+        ...(['remaining_percent', 'remaining_length_m'] as const).map((key): HeaderFilterDefinition => ({
+          key,
+          label: t(key === 'remaining_percent' ? 'spools.colRemainingPercent' : 'spools.colRemainingLength'),
+          columnSelector: `th.col-${key}`,
+          type: 'number' as const,
+          numberOperators: ['eq', 'gte', 'lte', 'between'],
+          initialValue: columnFilters[key],
+          onApply: (value: ColumnFilterValue) => applyColumnFilter(key, value),
+        })),
         {
           key: 'price',
           label: t('spools.colPrice'),
@@ -1210,6 +1245,8 @@ import Layout from '../../layouts/Layout.astro'
       {
         heading: t('common.columnsExtended'),
         columns: [
+          { key: 'remaining_percent', label: t('spools.colRemainingPercent') },
+          { key: 'remaining_length_m', label: t('spools.colRemainingLength') },
           { key: 'price', label: t('spools.colPrice') },
           { key: 'mfr_color', label: t('spools.colMfrColor') },
           { key: 'lot', label: t('spools.colLot') },

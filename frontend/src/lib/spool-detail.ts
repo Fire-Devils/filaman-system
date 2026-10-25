@@ -54,19 +54,10 @@ export function formatSpoolDate(value: string | null | undefined): string | null
 export function buildSpoolDetailSections(spool: SpoolDetailData, display: SpoolDetailDisplay = {}): SpoolDetailSection[] {
   return [
     {
-      key: 'inventory',
-      titleKey: 'spools.inventoryDetails',
-      rows: [
-        { key: 'status', labelKey: 'spools.status', value: empty(spool.status) },
-        { key: 'remaining', labelKey: 'spools.remaining', value: empty(spool.remaining) },
-        { key: 'location', labelKey: 'spools.location', value: empty(spool.location) },
-        { key: 'low_weight_threshold_g', labelKey: 'spools.lowThresholdLabel', value: weight(spool.low_weight_threshold_g), field: { type: 'number', step: '1', unit: 'g' } },
-      ],
-    },
-    {
       key: 'spool',
       titleKey: 'spools.spoolDetails',
       rows: [
+        { key: 'low_weight_threshold_g', labelKey: 'spools.lowThresholdLabel', value: weight(spool.low_weight_threshold_g), field: { type: 'number', step: '1', unit: 'g' } },
         { key: 'initial_total_weight_g', labelKey: 'spools.initialWeightLabel', value: weight(spool.initial_total_weight_g), field: { type: 'number', step: '1', unit: 'g' } },
         { key: 'empty_spool_weight_g', labelKey: 'spools.emptySpoolWeightLabel', value: weight(spool.empty_spool_weight_g), field: { type: 'number', step: '1', unit: 'g' } },
         {

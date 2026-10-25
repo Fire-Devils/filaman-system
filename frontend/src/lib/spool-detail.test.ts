@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate } from './spool-detail'
 
 describe('spool detail', () => {
+  it('keeps threshold editing in physical Spool details without repeating hero facts', () => {
+    const sections = buildSpoolDetailSections({ status: 'Opened', remaining: '500 g', location: 'Shelf A', low_weight_threshold_g: 100 })
+    expect(sections.flatMap(section => section.rows).map(row => row.key)).not.toContain('status')
+    expect(sections.flatMap(section => section.rows).map(row => row.key)).not.toContain('remaining')
+    expect(sections.flatMap(section => section.rows).map(row => row.key)).not.toContain('location')
+    expect(sections.find(section => section.key === 'spool')?.rows.find(row => row.key === 'low_weight_threshold_g'))
+      .toMatchObject({ value: '100 g', field: { type: 'number', unit: 'g' } })
+  })
   it('keeps operational values read-only while exposing standard spool fields', () => {
     const sections = buildSpoolDetailSections({
       status: 'Opened',

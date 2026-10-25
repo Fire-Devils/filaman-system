@@ -14,6 +14,16 @@ afterEach(() => {
 })
 
 describe('header filter accessibility', () => {
+  it('offers only the native numeric range operators when a column declares them', () => {
+    document.body.innerHTML = '<table><thead><tr><th class="col-metric">Remaining %</th></tr></thead></table>'
+    initHeaderColumnFilters(document.querySelector('table')!, [{
+      key: 'metric', label: 'Remaining %', columnSelector: 'th.col-metric', type: 'number',
+      numberOperators: ['eq', 'gte', 'lte', 'between'], onApply: vi.fn(),
+    }])
+    document.querySelector<HTMLButtonElement>('.fm-header-filter-trigger')!.click()
+    expect([...document.querySelectorAll<HTMLOptionElement>('.fm-header-filter-operator option')].map(option => option.value))
+      .toEqual(['eq', 'gte', 'lte', 'between'])
+  })
   it('localizes accessible names and closes the controlled panel with Escape', () => {
     setLang('de')
     document.body.innerHTML = '<table><thead><tr><th class="col-name">Name</th></tr></thead></table>'

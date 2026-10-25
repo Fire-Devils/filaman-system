@@ -2825,7 +2825,19 @@ html.sidebar-collapsed .fm-logo-text {
 @media (prefers-reduced-motion: reduce) { .detail-scroll-identity { transition: none; } }
 .detail-page-toolbar .fm-btn-primary:disabled,
 .entity-extra-fields-dialog-footer .fm-btn-primary:disabled { background: var(--bg-soft); border-color: var(--border); color: var(--text-muted); box-shadow: none; cursor: not-allowed; transform: none; }
-.spool-printer-overview:not(:empty) { margin-bottom: 16px; }
+.spool-action-panels { display: flex; flex-direction: column; gap: 16px; margin-bottom: 16px; }
+.spool-printer-overview { order: 1; min-width: 0; }
+.spool-printer-overview:empty { display: none; }
+.printer-slot-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+.spool-action-panels > .detail-quick-actions { min-width: 0; margin: 0; }
+@container detail-page (min-width: 62rem) {
+  .spool-action-panels:has(.spool-printer-overview:not(:empty):not(.has-multiple-printers)):has(.detail-quick-actions:not(.hidden)) { display: grid; grid-template-columns: minmax(280px, 20rem) minmax(0, 1fr); gap: 6px 16px; }
+  .spool-action-panels:has(.spool-printer-overview:not(:empty):not(.has-multiple-printers)):has(.detail-quick-actions:not(.hidden)) > div { display: grid; grid-template-rows: subgrid; grid-row: span 2; }
+  .spool-action-panels:has(.spool-printer-overview:not(:empty):not(.has-multiple-printers)):has(.detail-quick-actions:not(.hidden)) h2 { margin: 0; }
+  .spool-action-panels .spool-printer-overview:not(.has-multiple-printers) { order: 0; }
+  .spool-action-panels .detail-quick-action-buttons { display: flex; flex-wrap: wrap; align-self: center; gap: 8px; }
+  .spool-action-panels .detail-quick-action-buttons .fm-btn { min-height: 44px; padding: 8px 12px; font-size: .85rem; }
+}
 .detail-icon-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; aspect-ratio: 1; width: 44px; height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-soft); color: var(--text); cursor: pointer; text-decoration: none; }
 .detail-icon-button:hover { border-color: var(--accent); color: var(--accent); }
 .detail-icon-button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-text); }
@@ -2837,7 +2849,8 @@ html.sidebar-collapsed .fm-logo-text {
 .detail-icon-danger { color: var(--error-text); border-color: color-mix(in srgb, var(--error-text) 35%, var(--border)); }
 .detail-icon-danger:hover { color: var(--error-text); border-color: var(--error-text); }
 .detail-quick-actions { margin: 0 0 16px; }
-.detail-quick-actions h2 { margin: 0 0 12px; font-size: 1rem; font-weight: 650; }
+.detail-quick-actions h2, .spool-printer-overview h2 { margin: 0 0 12px; font-size: 1rem; font-weight: 650; }
+.spool-printer-overview h2 { margin-bottom: 6px; }
 .detail-quick-action-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .detail-quick-action-buttons .fm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
 .detail-quick-actions:not(#actions-section) .detail-quick-action-buttons { grid-template-columns: repeat(2, minmax(0, 220px)); }
@@ -2880,7 +2893,27 @@ html.sidebar-collapsed .fm-logo-text {
 .filament-hero-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 .filament-hero-logo { display: flex; align-items: center; justify-content: center; flex: 0 0 156px; width: 156px; height: 56px; padding: 5px 10px; border: 1px solid rgba(0, 0, 0, .12); border-radius: 8px; background: #fff; }
 .filament-hero-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.spool-hero .filament-hero-logo { transform: translate(12px, -12px); }
 .filament-hero-body { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 20px; }
+/* The reel occupies existing corner space; it never participates in hero sizing. */
+.spool-reel-corner { position: absolute; right: 0; bottom: 0; width: 88px; height: 88px; overflow: hidden; pointer-events: none; }
+.spool-reel-corner svg { display: block; width: 100%; height: 100%; }
+.spool-hero-facts { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--text-muted); font-size: .82rem; }
+.spool-hero-summary { margin-left: auto; padding-right: 70px; flex-shrink: 0; }
+.spool-remaining-label, .spool-remaining-length { display: block; color: var(--text-muted); font-size: .76rem; }
+.spool-remaining-amount { display: flex; align-items: center; gap: 8px; }
+.spool-remaining-grams { font-size: 1.45rem; font-weight: 650; }
+.spool-remaining-percent { padding: 2px 7px; border: 1px solid #171717; outline: 1px solid #ffffffb3; border-radius: 999px; font-size: .75rem; font-weight: 650; white-space: nowrap; }
+@media (min-width: 1200px) {
+  .spool-reel-corner { width: 110px; height: 110px; }
+  .spool-hero-summary { padding-right: 92px; }
+}
+@media (max-width: 640px) {
+  .spool-hero .filament-hero-logo { transform: translate(9px, -9px); }
+  .spool-reel-corner { width: 56px; height: 56px; }
+  .spool-hero-summary { padding-right: 44px; }
+  .spool-hero .filament-hero-body { gap: 12px; }
+}
 .detail-hero-stats { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .detail-hero-stat { display: flex; align-items: center; gap: 10px; min-width: 128px; padding: 10px 13px; border: 1px solid color-mix(in srgb, var(--text) 15%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--bg-elevated) 70%, transparent); }
 .detail-hero-stat svg { color: var(--accent); }
