@@ -13,10 +13,13 @@ function detailLoader(entity: 'spool' | 'filament') {
   return new Function('runtime', `
     const { fetchSequential, cachedFetchAllPages, CACHE_KEYS, getAbortSignal, isAbortError,
       renderSpool, renderFilament, renderFilamentEditor, openSpoolExtraFields, openFilamentExtraFields,
-      loadPrintersForParams, initPerModelProfilePicker, loadEvents, setupActions, loadSpools, loadPrinters,
+      initPrinterSetup, loadEvents, setupActions, loadSpools,
       getCsrfToken, getCsrfTokenGlobal, t, extraFieldsDialogRequested, editMode } = runtime;
     const id = '16';
-    let currentFilament; let spool, statuses, locations, activeDevices, spoolSystemFieldMap = {}, filamentSystemFieldMap = {}, systemFieldMap = {};
+    const editing = editMode;
+    let currentFilament = null, remainingRequest = 0;
+    const updatePrinterSaveState = () => {};
+    let spool, statuses, locations, activeDevices, printerSetup = null, filamentFormController = null, spoolSystemFieldMap = {}, filamentSystemFieldMap = {}, systemFieldMap = {};
     ${transpileModule(loader.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText}
     return ${name}();
   `)
@@ -45,8 +48,8 @@ async function loadDetail(entity: 'spool' | 'filament', failedTarget: string | n
     getAbortSignal: noop, isAbortError: () => false, t: (key: string) => key,
     renderSpool: render, renderFilament: render, renderFilamentEditor: render,
     openSpoolExtraFields: openDialog, openFilamentExtraFields: openDialog,
-    loadPrintersForParams: noop, initPerModelProfilePicker: noop, loadEvents: noop, setupActions: noop,
-    loadSpools: noop, loadPrinters: noop, getCsrfToken: noop, getCsrfTokenGlobal: noop,
+    initPrinterSetup: () => ({ refresh: async () => {} }), loadEvents: noop, setupActions: noop,
+    loadSpools: noop, getCsrfToken: noop, getCsrfTokenGlobal: noop,
     extraFieldsDialogRequested: !editMode, editMode,
   })
   return { render, openDialog }

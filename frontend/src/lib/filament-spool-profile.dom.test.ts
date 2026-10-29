@@ -10,6 +10,21 @@ function setup() {
   return { form, change, picker: createSpoolProfilePicker(form, change) }
 }
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+it('immediately clears the parent link on explicit rematch while loading', async () => {
+  const { picker, form, change } = setup()
+  let finish!: (value: Response) => void
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve })))
+  picker.setLink(735, '735.png')
+  const loading = picker.load()
+  form.querySelector<HTMLInputElement>('[name="default_spool_weight_g"]')!.value = '164'
+  form.querySelector<HTMLButtonElement>('.spool-profile-clear')!.click()
+  expect(change).toHaveBeenLastCalledWith(null, null)
+  expect(form.querySelector('img')).toBeNull()
+  finish(Response.json({ items: [profile], total: 1 }))
+  await loading
+  expect(change).toHaveBeenLastCalledWith(null, null)
+  picker.destroy()
+})
 it('infers a unique manual profile, clears a nonmatching inferred link, and leaves measured values alone', async () => {
   const { picker, form, change } = setup()
   await picker.load()

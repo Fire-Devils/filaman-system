@@ -11,7 +11,7 @@ import { t } from './i18n'
 interface DialogOptions {
   targetType: 'filament' | 'spool'
   systemFields: Record<string, SystemExtraFieldDef>
-  onSave: (payload: EntityExtraFieldPayload) => Promise<void>
+  onSave: (payload: EntityExtraFieldPayload, baseline: EntityExtraFieldPayload) => Promise<void>
 }
 
 interface DialogData {
@@ -60,6 +60,7 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   const error = overlay.querySelector<HTMLElement>('.entity-extra-fields-error')!
   const submit = overlay.querySelector<HTMLButtonElement>('[type="submit"]')!
   let baseline: string | null = null
+  let payloadBaseline: EntityExtraFieldPayload = { customFields: null, customFieldDefinitions: null }
   let saving = false
   const editor = createEntityExtraFieldEditor({
     container: overlay.querySelector<HTMLElement>('.entity-extra-fields-custom-grid')!,
@@ -111,7 +112,7 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
     saving = true
     updateSaveState()
     try {
-      await options.onSave(payload)
+      await options.onSave(payload, payloadBaseline)
       saving = false
       close()
     } catch (cause) {
@@ -124,8 +125,9 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   })
 
   return {
+    isOpen: () => overlay.open,
     open(data: DialogData, trigger?: HTMLElement) {
-      if (saving) return
+      if (saving || overlay.open) return
       returnFocus = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       const values = data.customFields ?? {}
       systemSection.hidden = Object.keys(options.systemFields).length === 0
@@ -134,6 +136,10 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
         return `<div>${field.field_type === 'checkbox' ? control : `<label class="fm-label">${escapeHtml(field.label)}</label>${control}`}</div>`
       }).join('')
       editor.setData(values, data.customFieldDefinitions)
+      payloadBaseline = collectExtraFieldPayload(systemGrid, editor) ?? {
+        customFields: data.customFields ?? null,
+        customFieldDefinitions: data.customFieldDefinitions ?? null,
+      }
       baseline = getSnapshot()
       updateSaveState()
       error.hidden = true

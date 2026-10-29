@@ -1,4 +1,5 @@
 import { request } from './api'
+import { setFormFieldValue } from './detail-edit'
 import { escapeHtml } from './extra-fields'
 import { createFilamentDbLookup, type LookupInstance } from './filamentdb-lookup'
 import { renderFilamentSpoolImage, spoolProfileImageUrl } from './filament-detail'
@@ -96,7 +97,7 @@ export function createSpoolProfilePicker(form: HTMLFormElement, onChange: (id: n
         // Explicit selection applies catalog defaults; later measured edits retain the selected reel.
         for (const [field, catalog] of properties) {
           const input = form.elements.namedItem(field) as HTMLInputElement | HTMLSelectElement
-          if (profile[catalog] != null) input.value = String(profile[catalog])
+          if (profile[catalog] != null) setFormFieldValue(input, profile[catalog])
         }
         profiles = [...profiles.filter(item => item.id !== profile.id), profile]
         select(profile)
@@ -109,6 +110,8 @@ export function createSpoolProfilePicker(form: HTMLFormElement, onChange: (id: n
     pinned = false
     selectedId = null
     selectedImage = null
+    render()
+    onChange(null, null)
     match()
   }
   choose.addEventListener('click', chooseProfile)

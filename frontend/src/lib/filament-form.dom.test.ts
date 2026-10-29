@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { experimental_AstroContainer as AstroContainer } from 'astro/container'
+import FilamentForm from '../components/FilamentForm.astro'
+import FilamentFormActions from '../components/FilamentFormActions.astro'
+import { setLang } from './i18n'
 
 import { createFilamentFormController } from './filament-form'
 
@@ -51,134 +55,36 @@ function installFetchStub() {
   return fetchStub
 }
 
-function renderForm(): HTMLFormElement {
-  document.body.innerHTML = `
-    <form id="filament-form">
-      <header id="filament-editor-hero">
-        <h1 id="filament-editor-title">New Filament</h1>
-        <span id="filament-editor-type">—</span>
-        <button id="filament-color-launcher" type="button">
-          <span id="filament-editor-color-swatch"></span>
-          <code id="filament-editor-color-name">Choose color</code>
-        </button>
-      </header>
-      <dialog id="filament-color-dialog">
-        <h2 id="filament-color-dialog-title">Edit Colors</h2>
-        <span id="filament-color-dialog-preview" hidden></span>
-        <button id="filament-color-dialog-close" type="button">Close</button>
-        <button id="filament-color-dialog-done" type="button">Done</button>
-        <h3 id="color-selection-title">Select Existing Filament Color</h3>
-        <span id="color-hint" hidden></span>
-        <button id="color-sort-name" type="button" data-direction="none">Name</button>
-        <button id="color-sort-hex" type="button" data-direction="none">Hex</button>
-        <button id="color-filter-clear" type="button">Clear Filters</button>
-        <button id="color-filter-button" type="button" data-filter-sidecar>Visual Color Filter</button>
-      </dialog>
-      <div data-dirty-key="manufacturer_id">
-        <select id="manufacturer_id" name="manufacturer_id" required>
-          <option value="">Select</option>
-        </select>
-        <label><span id="fil-search-scope-hint"></span><input id="fil-search-all-manufacturers" type="checkbox">Search all manufacturers</label>
-      </div>
-      <div id="fil-fdb-section" style="display:none">
-        <div id="fil-lookup-heading"></div>
-        <div id="fil-lookup-container"></div>
-        <div id="fil-lookup-toast"></div>
-      </div>
-      <div data-dirty-key="material_type">
-        <select id="type" name="type" required><option value="">Select</option></select>
-        <div id="custom-type-wrapper" class="hidden">
-          <input id="custom_type" name="custom_type">
-        </div>
-      </div>
-      <div data-dirty-key="designation"><label class="fm-label" for="designation">Name</label><input id="designation" name="designation" required></div>
-      <div data-dirty-key="diameter_mm"><input id="diameter_mm" name="diameter_mm" type="number" value="1.75"></div>
-      <input id="material_subgroup" name="material_subgroup">
-      <select id="finish_type" name="finish_type">
-        <option value=""></option><option value="matte">Matte</option>
-      </select>
-      <div data-dirty-key="color_mode">
-        <label><input name="color_mode" type="radio" value="single" checked>Single</label>
-        <label><input name="color_mode" type="radio" value="multi">Multi</label>
-      </div>
-      <div id="multi-color-options" hidden data-dirty-key="multi_color_style">
-        <select id="multi_color_style" name="multi_color_style" required disabled>
-          <option value="striped">Striped</option><option value="gradient">Gradient</option>
-        </select>
-      </div>
-      <div id="existing-color-picker" data-dirty-key="colors">
-        <input id="color-search" type="search">
-        <label><input id="color-list-toggle" type="checkbox">Color list</label>
-        <div id="selected-colors"></div>
-        <div id="color-grid"></div>
-      </div>
-      <input id="manufacturer_color_name" name="manufacturer_color_name">
-      <input id="raw_material_weight_g" name="raw_material_weight_g" type="number">
-      <input id="density_g_cm3" name="density_g_cm3" type="number">
-      <div data-dirty-key="extruder_temp_range_c"><input id="extruder_temp_value" type="number" step="any"><input id="extruder_temp_to" type="number" step="any"></div>
-      <div data-dirty-key="bed_temp_range_c"><input id="bed_temp_value" type="number" step="any"><input id="bed_temp_to" type="number" step="any"></div>
-      <div data-dirty-key="manufacturer_sku price_currency datasheet_url image_url drying_temp_c drying_time_hours softening_temp_c chamber_temp_c cooling_fan_range_percent max_volumetric_speed_mm3_s flow_ratio pressure_advance_k ams_compatibility build_plate_compatibility">
-        <input id="manufacturer_sku" name="manufacturer_sku">
-        <input id="price_currency" name="price_currency">
-        <input id="datasheet_url" name="datasheet_url">
-        <input id="image_url" name="image_url">
-        <input id="drying_temp_c" name="drying_temp_c" type="number" step="any">
-        <input id="drying_time_hours" name="drying_time_hours" type="number" step="any">
-        <input id="softening_temp_c" name="softening_temp_c" type="number" step="any">
-        <input id="chamber_temp_c" name="chamber_temp_c" type="number" step="any">
-        <input id="cooling_fan_value" type="number" step="any"><input id="cooling_fan_to" type="number" step="any">
-        <input id="max_volumetric_speed_mm3_s" name="max_volumetric_speed_mm3_s" type="number" step="any">
-        <input id="flow_ratio" name="flow_ratio" type="number" step="any">
-        <input id="pressure_advance_k" name="pressure_advance_k" type="number" step="any">
-        <input id="ams_compatibility" name="ams_compatibility">
-        <input id="build_plate_compatibility" name="build_plate_compatibility">
-      </div>
-      <label class="filament-form-check" data-dirty-key="is_discontinued"><input id="is_discontinued" name="is_discontinued" type="checkbox"><span>Discontinued</span></label>
-      <div id="filament-spool-profile" hidden data-dirty-key="filamentdb_spool_profile_id filamentdb_spool_image_file"><span class="fm-label">Spool type</span><button class="spool-profile-choose" type="button">Choose</button><span role="status"></span><span class="spool-profile-preview"></span><button class="spool-profile-clear" type="button">Match entered values</button><div class="spool-profile-lookup" hidden></div></div>
-      <input id="default_spool_weight_g" name="default_spool_weight_g" type="number">
-      <select id="spool_material" name="spool_material">
-        <option value=""></option><option value="Cardboard">Cardboard</option>
-      </select>
-      <input id="spool_outer_diameter_mm" name="spool_outer_diameter_mm" type="number">
-      <input id="spool_width_mm" name="spool_width_mm" type="number">
-      <input id="price" name="price" type="number">
-      <input id="shop_url" name="shop_url">
-      <div id="system-fields-container" data-dirty-key="system_fields"><label class="fm-label">System Fields</label><div id="system-fields-grid"></div></div>
-      <button id="btn-add-field" type="button">Add field</button>
-      <div id="filament-custom-fields-card" data-dirty-key="entity_fields"><label class="fm-label">Filament-specific fields</label><div id="custom-fields-container"></div></div>
-      <details id="new-color-disclosure">
-        <summary>Add color to library</summary>
-        <div id="new-color-form">
-          <input id="new-color-picker" type="color" value="#ff0000" disabled>
-          <input id="new-color-hex" value="#FF0000" disabled>
-          <input id="new-color-name" required disabled>
-          <input id="new-color-alpha-enabled" type="checkbox" disabled>
-          <div id="new-color-alpha-options"></div>
-          <span id="new-color-alpha-preview"></span>
-          <input id="new-color-alpha" type="range" value="100" disabled>
-          <input id="new-color-alpha-value" value="100" disabled>
-          <input id="new-color-alpha-hex" value="FF" disabled>
-          <button id="btn-save-new-color" type="button">Save Color</button>
-        </div>
-      </details>
-      <div id="unsaved-changes-status" class="hidden"></div>
-      <div id="error-message" class="hidden"></div>
-      <button id="submit-btn" type="submit">Create Filament</button>
-    </form>
-  `
-  const dialog = document.querySelector('#filament-color-dialog')!
-  for (const selector of ['[data-dirty-key="color_mode"]', '#multi-color-options', '#existing-color-picker', '#manufacturer_color_name', '#new-color-disclosure']) {
-    dialog.appendChild(document.querySelector(selector)!)
+const formMarkup = new Map<string, string>()
+beforeAll(async () => {
+  setLang('en')
+  const container = await AstroContainer.create()
+  for (const mode of ['create', 'edit'] as const) {
+    formMarkup.set(mode, await container.renderToString(FilamentFormActions, { props: { mode, cancelHref: '/filaments' } })
+      + '<span id="unsaved-changes-status" class="hidden"></span>'
+      + await container.renderToString(FilamentForm, { props: { mode } }))
   }
+})
+
+function renderForm(mode: 'create' | 'edit' = 'create'): HTMLFormElement {
+  document.body.innerHTML = formMarkup.get(mode)!
   return document.querySelector<HTMLFormElement>('#filament-form')!
 }
 
 async function createLoadedController(mode: 'create' | 'edit' = 'create', submit = vi.fn(async (_payload: unknown): Promise<void> => undefined)) {
-  const form = renderForm()
+  const form = renderForm(mode)
   const onSubmit = submit
   const controller = createFilamentFormController({ form, mode, onSubmit })
   await controller.loadReferenceData()
   return { controller, form, onSubmit }
+}
+
+async function selectCatalogResult(form: HTMLFormElement) {
+  const search = form.querySelector<HTMLInputElement>('.fdb-lookup-input')!
+  search.value = 'catalog'
+  search.dispatchEvent(new Event('input', { bubbles: true }))
+  await vi.waitFor(() => expect(form.querySelector('.fdb-lookup-item')).not.toBeNull())
+  form.querySelector<HTMLElement>('.fdb-lookup-item')!.click()
 }
 
 beforeEach(() => {
@@ -198,6 +104,39 @@ afterEach(() => {
 })
 
 describe('shared filament form controller', () => {
+  it.each(['single', 'multi'])('retains an inline-created color when reopening a saved %s filament', async colorMode => {
+    const { controller, form } = await createLoadedController('edit')
+    const data = { manufacturer_id: 7, designation: 'Saved PLA', material_type: 'PLA', diameter_mm: 1.75,
+      color_mode: colorMode, multi_color_style: 'striped', colors: [{ color_id: 11, position: 1 }] }
+    controller.applyInitialData(data)
+    const fetchData = globalThis.fetch
+    let created = false
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const color = { id: 99, name: 'New Purple', hex_code: '#880088' }
+      if (url.endsWith('/api/v1/colors') && init?.method === 'POST') { created = true; return jsonResponse(color) }
+      const response = await fetchData(input, init)
+      if (created && url.includes('/api/v1/colors?')) {
+        const body = await response.json()
+        return jsonResponse({ ...body, items: [...body.items, color], total: body.total + 1 })
+      }
+      return response
+    })
+    const disclosure = form.querySelector<HTMLDetailsElement>('#new-color-disclosure')!
+    disclosure.open = true
+    disclosure.dispatchEvent(new Event('toggle'))
+    form.querySelector<HTMLInputElement>('#new-color-name')!.value = 'New Purple'
+    form.querySelector<HTMLInputElement>('#new-color-hex')!.value = '#880088'
+    form.querySelector<HTMLButtonElement>('#btn-save-new-color')!.click()
+    await vi.waitFor(() => expect(controller.collectPayload().colors.some(color => color.color_id === 99)).toBe(true))
+    const colors = controller.collectPayload().colors
+    controller.destroy()
+    const next = await createLoadedController('edit')
+    next.controller.applyInitialData({ ...data, colors })
+    expect(next.controller.collectPayload().colors).toEqual(colors)
+    next.controller.destroy()
+  })
+
   it.each(['reset', 'destroy', 'close and reopen'])('keeps a pending color creation out of a later draft after %s', async action => {
     const { controller, form } = await createLoadedController('edit')
     const original = { manufacturer_id: 7, designation: 'Original', material_type: 'PLA', diameter_mm: 1.75, colors: [{ color_id: 11, position: 1 }] }
@@ -279,6 +218,72 @@ describe('shared filament form controller', () => {
     controller.destroy()
   })
 
+  it.each(['reset', 'destroy', 'newer selection', 'disabled lookup'])('discards a pending catalog prefill after %s', async action => {
+    const { controller, form } = await createLoadedController('edit')
+    const data = { manufacturer_id: 7, designation: 'Original', material_type: 'PLA', diameter_mm: 1.75, colors: [{ color_id: 11, position: 1 }] }
+    controller.resetInitialData(data)
+    const fetchData = globalThis.fetch
+    const pending: ((response: Response) => void)[] = []
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/filamentdb/filaments?')) return Promise.resolve(jsonResponse({ items: [{ id: 'catalog', name: 'Catalog PLA', material: { key: 'PLA' }, colors: [] }] }))
+      if (url.endsWith('/filamentdb/prepare-filament')) return new Promise<Response>(resolve => { pending.push(resolve) })
+      return fetchData(input, init)
+    })
+    await selectCatalogResult(form)
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    if (action === 'newer selection') {
+      await selectCatalogResult(form)
+      await vi.waitFor(() => expect(pending).toHaveLength(2))
+      pending[1](jsonResponse({ colors_created: 0, prefilled: { designation: 'Fresh draft' } }))
+      await vi.waitFor(() => expect(form.querySelector<HTMLInputElement>('#designation')!.value).toBe('Fresh draft'))
+    } else {
+      if (action === 'reset') { controller.resetInitialData(data); controller.captureBaseline() }
+      else if (action === 'destroy') controller.destroy()
+      else {
+        const manufacturer = form.querySelector<HTMLSelectElement>('#manufacturer_id')!
+        manufacturer.value = ''
+        manufacturer.dispatchEvent(new Event('change'))
+      }
+      form.querySelector<HTMLInputElement>('#designation')!.value = 'Fresh draft'
+    }
+    const stale = jsonResponse({ colors_created: 1, prefilled: { designation: 'Stale catalog', material_type: 'PETG' } })
+    const parsed = vi.spyOn(stale, 'json')
+    pending[0](stale)
+    await vi.waitFor(() => expect(parsed).toHaveBeenCalled())
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(form.querySelector<HTMLInputElement>('#designation')!.value).toBe('Fresh draft')
+    expect(form.querySelector<HTMLSelectElement>('#type')!.value).toBe('PLA')
+    controller.destroy()
+  })
+
+  it('reloads colors when a later catalog selection reuses colors created by a canceled request', async () => {
+    const { controller, form } = await createLoadedController('edit')
+    const original = { manufacturer_id: 7, designation: 'Original', material_type: 'PLA', diameter_mm: 1.75, colors: [{ color_id: 11, position: 1 }] }
+    controller.resetInitialData(original)
+    const fetchData = globalThis.fetch
+    let finish!: (response: Response) => void
+    let prepared = false
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/filamentdb/filaments?')) return jsonResponse({ items: [{ id: 'catalog', name: 'Catalog PLA', material: { key: 'PLA' }, colors: [] }] })
+      if (url.endsWith('/filamentdb/prepare-filament')) {
+        if (!prepared) { prepared = true; return new Promise<Response>(resolve => { finish = resolve }) }
+        return jsonResponse({ colors_created: 0, prefilled: { designation: 'Catalog PLA', color_ids: [99] } })
+      }
+      if (url.includes('/api/v1/colors?')) return jsonResponse({ items: [{ id: 11, name: 'Red', hex_code: '#FF0000' }, { id: 99, name: 'New Purple', hex_code: '#880088' }], total: 2 })
+      return fetchData(input, init)
+    })
+    await selectCatalogResult(form)
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    controller.resetInitialData(original)
+    finish(jsonResponse({ colors_created: 1, prefilled: { designation: 'Canceled', color_ids: [99] } }))
+    await selectCatalogResult(form)
+    await vi.waitFor(() => expect(form.querySelector<HTMLInputElement>('#designation')!.value).toBe('Catalog PLA'))
+    expect(controller.collectPayload().colors).toEqual([{ color_id: 99, position: 1 }])
+    controller.destroy()
+  })
+
   it('opens the editor without waiting for the optional spool catalog', async () => {
     const fetchReferences = globalThis.fetch
     let finishCatalog!: (response: Response) => void
@@ -286,7 +291,7 @@ describe('shared filament form controller', () => {
       String(input).includes('/api/v1/filamentdb/spool-profiles?')
         ? new Promise<Response>(resolve => { finishCatalog = resolve })
         : fetchReferences(input, init))
-    const form = renderForm()
+    const form = renderForm('edit')
     const controller = createFilamentFormController({ form, mode: 'edit', onSubmit: async () => {} })
     let ready = false
     const loading = controller.loadReferenceData().then(() => { ready = true })
@@ -301,6 +306,25 @@ describe('shared filament form controller', () => {
     }
   })
 
+  it('retries failed reference loads without duplicating choices or manufacturer dialogs', async () => {
+    const fetchReferences = globalThis.fetch
+    let unavailable = true
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/api/v1/system-extra-fields?') && unavailable
+        ? Promise.resolve(jsonResponse({}, 503))
+        : fetchReferences(input, init))
+    const form = renderForm('edit')
+    const controller = createFilamentFormController({ form, mode: 'edit', onSubmit: async () => {} })
+    await expect(controller.loadReferenceData()).rejects.toThrow()
+    unavailable = false
+    await controller.loadReferenceData()
+    expect(form.querySelectorAll('#manufacturer_id option[value="7"]')).toHaveLength(1)
+    expect(form.querySelectorAll('#manufacturer_id option[value="__add_manufacturer__"]')).toHaveLength(1)
+    expect(form.querySelectorAll('#type option[value="PLA"]')).toHaveLength(1)
+    expect(document.querySelectorAll('#manufacturer-dialog-title')).toHaveLength(1)
+    controller.destroy()
+  })
+
   it('resets discarded edit controls and metadata on re-entry without creating a second controller', async () => {
     const { controller } = await createLoadedController('edit')
     const data = { manufacturer_id: 7, designation: 'Basic', material_type: 'PLA', colors: [{ color_id: 11, position: 1 }] }
@@ -312,6 +336,27 @@ describe('shared filament form controller', () => {
     expect(document.querySelector<HTMLInputElement>('#flow_ratio')!.value).toBe('')
     expect(document.querySelector<HTMLButtonElement>('#submit-btn')!.disabled).toBe(true)
     expect(controller.collectPayload().scalar.flow_ratio).toBeNull()
+    controller.destroy()
+  })
+  it('enables page Save for printer-only edits and keeps retry available after failure', async () => {
+    const form = renderForm('edit')
+    let printerDirty = false
+    const onSubmit = vi.fn(async () => { throw new Error('Printer save failed') })
+    const controller = createFilamentFormController({ form, mode: 'edit', onSubmit, hasExternalChanges: () => printerDirty })
+    await controller.loadReferenceData()
+    controller.applyInitialData({ manufacturer_id: 7, designation: 'Basic', material_type: 'PLA', colors: [{ color_id: 11, position: 1 }] })
+    controller.captureBaseline()
+    const save = document.querySelector<HTMLButtonElement>('#submit-btn')!
+    expect(save.disabled).toBe(true)
+    printerDirty = true
+    controller.updateDirtyState()
+    expect(save.disabled).toBe(false)
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await vi.waitFor(() => expect(document.querySelector('#error-message')?.textContent).toContain('Printer save failed'))
+    expect(save.disabled).toBe(false)
+    printerDirty = false
+    controller.updateDirtyState()
+    expect(save.disabled).toBe(true)
     controller.destroy()
   })
   it('tracks metadata-only extra-field changes and their reversal', async () => {
@@ -337,12 +382,19 @@ describe('shared filament form controller', () => {
     const form = document.querySelector<HTMLFormElement>('#filament-form')!
     const save = document.querySelector<HTMLButtonElement>('#submit-btn')!
     const designation = document.querySelector<HTMLInputElement>('#designation')!
+    const wrapper = designation.closest<HTMLElement>('[data-dirty-key]')!
+    const changed = document.querySelector('#unsaved-changes-status')!
     expect(save.disabled).toBe(true)
     form.dispatchEvent(new Event('submit', { cancelable: true }))
     expect(onSubmit).not.toHaveBeenCalled()
     designation.value = 'Changed'
     designation.dispatchEvent(new Event('input', { bubbles: true }))
     expect(save.disabled).toBe(false)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(wrapper.classList.contains('is-dirty')).toBe(true)
+    expect(wrapper.querySelector('.filament-dirty-indicator')!.textContent).toBe('Changed')
+    expect(wrapper.querySelector<HTMLElement>('.filament-dirty-indicator')!.hidden).toBe(false)
+    expect(changed.classList.contains('hidden')).toBe(false)
     form.dispatchEvent(new Event('submit', { cancelable: true }))
     expect(onSubmit).toHaveBeenCalledTimes(1)
     designation.value = 'Basic'
@@ -355,9 +407,15 @@ describe('shared filament form controller', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
     rejectSave(new Error('Save failed'))
     await vi.waitFor(() => expect(save.disabled).toBe(false))
+    expect(document.querySelector('#error-message')!.textContent).toBe('Save failed')
+    expect(designation.value).toBe('Changed again')
+    expect(wrapper.classList.contains('is-dirty')).toBe(true)
     designation.value = 'Basic'
     designation.dispatchEvent(new Event('input', { bubbles: true }))
     expect(save.disabled).toBe(true)
+    expect(wrapper.classList.contains('is-dirty')).toBe(false)
+    expect(wrapper.querySelector<HTMLElement>('.filament-dirty-indicator')!.hidden).toBe(true)
+    expect(changed.classList.contains('hidden')).toBe(true)
     controller.destroy()
   })
   it('preserves the catalog spool image through weight edits and clears it for a new imageless catalog selection', async () => {
@@ -371,10 +429,9 @@ describe('shared filament form controller', () => {
     controller.destroy()
   })
   it.each(['create', 'edit'] as const)('keeps the external %s toolbar submit usable after a failed save', async mode => {
-    const form = renderForm()
+    const form = renderForm(mode)
     const button = document.querySelector<HTMLButtonElement>('#submit-btn')!
-    button.setAttribute('form', 'filament-form')
-    form.before(button)
+    expect(button.form).toBe(form)
     let rejectSave!: (error: Error) => void
     const controller = createFilamentFormController({
       form,
@@ -867,34 +924,6 @@ describe('shared filament form controller', () => {
     controller.destroy()
   })
 
-  it('outlines a changed scalar and clears the shared Changed pill when reverted', async () => {
-    const { controller } = await createLoadedController('edit')
-    controller.applyInitialData({
-      manufacturer_id: 7,
-      designation: 'Basic',
-      material_type: 'PLA',
-      diameter_mm: 1.75,
-      color_mode: 'single',
-      colors: [{ color_id: 11, position: 1 }],
-    })
-    controller.captureBaseline()
-    const designation = document.querySelector<HTMLInputElement>('#designation')!
-    const wrapper = document.querySelector<HTMLElement>('[data-dirty-key="designation"]')!
-
-    designation.value = 'Hyper'
-    designation.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(wrapper.classList.contains('is-dirty')).toBe(true)
-    expect(wrapper.querySelector('.filament-dirty-indicator')?.textContent).toBe('Changed')
-    expect((wrapper.querySelector('.filament-dirty-indicator') as HTMLElement).hidden).toBe(false)
-    expect(document.querySelector('#unsaved-changes-status')?.classList.contains('hidden')).toBe(false)
-
-    designation.value = 'Basic'
-    designation.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(wrapper.classList.contains('is-dirty')).toBe(false)
-    expect((wrapper.querySelector('.filament-dirty-indicator') as HTMLElement).hidden).toBe(true)
-    expect(document.querySelector('#unsaved-changes-status')?.classList.contains('hidden')).toBe(true)
-    controller.destroy()
-  })
 
   it('marks system and filament-specific extra fields independently', async () => {
     const fallbackFetch = vi.mocked(fetch).getMockImplementation()!
@@ -1202,25 +1231,6 @@ describe('shared filament form controller', () => {
     controller.destroy()
   })
 
-  it('does not submit Edit mutations until the form is submitted', async () => {
-    const submit = vi.fn(async () => undefined)
-    const { controller } = await createLoadedController('edit', submit)
-    controller.applyInitialData({
-      manufacturer_id: 7,
-      designation: 'Basic',
-      material_type: 'PLA',
-      diameter_mm: 1.75,
-      color_mode: 'single',
-      colors: [{ color_id: 11, position: 1 }],
-    })
-    controller.captureBaseline()
-    const designation = document.querySelector<HTMLInputElement>('#designation')!
-    designation.value = 'Hyper'
-    designation.dispatchEvent(new Event('input', { bubbles: true }))
-
-    expect(submit).not.toHaveBeenCalled()
-    controller.destroy()
-  })
 
   it('never shows dirty markers in Create mode', async () => {
     const { controller } = await createLoadedController('create')
@@ -1242,45 +1252,39 @@ describe('shared filament form controller', () => {
     controller.destroy()
   })
 
-  it('retains the dirty draft after a save failure', async () => {
-    const submit = vi.fn(async () => { throw new Error('Save failed') })
-    const { controller, form } = await createLoadedController('edit', submit)
-    controller.applyInitialData({
-      manufacturer_id: 7,
-      designation: 'Basic',
-      material_type: 'PLA',
-      diameter_mm: 1.75,
-      color_mode: 'single',
-      colors: [{ color_id: 11, position: 1 }],
-    })
-    controller.captureBaseline()
-    const designation = document.querySelector<HTMLInputElement>('#designation')!
-    designation.value = 'Hyper'
-    designation.dispatchEvent(new Event('input', { bubbles: true }))
-
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect(submit).toHaveBeenCalledOnce())
-    await vi.waitFor(() => expect(document.querySelector('#error-message')?.textContent).toBe('Save failed'))
-
-    expect(designation.value).toBe('Hyper')
-    expect(document.querySelector('[data-dirty-key="designation"]')?.classList.contains('is-dirty')).toBe(true)
-    controller.destroy()
-  })
 })
 
 
 it('keeps an initially inferred spool-type link saveable until it is persisted', async () => {
   installFetchStub()
-  const form = renderForm()
+  const form = renderForm('edit')
   const controller = createFilamentFormController({ form, mode: 'edit', onSubmit: async () => {} })
   await controller.loadReferenceData()
   controller.applyInitialData({ manufacturer_id: 7, designation: 'Manual PLA', material_type: 'PLA', diameter_mm: 1.75, colors: [{ color_id: 11, position: 1 }], default_spool_weight_g: 170, spool_material: 'Cardboard', spool_outer_diameter_mm: 200, spool_width_mm: 68 })
   controller.captureBaseline()
   await vi.waitFor(() => expect(controller.collectPayload().scalar.filamentdb_spool_profile_id).toBe(735))
-  expect(form.querySelector<HTMLButtonElement>('#submit-btn')!.disabled).toBe(false)
+  expect(document.querySelector<HTMLButtonElement>('#submit-btn')!.disabled).toBe(false)
   controller.applyInitialData({ filamentdb_spool_profile_id: 735, filamentdb_spool_image_file: '735.png' })
   controller.captureBaseline()
-  expect(form.querySelector<HTMLButtonElement>('#submit-btn')!.disabled).toBe(true)
+  expect(document.querySelector<HTMLButtonElement>('#submit-btn')!.disabled).toBe(true)
+  controller.destroy()
+})
+
+
+it('rebases an actual edit draft without replaying old profile metadata or normalized legacy values', async () => {
+  const { controller } = await createLoadedController('edit')
+  const initial = { manufacturer_id: 7, material_type: 'PLA', designation: 'Before', colors: [{ color_id: 11, position: 1 }], custom_fields: { note: 'Dry', bambu_profile_base_name: 'Generic PLA', legacy_count: 42 } }
+  controller.resetInitialData(initial)
+  controller.captureBaseline()
+  expect(await controller.prepareExtraFieldUpdate('/filaments/16', controller.collectPayload().scalar)).toEqual({})
+  controller.applyInitialData({ custom_fields: { ...initial.custom_fields, note: 'Wet' } })
+  const fetchData = globalThis.fetch
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => String(input) === '/api/v1/filaments/16'
+    ? Promise.resolve(Response.json({ custom_fields: { note: 'Dry', bambu_profile_base_name: 'Matte PLA', legacy_count: 42, plugin_added: true } }))
+    : fetchData(input, init))
+  expect(await controller.prepareExtraFieldUpdate('/filaments/16', controller.collectPayload().scalar)).toEqual({
+    custom_fields: { note: 'Wet', bambu_profile_base_name: 'Matte PLA', legacy_count: 42, plugin_added: true },
+  })
   controller.destroy()
 })
 

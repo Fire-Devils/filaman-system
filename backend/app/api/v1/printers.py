@@ -2,7 +2,7 @@ import logging
 import inspect
 import contextlib
 import os
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -222,6 +222,19 @@ class PrinterResponse(BaseModel):
 class PrinterDetailResponse(PrinterResponse):
     driver_config: dict | None = None
     slots: list[SlotResponse] = []
+
+
+@router.get("/{printer_id}/parameter-fields", response_model=list[dict[str, Any]])
+async def get_printer_parameter_fields(
+    printer_id: int,
+    db: DBSession,
+    principal: PrincipalDep,
+    target_type: Literal["filament_printer_param", "spool_printer_param"],
+):
+    printer = await db.get(Printer, printer_id)
+    if printer is None or printer.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Printer not found")
+    return plugin_manager.get_printer_parameter_fields(printer.driver_key, target_type)
 
 
 @router.get("", response_model=PaginatedResponse[PrinterResponse])

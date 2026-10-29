@@ -11,6 +11,17 @@ afterEach(() => {
 })
 
 describe('shared extra fields dialog', () => {
+  it('does not reset an active draft when opened again', () => {
+    const dialog = createEntityExtraFieldsDialog({ targetType: 'filament', systemFields: { note: { key: 'note', label: 'Note', field_type: 'text' } }, onSave: async () => {} })
+    dialog.open({ customFields: { note: 'Saved' } })
+    const input = document.querySelector<HTMLInputElement>('.entity-extra-fields-overlay .system-field-input')!
+    input.value = 'Draft'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    dialog.open({ customFields: { note: 'Late response' } })
+    expect(document.querySelector('.entity-extra-fields-overlay .system-field-input')).toBe(input)
+    expect(input.value).toBe('Draft')
+    expect(document.querySelector<HTMLButtonElement>('.entity-extra-fields-overlay [type="submit"]')!.disabled).toBe(false)
+  })
   it.each(['filament', 'spool'] as const)('requires a changed %s draft and resets the baseline on reopen', targetType => {
     const save = vi.fn(async () => {})
     const dialog = createEntityExtraFieldsDialog({
@@ -132,6 +143,7 @@ describe('shared extra fields dialog', () => {
     await vi.waitFor(() => expect(overlay.querySelector('.entity-extra-remove')).toBeNull())
     expect(submit.disabled).toBe(true)
 
+    overlay.querySelector<HTMLButtonElement>('[data-extra-fields-cancel]')!.click()
     dialog.open({ customFields: { note: 'Dry' } })
     overlay.querySelector<HTMLButtonElement>('.entity-extra-remove')!.click()
     await vi.waitFor(() => expect(overlay.querySelector('.entity-extra-remove')).toBeNull())
@@ -172,7 +184,10 @@ describe('shared extra fields dialog', () => {
     expect(overlay.querySelector<HTMLElement>('.entity-extra-fields-error')!.hidden).toBe(false)
     form.dispatchEvent(new Event('submit', { cancelable: true }))
     await vi.waitFor(() => expect(overlay.open).toBe(false))
-    expect(save).toHaveBeenLastCalledWith({ customFields: { note: 'Wet' }, customFieldDefinitions: null })
+    expect(save).toHaveBeenLastCalledWith(
+      { customFields: { note: 'Wet' }, customFieldDefinitions: null },
+      { customFields: { note: 'Dry' }, customFieldDefinitions: null },
+    )
   })
 
   it.each(['filament', 'spool'] as const)('keeps a pending %s save modal in its original session', async targetType => {
@@ -224,10 +239,10 @@ describe('shared extra fields dialog', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     overlay.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
 
-    await vi.waitFor(() => expect(save).toHaveBeenCalledWith({
-      customFields: { storage_note: 'Below 25% RH' },
-      customFieldDefinitions: null,
-    }))
+    await vi.waitFor(() => expect(save).toHaveBeenCalledWith(
+      { customFields: { storage_note: 'Below 25% RH' }, customFieldDefinitions: null },
+      { customFields: { storage_note: 'Keep dry' }, customFieldDefinitions: null },
+    ))
     expect(overlay.open).toBe(false)
 
     dialog.open({ customFields: { storage_note: 'Keep dry' } }, trigger)

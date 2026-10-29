@@ -1,12 +1,12 @@
 import json
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
-
 from app.api.v1.devices import _build_extended_data
 from app.models import (
+    FilamentPrinterInitialization,
     FilamentPrinterParam,
     Manufacturer,
     Printer,
@@ -18,6 +18,9 @@ from app.models.filament import Filament
 from app.plugins.base import BaseDriver
 from app.plugins.manager import PluginManager
 from app.services.spoolman_import_service import SpoolmanImportService
+from sqlalchemy import delete, event, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from tests.support.spoolman_fixture_server import SpoolmanFixtureServer
 
 
@@ -408,6 +411,270 @@ async def test_native_temperature_fallback_preserves_printer_overrides_and_profi
 
 
 @pytest.mark.parametrize(
+    ("cleared_keys", "remaining"),
+    [
+        (
+            ["bambu_nozzle_temp_min"],
+            {"bambu_nozzle_temp_max": "230", "bambu_bed_temp": "60"},
+        ),
+        (["bambu_nozzle_temp_min", "bambu_nozzle_temp_max"], {"bambu_bed_temp": "60"}),
+        (
+            ["bambu_bed_temp"],
+            {"bambu_nozzle_temp_min": "190", "bambu_nozzle_temp_max": "230"},
+        ),
+        (["bambu_nozzle_temp_min", "bambu_nozzle_temp_max", "bambu_bed_temp"], {}),
+    ],
+)
+async def test_native_temperature_clear_survives_printer_restart(
+    db_session, db_engine, monkeypatch, auth_client, cleared_keys, remaining
+):
+    class OfflineDriver(BaseDriver):
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+    manufacturer = Manufacturer(name="Clear Native Temperatures")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 190, "max": 230},
+        bed_temp_range_c={"min": 60, "max": 60},
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        FilamentPrinterParam(
+            filament_id=filament.id,
+            printer_id=printer.id,
+            param_key="bambu_k_value",
+            param_value="0.031",
+        )
+    )
+    await db_session.commit()
+
+    manager = _bambu_manager(db_session, monkeypatch)
+    monkeypatch.setattr(manager, "load_driver", lambda _key: OfflineDriver)
+    assert await manager.start_printer(printer)
+    client, csrf_token = auth_client
+    for key in cleared_keys:
+        response = await client.delete(
+            f"/api/v1/filaments/{filament.id}/printer-params/{printer.id}",
+            params={"param_key": key},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert response.status_code == 204
+
+    # Reload persisted state and recreate the manager, as on a service restart.
+    async with async_sessionmaker(db_engine, expire_on_commit=False)() as reopened:
+        restarted_printer = await reopened.get(Printer, printer.id)
+        manager = _bambu_manager(reopened, monkeypatch)
+        monkeypatch.setattr(manager, "load_driver", lambda _key: OfflineDriver)
+        assert await manager.start_printer(restarted_printer)
+        params = await reopened.scalars(select(FilamentPrinterParam).where(
+            FilamentPrinterParam.filament_id == filament.id,
+            FilamentPrinterParam.printer_id == printer.id,
+        ))
+        assert {p.param_key: p.param_value for p in params} == {
+            **remaining, "bambu_k_value": "0.031"
+        }
+
+
+async def test_cleared_native_temperatures_are_not_copied_back_from_another_printer(
+    db_session, monkeypatch, auth_client
+):
+    class OfflineDriver(BaseDriver):
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+    manufacturer = Manufacturer(name="Clear All Native Temperatures")
+    printers = [Printer(name=name, driver_key="bambulab") for name in ("A", "B")]
+    db_session.add_all([manufacturer, *printers])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 190, "max": 230},
+        bed_temp_range_c={"min": 60, "max": 60},
+    )
+    other = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Non-native PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+    )
+    db_session.add_all([filament, other])
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+    status_id = await db_session.scalar(
+        select(SpoolStatus.id).where(SpoolStatus.key == "active")
+    )
+    spool = Spool(filament_id=filament.id, status_id=status_id)
+    db_session.add(spool)
+    await db_session.flush()
+    db_session.add(
+        SpoolPrinterParam(
+            spool_id=spool.id,
+            printer_id=printers[1].id,
+            param_key="bambu_k_value",
+            param_value="0.035",
+        )
+    )
+    db_session.add(FilamentPrinterParam(
+        filament_id=other.id,
+        printer_id=printers[1].id,
+        param_key="bambu_k_value",
+        param_value="0.04",
+    ))
+    await db_session.commit()
+
+    client, csrf_token = auth_client
+    response = await client.delete(
+        f"/api/v1/filaments/{filament.id}/printer-params/{printers[0].id}",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert response.status_code == 204
+    manager = _bambu_manager(db_session, monkeypatch)
+    monkeypatch.setattr(manager, "load_driver", lambda _key: OfflineDriver)
+    assert await manager.start_printer(printers[0])
+    params = (await db_session.scalars(select(FilamentPrinterParam))).all()
+    assert {(p.filament_id, p.printer_id, p.param_key): p.param_value for p in params} == {
+        (filament.id, printers[1].id, "bambu_nozzle_temp_min"): "190",
+        (filament.id, printers[1].id, "bambu_nozzle_temp_max"): "230",
+        (filament.id, printers[1].id, "bambu_bed_temp"): "60",
+        (other.id, printers[0].id, "bambu_k_value"): "0.04",
+        (other.id, printers[1].id, "bambu_k_value"): "0.04",
+    }
+    spool_params = await db_session.scalars(select(SpoolPrinterParam).where(
+        SpoolPrinterParam.printer_id == printers[0].id,
+    ))
+    assert {p.param_key: p.param_value for p in spool_params} == {"bambu_k_value": "0.035"}
+
+
+async def test_native_initialization_seeds_later_filaments_and_new_printers(
+    db_session, monkeypatch
+):
+    manufacturer = Manufacturer(name="Later Native Initialization")
+    printer = Printer(name="A", driver_key="bambulab", custom_fields={"notes": "keep"})
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Initial PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+
+    # A filament with no native temperatures must remain eligible for initialization.
+    filament.extruder_temp_range_c = {"min": 190, "max": 230}
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+    minimum = await db_session.scalar(select(FilamentPrinterParam).where(
+        FilamentPrinterParam.param_key == "bambu_nozzle_temp_min",
+    ))
+    assert minimum is not None
+    await db_session.delete(minimum)
+    # Legacy imports must still migrate after the native defaults were initialized.
+    filament.custom_fields = {"bambu_k_value": "0.04"}
+    later = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Later PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 205, "max": 225},
+    )
+    db_session.add(later)
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+
+    params = await db_session.scalars(select(FilamentPrinterParam))
+    assert {(p.filament_id, p.param_key): p.param_value for p in params} == {
+        (filament.id, "bambu_nozzle_temp_max"): "230",
+        (filament.id, "bambu_k_value"): "0.04",
+        (later.id, "bambu_nozzle_temp_min"): "205",
+        (later.id, "bambu_nozzle_temp_max"): "225",
+    }
+    assert printer.custom_fields["notes"] == "keep"
+    assert filament.custom_fields is None
+
+    new_printer = Printer(name="B", driver_key="bambulab")
+    db_session.add(new_printer)
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+    params = await db_session.scalars(select(FilamentPrinterParam).where(
+        FilamentPrinterParam.printer_id == new_printer.id,
+    ))
+    assert {(p.filament_id, p.param_key): p.param_value for p in params} == {
+        (filament.id, "bambu_nozzle_temp_min"): "190",
+        (filament.id, "bambu_nozzle_temp_max"): "230",
+        (filament.id, "bambu_k_value"): "0.04",
+        (later.id, "bambu_nozzle_temp_min"): "205",
+        (later.id, "bambu_nozzle_temp_max"): "225",
+    }
+
+
+async def test_native_initialization_allows_a_recreated_filament_with_reused_id(
+    db_session, db_engine, monkeypatch
+):
+    manufacturer = Manufacturer(name="Recreated Native Initialization")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Old PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 190, "max": 230},
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+    filament_id, printer_id = filament.id, printer.id
+    await db_session.delete(filament)
+    await db_session.flush()
+    recreated = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="Replacement PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 205, "max": 225},
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    db_session.add(recreated)
+    await db_session.commit()
+    assert recreated.id == filament_id  # SQLite reuses a deleted maximum row ID.
+
+    # Use a fresh session so initialization state is reloaded from the database.
+    async with async_sessionmaker(db_engine, expire_on_commit=False)() as reopened:
+        for _ in range(2):
+            await _run_bambu_migration(reopened, monkeypatch)
+            params = await reopened.scalars(select(FilamentPrinterParam).where(
+                FilamentPrinterParam.printer_id == printer_id,
+                FilamentPrinterParam.filament_id == filament_id,
+            ))
+            assert {p.param_key: p.param_value for p in params} == {
+                "bambu_nozzle_temp_min": "205",
+                "bambu_nozzle_temp_max": "225",
+            }
+
+
+@pytest.mark.parametrize(
     ("custom_fields", "expected", "remaining"),
     [
         (
@@ -638,6 +905,201 @@ async def test_native_fallback_does_not_invert_explicit_printer_range(
         )
     )
     assert {p.param_key: p.param_value for p in params} == expected
+
+
+@pytest.mark.parametrize("entity_count", [1, 25])
+async def test_bambu_migration_parameter_reads_do_not_scale_with_entities(
+    db_session, db_engine, monkeypatch, entity_count
+):
+    manufacturer = Manufacturer(name="Migration query count")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filaments = [
+        Filament(
+            manufacturer_id=manufacturer.id,
+            designation=f"PLA {index}",
+            material_type="PLA",
+            diameter_mm=1.75,
+            extruder_temp_range_c={"min": 190, "max": 230},
+        )
+        for index in range(entity_count)
+    ]
+    db_session.add_all(filaments)
+    await db_session.flush()
+    status_id = await db_session.scalar(
+        select(SpoolStatus.id).where(SpoolStatus.key == "active")
+    )
+    spools = [
+        Spool(
+            filament_id=filament.id,
+            status_id=status_id,
+            custom_fields={"bambu_k_value": "0.025"},
+        )
+        for filament in filaments
+    ]
+    db_session.add_all(spools)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            FilamentPrinterParam(
+                filament_id=filaments[0].id,
+                printer_id=printer.id,
+                param_key="bambu_nozzle_temp_min",
+                param_value="205",
+            ),
+            SpoolPrinterParam(
+                spool_id=spools[0].id,
+                printer_id=printer.id,
+                param_key="bambu_k_value",
+                param_value="0.031",
+            ),
+        ]
+    )
+    for model, entity_field, entity_id in (
+        (FilamentPrinterParam, "filament_id", filaments[0].id),
+        (SpoolPrinterParam, "spool_id", spools[0].id),
+    ):
+        db_session.add(
+            model(
+                **{
+                    entity_field: entity_id,
+                    "printer_id": printer.id,
+                    "param_key": "unrelated_payload",
+                    "param_value": "x" * 100_000,
+                }
+            )
+        )
+    await db_session.commit()
+
+    reads = []
+    loaded_keys = []
+
+    def capture_loaded(_session, row):
+        if isinstance(row, (FilamentPrinterParam, SpoolPrinterParam)):
+            loaded_keys.append(row.param_key)
+
+    def capture_reads(_conn, _cursor, statement, _params, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT"):
+            reads.append(statement)
+
+    event.listen(db_session.sync_session, "loaded_as_persistent", capture_loaded)
+    event.listen(db_engine.sync_engine, "before_cursor_execute", capture_reads)
+    try:
+        for _ in range(2):
+            reads.clear()
+            await _run_bambu_migration(db_session, monkeypatch)
+            # Upstream adds two bounded scans to restore misplaced RFID identity fields.
+            assert len(reads) <= 10, f"{len(reads)} SELECTs for {entity_count} entities"
+            assert "unrelated_payload" not in loaded_keys
+    finally:
+        event.remove(db_engine.sync_engine, "before_cursor_execute", capture_reads)
+        event.remove(db_session.sync_session, "loaded_as_persistent", capture_loaded)
+
+    params = (
+        await db_session.scalars(
+            select(FilamentPrinterParam).where(
+                FilamentPrinterParam.param_key != "unrelated_payload"
+            )
+        )
+    ).all()
+    assert len(params) == entity_count * 2
+    assert {(p.filament_id, p.param_key): p.param_value for p in params} == {
+        (filament.id, key): value
+        for index, filament in enumerate(filaments)
+        for key, value in {
+            "bambu_nozzle_temp_min": "205" if index == 0 else "190",
+            "bambu_nozzle_temp_max": "230",
+        }.items()
+    }
+    spool_params = (
+        await db_session.scalars(
+            select(SpoolPrinterParam).where(
+                SpoolPrinterParam.param_key != "unrelated_payload"
+            )
+        )
+    ).all()
+    assert len(spool_params) == entity_count
+    assert {p.param_value for p in spool_params} == {"0.025"}
+
+
+@pytest.mark.parametrize("kind", ["", "-inventory"])
+@pytest.mark.parametrize("format", ["json", "jsonl"])
+async def test_native_temperature_clear_survives_backup_restore(
+    db_session, monkeypatch, auth_client, tmp_path, kind, format
+):
+    from app.api.v1 import system
+
+    monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
+    manufacturer = Manufacturer(name="Native Backup Test")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 190, "max": 230},
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+    client, csrf_token = auth_client
+    cleared = await client.delete(
+        f"/api/v1/filaments/{filament.id}/printer-params/{printer.id}",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert cleared.status_code == 204
+    exported = await client.get(
+        f"/api/v1/admin/system/backup/export{kind}?format={format}"
+    )
+    assert exported.status_code == 200
+    # Restore into storage without the initialization row, as on a fresh installation.
+    await db_session.execute(delete(FilamentPrinterInitialization))
+    await db_session.commit()
+    restored = await client.post(
+        f"/api/v1/admin/system/backup/import{kind}",
+        files={"file": (f"backup.{format}", exported.content, exported.headers["content-type"])},
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert restored.status_code == 200, restored.text
+    await _run_bambu_migration(db_session, monkeypatch)
+    assert (await db_session.scalars(select(FilamentPrinterParam))).all() == []
+
+
+@pytest.mark.parametrize("cleanup", ["killswitch", "uninstall"])
+async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
+    db_session, monkeypatch, cleanup
+):
+    from app.api.v1 import system
+    from app.core.security import Principal
+
+    manufacturer = Manufacturer(name="Native Cleanup Test")
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+        extruder_temp_range_c={"min": 190, "max": 230},
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await _run_bambu_migration(db_session, monkeypatch)
+    assert await db_session.scalar(select(FilamentPrinterInitialization)) is not None
+    principal = Principal(auth_type="session", user_id=1, is_superadmin=True)
+    if cleanup == "killswitch":
+        await system.killswitch(db_session, principal)
+    else:
+        async def keep_plugin_files(_service, _plugin_key):
+            pass
+
+        monkeypatch.setattr(system.PluginInstallService, "uninstall", keep_plugin_files)
+        await system.uninstall_plugin("bambulab", db_session, principal, delete_data=True)
+    assert await db_session.scalar(select(FilamentPrinterInitialization)) is None
 
 
 async def test_rfid_tags_stay_in_custom_fields_and_misfiled_params_are_restored(

@@ -43,6 +43,7 @@ from app.models import (
     Device,
     Filament,
     FilamentColor,
+    FilamentPrinterInitialization,
     FilamentPrinterParam,
     FilamentPrinterProfile,
     FilamentRating,
@@ -735,6 +736,11 @@ async def uninstall_plugin(
 
         if printer_ids:
             await db.execute(
+                delete(FilamentPrinterInitialization).where(
+                    FilamentPrinterInitialization.printer_id.in_(printer_ids)
+                )
+            )
+            await db.execute(
                 delete(FilamentPrinterParam).where(
                     FilamentPrinterParam.printer_id.in_(printer_ids)
                 )
@@ -1218,6 +1224,7 @@ async def killswitch(
         ("printer_slots", PrinterSlot),
         ("filament_printer_profiles", FilamentPrinterProfile),
         ("filament_printer_params", FilamentPrinterParam),
+        ("filament_printer_initializations", FilamentPrinterInitialization),
         ("spool_printer_params", SpoolPrinterParam),
         ("printers", Printer),
         ("spool_events", SpoolEvent),
@@ -1295,6 +1302,7 @@ INVENTORY_BACKUP_TABLES: tuple[tuple[str, type[Any]], ...] = (
     ("printers", Printer),
     ("filament_printer_profiles", FilamentPrinterProfile),
     ("filament_printer_params", FilamentPrinterParam),
+    ("filament_printer_initializations", FilamentPrinterInitialization),
     ("spools", Spool),
     ("spool_printer_params", SpoolPrinterParam),
     ("spool_events", SpoolEvent),
@@ -1812,9 +1820,17 @@ async def _import_jsonl_data(
 
     while (record := read_record(stream)) is not None:
         if record.get("end") is True:
+            counts = record.get("counts")
+            # Older JSONL backups predate the optional initialization table.
+            if (
+                isinstance(counts, dict)
+                and imported.get("filament_printer_initializations") == 0
+                and "filament_printer_initializations" not in counts
+            ):
+                counts = {**counts, "filament_printer_initializations": 0}
             if (
                 set(record) != {"end", "counts"}
-                or record.get("counts") != imported
+                or counts != imported
             ):
                 raise BackupStreamError("Backup footer counts do not match")
             if read_record(stream) is not None:

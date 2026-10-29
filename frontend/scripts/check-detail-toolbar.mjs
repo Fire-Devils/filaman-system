@@ -21,7 +21,7 @@ try {
     sessionStorage.setItem('filaman_duplicate_filament', JSON.stringify(data))
   }, { data: filament, language })
   await page.route('https://fixture.invalid/logo.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="40"><rect width="160" height="40" fill="black"/></svg>' }))
-  await page.route('**/api/**', async route => {
+  await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })

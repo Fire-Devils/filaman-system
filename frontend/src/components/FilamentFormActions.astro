@@ -11,5 +11,5 @@ const { mode, cancelHref } = Astro.props
   <button id="submit-btn" type="submit" form="filament-form" class="fm-btn fm-btn-primary" disabled={mode === 'edit'} data-i18n={mode === 'create' ? 'filaments.createFilament' : 'common.save'}>
     {mode === 'create' ? 'Create Filament' : 'Save'}
   </button>
-  <a id="filament-form-cancel" href={cancelHref} class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</a>
+  <a id="filament-form-cancel" href={cancelHref} data-discard-printer-draft class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</a>
 </div>

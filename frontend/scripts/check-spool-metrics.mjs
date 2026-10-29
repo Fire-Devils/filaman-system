@@ -20,6 +20,7 @@ try {
   let showPrinter = false
   let failPrinter = false
   let emptySlots = false
+  let driverConnected = true, failHealth = false
   let printerCount = 1, amsCount = 1
   let failSpoolRead = false
   let spoolReads = 0, printerReads = 0
@@ -29,7 +30,7 @@ try {
     localStorage.setItem('lang', 'en')
     localStorage.setItem('filaman-pagesize-spools', '25')
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })
     if (request.method() !== 'GET') {
@@ -43,10 +44,13 @@ try {
       if (failPrinter) return route.fulfill({ status: 503, json: { detail: 'Fixture driver unavailable' } })
       json = { items: showPrinter ? Array.from({ length: printerCount }, (_, i) => ({ id: i + 1, name: `Fixture Printer ${i + 1}` })) : [] }
     }
-    else if (/\/printers\/\d+\/driver\/health$/.test(path)) json = { connected: true, slots: emptySlots ? [] : [
+    else if (/\/printers\/\d+\/driver\/health$/.test(path)) {
+      if (failHealth) return route.fulfill({ status: 503, json: { detail: 'Fixture health unavailable' } })
+      json = { connected: driverConnected, slots: emptySlots ? [] : [
       { slot_index: '255-0', tray_color: '#FFBB00', present: true },
       ...Array.from({ length: amsCount * 4 }, (_, i) => ({ slot_index: `${Math.floor(i / 4)}-${i % 4}`, tray_color: '#FFBB00', present: true })),
-    ] }
+      ] }
+    }
     else if (path.endsWith('/print-requests/pending')) json = null
     else if (path.endsWith('/spools/16')) {
       spoolReads++
@@ -174,6 +178,28 @@ try {
   assert.equal(patches.length, 0, 'Live refresh never writes inventory or saves a draft')
   spool.remaining_weight_g = 500
   spool.metrics = { remaining_percent: 50, remaining_length_m: 167.6418097083822 }
+
+  for (const unavailable of ['removed', 'offline', 'empty', 'list-error', 'health-error']) {
+    showPrinter = true
+    await page.goto(new URL('/spools/16', base).href)
+    await page.locator('#printer-slots-inline .slot-dot').first().waitFor()
+    await page.locator('#printer-slots-inline .slot-dot').first().click()
+    await page.locator('.ctx-item').first().waitFor()
+    showPrinter = unavailable !== 'removed'
+    driverConnected = unavailable !== 'offline'
+    emptySlots = unavailable === 'empty'
+    failPrinter = unavailable === 'list-error'
+    failHealth = unavailable === 'health-error'
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'printer_update' } })))
+    await page.locator('#printer-slots-inline').waitFor({ state: 'hidden', timeout: 5000 })
+    assert.equal(await page.locator('#printer-slots-inline .slot-dot').count(), 0, `${unavailable}: stale slots are removed`)
+    assert.equal(await page.locator('.ctx-item').count(), 0, `${unavailable}: stale slot actions close too`)
+    driverConnected = true
+    emptySlots = failPrinter = failHealth = false
+    showPrinter = true
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'printer_update' } })))
+    await page.locator('#printer-slots-inline .slot-dot').first().waitFor()
+  }
 
   filament.manufacturer.logo_url = '/favicon.png'
   const longDesignation = filament.designation

@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
 import DetailScrollIdentity from '../../../components/DetailScrollIdentity.astro'
+import PrinterSetup from '../../../components/PrinterSetup.astro'
 
 export function getStaticPaths() {
   return [
@@ -105,35 +106,7 @@ const { id } = Astro.params
   </div>
   
 
-  <div id="slicer-profile-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.slicerProfile">Slicer Profile</h2>
-    <div class="fm-card" style="padding: 24px;">
-      <label class="fm-label" data-i18n="printers.bambuSlicerProfile">Bambu Slicer Profile</label>
-      <div id="slicer-profile-picker"></div>
-      <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 8px;" data-i18n="printers.slicerProfileSpoolHint">Synced to this spool in Bambuddy across all Bambu printers.</p>
-      <div id="slicer-profile-coverage" class="hidden" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
-      <span id="slicer-profile-msg" class="hidden" style="font-size: 0.85rem;"></span>
-    </div>
-  </div>
-
-  <div id="printer-params-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.printerParameters">Printer Parameters</h2>
-    <div class="fm-card" style="padding: 24px;">
-      <div style="margin-bottom: 16px;">
-        <label class="fm-label" data-i18n="printers.selectPrinter">Printer</label>
-        <select id="printer-select" class="fm-select">
-          <option value="">\u2014</option>
-        </select>
-      </div>
-      <div id="printer-params-list">
-        <p style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="printers.selectPrinterHint">Select a printer to view parameters</p>
-      </div>
-      <div id="printer-params-actions" class="hidden" style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
-        <button id="btn-save-params" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;" data-i18n="common.save">Save</button>
-        <span id="params-save-feedback" style="font-size: 0.85rem; opacity: 0; transition: opacity 0.3s;"></span>
-      </div>
-    </div>
-  </div>
+  <PrinterSetup />
   <div id="events-section" class="hidden" style="margin-top: 32px;">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="spools.eventHistory">Event History</h2>
     <div class="fm-card" style="padding: 0;">
@@ -221,6 +194,7 @@ const { id } = Astro.params
     import {
       buildEntityExtraFieldsForPrint,
       collectExtraFieldPayload,
+      prepareExtraFieldUpdate,
       createEntityExtraFieldEditor,
       getExtraFieldValue,
       renderDetailExtraFieldRows,
@@ -229,14 +203,15 @@ const { id } = Astro.params
     import { cachedFetchAllPages, fetchSequential, invalidateCachePrefix, CACHE_KEYS } from '../../../lib/cache'
     import { assignableLocations } from '../../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
-    import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
     import { formatSpoolMetrics, renderSpoolReel, spoolRemainingWeight } from '../../../lib/spool-reel'
     import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
     import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, type SpoolDetailRow } from '../../../lib/spool-detail'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
-    import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
+    import { changedNativeFields, createDetailEditSession, setFormFieldValue } from '../../../lib/detail-edit'
+    import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
+    import { initPrinterSetup } from '../../../lib/printer-setup'
     import {
       isBuiltInLabelField,
       scopeLabelExtraField,
@@ -258,16 +233,15 @@ const { id } = Astro.params
       window.location.href = '/spools'
     }
 
+    const editSession = createDetailEditSession<any>(`/api/v1/spools/${id}?include_metrics=true`, () => t('spools.failedLoadSingle'))
     let spool: any = null
+    let spoolNeedsRefresh = false
+    let pendingSpoolActions = 0
     let statuses: any[] = []
     let locations: any[] = []
     // RFID state
     let activeDevices: any[] = []
     let currentRfidSpoolId: any = null
-    let printersList: any[] = []
-    let currentPrinterParams: any[] = []
-    let fieldDefinitions: any[] = []
-    let filamentPrinterParams: any[] = []
     let spoolSystemFieldMap: Record<string, any> = {}
     const initialEditSection = new URLSearchParams(window.location.search).get('section')
     const extraFieldsDialogRequested = initialEditSection === 'extra-fields'
@@ -277,11 +251,8 @@ const { id } = Astro.params
     let spoolProfileLookup: LookupInstance | null = null
     let spoolDraftObserver: MutationObserver | null = null
 
-    // -- Bambu cloud profile picker (Option A) --
-    let currentDriverKey = ''
-    let currentPrinterId = 0
-    let cloudPresets: any[] = []
-    let cloudPresetsByCode: Record<string, any> = {}
+    let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
+    let updatePrinterSaveState = () => {}
     let filamentSystemFieldMap: Record<string, any> = {}
     // Pending slot assignment state (for animated ring feedback)
     let pendingSlotAssign: { slotIndex: string; printerId: number; expectedColor: string } | null = null
@@ -332,6 +303,7 @@ const { id } = Astro.params
         }
         
         spool = await spoolRes.json()
+        remainingRequest++
         
         if (statusesRes.ok) {
           statuses = await statusesRes.json()
@@ -350,16 +322,14 @@ const { id } = Astro.params
           window.history.replaceState(null, '', `/spools/${id}`)
           openSpoolExtraFields()
         }
-        loadPrintersForParams()
-        initPerModelProfilePicker({
-          entityType: 'spool',
-          entityId: parseInt(id),
+        if (printerSetup) await printerSetup.refresh()
+        else printerSetup = initPrinterSetup({
+          mount: document.getElementById('printer-setup')!,
+          entityType: 'spool', entityId: parseInt(id), editing,
+          onDirtyChange: () => updatePrinterSaveState(),
           filamentId: spool.filament_id,
           filamentLabel: spool.filament?.designation || `#${spool.filament_id}`,
-          t,
-          getCsrfToken,
-          getAbortSignal,
-          isAbortError,
+          t, getCsrfToken, getAbortSignal, isAbortError,
         })
         loadEvents()
         setupActions()
@@ -443,53 +413,84 @@ const { id } = Astro.params
       </section>`
     }
 
-    function openSpoolExtraFields(trigger?: HTMLElement): void {
-      extraFieldsDialog ??= createEntityExtraFieldsDialog({
-        targetType: 'spool',
-        systemFields: spoolSystemFieldMap,
-        async onSave(payload) {
-          const response = await fetch(`/api/v1/spools/${spool.id}`, {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-            body: JSON.stringify({
-              custom_fields: payload.customFields,
-              custom_field_definitions: payload.customFieldDefinitions,
-            }),
+    async function openSpoolExtraFields(trigger?: HTMLElement): Promise<void> {
+      if (editing || pendingSpoolActions || extraFieldsDialog?.isOpen()) return
+      try {
+        await editSession.manage(latest => {
+          extraFieldsDialog ??= createEntityExtraFieldsDialog({
+            targetType: 'spool',
+            systemFields: spoolSystemFieldMap,
+            async onSave(payload, baseline) {
+              const update = await prepareExtraFieldUpdate(`/spools/${spool.id}`, baseline, payload)
+              const response = await fetch(`/api/v1/spools/${spool.id}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+                body: JSON.stringify(update),
+              })
+              if (!response.ok) {
+                const error = await response.json().catch(() => ({}))
+                throw new Error(error.detail?.message || error.message || t('spools.failedUpdate'))
+              }
+              invalidateCachePrefix('spools')
+              window.location.reload()
+            },
           })
-          if (!response.ok) {
-            const error = await response.json().catch(() => ({}))
-            throw new Error(error.detail?.message || error.message || t('spools.failedUpdate'))
-          }
-          invalidateCachePrefix('spools')
-          window.location.reload()
-        },
-      })
-      extraFieldsDialog.open({
-        customFields: spool.custom_fields,
-        customFieldDefinitions: spool.custom_field_definitions,
-      }, trigger)
+          extraFieldsDialog.open({
+            customFields: latest.custom_fields,
+            customFieldDefinitions: latest.custom_field_definitions,
+          }, trigger)
+        })
+      } catch (error) {
+        if (!isAbortError(error)) (window as unknown as { __fmAlert(message: string): Promise<void> }).__fmAlert(error instanceof Error ? error.message : String(error))
+      }
+    }
+
+    function updateSpoolActionState() {
+      const button = document.getElementById('btn-edit-spool') as HTMLButtonElement | null
+      if (button) button.disabled = pendingSpoolActions > 0
+    }
+
+    // A View action owns its write and reload before Edit can start.
+    async function runSpoolAction(action: () => Promise<void>) {
+      pendingSpoolActions++
+      updateSpoolActionState()
+      try { await action() }
+      finally { pendingSpoolActions--; updateSpoolActionState() }
     }
 
     function bindSpoolContentActions() {
-      document.getElementById('btn-edit-spool')?.addEventListener('click', () => {
-        const restore = captureDetailEditPosition(document.querySelector('main')!)
-        if (editing) exitEditMode()
-        else {
-          editing = true
-          window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: true } }))
-        }
-        renderSpool()
-        restore()
-        document.getElementById('btn-edit-spool')?.focus({ preventScroll: true })
+      updateSpoolActionState()
+      document.getElementById('btn-edit-spool')?.addEventListener('click', async () => {
+        if (pendingSpoolActions || printerSetup?.isSaving()) return
+        await runSpoolAction(async () => {
+          if ((!editing || spoolNeedsRefresh) && !(await refreshSpoolSnapshot(!editing))) return
+          const restore = captureDetailEditPosition(document.querySelector('main')!)
+          if (editing) exitEditMode()
+          else {
+            editing = true
+            window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: true } }))
+          }
+          renderSpool()
+          const profileUpdate = printerSetup?.setEditing(editing)
+          restore()
+          await profileUpdate
+          restore()
+          document.getElementById('btn-edit-spool')?.focus({ preventScroll: true })
+        })
       })
       document.getElementById('btn-edit-extra-fields')?.addEventListener('click', event => {
         openSpoolExtraFields(event.currentTarget as HTMLElement)
       })
-      document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
+      document.getElementById('btn-cancel-edit')?.addEventListener('click', async () => {
+        if (pendingSpoolActions || printerSetup?.isSaving()) return
+        if (spoolNeedsRefresh && !(await refreshSpoolSnapshot())) return
         const restore = captureDetailEditPosition(document.querySelector('main')!)
         exitEditMode()
         renderSpool()
+        const profileUpdate = printerSetup?.setEditing(false)
+        restore()
+        await profileUpdate
         restore()
         document.getElementById('btn-edit-spool')?.focus({ preventScroll: true })
       })
@@ -508,11 +509,32 @@ const { id } = Astro.params
     }
 
     function exitEditMode() {
+      editSession.invalidate()
       editing = false
       const url = new URL(window.location.href)
       url.searchParams.delete('edit')
       window.history.replaceState(null, '', url)
       window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: false } }))
+    }
+
+    async function refreshSpoolSnapshot(enterEdit = false) {
+      try {
+        if (enterEdit) await editSession.edit(latest => { spool = latest })
+        else spool = await editSession.read()
+        remainingRequest++
+        spoolNeedsRefresh = false
+        return true
+      } catch (cause) {
+        if (isAbortError(cause)) return false
+        const error = document.getElementById('spool-edit-error')
+        if (error) {
+          error.textContent = t('spools.failedLoadSingle')
+          error.classList.remove('hidden')
+        } else {
+          window.__fmAlert?.(t('spools.failedLoadSingle'))
+        }
+        return false
+      }
     }
 
     async function setupInlineEditor() {
@@ -534,16 +556,21 @@ const { id } = Astro.params
       })
       spoolExtraFieldEditor.setSystemFieldKeys(Object.keys(spoolSystemFieldMap))
       spoolExtraFieldEditor.setData(spool.custom_fields, spool.custom_field_definitions)
+      const materialSelect = form.elements.namedItem('spool_material') as HTMLSelectElement | null
+      if (materialSelect) setFormFieldValue(materialSelect, spool.spool_material)
       const usesCore = document.getElementById('uses_spool_core') as HTMLInputElement | null
       const submit = document.querySelector('[form="spool-inline-form"][type="submit"]') as HTMLButtonElement
       let submitting = false
-      const readSnapshot = () => JSON.stringify([
-        buildSpoolUpdatePayload(new FormData(form), usesCore?.checked ?? true),
-        Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.system-field-input, .system-field-input-multi'), field => field instanceof HTMLInputElement && field.type === 'checkbox' ? field.checked : field.value),
-        spoolExtraFieldEditor.getSnapshot(),
-      ])
-      const baseline = readSnapshot()
-      const updateSaveState = () => { submit.disabled = submitting || readSnapshot() === baseline }
+      const readSnapshot = () => ({
+        native: buildSpoolUpdatePayload(new FormData(form), usesCore?.checked ?? true),
+        system: Array.from(form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.system-field-input, .system-field-input-multi'), field => field instanceof HTMLInputElement && field.type === 'checkbox' ? field.checked : field.value),
+        entity: spoolExtraFieldEditor.getSnapshot(),
+      })
+      let extraFieldBaseline = collectExtraFieldPayload(document.getElementById('spool-system-fields-editor')!, spoolExtraFieldEditor) ?? { customFields: spool.custom_fields ?? null, customFieldDefinitions: spool.custom_field_definitions ?? null }
+      const nativeBaseline = buildSpoolUpdatePayload(new FormData(form), usesCore?.checked ?? true)
+      let baseline = readSnapshot()
+      const unchanged = () => JSON.stringify(readSnapshot()) === JSON.stringify(baseline) && !printerSetup?.isDirty()
+      const updateSaveState = updatePrinterSaveState = () => { if (submit.isConnected) submit.disabled = submitting || unchanged() }
       usesCore?.addEventListener('change', () => {
         const input = form.elements.namedItem('spool_core_weight_g') as HTMLInputElement
         input.disabled = !usesCore.checked
@@ -555,33 +582,52 @@ const { id } = Astro.params
       updateSaveState()
       form.addEventListener('submit', async (event) => {
         event.preventDefault()
-        if (submitting || readSnapshot() === baseline) return
+        if (submitting || unchanged()) return
         const error = document.getElementById('spool-edit-error')!
         error.classList.add('hidden')
-        const extraFields = collectExtraFieldPayload(document.getElementById('spool-system-fields-editor')!, spoolExtraFieldEditor)
+        const extraFields = structuredClone(collectExtraFieldPayload(document.getElementById('spool-system-fields-editor')!, spoolExtraFieldEditor))
         if (!extraFields) return
+        const submittedSnapshot = readSnapshot()
+        const current = submittedSnapshot.native
+        const rfidInputs = ['rfid_uid', 'rfid_uid_2'].map(key => {
+          const input = form.elements.namedItem(key) as HTMLInputElement | null
+          return { key, input, submitted: input?.value }
+        })
         submitting = true
         updateSaveState()
         try {
-          const payload = buildSpoolUpdatePayload(new FormData(form), usesCore?.checked ?? true)
-          Object.assign(payload, {
-            custom_fields: extraFields.customFields,
-            custom_field_definitions: extraFields.customFieldDefinitions,
+          await printerSetup!.save(async () => {
+            spoolNeedsRefresh = true
+            const payload = changedNativeFields(nativeBaseline, current)
+            Object.assign(payload, await prepareExtraFieldUpdate(`/spools/${spool.id}`, extraFieldBaseline, extraFields))
+            const response = await fetch(`/api/v1/spools/${spool.id}`, {
+              method: 'PATCH',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+              body: JSON.stringify(payload),
+            })
+            if (!response.ok) {
+              const data = await response.json().catch(() => ({}))
+              throw new Error(data.detail?.message || data.message || t('spools.failedUpdate'))
+            }
+            const saved = await response.json()
+            Object.assign(nativeBaseline, current)
+            extraFieldBaseline = structuredClone(extraFields)
+            baseline = submittedSnapshot
+            for (const { key, input, submitted } of rfidInputs) {
+              nativeBaseline[key] = saved[key] ?? null
+              if (input) {
+                baseline.native[key] = nativeBaseline[key]
+                if (input.value === submitted) input.value = saved[key] ?? ''
+              }
+            }
+            invalidateCachePrefix('spools')
+            await printerSetup!.setFilament(Number(current.filament_id), filamentSelect.selectedOptions[0]?.textContent || undefined)
           })
-          const response = await fetch(`/api/v1/spools/${spool.id}`, {
-            method: 'PATCH',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-            body: JSON.stringify(payload),
-          })
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}))
-            throw new Error(data.detail?.message || data.message || t('spools.failedUpdate'))
-          }
-          invalidateCachePrefix('spools')
           exitEditMode()
           window.location.reload()
         } catch (err) {
+          if (spoolNeedsRefresh) await refreshSpoolSnapshot()
           error.textContent = err instanceof Error ? err.message : t('spools.failedUpdate')
           error.classList.remove('hidden')
         } finally {
@@ -613,7 +659,7 @@ const { id } = Astro.params
           onSelect: (item: any) => {
             for (const [name, value] of Object.entries({ empty_spool_weight_g: item.empty_weight_g, spool_material: item.spool_material, spool_outer_diameter_mm: item.outer_diameter_mm, spool_width_mm: item.width_mm })) {
               const input = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null
-              if (input && value != null) input.value = String(value)
+              if (input && value != null) setFormFieldValue(input, value)
             }
             updateSaveState()
             const toast = document.getElementById('spool-profile-lookup-toast')!
@@ -740,7 +786,7 @@ const { id } = Astro.params
       const spoolContent = document.getElementById('spool-content')!
       const quickActions = document.getElementById('actions-section')!
       quickActions.remove()
-      
+
       spoolContent.innerHTML = `
         <header class="filament-hero spool-hero" style="${buildFilamentHeroStyle(spool.filament)}">
           ${renderSpoolReel(metrics.fraction, colors, spool.filament?.multi_color_style === 'gradient' ? 'gradient' : 'striped')}
@@ -1008,20 +1054,23 @@ const { id } = Astro.params
     
     // Remove one RFID tag (slot 1 or 2). The backend shifts tag 2 into slot 1 when slot 1 is cleared.
     ;(window as any).removeRfidTag = async (slot: number, uid: string) => {
-      const msg = t('rfid.confirmRemoveTag', { uid: formatRfidUid(uid) })
-      const ok = (window as any).__fmConfirm ? await (window as any).__fmConfirm(msg) : confirm(msg)
-      if (!ok) return
-      const res = await fetch(`/api/v1/spools/${spool.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-        credentials: 'include',
-        body: JSON.stringify(slot === 1 ? { rfid_uid: null } : { rfid_uid_2: null }),
+      if (editing || pendingSpoolActions) return
+      await runSpoolAction(async () => {
+        const msg = t('rfid.confirmRemoveTag', { uid: formatRfidUid(uid) })
+        const ok = (window as any).__fmConfirm ? await (window as any).__fmConfirm(msg) : confirm(msg)
+        if (!ok) return
+        const res = await fetch(`/api/v1/spools/${spool.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          body: JSON.stringify(slot === 1 ? { rfid_uid: null } : { rfid_uid_2: null }),
+        })
+        if (!res.ok) {
+          ;(window as any).__fmAlert?.(t('rfid.removeTagError'))
+          return
+        }
+        window.location.reload()
       })
-      if (!res.ok) {
-        ;(window as any).__fmAlert?.(t('rfid.removeTagError'))
-        return
-      }
-      window.location.reload()
     }
 
     // RFID Modal Logic
@@ -1139,6 +1188,7 @@ const { id } = Astro.params
         })
 
         const result = await response.json()
+        if (!isPolling) return
         
         if (response.ok && result.success) {
           // Polling: Check periodically for the write status
@@ -1177,6 +1227,7 @@ const { id } = Astro.params
                 signal: getAbortSignal(),
               })
               const statusData = await statusRes.json()
+              if (!isPolling) return
               
               if (statusData.status === 'success') {
                 isPolling = false
@@ -1188,9 +1239,13 @@ const { id } = Astro.params
                 confirmBtn.disabled = true
                 cancelBtn.textContent = t('common.close')
                 cancelBtn.removeEventListener('click', onCancel)
+                let closed = false
                 const autoClose = () => {
+                  if (closed) return
+                  closed = true
+                  cancelBtn.removeEventListener('click', autoClose)
                   document.getElementById('rfid-modal')!.classList.remove('open')
-                  loadData()
+                  void runSpoolAction(loadData)
                 }
                 cancelBtn.addEventListener('click', autoClose, { once: true })
                 setTimeout(autoClose, 2000)
@@ -1203,7 +1258,7 @@ const { id } = Astro.params
                 return
               }
             } catch (e) {
-              if (isAbortError(e)) return
+              if (!isPolling || isAbortError(e)) return
               console.error('Status check failed:', e)
             }
             
@@ -1224,7 +1279,7 @@ const { id } = Astro.params
           confirmBtn.disabled = false
         }
       } catch (error) {
-        if (isAbortError(error)) return
+        if (!isPolling || isAbortError(error)) return
         status.className = 'fm-alert fm-alert-error'
         status.innerHTML = `<strong>${t('rfid.writeError')}</strong><br>${error}`
         confirmBtn.disabled = false
@@ -1337,484 +1392,94 @@ const { id } = Astro.params
 
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
+      if (editing || pendingSpoolActions) return
+      await runSpoolAction(async () => {
       
-      const container = document.getElementById('modal-container') as HTMLElement
-      const type = container.dataset.type
-      const error = document.getElementById('modal-error') as HTMLElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
+        const container = document.getElementById('modal-container') as HTMLElement
+        const type = container.dataset.type
+        const error = document.getElementById('modal-error') as HTMLElement
+        const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
-      let url = ''
-      const body: Record<string, unknown> = {}
+        let url = ''
+        const body: Record<string, unknown> = {}
       
-      if (type === 'measurement') {
-        url = `/api/v1/spools/${id}/measurements`
-        body.measured_weight_g = parseFloat((document.getElementById('field-weight') as HTMLInputElement).value)
-        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
-      } else if (type === 'adjustment') {
-        url = `/api/v1/spools/${id}/adjustments`
-        const adjType = (document.getElementById('field-adjustment-type') as HTMLInputElement).value
-        body.adjustment_type = adjType
-        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
-        if (adjType === 'relative') {
-          body.delta_weight_g = parseFloat((document.getElementById('field-delta') as HTMLInputElement).value) || null
-        } else {
-          body.measured_weight_g = parseFloat((document.getElementById('field-measured') as HTMLInputElement).value) || null
-        }
-      } else if (type === 'status') {
-        url = `/api/v1/spools/${id}/status`
-        body.status = (document.getElementById('field-status') as HTMLInputElement).value
-        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
-      } else if (type === 'move') {
-        url = `/api/v1/spools/${id}/move`
-        const locId = (document.getElementById('field-location') as HTMLInputElement).value
-        body.location_id = locId ? parseInt(locId) : null
-        body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
-      }
-      
-      error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.submitting')
-      
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': getCsrfToken(),
-          },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify(body),
-        })
-        
-        if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.message || t('spools.failedSubmit'))
-        }
-        
-        container.classList.add('hidden')
-        loadData()
-      } catch (err) {
-        if (isAbortError(err)) return
-        error.textContent = (err instanceof Error ? err.message : null) || t('spools.failedSubmit')
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.submit')
-      }
-    })
-    
-    async function loadPrintersForParams() {
-      try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
-        const data = await res.json()
-        printersList = data.items || data || []
-        if (printersList.length === 0) return
-
-        document.getElementById('printer-params-section')!.classList.remove('hidden')
-        const select = document.getElementById('printer-select') as HTMLSelectElement
-        select.innerHTML = '<option value="">\u2014</option>' +
-          printersList.map((p: any) => `<option value="${p.id}" data-driver="${p.driver_key || ''}">${p.name}</option>`).join('')
-
-        select.addEventListener('change', async () => {
-          const printerId = select.value
-          if (printerId) {
-            const option = select.selectedOptions[0]
-            const driverKey = option?.dataset.driver || ''
-            currentDriverKey = driverKey
-            currentPrinterId = parseInt(printerId)
-            await loadFieldDefinitions(driverKey)
-            await loadCloudPresets(currentPrinterId, driverKey)
-            await loadSpoolPrinterParams(parseInt(printerId))
+        if (type === 'measurement') {
+          url = `/api/v1/spools/${id}/measurements`
+          body.measured_weight_g = parseFloat((document.getElementById('field-weight') as HTMLInputElement).value)
+          body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
+        } else if (type === 'adjustment') {
+          url = `/api/v1/spools/${id}/adjustments`
+          const adjType = (document.getElementById('field-adjustment-type') as HTMLInputElement).value
+          body.adjustment_type = adjType
+          body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
+          if (adjType === 'relative') {
+            body.delta_weight_g = parseFloat((document.getElementById('field-delta') as HTMLInputElement).value) || null
           } else {
-            fieldDefinitions = []
-            currentPrinterParams = []
-            filamentPrinterParams = []
-            currentDriverKey = ''
-            currentPrinterId = 0
-            cloudPresets = []
-            cloudPresetsByCode = {}
-            renderPrinterParams()
+            body.measured_weight_g = parseFloat((document.getElementById('field-measured') as HTMLInputElement).value) || null
           }
-        })
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load printers:', e)
-      }
-    }
-
-    async function loadFieldDefinitions(driverKey: string) {
-      if (!driverKey) {
-        fieldDefinitions = []
-        return
-      }
-      try {
-        const res = await fetch(`/api/v1/system-extra-fields?target_type=spool_printer_param&source=${driverKey}`, { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) throw new Error('Failed')
-        fieldDefinitions = await res.json()
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load field definitions:', e)
-        fieldDefinitions = []
-      }
-    }
-
-    async function loadSpoolPrinterParams(printerId: number) {
-      try {
-        // Fetch spool params and filament params in parallel
-        const [spoolRes, filamentRes] = await Promise.all([
-          fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
-          fetch(`/api/v1/filaments/${spool.filament_id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() }),
-        ])
-        currentPrinterParams = spoolRes.ok ? await spoolRes.json() : []
-        filamentPrinterParams = filamentRes.ok ? await filamentRes.json() : []
-        renderPrinterParams()
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load printer params:', e)
-      }
-    }
-
-    async function loadCloudPresets(printerId: number, driverKey: string) {
-      cloudPresets = []
-      cloudPresetsByCode = {}
-      if (driverKey !== 'bambuddy') return
-      try {
-        const res = await fetch(`/api/v1/printers/${printerId}/driver/cloud-presets`, { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
-        const data = await res.json()
-        cloudPresets = data.presets || []
-        cloudPresetsByCode = {}
-        cloudPresets.forEach((p: any) => { cloudPresetsByCode[p.code] = p })
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load cloud presets:', e)
-      }
-    }
-
-    function escapeHtml(s: string): string {
-      return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
-    }
-
-    function presetLabel(code: string): string {
-      if (!code) return ''
-      const p = cloudPresetsByCode[code]
-      return p ? p.displayName : code
-    }
-
-    // Slicer profiles use driver actions (set_spool_profile): full preset →
-    // bambu_slicer_setting_id, generic AMS code → bambu_idx. Params PUT must not
-    // write PFUS codes into bambu_idx (standalone picker handles profiles).
-    const BAMBUDDY_PROFILE_PARAM_KEYS = ['bambu_idx', 'bambu_slicer_setting_id']
-    function isBambuddyCloudProfileManaged(): boolean {
-      return currentDriverKey === 'bambuddy' && cloudPresets.length > 0
-    }
-    function excludeManagedProfileParams(params: { param_key: string; param_value: string | null }[]) {
-      if (!isBambuddyCloudProfileManaged()) return params
-      return params.filter(p => !BAMBUDDY_PROFILE_PARAM_KEYS.includes(p.param_key))
-    }
-
-    // Codes reflected from the printer's AMS (e.g. "SUN20010") are not part of
-    // the selectable cloud-preset catalog, so the picker can't label them.
-    // Ask the driver to resolve the readable name and inject a display-only
-    // entry so presetLabel() shows the name instead of the raw code.
-    async function ensureCodeLabel(printerId: number, code: string): Promise<void> {
-      if (!code || cloudPresetsByCode[code]) return
-      try {
-        const res = await fetch(`/api/v1/printers/${printerId}/driver/action`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ action: 'resolve_preset_label', params: { code } }),
-        })
-        if (!res.ok) return
-        const json = await res.json()
-        const name = json && json.data && json.data.name
-        if (name && name !== code) cloudPresetsByCode[code] = { code, displayName: name, name }
-      } catch (e) {
-        if (!isAbortError(e)) console.error('Failed to resolve preset label:', e)
-      }
-    }
-
-    function renderCloudCombobox(key: string, code: string, placeholderLabel: string, inheritedStyle: string, forParamsSave = true): string {
-      const label = presetLabel(code)
-      const ph = placeholderLabel
-        ? escapeHtml(presetLabel(placeholderLabel))
-        : escapeHtml(t('printers.searchProfile') || 'Search profile…')
-      const hiddenClass = forParamsSave ? 'param-value' : 'slicer-profile-code'
-      return `<div class="cloud-combo" data-key="${key}" style="flex: 2; position: relative;${inheritedStyle}">
-        <input type="hidden" class="${hiddenClass}" data-key="${key}" value="${escapeHtml(code)}" />
-        <input type="text" class="fm-input cloud-combo-search" autocomplete="off" spellcheck="false"
-          placeholder="${ph}" value="${escapeHtml(label)}" style="width: 100%;" />
-        <div class="cloud-combo-list" style="display:none; position:absolute; z-index:50; left:0; right:0; max-height:260px; overflow-y:auto; background:var(--surface, #1e1e1e); border:1px solid var(--border, #444); border-radius:6px; margin-top:2px; box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>
-      </div>`
-    }
-
-    function wireCombo(combo: any, onSelect: ((code: string) => void) | null) {
-      const hidden = combo.querySelector('.param-value, .slicer-profile-code') as HTMLInputElement
-      const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
-      const list = combo.querySelector('.cloud-combo-list') as HTMLElement
-
-      const renderList = (query: string) => {
-        const q = query.trim().toLowerCase()
-        const matches = (q
-          ? cloudPresets.filter((p: any) => (p.displayName || '').toLowerCase().includes(q))
-          : cloudPresets).slice(0, 200)
-        if (matches.length === 0) {
-          list.innerHTML = `<div style="padding:8px 10px; color:var(--text-muted); font-size:0.85rem;">${escapeHtml(t('printers.noProfileMatches') || 'No matches')}</div>`
-          return
+        } else if (type === 'status') {
+          url = `/api/v1/spools/${id}/status`
+          body.status = (document.getElementById('field-status') as HTMLInputElement).value
+          body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
+        } else if (type === 'move') {
+          url = `/api/v1/spools/${id}/move`
+          const locId = (document.getElementById('field-location') as HTMLInputElement).value
+          body.location_id = locId ? parseInt(locId) : null
+          body.note = (document.getElementById('field-note') as HTMLInputElement).value || null
         }
-        list.innerHTML = matches.map((p: any) => {
-          const sel = p.code === hidden.value ? ' style="background:var(--accent-muted, rgba(59,130,246,0.15));"' : ''
-          return `<div class="cloud-combo-opt" data-code="${escapeHtml(p.code)}"${sel}
-            style="padding:7px 10px; cursor:pointer; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
-            title="${escapeHtml(p.displayName)}">${escapeHtml(p.displayName)}</div>`
-        }).join('')
-        list.querySelectorAll('.cloud-combo-opt').forEach((opt: any) => {
-          opt.addEventListener('mousedown', (ev: Event) => {
-            ev.preventDefault()
-            const code = opt.dataset.code
-            hidden.value = code
-            search.value = presetLabel(code)
-            list.style.display = 'none'
-            if (onSelect) onSelect(code)
-          })
-        })
-      }
 
-      search.addEventListener('focus', () => { renderList(''); list.style.display = 'block' })
-      search.addEventListener('input', () => { renderList(search.value); list.style.display = 'block' })
-      search.addEventListener('blur', () => {
-        setTimeout(() => {
-          list.style.display = 'none'
-          search.value = presetLabel(hidden.value)
-        }, 150)
-      })
-    }
+        error.classList.add('hidden')
+        submitBtn.disabled = true
+        submitBtn.textContent = t('common.submitting')
 
-    function wireCloudComboboxes() {
-      document.querySelectorAll('#printer-params-list .cloud-combo').forEach((combo: any) =>
-        wireCombo(combo, (code: string) => onCloudProfileSelected(code, currentPrinterId)))
-    }
-
-    // -- Standalone per-model slicer profile picker (see cloud-profile-picker.ts) --
-
-    function showSlicerMsg(text: string, isError: boolean) {
-      const msg = document.getElementById('slicer-profile-msg')
-      if (!msg) return
-      msg.textContent = text
-      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
-      msg.classList.remove('hidden')
-      setTimeout(() => msg.classList.add('hidden'), 3000)
-    }
-
-    function renderProfileCoverage(result: any) {
-      const el = document.getElementById('slicer-profile-coverage')
-      const data = result?.data ?? result
-      if (!el || !data?.coverage) return
-      const entries = Object.entries(data.coverage) as [string, any][]
-      if (entries.length === 0) { el.classList.add('hidden'); return }
-      el.innerHTML = entries.map(([model, c]) => {
-        const nozzle = c.nozzle_resolved != null ? ` ${c.nozzle_resolved} mm` : ''
-        let color = 'var(--success-text)'
-        let label = `${model}${nozzle} ok`
-        let title = c.code || ''
-        if (!c.mapped) {
-          color = 'var(--error-text, #c44)'
-          label = `${model} missing`
-          title = c.expected_name || 'Create matching variant in Bambu Studio'
-        } else if (c.fallback_nozzle) {
-          color = 'var(--warning-text, #b8860b)'
-          label = `${model}${nozzle} (fallback)`
-          title = (c.expected_name || '') + ' — using closest nozzle variant'
-        }
-        return `<span title="${title}" style="font-size:0.75rem;padding:2px 8px;border-radius:999px;border:1px solid ${color};color:${color}">${label}</span>`
-      }).join('')
-      el.classList.remove('hidden')
-    }
-
-    async function onCloudProfileSelected(code: string, printerId: number) {
-      if (!code || !printerId) return
-      try {
-        const res = await fetch(`/api/v1/printers/${printerId}/driver/action`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ action: 'set_spool_profile', params: { spool_id: parseInt(id), code } }),
-        })
-        if (!res.ok) throw new Error('set_spool_profile failed')
-        const result = await res.json().catch(() => ({}))
-        renderProfileCoverage(result)
         try {
-          const pr = await fetch(`/api/v1/spools/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() })
-          if (pr.ok) currentPrinterParams = await pr.json()
-        } catch {}
-        const data = result?.data ?? result
-        if (data?.base_name) {
-          showSlicerMsg((t('common.saved') || 'Saved') + ` — ${data.base_name}`, false)
-        } else {
-          showSlicerMsg(t('common.saved') || 'Saved', false)
-        }
-        showParamsFeedback(true)
-      } catch (e) {
-        if (!isAbortError(e)) { console.error('Failed to set spool profile:', e); showSlicerMsg(t('printers.paramsSaveFailed') || 'Failed', true) }
-      }
-    }
-
-    /* removed initSlicerProfilePicker — replaced by initPerModelProfilePicker */
-
-    function renderPrinterParams() {
-      const container = document.getElementById('printer-params-list') as HTMLElement
-      const actions = document.getElementById('printer-params-actions') as HTMLElement
-      const printerId = (document.getElementById('printer-select') as HTMLSelectElement | null)?.value
-
-      if (!printerId) {
-        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">' + t('printers.selectPrinterHint') + '</p>'
-        actions.classList.add('hidden')
-        return
-      }
-
-      actions.classList.remove('hidden')
-
-      // Build value maps: spool-level (own) and filament-level (inherited)
-      const spoolValuesMap: Record<string, string> = {}
-      currentPrinterParams.forEach((p: any) => { spoolValuesMap[p.param_key] = p.param_value || '' })
-      const filamentValuesMap: Record<string, string> = {}
-      filamentPrinterParams.forEach((p: any) => { filamentValuesMap[p.param_key] = p.param_value || '' })
-
-      if (fieldDefinitions.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem;">' + t('printers.noFieldDefinitions') + '</p>'
-        actions.classList.add('hidden')
-        return
-      }
-
-      container.innerHTML = fieldDefinitions.map(fd => {
-        // Profile picker lives in the standalone slicer section; params save only handles AMS tuning fields.
-        if (isBambuddyCloudProfileManaged() && fd.key === 'bambu_idx') return ''
-
-        const spoolValue = spoolValuesMap[fd.key] || ''
-        const filamentValue = filamentValuesMap[fd.key] || ''
-        const value = spoolValue || filamentValue
-        const isInherited = !spoolValue && !!filamentValue
-        let inputHtml = ''
-        const inheritedStyle = isInherited ? ' opacity: 0.6; font-style: italic;' : ''
-
-        if (fd.field_type === 'dropdown' && fd.options) {
-          const opts = fd.options.map((o: any) => {
-            const selected = value === o ? ' selected' : ''
-            return `<option value="${o}"${selected}>${o}</option>`
-          }).join('')
-          inputHtml = `<select class="fm-select param-value" data-key="${fd.key}" style="flex: 2;${inheritedStyle}">
-            <option value="">\u2014</option>${opts}</select>`
-        } else if (fd.field_type === 'number') {
-          if (isInherited) {
-            inputHtml = `<input type="number" step="any" class="fm-input param-value" data-key="${fd.key}" value="" placeholder="${filamentValue}" style="flex: 2;${inheritedStyle}" />`
-          } else {
-            inputHtml = `<input type="number" step="any" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
-          }
-        } else if (fd.field_type === 'checkbox') {
-          inputHtml = `<label style="flex: 2; display: flex; align-items: center;${inheritedStyle}"><input type="checkbox" class="param-value" data-key="${fd.key}" ${value === 'true' || value === '1' ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--accent);" /></label>`
-        } else {
-          if (isInherited) {
-            inputHtml = `<input type="text" class="fm-input param-value" data-key="${fd.key}" value="" placeholder="${filamentValue}" style="flex: 2;${inheritedStyle}" />`
-          } else {
-            inputHtml = `<input type="text" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
-          }
-        }
-
-        const inheritedBadge = isInherited ? `<span style="font-size: 0.7rem; color: var(--text-muted); opacity: 0.7;" title="${t('printers.inheritedFromFilament') || 'Inherited from filament'}">&#8593; Filament</span>` : ''
-
-        return `<div class="param-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-          <label style="flex: 1; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${fd.label} ${inheritedBadge}</label>
-          ${inputHtml}
-        </div>`
-      }).join('')
-
-      wireCloudComboboxes()
-    }
-
-    function showParamsFeedback(success: boolean) {
-      const fb = document.getElementById('params-save-feedback')
-      if (!fb) return
-      fb.textContent = success ? (t('common.saved') || '✓ Saved') : (t('common.saveFailed') || '✗ Failed')
-      fb.style.color = success ? 'var(--success-text)' : 'var(--error-text)'
-      fb.style.opacity = '1'
-      setTimeout(() => { fb.style.opacity = '0' }, 3000)
-    }
-
-    document.getElementById('btn-save-params')?.addEventListener('click', async () => {
-      const printerId = (document.getElementById('printer-select') as HTMLSelectElement | null)?.value
-      if (!printerId) return
-
-      const params: any[] = []
-      document.querySelectorAll<HTMLInputElement>('#printer-params-list .param-value').forEach(el => {
-        const key = el.dataset.key
-        let value = null
-        if (el.type === 'checkbox') {
-          value = el.checked ? 'true' : ''
-        } else {
-          value = el.value?.trim() || null
-        }
-        if (key) params.push({ param_key: key, param_value: value })
-      })
-
-      // Filter out empty values for clean storage; never PUT cloud presets into bambu_idx
-      const nonEmptyParams = excludeManagedProfileParams(
-        params.filter(p => p.param_value !== null && p.param_value !== '')
-      )
-
-      if (nonEmptyParams.length === 0) {
-        try {
-          await fetch(`/api/v1/spools/${id}/printer-params/${printerId}`, {
-            method: 'DELETE',
-            headers: { 'X-CSRF-Token': getCsrfToken() },
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': getCsrfToken(),
+            },
             credentials: 'include',
             signal: getAbortSignal(),
+            body: JSON.stringify(body),
           })
-          currentPrinterParams = []
-          filamentPrinterParams = []
-          renderPrinterParams()
-          showParamsFeedback(true)
-        } catch (e) {
-          if (isAbortError(e)) return
-          console.error('Failed to delete params:', e)
-          showParamsFeedback(false)
-        }
-        return
-      }
 
-      try {
-        const res = await fetch(`/api/v1/spools/${id}/printer-params/${printerId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ params: nonEmptyParams }),
-        })
-        if (res.ok) {
-          currentPrinterParams = await res.json()
-          renderPrinterParams()
-          showParamsFeedback(true)
-        } else {
-          showParamsFeedback(false)
+          if (!response.ok) {
+            const data = await response.json()
+            throw new Error(data.message || t('spools.failedSubmit'))
+          }
+
+          container.classList.add('hidden')
+          await loadData()
+        } catch (err) {
+          if (isAbortError(err)) return
+          error.textContent = (err instanceof Error ? err.message : null) || t('spools.failedSubmit')
+          error.classList.remove('hidden')
+        } finally {
+          submitBtn.disabled = false
+          submitBtn.textContent = t('common.submit')
         }
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to save printer params:', e)
-        showParamsFeedback(false)
-      }
+      })
     })
 
+    let printerOverviewRequest = 0
     async function loadPrinterSlotOverview() {
+      const container = document.getElementById('printer-slots-inline')
+      if (!container) return
+      const request = ++printerOverviewRequest
+      const isCurrent = () => request === printerOverviewRequest && container.isConnected
+      const clear = () => {
+        container.replaceChildren()
+        container.classList.remove('has-multiple-printers')
+        closeSlotMenu()
+      }
       try {
         const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
+        if (!isCurrent()) return
+        if (!res.ok) { clear(); return }
         const data = await res.json()
         const printers = data.items || data || []
-        if (printers.length === 0) return
+        if (printers.length === 0) { clear(); return }
 
         const healthResults = await Promise.allSettled(
           printers.map((p: any) =>
@@ -1827,6 +1492,8 @@ const { id } = Astro.params
         const onlinePrinters = healthResults
           .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value != null && r.value.health?.connected && r.value.health.slots?.length > 0)
           .map(r => r.value)
+        if (!isCurrent()) return
+        if (onlinePrinters.length === 0) { clear(); return }
 
         // Force a direct Moonraker status refresh via backend before loading
         // DB slot assignments. This ensures active spool changes made outside
@@ -1856,8 +1523,7 @@ const { id } = Astro.params
           })
         )
 
-        const container = document.getElementById('printer-slots-inline')
-        if (onlinePrinters.length === 0 || !container) return
+        if (!isCurrent()) return
 
         container.classList.toggle('has-multiple-printers', onlinePrinters.length > 1)
         let html = `<h2>${t('spools.printerSlots')}</h2><div class="printer-slot-cards">`
@@ -1966,7 +1632,8 @@ const { id } = Astro.params
           })
         })
       } catch (e) {
-        if (isAbortError(e)) return
+        if (isAbortError(e) || !isCurrent()) return
+        clear()
         console.error('Failed to load printer slot overview:', e)
       }
     }
@@ -2323,29 +1990,32 @@ const { id } = Astro.params
     }
 
     async function handleImportTrayToSpool(slot: any, printerId: any) {
-      const ok = await saveTrayParamsToEntity(slot, printerId, 'spool')
-      if (ok) {
-        window.__fmSuccess?.(t('spools.slotImportSpoolSuccess'))
-        // Refresh printer params display if same printer is selected
-        const sel = document.getElementById('printer-select') as HTMLSelectElement | null
-        if (sel && parseInt(sel.value) === printerId) loadSpoolPrinterParams(printerId)
-      } else {
-        window.__fmAlert?.(t('spools.slotImportError'))
-      }
+      if (editing || pendingSpoolActions) return
+      await runSpoolAction(async () => {
+        const ok = await saveTrayParamsToEntity(slot, printerId, 'spool')
+        if (ok) {
+          window.__fmSuccess?.(t('spools.slotImportSpoolSuccess'))
+          await printerSetup?.refresh()
+        } else {
+          window.__fmAlert?.(t('spools.slotImportError'))
+        }
+      })
     }
 
     async function handleImportTrayToSpoolAndFilament(slot: any, printerId: any) {
-      const [spoolOk, filamentOk] = await Promise.all([
-        saveTrayParamsToEntity(slot, printerId, 'spool'),
-        saveTrayParamsToEntity(slot, printerId, 'filament'),
-      ])
-      if (spoolOk && filamentOk) {
-        window.__fmSuccess?.(t('spools.slotImportBothSuccess'))
-        const sel = document.getElementById('printer-select') as HTMLSelectElement | null
-        if (sel && parseInt(sel.value) === printerId) loadSpoolPrinterParams(printerId)
-      } else {
-        window.__fmAlert?.(t('spools.slotImportError'))
-      }
+      if (editing || pendingSpoolActions) return
+      await runSpoolAction(async () => {
+        const [spoolOk, filamentOk] = await Promise.all([
+          saveTrayParamsToEntity(slot, printerId, 'spool'),
+          saveTrayParamsToEntity(slot, printerId, 'filament'),
+        ])
+        if (spoolOk || filamentOk) await printerSetup?.refresh()
+        if (spoolOk && filamentOk) {
+          window.__fmSuccess?.(t('spools.slotImportBothSuccess'))
+        } else {
+          window.__fmAlert?.(t('spools.slotImportError'))
+        }
+      })
     }
 
     // --- SSE Auto-Update (via shared Layout.astro connection) ---
