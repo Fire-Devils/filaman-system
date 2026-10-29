@@ -1,3 +1,4 @@
+import { api } from './api'
 import {
   collectSystemFieldValues,
   escapeHtml,
@@ -34,6 +35,29 @@ export type EntityExtraFieldDefinitions = Record<string, EntityExtraFieldDefinit
 export interface EntityExtraFieldPayload {
   customFields: Record<string, unknown> | null
   customFieldDefinitions: EntityExtraFieldDefinitions | null
+}
+
+/** Rebase only user-edited JSON values; immediate plugin saves own the other keys. */
+export async function prepareExtraFieldUpdate(path: string, baseline: EntityExtraFieldPayload, draft: EntityExtraFieldPayload) {
+  const columns = [['customFields', 'custom_fields'], ['customFieldDefinitions', 'custom_field_definitions']] as const
+  const changed = columns.filter(([key]) => JSON.stringify(baseline[key]) !== JSON.stringify(draft[key]))
+  if (!changed.length) return {}
+  const latest = await api.get<Record<string, Record<string, unknown> | null>>(path)
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
+  function rebase(before: unknown, after: unknown, current: unknown): unknown {
+    if (!object(before) || !object(after)) return after
+    const result = object(current) ? { ...current } : {}
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (hasOwnFieldValue(before, key) === hasOwnFieldValue(after, key) && JSON.stringify(before[key]) === JSON.stringify(after[key])) continue
+      if (!hasOwnFieldValue(after, key)) delete result[key]
+      else setOwnFieldValue(result, key, rebase(before[key], after[key], result[key]))
+    }
+    return result
+  }
+  return Object.fromEntries(changed.map(([key, column]) => {
+    const value = rebase(baseline[key] ?? {}, draft[key] ?? {}, latest[column] ?? {}) as Record<string, unknown>
+    return [column, Object.keys(value).length ? value : null]
+  }))
 }
 
 export interface FlattenedExtraFieldValue {

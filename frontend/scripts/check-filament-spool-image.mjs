@@ -14,7 +14,7 @@ try {
   let catalogActive = false
   const writes = []
   await page.addInitScript(() => localStorage.setItem('lang', 'en'))
-  await page.route('**/api/**', async route => {
+  await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })
@@ -124,9 +124,7 @@ try {
   }), 'Mobile reel controls fit the card')
   await page.locator('#submit-btn').click()
   await page.waitForFunction(() => document.querySelector('#error-message')?.textContent.includes('Fixture writes blocked'))
-  assert.equal(writes.at(-1).filamentdb_spool_profile_id, 735)
-  assert.equal(writes.at(-1).filamentdb_spool_image_file, '735.png')
-  assert.equal(writes.at(-1).default_spool_weight_g, 170)
+  assert.deepEqual(writes.at(-1), { filamentdb_spool_profile_id: 735 })
   console.log('PASS one filament-owned image, unchanged card heights and caption bounds at 320/390/760/1440px, no duplicate physical-spool photo, missing-image fallback, keyboard spool-type selection, draft-safe manual matching and intercepted profile persistence')
 } finally {
   await browser.close()

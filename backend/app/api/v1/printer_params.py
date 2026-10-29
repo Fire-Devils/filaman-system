@@ -1,19 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.api.deps import PrincipalDep, RequirePermission
-from app.models import Printer
-from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
-from app.models.system_extra_field import SystemExtraField
 from app.api.v1.schemas_printer_params import (
     FilamentPrinterParamResponse,
     PrinterParamBulkRequest,
-    PrinterParamCreate,
-    PrinterParamUpdate,
     SpoolPrinterParamResponse,
 )
+from app.core.database import get_db
+from app.models import Printer
+from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+from app.models.system_extra_field import SystemExtraField
+from app.plugins.manager import plugin_manager
 
 router_filament_params = APIRouter()
 router_spool_params = APIRouter()
@@ -38,7 +37,7 @@ def _reject_cloud_preset_in_bambu_idx(param_key: str, param_value: str | None) -
 
 
 async def _get_valid_param_keys(db: AsyncSession, printer_id: int, target_type: str) -> set[str] | None:
-    """Get valid param_keys for a printer from its driver's SystemExtraField definitions.
+    """Accept declared driver keys and previously registered keys.
 
     Returns None if no definitions exist (validation skipped).
     Returns a set of valid keys if definitions exist.
@@ -58,7 +57,11 @@ async def _get_valid_param_keys(db: AsyncSession, printer_id: int, target_type: 
         )
     )
     keys = {r[0] for r in result.all()}
-    return keys if keys else None  # Skip validation if no definitions
+    if not keys:
+        return None  # Preserve validation bypass when no definitions exist.
+    # Shared keys can belong to a different driver in the global registry.
+    keys.update(field["key"] for field in plugin_manager.get_printer_parameter_fields(driver_key, target_type))
+    return keys
 
 # ─── Filament Printer Params ──────────────────────────────────────────────────
 
@@ -84,7 +87,7 @@ async def get_filament_printer_params(
 @router_filament_params.put(
     "/{filament_id}/printer-params/{printer_id}",
     response_model=list[FilamentPrinterParamResponse],
-    dependencies=[RequirePermission("filaments:edit")],
+    dependencies=[RequirePermission("filaments:update")],
 )
 async def upsert_filament_printer_params(
     filament_id: int,
@@ -140,7 +143,7 @@ async def upsert_filament_printer_params(
 @router_filament_params.delete(
     "/{filament_id}/printer-params/{printer_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[RequirePermission("filaments:edit")],
+    dependencies=[RequirePermission("filaments:update")],
 )
 async def delete_filament_printer_params(
     filament_id: int,
@@ -183,7 +186,7 @@ async def get_spool_printer_params(
 @router_spool_params.put(
     "/{spool_id}/printer-params/{printer_id}",
     response_model=list[SpoolPrinterParamResponse],
-    dependencies=[RequirePermission("spools:edit")],
+    dependencies=[RequirePermission("spools:update")],
 )
 async def upsert_spool_printer_params(
     spool_id: int,
@@ -239,7 +242,7 @@ async def upsert_spool_printer_params(
 @router_spool_params.delete(
     "/{spool_id}/printer-params/{printer_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[RequirePermission("spools:edit")],
+    dependencies=[RequirePermission("spools:update")],
 )
 async def delete_spool_printer_params(
     spool_id: int,

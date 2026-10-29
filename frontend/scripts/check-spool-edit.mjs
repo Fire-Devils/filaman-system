@@ -4,6 +4,7 @@ import { chromium } from 'playwright-core'
 
 const baseUrl = process.argv[2] || 'http://127.0.0.1:4321'
 const filament = { id: 10, designation: 'Fixture PLA', material_type: 'PLA', diameter_mm: 1.75, manufacturer: { name: 'Fixture Brand' }, colors: [] }
+const filaments = [filament, { ...filament, id: 11, designation: 'Other PLA' }]
 const spool = { id: 16, filament_id: 10, filament, status_id: 1, initial_total_weight_g: 1200, empty_spool_weight_g: 200, spool_core_weight_g: null, spool_material: 'Cardboard', spool_outer_diameter_mm: 200, spool_width_mm: 65, low_weight_threshold_g: 100, purchase_price: 24.95, purchase_date: '2026-10-01', lot_number: 'LOT-1', external_id: 'EX-1', rfid_uid: 'AABBCCDD', rfid_uid_2: '11223344', custom_fields: { inspection: 'Passed' }, custom_field_definitions: { inspection: { label: 'Inspection', field_type: 'text' } } }
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true })
 try {
@@ -14,13 +15,18 @@ try {
     localStorage.setItem('lang', 'en')
     localStorage.setItem('sidebar-collapsed', 'false')
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })
     if (path.endsWith('/me/label-presets/migrate')) return route.fulfill({ json: [] })
     if (request.method() !== 'GET') {
-      writes.push({ path, body: request.postDataJSON() })
+      const body = request.postDataJSON()
+      writes.push({ path, body })
+      if (path === '/api/v1/spools/16' && request.method() === 'PATCH') {
+        Object.assign(spool, body)
+        spool.filament = filaments.find(item => item.id === spool.filament_id)
+      }
       return route.fulfill({ json: spool })
     }
     let json = []
@@ -28,7 +34,7 @@ try {
     else if (path.endsWith('/spools/16')) json = spool
     else if (path.endsWith('/spools/16/events')) json = { items: [], total: 0, page: 1, page_size: 50 }
     else if (path.endsWith('/spools/statuses')) json = [{ id: 1, key: 'opened', label: 'Opened' }]
-    else if (path.endsWith('/filaments')) json = { items: [filament, { ...filament, id: 11, designation: 'Other PLA' }], total: 2 }
+    else if (path.endsWith('/filaments')) json = { items: filaments, total: filaments.length }
     else if (path.endsWith('/locations')) json = { items: [], total: 0 }
     else if (path.endsWith('/public-info')) json = { currency: 'USD', filament_lookup_source: 'disabled' }
     else if (path.endsWith('/system-extra-fields') && new URL(request.url()).searchParams.get('target_type') === 'spool') json = [{ id: 1, key: 'storage_note', label: 'Storage note', field_type: 'text' }]
@@ -192,17 +198,18 @@ try {
   assert.equal(new URL(page.url()).searchParams.has('edit'), false)
   const payload = writes.filter(write => write.path === '/api/v1/spools/16').at(-1).body
   assert.deepEqual(payload, {
-    initial_total_weight_g: 1200, empty_spool_weight_g: 200, spool_core_weight_g: null, spool_material: 'Cardboard', spool_outer_diameter_mm: 200, spool_width_mm: 65, low_weight_threshold_g: 100, purchase_price: 24.95, purchase_date: '2026-10-01', lot_number: 'LOT-1', external_id: 'EX-1', filament_id: 11, rfid_uid: 'aa:bb:cc:dd', rfid_uid_2: null, custom_fields: { inspection: 'Passed' }, custom_field_definitions: { inspection: { label: 'Inspection', field_type: 'text', options: null, config: null } },
+    filament_id: 11, rfid_uid: 'aa:bb:cc:dd', rfid_uid_2: null,
   })
   await page.reload()
   await page.locator('#btn-edit-spool').waitFor()
   await page.locator('#btn-edit-spool').click()
+  assert.equal(await page.locator('[name="filament_id"]').inputValue(), '11', 'Reopened edit retains the saved filament')
   await page.locator('[name="rfid_uid_2"]').fill(' 55:66:77:88 ')
   await page.locator('[form="spool-inline-form"][type="submit"]').click()
   await page.locator('#btn-edit-spool[aria-pressed="false"]').waitFor()
   const secondPayload = writes.filter(write => write.path === '/api/v1/spools/16').at(-1).body
-  assert.equal(secondPayload.filament_id, 10)
-  assert.equal(secondPayload.rfid_uid, 'AABBCCDD')
+  assert.equal(Object.hasOwn(secondPayload, 'filament_id'), false, 'An untouched filament stays out of the sparse PATCH')
+  assert.equal(Object.hasOwn(secondPayload, 'rfid_uid'), false, 'An untouched primary tag must not overwrite a concurrent device write')
   assert.equal(secondPayload.rfid_uid_2, '55:66:77:88')
   assert.equal(await page.evaluate(() => localStorage.getItem('sidebar-collapsed')), 'false')
   assert.equal(await page.evaluate(() => document.documentElement.classList.contains('sidebar-collapsed')), false)

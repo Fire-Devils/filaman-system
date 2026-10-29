@@ -21,7 +21,11 @@ from app.models.printer import (
     PrinterSlotAssignment,
     PrinterSlotEvent,
 )
-from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+from app.models.printer_params import (
+    FilamentPrinterInitialization,
+    FilamentPrinterParam,
+    SpoolPrinterParam,
+)
 from app.models.rbac import Permission, Role, RolePermission, UserPermission, UserRole
 from app.models.spool import Spool, SpoolEvent, SpoolStatus
 from app.models.system_extra_field import SystemExtraField
@@ -35,6 +39,7 @@ __all__ = [
     "Device",
     "Filament",
     "FilamentColor",
+    "FilamentPrinterInitialization",
     "FilamentPrinterParam",
     "FilamentPrinterProfile",
     "FilamentRating",

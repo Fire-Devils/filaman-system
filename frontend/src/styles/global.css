@@ -2800,7 +2800,7 @@ html.sidebar-collapsed .fm-logo-text {
 
 /* Shared filament/spool detail layout */
 .fm-main:has(> .detail-page-toolbar) { --detail-content-width: 1110px; height: 100dvh; scroll-padding-top: 5rem; }
-.fm-main:has(> .detail-page-toolbar) > :is(#filament-content, #filament-editor, #spool-content, #printer-params-section, #slicer-profile-section, .filament-spool-panel) { width: 100%; max-width: var(--detail-content-width); margin-left: 0; margin-right: auto; }
+.fm-main:has(> .detail-page-toolbar) > :is(#filament-content, #filament-editor, #spool-content, #printer-params-section, #slicer-profile-section, #printer-setup, .filament-spool-panel) { width: 100%; max-width: var(--detail-content-width); margin-left: 0; margin-right: auto; }
 .fm-main:has(> .detail-page-toolbar) .filament-form-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* Stack only when two compact cards would be narrower than about 360px. */
 @container detail-page (max-width: 46rem) {

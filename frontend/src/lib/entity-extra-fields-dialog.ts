@@ -7,11 +7,19 @@ import {
 } from './entity-extra-fields'
 import { escapeHtml, renderFieldInput, type SystemExtraFieldDef } from './extra-fields'
 import { t } from './i18n'
+import { getAbortSignal } from './abort'
+
+export async function loadEntitySystemFields(target: 'filament' | 'spool'): Promise<Record<string, SystemExtraFieldDef>> {
+  const response = await fetch(`/api/v1/system-extra-fields?target_type=${target}`, { credentials: 'include', signal: getAbortSignal() })
+  if (!response.ok) throw new Error(t('common.systemFieldsUnavailable'))
+  const definitions: SystemExtraFieldDef[] = await response.json()
+  return Object.fromEntries(definitions.map(field => [field.key, field]))
+}
 
 interface DialogOptions {
   targetType: 'filament' | 'spool'
   systemFields: Record<string, SystemExtraFieldDef>
-  onSave: (payload: EntityExtraFieldPayload) => Promise<void>
+  onSave: (payload: EntityExtraFieldPayload, baseline: EntityExtraFieldPayload) => Promise<void>
 }
 
 interface DialogData {
@@ -60,6 +68,7 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   const error = overlay.querySelector<HTMLElement>('.entity-extra-fields-error')!
   const submit = overlay.querySelector<HTMLButtonElement>('[type="submit"]')!
   let baseline: string | null = null
+  let payloadBaseline: EntityExtraFieldPayload = { customFields: null, customFieldDefinitions: null }
   let saving = false
   const editor = createEntityExtraFieldEditor({
     container: overlay.querySelector<HTMLElement>('.entity-extra-fields-custom-grid')!,
@@ -111,7 +120,7 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
     saving = true
     updateSaveState()
     try {
-      await options.onSave(payload)
+      await options.onSave(payload, payloadBaseline)
       saving = false
       close()
     } catch (cause) {
@@ -124,16 +133,22 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
   })
 
   return {
-    open(data: DialogData, trigger?: HTMLElement) {
-      if (saving) return
+    isOpen: () => overlay.open,
+    open(data: DialogData, trigger?: HTMLElement, systemFields = options.systemFields) {
+      if (saving || overlay.open) return
       returnFocus = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       const values = data.customFields ?? {}
-      systemSection.hidden = Object.keys(options.systemFields).length === 0
-      systemGrid.innerHTML = Object.values(options.systemFields).map(field => {
+      editor.setSystemFieldKeys(Object.keys(systemFields))
+      systemSection.hidden = Object.keys(systemFields).length === 0
+      systemGrid.innerHTML = Object.values(systemFields).map(field => {
         const control = renderFieldInput(field, getExtraFieldValue(values, field.key))
         return `<div>${field.field_type === 'checkbox' ? control : `<label class="fm-label">${escapeHtml(field.label)}</label>${control}`}</div>`
       }).join('')
       editor.setData(values, data.customFieldDefinitions)
+      payloadBaseline = collectExtraFieldPayload(systemGrid, editor) ?? {
+        customFields: data.customFields ?? null,
+        customFieldDefinitions: data.customFieldDefinitions ?? null,
+      }
       baseline = getSnapshot()
       updateSaveState()
       error.hidden = true

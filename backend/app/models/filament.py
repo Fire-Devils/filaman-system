@@ -150,6 +150,10 @@ class Filament(Base, TimestampMixin):
         back_populates="filament", cascade="all, delete-orphan"
     )
 
+    printer_initializations: Mapped[list["FilamentPrinterInitialization"]] = relationship(
+        back_populates="filament", cascade="all, delete-orphan"
+    )
+
     @property
     def colors(self) -> list["FilamentColor"]:
         return self.filament_colors
@@ -267,6 +271,6 @@ class FilamentPrinterProfile(Base, TimestampMixin):
 
 
 from app.models.printer import Printer
-from app.models.printer_params import FilamentPrinterParam
+from app.models.printer_params import FilamentPrinterInitialization, FilamentPrinterParam
 from app.models.spool import Spool
 from app.models.user import User

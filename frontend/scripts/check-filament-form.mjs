@@ -15,7 +15,7 @@ try {
     localStorage.setItem('lang', 'en')
     sessionStorage.setItem('filaman_duplicate_filament', JSON.stringify({ manufacturer_id: 7, designation: 'Precision PLA', material_type: 'PLA', diameter_mm: 1.75, color_mode: 'multi', multi_color_style: null, colors: [{ color_id: 11, position: 1 }], default_spool_weight_g: 237, spool_material: 'Cardboard', spool_outer_diameter_mm: 203, spool_width_mm: 69 }))
   })
-  await page.route('**/api/**', async route => {
+  await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })

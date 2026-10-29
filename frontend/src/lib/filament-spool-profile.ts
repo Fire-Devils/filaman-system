@@ -1,4 +1,5 @@
 import { request } from './api'
+import { setFormFieldValue } from './detail-edit'
 import { escapeHtml } from './extra-fields'
 import { createFilamentDbLookup, type LookupInstance } from './filamentdb-lookup'
 import { renderFilamentSpoolImage, spoolProfileImageUrl } from './filament-detail'
@@ -47,6 +48,7 @@ export function createSpoolProfilePicker(form: HTMLFormElement, onChange: (id: n
   let destroyed = false
   let loaded = false
   let pendingMatch = false
+  let loadRequest = 0
 
   function render(message?: string) {
     const selected = profiles.find(profile => profile.id === selectedId)
@@ -96,7 +98,7 @@ export function createSpoolProfilePicker(form: HTMLFormElement, onChange: (id: n
         // Explicit selection applies catalog defaults; later measured edits retain the selected reel.
         for (const [field, catalog] of properties) {
           const input = form.elements.namedItem(field) as HTMLInputElement | HTMLSelectElement
-          if (profile[catalog] != null) input.value = String(profile[catalog])
+          if (profile[catalog] != null) setFormFieldValue(input, profile[catalog])
         }
         profiles = [...profiles.filter(item => item.id !== profile.id), profile]
         select(profile)
@@ -109,12 +111,15 @@ export function createSpoolProfilePicker(form: HTMLFormElement, onChange: (id: n
     pinned = false
     selectedId = null
     selectedImage = null
+    render()
+    onChange(null, null)
     match()
   }
   choose.addEventListener('click', chooseProfile)
   clear.addEventListener('click', clearProfile)
   return {
     async load() {
+      const current = ++loadRequest
       host.hidden = false
       try {
         const all: SpoolProfile[] = []
@@ -122,16 +127,20 @@ export function createSpoolProfilePicker(form: HTMLFormElement, onChange: (id: n
         let total = 0
         do {
           const response = await request<{ items: SpoolProfile[]; total: number }>(`/filamentdb/spool-profiles?page=${page++}&page_size=100`)
-          if (destroyed) return
+          if (destroyed || current !== loadRequest) return
           all.push(...response.items)
           total = response.total
           if (!response.items.length) break
         } while (all.length < total)
         profiles = all
         loaded = true
+        choose.disabled = false
+        clear.disabled = false
+        choose.removeAttribute('title')
         render()
         if (pendingMatch) match()
       } catch {
+        if (destroyed || current !== loadRequest) return
         // Catalog outages must not discard an existing saved selection.
         choose.disabled = true
         clear.disabled = true
