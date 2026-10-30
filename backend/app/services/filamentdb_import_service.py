@@ -36,6 +36,15 @@ from app.core.config import MANUFACTURER_LOGO_DIR as LOGO_DIR
 FUZZY_THRESHOLD = FUZZY_MATCH_THRESHOLD
 
 
+def _material_type_from_fdb(mat: dict[str, Any]) -> str:
+    """material_type aus einem FilamentDB-Material: Anzeigename (z.B. "PLA+/Pro"),
+    nicht der Slug ("pla-plus")."""
+    name = (mat.get("name") or "").strip()
+    if name:
+        return name
+    return (mat.get("key") or "").upper() or "PLA"
+
+
 def _resolve_mfr_id(fil: dict[str, Any]) -> int | None:
     """FilamentDB-Manufacturer-ID aus einem Filament-Dict auflösen."""
     mfr_id = fil.get("manufacturer_id")
@@ -330,7 +339,7 @@ class FilamentDBImportService:
         mat_map: dict[int, str] = {}
         for mat in materials:
             mid = mat.get("id")
-            mkey = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            mkey = _material_type_from_fdb(mat)
             if mid:
                 mat_map[mid] = mkey
 
@@ -349,9 +358,7 @@ class FilamentDBImportService:
 
             material_key = mat_map.get(mat_id_fdb, "PLA")
             if material_key == "PLA" and isinstance(mat_nested, dict):
-                material_key = (
-                    mat_nested.get("key") or mat_nested.get("name") or "PLA"
-                ).upper()
+                material_key = _material_type_from_fdb(mat_nested)
 
             if mfr_id_fdb:
                 mfr_filament_counts[mfr_id_fdb] = (
@@ -399,7 +406,7 @@ class FilamentDBImportService:
         mat_map: dict[int, str] = {}
         for mat in materials:
             mid = mat.get("id")
-            mkey = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            mkey = _material_type_from_fdb(mat)
             if mid:
                 mat_map[mid] = mkey
 
@@ -443,9 +450,7 @@ class FilamentDBImportService:
 
             material_key = mat_map.get(mat_id_fdb, "PLA")
             if material_key == "PLA" and isinstance(mat_nested, dict):
-                material_key = (
-                    mat_nested.get("key") or mat_nested.get("name") or "PLA"
-                ).upper()
+                material_key = _material_type_from_fdb(mat_nested)
 
             fil["_material_key"] = material_key
 
@@ -534,11 +539,13 @@ class FilamentDBImportService:
             m["id"]: (m.get("name") or "").strip() for m in manufacturers if m.get("id")
         }
         mat_map: dict[int, str] = {}
+        mat_legacy_map: dict[int, str] = {}
         for mat in materials:
             mid = mat.get("id")
-            mkey = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            mkey = _material_type_from_fdb(mat)
             if mid:
                 mat_map[mid] = mkey
+                mat_legacy_map[mid] = (mat.get("key") or "").lower()
 
         sp_map: dict[int, dict[str, Any]] = {}
         for sp in spool_profiles:
@@ -608,19 +615,33 @@ class FilamentDBImportService:
                     mat_id = mat_nested.get("id")
                 material = mat_map.get(mat_id, "PLA").lower()
                 if material == "pla" and isinstance(mat_nested, dict):
-                    material = (
-                        mat_nested.get("key") or mat_nested.get("name") or "PLA"
-                    ).lower()
+                    material = _material_type_from_fdb(mat_nested).lower()
+                # Aeltere Importe speicherten den Key (z.B. PLA-PLUS) statt des Namens
+                materials = [material]
+                legacy = mat_legacy_map.get(mat_id)
+                if legacy is None and isinstance(mat_nested, dict):
+                    legacy = (mat_nested.get("key") or "").lower()
+                if legacy and legacy != material:
+                    materials.append(legacy)
 
                 # Exakter Match
-                matched = local_index.get((mfr_name, designation, material))
+                matched = next(
+                    (
+                        local_index[key]
+                        for m in materials
+                        if (key := (mfr_name, designation, m)) in local_index
+                    ),
+                    None,
+                )
                 if matched:
                     local_by_fdb_id[fdb_id] = matched
                     continue
 
                 # Fuzzy-Fallback
                 fdb_desig_raw = (fdb_f.get("designation") or "").strip()
-                candidates = local_by_mfr_mat.get((mfr_name, material), [])
+                candidates = [
+                    c for m in materials for c in local_by_mfr_mat.get((mfr_name, m), [])
+                ]
                 best_score = 0.0
                 best_fil: Filament | None = None
                 for local_desig, local_fil in candidates:
@@ -784,7 +805,7 @@ class FilamentDBImportService:
         mat_map: dict[int, str] = {}
         for mat in materials:
             mid = mat.get("id")
-            mkey = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            mkey = _material_type_from_fdb(mat)
             if mid:
                 mat_map[mid] = mkey
 
@@ -831,9 +852,7 @@ class FilamentDBImportService:
                 mat_id_fdb = mat_nested.get("id")
             material_key = mat_map.get(mat_id_fdb, "PLA")
             if material_key == "PLA" and isinstance(mat_nested, dict):
-                material_key = (
-                    mat_nested.get("key") or mat_nested.get("name") or "PLA"
-                ).upper()
+                material_key = _material_type_from_fdb(mat_nested)
 
             fil["_material_key"] = material_key
 
@@ -923,7 +942,7 @@ class FilamentDBImportService:
         material_map: dict[int, str] = {}
         for mat in preview.materials:
             mat_id = mat.get("id")
-            mat_key = mat.get("key", "").upper() or mat.get("name", "PLA").upper()
+            mat_key = _material_type_from_fdb(mat)
             if mat_id:
                 material_map[mat_id] = mat_key
 
@@ -1119,9 +1138,7 @@ class FilamentDBImportService:
             material_key = material_map.get(material_id_fdb, "PLA")
             # Fallback: nested material
             if material_key == "PLA" and isinstance(mat_nested, dict):
-                material_key = (
-                    mat_nested.get("key") or mat_nested.get("name") or "PLA"
-                ).upper()
+                material_key = _material_type_from_fdb(mat_nested)
 
             designation = (fil_data.get("designation") or "").strip()
             if not designation:

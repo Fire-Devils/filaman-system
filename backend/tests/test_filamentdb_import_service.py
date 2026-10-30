@@ -10,6 +10,7 @@ from app.services.filamentdb_import_service import (
     SYNC_CACHE_KEY,
     FilamentDBImportService,
     SyncSnapshot,
+    _material_type_from_fdb,
 )
 
 
@@ -270,3 +271,16 @@ async def test_create_filament_colors_replaces_stale_rows_for_reused_filament_id
     assert colors[0].color_id == new_color.id
     assert colors[0].position == 1
     assert colors[0].display_name_override == "Silk Blue"
+
+
+@pytest.mark.parametrize(
+    ("material", "expected"),
+    [
+        ({"id": 31, "key": "pla-plus", "name": "PLA+/Pro"}, "PLA+/Pro"),
+        ({"id": 1, "key": "pla", "name": "PLA"}, "PLA"),
+        ({"id": 2, "key": "petg"}, "PETG"),
+        ({"id": 3}, "PLA"),
+    ],
+)
+def test_material_type_prefers_display_name_over_key(material, expected):
+    assert _material_type_from_fdb(material) == expected
