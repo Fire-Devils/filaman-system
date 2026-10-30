@@ -146,7 +146,8 @@
     "oidcFailed": "Échec de la connexion Single Sign-On. Veuillez réessayer.",
     "oidcExpired": "La session de connexion a expiré. Veuillez réessayer.",
     "oidcNoUser": "Aucun compte utilisateur correspondant. Contactez votre administrateur.",
-    "autoLogin": "Connexion automatique…"
+    "autoLogin": "Connexion automatique…",
+    "autoLoginLoop": "La connexion automatique échoue à répétition : le navigateur ne conserve pas le cookie de session. Si FilaMan est aussi accessible en HTTPS sur cet hôte, supprimez les cookies de cet hôte ou utilisez l'adresse HTTPS."
   },
   "dashboard": {
     "title": "Tableau de bord",

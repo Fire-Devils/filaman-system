@@ -93,6 +93,7 @@ const { error } = Astro.props
 
     <script>
       import { t, initI18n } from '../lib/i18n'
+      import { postLoginTarget } from '../lib/login-redirect'
 
       async function init() {
         await initI18n()
@@ -125,6 +126,22 @@ const { error } = Astro.props
               errorMessage.style.color = 'var(--text)'
               errorMessage.style.border = '1px solid var(--border)'
               
+              // Guard against a redirect loop when the browser drops the session cookie
+              const now = Date.now()
+              let attempts: number[] = []
+              try {
+                attempts = JSON.parse(sessionStorage.getItem('autoLoginAttempts') || '[]')
+                  .filter((ts: number) => now - ts < 15000)
+                attempts.push(now)
+                sessionStorage.setItem('autoLoginAttempts', JSON.stringify(attempts))
+              } catch {
+                // sessionStorage unavailable — no loop detection
+              }
+              if (attempts.length > 3) {
+                errorMessage.textContent = t('login.autoLoginLoop')
+                return
+              }
+
               // Auto-POST with dummy credentials
               const autoResp = await fetch('/auth/login', {
                 method: 'POST',
@@ -133,7 +150,7 @@ const { error } = Astro.props
                 body: JSON.stringify({ email: 'auto@login', password: 'disabled' }),
               })
               if (autoResp.ok) {
-                window.location.href = '/'
+                window.location.href = postLoginTarget(window.location.search)
                 return
               }
             }
@@ -164,7 +181,7 @@ const { error } = Astro.props
             })
 
             if (response.ok) {
-              window.location.href = '/'
+              window.location.href = postLoginTarget(window.location.search)
               return
             }
 

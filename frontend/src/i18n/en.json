@@ -146,7 +146,8 @@
     "oidcFailed": "Single Sign-On login failed. Please try again.",
     "oidcExpired": "The login session expired. Please try again.",
     "oidcNoUser": "No matching user account found. Contact your administrator.",
-    "autoLogin": "Logging in automatically..."
+    "autoLogin": "Logging in automatically...",
+    "autoLoginLoop": "Automatic login keeps failing: your browser does not keep the session cookie. If FilaMan is also reachable via HTTPS on this host, clear the cookies for this host or use the HTTPS address."
   },
   "dashboard": {
     "title": "Dashboard",

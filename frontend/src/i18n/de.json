@@ -147,7 +147,8 @@
     "oidcFailed": "Single Sign-On Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
     "oidcExpired": "Die Anmeldesitzung ist abgelaufen. Bitte erneut versuchen.",
     "oidcNoUser": "Kein passender Benutzer gefunden. Kontaktieren Sie Ihren Administrator.",
-    "autoLogin": "Automatische Anmeldung..."
+    "autoLogin": "Automatische Anmeldung...",
+    "autoLoginLoop": "Die automatische Anmeldung schlägt wiederholt fehl: Der Browser behält das Sitzungs-Cookie nicht. Ist FilaMan auf diesem Host auch per HTTPS erreichbar, lösche die Cookies dieses Hosts oder nutze die HTTPS-Adresse."
   },
   "dashboard": {
     "title": "Dashboard",

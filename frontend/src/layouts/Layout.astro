@@ -225,6 +225,7 @@ const { title } = Astro.props
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
       import { navHrefFor } from '../lib/plugin-nav'
+      import { loginUrlWithNext } from '../lib/login-redirect'
       import {
         isAutoOpenEnabled,
         getBoundReaderId,
@@ -367,7 +368,7 @@ const { title } = Astro.props
             // Server explicitly rejected auth — clear cookies and redirect
             document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
             document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-            window.location.href = '/login'
+            window.location.href = loginUrlWithNext(window.location)
             return
           }
 
@@ -401,7 +402,7 @@ const { title } = Astro.props
           // Genuine network error (e.g. disconnected backend) — clear cookies and redirect
           document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
           document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-          window.location.href = '/login'
+          window.location.href = loginUrlWithNext(window.location)
         }
       }
 

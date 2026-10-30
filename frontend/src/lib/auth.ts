@@ -1,5 +1,6 @@
 import { api } from './api'
 import { clearLabelPresetBrowserStorage } from './label-preset-storage'
+import { loginUrlWithNext } from './login-redirect'
 
 export interface User {
   id: number
@@ -69,7 +70,7 @@ export async function requireAuth(): Promise<User> {
   const user = await getMe()
   if (!user) {
     if (typeof window !== 'undefined') {
-      window.location.href = '/login'
+      window.location.href = loginUrlWithNext(window.location)
     }
     throw new Error('Unauthorized')
   }
