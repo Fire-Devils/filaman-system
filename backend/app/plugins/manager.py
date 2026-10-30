@@ -6,7 +6,7 @@ import logging
 import shutil
 import sys
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -163,7 +163,6 @@ class PluginManager:
         """Point an assignment at a spool and mirror its material/color into meta."""
         assignment.spool_id = spool_id
         assignment.present = spool_id is not None
-        assignment.updated_at = datetime.now(timezone.utc)
 
         meta = dict(meta or {})
         meta["active_spool_id"] = spool_id
@@ -306,6 +305,7 @@ class PluginManager:
                                 self._parse_spool_id(slot_data["spool_id"]),
                                 meta,
                             )
+                            assignment.updated_at = datetime.now(UTC)
 
                     # Retire legacy external keys (255-254 / 255-255) once the
                     # canonical 255-0 / 255-1 rows exist, so AMS View and the
@@ -387,10 +387,22 @@ class PluginManager:
                             db.add(assignment)
                             await db.flush()
 
+                        # Publishing unchanged state would trigger another health read via SSE.
+                        previous_state = (
+                            assignment.spool_id,
+                            assignment.present,
+                            assignment.meta,
+                        )
                         assignment.meta = await self._apply_spool_to_assignment(
                             db, assignment, active_spool_id, assignment.meta or {}
                         )
-                        active_spool_synced = True
+                        active_spool_synced = previous_state != (
+                            assignment.spool_id,
+                            assignment.present,
+                            assignment.meta,
+                        )
+                        if active_spool_synced:
+                            assignment.updated_at = datetime.now(UTC)
 
                 if active_spool_synced:
                     await db.commit()

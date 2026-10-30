@@ -1,10 +1,15 @@
+from contextlib import asynccontextmanager
+from unittest.mock import Mock
+
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
-
+from app.api.v1 import printers
+from app.core.event_bus import EventBus
 from app.models import Filament, Manufacturer, Printer, Spool, SpoolStatus
 from app.models.printer import PrinterSlot, PrinterSlotAssignment
 from app.plugins.manager import PluginManager
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 
 @pytest_asyncio.fixture
@@ -264,3 +269,165 @@ class TestActiveSpoolFallbackOnMultiSlotPrinters:
         assignments = await _assignments_by_slot_index(db_session, printer.id)
         assert assignments["0-0"] is None
         assert assignments["0-1"] is None
+
+
+@pytest_asyncio.fixture
+async def health_env(db_session, db_engine, slots_env, monkeypatch):
+    printer, spools = slots_env
+    manager = PluginManager()
+    await manager._handle_slots_update(printer.id, [_toolhead("0-0", "Toolhead")])
+
+    class Driver:
+        def __init__(self):
+            self.payload = {"active_spool_id": 0}
+
+        async def refresh_status(self):
+            if isinstance(self.payload, Exception):
+                raise self.payload
+            return self.payload
+
+        def health(self):
+            return {"running": True, "connected": True}
+
+    driver = Driver()
+    manager.drivers[printer.id] = driver
+    monkeypatch.setattr(printers, "plugin_manager", manager)
+    monkeypatch.setattr(printers, "_is_primary_worker", lambda: True)
+    monkeypatch.setattr(printers.shared_health_store, "publish", lambda payload: None)
+
+    bus = EventBus()
+    published = []
+
+    async def publish(payload):
+        published.append(payload)
+        await bus.publish(payload)
+
+    monkeypatch.setattr("app.plugins.manager.event_bus.publish", publish)
+    commits = Mock()
+    sessions = async_sessionmaker(db_engine, expire_on_commit=False)
+
+    @asynccontextmanager
+    async def manager_session():
+        async with sessions() as session:
+            event.listen(session.sync_session, "after_commit", commits)
+            yield session
+
+    monkeypatch.setattr("app.plugins.manager.async_session_maker", manager_session)
+    return printer, spools, manager, driver, published, commits
+
+
+class TestSingleSlotHealthReconciliation:
+    @pytest.mark.parametrize("loaded", [False, True])
+    async def test_repeated_health_refresh_does_not_republish_or_commit(
+        self, auth_client, db_session, health_env, loaded
+    ):
+        printer, spools, _, driver, published, commits = health_env
+        client, _ = auth_client
+        driver.payload = {"active_spool_id": spools[0].id if loaded else 0}
+        url = f"/api/v1/printers/{printer.id}/driver/health?refresh=1"
+        response = await client.get(url)
+        assert response.status_code == 200
+        assert [item["event"] for item in published] == ["slots_update", "printer_update"]
+        assignment = (
+            await db_session.execute(select(PrinterSlotAssignment))
+        ).scalar_one()
+        await db_session.refresh(assignment)
+        updated_at = assignment.updated_at
+        published.clear()
+        commits.reset_mock()
+
+        for _ in range(3):
+            response = await client.get(url)
+            assert response.status_code == 200
+            assert response.json() == {"running": True, "connected": True}
+
+        await db_session.refresh(assignment)
+        assert assignment.spool_id == (spools[0].id if loaded else None)
+        assert assignment.present is loaded
+        assert assignment.updated_at == updated_at
+        assert published == []
+        commits.assert_not_called()
+
+    async def test_external_load_switch_and_unload_are_persisted_and_published(
+        self, auth_client, db_session, health_env
+    ):
+        printer, spools, _, driver, published, commits = health_env
+        client, _ = auth_client
+        for raw_id, spool_id, present, material in (
+            (str(spools[0].id), spools[0].id, True, "PLA"),
+            (spools[1].id, spools[1].id, True, "PETG"),
+            (0, None, False, None),
+        ):
+            published.clear()
+            commits.reset_mock()
+            driver.payload = {"active_spool_id": raw_id}
+            response = await client.get(
+                f"/api/v1/printers/{printer.id}/driver/health?refresh=1"
+            )
+            assert response.status_code == 200
+            assignment = (
+                await db_session.execute(select(PrinterSlotAssignment))
+            ).scalar_one()
+            await db_session.refresh(assignment)
+            assert assignment.spool_id == spool_id
+            assert assignment.present is present
+            assert assignment.meta.get("tray_type") == material
+            assert assignment.meta["active_spool_id"] == spool_id
+            assert published == [
+                {"event": "slots_update", "printer_id": printer.id},
+                {"event": "printer_update", "printer_id": printer.id},
+            ]
+            assert commits.call_count == 1
+
+    @pytest.mark.parametrize(
+        "payload", [None, {}, {"active_spool_id": None}, RuntimeError("offline")]
+    )
+    async def test_unavailable_active_spool_does_not_clear_assignment(
+        self, auth_client, db_session, health_env, payload
+    ):
+        printer, spools, manager, driver, published, commits = health_env
+        client, _ = auth_client
+        await manager._handle_slots_update(printer.id, [], None, spools[0].id)
+        published.clear()
+        commits.reset_mock()
+        driver.payload = payload
+
+        response = await client.get(
+            f"/api/v1/printers/{printer.id}/driver/health?refresh=1"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"running": True, "connected": True}
+        assert await _assignments_by_slot_index(db_session, printer.id) == {
+            "0-0": spools[0].id
+        }
+        assert published == []
+        commits.assert_not_called()
+
+    async def test_unchanged_spool_still_reconciles_metadata(
+        self, auth_client, db_session, health_env
+    ):
+        printer, spools, manager, driver, published, commits = health_env
+        client, _ = auth_client
+        await manager._handle_slots_update(printer.id, [], None, spools[0].id)
+        assignment = (
+            await db_session.execute(select(PrinterSlotAssignment))
+        ).scalar_one()
+        await db_session.refresh(assignment)
+        assignment.meta = {**assignment.meta, "tray_type": "outdated", "cali_idx": 7}
+        await db_session.commit()
+        published.clear()
+        commits.reset_mock()
+        driver.payload = {"active_spool_id": spools[0].id}
+
+        response = await client.get(
+            f"/api/v1/printers/{printer.id}/driver/health?refresh=1"
+        )
+
+        assert response.status_code == 200
+        await db_session.refresh(assignment)
+        assert assignment.meta == {
+            "active_spool_id": spools[0].id, "tray_type": "PLA", "cali_idx": 7
+        }
+        assert [item["event"] for item in published] == ["slots_update", "printer_update"]
+        assert commits.call_count == 1
