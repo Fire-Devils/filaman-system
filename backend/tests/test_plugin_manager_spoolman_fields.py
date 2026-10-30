@@ -203,3 +203,74 @@ async def test_invalid_native_nozzle_object_is_retained(
         "nozzle_temperature": invalid_range,
         "notes": "keep",
     }
+
+
+async def test_rfid_tags_stay_in_custom_fields_and_misfiled_params_are_restored(
+    db_session,
+    monkeypatch,
+):
+    printer_a = Printer(name="Bambu RFID A", driver_key="bambulab")
+    printer_b = Printer(name="Bambu RFID B", driver_key="bambulab")
+    manufacturer = Manufacturer(name="Bambu RFID Test")
+    db_session.add_all([printer_a, printer_b, manufacturer])
+    await db_session.flush()
+
+    filament = Filament(
+        manufacturer_id=manufacturer.id,
+        designation="RFID PLA",
+        material_type="PLA",
+        diameter_mm=1.75,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    status_id = await db_session.scalar(
+        select(SpoolStatus.id).where(SpoolStatus.key == "active")
+    )
+    kept_spool = Spool(
+        filament_id=filament.id,
+        status_id=status_id,
+        custom_fields={
+            "bambu_rfid_tag_1": "0B:11:57:FF",
+            "spoolman_extra": {"bambu_rfid_tag_2": "4B:5B:51:FF"},
+        },
+    )
+    misfiled_spool = Spool(filament_id=filament.id, status_id=status_id)
+    db_session.add_all([kept_spool, misfiled_spool])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SpoolPrinterParam(
+                spool_id=misfiled_spool.id,
+                printer_id=printer_id,
+                param_key=key,
+                param_value=value,
+            )
+            for printer_id in (printer_a.id, printer_b.id)
+            for key, value in (
+                ("bambu_rfid_tag_1", "AA:BB:CC:DD"),
+                ("bambu_rfid_tag_2", "EE:FF:00:11"),
+            )
+        ]
+    )
+    await db_session.commit()
+
+    await _run_bambu_migration(db_session, monkeypatch)
+
+    await db_session.refresh(kept_spool)
+    await db_session.refresh(misfiled_spool)
+    assert kept_spool.custom_fields == {
+        "bambu_rfid_tag_1": "0B:11:57:FF",
+        "spoolman_extra": {"bambu_rfid_tag_2": "4B:5B:51:FF"},
+    }
+    assert misfiled_spool.custom_fields == {
+        "bambu_rfid_tag_1": "AA:BB:CC:DD",
+        "bambu_rfid_tag_2": "EE:FF:00:11",
+    }
+    remaining = (
+        await db_session.execute(
+            select(SpoolPrinterParam).where(
+                SpoolPrinterParam.param_key.like("bambu_rfid_tag_%")
+            )
+        )
+    ).scalars().all()
+    assert remaining == []

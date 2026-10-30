@@ -922,6 +922,9 @@ class PluginManager:
             "bambu_slicer_filament",
             "bambu_slicer_filament_name",
             "bambu_color_name",
+            # Spool identity (RFID tag UIDs) written by the driver — not params.
+            "bambu_rfid_tag_1",
+            "bambu_rfid_tag_2",
         }
 
         async with async_session_maker() as db:
@@ -950,6 +953,22 @@ class PluginManager:
                 )
             await db.commit()
             logger.debug("Legacy param_key renames applied (if any)")
+
+            # --- Restore identity keys misfiled as printer params by older versions ---
+            await self._restore_kept_keys_from_params(
+                db,
+                SpoolPrinterParam,
+                SpoolPrinterParam.spool_id,
+                Spool,
+                KEEP_IN_CUSTOM_FIELDS,
+            )
+            await self._restore_kept_keys_from_params(
+                db,
+                FilamentPrinterParam,
+                FilamentPrinterParam.filament_id,
+                Filament,
+                KEEP_IN_CUSTOM_FIELDS,
+            )
             printer_ids = [p.id for p in printers]
 
             # --- Filaments ---
@@ -1023,6 +1042,50 @@ class PluginManager:
                     f"{migrated_filaments} filaments, {migrated_spools} spools "
                     f"(for {len(printer_ids)} {driver_key} printers)"
                 )
+
+    @staticmethod
+    async def _restore_kept_keys_from_params(
+        db: AsyncSession,
+        param_model: type[FilamentPrinterParam] | type[SpoolPrinterParam],
+        entity_column: Any,
+        entity_model: type[Filament] | type[Spool],
+        keep_keys: set[str],
+    ) -> None:
+        """Move keep_keys back from printer_params into custom_fields.
+
+        Existing custom_fields values win; the param rows are deleted either way."""
+        result = await db.execute(
+            select(param_model).where(param_model.param_key.in_(list(keep_keys)))
+        )
+        rows = result.scalars().all()
+        if not rows:
+            return
+
+        restored: dict[int, dict[str, str]] = {}
+        for row in sorted(rows, key=lambda r: r.printer_id):
+            entity_id = getattr(row, entity_column.key)
+            if row.param_value:
+                restored.setdefault(entity_id, {}).setdefault(
+                    row.param_key, row.param_value
+                )
+            await db.delete(row)
+
+        for entity_id, values in restored.items():
+            entity = await db.get(entity_model, entity_id)
+            if entity is None:
+                continue
+            cf = dict(entity.custom_fields or {})
+            for key, value in values.items():
+                if not cf.get(key):
+                    cf[key] = value
+            entity.custom_fields = cf
+            flag_modified(entity, "custom_fields")
+
+        await db.commit()
+        logger.info(
+            f"Restored {len(rows)} misfiled {param_model.__tablename__} rows "
+            f"to custom_fields"
+        )
 
     @staticmethod
     async def _upsert_bambu_params(
@@ -1195,7 +1258,7 @@ class PluginManager:
             cleaned = {
                 k: v
                 for k, v in spoolman_extra.items()
-                if not k.startswith("bambu_")
+                if not (k.startswith("bambu_") and k not in keep_keys)
                 and (k not in SPOOLMAN_MIGRATE_KEYS or preserve_nozzle_temperature)
             }
             if cleaned:
