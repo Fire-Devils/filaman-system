@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from app.core.config import settings
 
 from .schemas_entity_extra_field import (
     EntityExtraFieldDefinitions,
@@ -122,6 +124,14 @@ class SpoolResponse(BaseModel):
         optional_entity_definitions_field(omit_none=True)
     )
     filament: FilamentDetailResponse | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def web_url(self) -> str | None:
+        """Detail page in the web UI; null unless PUBLIC_URL is configured."""
+        if not settings.public_url:
+            return None
+        return f"{settings.public_url}/spools/{self.id}"
 
     class Config:
         from_attributes = True

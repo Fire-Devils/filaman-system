@@ -759,6 +759,30 @@ class TestSpoolCRUD:
         assert data["id"] == spool.id
         assert data["filament"]["id"] == filament.id
         assert data["filament"]["manufacturer"]["id"] == manufacturer.id
+        assert data["web_url"] is None
+
+    @pytest.mark.asyncio
+    async def test_spool_web_url_uses_public_url(
+        self, auth_client, db_session, monkeypatch
+    ):
+        from app.core.config import settings
+
+        client, _ = auth_client
+        monkeypatch.setattr(settings, "public_url", "https://example.com/filaman")
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+
+        detail = (await client.get(f"/api/v1/spools/{spool.id}")).json()
+        listing = (await client.get("/api/v1/spools")).json()
+
+        expected = f"https://example.com/filaman/spools/{spool.id}"
+        assert detail["web_url"] == expected
+        assert [i["web_url"] for i in listing["items"] if i["id"] == spool.id] == [
+            expected
+        ]
 
     @pytest.mark.asyncio
     async def test_update_spool(self, auth_client, db_session):
