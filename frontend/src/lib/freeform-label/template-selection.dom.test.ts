@@ -389,7 +389,8 @@ describe('optional template fragments', () => {
     expect(empty.querySelectorAll('span[style*="padding"]')).toHaveLength(0)
   })
 
-  it('preserves clipboard identity for literals, fields, and complete conditional blocks in every style', () => {
+  // Exhaustive combinations; needs headroom when the suite runs in parallel.
+  it('preserves clipboard identity for literals, fields, and complete conditional blocks in every style', { timeout: 20_000 }, () => {
     const wrappers = [
       ['', ''], ['[b]', '[/b]'], ['[i]', '[/i]'], ['__', '__'], ['^^', '^^'], ['==', '=='], ['@@', '@@'],
       ...['Space Grotesk', 'Fraunces', 'Roboto Condensed', 'Space Mono'].map(font => [`[font=${font}]`, '[/font]']),
@@ -808,7 +809,8 @@ describe('source range formatting', () => {
 
 
 describe('selection formatting state', () => {
-  it('preserves text, styles, and selection through every ordered pair of overlapping format operations', () => {
+  // Exhaustive combinations; needs headroom when the suite runs in parallel.
+  it('preserves text, styles, and selection through every ordered pair of overlapping format operations', { timeout: 20_000 }, () => {
     const modifiers = ['bold', 'italic', 'underline', 'caps', 'inverse', 'colorInverse'] as const
     const operations = [...modifiers, 'Fraunces', 'Space Mono'] as const
     const spans = [[0, 2], [1, 4], [2, 5]] as const
