@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import delete, func, select
+from sqlalchemy import String, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -43,6 +43,10 @@ def _material_type_from_fdb(mat: dict[str, Any]) -> str:
     if name:
         return name
     return (mat.get("key") or "").upper() or "PLA"
+
+
+def _material_type_aliases(name: str, legacy_key: str | None) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(value.strip().lower() for value in (name, legacy_key) if value and value.strip()))
 
 
 def _resolve_mfr_id(fil: dict[str, Any]) -> int | None:
@@ -410,6 +414,8 @@ class FilamentDBImportService:
             if mid:
                 mat_map[mid] = mkey
 
+        mat_legacy_map = {mat.get("id"): mat.get("key") for mat in materials}
+
         # FDB-Manufacturer-ID -> Name (fuer Filament-Duplikat-Check)
         fdb_mfr_id_to_name: dict[int, str] = {}
         for mfr in manufacturers:
@@ -423,12 +429,20 @@ class FilamentDBImportService:
                 Filament.designation,
                 Filament.material_type,
                 Manufacturer.name,
-            ).join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+                Filament.custom_fields["filamentdb_id"].as_string(),
+            ).join(Manufacturer, Filament.manufacturer_id == Manufacturer.id).order_by(Filament.id)
         )
+        existing_rows = existing_fil_result.all()
+        existing_catalog_ids = {
+            ((row[2] or "").lower(), str(row[3])) for row in existing_rows if row[3] is not None
+        }
         existing_fil_keys: set[tuple[str, str, str]] = set()
         # Index fuer Fuzzy-Lookup: (mfr_name_lower, material_lower) -> [designation, ...]
         existing_by_mfr_mat: dict[tuple[str, str], list[str]] = defaultdict(list)
-        for row in existing_fil_result.all():
+        for row in existing_rows:
+            # A saved identity must never be reassigned by name/material matching.
+            if row[3] not in (None, ""):
+                continue
             mfr = (row[2] or "").lower()
             desig = (row[0] or "").lower()
             mat = (row[1] or "").lower()
@@ -453,20 +467,29 @@ class FilamentDBImportService:
                 material_key = _material_type_from_fdb(mat_nested)
 
             fil["_material_key"] = material_key
+            legacy_key = mat_legacy_map.get(mat_id_fdb)
+            if legacy_key is None and isinstance(mat_nested, dict):
+                legacy_key = mat_nested.get("key")
+            material_keys = _material_type_aliases(material_key, legacy_key)
 
             # Duplikat-Check: exakt, dann fuzzy
             designation = (fil.get("designation") or "").strip()
             mfr_name = fdb_mfr_id_to_name.get(mfr_id_fdb, "")
-            key = (mfr_name.lower(), designation.lower(), material_key.lower())
+            known = (mfr_name.lower(), str(fil.get("id"))) in existing_catalog_ids
+            known = known or any(
+                (mfr_name.lower(), designation.lower(), material) in existing_fil_keys
+                for material in material_keys
+            )
 
-            if key in existing_fil_keys:
+            if known:
                 fil["_exists"] = True
                 fil["_match_type"] = "exact"
             else:
                 # Fuzzy-Fallback: alle lokalen Filamente desselben Herstellers+Materials
-                candidates = existing_by_mfr_mat.get(
-                    (mfr_name.lower(), material_key.lower()), []
-                )
+                candidates = [
+                    name for material in material_keys
+                    for name in existing_by_mfr_mat.get((mfr_name.lower(), material), [])
+                ]
                 best_score = 0.0
                 best_name: str | None = None
                 for local_desig in candidates:
@@ -555,6 +578,7 @@ class FilamentDBImportService:
 
         # FDB-Filamente indexieren
         id_set = set(filament_ids)
+        requested_ids = {str(fid): fid for fid in id_set}
         fdb_fils: dict[int, dict[str, Any]] = {}
         for f in all_filaments:
             fdb_id = f.get("id")
@@ -567,6 +591,7 @@ class FilamentDBImportService:
         # Strategie: Alle Filamente mit filamentdb_id laden
         local_result = await self.db.execute(
             select(Filament)
+            .order_by(Filament.id)
             .options(
                 selectinload(Filament.manufacturer),
                 selectinload(Filament.filament_colors),
@@ -576,15 +601,22 @@ class FilamentDBImportService:
         for fil in local_result.scalars().all():
             cf = fil.custom_fields
             if isinstance(cf, dict) and cf.get("filamentdb_id"):
-                fid = cf["filamentdb_id"]
-                if fid in id_set:
+                fid = requested_ids.get(str(cf["filamentdb_id"]))
+                if fid is None or fid not in fdb_fils:
+                    continue
+                # Match the manufacturer scope used by preview and execution.
+                mfr_name = fdb_mfr_map.get(_resolve_mfr_id(fdb_fils[fid]), "").lower()
+                if fil.manufacturer and fil.manufacturer.name.lower() == mfr_name:
                     local_by_fdb_id[fid] = fil
 
         # Fallback: Filamente ueber Name+Hersteller+Material matchen
         if len(local_by_fdb_id) < len(fdb_fils):
             missing_ids = id_set - set(local_by_fdb_id.keys())
+            catalog_id = cast(Filament.custom_fields["filamentdb_id"].as_string(), String)
             all_local_result = await self.db.execute(
-                select(Filament).options(
+                select(Filament).where(
+                    catalog_id.is_(None) | (catalog_id == "")
+                ).order_by(Filament.id).options(
                     selectinload(Filament.manufacturer),
                     selectinload(Filament.filament_colors),
                 )
@@ -617,12 +649,10 @@ class FilamentDBImportService:
                 if material == "pla" and isinstance(mat_nested, dict):
                     material = _material_type_from_fdb(mat_nested).lower()
                 # Aeltere Importe speicherten den Key (z.B. PLA-PLUS) statt des Namens
-                materials = [material]
                 legacy = mat_legacy_map.get(mat_id)
                 if legacy is None and isinstance(mat_nested, dict):
-                    legacy = (mat_nested.get("key") or "").lower()
-                if legacy and legacy != material:
-                    materials.append(legacy)
+                    legacy = mat_nested.get("key")
+                materials = _material_type_aliases(material, legacy)
 
                 # Exakter Match
                 matched = next(
@@ -678,6 +708,15 @@ class FilamentDBImportService:
                 continue
 
             changes: list[dict[str, Any]] = []
+            material = fdb_f.get("material")
+            material_id = fdb_f.get("material_id")
+            if not material_id and isinstance(material, dict):
+                material_id = material.get("id")
+            material_type = mat_map.get(material_id) or _material_type_from_fdb(
+                material if isinstance(material, dict) else {}
+            )
+            if local.material_type != material_type:
+                changes.append({"field": "material_type", "old": local.material_type, "new": material_type})
 
             # Vergleich der Standard-Felder
             for fdb_key, local_attr, label in self._DIFF_FIELDS:
@@ -809,6 +848,8 @@ class FilamentDBImportService:
             if mid:
                 mat_map[mid] = mkey
 
+        mat_legacy_map = {mat.get("id"): mat.get("key") for mat in materials}
+
         # -- FDB-Manufacturer-ID -> Name (fuer Filament-Duplikat-Check) --
         fdb_mfr_id_to_name: dict[int, str] = {}
         for mfr in manufacturers:
@@ -823,15 +864,20 @@ class FilamentDBImportService:
                 Filament.designation,
                 Filament.material_type,
                 Manufacturer.name,
-            ).join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+                Filament.custom_fields["filamentdb_id"].as_string(),
+            ).join(Manufacturer, Filament.manufacturer_id == Manufacturer.id).order_by(Filament.id)
         )
+        existing_rows = existing_fil_result.all()
+        existing_catalog_ids = {
+            ((row[2] or "").lower(), str(row[3])) for row in existing_rows if row[3] is not None
+        }
         existing_fil_keys: set[tuple[str, str, str]] = {
             (
                 (row[2] or "").lower(),
                 (row[0] or "").lower(),
                 (row[1] or "").lower(),
             )
-            for row in existing_fil_result.all()
+            for row in existing_rows if row[3] in (None, "")
         }
 
         # Filament-Zaehler und Materialtypen pro Manufacturer
@@ -855,6 +901,10 @@ class FilamentDBImportService:
                 material_key = _material_type_from_fdb(mat_nested)
 
             fil["_material_key"] = material_key
+            legacy_key = mat_legacy_map.get(mat_id_fdb)
+            if legacy_key is None and isinstance(mat_nested, dict):
+                legacy_key = mat_nested.get("key")
+            material_keys = _material_type_aliases(material_key, legacy_key)
 
             # Zaehler / Material-Sets pro Manufacturer
             if mfr_id_fdb:
@@ -866,8 +916,12 @@ class FilamentDBImportService:
             # Duplikat-Check
             designation = (fil.get("designation") or "").strip()
             mfr_name = fdb_mfr_id_to_name.get(mfr_id_fdb, "") if mfr_id_fdb else ""
-            key = (mfr_name.lower(), designation.lower(), material_key.lower())
-            fil["_exists"] = key in existing_fil_keys
+            known = (mfr_name.lower(), str(fil.get("id"))) in existing_catalog_ids
+            known = known or any(
+                (mfr_name.lower(), designation.lower(), material) in existing_fil_keys
+                for material in material_keys
+            )
+            fil["_exists"] = known
 
         # Manufacturers anreichern
         for mfr in manufacturers:
@@ -972,6 +1026,7 @@ class FilamentDBImportService:
             result,
             update_filament_ids=update_filament_ids,
             skip_fuzzy_ids=skip_fuzzy_ids,
+            legacy_material_map={mat.get("id"): mat.get("key") for mat in preview.materials},
         )
 
         # 4. SpoolProfile auf Manufacturer-Ebene (wenn gewuenscht)
@@ -1100,11 +1155,16 @@ class FilamentDBImportService:
         result: ImportResult,
         update_filament_ids: list[int] | None = None,
         skip_fuzzy_ids: list[int] | None = None,
+        legacy_material_map: dict[int, str | None] | None = None,
     ) -> dict[int, int]:
         """Filamente importieren. Gibt FilamentDB-ID -> FilaMan-ID."""
         fil_map: dict[int, int] = {}
         update_id_set = set(update_filament_ids) if update_filament_ids else set()
         skip_fuzzy_set = set(skip_fuzzy_ids) if skip_fuzzy_ids else set()
+        catalog_id = cast(Filament.custom_fields["filamentdb_id"].as_string(), String)
+        unlinked = catalog_id.is_(None) | (catalog_id == "")
+        # Resolve the whole batch before writes can change subsequent matches.
+        pending: list[tuple[dict[str, Any], int, str, str, Filament | None]] = []
 
         for fil_data in filaments:
             if not isinstance(fil_data, dict):
@@ -1144,27 +1204,58 @@ class FilamentDBImportService:
             if not designation:
                 designation = f"{material_key} (FilamentDB #{fdb_id})"
 
-            # Duplicate-Check: exakt, dann fuzzy
-            existing = await self.db.execute(
-                select(Filament).where(
-                    (Filament.manufacturer_id == filaman_mfr_id)
-                    & (func.lower(Filament.designation) == designation.lower())
-                    & (func.lower(Filament.material_type) == material_key.lower())
+            legacy_key = (legacy_material_map or {}).get(material_id_fdb)
+            if legacy_key is None and isinstance(mat_nested, dict):
+                legacy_key = mat_nested.get("key")
+            material_keys = _material_type_aliases(material_key, legacy_key)
+
+            # A saved catalog identity survives material/display-name changes.
+            existing_matches = []
+            if fdb_id:
+                linked = await self.db.execute(
+                    select(Filament).where(
+                        Filament.manufacturer_id == filaman_mfr_id,
+                        catalog_id == str(fdb_id),
+                    )
                 )
-            )
-            existing_fil = existing.scalar_one_or_none()
+                existing_matches = list(linked.scalars())
+
+            # Duplicate-Check: exakt, dann fuzzy
+            if not existing_matches:
+                existing = await self.db.execute(
+                    select(Filament).where(
+                        (Filament.manufacturer_id == filaman_mfr_id)
+                        & (func.lower(Filament.designation) == designation.lower())
+                        & (func.lower(Filament.material_type).in_(material_keys))
+                        & unlinked
+                    )
+                )
+                existing_matches = list(existing.scalars())
+            if len(existing_matches) > 1:
+                result.warnings.append(
+                    f"FilamentDB #{fdb_id}: multiple local matches; resolve duplicates before updating."
+                )
+                result.filaments_skipped += 1
+                continue
+            existing_fil = existing_matches[0] if existing_matches else None
 
             # Fuzzy-Fallback wenn kein exakter Match
             if not existing_fil and fdb_id not in skip_fuzzy_set:
                 fuzzy_candidates_result = await self.db.execute(
                     select(Filament).where(
                         (Filament.manufacturer_id == filaman_mfr_id)
-                        & (func.lower(Filament.material_type) == material_key.lower())
+                        & (func.lower(Filament.material_type).in_(material_keys))
+                        & unlinked
                     )
                 )
                 best_score = 0.0
                 best_candidate: Filament | None = None
-                for candidate in fuzzy_candidates_result.scalars().all():
+                # Match preview/diff priority: display name, legacy key, then local ID.
+                candidates = sorted(
+                    fuzzy_candidates_result.scalars(),
+                    key=lambda row: (material_keys.index(row.material_type.lower()), row.id),
+                )
+                for candidate in candidates:
                     score = fuzzy_token_score(candidate.designation or "", designation)
                     if score > best_score:
                         best_score = score
@@ -1172,7 +1263,20 @@ class FilamentDBImportService:
                 if best_score >= FUZZY_THRESHOLD and best_candidate is not None:
                     existing_fil = best_candidate
 
+            pending.append((fil_data, filaman_mfr_id, material_key, designation, existing_fil))
+
+        claimed_catalog_ids: dict[int, int] = {}
+        for fil_data, filaman_mfr_id, material_key, designation, existing_fil in pending:
+            fdb_id = fil_data.get("id")
             if existing_fil:
+                claimed_id = claimed_catalog_ids.get(existing_fil.id)
+                if claimed_id is not None and claimed_id != fdb_id:
+                    result.warnings.append(
+                        f"FilamentDB #{fdb_id}: local filament #{existing_fil.id} already updated "
+                        f"for FilamentDB #{claimed_id}; skipped conflicting match."
+                    )
+                    result.filaments_skipped += 1
+                    continue
                 if fdb_id:
                     fil_map[fdb_id] = existing_fil.id
 
@@ -1187,10 +1291,11 @@ class FilamentDBImportService:
                         color_map,
                     )
                     # custom_fields aktualisieren (filamentdb_id sicherstellen)
-                    cf = existing_fil.custom_fields or {}
+                    cf = dict(existing_fil.custom_fields or {})
                     cf["filamentdb_id"] = fdb_id
                     existing_fil.custom_fields = cf
                     await self.db.flush()
+                    claimed_catalog_ids[existing_fil.id] = fdb_id
                     result.filaments_updated += 1
                 else:
                     result.filaments_skipped += 1
@@ -1356,7 +1461,8 @@ class FilamentDBImportService:
                 )
 
         # Custom-Fields aktualisieren (temp/print-settings)
-        custom = existing.custom_fields or {}
+        # Copy before mutation so JSON changes survive the colors helper's flush.
+        custom = dict(existing.custom_fields or {})
         sku = fil_data.get("sku")
         if sku:
             custom["sku"] = sku
