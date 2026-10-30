@@ -53,7 +53,7 @@ def _is_primary_worker() -> bool:
 
 from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
 from app.core.security import Principal, generate_token_secret, hash_token
-from app.models import AppSettings, Device, Location, Spool, SpoolStatus
+from app.models import AppSettings, Device, Location, Spool
 from app.models.filament import Color, FilamentColor, Manufacturer
 from app.services.spool_service import SpoolService
 

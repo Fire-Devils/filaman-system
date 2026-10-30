@@ -83,6 +83,9 @@ try {
     ]) {
       await page.goto(new URL(url, baseUrl).href, { waitUntil: 'domcontentloaded' })
       await page.locator(ready).waitFor()
+      if (url.startsWith('/filaments') && (toggle || url.endsWith('new'))) {
+        await page.waitForFunction(() => document.querySelector('#designation')?.value === 'Fixture PLA')
+      }
       if (url.startsWith('/spools')) await page.locator('#printer-slots-inline .fm-card').waitFor()
       const grid = page.locator(url.startsWith('/spools') ? '#spool-inline-form > .filament-spec-grid' : (toggle || url.endsWith('new')) ? '.filament-form-sections' : '#filament-content .filament-spec-grid')
       const layoutCards = await grid.locator(':scope > .filament-spec-card').evaluateAll(cards => cards.map(card => {
@@ -95,7 +98,6 @@ try {
       if (width >= 900) assert.ok(Math.abs(layoutCards[1].top - layoutCards[0].top) < 1, `${width} ${url}: tablet/desktop sections use two columns`)
       assert.equal(await page.evaluate(() => localStorage.getItem('sidebar-collapsed')), 'false', `${url}: temporary editor collapse preserves the saved preference`)
       if (toggle) {
-        if (url.startsWith('/filaments')) await page.waitForFunction(() => document.querySelector('#designation')?.value === 'Fixture PLA')
         assert.equal(await page.locator('.detail-page-toolbar [type="submit"]').isDisabled(), true, `${url}: unchanged editor starts with Save disabled`)
         assert.ok(await page.locator('.detail-page-toolbar [type="submit"]').evaluate(save => getComputedStyle(save).backgroundColor !== getComputedStyle(save.closest('.detail-page-actions').querySelector('[aria-pressed="true"]')).backgroundColor), `${url}: clean Save is muted, not highlighted like Edit`)
       }
@@ -167,7 +169,6 @@ try {
         }
       }
       if (url.includes('filaments/') && (url.includes('edit=1') || url.endsWith('new'))) {
-        await page.waitForFunction(() => document.querySelector('#designation')?.value === 'Fixture PLA')
         assert.ok(await page.locator('.filament-form-check').evaluate(row => row.querySelector('span').getBoundingClientRect().right < row.querySelector('input').getBoundingClientRect().left), 'Checkbox label stays on the left, consistent with numeric rows')
         assert.ok(await page.locator('.filament-form-number').evaluateAll(rows => rows.every(row => {
           const bounds = row.getBoundingClientRect()

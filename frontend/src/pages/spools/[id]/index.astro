@@ -746,15 +746,10 @@ const { id } = Astro.params
       spoolDraftObserver?.disconnect()
       spoolProfileLookup?.destroy()
       spoolProfileLookup = null
-      const remainingWeight = spoolRemainingWeight(spool)
-      const remaining = remainingWeight == null ? '—' : `${remainingWeight.toFixed(0)} g`
       const metrics = formatSpoolMetrics(spool.metrics, getLang())
       const colors = getFilamentColors(spool.filament || {})
       const spoolSections = buildSpoolDetailSections({
         ...spool,
-        status: getStatusLabel(spool.status_id),
-        remaining,
-        location: getLocationName(spool.location_id),
         purchase_price: spool.purchase_price == null ? null : formatPrice(spool.purchase_price, getCurrency()),
         purchase_date: formatSpoolDate(spool.purchase_date),
       }, {
@@ -1699,7 +1694,6 @@ const { id } = Astro.params
       // Make slot_name user-friendly: AMS 0 → AMS 1
       let slotLabel = slot.slot_name || slot.slot_index
       slotLabel = slotLabel.replace(/AMS (\d+)/, (_: string, n: string) => `AMS ${parseInt(n) + 1}`)
-      const iconFilter = document.documentElement.dataset.theme === 'light' ? 'none' : 'invert(1)'
       menu.innerHTML = `
         <div style="padding:6px 12px;font-weight:600;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">${slotLabel}</div>
         <button class="ctx-item" data-action="assign" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#16a34a;cursor:pointer;font-size:0.82rem;"><img src="/to_printer.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(45%) sepia(96%) saturate(497%) hue-rotate(110deg) brightness(96%) contrast(91%);" />${t('spools.slotAssignSpool')}</button>

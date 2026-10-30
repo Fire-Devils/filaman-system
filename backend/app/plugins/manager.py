@@ -930,9 +930,7 @@ class PluginManager:
 
         # Build rename map: includes legacy_renames + spoolman-specific renames
         # (bambu_idx in spoolman is actually tray_info_idx)
-        RENAME_KEYS = {**legacy_renames}
-        if driver_key == "bambulab":
-            RENAME_KEYS["bambu_idx"] = "bambu_tray_idx"  # spoolman-specific rename
+        RENAME_KEYS = {**legacy_renames, "bambu_idx": "bambu_tray_idx"}
 
         KEEP_IN_CUSTOM_FIELDS: set[str] = {
             # Bambuddy profile metadata — not printer calibration params.

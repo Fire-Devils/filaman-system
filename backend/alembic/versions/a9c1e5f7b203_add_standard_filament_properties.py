@@ -14,7 +14,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import sqlalchemy as sa
-
 from alembic import op
 
 revision: str = "a9c1e5f7b203"
