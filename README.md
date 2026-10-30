@@ -175,6 +175,14 @@ To enable OIDC (OpenID Connect) login, set the following environment variable:
 OIDC_ENC_KEY=your-fernet-key
 ```
 
+#### Worker Processes
+The Docker image starts 4 worker processes by default. Each one holds a full copy of the application (about 90 MB), so on a small host such as a Raspberry Pi you can run fewer:
+
+```bash
+# Default: 4. A single worker runs the printer drivers itself, nothing is forwarded.
+WEB_CONCURRENCY=1
+```
+
 **Note:** When using MySQL or PostgreSQL, backups must be managed externally by the administrator. The automatic SQLite backup is disabled in this case.
 
 ## Project Structure

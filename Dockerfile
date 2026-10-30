@@ -110,4 +110,7 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 
 # The command to run the application with Gunicorn and multiple Uvicorn workers
 # nginx (port 8000) -> Gunicorn (port 8001) for static file performance
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--pid", "/tmp/filaman-gunicorn.pid", "--access-logfile", "-", "app.main:app"]
+# Gunicorn reads the worker count from WEB_CONCURRENCY; each worker holds a
+# full copy of the app (~90 MB), so small hosts can run fewer.
+ENV WEB_CONCURRENCY=4
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--pid", "/tmp/filaman-gunicorn.pid", "--access-logfile", "-", "app.main:app"]
