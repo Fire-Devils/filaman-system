@@ -325,13 +325,6 @@ function displayBaseForPicker(selectedBase: string): string {
   return selectedBase || ''
 }
 
-function renderStaleNotice(staleBase: string, model: string, t: TranslateFn): string {
-  if (!staleBase) return ''
-  return `<p class="profile-stale-notice" style="margin:0 0 8px;font-size:0.8rem;color:var(--warning-text,#b8860b);">${escapeHtml(
-    ptr(t, 'profilePickerStaleNotice', { name: staleBase, model })
-  )}</p>`
-}
-
 function committedVisual(
   baseName: string,
   presets: any[],

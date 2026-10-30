@@ -20,9 +20,6 @@ export interface SpoolDetailSection {
 
 interface SpoolDetailData {
   [key: string]: unknown
-  status?: string
-  remaining?: string
-  location?: string
   initial_total_weight_g?: number | null
   empty_spool_weight_g?: number | null
   spool_core_weight_g?: number | null
