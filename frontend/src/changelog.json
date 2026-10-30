@@ -1,6 +1,28 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Spulen-Antworten der API enthalten jetzt einen Link zur Detailseite der Spule (z. B. für QR-Codes auf Etiketten). Voraussetzung ist die neue Einstellung PUBLIC_URL mit der öffentlichen Adresse von FilaMan." },
+          { "type": "fix", "text": "Wer ohne Anmeldung einen Link öffnet, etwa per QR-Code auf einem Spulenetikett, landet nach dem Login wieder auf der aufgerufenen Seite statt auf dem Dashboard." },
+          { "type": "fix", "text": "Behält der Browser das Sitzungs-Cookie nicht, endet die automatische Anmeldung nicht mehr in einer Endlosschleife, sondern zeigt einen Hinweis." },
+          { "type": "fix", "text": "Beim Zuweisen einer Spule zu einem AMS-Slot wird wieder die richtige Bambu-Filament-ID übertragen." },
+          { "type": "fix", "text": "Bambu-RFID-Tag-Kennungen an Spulen gehen beim Start des BambuLab-Treibers nicht mehr verloren; bereits verschobene Werte werden automatisch wiederhergestellt." },
+          { "type": "fix", "text": "Der FilamentDB-Import übernimmt den Materialnamen in der üblichen Schreibweise (z. B. „PLA+/Pro“ statt „PLA-PLUS“)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Spool API responses now include a link to the spool's detail page (e.g. for QR codes on labels). Requires the new PUBLIC_URL setting with FilaMan's public address." },
+          { "type": "fix", "text": "Opening a link without being signed in, e.g. via the QR code on a spool label, now returns you to that page after login instead of the dashboard." },
+          { "type": "fix", "text": "If the browser does not keep the session cookie, automatic login no longer loops endlessly but shows a hint instead." },
+          { "type": "fix", "text": "Assigning a spool to an AMS slot sends the correct Bambu filament ID again." },
+          { "type": "fix", "text": "Bambu RFID tag IDs on spools are no longer lost when the BambuLab driver starts; values that were already moved are restored automatically." },
+          { "type": "fix", "text": "The FilamentDB import uses the material name in its usual spelling (e.g. \"PLA+/Pro\" instead of \"PLA-PLUS\")." }
+        ]
+      }
+    },
+    {
       "version": "1.4.3",
       "date": "",
       "changes": {
