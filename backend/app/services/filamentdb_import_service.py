@@ -247,6 +247,7 @@ class FilamentDBImportService:
 
         Es gibt genau **einen** Cache-Slot (``SYNC_CACHE_KEY``).  Ein neuer
         Preview ersetzt den alten Snapshot; nachfolgende Schritte lesen ihn.
+        Shared data is read-only internally; consumers copy returned or annotated rows.
         """
         # -- Versuch aus Cache zu lesen (sofern kein force_refresh) --
         if not force_refresh:
@@ -258,7 +259,7 @@ class FilamentDBImportService:
                     return SyncSnapshot(
                         snapshot_id=cached_id,
                         synced_at=cached.get("synced_at"),
-                        data=copy.deepcopy(cached["data"]),
+                        data=cached["data"],
                     )
 
         # -- Cache-Miss oder force_refresh: frisch von FilamentDB laden --
@@ -295,7 +296,7 @@ class FilamentDBImportService:
         return SyncSnapshot(
             snapshot_id=new_id,
             synced_at=payload.get("synced_at"),
-            data=copy.deepcopy(payload),
+            data=payload,
         )
 
     # ------------------------------------------------------------------ #
@@ -364,7 +365,7 @@ class FilamentDBImportService:
         )
         data = snapshot.data
 
-        manufacturers = data.get("manufacturers", [])
+        manufacturers = copy.deepcopy(data.get("manufacturers", []))
         materials = data.get("materials", [])
         filaments = data.get("filaments", [])
 
@@ -418,7 +419,7 @@ class FilamentDBImportService:
         return ManufacturerPreview(
             snapshot_id=snapshot.snapshot_id,
             manufacturers=manufacturers,
-            materials=materials,
+            materials=copy.deepcopy(materials),
             total_filaments=len(filaments),
         )
 
@@ -494,6 +495,8 @@ class FilamentDBImportService:
             mfr_id_fdb = _resolve_mfr_id(fil)
             if not mfr_id_fdb or mfr_id_fdb not in mfr_id_set:
                 continue
+
+            fil = copy.deepcopy(fil)
 
             # Material auflösen
             mat_id_fdb = fil.get("material_id")
@@ -864,7 +867,7 @@ class FilamentDBImportService:
                 }
             )
 
-        return DiffResult(snapshot_id=snapshot.snapshot_id, results=results)
+        return DiffResult(snapshot_id=snapshot.snapshot_id, results=copy.deepcopy(results))
 
     # ------------------------------------------------------------------ #
     #  Vorschau (komplett — wird intern von execute() genutzt)
@@ -881,10 +884,10 @@ class FilamentDBImportService:
         snapshot = await self._fetch_sync_data(snapshot_id=snapshot_id)
         data = snapshot.data
 
-        manufacturers = data.get("manufacturers", [])
+        manufacturers = copy.deepcopy(data.get("manufacturers", []))
         materials = data.get("materials", [])
-        filaments = data.get("filaments", [])
-        spool_profiles = data.get("spool_profiles", [])
+        filaments = copy.deepcopy(data.get("filaments", []))
+        spool_profiles = copy.deepcopy(data.get("spool_profiles", []))
         colors = self._extract_colors(filaments)
 
         # -- Duplikat-Abgleich: Manufacturers --
@@ -989,7 +992,7 @@ class FilamentDBImportService:
         return ImportPreview(
             snapshot_id=snapshot.snapshot_id,
             manufacturers=manufacturers,
-            materials=materials,
+            materials=copy.deepcopy(materials),
             filaments=filaments,
             spool_profiles=spool_profiles,
             colors=colors,

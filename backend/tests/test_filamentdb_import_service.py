@@ -1,16 +1,17 @@
+import copy
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import delete, select
-
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.services.filamentdb_import_service import (
+    SYNC_CACHE_KEY,
     FilamentDBImportService,
     ImportResult,
     SyncSnapshot,
     _material_type_from_fdb,
 )
+from sqlalchemy import delete, select
 
 # ------------------------------------------------------------------ #
 #  Fixtures
@@ -174,32 +175,98 @@ async def test_fetch_sync_data_no_snapshot_id_returns_cached(db_session):
 
 
 @pytest.mark.asyncio
-async def test_fetch_sync_data_returns_deepcopy(db_session):
-    """Each call must return a deep copy so mutations in one step
-    don't corrupt data for subsequent steps."""
-    service = FilamentDBImportService(db_session)
+async def test_catalog_consumers_copy_only_returned_rows_and_isolate_nested_data(
+    db_session, monkeypatch
+):
     payload = _make_sync_payload()
-    payload["manufacturers"] = [{"id": 1, "name": "TestMfr"}]
+    payload["manufacturers"] = [{"id": 1, "name": "Brand", "metadata": {"tags": []}}]
+    payload["materials"] = [{"id": 2, "key": "PLA", "metadata": {"tags": []}}]
+    payload["spool_profiles"] = [{"id": 3, "metadata": {"tags": []}}]
+    payload["filaments"] = [
+        {
+            "id": index,
+            "manufacturer_id": 1 if index == 1 else 99,
+            "designation": f"PLA {index}",
+            "material_id": 2,
+            "ams_compatible": ["ams"],
+            "colors": [{"hex_code": "#ff0000", "color_name": "Red"}],
+            "spool_profile": {"id": 3, "metadata": {"tags": []}},
+        }
+        for index in range(1, 101)
+    ]
+    manufacturer = Manufacturer(name="Brand")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    db_session.add(
+        Filament(
+            manufacturer_id=manufacturer.id,
+            designation="PLA 1",
+            material_type="PLA",
+            diameter_mm=1.75,
+            custom_fields={"filamentdb_id": 1},
+        )
+    )
+    await db_session.flush()
+    original = copy.deepcopy(payload)
+    response_cache.set(SYNC_CACHE_KEY, {"snapshot_id": "catalog", "data": payload})
+    copied = []
+    copied_filaments = []
+    filament_objects = {id(row) for row in payload["filaments"]}
+    deepcopy = copy.deepcopy
 
-    mock_resp = _mock_httpx_response(payload)
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_resp)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
+    def count_filaments(value):
+        if id(value) in filament_objects:
+            copied_filaments.append(value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                count_filaments(child)
+        elif isinstance(value, list):
+            for child in value:
+                count_filaments(child)
 
-    with patch(
-        "app.services.filamentdb_import_service.httpx.AsyncClient",
-        return_value=mock_client,
-    ):
-        snap1 = await service._fetch_sync_data()
-        # Mutate the returned data
-        snap1.data["manufacturers"][0]["_exists"] = True
-        snap1.data["manufacturers"].append({"id": 99, "name": "Injected"})
+    def record_copy(value):
+        copied.append(value)
+        count_filaments(value)
+        return deepcopy(value)
 
-        # Second read must NOT see the mutations
-        snap2 = await service._fetch_sync_data(snapshot_id=snap1.snapshot_id)
-        assert len(snap2.data["manufacturers"]) == 1
-        assert "_exists" not in snap2.data["manufacturers"][0]
+    monkeypatch.setattr(
+        "app.services.filamentdb_import_service.copy.deepcopy", record_copy
+    )
+    service = FilamentDBImportService(db_session)
+    manufacturers = await service.preview_manufacturers(snapshot_id="catalog")
+    selected = await service.fetch_filaments([1], snapshot_id="catalog")
+    diff = await service.diff_filaments([1], snapshot_id="catalog")
+    compatibility = next(
+        change
+        for change in diff.results[0]["changes"]
+        if change["field"] == "ams_compatibility"
+    )
+    compatibility["new"].append("changed")
+    assert manufacturers.total_filaments == 100
+    assert manufacturers.manufacturers[0]["_filament_count"] == 1
+    assert len(selected.filaments) == 1
+    assert selected.filaments[0]["_material_key"] == "PLA"
+    assert not any(
+        value is payload or value is payload["filaments"] for value in copied
+    )
+    assert len(copied_filaments) == 1
+    assert copied_filaments[0] is payload["filaments"][0]
+    assert payload == original
+
+    manufacturers.manufacturers[0]["metadata"]["tags"].append("changed")
+    manufacturers.materials[0]["metadata"]["tags"].append("changed")
+    selected.filaments[0]["colors"][0]["color_name"] = "changed"
+    selected.filaments[0]["spool_profile"]["metadata"]["tags"].append("changed")
+    preview = await service.preview(snapshot_id="catalog")
+    assert preview.manufacturers[0]["metadata"]["tags"] == []
+    assert preview.filaments[0]["colors"][0]["color_name"] == "Red"
+    preview.manufacturers[0]["metadata"]["tags"].append("changed")
+    preview.materials[0]["metadata"]["tags"].append("changed")
+    preview.filaments[0]["colors"][0]["color_name"] = "changed"
+    preview.spool_profiles[0]["metadata"]["tags"].append("changed")
+    assert payload == original
+    again = await service.fetch_filaments([1], snapshot_id="catalog")
+    assert again.filaments[0]["colors"][0]["color_name"] == "Red"
 
 
 # ------------------------------------------------------------------ #
