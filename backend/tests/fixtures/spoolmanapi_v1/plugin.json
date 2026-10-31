@@ -1,0 +1,8 @@
+{
+  "plugin_key": "spoolmanapi",
+  "plugin_type": "integration",
+  "name": "Spoolman-Compatible API",
+  "version": "1.0.0",
+  "mount_prefix": "/spoolman",
+  "show_in_nav": false
+}

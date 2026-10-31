@@ -15,6 +15,14 @@ from urllib.parse import urlparse
 
 import sqlalchemy as sa
 from alembic import op
+from app.services.spoolman_projection import (
+    alias_source,
+    alias_target,
+    owns_retained_source,
+    project_alias_value,
+    promotion_alias,
+)
+from app.services.system_extra_field_compatibility import is_existing_value_compatible
 
 revision: str = "a9c1e5f7b203"
 down_revision: str | Sequence[str] | None = "f3c7a1e9d204"
@@ -256,7 +264,7 @@ def _currency(value: Any) -> str | None:
     )
 
 
-def _standard_value(target: str, value: Any) -> Any:
+def _standard_value(target: str, value: Any, definition: Any = None) -> Any:
     if target == "cooling_fan_range_percent":
         return _percentage_range(value)
     if target in _STANDARD_NUMBER_LABELS:
@@ -266,6 +274,8 @@ def _standard_value(target: str, value: Any) -> Any:
     if target == "is_discontinued":
         return _boolean(value)
     if target in {"ams_compatibility", "build_plate_compatibility"}:
+        if isinstance(definition, dict) and definition.get("field_type") == "dropdown":
+            value = [value] if isinstance(value, str) else value
         return _string_list(value)
     if target == "price_currency":
         return _currency(value)
@@ -281,8 +291,13 @@ def _compatible_unit(target: str, config: Any) -> bool:
     )
 
 
-def _decoded_spoolman_value(value: Any, target: str) -> Any:
+def _decoded_spoolman_value(value: Any, target: str, definition: Any = None) -> Any:
     if not isinstance(value, str):
+        return value
+    # Declared single choices can themselves be JSON-looking literal text.
+    if isinstance(definition, dict) and definition.get("field_type") == "dropdown" and (
+        not definition.get("options") or value in definition["options"]
+    ):
         return value
     try:
         decoded = json.loads(value)
@@ -345,7 +360,8 @@ def _find_value(
                 system_definitions.get(path, system_definitions.get(key)),
             ):
                 if isinstance(definition, dict) and (
-                    definition.get("field_type")
+                    definition.get("default_value") is not None
+                    or definition.get("field_type")
                     not in {
                         "number",
                         "range",
@@ -370,9 +386,10 @@ def _remove_source(
     definitions: dict[str, Any],
     source: tuple[str, ...],
     target: str,
-    aliases: dict[str, str],
+    aliases: dict[str, Any],
+    native: Any,
 ) -> None:
-    # Keep token identities, not stale copies of the promoted values.
+    # Capture representation before removing the source; native remains authoritative.
     nested = source[0] == "spoolman_extra"
     keys = source[1:] if nested else source
     for key in keys:
@@ -382,8 +399,13 @@ def _remove_source(
             else ".max" if key in {"max_temp", "temp_nozzle_max", "fan_speed_max"}
             else ""
         ) if target in {"extruder_temp_range_c", "cooling_fan_range_percent"} else ""
-        aliases[path] = target + endpoint
         value = (custom.get("spoolman_extra") or {}).get(key) if nested else custom.get(key)
+        snapshot = native.get(endpoint[1:]) if endpoint else native
+        if path not in aliases:
+            aliases[path] = promotion_alias(target + endpoint, value, snapshot)
+            aliases[path]["wire"]["source"] = ["spoolman_extra", key] if nested else [key]
+            if source[-1] in _PLUGIN_MIGRATION_KEYS:
+                aliases[path]["wire"]["retained"] = True
         if isinstance(value, dict) and set(value) <= {"min", "max"}:
             for bound in value:
                 aliases[f"{path}.{bound}"] = f"{target}.{bound}"
@@ -440,7 +462,8 @@ def _promote_filamentdb_fields(
             system_definitions.get(path, system_definitions.get(source)),
         ):
             if isinstance(definition, dict) and (
-                not _compatible_unit(target, definition.get("config"))
+                definition.get("default_value") is not None
+                or not _compatible_unit(target, definition.get("config"))
                 or (definition.get("field_type") is not None
                     and definition["field_type"] not in (allowed_types or set()))
             ):
@@ -505,15 +528,16 @@ def _promote_filamentdb_fields(
             )
 
     for source, target in system_aliases.items():
+        definition = system_definitions.get(source, definitions.get(source))
         if source in custom and direct_allowed(source, target):
             candidates[target].append(
-                (_standard_value(target, custom[source]), (source,))
+                (_standard_value(target, custom[source], definition), (source,))
             )
         key = source.removeprefix("spoolman_extra.")
         if isinstance(nested, dict) and key in nested and direct_allowed(key, target, nested=True):
             candidates[target].append(
                 (
-                    _standard_value(target, _decoded_spoolman_value(nested[key], target)),
+                    _standard_value(target, _decoded_spoolman_value(nested[key], target, definition), definition),
                     ("spoolman_extra", key),
                 )
             )
@@ -528,7 +552,7 @@ def _promote_filamentdb_fields(
             continue
         values[target] = target_candidates[0][0]
         for _, source in target_candidates:
-            _remove_source(custom, definitions, source, target, values.setdefault("label_field_aliases", {}))
+            _remove_source(custom, definitions, source, target, values.setdefault("label_field_aliases", {}), values[target])
     return values
 
 
@@ -536,9 +560,18 @@ def _preserve_label_formats(
     aliases: dict[str, Any], definitions: dict[str, Any], system_definitions: dict[str, Any]
 ) -> None:
     # Saved tokens follow native values but retain their original presentation.
-    for key, target in list(aliases.items()):
+    for key, alias in list(aliases.items()):
+        target = alias.get("target") if isinstance(alias, dict) else alias
         if not isinstance(target, str):
             continue
+        source_key = key.removeprefix("spoolman_extra.")
+        definition = system_definitions.get(key, system_definitions.get(source_key,
+            definitions.get(key, definitions.get(source_key))))
+        if isinstance(definition, dict) and isinstance(alias, dict) and "wire" in alias:
+            alias["wire"]["definition"] = {
+                name: definition[name] for name in ("label", "field_type", "options", "config")
+                if name in definition
+            }
         definition = system_definitions.get(key, definitions.get(key))
         if isinstance(definition, dict) and (
             definition.get("config") or definition.get("field_type") == "checkbox"
@@ -547,7 +580,7 @@ def _preserve_label_formats(
                 "extruder_temp_range_c", "bed_temp_range_c", "cooling_fan_range_percent"
             }:
                 target += ".min"
-            aliases[key] = {"target": target, "definition": {
+            aliases[key] = {**(alias if isinstance(alias, dict) else {}), "target": target, "definition": {
                 name: definition[name] for name in ("label", "field_type", "config")
                 if name in definition
             }}
@@ -797,7 +830,7 @@ def upgrade() -> None:
                 for source in sources:
                     if source[-1] in _PLUGIN_MIGRATION_KEYS:
                         promoted_sources.add(("filament", row["id"], ".".join(source)))
-                    _remove_source(custom, definitions, source, column, values.setdefault("label_field_aliases", {}))
+                    _remove_source(custom, definitions, source, column, values.setdefault("label_field_aliases", {}), normalized)
         if values:
             _preserve_label_formats(values.get("label_field_aliases", {}), original_definitions, system_definitions["filament"])
             values["custom_fields"] = custom or None
@@ -866,7 +899,7 @@ def upgrade() -> None:
             for source in sources:
                 if source[-1] in _PLUGIN_MIGRATION_KEYS:
                     promoted_sources.add(("spool", spool_id, ".".join(source)))
-                _remove_source(custom, definitions, source, column.key, label_aliases)
+                _remove_source(custom, definitions, source, column.key, label_aliases, value)
             _preserve_label_formats(label_aliases, original_definitions, system_definitions["spool"])
             connection.execute(
                 spools.update()
@@ -904,34 +937,52 @@ def downgrade() -> None:
             custom = dict(row["custom_fields"] or {})
             definitions = dict(row["custom_field_definitions"] or {})
             for source, alias in (row["label_field_aliases"] or {}).items():
-                target = alias["target"] if isinstance(alias, dict) else alias
-                column, _, endpoint = target.partition(".")
-                value = native.get(column)
-                if endpoint:
-                    value = value.get(endpoint) if isinstance(value, dict) else None
+                target = alias_target(alias)
+                if not isinstance(target, str) or target.split(".")[0] not in _DOWNGRADE_FIELDS:
+                    continue
+                parts = alias_source(source, alias, row["label_field_aliases"])
+                if parts is None:
+                    continue
+                wire = alias.get("wire") if isinstance(alias, dict) else None
+                wire = wire if isinstance(wire, dict) else {}
+                column = target.partition(".")[0]
+                value = project_alias_value(native, source, alias, filament=table is filaments)
                 container = custom
-                parts = source.split(".")
                 for part in parts[:-1]:
                     if not isinstance(container.get(part, {}), dict):
                         break
                     container = container.setdefault(part, {})
                 else:
-                    if parts[-1] not in container:
+                    if parts[-1] not in container or owns_retained_source(alias, container[parts[-1]], definitions.get(source)):
                         container[parts[-1]] = value
                         if value is not None and not any(
                             source == key or source.startswith(f"{key}.") or key.startswith(f"{source}.")
                             for key in definitions
                         ):
-                            if isinstance(alias, dict) and alias.get("definition"):
-                                definitions[source] = alias["definition"]
+                            saved = wire.get("definition") or (alias.get("definition") if isinstance(alias, dict) else None)
+                            if isinstance(saved, dict) and is_existing_value_compatible(
+                                value, saved.get("field_type", "text"), saved.get("options"), saved.get("config"),
+                            ):
+                                definitions[source] = saved
                                 continue
-                            label, field_type, unit = _DOWNGRADE_FIELDS[column]
-                            definition = {"label": label, "field_type": "number" if endpoint else field_type}
+                            label, _, unit = _DOWNGRADE_FIELDS[column]
+                            # A source can retain text/CSV/JSON encoding after native promotion.
+                            if isinstance(value, str):
+                                field_type = "text"
+                            elif isinstance(value, bool):
+                                field_type = "checkbox"
+                            elif isinstance(value, int | float):
+                                field_type = "number"
+                            elif isinstance(value, list):
+                                field_type = "multiselect"
+                            else:
+                                field_type = "range"
+                            definition = {"label": label, "field_type": field_type}
                             if field_type == "multiselect":
                                 if not value:
                                     continue
-                                definition["options"] = list(dict.fromkeys(value))
-                            if unit:
+                                definition["options"] = list(dict.fromkeys(str(item) for item in value))
+                            if unit and field_type in {"number", "range"}:
                                 definition["config"] = {"unit": unit}
                             definitions[source] = definition
             if row["label_field_aliases"]:

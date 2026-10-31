@@ -55,6 +55,21 @@ def legacy_schema():
     return metadata, filaments, spools, system_fields
 
 
+
+def label_aliases(aliases):
+    """Assert the label contract independently of added wire provenance."""
+    if aliases is None:
+        return None
+    result = {}
+    for path, alias in aliases.items():
+        if isinstance(alias, dict):
+            alias = {key: value for key, value in alias.items() if key != 'wire'}
+            if set(alias) == {'target'}:
+                alias = alias['target']
+        result[path] = alias
+    return result
+
+
 def test_ambiguous_system_keys_are_not_promoted_by_direct_fallback():
     migration = load_migration_module()
     custom = {
@@ -79,7 +94,7 @@ def test_label_alias_uses_the_resolved_target_not_an_endpoint_like_key():
         {"min_temp": "SKU-42"}, {}, {"min_temp": "manufacturer_sku"}, set()
     )
     assert values["manufacturer_sku"] == "SKU-42"
-    assert values["label_field_aliases"] == {"min_temp": "manufacturer_sku"}
+    assert label_aliases(values["label_field_aliases"]) == {"min_temp": "manufacturer_sku"}
 
 
 @pytest.mark.parametrize(
@@ -177,7 +192,7 @@ def test_upgrade_keeps_label_format_and_downgrade_restores_it(system):
         upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
         row = connection.execute(sa.select(upgraded)).mappings().one()
         assert row["custom_fields"] is None
-        assert row["label_field_aliases"] == {
+        assert label_aliases(row["label_field_aliases"]) == {
             "dry_temp": {"target": "drying_temp_c", "definition": definition},
         }
         connection.execute(upgraded.update().values(drying_temp_c=65))
@@ -289,7 +304,7 @@ def test_upgrade_respects_local_metadata_for_system_aliases(
                 "label": "Drying temperature", "field_type": "number", "config": {"unit": "°C"},
             },
         }
-        assert row["label_field_aliases"] == (
+        assert label_aliases(row["label_field_aliases"]) == (
             None if expected is None else {prefix + source: alias}
         )
         assert connection.execute(
@@ -480,7 +495,7 @@ def test_upgrade_respects_system_temperature_metadata(
                     expected_alias = {"target": expected_alias, "definition": {
                         "label": key, "field_type": field_type, "config": config,
                     }}
-                assert aliases[prefix + source_key] == expected_alias
+                assert label_aliases(aliases)[prefix + source_key] == expected_alias
         source_table = upgraded if target == "filament" else spools
         remaining = connection.execute(
             sa.select(source_table.c.custom_fields).where(source_table.c.id == 1)
@@ -622,9 +637,8 @@ def test_downgrade_preserves_standard_values_as_typed_custom_fields(
                 "options": ["AMS", "AMS Lite"],
             },
         }
-        from pydantic import TypeAdapter
-
         from app.api.v1.schemas_entity_extra_field import EntityExtraFieldDefinitions
+        from pydantic import TypeAdapter
 
         TypeAdapter(EntityExtraFieldDefinitions).validate_python(
             row.custom_field_definitions
@@ -1222,8 +1236,8 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         assert rows[8].cooling_fan_range_percent == {"min": 30, "max": 90}
         assert rows[8].custom_fields is None
         assert rows[8].custom_field_definitions is None
-        assert rows[8].label_field_aliases["my_drying_temperature"] == "drying_temp_c"
-        assert rows[8].label_field_aliases["my_cooling_fan"] == "cooling_fan_range_percent"
+        assert label_aliases(rows[8].label_field_aliases)["my_drying_temperature"] == "drying_temp_c"
+        assert label_aliases(rows[8].label_field_aliases)["my_cooling_fan"] == "cooling_fan_range_percent"
         assert rows[9].cooling_fan_range_percent is None
         assert rows[9].custom_fields == {"my_cooling_fan": [30, 120]}
         assert rows[10].extruder_temp_range_c is None
@@ -1330,3 +1344,340 @@ def test_upgrade_promotes_known_filament_and_spool_temperature_shapes(
         }
 
     engine.dispose()
+
+
+@pytest.mark.parametrize('clear', [False, True])
+async def test_downgrade_current_import_restores_legacy_temperature_schema_and_json_ranges(db_session, clear):
+    import json
+
+    from app.models.filament import Filament
+    from app.services.spoolman_import_service import SpoolmanImportService
+
+    from tests.fixtures.spoolmanapi_v1.service import SpoolmanService
+    from tests.support.spoolman_fixture_server import SpoolmanFixtureServer
+
+    data = json.loads((Path(__file__).parent / 'fixtures/spoolman/rich_fields.json').read_text())
+    data['filament'][0].update(settings_extruder_temp=210, settings_bed_temp=None,
+                              extra={'bed': '[50,70]'})
+    service = SpoolmanImportService(db_session, client_factory=SpoolmanFixtureServer(data).client_factory)
+    result = await service.execute('http://spoolman')
+    assert result.errors == []
+    imported = await db_session.scalar(sa.select(Filament).order_by(Filament.id))
+    metadata, filaments, _, _ = legacy_schema()
+    with sa.create_engine('sqlite://').begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {'id': 1})
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table('filaments', sa.MetaData(), autoload_with=connection)
+        native = None if clear else {'min': 215.6, 'max': 230}
+        connection.execute(upgraded.update().values(
+            extruder_temp_range_c=native, bed_temp_range_c={'min': 60, 'max': 75},
+            label_field_aliases=imported.label_field_aliases,
+            custom_fields={'sku': {'owner': 'user'}},
+        ))
+        migration.downgrade()
+        restored = sa.Table('filaments', sa.MetaData(), autoload_with=connection)
+        custom = connection.execute(sa.select(restored.c.custom_fields)).scalar_one()
+    wire = SpoolmanService(None)._filament_to_schema(Filament(
+        id=1, designation='Rollback', manufacturer=None, filament_colors=[], custom_fields=custom))
+    assert wire.settings_extruder_temp == (None if clear else 216)
+    assert clear or type(wire.settings_extruder_temp) is int
+    assert wire.extra['spoolman_extra']['bed'] == '[60, 75]'
+    assert wire.extra['sku'] == {'owner': 'user'}
+    if not clear:
+        assert custom['extruder_temp_range_c'] == native
+
+
+def test_downgrade_legacy_scalars_and_range_strings_use_current_native_values():
+    metadata, filaments, _, _ = legacy_schema()
+    with sa.create_engine('sqlite://').begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {'id': 1, 'custom_fields': {
+            'extruder_temp': 210, 'spoolman_extra': {'bed_temp': '[50,70]'},
+        }})
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table('filaments', sa.MetaData(), autoload_with=connection)
+        connection.execute(upgraded.update().values(extruder_temp_range_c={'min': 220.5, 'max': 240},
+                                                    bed_temp_range_c={'min': 60, 'max': 75}))
+        migration.downgrade()
+        restored = sa.Table('filaments', sa.MetaData(), autoload_with=connection)
+        custom = connection.execute(sa.select(restored.c.custom_fields)).scalar_one()
+    assert custom['extruder_temp'] == 220.5
+    assert custom['spoolman_extra']['bed_temp'] == '[60, 75]'
+    assert custom['extruder_temp_range_c'] == {'min': 220.5, 'max': 240}
+
+
+@pytest.mark.parametrize(
+    "source,wire_value,target,native,source_definition,expected_type",
+    [
+        ("plates", "PEI, Textured", "build_plate_compatibility", ["PEI", "Textured"],
+         {"label": "Build plates", "field_type": "text"}, "text"),
+        ("plates", ["PEI", "Textured"], "build_plate_compatibility", ["PEI", "Textured"],
+         {"label": "Build plates", "field_type": "multiselect"}, "multiselect"),
+        ("extruder_temp", 210, "extruder_temp_range_c", {"min": 210, "max": 210}, None, "number"),
+        ("extruder_temp", "210", "extruder_temp_range_c", {"min": 210, "max": 210}, None, "text"),
+        ("spoolman_extra.bed_temp", '["50", "70"]', "bed_temp_range_c", {"min": 50, "max": 70},
+         None, "text"),
+        ("spoolman_extra.bed_temp", '{"min":"50","max":"70"}', "bed_temp_range_c",
+         {"min": 50, "max": 70}, {"label": "Bed temperature", "field_type": "range",
+                                "config": {"unit": "°C"}}, "text"),
+        ("extruder_temp", "210", "extruder_temp_range_c", {"min": 210, "max": 210},
+         {"label": "Nozzle temperature", "field_type": "number",
+          "config": {"unit": "°C", "decimal_places": 1}}, "number"),
+        ("extruder_temp", {"min": "210", "max": "230"}, "extruder_temp_range_c",
+         {"min": 210, "max": 230}, None, "range"),
+    ],
+)
+def test_downgrade_source_definitions_match_restored_wire_values(
+    source, wire_value, target, native, source_definition, expected_type,
+):
+    from app.services.system_extra_field_compatibility import (
+        is_existing_value_compatible,
+    )
+
+    metadata, filaments, _, system_fields = legacy_schema()
+    custom = {"spoolman_extra": {source.split(".")[1]: wire_value}} if "." in source else {source: wire_value}
+    with sa.create_engine("sqlite://").begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {"id": 1, "custom_fields": custom})
+        if source_definition:
+            connection.execute(system_fields.insert(), {
+                "id": 1, "target_type": "filament", "key": source, **source_definition,
+            })
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(upgraded)).mappings().one()
+        assert row[target] == native
+        saved_definition = row["label_field_aliases"][source].get("definition")
+        migration.downgrade()
+        restored = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(restored)).mappings().one()
+
+    restored_value = row["custom_fields"]
+    for part in source.split("."):
+        restored_value = restored_value[part]
+    assert restored_value == wire_value
+    definition = row["custom_field_definitions"][source]
+    assert definition["field_type"] == expected_type
+    assert is_existing_value_compatible(
+        restored_value, definition["field_type"], definition.get("options"), definition.get("config"),
+    )
+    if saved_definition and expected_type == source_definition["field_type"]:
+        assert definition == saved_definition
+    if expected_type == "multiselect":
+        assert definition.get("options") == source_definition.get("options")
+    assert row["custom_fields"][target] == native
+    recovery_definition = row["custom_field_definitions"][target]
+    assert recovery_definition["field_type"] == ("multiselect" if isinstance(native, list) else "range")
+    assert is_existing_value_compatible(
+        native, recovery_definition["field_type"], recovery_definition.get("options"),
+        recovery_definition.get("config"),
+    )
+
+
+@pytest.mark.parametrize("choice", ["Smooth PEI, high-temp", '["PEI", "Glass"]', '{"plate":"PEI"}'])
+@pytest.mark.parametrize("nested", [False, True])
+def test_upgrade_preserves_single_choice_items(choice, nested):
+    metadata, filaments, _, system_fields = legacy_schema()
+    system_fields.append_column(sa.Column("options", sa.JSON))
+    custom = {"spoolman_extra": {"plates": choice}} if nested else {"plates": choice}
+    with sa.create_engine("sqlite://").begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {"id": 1, "custom_fields": custom})
+        connection.execute(system_fields.insert(), {
+            "id": 1, "target_type": "filament", "key": "plates",
+            "label": "Build Plates", "field_type": "dropdown", "options": [choice],
+        })
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(upgraded)).mappings().one()
+        assert row["build_plate_compatibility"] == [choice]
+        migration.downgrade()
+        restored = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(restored)).mappings().one()
+        assert all(row["custom_fields"][key] == value for key, value in custom.items())
+        definition_key = "spoolman_extra.plates" if nested else "plates"
+        assert row["custom_field_definitions"][definition_key] == {
+            "label": "Build Plates", "field_type": "dropdown", "options": [choice], "config": None,
+        }
+
+
+@pytest.mark.parametrize("key,label,field_type,default,explicit,column,target_type", [
+    ("dry_temp", "Drying temperature", "number", "0", 70, "drying_temp_c", "filament"),
+    ("discontinued", "Discontinued", "checkbox", "false", True, "is_discontinued", "filament"),
+    ("sku", "Manufacturer SKU", "text", "default", "current", "manufacturer_sku", "filament"),
+    ("plates", "Build Plates", "multiselect", '["default"]', ["current"], "build_plate_compatibility", "filament"),
+    ("bed", "Bed temperature", "range", '{"min":0,"max":0}', {"min": 55, "max": 65}, "bed_temp_range_c", "filament"),
+    ("bed", "Bed temperature", "range", '{"min":0,"max":0}', {"min": 55, "max": 65}, "bed_temp_range_c", "spool"),
+])
+def test_upgrade_keeps_explicit_default_bearing_sources(target_type, key, label, field_type, default, explicit, column):
+    metadata, filaments, spools, system_fields = legacy_schema()
+    system_fields.append_column(sa.Column("default_value", sa.String(500)))
+    with sa.create_engine("sqlite://").begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {"id": 1, "custom_fields": {key: explicit} if target_type == "filament" else None})
+        if target_type == "spool":
+            connection.execute(spools.insert(), {"id": 1, "filament_id": 1, "custom_fields": {key: explicit}})
+        connection.execute(system_fields.insert(), {
+            "id": 1, "target_type": target_type, "key": key, "label": label,
+            "field_type": field_type, "default_value": default,
+        })
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(upgraded)).mappings().one()
+        assert row[column] == (False if column == "is_discontinued" else None)
+        source = sa.Table("filaments" if target_type == "filament" else "spools", sa.MetaData(), autoload_with=connection)
+        assert connection.execute(sa.select(source.c.custom_fields)).scalar_one() == {key: explicit}
+        assert connection.execute(sa.select(system_fields.c.default_value)).scalar_one() == default
+
+
+@pytest.mark.parametrize("storage", ["system", "local"])
+@pytest.mark.parametrize("custom,key", [
+    ({"sku": "SKU-🧵"}, "sku"),
+    ({"a.b": "SKU-🧵", "a": {"b": "keep nested"}}, "a.b"),
+    ({"spoolman_extra.sku": "SKU-🧵", "spoolman_extra": {"keep": "keep nested"}}, "spoolman_extra.sku"),
+])
+def test_downgrade_restores_literal_source_keys_and_complete_definitions(storage, custom, key):
+    metadata, filaments, _, system_fields = legacy_schema()
+    system_fields.append_column(sa.Column("options", sa.JSON))
+    definition = {"label": "Manufacturer SKU 🧵", "field_type": "dropdown", "options": ["SKU-🧵", "SKU-44"], "config": None}
+    with sa.create_engine("sqlite://").begin() as connection:
+        metadata.create_all(connection)
+        # Noncanonical keys need a System definition to identify the native target.
+        if storage == "system" or key != "sku":
+            connection.execute(system_fields.insert(), {"id": 1, "target_type": "filament", "key": key, **definition})
+        connection.execute(filaments.insert(), {"id": 1, "custom_fields": custom,
+            "custom_field_definitions": {key: definition} if storage == "local" else None})
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        assert connection.execute(sa.select(upgraded.c.manufacturer_sku)).scalar_one() == "SKU-🧵"
+        migration.downgrade()
+        restored = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = connection.execute(sa.select(restored)).mappings().one()
+        assert all(row["custom_fields"][source] == value for source, value in custom.items())
+        assert row["custom_field_definitions"][key] == definition
+
+
+
+@pytest.mark.parametrize("key,custom,definition,target,expected", [
+    ("plates", {"plates": "Smooth PEI, high-temp"},
+     {"label": "Build Plates 🧵", "field_type": "dropdown", "options": ["Smooth PEI, high-temp", "Textured PEI"], "config": None},
+     "build_plate_compatibility", ["Smooth PEI, high-temp"]),
+    ("a.b", {"a.b": "SKU-42", "a": {"b": "keep nested"}},
+     {"label": "Manufacturer SKU 🧵", "field_type": "dropdown", "options": ["SKU-42", "SKU-44"], "config": None},
+     "manufacturer_sku", "SKU-42"),
+    ("dry_temp", {"dry_temp": 70},
+     {"label": "Drying temperature", "field_type": "number", "config": {"unit": "°C"}},
+     "drying_temp_c", None),
+])
+async def test_migrated_sources_survive_native_rename_and_downgrade(
+    db_session, auth_client, key, custom, definition, target, expected,
+):
+    from app.models.filament import Filament, Manufacturer
+    from app.models.system_extra_field import SystemExtraField
+
+    manufacturer = Manufacturer(name="Migration source")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    filament = Filament(manufacturer_id=manufacturer.id, designation="Before upgrade", material_type="PLA", diameter_mm=1.75, custom_fields=custom)
+    db_session.add(filament)
+    db_session.add(SystemExtraField(target_type="filament", key=key,
+        default_value="0" if key == "dry_temp" else None, **definition))
+    await db_session.commit()
+    filament_id = filament.id
+
+    def upgrade_legacy_schema(connection):
+        # Keep the complete native API schema, removing only this revision's additions.
+        for table in ("filaments", "spools"):
+            connection.exec_driver_sql(f'ALTER TABLE {table} DROP COLUMN label_field_aliases')
+        for column in (
+            "extruder_temp_range_c", "bed_temp_range_c", "manufacturer_sku", "datasheet_url",
+            "image_url", "is_discontinued", "drying_temp_c", "drying_time_hours", "softening_temp_c",
+            "cooling_fan_range_percent", "chamber_temp_c", "max_volumetric_speed_mm3_s", "flow_ratio",
+            "pressure_advance_k", "ams_compatibility", "build_plate_compatibility", "price_currency",
+        ):
+            connection.exec_driver_sql(f'ALTER TABLE filaments DROP COLUMN {column}')
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+
+    connection = await db_session.connection()
+    await connection.run_sync(upgrade_legacy_schema)
+    await db_session.commit()
+    db_session.expire_all()
+    client, csrf = auth_client
+    response = await client.get(f"/api/v1/filaments/{filament_id}")
+    assert response.status_code == 200
+    dto = response.json()
+    assert dto[target] == expected
+    if key == "dry_temp":
+        assert dto["custom_fields"] == custom
+    assert (await client.patch(f"/api/v1/filaments/{filament_id}", headers={"X-CSRF-Token": csrf},
+        json={"designation": "Unrelated rename"})).status_code == 200
+    reopened = (await client.get(f"/api/v1/filaments/{filament_id}")).json()
+    assert reopened[target] == expected
+    assert reopened["label_field_aliases"] == dto["label_field_aliases"]
+
+    def downgrade_and_read(connection):
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.downgrade()
+        restored = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        return connection.execute(sa.select(restored.c.custom_fields, restored.c.custom_field_definitions)
+            .where(restored.c.id == filament_id)).one()
+
+    connection = await db_session.connection()
+    restored_custom, restored_definitions = await connection.run_sync(downgrade_and_read)
+    assert all(restored_custom[source] == value for source, value in custom.items())
+    if key != "dry_temp":
+        assert restored_definitions[key] == definition
+
+
+@pytest.mark.parametrize("source", [
+    None, [], "sku", {}, [1], [None], [["sku"]],
+    ["spoolman_extra", {}], ["other", "sku"], ["spoolman_extra", "sku", "child"],
+])
+def test_malformed_source_metadata_falls_back_safely_in_projection_and_downgrade(source):
+    from types import SimpleNamespace
+
+    from app.services.spoolman_projection import project_extra
+
+    metadata, filaments, _, _ = legacy_schema()
+    with sa.create_engine("sqlite://").begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {
+            "id": 1, "custom_fields": {"spoolman_extra": {"sku": "SKU-42"}},
+        })
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        upgraded = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        row = dict(connection.execute(sa.select(upgraded)).mappings().one())
+        aliases = row["label_field_aliases"]
+        aliases["spoolman_extra.sku"]["wire"]["source"] = source
+        aliases["spoolman_extra.sku.child"] = {
+            "target": "manufacturer_sku", "wire": {"source": source},
+        }
+        row.update(manufacturer_sku="SKU-43", label_field_aliases=aliases)
+        assert project_extra(SimpleNamespace(**row), {}) == {
+            "spoolman_extra": {"sku": "SKU-43"},
+        }
+        connection.execute(upgraded.update().values(
+            manufacturer_sku="SKU-43", label_field_aliases=aliases,
+        ))
+        migration.downgrade()
+        restored = sa.Table("filaments", sa.MetaData(), autoload_with=connection)
+        custom = connection.execute(sa.select(restored.c.custom_fields)).scalar_one()
+    assert custom["spoolman_extra"] == {"sku": "SKU-43"}

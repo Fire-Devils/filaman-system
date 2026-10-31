@@ -178,3 +178,12 @@ def test_spool_lengths_keep_legacy_millimetres_and_negative_values(adapter, monk
     assert wire.used_length == pytest.approx((1000 - remaining) * expected_per_gram_mm)
     assert wire.remaining_weight == remaining
     assert wire.initial_weight == 1000
+
+
+def test_tracked_adapter_uses_the_same_promoted_extra_projection(adapter):
+    filament = Filament(id=1, designation='PLA', manufacturer=None, filament_colors=[],
+                        drying_temp_c=0, pressure_advance_k=0.025,
+                        custom_fields={'article_number': 'ARTICLE'})
+    wire = adapter._filament_to_schema(filament)
+    assert wire.extra == {'dry_temp': 0, 'k_value': 0.025}
+    assert wire.article_number == 'ARTICLE'
