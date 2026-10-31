@@ -72,6 +72,7 @@ export function getStaticPaths() {
     type LabelSettingsState,
   } from '../../../lib/label-print-page'
   import {
+    buildLegacyLabelAliases,
     dedupeLabelExtraFields,
     isBuiltInLabelField,
     scopeLabelExtraField,
@@ -93,6 +94,7 @@ export function getStaticPaths() {
   import { buildEntityExtraFieldsForPrint } from '../../../lib/entity-extra-fields'
   import { type SystemExtraFieldDef } from '../../../lib/extra-fields'
   import { consumeScopedLabelFields } from '../../../lib/label-print-session'
+  import { getCurrency, initCurrency } from '../../../lib/format'
 
   bindPrintPageSidebarCollapse()
 
@@ -123,6 +125,7 @@ export function getStaticPaths() {
 
   type SingleSpoolExtraField = LabelExtraFieldValue & { value: string }
   let extraFields: SingleSpoolExtraField[] = []
+  let legacyAliases: SingleSpoolExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<SingleSpoolExtraField>('filaman-label-extra-fields', id)
     if (Array.isArray(parsed)) {
@@ -130,7 +133,11 @@ export function getStaticPaths() {
         parsed.filter((item) => {
           if (!item || typeof item.key !== 'string' || typeof item.label !== 'string' || typeof item.value !== 'string') return false
           const source = item.source === 'filament' ? 'filament' : 'spool'
-          return !(item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label))
+          if (item.key.includes('.') && isBuiltInLabelField(source, item.key, item.label)) {
+            legacyAliases.push({ ...item, legacyAlias: true })
+            return false
+          }
+          return true
         }),
         'spool',
       )
@@ -143,7 +150,7 @@ export function getStaticPaths() {
     return buildSpoolDesignerDataFromLabelData({
       ...labelData,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
-      extraFields,
+      extraFields: [...legacyAliases, ...extraFields],
     })
   }
 
@@ -547,12 +554,21 @@ export function getStaticPaths() {
   const [apiSpoolData, loadedLookups] = await Promise.all([
     fetchSpoolApiData(),
     loadSpoolLabelLookups(),
+    initCurrency(),
   ])
+  labelData.purchase_currency = getCurrency()
   if (apiSpoolData) {
+    const filament = apiSpoolData.filament ?? {}
+    legacyAliases = [
+      ...buildLegacyLabelAliases(apiSpoolData, filament, 'spool'),
+      ...buildLegacyLabelAliases(filament, filament, 'filament'),
+      ...legacyAliases,
+    ]
     const apiLabelData = buildSpoolLabelDataFromApi(
       apiSpoolData,
       loadedLookups,
       id,
+      getCurrency(),
     )
     mergeMissingSpoolLabelData(
       apiLabelData,
@@ -582,12 +598,11 @@ export function getStaticPaths() {
 
   // Initialize: load logo then render the selected workspace.
   if (requestedLabelReady) loadLabelLogo().then(() => {
-    tabControls.activate(initialMode, false)
+    tabControls.activate(isPrintRequest ? initialMode : tabControls.getActiveMode(), false)
   })
 
-  // Fallback: if no extra fields came from sessionStorage (e.g. direct navigation),
-  // fetch definitions from the API and rebuild the extra-fields UI.
-  if (extraFields.length === 0) {
+  // Saved range tokens still need global definitions when a session handoff exists.
+  {
     ;(async () => {
       try {
         const [spoolDefs, filamentDefs] = await Promise.all([
@@ -609,6 +624,12 @@ export function getStaticPaths() {
         const sd = apiSpoolData ?? await fetchSpoolApiData()
         if (!sd) return
 
+        legacyAliases = [
+          ...legacyAliases,
+          ...buildLegacyLabelAliases(sd, sd.filament ?? {}, 'spool', spoolSystemDefinitions),
+          ...buildLegacyLabelAliases(sd.filament ?? {}, sd.filament ?? {}, 'filament', filamentSystemDefinitions),
+        ]
+        if (extraFields.length > 0) { singlePreview.refresh(); return }
         // Populate extraFields and rebuild UI.
         const fallbackFields = [
           ...buildEntityExtraFieldsForPrint(
@@ -624,7 +645,7 @@ export function getStaticPaths() {
             true,
           ).map(field => scopeLabelExtraField(field, 'filament')),
         ].filter(field => !isBuiltInLabelField(field.source, field.key, field.label))
-        if (fallbackFields.length === 0) return
+        if (fallbackFields.length === 0) { singlePreview.refresh(); return }
 
         for (const field of fallbackFields) {
           extraFields.push(field)

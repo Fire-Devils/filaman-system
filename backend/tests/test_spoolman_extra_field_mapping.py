@@ -48,8 +48,7 @@ def test_infer_definition_returns_proposal_metadata_and_candidate():
     assert inferred.definition is not None
     assert inferred.definition.field_type is RepairFieldType.RANGE
     assert (
-        inferred.definition.source_field_type
-        is SpoolmanSourceFieldType.INTEGER_RANGE
+        inferred.definition.source_field_type is SpoolmanSourceFieldType.INTEGER_RANGE
     )
     assert inferred.confidence == "high"
     assert inferred.confidence_reason == "structured_values"
@@ -135,6 +134,7 @@ def test_definition_can_receive_all_values(receiver, incoming, expected):
         ("integer", "42", 42),
         ("float", "3.14", 3.14),
         ("integer_range", "[190,230]", {"min": 190, "max": 230}),
+        ("integer_range", "210", {"min": 210, "max": 210}),
         ("float_range", "[0.2,null]", {"min": 0.2, "max": None}),
         ("boolean", "true", True),
         ("choice", '"PLA"', "PLA"),
@@ -162,9 +162,7 @@ def test_choice_cardinality_is_enforced():
         ("float_range", '{"min":0.2,"max":null}', {"min": 0.2, "max": None}),
     ],
 )
-def test_convert_spoolman_range_accepts_exact_min_max_object(
-    field_type, raw, expected
-):
+def test_convert_spoolman_range_accepts_exact_min_max_object(field_type, raw, expected):
     """Fails if object-shaped legacy ranges are not normalized at conversion."""
     assert convert_spoolman_value(raw, field_type) == expected
 
@@ -178,7 +176,10 @@ def test_convert_spoolman_range_accepts_exact_min_max_object(
         {"max": 230},
         {"min": 190, "max": 230, "unit": "C"},
         {"min": math.nan, "max": 230},
+        {"min": 230, "max": 190},
+        [230, 190],
         {"min": 190, "max": math.inf},
+        {"min": 10**400, "max": None},
     ],
 )
 def test_convert_spoolman_range_rejects_malformed_min_max_objects(raw):
@@ -362,8 +363,7 @@ def test_infer_definition_recognizes_exact_min_max_objects():
     assert inferred.definition is not None
     assert inferred.definition.field_type is RepairFieldType.RANGE
     assert (
-        inferred.definition.source_field_type
-        is SpoolmanSourceFieldType.INTEGER_RANGE
+        inferred.definition.source_field_type is SpoolmanSourceFieldType.INTEGER_RANGE
     )
     assert inferred.definition.config == {"decimal_places": 0}
     assert inferred.confidence == "medium"
@@ -386,8 +386,7 @@ def test_infer_definition_uses_object_shaped_ranges_for_majority_inference():
     assert inferred.definition is not None
     assert inferred.definition.field_type is RepairFieldType.RANGE
     assert (
-        inferred.definition.source_field_type
-        is SpoolmanSourceFieldType.INTEGER_RANGE
+        inferred.definition.source_field_type is SpoolmanSourceFieldType.INTEGER_RANGE
     )
     assert inferred.confidence == "medium"
     assert inferred.confidence_reason == "majority_match"

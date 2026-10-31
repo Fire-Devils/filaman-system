@@ -1,3 +1,4 @@
+import { api } from './api'
 import {
   collectSystemFieldValues,
   escapeHtml,
@@ -34,6 +35,29 @@ export type EntityExtraFieldDefinitions = Record<string, EntityExtraFieldDefinit
 export interface EntityExtraFieldPayload {
   customFields: Record<string, unknown> | null
   customFieldDefinitions: EntityExtraFieldDefinitions | null
+}
+
+/** Rebase only user-edited JSON values; immediate plugin saves own the other keys. */
+export async function prepareExtraFieldUpdate(path: string, baseline: EntityExtraFieldPayload, draft: EntityExtraFieldPayload) {
+  const columns = [['customFields', 'custom_fields'], ['customFieldDefinitions', 'custom_field_definitions']] as const
+  const changed = columns.filter(([key]) => JSON.stringify(baseline[key]) !== JSON.stringify(draft[key]))
+  if (!changed.length) return {}
+  const latest = await api.get<Record<string, Record<string, unknown> | null>>(path)
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
+  function rebase(before: unknown, after: unknown, current: unknown): unknown {
+    if (!object(before) || !object(after)) return after
+    const result = object(current) ? { ...current } : {}
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (hasOwnFieldValue(before, key) === hasOwnFieldValue(after, key) && JSON.stringify(before[key]) === JSON.stringify(after[key])) continue
+      if (!hasOwnFieldValue(after, key)) delete result[key]
+      else setOwnFieldValue(result, key, rebase(before[key], after[key], result[key]))
+    }
+    return result
+  }
+  return Object.fromEntries(changed.map(([key, column]) => {
+    const value = rebase(baseline[key] ?? {}, draft[key] ?? {}, latest[column] ?? {}) as Record<string, unknown>
+    return [column, Object.keys(value).length ? value : null]
+  }))
 }
 
 export interface FlattenedExtraFieldValue {
@@ -316,6 +340,7 @@ export interface EntityExtraFieldEditor {
     definitions?: EntityExtraFieldDefinitions | null,
   ) => void
   setSystemFieldKeys: (keys: string[]) => void
+  getSnapshot: () => string
   getPayload: () => EntityExtraFieldPayload | null
 }
 
@@ -408,10 +433,11 @@ export function renderEntityExtraFieldRows(
     )
     .map(([key, definition]) => {
       const field = { ...definition, key, label: definition.label || key }
+      const display = renderFieldDisplay(field, getExtraFieldValue(customFields, key)) || '—'
       return `
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(field.label)}</span>
-        <span style="word-break: break-all;">${renderFieldDisplay(field, getExtraFieldValue(customFields, key))}</span>
+      <div class="filament-spec-row">
+        <span class="filament-spec-label">${escapeHtml(field.label)}</span>
+        <span class="filament-spec-value">${display}</span>
       </div>
       `
     })
@@ -432,14 +458,45 @@ export function renderUnregisteredExtraFieldRows(
         !extraFieldPathOverlaps(field.key, excluded),
     )
     .map(
-      field => `
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
-        <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(field.key)}</span>
-        <span style="font-family: monospace; word-break: break-all;">${escapeHtml(renderUnknownFieldPlainText(field.value))}</span>
+      field => {
+        const display = renderUnknownFieldPlainText(field.value) || '—'
+        return `
+      <div class="filament-spec-row">
+        <span class="filament-spec-label">${escapeHtml(field.key)}</span>
+        <span class="filament-spec-value" style="font-family: monospace;">${escapeHtml(display)}</span>
       </div>
-      `,
+      `
+      },
     )
     .join('')
+}
+
+export function renderDetailExtraFieldRows(
+  customFields: Record<string, unknown>,
+  definitions: EntityExtraFieldDefinitions | null | undefined,
+  systemDefinitions: Record<string, SystemExtraFieldDef>,
+  systemLabel: string,
+): string {
+  const systemKeys = new Set(Object.keys(systemDefinitions))
+  const systemRows = Object.values(systemDefinitions)
+    .filter(definition => getExtraFieldValue(customFields, definition.key) !== undefined)
+    .map(definition => {
+      const display = renderFieldDisplay(definition, getExtraFieldValue(customFields, definition.key)) || '—'
+      return `
+      <div class="filament-spec-row" style="background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-inline: 8px;">
+        <span class="filament-spec-label" style="display: flex; align-items: center; gap: 6px;">
+          <span>${escapeHtml(definition.label)}</span>
+          <span style="background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; white-space: nowrap;">${escapeHtml(systemLabel)}</span>
+        </span>
+        <span class="filament-spec-value">${display}</span>
+      </div>
+      `
+    })
+    .join('')
+
+  return systemRows
+    + renderEntityExtraFieldRows(customFields, definitions, systemKeys)
+    + renderUnregisteredExtraFieldRows(customFields, definitions, systemKeys)
 }
 
 export function mergeExtraFieldValues(
@@ -500,6 +557,7 @@ export function createEntityExtraFieldEditor(options: {
   container: HTMLElement
   addButton: HTMLElement
   emptyText?: string
+  onChange?: () => void
 }): EntityExtraFieldEditor {
   const { container, addButton } = options
   let drafts: DraftField[] = []
@@ -571,6 +629,7 @@ export function createEntityExtraFieldEditor(options: {
   function render(): void {
     if (!drafts.length) {
       container.innerHTML = `<div style="color:var(--text-muted);font-size:0.85rem">${escapeHtml(options.emptyText ?? '')}</div>`
+      options.onChange?.()
       return
     }
 
@@ -619,8 +678,10 @@ export function createEntityExtraFieldEditor(options: {
         const row = button.closest<HTMLElement>('[data-entity-extra-id]')
         drafts = drafts.filter((item) => item.id !== Number(row?.dataset.entityExtraId))
         render()
+        addButton.focus()
       })
     })
+    options.onChange?.()
   }
 
   addButton.addEventListener('click', openAddDialog)
@@ -652,6 +713,9 @@ export function createEntityExtraFieldEditor(options: {
       systemKeys = new Set(keys)
       drafts = drafts.filter((draft) => !isSystemKey(draft.key.trim(), systemKeys))
       render()
+    },
+    getSnapshot() {
+      return JSON.stringify(drafts.map(draft => ({ ...draft, id: undefined })).sort((a, b) => a.key.localeCompare(b.key)))
     },
     getPayload() {
       const values: Record<string, unknown> = {}

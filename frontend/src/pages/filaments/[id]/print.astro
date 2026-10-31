@@ -75,6 +75,7 @@ export function getStaticPaths() {
     type LabelSettingsState,
   } from '../../../lib/label-print-page'
   import {
+    buildLegacyLabelAliases,
     dedupeLabelExtraFields,
     isBuiltInLabelField,
     scopeLabelExtraField,
@@ -107,6 +108,7 @@ export function getStaticPaths() {
   const labelData = buildFilamentLabelDataFromParams(id, params)
 
   let extraFields: FilamentExtraField[] = []
+  let legacyAliases: FilamentExtraField[] = []
   try {
     const parsed = consumeScopedLabelFields<FilamentExtraField>('filaman-filament-label-extra-fields', id)
     if (Array.isArray(parsed)) {
@@ -134,7 +136,8 @@ export function getStaticPaths() {
       ...labelData,
       filament_id: labelData.id,
       manufacturer_id: labelData.manufacturer_id || labelData.mfr_id,
-      extraFields,
+      // API aliases retain migrated units/precision over reduced Standard-label fields.
+      extraFields: [...extraFields, ...legacyAliases],
     })
   }
 
@@ -449,10 +452,11 @@ export function getStaticPaths() {
       if (filRes.ok) {
         apiFilament = await filRes.json() as Record<string, unknown>
         Object.assign(labelData, buildCanonicalFilamentLabelData(apiFilament, labelData, id))
+        legacyAliases = buildLegacyLabelAliases(apiFilament, apiFilament, 'filament')
       }
     } catch { /* retain query fallbacks when the API is unavailable */ }
 
-    if (extraFields.length === 0) {
+    {
       let definitions: unknown = []
       try {
         const response = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' })
@@ -471,42 +475,45 @@ export function getStaticPaths() {
             { ...definition, field_type: definition.field_type || 'text' },
           ]),
       ) as Record<string, SystemExtraFieldDef>
-      const customPrintFields = apiFilament
-        ? buildEntityExtraFieldsForPrint(
-            apiFilament.custom_fields as Record<string, unknown> | undefined,
-            apiFilament.custom_field_definitions as Record<string, unknown> | undefined,
-            systemDefinitions,
-            true,
-          ).filter(field => !isBuiltInLabelField('filament', field.key, field.label))
-        : []
-      const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
+      if (apiFilament) legacyAliases = buildLegacyLabelAliases(apiFilament, apiFilament, 'filament', systemDefinitions)
+      if (extraFields.length === 0) {
+        const customPrintFields = apiFilament
+          ? buildEntityExtraFieldsForPrint(
+              apiFilament.custom_fields as Record<string, unknown> | undefined,
+              apiFilament.custom_field_definitions as Record<string, unknown> | undefined,
+              systemDefinitions,
+              true,
+            ).filter(field => !isBuiltInLabelField('filament', field.key, field.label))
+          : []
+        const standardFilamentFields = buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)
 
-      if (standardFilamentFields.length > 0 || customPrintFields.length > 0) {
-        function makeEfCheckbox(ef: FilamentExtraField) {
-          extraFields.push({ ...ef, source: ef.source ?? 'filament' })
-          const cb = appendLabelSettingsCheckbox({
-            container: extraFieldsCheckboxes,
-            id: `check-ef-${ef.key}`,
-            label: ef.label,
-            checked: savedExtraFieldSettings[ef.key] || false,
-            onChange: singlePreview.refresh,
-          })
-          extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+        if (standardFilamentFields.length > 0 || customPrintFields.length > 0) {
+          function makeEfCheckbox(ef: FilamentExtraField) {
+            extraFields.push({ ...ef, source: ef.source ?? 'filament' })
+            const cb = appendLabelSettingsCheckbox({
+              container: extraFieldsCheckboxes,
+              id: `check-ef-${ef.key}`,
+              label: ef.label,
+              checked: savedExtraFieldSettings[ef.key] || false,
+              onChange: singlePreview.refresh,
+            })
+            extraFieldChecks.push({ key: ef.key, label: ef.label, value: ef.value, checkbox: cb })
+          }
+
+          for (const sfd of standardFilamentFields) {
+            makeEfCheckbox(sfd)
+          }
+
+          for (const field of customPrintFields) {
+            makeEfCheckbox(scopeLabelExtraField(field, 'filament'))
+          }
+
+          extraFieldsTitle.style.display = ''
+          extraFieldsCheckboxes.style.display = ''
+          document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
+
+          designerEditor.refreshExtraFields(getDesignerExtraFields())
         }
-
-        for (const sfd of standardFilamentFields) {
-          makeEfCheckbox(sfd)
-        }
-
-        for (const field of customPrintFields) {
-          makeEfCheckbox(scopeLabelExtraField(field, 'filament'))
-        }
-
-        extraFieldsTitle.style.display = ''
-        extraFieldsCheckboxes.style.display = ''
-        document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
-
-        designerEditor.refreshExtraFields(getDesignerExtraFields())
       }
     }
 
@@ -522,7 +529,7 @@ export function getStaticPaths() {
     }
     if (requestedLabelReady) {
       await loadLabelLogo()
-      tabControls.activate(initialMode, false)
+      tabControls.activate(isPrintRequest ? initialMode : tabControls.getActiveMode(), false)
     }
   })()
 

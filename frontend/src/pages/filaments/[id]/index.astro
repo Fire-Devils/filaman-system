@@ -1,5 +1,9 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
+import FilamentForm from '../../../components/FilamentForm.astro'
+import FilamentFormActions from '../../../components/FilamentFormActions.astro'
+import DetailScrollIdentity from '../../../components/DetailScrollIdentity.astro'
+import PrinterSetup from '../../../components/PrinterSetup.astro'
 
 export function getStaticPaths() {
   return [
@@ -7,50 +11,30 @@ export function getStaticPaths() {
   ];
 }
 
-const { id } = Astro.params
 ---
 
 <Layout title="FilaMan - Filament">
-  <div style="margin-bottom: 24px;">
-    <a href="/filaments" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+  <div class="detail-page-toolbar">
+    <div class="detail-toolbar-back"><a href="/filaments" class="detail-back-link">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+      <span id="unsaved-changes-status" class="filament-change-pill hidden" role="status" aria-live="polite" data-i18n="filaments.changed">Changed</span></div>
+    <div id="filament-page-actions"></div>
+    <div id="filament-form-actions" class="hidden"><FilamentFormActions mode="edit" cancelHref="/filaments" /></div>
+    <DetailScrollIdentity />
   </div>
   
   <div id="filament-content">
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
 
-  <div id="slicer-profile-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.slicerProfile">Slicer Profile</h2>
-    <div class="fm-card" style="padding: 24px;">
-      <label class="fm-label" data-i18n="printers.bambuSlicerProfile">Bambu Slicer Profile</label>
-      <div id="slicer-profile-picker"></div>
-      <div id="slicer-profile-coverage" class="hidden" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
-      <p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 8px;" data-i18n="printers.slicerProfileHint">Applies to this filament across all Bambu printers and any new spools made from it.</p>
-      <span id="slicer-profile-msg" class="hidden" style="font-size: 0.85rem;"></span>
-    </div>
+  <div id="filament-editor" class="hidden">
+    <FilamentForm mode="edit" />
   </div>
 
-  <div id="printer-params-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="printers.printerParameters">Printer Parameters</h2>
-    <div class="fm-card" style="padding: 24px;">
-      <div style="margin-bottom: 16px;">
-        <label class="fm-label" data-i18n="printers.selectPrinter">Printer</label>
-        <select id="printer-select" class="fm-select">
-          <option value="">\u2014</option>
-        </select>
-      </div>
-      <div id="printer-params-list">
-        <p style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="printers.selectPrinterHint">Select a printer to view parameters</p>
-      </div>
-      <div id="printer-params-actions" class="hidden" style="margin-top: 12px; display: flex; align-items: center; gap: 12px;">
-        <button id="btn-save-params" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;" data-i18n="common.save">Save</button>
-        <span id="params-save-msg" class="hidden" style="font-size: 0.85rem;"></span>
-      </div>
-    </div>
-  </div>
+  <PrinterSetup />
 
-  <div id="spools-section" class="hidden" style="margin-top: 32px;">
-    <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.spools">Spools</h2>
+  <section class="spool-filament-panel filament-spool-panel">
+  <div id="spools-section" class="hidden">
+    <div class="spools-heading"><h2 style="font-weight: 600; margin: 0;" data-i18n="filaments.spools">Spools</h2></div>
     <div class="fm-card" style="padding: 0;">
       <table class="fm-table">
         <thead>
@@ -70,79 +54,60 @@ const { id } = Astro.params
     </div>
   </div>
 
-  <div id="price-summary" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 32px;">
-    <div class="fm-card" style="border-left: 4px solid var(--accent);">
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalValueAvailable">Total Value (available)</div>
-      <div id="total-available-price" style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">0.00</div>
-    </div>
-    <div class="fm-card" style="border-left: 4px solid var(--text-muted);">
-      <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</div>
-      <div id="total-spent-price" style="font-size: 1.4rem; font-weight: 700;">0.00</div>
-    </div>
-  </div>
-  
-  <div id="price-history-section" class="hidden" style="margin-top: 32px; margin-bottom: 32px;">
+  <div id="price-history-section" class="hidden">
     <h2 style="font-weight: 600; margin-bottom: 16px;" data-i18n="filaments.priceHistory">Price History</h2>
+    <div id="price-summary" class="spool-totals hidden">
+      <span><span data-i18n="filaments.totalValueAvailable">Total Value (available)</span> <strong id="total-available-price">0.00</strong></span>
+      <span><span data-i18n="filaments.totalSpentAllTime">Total Spent (all time)</span> <strong id="total-spent-price">0.00</strong></span>
+    </div>
     <div class="fm-card" style="padding: 24px;">
       <div style="height: 300px; width: 100%;">
         <canvas id="priceChart"></canvas>
       </div>
     </div>
   </div>
-  
+  </section>
+
   <script is:inline src="/vendor/chart.min.js"></script>
   <script>
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldDisplay } from '../../../lib/extra-fields'
-    import {
-      getExtraFieldValue,
-      renderEntityExtraFieldRows,
-      renderUnregisteredExtraFieldRows,
-    } from '../../../lib/entity-extra-fields'
-    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../../../lib/cache'
-    import { toColorSwatchBackground } from '../../../lib/colors'
+    import { escapeHtml as escapeExtraFieldHtml } from '../../../lib/extra-fields'
+    import { prepareExtraFieldUpdate, renderDetailExtraFieldRows } from '../../../lib/entity-extra-fields'
+    import { createEntityExtraFieldsDialog } from '../../../lib/entity-extra-fields-dialog'
+    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
+    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
+    import { createFilamentFormController } from '../../../lib/filament-form'
+    import { createDetailEditSession } from '../../../lib/detail-edit'
+    import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
+    import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
     import { formatPrice, getCurrency, initCurrency } from '../../../lib/format'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
-    import { initPerModelProfilePicker } from '../../../lib/cloud-profile-picker'
+    import { initPrinterSetup } from '../../../lib/printer-setup'
     import { buildFilamentExtraFieldsForPrint, buildFilamentPrintSearchParams } from '../../../lib/filament-label-data'
     import { writeScopedLabelFields } from '../../../lib/label-print-session'
     await initI18n()
     await initCurrency()
 
+    const updateScrollIdentity = createDetailScrollIdentity(document.querySelector<HTMLElement>('.detail-page-toolbar')!)
+
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
+    const extraFieldsDialogRequested = new URLSearchParams(window.location.search).get('section') === 'extra-fields'
+    let editMode = new URLSearchParams(window.location.search).get('edit') === '1' && !extraFieldsDialogRequested
     if (id === 'detail') {
       window.location.href = '/filaments'
     }
 
+    let currentFilament: (Parameters<typeof buildFilamentHeaderName>[0] & { id: number }) | null = null
+    const editSession = createDetailEditSession<any>(`/api/v1/filaments/${id}`, () => t('filaments.failedLoadSingle'))
+    let changingEdit = false
+    let filamentReferencesLoaded = false
+    let filamentNeedsRefresh = false
+    let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
+    let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
     let statuses: any[] = []
     let locations: any[] = []
-    let printers: any[] = []
-    let currentPrinterParams: any[] = []
-    let fieldDefinitions: any[] = []
     let systemFieldMap: Record<string, any> = {}
-
-    // -- Bambu cloud profile picker (Option A) --
-    let currentDriverKey = ''
-    let currentPrinterId = 0
-    let cloudPresets: any[] = []
-    let cloudPresetsByCode: Record<string, any> = {}
-
-    const finishLabels: Record<string, string> = {
-      solid: 'filaments.finishSolid',
-      translucent: 'filaments.finishTranslucent',
-      neon: 'filaments.finishNeon',
-      glow: 'filaments.finishGlow',
-    }
-
-    const colorModeLabels: Record<string, string> = {
-      single: 'filaments.colorModeSingle',
-      multi: 'filaments.colorModeMulti',
-    }
-
-    const multiStyleLabels: Record<string, string> = {
-      striped: 'filaments.styleStriped',
-      gradient: 'filaments.styleGradient',
-    }
+    let extraFieldsDialog: ReturnType<typeof createEntityExtraFieldsDialog> | null = null
 
     async function loadFilament() {
       try {
@@ -152,6 +117,7 @@ const { id } = Astro.params
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal }),
         ])
 
+        if (!sysFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
         if (sysFieldsRes.ok) {
           const defs: any[] = await sysFieldsRes.json()
           systemFieldMap = {}
@@ -173,17 +139,22 @@ const { id } = Astro.params
           throw new Error('Failed to fetch filament')
         }
 
-        const filament = await response.json()
+        const filament = currentFilament = await response.json()
         renderFilament(filament)
+        if (editMode) {
+          await renderFilamentEditor(filament)
+          document.querySelector('.detail-page-toolbar .detail-page-actions')?.classList.add('hidden')
+        }
+        if (extraFieldsDialogRequested) {
+          window.history.replaceState(null, '', `/filaments/${id}`)
+          openFilamentExtraFields(filament)
+        }
         loadSpools(filament.id)
-        loadPrinters()
-        initPerModelProfilePicker({
-          entityType: 'filament',
-          entityId: parseInt(id),
-          t,
-          getCsrfToken: getCsrfTokenGlobal,
-          getAbortSignal,
-          isAbortError,
+        printerSetup = initPrinterSetup({
+          mount: document.getElementById('printer-setup')!,
+          entityType: 'filament', entityId: parseInt(id), t, editing: editMode,
+          onDirtyChange: () => filamentFormController?.updateDirtyState(),
+          getCsrfToken: getCsrfTokenGlobal, getAbortSignal, isAbortError,
         })
       } catch (error) {
         if (isAbortError(error)) return
@@ -197,159 +168,248 @@ const { id } = Astro.params
       }
     }
 
-    function renderColorSwatches(colors: any[]): string {
-      if (!colors || colors.length === 0) return '-'
-      return colors.map(fc => {
-        const c = fc.color
-        if (!c) return ''
-        const label = fc.display_name_override || c.name
-        return `<span style="display: inline-flex; align-items: center; gap: 6px; margin-right: 10px;">
-          <span style="display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 2px solid var(--border); vertical-align: middle;"></span>
-          <span>${label}</span>
-        </span>`
-      }).join('')
+    async function renderFilamentEditor(filament: any) {
+      const form = document.getElementById('filament-form') as HTMLFormElement
+      const cancel = document.getElementById('filament-form-cancel') as HTMLAnchorElement
+      cancel.href = `/filaments/${id}`
+      cancel.onclick = event => { event.preventDefault(); void setFilamentEditing(false) }
+      document.getElementById('btn-edit-filament')!.onclick = () => { void setFilamentEditing(false) }
+      if (!filamentFormController) {
+        filamentFormController = createFilamentFormController({
+          form,
+          mode: 'edit',
+          hasExternalChanges: () => printerSetup?.isDirty() ?? false,
+          async onSubmit({ scalar, colors }) {
+            try {
+              await printerSetup!.save(async () => {
+                const extraUpdate = await filamentFormController!.prepareExtraFieldUpdate(`/filaments/${id}`, scalar)
+                const native = filamentFormController!.prepareNativeFieldUpdate(scalar)
+                filamentNeedsRefresh = true
+                const signal = getAbortSignal()
+                const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() }
+                const patchResponse = await fetch(`/api/v1/filaments/${id}`, {
+                  method: 'PATCH',
+                  headers,
+                  credentials: 'include',
+                  signal,
+                  body: JSON.stringify({ ...native, ...extraUpdate }),
+                })
+                if (!patchResponse.ok) {
+                  const error = await patchResponse.json()
+                  throw new Error(error.detail?.message || error.message || t('filaments.failedUpdate'))
+                }
+                filamentFormController!.acceptNativeUpdate(scalar)
+                if (filamentFormController!.hasColorChanges({ scalar, colors })) {
+                  const colorsResponse = await fetch(`/api/v1/filaments/${id}/colors`, {
+                    method: 'PUT',
+                    headers,
+                    credentials: 'include',
+                    signal,
+                    body: JSON.stringify({
+                      color_mode: scalar.color_mode,
+                      multi_color_style: scalar.multi_color_style,
+                      colors,
+                    }),
+                  })
+                  if (!colorsResponse.ok) {
+                    const error = await colorsResponse.json()
+                    throw new Error(error.detail?.message || error.message || t('filaments.failedUpdate'))
+                  }
+                  filamentFormController!.acceptColorUpdate({ scalar, colors })
+                }
+                invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
+              })
+            } catch (error) {
+              if (filamentNeedsRefresh) await refreshFilamentSnapshot().catch(() => {})
+              throw error
+            }
+            window.location.href = `/filaments/${id}`
+          },
+        })
+      }
+      if (!filamentReferencesLoaded) {
+        await filamentFormController.loadReferenceData()
+        filamentReferencesLoaded = true
+      }
+      const controller = filamentFormController
+      controller.resetInitialData(filament)
+      controller.captureBaseline()
+      document.getElementById('filament-content')!.classList.add('hidden')
+      document.getElementById('filament-editor')!.classList.remove('hidden')
+      document.getElementById('filament-form-actions')!.classList.remove('hidden')
+      updateScrollIdentity(document.getElementById('filament-editor-hero')!, t('filaments.filamentId', { id: formatHeaderId(filament.id) }))
     }
 
-    function renderDetailCard(label: string, value: string): string {
-      return `<div class="fm-card">
-        <div style="font-size: 0.85rem; color: var(--text-muted);">${label}</div>
-        <div style="font-size: 1.1rem; font-weight: 600;">${value}</div>
+    async function refreshFilamentSnapshot() {
+      currentFilament = await editSession.read()
+      filamentNeedsRefresh = false
+    }
+
+    async function setFilamentEditing(value: boolean) {
+      if (changingEdit || printerSetup?.isSaving() || !currentFilament) return
+      const restore = captureDetailEditPosition(document.querySelector('main')!)
+      changingEdit = true
+      try {
+        if (value) await editSession.edit(async latest => {
+          currentFilament = latest
+          filamentNeedsRefresh = false
+          await renderFilamentEditor(latest)
+        })
+        else {
+          editSession.invalidate()
+          if (filamentNeedsRefresh) await refreshFilamentSnapshot()
+          renderFilament(currentFilament)
+          filamentFormController?.resetInitialData(currentFilament)
+          filamentFormController?.captureBaseline()
+          document.getElementById('filament-editor')!.classList.add('hidden')
+          document.getElementById('filament-form-actions')!.classList.add('hidden')
+          document.getElementById('filament-content')!.classList.remove('hidden')
+          document.getElementById('unsaved-changes-status')!.classList.add('hidden')
+          updateScrollIdentity(document.querySelector<HTMLElement>('#filament-content .filament-hero')!, t('filaments.filamentId', { id: formatHeaderId(currentFilament.id) }))
+        }
+        editMode = value
+        document.querySelector('.detail-page-toolbar .detail-page-actions')?.classList.toggle('hidden', value)
+        const url = new URL(window.location.href)
+        if (value) url.searchParams.set('edit', '1')
+        else url.searchParams.delete('edit')
+        window.history.replaceState(null, '', url)
+        const profileUpdate = printerSetup?.setEditing(value)
+        restore()
+        await profileUpdate
+        restore()
+        document.getElementById(value ? 'btn-edit-filament' : 'btn-enter-filament-edit')?.focus({ preventScroll: true })
+      } catch (error) {
+        if (!isAbortError(error)) (window as unknown as { __fmAlert(message: string): Promise<void> }).__fmAlert(error instanceof Error ? error.message : String(error))
+      } finally { changingEdit = false }
+    }
+
+    async function openFilamentExtraFields(_filament: any, trigger?: HTMLElement): Promise<void> {
+      if (editMode || changingEdit || extraFieldsDialog?.isOpen()) return
+      try {
+        await editSession.manage(filament => {
+          extraFieldsDialog ??= createEntityExtraFieldsDialog({
+            targetType: 'filament',
+            systemFields: systemFieldMap,
+            async onSave(payload, baseline) {
+              const update = await prepareExtraFieldUpdate(`/filaments/${id}`, baseline, payload)
+              const response = await fetch(`/api/v1/filaments/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
+                credentials: 'include',
+                signal: getAbortSignal(),
+                body: JSON.stringify(update),
+              })
+              if (!response.ok) {
+                const error = await response.json().catch(() => ({}))
+                throw new Error(error.detail?.message || error.message || t('filaments.failedUpdate'))
+              }
+              invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
+              window.location.reload()
+            },
+          })
+          extraFieldsDialog.open({
+            customFields: filament.custom_fields,
+            customFieldDefinitions: filament.custom_field_definitions,
+          }, trigger)
+        })
+      } catch (error) {
+        if (!isAbortError(error)) (window as unknown as { __fmAlert(message: string): Promise<void> }).__fmAlert(error instanceof Error ? error.message : String(error))
+      }
+    }
+
+    function safeExternalUrl(value: unknown): string {
+      if (typeof value !== 'string') return ''
+      try {
+        const url = new URL(value, window.location.origin)
+        return url.protocol === 'http:' || url.protocol === 'https:'
+          ? escapeExtraFieldHtml(url.href)
+          : ''
+      } catch {
+        return ''
+      }
+    }
+
+    function renderSpecRow(row: { labelKey: string; value: string; href?: string }): string {
+      const href = safeExternalUrl(row.href)
+      const value = escapeExtraFieldHtml(row.value)
+      return `<div class="filament-spec-row">
+        <span class="filament-spec-label">${t(row.labelKey)}</span>
+        <span class="filament-spec-value">${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>` : value}</span>
       </div>`
     }
-    
+
     function renderFilament(f: any) {
-      // Build the secondary info cards grid
-      const cards: string[] = []
-      cards.push(renderDetailCard(t('filaments.type'), f.material_type))
-      if (f.material_subgroup) {
-        cards.push(renderDetailCard(t('filaments.materialSubgroup'), f.material_subgroup))
-      }
-      cards.push(renderDetailCard(t('filaments.diameter'), f.diameter_mm + 'mm'))
-      if (f.finish_type) {
-        const finishKey = finishLabels[f.finish_type]
-        cards.push(renderDetailCard(t('filaments.finishType'), finishKey ? t(finishKey) : f.finish_type))
-      }
-      cards.push(renderDetailCard(t('filaments.rawMaterial'), f.raw_material_weight_g ? f.raw_material_weight_g + 'g' : '-'))
-      cards.push(renderDetailCard(t('filaments.spoolWeight'), f.default_spool_weight_g ? f.default_spool_weight_g + 'g' : '-'))
-      if (f.price != null) {
-        cards.push(renderDetailCard(t('filaments.price'), formatPrice(f.price, getCurrency())))
-      }
-      if (f.density_g_cm3 != null) {
-        cards.push(renderDetailCard(t('filaments.density'), f.density_g_cm3.toString()))
-      }
+      const sections = buildFilamentDetailSections(f, {
+        translate: t,
+        price: f.price == null ? undefined : formatPrice(f.price, f.price_currency || getCurrency()),
+      })
+      const sectionsHtml = sections.map(section => `<section class="fm-card filament-spec-card">
+        <h2 class="filament-spec-title">${t(section.titleKey)}</h2>
+        <div class="filament-spec-rows">${section.rows.map(renderSpecRow).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(f.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div>
+      </section>`).join('')
 
-      // Color mode info
-      const colorModeKey = colorModeLabels[f.color_mode]
-      let colorModeDisplay = colorModeKey ? t(colorModeKey) : f.color_mode
-      if (f.color_mode === 'multi' && f.multi_color_style) {
-        const styleKey = multiStyleLabels[f.multi_color_style]
-        colorModeDisplay += ` (${styleKey ? t(styleKey) : f.multi_color_style})`
-      }
-
-      // Colors section
-      const colorsHtml = f.colors && f.colors.length > 0
-        ? `<div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">
-              ${t('filaments.colors')} &mdash; ${colorModeDisplay}
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-              ${renderColorSwatches(f.colors)}
-            </div>
-          </div>`
-        : ''
-
-      // Manufacturer color name
-      const mfgColorHtml = f.manufacturer_color_name
-        ? `<div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.manufacturerColorName')}</div>
-            <div style="font-size: 1.1rem; font-weight: 600;">${f.manufacturer_color_name}</div>
-          </div>`
-        : ''
-
-      // Shop URL
-      const shopHtml = f.shop_url
-        ? `<div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.shopUrl')}</div>
-            <div style="font-size: 1.1rem;">
-              <a href="${f.shop_url}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); word-break: break-all;">${f.shop_url}</a>
-            </div>
-          </div>`
-        : ''
-
-      // Custom Fields
-      let customFieldsHtml = ''
-      if (f.custom_fields && Object.keys(f.custom_fields).length > 0) {
-        const sysKeys = new Set(Object.keys(systemFieldMap))
-        const entityDefs = f.custom_field_definitions ?? {}
-        // System fields: render from raw values (handles range/multiselect correctly)
-        const sysRows = Object.values(systemFieldMap)
-          .filter((sysDef: any) => getExtraFieldValue(f.custom_fields, sysDef.key) !== undefined)
-          .map((sysDef: any) => {
-            const displayHtml = renderFieldDisplay(sysDef, getExtraFieldValue(f.custom_fields, sysDef.key))
-            return `
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent-2) 5%, transparent); margin: 0 -8px; padding-left: 8px; padding-right: 8px;">
-              <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="color: var(--text-muted); font-weight: 500;">${escapeExtraFieldHtml(sysDef.label)}</span>
-                <span style="background: color-mix(in srgb, var(--accent-2) 20%, transparent); color: var(--accent-2); padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; white-space: nowrap;">${t('common.systemField')}</span>
-              </span>
-              <span style="word-break: break-all;">${displayHtml}</span>
-            </div>
-            `
-          }).join('')
-        const entityRows = renderEntityExtraFieldRows(f.custom_fields, entityDefs, sysKeys)
-        const customRows = renderUnregisteredExtraFieldRows(
-          f.custom_fields,
-          entityDefs,
-          sysKeys,
-        )
-        const rows = sysRows + entityRows + customRows
-
-        customFieldsHtml = `
-          <div class="fm-card" style="margin-top: 16px;">
-            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">${t('common.extraFields')}</div>
-            <div>${rows}</div>
-          </div>
-        `
-      }
+      const extraFieldRows = renderDetailExtraFieldRows(
+        f.custom_fields ?? {},
+        f.custom_field_definitions ?? {},
+        systemFieldMap,
+        t('common.systemField'),
+      )
+      const customFieldsHtml = `<section class="fm-card filament-spec-card" style="margin-top: 16px;">
+        <h2 class="filament-spec-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span>${t('common.extraFields')}</span><button id="btn-edit-filament-extra-fields" type="button" class="fm-btn fm-btn-outline" style="font-size:.72rem;padding:3px 8px">${t('common.manageFields')}</button></h2>
+        <div class="filament-spec-rows">${extraFieldRows || `<div style="padding: 8px 0; color: var(--text-muted); font-size: .82rem;">${t('filaments.noSpecificExtraFields')}</div>`}</div>
+      </section>`
 
       document.getElementById('filament-content')!.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
-          <div>
-            <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">${f.designation}</h1>
-            <p style="color: var(--text-muted); margin: 4px 0 0; display: flex; align-items: center; gap: 8px;">${f.manufacturer?.logo_url ? `<img src="${f.manufacturer.logo_url}" alt="" style="height: 1.4em; width: auto; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 4px; padding: 2px; flex-shrink: 0;" onerror="this.style.display='none'" />` : ''}${f.manufacturer?.name || t('filaments.unknownManufacturer')}</p>
+        <header class="filament-hero" style="${buildFilamentHeroStyle(f)}">
+          <div class="filament-hero-layout">
+            <div class="filament-hero-identity">
+              <div class="filament-hero-title-row">
+                <div class="filament-hero-title-copy">
+                  <h1><span class="detail-record-id">${escapeExtraFieldHtml(t('filaments.filamentId', { id: formatHeaderId(f.id) }))}</span><span class="detail-record-name">${escapeExtraFieldHtml(buildFilamentHeaderName(f))}</span></h1>
+                </div>
+                ${safeExternalUrl(f.manufacturer?.logo_url) ? `<span class="filament-hero-logo"><img src="${safeExternalUrl(f.manufacturer.logo_url)}" alt="" onerror="this.parentElement.style.display='none'" /></span>` : ''}
+              </div>
+              <div class="filament-hero-body">
+                ${renderFilamentHeaderColors(f, t('filaments.soldAs'))}
+                <div class="detail-hero-stats">
+                  <div class="detail-hero-stat"><span class="detail-stat-symbol" aria-hidden="true">⌀</span><div><span>${t('filaments.diameter')}</span><strong>${f.diameter_mm != null ? escapeExtraFieldHtml(`${f.diameter_mm} mm`) : '—'}</strong></div></div>
+                  <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail3#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
+              <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></a>
+              <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button>
+              <button id="btn-delete-filament" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>
+            </div>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary">
-              ${t('filaments.newSpool')}
-            </a>
-            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline">
-              ${t('filaments.printLabel') || 'Print Label'}
-            </a>
-            <a href="/filaments/${f.id}/edit" class="fm-btn fm-btn-outline">
-              ${t('common.edit')}
-            </a>
-            <button id="btn-duplicate-filament" type="button" class="fm-btn fm-btn-info">
-              ${t('common.duplicate')}
-            </button>
-            <button id="btn-delete-filament" class="fm-btn fm-btn-danger">
-              ${t('common.delete')}
-            </button>
-          </div>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px;">
-          ${cards.join('\n')}
-        </div>
+        </header>
 
-        ${colorsHtml}
-        ${mfgColorHtml}
-        ${shopHtml}
+        <section class="detail-quick-actions">
+          <h2>${t('spools.quickActions')}</h2>
+          <div class="detail-quick-action-buttons">
+            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary"><svg class="detail-spool-icon" aria-hidden="true"><use href="/icons.svg#icon-spools"></use></svg>${t('filaments.newSpool')}</a>
+            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-print"></use></svg>${t('filaments.printLabel') || 'Print Label'}</a>
+          </div>
+        </section>
+
+        <div class="filament-spec-grid">${sectionsHtml}</div>
         ${customFieldsHtml}
       `
 
+      document.querySelector('.detail-page-toolbar .detail-page-actions, #filament-page-actions')!.replaceWith(document.querySelector('#filament-content .detail-page-actions')!)
+      updateScrollIdentity(document.querySelector<HTMLElement>('#filament-content .filament-hero')!, t('filaments.filamentId', { id: formatHeaderId(f.id) }))
+
+      document.getElementById('btn-enter-filament-edit')?.addEventListener('click', event => {
+        event.preventDefault()
+        void setFilamentEditing(true)
+      })
       document.getElementById('btn-duplicate-filament')?.addEventListener('click', () => {
         sessionStorage.setItem('filaman_duplicate_filament', JSON.stringify(f))
         window.location.href = '/filaments/new'
+      })
+      document.getElementById('btn-edit-filament-extra-fields')?.addEventListener('click', event => {
+        openFilamentExtraFields(f, event.currentTarget as HTMLElement)
       })
 
       // Print Settings is intentionally reduced; the Label Designer receives the full
@@ -591,354 +651,6 @@ const { id } = Astro.params
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
     }
-
-    function showParamsMessage(text: string, isError: boolean) {
-      const msg = document.getElementById('params-save-msg')!
-      msg.textContent = text
-      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
-      msg.classList.remove('hidden')
-      setTimeout(() => msg.classList.add('hidden'), 3000)
-    }
-
-    async function loadPrinters() {
-      try {
-        const res = await fetch('/api/v1/printers', { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
-        const data = await res.json()
-        printers = data.items || data || []
-        if (printers.length === 0) return
-
-        document.getElementById('printer-params-section')!.classList.remove('hidden')
-        const select = document.getElementById('printer-select')! as HTMLSelectElement
-        select.innerHTML = '<option value="">\u2014</option>' +
-          printers.map((p: any) => `<option value="${p.id}" data-driver="${p.driver_key || ''}">${p.name}</option>`).join('')
-
-        select.addEventListener('change', async () => {
-          const printerId = select.value
-          if (printerId) {
-            const option = select.selectedOptions[0]
-            const driverKey = option?.dataset.driver || ''
-            currentDriverKey = driverKey
-            currentPrinterId = parseInt(printerId)
-            await loadFieldDefinitions(driverKey)
-            await loadCloudPresets(currentPrinterId, driverKey)
-            await loadFilamentPrinterParams(parseInt(printerId))
-          } else {
-            fieldDefinitions = []
-            currentPrinterParams = []
-            currentDriverKey = ''
-            currentPrinterId = 0
-            cloudPresets = []
-            cloudPresetsByCode = {}
-            renderPrinterParams()
-          }
-        })
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load printers:', e)
-      }
-    }
-
-    async function loadFieldDefinitions(driverKey: string) {
-      if (!driverKey) {
-        fieldDefinitions = []
-        return
-      }
-      try {
-        const res = await fetch(`/api/v1/system-extra-fields?target_type=filament_printer_param&source=${driverKey}`, { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) throw new Error('Failed')
-        fieldDefinitions = await res.json()
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load field definitions:', e)
-        fieldDefinitions = []
-      }
-    }
-
-    async function loadFilamentPrinterParams(printerId: number) {
-      try {
-        const res = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${printerId}`, { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) throw new Error('Failed')
-        currentPrinterParams = await res.json()
-        renderPrinterParams()
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load printer params:', e)
-      }
-    }
-
-    async function loadCloudPresets(printerId: number, driverKey: string) {
-      cloudPresets = []
-      cloudPresetsByCode = {}
-      if (driverKey !== 'bambuddy') return
-      try {
-        const res = await fetch(`/api/v1/printers/${printerId}/driver/cloud-presets`, { credentials: 'include', signal: getAbortSignal() })
-        if (!res.ok) return
-        const data = await res.json()
-        cloudPresets = data.presets || []
-        cloudPresetsByCode = {}
-        cloudPresets.forEach((p: any) => { cloudPresetsByCode[p.code] = p })
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to load cloud presets:', e)
-      }
-    }
-
-    function escapeHtml(s: string): string {
-      return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
-    }
-
-    function presetLabel(code: string): string {
-      if (!code) return ''
-      const p = cloudPresetsByCode[code]
-      return p ? p.displayName : code
-    }
-
-    // Codes reflected from the printer's AMS (e.g. "SUN20010") are not part of
-    // the selectable cloud-preset catalog, so the picker can't label them.
-    // Ask the driver to resolve the readable name and inject a display-only
-    // entry so presetLabel() shows the name instead of the raw code.
-    async function ensureCodeLabel(printerId: number, code: string): Promise<void> {
-      if (!code || cloudPresetsByCode[code]) return
-      try {
-        const res = await fetch(`/api/v1/printers/${printerId}/driver/action`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ action: 'resolve_preset_label', params: { code } }),
-        })
-        if (!res.ok) return
-        const json = await res.json()
-        const name = json && json.data && json.data.name
-        if (name && name !== code) cloudPresetsByCode[code] = { code, displayName: name, name }
-      } catch (e) {
-        if (!isAbortError(e)) console.error('Failed to resolve preset label:', e)
-      }
-    }
-
-    const BAMBUDDY_PROFILE_PARAM_KEYS = ['bambu_idx', 'bambu_slicer_setting_id']
-    function isBambuddyCloudProfileManaged(): boolean {
-      return currentDriverKey === 'bambuddy' && cloudPresets.length > 0
-    }
-    function excludeManagedProfileParams(params: { param_key: string; param_value: string | null }[]) {
-      if (!isBambuddyCloudProfileManaged()) return params
-      return params.filter(p => !BAMBUDDY_PROFILE_PARAM_KEYS.includes(p.param_key))
-    }
-
-    // Searchable combobox markup: visible search input shows the profile NAME,
-    // hidden input carries the preset code (driver action, not params PUT).
-    function renderCloudCombobox(key: string, code: string, forParamsSave = true): string {
-      const label = presetLabel(code)
-      const hiddenClass = forParamsSave ? 'param-value' : 'slicer-profile-code'
-      return `<div class="cloud-combo" data-key="${key}" style="flex: 2; position: relative;">
-        <input type="hidden" class="${hiddenClass}" data-key="${key}" value="${escapeHtml(code)}" />
-        <input type="text" class="fm-input cloud-combo-search" autocomplete="off" spellcheck="false"
-          placeholder="${escapeHtml(t('printers.searchProfile') || 'Search profile…')}"
-          value="${escapeHtml(label)}" style="width: 100%;" />
-        <div class="cloud-combo-list" style="display:none; position:absolute; z-index:50; left:0; right:0; max-height:260px; overflow-y:auto; background:var(--surface, #1e1e1e); border:1px solid var(--border, #444); border-radius:6px; margin-top:2px; box-shadow:0 4px 16px rgba(0,0,0,0.3);"></div>
-      </div>`
-    }
-
-    function wireCombo(combo: any, onSelect: ((code: string) => void) | null) {
-      const hidden = combo.querySelector('.param-value, .slicer-profile-code') as HTMLInputElement
-      const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
-      const list = combo.querySelector('.cloud-combo-list') as HTMLElement
-
-      const renderList = (query: string) => {
-        const q = query.trim().toLowerCase()
-        const matches = (q
-          ? cloudPresets.filter((p: any) => (p.displayName || '').toLowerCase().includes(q))
-          : cloudPresets).slice(0, 200)
-        if (matches.length === 0) {
-          list.innerHTML = `<div style="padding:8px 10px; color:var(--text-muted); font-size:0.85rem;">${escapeHtml(t('printers.noProfileMatches') || 'No matches')}</div>`
-          return
-        }
-        list.innerHTML = matches.map((p: any) => {
-          const sel = p.code === hidden.value ? ' style="background:var(--accent-muted, rgba(59,130,246,0.15));"' : ''
-          return `<div class="cloud-combo-opt" data-code="${escapeHtml(p.code)}"${sel}
-            style="padding:7px 10px; cursor:pointer; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
-            title="${escapeHtml(p.displayName)}">${escapeHtml(p.displayName)}</div>`
-        }).join('')
-        list.querySelectorAll('.cloud-combo-opt').forEach((opt: any) => {
-          opt.addEventListener('mousedown', (ev: Event) => {
-            ev.preventDefault()
-            const code = opt.dataset.code
-            hidden.value = code
-            search.value = presetLabel(code)
-            list.style.display = 'none'
-            if (onSelect) onSelect(code)
-          })
-          opt.addEventListener('mouseenter', () => { opt.style.background = 'var(--accent-muted, rgba(59,130,246,0.25))' })
-          opt.addEventListener('mouseleave', () => { opt.style.background = opt.dataset.code === hidden.value ? 'var(--accent-muted, rgba(59,130,246,0.15))' : '' })
-        })
-      }
-
-      const open = () => { renderList(''); list.style.display = 'block' }
-      search.addEventListener('focus', open)
-      search.addEventListener('input', () => { renderList(search.value); list.style.display = 'block' })
-      search.addEventListener('blur', () => {
-        setTimeout(() => {
-          list.style.display = 'none'
-          search.value = presetLabel(hidden.value)
-        }, 150)
-      })
-    }
-
-    function wireCloudComboboxes() {
-      document.querySelectorAll('#printer-params-list .cloud-combo').forEach((combo: any) => wireCombo(combo, null))
-    }
-
-    // -- Standalone (printer-independent) slicer profile picker --
-    const slicerRepPrinterId = 0
-
-    function showSlicerMsg(text: string, isError: boolean) {
-      const msg = document.getElementById('slicer-profile-msg')
-      if (!msg) return
-      msg.textContent = text
-      msg.style.color = isError ? 'var(--error-text)' : 'var(--success-text)'
-      msg.classList.remove('hidden')
-      setTimeout(() => msg.classList.add('hidden'), 3000)
-    }
-
-    async function applyFilamentProfileFromPicker(code: string) {
-      if (!code || !slicerRepPrinterId) return
-      const applyAll = window.confirm(t('printers.applyProfileToExisting') || 'Apply this slicer profile to existing spools of this filament?\n\nOK = update all existing spools\nCancel = only new spools')
-      try {
-        const res = await fetch(`/api/v1/printers/${slicerRepPrinterId}/driver/action`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ action: 'set_filament_profile', params: { filament_id: parseInt(id), code, apply_to_existing: applyAll } }),
-        })
-        if (!res.ok) throw new Error('set_filament_profile failed')
-        try {
-          const pr = await fetch(`/api/v1/filaments/${id}/printer-params?printer_id=${slicerRepPrinterId}`, { credentials: 'include', signal: getAbortSignal() })
-          if (pr.ok) currentPrinterParams = await pr.json()
-        } catch {}
-        showSlicerMsg(t('common.saved') || 'Saved', false)
-      } catch (e) {
-        if (!isAbortError(e)) { console.error('Failed to apply filament profile:', e); showSlicerMsg(t('printers.paramsSaveFailed') || 'Failed', true) }
-      }
-    }
-
-    /* removed initSlicerProfilePicker — replaced by initPerModelProfilePicker */
-
-    function renderPrinterParams() {
-      const container = document.getElementById('printer-params-list')!
-      const actions = document.getElementById('printer-params-actions')!
-      const printerId = (document.getElementById('printer-select') as HTMLSelectElement).value
-
-      if (!printerId) {
-        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('printers.selectPrinterHint')}</p>`
-        actions.classList.add('hidden')
-        return
-      }
-
-      actions.classList.remove('hidden')
-
-      // Build a map of current values
-      const valuesMap: Record<string, string> = {}
-      currentPrinterParams.forEach((p: any) => { valuesMap[p.param_key] = p.param_value || '' })
-
-      if (fieldDefinitions.length === 0) {
-        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('printers.noFieldDefinitions')}</p>`
-        actions.classList.add('hidden')
-        return
-      }
-
-      container.innerHTML = fieldDefinitions.map((fd: any) => {
-        if (isBambuddyCloudProfileManaged() && fd.key === 'bambu_idx') return ''
-
-        const value = valuesMap[fd.key] || ''
-        let inputHtml = ''
-
-        if (fd.field_type === 'dropdown' && fd.options) {
-          const opts = fd.options.map((o: string) => {
-            const selected = value === o ? ' selected' : ''
-            return `<option value="${o}"${selected}>${o}</option>`
-          }).join('')
-          inputHtml = `<select class="fm-select param-value" data-key="${fd.key}" style="flex: 2;">
-            <option value="">\u2014</option>${opts}</select>`
-        } else if (fd.field_type === 'number') {
-          inputHtml = `<input type="number" step="any" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
-        } else if (fd.field_type === 'checkbox') {
-          inputHtml = `<label style="flex: 2; display: flex; align-items: center;"><input type="checkbox" class="param-value" data-key="${fd.key}" ${value === 'true' || value === '1' ? 'checked' : ''} style="width: 18px; height: 18px; accent-color: var(--accent);" /></label>`
-        } else {
-          inputHtml = `<input type="text" class="fm-input param-value" data-key="${fd.key}" value="${value}" style="flex: 2;" />`
-        }
-
-        return `<div class="param-row" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-          <label style="flex: 1; font-size: 0.85rem; font-weight: 500; color: var(--text-muted);">${fd.label}</label>
-          ${inputHtml}
-        </div>`
-      }).join('')
-
-      wireCloudComboboxes()
-    }
-
-    document.getElementById('btn-save-params')?.addEventListener('click', async () => {
-      const printerId = (document.getElementById('printer-select') as HTMLSelectElement).value
-      if (!printerId) return
-
-      const params: any[] = []
-      document.querySelectorAll('#printer-params-list .param-value').forEach((el: any) => {
-        const key = el.dataset.key
-        let value: string | null = null
-        if (el.type === 'checkbox') {
-          value = el.checked ? 'true' : ''
-        } else {
-          value = el.value?.trim() || null
-        }
-        if (key) params.push({ param_key: key, param_value: value })
-      })
-
-      // Filter out empty values for clean storage
-      const nonEmptyParams = excludeManagedProfileParams(
-        params.filter(p => p.param_value !== null && p.param_value !== '')
-      )
-
-      if (nonEmptyParams.length === 0) {
-        try {
-          await fetch(`/api/v1/filaments/${id}/printer-params/${printerId}`, {
-            method: 'DELETE',
-            headers: { 'X-CSRF-Token': getCsrfTokenGlobal() },
-            credentials: 'include',
-            signal: getAbortSignal(),
-          })
-          currentPrinterParams = []
-          renderPrinterParams()
-          showParamsMessage(t('printers.paramsCleared'), false)
-        } catch (e) {
-          if (isAbortError(e)) return
-          console.error('Failed to delete params:', e)
-          showParamsMessage(t('printers.paramsSaveFailed'), true)
-        }
-        return
-      }
-
-      try {
-        const res = await fetch(`/api/v1/filaments/${id}/printer-params/${printerId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfTokenGlobal() },
-          credentials: 'include',
-          signal: getAbortSignal(),
-          body: JSON.stringify({ params: nonEmptyParams }),
-        })
-        if (res.ok) {
-          currentPrinterParams = await res.json()
-          renderPrinterParams()
-          showParamsMessage(t('printers.paramsSaved'), false)
-        } else {
-          showParamsMessage(t('printers.paramsSaveFailed'), true)
-        }
-      } catch (e) {
-        if (isAbortError(e)) return
-        console.error('Failed to save printer params:', e)
-        showParamsMessage(t('printers.paramsSaveFailed'), true)
-      }
-    })
 
     loadFilament()
   </script>

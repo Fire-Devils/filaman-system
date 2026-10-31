@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Float,
     ForeignKey,
     Integer,
@@ -89,12 +90,44 @@ class Filament(Base, TimestampMixin):
     spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    filamentdb_spool_image_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    filamentdb_spool_profile_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     shop_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     density_g_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
+    extruder_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    bed_temp_range_c: Mapped[dict[str, int | float | None] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    manufacturer_sku: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    datasheet_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_discontinued: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    drying_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drying_time_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    softening_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cooling_fan_range_percent: Mapped[dict[str, int | float | None] | None] = (
+        mapped_column(JSON, nullable=True)
+    )
+    chamber_temp_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_volumetric_speed_mm3_s: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    flow_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pressure_advance_k: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ams_compatibility: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    build_plate_compatibility: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    price_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
     color_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="single"
     )
+    label_field_aliases: Mapped[dict[str, str | dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     multi_color_style: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
@@ -114,6 +147,10 @@ class Filament(Base, TimestampMixin):
         back_populates="filament", cascade="all, delete-orphan"
     )
     printer_params: Mapped[list["FilamentPrinterParam"]] = relationship(
+        back_populates="filament", cascade="all, delete-orphan"
+    )
+
+    printer_initializations: Mapped[list["FilamentPrinterInitialization"]] = relationship(
         back_populates="filament", cascade="all, delete-orphan"
     )
 
@@ -234,6 +271,6 @@ class FilamentPrinterProfile(Base, TimestampMixin):
 
 
 from app.models.printer import Printer
-from app.models.printer_params import FilamentPrinterParam
+from app.models.printer_params import FilamentPrinterInitialization, FilamentPrinterParam
 from app.models.spool import Spool
 from app.models.user import User

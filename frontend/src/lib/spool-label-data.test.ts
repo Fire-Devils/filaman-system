@@ -63,6 +63,26 @@ const lookups = createSpoolLabelLookups(
 )
 
 describe('spool label data normalization', () => {
+  it('roundtrips independent RFID values and configured currency', () => {
+    for (const rfid_uid of ['PRIMARY', null]) {
+      const spool = { ...apiSpool, rfid_uid, rfid_uid_2: 'SECONDARY', purchase_currency: 'IGNORED' }
+      const canonical = buildSpoolLabelDataFromApi(spool, lookups, '', 'USD')
+      expect(canonical).toMatchObject({ rfid_uid: rfid_uid ?? '', rfid_uid_2: 'SECONDARY', purchase_currency: 'USD' })
+      expect(buildSpoolLabelDataFromParams('7', buildSpoolPrintSearchParams(spool, lookups, 'USD'))).toEqual(canonical)
+      expect(buildSpoolDataFromApiSpool(spool, lookups, undefined, 'USD')).toMatchObject({ rfid_uid: rfid_uid ?? '', rfid_uid_2: 'SECONDARY', purchase_currency: 'USD' })
+    }
+    expect(buildSpoolLabelDataFromApi(apiSpool).purchase_currency).toBe('')
+    expect(buildSpoolLabelDataFromApi({ ...apiSpool, rfid_uid_2: null })).toMatchObject({ rfid_uid: 'AABBCCDD', rfid_uid_2: '' })
+  })
+
+  it('maps effective spool physical values to direct and legacy designer tokens', () => {
+    const spool = { ...apiSpool, spool_material: 'ABS', spool_outer_diameter_mm: 0, spool_width_mm: 72 }
+    const data = buildSpoolDataFromApiSpool(spool, lookups)
+    for (const [key, value] of Object.entries({ spool_material: 'ABS', spool_outer_diameter_mm: '0', spool_width_mm: '72' })) {
+      expect(data[key]).toBe(value)
+      expect(data[`filament.${key}`]).toBe(value)
+    }
+  })
   it('normalizes complete API spool data with resolved relationships', () => {
     expect(buildSpoolLabelDataFromApi(apiSpool, lookups)).toMatchObject({
       id: '7',

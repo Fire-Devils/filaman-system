@@ -1,6 +1,59 @@
 import pytest
 
 from app.api.v1 import filamentdb_proxy
+from app.services.filamentdb_field_mapping import standard_filamentdb_fields
+
+
+def test_standard_mapping_preserves_out_of_bounds_fan_as_unmapped():
+    assert "cooling_fan_range_percent" not in standard_filamentdb_fields(
+        {"fan_speed_min": 30, "fan_speed_max": 120}
+    )
+
+
+def test_prepare_request_accepts_missing_discontinued_value():
+    request = filamentdb_proxy.PrepareFilamentRequest(
+        manufacturer_name="Example",
+        designation="PLA",
+        discontinued=None,
+    )
+    assert request.discontinued is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_preserves_spool_image_separately_from_product_image(db_session):
+    result = await filamentdb_proxy.prepare_filament(
+        filamentdb_proxy.PrepareFilamentRequest(
+            manufacturer_name='Spool Photo Brand', designation='PLA',
+            image_file='product.png', spool_profile_image_file='735.png',
+        ), db_session, None,
+    )
+    assert result.prefilled['filamentdb_spool_image_file'] == '735.png'
+    assert result.prefilled['image_url'].endswith('/uploads/filaments/product.png')
+
+
+def test_bad_catalog_spool_image_clears_a_previous_photo_instead_of_reusing_it():
+    assert standard_filamentdb_fields({'spool_profile_image_file': '../unsafe.png'})['filamentdb_spool_image_file'] is None
+
+
+@pytest.mark.asyncio
+async def test_spool_image_proxy_sandboxes_catalog_content_when_opened_directly(monkeypatch):
+    import httpx
+
+    class CatalogClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url):
+            assert url.endswith('/uploads/spool-profiles/735.png')
+            return httpx.Response(200, content=b'<script>bad()</script>', headers={'content-type': 'text/html'}, request=httpx.Request('GET', url))
+
+    monkeypatch.setattr(filamentdb_proxy.httpx, 'AsyncClient', lambda **kwargs: CatalogClient())
+    response = await filamentdb_proxy.proxy_spool_profile_image(None, '735.png')
+    assert response.headers['content-security-policy'] == 'sandbox'
+    assert response.headers['x-content-type-options'] == 'nosniff'
 
 
 @pytest.mark.asyncio
@@ -183,3 +236,114 @@ def test_lookup_text_caps_nested_remote_response_traversal():
     assert "Root" in text
     assert "Nested 2" in text
     assert "Nested 3" not in text
+
+
+@pytest.mark.asyncio
+async def test_prepare_filament_returns_standard_temperature_ranges(db_session):
+    result = await filamentdb_proxy.prepare_filament(
+        filamentdb_proxy.PrepareFilamentRequest(
+            manufacturer_name="Temperature Manufacturer",
+            designation="Temperature PLA",
+            temp_nozzle_min=190,
+            temp_nozzle_max=230,
+            temp_bed=60,
+        ),
+        db_session,
+        None,
+    )
+
+    assert result.prefilled["extruder_temp_range_c"] == {"min": 190, "max": 230}
+    assert result.prefilled["bed_temp_range_c"] == {"min": 60, "max": 60}
+
+
+@pytest.mark.asyncio
+async def test_prepare_filament_returns_all_standard_filamentdb_fields(db_session):
+    result = await filamentdb_proxy.prepare_filament(
+        filamentdb_proxy.PrepareFilamentRequest(
+            manufacturer_name="Complete Manufacturer",
+            designation="Complete PLA",
+            sku="PLA-42",
+            datasheet_url="https://example.com/pla.pdf",
+            image_url="https://example.com/pla.png",
+            discontinued=True,
+            dry_temp=55,
+            dry_time_hours=6,
+            softening_temp=65,
+            fan_speed_min=40,
+            fan_speed_max=80,
+            chamber_temp=35,
+            max_volumetric_speed=18,
+            flow_ratio=0.97,
+            k_value=0.025,
+            ams_compatible="ams,ams-2-pro",
+            build_plates="pei,textured-pei",
+            currency="EUR",
+        ),
+        db_session,
+        None,
+    )
+
+    assert result.prefilled == {
+        **result.prefilled,
+        "manufacturer_sku": "PLA-42",
+        "datasheet_url": "https://example.com/pla.pdf",
+        "image_url": "https://example.com/pla.png",
+        "is_discontinued": True,
+        "drying_temp_c": 55,
+        "drying_time_hours": 6,
+        "softening_temp_c": 65,
+        "cooling_fan_range_percent": {"min": 40, "max": 80},
+        "chamber_temp_c": 35,
+        "max_volumetric_speed_mm3_s": 18,
+        "flow_ratio": 0.97,
+        "pressure_advance_k": 0.025,
+        "ams_compatibility": ["ams", "ams-2-pro"],
+        "build_plate_compatibility": ["pei", "textured-pei"],
+        "price_currency": "EUR",
+    }
+
+
+@pytest.mark.asyncio
+async def test_prepare_filament_ignores_invalid_remote_temperature_range(db_session):
+    result = await filamentdb_proxy.prepare_filament(
+        filamentdb_proxy.PrepareFilamentRequest(
+            manufacturer_name="Invalid Temperature Manufacturer",
+            designation="Temperature PLA",
+            temp_nozzle_min=240,
+            temp_nozzle_max=190,
+        ),
+        db_session,
+        None,
+    )
+
+    assert "extruder_temp_range_c" not in result.prefilled
+async def test_prepare_filament_preserves_manufacturer_color_name(auth_client):
+    client, csrf_token = auth_client
+
+    response = await client.post(
+        "/api/v1/filamentdb/prepare-filament",
+        json={
+            "manufacturer_name": "Example Brand",
+            "designation": "Basic",
+            "material_key": "PLA",
+            "manufacturer_color_name": "Bambu Green",
+            "colors": [
+                {
+                    "hex_code": "#00AE42",
+                    "color_name": "Bambu Green",
+                    "position": 1,
+                }
+            ],
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["prefilled"]["manufacturer_color_name"] == "Bambu Green"
+
+
+def test_catalog_spool_profile_id_is_retained_and_invalid_values_ignored():
+    assert standard_filamentdb_fields({'spool_profile': {'id': 735, 'image_file': '735.png'}})['filamentdb_spool_profile_id'] == 735
+    assert standard_filamentdb_fields({'spool_profile_id': 735, 'spool_profile_image_file': '735.png'})['filamentdb_spool_profile_id'] == 735
+    for value in [True, 0, -1, '735']:
+        assert 'filamentdb_spool_profile_id' not in standard_filamentdb_fields({'spool_profile': {'id': value}})

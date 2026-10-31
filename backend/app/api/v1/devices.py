@@ -53,7 +53,7 @@ def _is_primary_worker() -> bool:
 
 from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
 from app.core.security import Principal, generate_token_secret, hash_token
-from app.models import AppSettings, Device, Location, Spool, SpoolStatus
+from app.models import AppSettings, Device, Location, Spool
 from app.models.filament import Color, FilamentColor, Manufacturer
 from app.services.spool_service import SpoolService
 
@@ -72,6 +72,18 @@ _MATERIAL_TEMP_DEFAULTS: dict[str, tuple[int, int]] = {
     "PLA+": (180, 230),
 }
 _DEFAULT_TEMP = (190, 230)
+
+
+def _rfid_temperature(value: str | None, default: int) -> int:
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        try:
+            return round(float(value))
+        except (ValueError, OverflowError):
+            return default
 
 
 async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> dict:
@@ -107,6 +119,8 @@ async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> di
     min_temp, max_temp = _MATERIAL_TEMP_DEFAULTS.get(material_type.upper(), _DEFAULT_TEMP)
     if filament:
         from app.models.printer_params import FilamentPrinterParam
+        from app.plugins.manager import PluginManager
+
         param_result = await db.execute(
             select(FilamentPrinterParam.param_key, FilamentPrinterParam.param_value)
             .where(
@@ -115,16 +129,14 @@ async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> di
             )
         )
         params = {row.param_key: row.param_value for row in param_result.all()}
-        if "bambu_nozzle_temp_min" in params and params["bambu_nozzle_temp_min"]:
-            try:
-                min_temp = int(params["bambu_nozzle_temp_min"])
-            except ValueError:
-                pass
-        if "bambu_nozzle_temp_max" in params and params["bambu_nozzle_temp_max"]:
-            try:
-                max_temp = int(params["bambu_nozzle_temp_max"])
-            except ValueError:
-                pass
+        native_params = PluginManager._bambu_temperature_fallbacks(
+            PluginManager._native_bambu_temperature_params(filament), params,
+            {"bambu_nozzle_temp_min": min_temp, "bambu_nozzle_temp_max": max_temp},
+        )
+        min_temp = _rfid_temperature(native_params.get("bambu_nozzle_temp_min"), min_temp)
+        max_temp = _rfid_temperature(native_params.get("bambu_nozzle_temp_max"), max_temp)
+        min_temp = _rfid_temperature(params.get("bambu_nozzle_temp_min"), min_temp)
+        max_temp = _rfid_temperature(params.get("bambu_nozzle_temp_max"), max_temp)
 
     return {
         "protocol": protocol,

@@ -1,0 +1,114 @@
+<div id="printer-setup" class="printer-setup hidden"></div>
+
+<style is:global>
+  .printer-setup { --number-width: 7.5ch; --range-width: calc(15ch + 18px); --unit-width: 38px; --reset-width: 28px; display: grid; gap: 12px; margin-top: 16px; min-width: 0; }
+  .printer-setup.hidden, .printer-setup .hidden { display: none !important; }
+  .printer-setup *, .printer-setup *::before, .printer-setup *::after { box-sizing: border-box; }
+  .printer-setup h2, .printer-setup h3, .printer-setup h4, .printer-setup h5, .printer-setup p { margin: 0; }
+  .printer-setup-heading h2 { font: inherit; }
+  .printer-setup h4 { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
+  .printer-setup h5 { font-size: .8rem; font-weight: 600; }
+  .printer-setup a { color: var(--accent); text-underline-offset: 3px; }
+  .printer-setup-card { padding: 0; min-width: 0; margin: 0; }
+  .printer-setup-card-body { padding: 8px 16px 12px; }
+  .printer-setup-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin: 0; border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0; }
+  .printer-setup-source { color: var(--text-muted); font-size: .74rem; }
+  .printer-setup-links, .printer-setup-driver-label, .printer-setup-links a, .printer-setup-links > span { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+  .printer-setup-links { justify-content: flex-end; gap: 5px 12px; font-size: .7rem; color: var(--text-muted); }
+  .printer-setup-driver-logo { width: 18px; height: 18px; object-fit: contain; }
+  .printer-setup-plugin-icon { width: 16px; height: 16px; fill: currentColor; }
+  .printer-setup-activation { font-size: .68rem; padding: 3px 7px; border: 1px solid var(--border); border-radius: 999px; white-space: nowrap; }
+  .printer-setup fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+  .printer-setup-printers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 29rem), 1fr)); gap: 12px; align-items: start; }
+  .printer-setup-printer { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .printer-setup-printer-heading { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; padding: 8px 10px; gap: 3px 8px; cursor: pointer; list-style: none; background: var(--bg-soft); border-radius: inherit; }
+  .printer-setup-printer-heading::-webkit-details-marker { display: none; }
+  .printer-setup-identity { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .printer-setup-printer-icon { width: 18px; height: 18px; flex: 0 0 18px; fill: currentColor; color: var(--text-muted); }
+  .printer-setup-settings { width: 26px; height: 28px; flex: 0 0 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; }
+  .printer-setup-settings:hover { background: var(--bg-soft); }
+  .printer-setup-settings svg { width: 16px; height: 16px; fill: currentColor; }
+  .printer-setup-printer-heading > .printer-setup-links { grid-column: 3; grid-row: 1; }
+  .printer-setup-printer[open] > summary { border-bottom: 1px solid var(--border); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .printer-setup-printer-body { container: printer-parameters / inline-size; padding: 0 10px 8px; }
+  .printer-setup-chevron { width: 16px; height: 16px; color: var(--text-muted); }
+  .printer-setup-printer[open] > summary .printer-setup-chevron { transform: rotate(90deg); }
+  .printer-setup-dirty { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent); border-radius: 999px; font-size: .62rem; font-weight: 750; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; color: var(--accent); }
+  .printer-setup-groups { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; min-width: 0; }
+  .printer-setup-groups > div:empty { display: none; }
+  .printer-setup-groups > div:has(> .printer-setup-group-title) { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 8px 4px; }
+  .printer-setup-group-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 2px; }
+  .printer-setup-groups .printer-setup-group-title { margin: 0 -8px 2px; padding: 6px 8px; background: var(--bg-soft); border-bottom: 1px solid var(--border); border-radius: inherit; }
+  .printer-setup-group-title > span { font-size: .68rem; color: var(--text-muted); }
+  .printer-setup-field { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 4px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+  .printer-setup-field:last-child { border-bottom: 0; }
+  .printer-setup-field.is-dirty { outline: 1px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: -1px; border-radius: 6px; margin-inline: -6px; padding-inline: 6px; }
+  .printer-setup-field[data-owned="true"]::before { content: ""; position: absolute; left: -7px; top: 4px; bottom: 4px; width: 2px; background: var(--accent); }
+  .printer-setup-field > label, .printer-setup-field-label { font-size: .8rem; overflow-wrap: anywhere; }
+  .printer-setup-field-content { min-width: 0; }
+  .printer-setup-control { display: grid; grid-template-columns: var(--reset-width) minmax(0, 1fr) var(--unit-width); gap: 6px; align-items: start; min-width: 0; font-size: .83rem; }
+  .printer-setup-field[data-type="number"] .printer-setup-control { grid-template-columns: var(--reset-width) var(--number-width) var(--unit-width); }
+  .printer-setup-field.printer-setup-range .printer-setup-control { grid-template-columns: var(--reset-width) var(--range-width) var(--unit-width); }
+  .printer-setup-entry { min-width: 0; width: 10rem; max-width: 100%; }
+  .printer-setup-field[data-type="dropdown"] .printer-setup-entry { width: 11rem; }
+  .printer-setup-field[data-type="checkbox"] .printer-setup-entry { width: auto; }
+  .printer-setup-field[data-type="number"] .printer-setup-entry { width: var(--number-width); }
+  .printer-setup-field.printer-setup-range .printer-setup-entry { width: var(--range-width); }
+  .printer-setup-inputs { display: flex; align-items: center; gap: 5px; min-height: 30px; }
+  .printer-setup-range-separator { width: 8px; flex: 0 0 8px; text-align: center; color: var(--text-muted); }
+  .printer-setup-value { width: 100%; min-height: 30px; display: flex; align-items: center; justify-content: flex-end; padding-inline: 7px; font-size: inherit; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .printer-setup-field[data-type="number"] .printer-setup-value { min-width: 0; width: auto; flex: 1 1 0; }
+  .printer-setup .fm-input, .printer-setup .fm-select { min-width: 0; max-width: 100%; height: 30px; font-size: inherit; margin: 0; }
+  .printer-setup-value.is-empty, .printer-setup .fm-input::placeholder { color: var(--text-muted); opacity: .65; }
+  .printer-setup-value.is-empty { justify-content: center; }
+  .printer-setup .fm-input::placeholder { text-align: center; }
+  .printer-setup .fm-input { padding: 5px 7px; width: 10rem; }
+  .printer-setup .fm-input.printer-setup-number { width: var(--number-width); flex: 0 0 var(--number-width); text-align: right; font-variant-numeric: tabular-nums; }
+  .printer-setup .fm-select { width: 11rem; padding: 5px 32px 5px 9px; background-position: right 10px center; }
+  .printer-setup-inputs input[type="checkbox"] { accent-color: var(--accent); width: 18px; height: 18px; }
+  .printer-setup-unit { font-size: .72rem; color: var(--text-muted); line-height: 30px; }
+  .printer-setup-origin { display: block; min-height: 12px; line-height: 12px; font-size: .67rem; color: var(--text-muted); text-align: center; overflow-wrap: anywhere; }
+  .printer-setup-base { display: block; font-size: .68rem; color: var(--text-muted); text-align: right; margin-top: 3px; }
+  .printer-setup-field[data-owned="true"] .printer-setup-origin { color: var(--accent); }
+  .printer-setup-reset-slot { width: var(--reset-width); min-height: 30px; display: flex; align-items: center; justify-content: center; }
+  .printer-setup-reset { width: 26px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 5px; border: 0; border-radius: 6px; color: var(--text-muted); background: transparent; cursor: pointer; }
+  .printer-setup-reset:hover { color: var(--accent); background: var(--bg-soft); }
+  .printer-setup-reset svg { width: 16px; height: 16px; }
+  .printer-setup .fm-btn { font-size: .76rem; padding: 6px 11px; min-height: 32px; white-space: normal; }
+  .printer-setup-additional { margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 8px; }
+  .printer-setup-additional > summary { margin: 0 -8px; color: var(--text-muted); background: var(--bg-soft); border-radius: inherit; font-size: .77rem; font-weight: 600; cursor: pointer; padding: 6px 8px; }
+  .printer-setup-additional[open] > summary { border-bottom: 1px solid var(--border); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .printer-setup-note { color: var(--text-muted); font-size: .72rem; line-height: 1.35; }
+  .printer-setup-error { color: var(--error-text); font-size: .8rem; padding: 8px 0; overflow-wrap: anywhere; }
+  .printer-setup-conflict { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .75rem; color: var(--warning-text); }
+  .printer-setup-conflict > span { flex-basis: 100%; }
+  .printer-setup .profile-picker-help { color: var(--text-muted); font-size: .76rem; line-height: 1.35; margin: 0 0 8px; }
+  .printer-setup .per-model-profile-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)) !important; gap: 12px !important; }
+  .printer-setup .per-model-profile-row > h4 { margin-bottom: 6px; }
+  .printer-setup .profile-picker-technical { margin-top: 6px; }
+  .printer-setup .profile-picker-technical > summary { cursor: pointer; color: var(--text-muted); }
+  .printer-setup .per-model-profile-row, .printer-setup .profile-picker-shell, .printer-setup .cloud-combo { min-width: 0; }
+  .printer-setup .cloud-combo-search { width: 100%; height: 38px; }
+  .printer-setup .cloud-combo-list { background: var(--bg-elevated) !important; }
+  @container printer-parameters (min-width: 46rem) {
+    .printer-setup-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
+  }
+  @media (max-width: 640px) {
+    .printer-setup-card-body { padding: 8px 12px 10px; }
+    .printer-setup-printers { grid-template-columns: 1fr; }
+    .printer-setup-printer-heading > .printer-setup-links { grid-column: 2 / -1; grid-row: auto; justify-content: flex-start; }
+    .printer-setup-field { gap: 4px 8px; }
+    .printer-setup-field:has(input[type="text"], select), .printer-setup-range { grid-template-columns: 1fr; }
+    .printer-setup-range .printer-setup-field-content { justify-self: end; }
+    .printer-setup .fm-input:not(.printer-setup-number), .printer-setup .fm-select { width: 100%; }
+  }
+  @media (pointer: coarse) {
+    .printer-setup { --reset-width: 32px; }
+    .printer-setup-reset { min-width: 32px; min-height: 32px; }
+    .printer-setup-settings { min-width: 32px; min-height: 32px; }
+    .printer-setup-printer-heading, .printer-setup-additional > summary { min-height: 44px; }
+    .printer-setup-control { font-size: 16px; }
+    .printer-setup .fm-input, .printer-setup .fm-select, .printer-setup-inputs, .printer-setup-value { min-height: 34px; }
+    .printer-setup-unit { line-height: 34px; }
+  }
+</style>

@@ -19,7 +19,8 @@ const bundle = await build({ configFile: false, root: frontend, logLevel: 'error
   write: false, minify: false,
   lib: { entry: `${frontend}src/lib/label-pc-print-prompt.ts`, name: 'printPrompt', formats: ['iife'] },
 } })
-const loader = await createServer({ configFile: false, root: frontend, server: { middlewareMode: true } })
+// Keep this SSR fixture from invalidating the running Astro server's optimized modules.
+const loader = await createServer({ configFile: false, root: frontend, cacheDir: `${frontend}node_modules/.vite-pc-print-check`, server: { middlewareMode: true } })
 const core = await loader.ssrLoadModule('/tests/label-rendering/render.mjs')
 const runtime = await core.createSvgRuntime(path => readFile(`${frontend}node_modules/${path}`))
 await loader.close()

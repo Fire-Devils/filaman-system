@@ -22,6 +22,22 @@ class FilamentPrinterParam(Base, TimestampMixin):
     printer: Mapped["Printer"] = relationship(back_populates="filament_params")
 
 
+class FilamentPrinterInitialization(Base):
+    """Records native default initialization independently of removable calibration rows."""
+
+    __tablename__ = "filament_printer_initializations"
+
+    filament_id: Mapped[int] = mapped_column(
+        ForeignKey("filaments.id", ondelete="CASCADE"), primary_key=True
+    )
+    printer_id: Mapped[int] = mapped_column(
+        ForeignKey("printers.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+    filament: Mapped["Filament"] = relationship(back_populates="printer_initializations")
+    printer: Mapped["Printer"] = relationship(back_populates="filament_initializations")
+
+
 class SpoolPrinterParam(Base, TimestampMixin):
     """Per-printer calibration parameters for a spool (overrides filament-level values)."""
     __tablename__ = "spool_printer_params"

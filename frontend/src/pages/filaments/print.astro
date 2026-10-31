@@ -545,7 +545,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
     loadSettings()
     await prefetchLogos()
-    tabControls.activate(initialMode)
+    tabControls.activate(tabControls.getActiveMode())
   }
 
   bindLabelSettingsEvents({
