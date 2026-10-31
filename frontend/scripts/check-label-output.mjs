@@ -31,7 +31,7 @@ const migratedSpool = { ...spool, filament: migratedFilament, label_field_aliase
 const standardDefinition = { label: 'Drying temperature', field_type: 'number', config: { unit: '°C', decimal_places: 1 } };
 const temperatureDefinition = { ...standardDefinition, label: 'Extruder temperature' };
 const standardFilament = { ...filament, drying_temp_c: 55, extruder_temp_range_c: { min: 225, max: 230 },
-  custom_fields: { settings_extruder_temp: 210 }, label_field_aliases: {
+  custom_fields: { settings_extruder_temp: 210, note: 'Keep dry' }, label_field_aliases: {
     dry_temp: { target: 'drying_temp_c', definition: standardDefinition },
     settings_extruder_temp: { target: 'extruder_temp_range_c.min', definition: temperatureDefinition,
       wire: { target: 'extruder_temp_range_c', value: 210, native: { min: 210, max: 210 }, source: ['settings_extruder_temp'], retained: true, definition: temperatureDefinition } },
@@ -39,6 +39,7 @@ const standardFilament = { ...filament, drying_temp_c: 55, extruder_temp_range_c
 let standardFixture = false;
 let migrated = false;
 let entityResponseGate = null;
+let definitionResponseGate = null;
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
@@ -66,6 +67,7 @@ try {
     if (/\/(filaments\/[89]|spools\/29[56])$/.test(path)) {
       await entityResponseGate;
     }
+    if (path.endsWith('/system-extra-fields')) await definitionResponseGate;
     if (migrated && path.endsWith('/system-extra-fields') && new URL(route.request().url()).searchParams.get('target_type') === 'filament') data = [{ id: 1, key: 'bed_temp_range_c', label: 'Bed range', field_type: 'range', config: { unit: '°C' } }];
     if (path.endsWith('/label-assets')) data = [{ id: design.elements[1].assetId, display_name: 'Fixture logo', width: 100, height: 50 }];
     if (path.endsWith('/events/stream')) return route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' });
@@ -107,6 +109,52 @@ try {
     assert.deepEqual(errors, []);
     await standardPage.close();
     console.log(`${url}: saved Standard aliases selected=${selected} passed`);
+  }
+  // Defaults cancels saved selections even when their controls arrive later.
+  for (const entity of ['filament', 'spool']) for (const pending of ['entity', 'definitions']) for (const handoff of [false, true]) {
+    const standardPage = await context.newPage();
+    const id = entity === 'filament' ? 8 : 295;
+    const settingsKey = entity === 'filament' ? 'filaman-filament-label-settings' : 'filaman-label-settings';
+    await standardPage.addInitScript(({ entity, id, settingsKey, handoff }) => {
+      localStorage.setItem(settingsKey, JSON.stringify({ _v: 2, showQR: false, extraFields: { 'filament.dry_temp': true } }));
+      localStorage.removeItem(entity === 'filament' ? 'filaman-filament-label-active-tab' : 'filaman-label-active-tab');
+      sessionStorage.clear();
+      if (handoff) sessionStorage.setItem(entity === 'filament' ? 'filaman-filament-label-extra-fields' : 'filaman-label-extra-fields', JSON.stringify({
+        entityId: String(id), fields: [{ key: 'filament.note', label: 'Note', source: 'filament', value: 'Keep dry' }],
+      }));
+    }, { entity, id, settingsKey, handoff });
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    if (pending === 'entity') entityResponseGate = gate;
+    else definitionResponseGate = gate;
+    const waiting = standardPage.waitForRequest(request => {
+      const path = new URL(request.url()).pathname;
+      return pending === 'entity' ? path === `/api/v1/${entity}s/${id}` : path.endsWith('/system-extra-fields');
+    });
+    try {
+      await standardPage.goto(`${origin}/${entity}s/${id}/print`, { waitUntil: 'domcontentloaded' });
+      await waiting;
+      await standardPage.locator('#btn-reset').click();
+      await standardPage.locator('#check-mat').uncheck();
+      if (handoff) await standardPage.locator('[id="check-ef-filament.note"]').check();
+      release();
+      await standardPage.locator('[id="check-ef-filament.note"]').waitFor();
+      await standardPage.waitForFunction(() => document.querySelector('.label-designation')?.textContent === 'Matte Charcoal 11101');
+      assert.equal(await standardPage.locator('[id="check-ef-filament.dry_temp"]:checked').count(), 0);
+      assert.ok(!(await standardPage.locator('.label-extra-fields').allTextContents()).some(text => text.includes('55.0')));
+      assert.equal(await standardPage.locator('#check-mat').isChecked(), false);
+      assert.equal(await standardPage.locator('[id="check-ef-filament.note"]').isChecked(), handoff);
+      if (!handoff) await standardPage.locator('[id="check-ef-filament.note"]').check();
+      await standardPage.waitForFunction(() => document.querySelector('.label-extra-fields')?.textContent.includes('Keep dry'));
+      const stored = await standardPage.evaluate(key => JSON.parse(localStorage.getItem(key)), settingsKey);
+      assert.notEqual(stored.extraFields['filament.dry_temp'], true);
+      console.log(`${entity}: Defaults during ${pending}, handoff=${handoff}, later choice preserved`);
+    } finally {
+      release();
+      entityResponseGate = null;
+      definitionResponseGate = null;
+      await standardPage.close();
+    }
   }
   standardFixture = false;
   // A late entity response must not reset a tab the user already selected.

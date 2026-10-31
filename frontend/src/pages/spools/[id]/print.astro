@@ -294,7 +294,7 @@ export function getStaticPaths() {
   const extraFieldChecks: {key: string, label: string, value: string, checkbox: HTMLInputElement}[] = []
 
   const parsedClassicSettings = apiDefaultRequest ? null : parseJsonOrNull<LabelSettingsState>(readStorageValue(LABEL_SETTINGS_KEY))
-  const savedExtraFieldSettings = parsedClassicSettings?.extraFields
+  let savedExtraFieldSettings = parsedClassicSettings?.extraFields
     && typeof parsedClassicSettings.extraFields === 'object'
     ? parsedClassicSettings.extraFields as Record<string, boolean>
     : {}
@@ -546,6 +546,7 @@ export function getStaticPaths() {
   })
 
   function resetStandardSettings() {
+    savedExtraFieldSettings = {}
     if (apiDefaultRequest) applyStandardLabelSettings(settingsControls, API_DEFAULT_LABEL_SETTINGS)
     else {
       removeStorageValue(LABEL_SETTINGS_KEY)

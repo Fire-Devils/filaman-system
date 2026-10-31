@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { renderPrintPage, runPrintPage } from './label-print-test-support'
 
 import LabelSheetOutputSettings from '../components/LabelSheetOutputSettings.astro'
 import StandardLabelSettingsPanel from '../components/StandardLabelSettingsPanel.astro'
@@ -102,6 +103,73 @@ afterEach(() => {
   vi.unstubAllGlobals()
   document.head.innerHTML = ''
   document.body.innerHTML = ''
+})
+
+describe('single print page pending Defaults', () => {
+  for (const entity of ['filament', 'spool'] as const) for (const pending of ['entity', 'definitions']) for (const handoff of [false, true]) {
+    it(`${entity} Defaults survives pending ${pending} (handoff ${handoff}) and preserves a later user choice`, async () => {
+      history.replaceState(null, '', `/${entity}s/8/print`)
+      sessionStorage.clear()
+      if (handoff) sessionStorage.setItem(entity === 'filament' ? 'filaman-filament-label-extra-fields' : 'filaman-label-extra-fields', JSON.stringify({
+        entityId: '8', fields: [{ key: 'filament.note', label: 'Note', source: 'filament', value: 'Keep dry' }],
+      }))
+      vi.stubGlobal('QRCode', class { static CorrectLevel = { H: 2 } })
+      const settingsKey = entity === 'filament' ? 'filaman-filament-label-settings' : 'filaman-label-settings'
+      localStorage.setItem(settingsKey, JSON.stringify({ _v: 2, extraFields: { 'filament.dry_temp': true }, showQR: false }))
+      await renderPrintPage(entity)
+      let release!: () => void
+      const gate = new Promise<void>(resolve => { release = resolve })
+      let waiting = false
+      const filament = { id: 8, designation: 'Test PLA', material_type: 'PLA', drying_temp_c: 55,
+        custom_fields: { note: 'Keep dry' }, label_field_aliases: {
+          dry_temp: { target: 'drying_temp_c', definition: { label: 'Drying temperature', field_type: 'number', config: { unit: '°C', decimal_places: 1 } } },
+        } }
+      vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+        const path = String(input)
+        const entityRequest = /\/(filaments|spools)\/8$/.test(path)
+        const definitionRequest = path.includes('/system-extra-fields')
+        if ((pending === 'entity' && entityRequest) || (pending === 'definitions' && definitionRequest)) {
+          waiting = true
+          await gate
+        }
+        if (entityRequest) return Response.json(entity === 'filament' ? filament : { id: 8, filament_id: 8, filament, remaining_weight_g: 123 })
+        if (path === '/api/v1/locations') return Response.json({ items: [], total: 0 })
+        if (path.endsWith('/public-info')) return Response.json({ currency: 'EUR' })
+        return Response.json([])
+      }))
+      let editor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | undefined
+      const completion = runPrintPage(entity, false, {
+        initPrintDesignerEditor: async (options: Parameters<typeof initPrintDesignerEditor>[0]) => {
+          editor = await initPrintDesignerEditor(options)
+          return editor
+        },
+      })
+      await vi.waitFor(() => expect(waiting).toBe(true))
+      document.querySelector<HTMLButtonElement>('#btn-reset')!.click()
+      const material = document.querySelector<HTMLInputElement>('#check-mat')!
+      material.checked = false
+      material.dispatchEvent(new Event('change'))
+      if (handoff) document.querySelector<HTMLInputElement>('[id="check-ef-filament.note"]')!.click()
+      release()
+      await completion
+      try {
+        await vi.waitFor(() => expect(document.querySelector('[id="check-ef-filament.note"]')).not.toBeNull())
+        await vi.waitFor(() => expect(document.querySelector('.label-designation')?.textContent).toBe('Test PLA'))
+        expect(document.querySelector('[id="check-ef-filament.dry_temp"]:checked')).toBeNull()
+        expect(document.querySelector('.label-extra-fields')?.textContent ?? '').not.toContain('55.0')
+        await vi.waitFor(() => expect(localStorage.getItem(settingsKey)).not.toBeNull())
+        expect(JSON.parse(localStorage.getItem(settingsKey)!).extraFields['filament.dry_temp']).not.toBe(true)
+        expect(material.checked).toBe(false)
+        const note = document.querySelector<HTMLInputElement>('[id="check-ef-filament.note"]')!
+        expect(note.checked).toBe(handoff)
+        if (!handoff) note.click()
+        await vi.waitFor(() => expect(document.querySelector('.label-extra-fields')?.textContent).toContain('Keep dry'))
+      } finally {
+        editor?.destroy()
+        window.dispatchEvent(new Event('pagehide'))
+      }
+    })
+  }
 })
 
 describe('label sheet preview styling', () => {
