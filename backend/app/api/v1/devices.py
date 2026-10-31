@@ -119,6 +119,8 @@ async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> di
     min_temp, max_temp = _MATERIAL_TEMP_DEFAULTS.get(material_type.upper(), _DEFAULT_TEMP)
     if filament:
         from app.models.printer_params import FilamentPrinterParam
+        from app.plugins.manager import PluginManager
+
         param_result = await db.execute(
             select(FilamentPrinterParam.param_key, FilamentPrinterParam.param_value)
             .where(
@@ -127,6 +129,12 @@ async def _build_extended_data(db: DBSession, spool: Spool, protocol: str) -> di
             )
         )
         params = {row.param_key: row.param_value for row in param_result.all()}
+        native_params = PluginManager._bambu_temperature_fallbacks(
+            PluginManager._native_bambu_temperature_params(filament), params,
+            {"bambu_nozzle_temp_min": min_temp, "bambu_nozzle_temp_max": max_temp},
+        )
+        min_temp = _rfid_temperature(native_params.get("bambu_nozzle_temp_min"), min_temp)
+        max_temp = _rfid_temperature(native_params.get("bambu_nozzle_temp_max"), max_temp)
         min_temp = _rfid_temperature(params.get("bambu_nozzle_temp_min"), min_temp)
         max_temp = _rfid_temperature(params.get("bambu_nozzle_temp_max"), max_temp)
 

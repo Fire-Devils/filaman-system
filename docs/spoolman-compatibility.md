@@ -81,3 +81,18 @@ saved opposite endpoint, the effective legacy pair is retained in `min_temp` /
 `max_temp` extras while the native range stays valid. A later compatible update
 moves the pair into native storage. Explicitly reversed pairs supplied together
 still return HTTP 400.
+
+## Printer integrations
+
+Legacy Bambu settings migrate for BambuLab and compatible declared driver fields,
+including Bambuddy. Renames affect only that driver's printers. Unknown or
+undeclared values remain intact, and existing printer/spool settings and clears
+take priority over imported values.
+
+Native temperatures supply supported assignment and RFID fallbacks without
+replacing calibration or reseeding cleared, initialized pairs. Partial native
+ranges apply only when compatible with the consumer's opposite endpoint;
+complete valid native ranges can still replace material defaults. No missing
+endpoint is invented. Generic filament pressure advance remains separate from
+measured per-printer calibration. No new printer commands or nozzle-specific
+calibration protocol is added.
