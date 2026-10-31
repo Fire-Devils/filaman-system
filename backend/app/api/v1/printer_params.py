@@ -17,6 +17,8 @@ from app.plugins.manager import plugin_manager
 router_filament_params = APIRouter()
 router_spool_params = APIRouter()
 
+_NATIVE_TEMPERATURE_KEYS = {"bambu_nozzle_temp_min", "bambu_nozzle_temp_max", "bambu_bed_temp"}
+
 # bambu_idx holds generic AMS codes (SUN20012). Cloud presets (PFUS…) belong in
 # bambu_slicer_setting_id via the driver's set_*_profile actions.
 def _reject_cloud_preset_in_bambu_idx(param_key: str, param_value: str | None) -> None:
@@ -110,9 +112,14 @@ async def upsert_filament_printer_params(
                 },
             )
 
-    results = []
     for item in body.params:
         _reject_cloud_preset_in_bambu_idx(item.param_key, item.param_value)
+    pending_values = {item.param_key: item.param_value for item in body.params}
+    if _NATIVE_TEMPERATURE_KEYS.intersection(pending_values):
+        await plugin_manager.initialize_filament_temperatures(db, filament_id, printer_id, pending_values)
+
+    results = []
+    for item in body.params:
         query = select(FilamentPrinterParam).where(
             FilamentPrinterParam.filament_id == filament_id,
             FilamentPrinterParam.printer_id == printer_id,
@@ -152,6 +159,10 @@ async def delete_filament_printer_params(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete printer params. If param_key given, delete only that key. Otherwise delete all for printer."""
+    if not param_key or param_key in _NATIVE_TEMPERATURE_KEYS:
+        await plugin_manager.initialize_filament_temperatures(
+            db, filament_id, printer_id, {param_key: None} if param_key else None,
+        )
     query = delete(FilamentPrinterParam).where(
         FilamentPrinterParam.filament_id == filament_id,
         FilamentPrinterParam.printer_id == printer_id,

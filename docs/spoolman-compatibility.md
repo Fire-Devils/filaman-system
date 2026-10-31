@@ -25,7 +25,9 @@ decoded custom values; those accepted formats remain supported here.
   names. Existing extras keep priority; the default `discontinued=false` does not
   add an extra to an otherwise empty record. Reintroduced custom values keep
   priority over historical aliases. Deliberately retained temperature extras
-  follow native edits only while their captured value and definition still match.
+  follow native edits only while their captured value and effective definition
+  still match. System definitions take precedence over record definitions in
+  both live output and rollback.
 - Catalog updates retain saved label targets and formatting. Downgrade uses the
   same representation rules to restore current legacy values, including integer
   top-level temperatures, while keeping separate full native-range recovery data.
@@ -58,13 +60,23 @@ an equivalent representation. Single-choice strings remain one item even when
 containing a comma. Zero purchase prices and empty-reel weights remain zero.
 
 Promoted SYSTEM/LOCAL fields retain their old label paths and typed formatting,
-without adding duplicate picker entries. Native compatibility lists survive an
+including enabled selections in saved Standard labels, without adding duplicate
+picker entries. Retained label snapshots follow native edits and clears unless
+their value or effective definition has been independently changed.
+Browser label output waits for data and field-definition initialization, so
+delayed definitions cannot change a saved alias's units after export.
+Native compatibility lists survive an
 unrelated form save, including comma-containing items and empty arrays. Manage
 fields merges only the edited values into a fresh record, preserving independent
 profile saves. Both page editors fetch the current record before entering Edit
 and submit only deliberately changed native values. Untouched text, unknown saved
 select options and ordered colors are preserved. Pending Manage reads cannot
-replace a dialog draft or interrupt Edit.
+replace a dialog draft or interrupt Edit. Fresh related manufacturer/color data
+and printer values are reconciled on Edit; spool inheritance uses its current
+linked filament. Reopened editors and Manage dialogs refresh field definitions;
+available manufacturers and colors respect the normal cache expiry/invalidation.
+Printer writes use the parent acknowledged by the saved spool response, so a
+concurrent reassignment is checked before applying resets.
 
 Successful native, extra-field and color writes advance their own baselines before
 a later printer write can fail. After a partial failure, retries can revert an
@@ -81,3 +93,22 @@ saved opposite endpoint, the effective legacy pair is retained in `min_temp` /
 `max_temp` extras while the native range stays valid. A later compatible update
 moves the pair into native storage. Explicitly reversed pairs supplied together
 still return HTTP 400.
+
+## Printer integrations
+
+Legacy Bambu settings migrate for BambuLab and compatible declared driver fields,
+including Bambuddy. Renames affect only that driver's printers. Unknown or
+undeclared values remain intact, and existing printer/spool settings and clears
+take priority over imported values.
+
+Native temperatures supply supported assignment and RFID fallbacks without
+replacing calibration or reseeding cleared, initialized pairs. The first explicit
+temperature save or clear initializes untouched endpoints in the same transaction,
+including for filaments created after printer startup. Explicit clears remain
+remembered when native temperature data arrives later. Startup, calibration copy
+and explicit edits share initialization locking and fresh reads. Partial native
+ranges apply only when compatible with the consumer's opposite endpoint;
+complete valid native ranges can still replace material defaults. No missing
+endpoint is invented. Generic filament pressure advance remains separate from
+measured per-printer calibration. No new printer commands or nozzle-specific
+calibration protocol is added.
