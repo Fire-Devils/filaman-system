@@ -741,6 +741,7 @@ async def test_comparison_and_update_use_the_same_manufacturer_for_all_fields(db
         "spool_outer_diameter_mm": (197, 200),
         "spool_width_mm": (65, 70),
         "spool_material": ("cardboard", "plastic"),
+        "filamentdb_spool_profile_id": (None, 9),
     }
     for field, (old, _) in changes.items():
         setattr(target, field, old)
@@ -787,8 +788,10 @@ async def test_comparison_and_update_use_the_same_manufacturer_for_all_fields(db
 @pytest.mark.asyncio
 @pytest.mark.parametrize("update", [False, True])
 async def test_existing_catalog_link_persists_approved_metadata_updates(db_session, update):
-    service, filament, _, payload = await _legacy_material_catalog(db_session, material="PLA+/Pro")
-    original = {"filamentdb_id": 71, "notes": "keep", "sku": "OLD", "temp_bed": 50}
+    service, filament, _, payload = await _legacy_material_catalog(
+        db_session, catalog_id="71", material="PLA+/Pro",
+    )
+    original = {"filamentdb_id": "71", "notes": "keep", "sku": "OLD", "temp_bed": 50}
     filament.custom_fields = original.copy()
     await db_session.commit()
     metadata = {
@@ -804,7 +807,23 @@ async def test_existing_catalog_link_persists_approved_metadata_updates(db_sessi
     )
     assert result.filaments_updated == int(update)
     await db_session.refresh(filament)
-    assert filament.custom_fields == (original | metadata if update else original)
+    # Native catalog values and the normalized link must survive the colors flush.
+    assert filament.custom_fields == (original | {"filamentdb_id": 71} if update else original)
+    expected_native = {
+        "manufacturer_sku": "NEW",
+        "extruder_temp_range_c": {"min": 205, "max": 225},
+        "bed_temp_range_c": {"min": 60, "max": 60},
+        "cooling_fan_range_percent": {"min": 0, "max": 100},
+        "chamber_temp_c": 35,
+        "max_volumetric_speed_mm3_s": 20,
+        "flow_ratio": 0.98,
+        "pressure_advance_k": 0.025,
+        "drying_temp_c": 55,
+        "drying_time_hours": 6,
+        "softening_temp_c": 65,
+    }
+    for field, value in expected_native.items():
+        assert getattr(filament, field) == (value if update else None)
 
 
 @pytest.mark.asyncio
@@ -994,3 +1013,60 @@ async def test_batch_updates_never_switch_to_an_unreviewed_fuzzy_match(
         "Legacy PLA Pro Blue", 20, None,
     )
     assert (spool.filament_id, other_spool.filament_id) == (reviewed.id, unreviewed.id)
+
+
+async def test_catalog_update_preserves_migrated_label_definition_and_scalar_target(db_session):
+    import sqlalchemy as sa
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from app.services.spoolman_projection import FilamentCompatibilityView
+
+    from tests.test_filament_temperature_migration import (
+        legacy_schema,
+        load_migration_module,
+    )
+
+    metadata, filaments, _, _ = legacy_schema()
+    definitions = {
+        key: {'label': label, 'field_type': 'number', 'config': {'unit': '°C', 'decimal_places': 1}}
+        for key, label in [('dry_temp', 'Drying temperature'), ('temp_bed', 'Bed temperature')]
+    }
+    with sa.create_engine('sqlite://').begin() as connection:
+        metadata.create_all(connection)
+        connection.execute(filaments.insert(), {'id': 1, 'custom_fields': {'dry_temp': 55, 'temp_bed': 60}, 'custom_field_definitions': definitions})
+        migration = load_migration_module()
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        table = sa.Table('filaments', sa.MetaData(), autoload_with=connection)
+        row = dict(connection.execute(sa.select(table)).mappings().one())
+    before = copy.deepcopy(row['label_field_aliases'])
+    manufacturer = Manufacturer(name='Alias catalog')
+    db_session.add(manufacturer)
+    await db_session.flush()
+    filament = Filament(**row, manufacturer=manufacturer, designation='PLA', material_type='PLA', diameter_mm=1.75)
+    db_session.add(filament)
+    await db_session.flush()
+    await FilamentDBImportService(db_session)._update_existing_filament(filament, {'dry_temp': 65, 'temp_bed': 70}, 'PLA', {}, 'filament', {})
+    for key in ('dry_temp', 'temp_bed'):
+        assert filament.label_field_aliases[key]['target'] == before[key]['target']
+        assert filament.label_field_aliases[key]['definition'] == definitions[key]
+    assert filament.label_field_aliases['temp_bed']['target'] == 'bed_temp_range_c.min'
+    assert FilamentCompatibilityView(filament).custom_fields['dry_temp'] == 65
+    assert FilamentCompatibilityView(filament).custom_fields['temp_bed'] == 70
+    filament.bed_temp_range_c = {'min': 75, 'max': 85}
+    assert FilamentCompatibilityView(filament).custom_fields['temp_bed'] == 75
+
+
+async def test_catalog_does_not_claim_source_alias_for_another_native_property(db_session):
+    from app.services.spoolman_projection import promotion_alias
+    manufacturer = Manufacturer(name='Existing aliases')
+    db_session.add(manufacturer)
+    await db_session.flush()
+    aliases = {'dry_temp': promotion_alias('manufacturer_sku', 'DRY-SKU', 'DRY-SKU')}
+    filament = Filament(manufacturer=manufacturer, designation='PLA', material_type='PLA', diameter_mm=1.75,
+                        manufacturer_sku='DRY-SKU', label_field_aliases=copy.deepcopy(aliases))
+    db_session.add(filament)
+    await db_session.flush()
+    await FilamentDBImportService(db_session)._update_existing_filament(filament, {'dry_temp': 65}, 'PLA', {}, 'filament', {})
+    assert filament.label_field_aliases == aliases
+    assert filament.drying_temp_c == 65

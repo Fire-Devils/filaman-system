@@ -191,3 +191,17 @@ it('retains the built-in Default color swatch in actual raster output', async ()
   expect(output.pixels.some((channel: number, i: number) => i % 4 === 0 && channel > 200 && output.pixels[i + 1] < 50)).toBe(true)
   expect(output.pixels.some((channel: number, i: number) => i % 4 === 2 && channel > 200 && output.pixels[i - 2] < 50)).toBe(true)
 })
+
+it('keeps catalog-updated label formatting independent of refreshed wire provenance', () => {
+  const definition = { label: 'Temperature', field_type: 'number', config: { unit: '°C', decimal_places: 1 } }
+  const filament = { id: 8, drying_temp_c: 65, bed_temp_range_c: { min: 75, max: 85 },
+    label_field_aliases: {
+      dry_temp: { target: 'drying_temp_c', definition,
+        wire: { target: 'drying_temp_c', value: 65, native: 65 } },
+      temp_bed: { target: 'bed_temp_range_c.min', definition,
+        wire: { target: 'bed_temp_range_c', value: 70, native: { min: 70, max: 70 } } },
+    } }
+  const data = prepareSvgApiInput({ ...payload, spool: undefined, filament }, 'https://fila.test', {}).data
+  expect(renderTemplateText('{extra.filament.dry_temp}|{extra.filament.temp_bed}', data)).toBe('65.0 °C|75.0 °C')
+  expect(renderTemplateText('{filament.bed_temp_range_c}', data)).toBe('75–85')
+})

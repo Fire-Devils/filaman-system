@@ -14,20 +14,12 @@ from app.models.spool import Spool, SpoolStatus
 from app.models.location import Location
 from app.models.app_settings import AppSettings
 from app.services.spool_service import SpoolService
+from app.services.spoolman_projection import FilamentCompatibilityView, project_extra
 from app.utils.colors import normalize_hex_color
 
 from . import schemas
 
 logger = logging.getLogger(__name__)
-
-
-def _temperature_scalar(native: dict | None, legacy: Any) -> int | None:
-    if native is None:
-        return legacy
-    value = native.get("min")
-    if value is None:
-        value = native.get("max")
-    return int(round(value)) if value is not None else None  # noqa: RUF046 -- match tag projection
 
 
 def _weight_to_length_mm(
@@ -797,6 +789,7 @@ class SpoolmanService:
         )
 
     def _filament_to_schema(self, filament: Filament) -> schemas.Filament:
+        filament = FilamentCompatibilityView(filament)
         vendor = (
             self._manufacturer_to_vendor(filament.manufacturer)
             if filament.manufacturer
@@ -826,12 +819,8 @@ class SpoolmanService:
         custom_fields = dict(filament.custom_fields or {})
         article_number = custom_fields.pop("article_number", None)
         comment = custom_fields.pop("comment", None)
-        settings_extruder_temp = _temperature_scalar(
-            filament.extruder_temp_range_c, custom_fields.pop("settings_extruder_temp", None)
-        )
-        settings_bed_temp = _temperature_scalar(
-            filament.bed_temp_range_c, custom_fields.pop("settings_bed_temp", None)
-        )
+        settings_extruder_temp = custom_fields.pop("settings_extruder_temp", None)
+        settings_bed_temp = custom_fields.pop("settings_bed_temp", None)
         external_id = custom_fields.pop("external_id", None)
 
         return schemas.Filament(
@@ -966,7 +955,7 @@ class SpoolmanService:
                     used_weight, filament.diameter, filament.density
                 )
 
-        custom_fields = dict(spool.custom_fields or {})
+        custom_fields = project_extra(spool, spool.custom_fields or {}, filament=spool.filament)
         comment = custom_fields.pop("comment", None)
 
         return schemas.Spool(

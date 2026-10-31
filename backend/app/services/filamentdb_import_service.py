@@ -16,6 +16,7 @@ from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.services.extra_field_validation import normalize_numeric_range
 from app.services.filamentdb_field_mapping import standard_filamentdb_fields
+from app.services.spoolman_projection import catalog_promotion_aliases
 from app.utils.search import FUZZY_MATCH_THRESHOLD, fuzzy_token_score
 
 logger = logging.getLogger(__name__)
@@ -1420,6 +1421,9 @@ class FilamentDBImportService:
                 density_g_cm3=fil_data.get("density_g_cm3"),
                 **temperature_ranges,
                 **standard_fields,
+                label_field_aliases=catalog_promotion_aliases(
+                    fil_data, {**temperature_ranges, **standard_fields}
+                ) or None,
                 color_mode=color_mode,
                 multi_color_style=multi_color_style,
                 custom_fields=custom if custom else None,
@@ -1490,6 +1494,13 @@ class FilamentDBImportService:
         standard_fields = standard_filamentdb_fields({**fil_data, 'spool_profile': sp_data}, base_url=FILAMENTDB_URL)
         for column, value in standard_fields.items():
             setattr(existing, column, value)
+        existing.label_field_aliases = {
+            **(existing.label_field_aliases or {}),
+            **catalog_promotion_aliases(
+                fil_data, {**temperature_ranges, **standard_fields},
+                existing.custom_fields, existing.label_field_aliases,
+            ),
+        } or None
         existing.color_mode = fil_data.get("color_mode", existing.color_mode)
         existing.multi_color_style = (
             fil_data.get("multi_color_style") or existing.multi_color_style

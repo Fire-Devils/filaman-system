@@ -74,7 +74,7 @@ def standard_source_definitions(
     for definition in definitions:
         key = definition.get("key")
         source_type = definition.get("field_type")
-        if not isinstance(key, str):
+        if not isinstance(key, str) or definition.get("default_value") is not None:
             continue
         try:
             map_spoolman_definition(definition, "filament")
@@ -139,7 +139,11 @@ def standard_value(raw: Any, target: str, definition: dict[str, Any]) -> Any:
     if target == "is_discontinued":
         return value
     if target in _LISTS:
-        values = value if isinstance(value, list) else value.split(",")
+        values = (
+            value if isinstance(value, list)
+            else [value] if source_type == "choice"
+            else value.split(",")
+        )
         items = [
             item.strip()
             for item in values
