@@ -1,4 +1,8 @@
-import { getAbortSignal, isAbortError } from './abort'
+import { isAbortError } from './abort'
+import { request } from './api'
+import { formatPrice, getCurrency } from './format'
+import { catalogLinks, catalogSnapshot, filamentDbSource, profileFields, withManufacturerMetadata, type CatalogEntry, type CatalogLinks, type ManufacturerSource } from './manufacturer-catalog'
+import '../styles/manufacturer-dialog.css'
 import { CACHE_KEYS, invalidateCachePrefix } from './cache'
 import { escapeHtml } from './extra-fields'
 import { createFilamentDbLookup, fuzzyTokenScore, type LookupInstance } from './filamentdb-lookup'
@@ -12,11 +16,12 @@ export type Manufacturer = {
   spool_material?: string | null
   spool_outer_diameter_mm?: number | null
   spool_width_mm?: number | null
+  custom_fields?: Record<string, unknown> | null
   [key: string]: unknown
 }
 
 export type ManufacturerDialog = {
-  open: (manufacturer?: Manufacturer | null) => void
+  open: (manufacturer?: Manufacturer | null, options?: { mode: 'view' | 'edit' }) => void
   close: () => void
 }
 
@@ -43,278 +48,328 @@ export function bindManufacturerCreateOption(select: HTMLSelectElement, open: ()
 }
 
 export function createManufacturerDialog(options: {
-  filamentDbActive: boolean
+  filamentDbActive?: boolean
+  sources?: ManufacturerSource[]
   onSaved: (manufacturer: Manufacturer, isCurrentSession: boolean) => void | Promise<void>
 }): ManufacturerDialog {
+  const sources = options.sources ?? (options.filamentDbActive ? [filamentDbSource()] : [])
+  const e = escapeHtml
+  const label = (key: string) => e(t(key))
+  const icon = (name: string) => `<svg aria-hidden="true"><use href="/icons.svg#icon-${name}"/></svg>`
+  const fields = [
+    ['name', 'manufacturers.name', 'text', ''],
+    ['url', 'manufacturers.url', 'url', ''],
+    ['contact_email', 'manufacturers.contactEmail', 'email', ''],
+    ['description', 'manufacturers.description', 'textarea', ''],
+    ['empty_spool_weight_g', 'spools.emptySpoolWeight', 'number', 'g'],
+    ['spool_material', 'spools.spoolMaterial', 'select', ''],
+    ['spool_outer_diameter_mm', 'spools.spoolOuterDiameter', 'number', 'mm'],
+    ['spool_width_mm', 'spools.spoolWidth', 'number', 'mm'],
+  ]
+  const selectors = ['name', 'url', 'email', 'description', 'empty-weight', 'material', 'outer-diameter', 'width']
+  const field = (index: number) => {
+    const [key, title, type, unit] = fields[index]
+    const attrs = `id="manufacturer-dialog-${key}" name="${key}" data-manufacturer-${selectors[index]} class="fm-input${type === 'select' ? ' fm-select' : ''}"`
+    const input = type === 'textarea' ? `<textarea ${attrs} rows="2"></textarea>` : type === 'select'
+      ? `<select ${attrs}><option value="">–</option>${['Plastic', 'Cardboard', 'Metal', 'Other'].map(value => `<option value="${value}">${label(`spools.spoolMaterial${value}`)}</option>`).join('')}</select>`
+      : `<input ${attrs} type="${type}" ${key === 'name' ? 'required' : ''} ${type === 'number' ? 'step="any"' : ''} placeholder="${key === 'name' ? label('manufacturers.namePlaceholder') : '–'}"/>`
+    return `<div class="manufacturer-field ${type === 'textarea' ? 'manufacturer-description' : ''}"><label for="manufacturer-dialog-${key}">${label(title).replace(/\s+\((?:g|mm)\)$/, '')}</label><div class="manufacturer-value">${input}${unit ? `<span class="manufacturer-unit">${unit}</span>` : ''}</div></div>`
+  }
   const overlay = document.createElement('dialog')
-  overlay.className = 'fm-modal-overlay'
+  overlay.className = 'fm-modal-overlay manufacturer-dialog'
   overlay.setAttribute('aria-labelledby', 'manufacturer-dialog-title')
-  overlay.innerHTML = `
-    <div class="fm-card" style="width:100%;max-width:480px;margin:16px;">
-      <h3 id="manufacturer-dialog-title" style="font-size:1.1rem;font-weight:600;margin-bottom:16px;"></h3>
-      <div class="fdb-mode-toggle" data-manufacturer-mode style="display:none;">
-        <label>
-          <input type="radio" name="manufacturer-dialog-mode" value="db" />
-          <span>${escapeHtml(t('filamentdbLookup.fromDatabase'))}</span>
-        </label>
-        <label>
-          <input type="radio" name="manufacturer-dialog-mode" value="manual" checked />
-          <span>${escapeHtml(t('filamentdbLookup.manualEntry'))}</span>
-        </label>
-      </div>
-      <div class="fdb-lookup-section" data-manufacturer-db-lookup style="display:none;">
-        <div class="fdb-lookup-section-title">${escapeHtml(t('filamentdbLookup.loadFromDb'))}</div>
-        <div data-manufacturer-lookup></div>
-        <div data-manufacturer-lookup-toast style="display:none;"></div>
-      </div>
-      <form data-manufacturer-form style="display:grid;gap:16px;">
-        <div>
-          <label class="fm-label" for="manufacturer-dialog-name"><span>${escapeHtml(t('manufacturers.name'))}</span> *</label>
-          <input id="manufacturer-dialog-name" type="text" required class="fm-input" data-manufacturer-name placeholder="${escapeHtml(t('manufacturers.namePlaceholder'))}" />
-        </div>
-        <div>
-          <label class="fm-label" for="manufacturer-dialog-url">${escapeHtml(t('manufacturers.url'))}</label>
-          <input id="manufacturer-dialog-url" type="url" class="fm-input" data-manufacturer-url placeholder="${escapeHtml(t('manufacturers.urlPlaceholder'))}" />
-        </div>
-        <div class="fm-card" style="padding:16px;margin-top:8px;">
-          <h3 class="fm-label" style="font-size:1rem;margin:0 0 16px;color:var(--text);">${escapeHtml(t('common.spoolDefaultSettings'))}</h3>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div>
-              <label class="fm-label" for="manufacturer-dialog-empty-weight">${escapeHtml(t('spools.emptySpoolWeight'))}</label>
-              <input id="manufacturer-dialog-empty-weight" type="number" step="1" class="fm-input" data-manufacturer-empty-weight />
-            </div>
-            <div>
-              <label class="fm-label" for="manufacturer-dialog-material">${escapeHtml(t('spools.spoolMaterial'))}</label>
-              <select id="manufacturer-dialog-material" class="fm-select" data-manufacturer-material>
-                <option value="">-</option>
-                <option value="Plastic">${escapeHtml(t('spools.spoolMaterialPlastic'))}</option>
-                <option value="Cardboard">${escapeHtml(t('spools.spoolMaterialCardboard'))}</option>
-                <option value="Metal">${escapeHtml(t('spools.spoolMaterialMetal'))}</option>
-                <option value="Other">${escapeHtml(t('spools.spoolMaterialOther'))}</option>
-              </select>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
-            <div>
-              <label class="fm-label" for="manufacturer-dialog-outer-diameter">${escapeHtml(t('spools.spoolOuterDiameter'))}</label>
-              <input id="manufacturer-dialog-outer-diameter" type="number" step="0.1" class="fm-input" data-manufacturer-outer-diameter />
-            </div>
-            <div>
-              <label class="fm-label" for="manufacturer-dialog-width">${escapeHtml(t('spools.spoolWidth'))}</label>
-              <input id="manufacturer-dialog-width" type="number" step="0.1" class="fm-input" data-manufacturer-width />
-            </div>
-          </div>
-        </div>
-        <div class="fm-alert-error hidden" data-manufacturer-error></div>
-        <div style="display:flex;gap:12px;">
-          <button type="submit" class="fm-btn fm-btn-primary" data-manufacturer-submit>${escapeHtml(t('common.save'))}</button>
-          <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-cancel>${escapeHtml(t('common.cancel'))}</button>
-        </div>
-      </form>
-    </div>
-  `
-  document.body.appendChild(overlay)
-
-  const title = overlay.querySelector<HTMLElement>('#manufacturer-dialog-title')!
-  const form = overlay.querySelector<HTMLFormElement>('[data-manufacturer-form]')!
-  const modeToggle = overlay.querySelector<HTMLElement>('[data-manufacturer-mode]')!
-  const dbLookup = overlay.querySelector<HTMLElement>('[data-manufacturer-db-lookup]')!
-  const lookupContainer = overlay.querySelector<HTMLElement>('[data-manufacturer-lookup]')!
-  const lookupToast = overlay.querySelector<HTMLElement>('[data-manufacturer-lookup-toast]')!
-  const nameInput = overlay.querySelector<HTMLInputElement>('[data-manufacturer-name]')!
-  const urlInput = overlay.querySelector<HTMLInputElement>('[data-manufacturer-url]')!
-  const emptyWeightInput = overlay.querySelector<HTMLInputElement>('[data-manufacturer-empty-weight]')!
-  const materialInput = overlay.querySelector<HTMLSelectElement>('[data-manufacturer-material]')!
-  const outerDiameterInput = overlay.querySelector<HTMLInputElement>('[data-manufacturer-outer-diameter]')!
-  const widthInput = overlay.querySelector<HTMLInputElement>('[data-manufacturer-width]')!
-  const error = overlay.querySelector<HTMLElement>('[data-manufacturer-error]')!
+  overlay.innerHTML = `<form data-manufacturer-form class="fm-card manufacturer-panel">
+    <header class="manufacturer-header"><div class="manufacturer-toolbar">
+      <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-close>${label('common.close')}</button>
+      <div class="manufacturer-actions"><span class="manufacturer-changed" hidden>${label('filaments.changed')}</span>
+      <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-edit aria-label="${label('manufacturers.editManufacturer')}">${icon('edit')}</button>
+      <button type="submit" class="fm-btn fm-btn-primary" data-manufacturer-submit>${label('common.save')}</button>
+      <button type="button" class="fm-btn fm-btn-outline" data-manufacturer-cancel>${label('common.cancel')}</button></div></div>
+      <div class="manufacturer-identity"><div><div class="manufacturer-number" id="manufacturer-dialog-title"></div>${field(0)}</div><div class="manufacturer-logo" data-manufacturer-logo></div></div>
+      <div class="manufacturer-stats" data-manufacturer-stats></div>
+    </header>
+    <div class="manufacturer-body">
+      <div class="manufacturer-columns"><section class="manufacturer-section"><h3>${label('manufacturers.profile')}</h3><div class="manufacturer-section-body">${[1, 2, 3].map(field).join('')}</div></section>
+      <section class="manufacturer-section"><h3>${label('common.spoolDefaultSettings')}<small>${label('manufacturers.fallbackValues')}</small></h3><div class="manufacturer-section-body">${[4, 5, 6, 7].map(field).join('')}</div></section></div>
+      <div data-manufacturer-sources></div><div class="fm-alert-error hidden" data-manufacturer-error role="alert"></div>
+    </div></form>`
+  document.body.append(overlay)
+  type Input = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  const form = overlay.querySelector<HTMLFormElement>('form')!
+  const inputs = Object.fromEntries(fields.map(([key]) => [key, form.elements.namedItem(key) as Input]))
   const submit = overlay.querySelector<HTMLButtonElement>('[data-manufacturer-submit]')!
+  const error = overlay.querySelector<HTMLElement>('[data-manufacturer-error]')!
+  const sourceContainer = overlay.querySelector<HTMLElement>('[data-manufacturer-sources]')!
   let current: Manufacturer | null = null
-  let lookup: LookupInstance | null = null
-  let pendingLogoSlug: string | null = null
-  let pendingHasLabelLogo = false
+  let links: CatalogLinks = {}
+  let entries: Record<string, CatalogEntry> = {}
+  // Keep fetched display values separate from catalog changes staged by comparison.
+  let committedEntries: Record<string, CatalogEntry> = {}
+  let baseline = ''
+  let editing = false
+  let busy = false
+  let saveSequence = 0
+  let session = 0
+  let controller = new AbortController()
   let restoreFocus: HTMLElement | null = null
-  let dialogSession = 0
-
-  const destroyLookup = () => {
-    lookup?.destroy()
-    lookup = null
-    lookupContainer.replaceChildren()
+  const lookups: LookupInstance[] = []
+  const pendingLogos = new Map<ManufacturerSource, CatalogEntry>()
+  const selectedLogos = new Set<string>()
+  const values = () => Object.fromEntries(fields.map(([key, , type]) => [key, type === 'number' ? inputs[key].value === '' ? null : Number(inputs[key].value) : inputs[key].value]))
+  const signature = () => JSON.stringify([values(), links])
+  const showError = (message: string) => { error.textContent = message; error.classList.remove('hidden') }
+  const update = () => {
+    const dirty = signature() !== baseline || [...pendingLogos.keys()].some(source => source.saveLogo && selectedLogos.has(source.key))
+    form.inert = busy
+    form.setAttribute('aria-busy', String(busy))
+    submit.disabled = busy || !editing || (!dirty && !!current)
+    overlay.querySelector<HTMLElement>('.manufacturer-changed')!.hidden = !dirty || !editing
   }
-
-  const onLookupSelect = (item: Record<string, unknown>) => {
-    nameInput.value = String(item.name || '')
-    urlInput.value = String(item.website || '')
-    pendingLogoSlug = item.has_web_logo || item.has_label_logo ? String(item.slug || '') || null : null
-    pendingHasLabelLogo = Boolean(item.has_label_logo)
-    lookupToast.className = 'fdb-toast fdb-toast-success'
-    lookupToast.textContent = t('filamentdbLookup.prefillSuccess')
-    lookupToast.style.display = ''
+  const setMode = (edit: boolean) => {
+    editing = edit
+    overlay.classList.toggle('is-editing', edit)
+    for (const input of Object.values(inputs)) {
+      if (input instanceof HTMLSelectElement) input.disabled = !edit
+      else input.readOnly = !edit
+    }
+    overlay.querySelector<HTMLElement>('[data-manufacturer-edit]')!.hidden = edit
+    submit.hidden = !edit
+    overlay.querySelector<HTMLElement>('[data-manufacturer-cancel]')!.hidden = !edit
+    update()
   }
-
-  const initLookup = (initialQuery?: string) => {
-    if (lookup) return
-    lookup = createFilamentDbLookup<Record<string, unknown>>({
-      container: lookupContainer,
-      endpoint: '/filamentdb/manufacturers',
-      placeholder: t('filamentdbLookup.searchManufacturer'),
-      renderItem: (item) => {
-        const website = item.website ? `<div class="fdb-lookup-item-sub">${escapeHtml(String(item.website))}</div>` : ''
-        const count = item.filament_count
-          ? `<span style="color:var(--text-muted);font-size:0.8rem;margin-left:8px;">${escapeHtml(String(item.filament_count))} filaments</span>`
-          : ''
-        return `<div class="fdb-lookup-item-name">${escapeHtml(String(item.name || ''))}${count}</div>${website}`
-      },
-      onSelect: onLookupSelect,
-      initialQuery,
-      fuzzyScore: initialQuery ? (item) => fuzzyTokenScore(String(item.name || ''), initialQuery) : undefined,
+  const fill = () => {
+    const profile = profileFields(current?.custom_fields)
+    const data = { empty_spool_weight_g: 250, spool_outer_diameter_mm: 200, spool_width_mm: 65, ...current, ...profile }
+    for (const [key] of fields) inputs[key].value = data[key as keyof typeof data] == null ? '' : String(data[key as keyof typeof data])
+    // Retain legacy material values instead of clearing them when the editor opens.
+    const material = current?.spool_material
+    if (material && !Array.from((inputs.spool_material as HTMLSelectElement).options).some(option => option.value === material)) {
+      (inputs.spool_material as HTMLSelectElement).add(new Option(material, material))
+      inputs.spool_material.value = material
+    }
+  }
+  const resetDraft = () => {
+    fill()
+    links = catalogLinks(current?.custom_fields)
+    entries = Object.fromEntries(Object.entries(links).flatMap(([key, link]) => {
+      const entry = (String(committedEntries[key]?.id) === String(link.id) ? committedEntries[key] : undefined) ?? catalogSnapshot(link.snapshot)
+      return entry ? [[key, entry]] : []
+    }))
+    pendingLogos.clear()
+    selectedLogos.clear()
+    baseline = signature()
+  }
+  const safeUrl = (value: unknown) => {
+    if (typeof value !== 'string') return ''
+    try { const url = new URL(value, location.origin); return ['http:', 'https:'].includes(url.protocol) ? url.href : '' } catch { return '' }
+  }
+  const logo = () => {
+    const draft = [...pendingLogos].filter(([source]) => selectedLogos.has(source.key)).at(-1)?.[1]
+    const entry = draft ?? Object.values(entries)[0]
+    const url = safeUrl(draft?.logo_url || draft?.label_logo_url || current?.logo_url || current?.label_logo_url || entry?.logo_url || entry?.label_logo_url)
+    const holder = overlay.querySelector<HTMLElement>('[data-manufacturer-logo]')!
+    holder.innerHTML = url ? `<img src="${e(url)}" alt="${e(inputs.name.value)}"/>` : icon('manufacturers')
+    holder.querySelector('img')?.addEventListener('error', () => { holder.innerHTML = icon('manufacturers') }, { once: true })
+  }
+  const renderStats = () => {
+    const stats = overlay.querySelector<HTMLElement>('[data-manufacturer-stats]')!
+    stats.hidden = !current
+    const count = (key: string) => current?.[key] == null ? '–' : String(current[key])
+    if (!current) { stats.replaceChildren(); return }
+    const base = `manufacturer_id=${encodeURIComponent(current.id)}&clear_filters=1`
+    const filamentUrl = `/filaments?${base}`
+    const spoolUrl = (scope: string) => `/spools?${base}&status_scope=${scope}`
+    const metric = (key: string, title: string, name: string, href: string, tone: string) =>
+      `<a class="manufacturer-metric ${tone}" href="${e(href)}">${icon(name)}<strong>${e(count(key))}</strong><span class="manufacturer-metric-label">${label(title)}</span><span class="manufacturer-metric-arrow" aria-hidden="true">→</span></a>`
+    stats.innerHTML = `<div class="manufacturer-metrics">
+      ${metric('filament_count', 'manufacturers.filaments', 'filaments', filamentUrl, 'metric-filaments')}
+      ${metric('spool_count', 'manufacturers.availableSpools', 'spools', spoolUrl('active'), 'metric-spools')}
+      ${metric('archived_spool_count', 'manufacturers.archivedSpools', 'archive', spoolUrl('archived'), 'metric-archived')}
+    </div><div class="manufacturer-inventory-context"><div class="manufacturer-materials">${(current.materials as string[] || []).map(material => `<span>${e(material)}</span>`).join('')}</div><div class="manufacturer-values">
+      <a href="${e(spoolUrl('active'))}"><span>${label('manufacturers.totalValueAvailable')}</span><strong>${e(formatPrice(current.total_price_available as number, getCurrency()))}</strong></a>
+      <a href="${e(spoolUrl('all'))}"><span>${label('manufacturers.totalSpentAllTime')}</span><strong>${e(formatPrice(current.total_price_all as number, getCurrency()))}</strong></a>
+    </div></div>`
+  }
+  const compare = (source: ManufacturerSource, entry: CatalogEntry, host: HTMLElement) => {
+    if (busy) return
+    const candidates = { name: entry.name, url: entry.website, contact_email: entry.contact_email, description: entry.description }
+    const differences = Object.entries(candidates).filter(([key, value]) => value && value !== inputs[key].value)
+    const area = host.querySelector<HTMLElement>('[data-catalog-comparison]')!
+    area.innerHTML = `<p>${label('manufacturers.compareHelp')}</p>${differences.map(([key, value]) => `<label class="manufacturer-comparison"><input type="checkbox" data-catalog-field="${key}"/><span><b>${label(fields.find(field => field[0] === key)![1])}</b><del>${e(inputs[key].value || '–')}</del><span>${e(value)}</span></span></label>`).join('')}${source.saveLogo && (entry.logo_url || entry.label_logo_url) ? `<label class="manufacturer-comparison"><input type="checkbox" data-catalog-logo ${!current?.logo_url && !current?.label_logo_url ? 'checked' : ''}/><span>${label('manufacturers.useCatalogLogos')}</span></label>` : ''}<button type="button" data-catalog-apply class="fm-btn fm-btn-primary">${label('manufacturers.useSelected')}</button> <button type="button" class="fm-btn fm-btn-outline" data-catalog-cancel>${label('common.cancel')}</button>`
+    area.hidden = false
+    area.querySelector('[data-catalog-cancel]')!.addEventListener('click', () => { area.hidden = true })
+    area.querySelector('[data-catalog-apply]')!.addEventListener('click', () => {
+      if (busy) return
+      setMode(true)
+      for (const input of area.querySelectorAll<HTMLInputElement>('[data-catalog-field]:checked')) {
+        const key = input.dataset.catalogField as keyof typeof candidates
+        inputs[key].value = candidates[key]
+      }
+      links = { ...links, [source.key]: { ...links[source.key], id: entry.id, snapshot: entry } }
+      entries[source.key] = entry
+      if (area.querySelector<HTMLInputElement>('[data-catalog-logo]')?.checked) selectedLogos.add(source.key)
+      else selectedLogos.delete(source.key)
+      pendingLogos.set(source, entry)
+      area.hidden = true
+      host.querySelector('h3 small')!.textContent = t('manufacturers.linked')
+      renderSourceRecord(source, host); logo(); update()
     })
   }
-
+  const renderSourceRecord = (source: ManufacturerSource, host: HTMLElement) => {
+    const entry = entries[source.key]
+    const record = host.querySelector<HTMLElement>('[data-catalog-record]')!
+    const expanded = record.querySelector<HTMLDetailsElement>('details')?.open ?? false
+    const focused = record.contains(document.activeElement)
+    host.querySelector<HTMLElement>('.manufacturer-source-summary')!.innerHTML = `<span>${e(source.label)}</span>${entry ? `<strong>${e(entry.name)}</strong>` : ''}`
+    const button = host.querySelector<HTMLButtonElement>('[data-catalog-compare]')!
+    button.hidden = !entry
+    const summary = entry ? (source.summary?.(entry) ?? []).map(value => typeof value === 'string'
+      ? `<span>${e(value)}</span>` : `<span class="is-${e(value.tone)}">${e(value.label)}</span>`).join('') : ''
+    record.innerHTML = entry ? `<div class="manufacturer-catalog-summary">${summary}</div><details><summary>${label('manufacturers.catalogDetails')}</summary><dl>${Object.entries({ website: entry.website, contact_email: entry.contact_email, description: entry.description, ...entry.details }).map(([key, value]) => `<div><dt>${e(t(`manufacturers.catalog.${key}`) === `manufacturers.catalog.${key}` ? key : t(`manufacturers.catalog.${key}`))}</dt><dd>${e(value == null || value === '' ? '–' : String(value))}</dd></div>`).join('')}</dl>${entry.label_logo_url ? `<img class="manufacturer-print-logo" src="${e(safeUrl(entry.label_logo_url))}" alt="${label('manufacturers.printLogo')}"/>` : ''}</details>` : ''
+    const details = record.querySelector<HTMLDetailsElement>('details')
+    if (details) details.open = expanded
+    if (focused) button?.focus()
+  }
+  const renderSources = () => {
+    for (const lookup of lookups.splice(0)) lookup.destroy()
+    sourceContainer.replaceChildren()
+    for (const source of sources) {
+      const host = document.createElement('section')
+      host.className = 'manufacturer-section manufacturer-source'
+      host.innerHTML = `<h3><span class="manufacturer-source-summary"></span><span class="manufacturer-source-actions"><small>${links[source.key] ? label('manufacturers.linked') : label('manufacturers.notLinked')}</small><button type="button" class="fm-btn fm-btn-outline" data-catalog-compare hidden>${label('manufacturers.compareValues')}</button></span></h3><div class="manufacturer-section-body">
+      <div data-catalog-record></div>
+      <details class="manufacturer-lookup-details"><summary>${label('manufacturers.findCatalog')}</summary><div data-catalog-lookup></div></details><div data-catalog-comparison hidden></div><p class="manufacturer-source-error" role="status"></p></div>`
+      sourceContainer.append(host)
+      renderSourceRecord(source, host)
+      host.querySelector('[data-catalog-compare]')!.addEventListener('click', () => compare(source, entries[source.key], host))
+      host.querySelector('details.manufacturer-lookup-details')!.addEventListener('toggle', event => {
+        if (!(event.target as HTMLDetailsElement).open || host.querySelector('.fdb-lookup')) return
+        const activeSession = session
+        lookups.push(createFilamentDbLookup<Record<string, unknown>>({
+          container: host.querySelector('[data-catalog-lookup]')!, endpoint: source.endpoint,
+          placeholder: t('filamentdbLookup.searchManufacturer'), initialQuery: current?.name,
+          fuzzyScore: item => fuzzyTokenScore(String(item.name || ''), current?.name || ''),
+          renderItem: item => `<span>${e(String(item.name || ''))}</span>`,
+          onSelect: item => {
+            if (activeSession !== session || !overlay.open || busy) return
+            try { compare(source, source.normalize(item), host) } catch { showError(t('manufacturers.failedCatalog')) }
+          },
+        }))
+      })
+    }
+  }
   const close = () => {
-    dialogSession++
+    if (busy) return
+    session++
+    controller.abort()
+    for (const lookup of lookups.splice(0)) lookup.destroy()
     if (overlay.open) overlay.close()
     overlay.classList.remove('open')
-    destroyLookup()
     restoreFocus?.focus()
     restoreFocus = null
   }
-  overlay.addEventListener('cancel', event => {
-    event.preventDefault()
-    close()
-  })
-
-  const open = (manufacturer: Manufacturer | null = null) => {
-    dialogSession++
+  const open: ManufacturerDialog['open'] = (manufacturer = null, mode) => {
+    controller.abort()
+    controller = new AbortController()
+    const activeSession = ++session
     current = manufacturer
     restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    destroyLookup()
-    pendingLogoSlug = null
-    pendingHasLabelLogo = false
-    dbLookup.style.display = 'none'
-    lookupToast.style.display = 'none'
+    links = catalogLinks(current?.custom_fields)
+    entries = Object.fromEntries(Object.entries(links).flatMap(([key, link]) => {
+      const entry = catalogSnapshot(link.snapshot)
+      return entry ? [[key, entry]] : []
+    }))
+    committedEntries = { ...entries }
+    pendingLogos.clear()
+    selectedLogos.clear()
     error.classList.add('hidden')
-    title.textContent = manufacturer ? t('manufacturers.editManufacturer') : t('manufacturers.addManufacturer')
-    nameInput.value = manufacturer?.name || ''
-    urlInput.value = manufacturer?.url || ''
-    emptyWeightInput.value = manufacturer
-      ? manufacturer.empty_spool_weight_g == null
-        ? ''
-        : String(manufacturer.empty_spool_weight_g)
-      : '250'
-    materialInput.value = manufacturer?.spool_material || ''
-    outerDiameterInput.value = manufacturer
-      ? manufacturer.spool_outer_diameter_mm == null
-        ? ''
-        : String(manufacturer.spool_outer_diameter_mm)
-      : '200'
-    widthInput.value = manufacturer
-      ? manufacturer.spool_width_mm == null
-        ? ''
-        : String(manufacturer.spool_width_mm)
-      : '65'
-
-    modeToggle.style.display = !manufacturer && options.filamentDbActive ? 'flex' : 'none'
-    modeToggle.querySelector<HTMLInputElement>('input[value="manual"]')!.checked = true
-    if (manufacturer && options.filamentDbActive) {
-      initLookup(manufacturer.name)
-      dbLookup.style.display = ''
-    }
+    fill()
+    baseline = signature()
+    overlay.querySelector<HTMLElement>('#manufacturer-dialog-title')!.textContent = current ? t('manufacturers.manufacturerNumber', { id: current.id }) : t('manufacturers.addManufacturer')
+    setMode(!manufacturer || mode?.mode !== 'view')
+    renderStats(); renderSources(); logo()
     overlay.showModal()
     overlay.classList.add('open')
-    nameInput.focus()
-  }
-
-  modeToggle.addEventListener('change', () => {
-    const mode = modeToggle.querySelector<HTMLInputElement>('input:checked')?.value
-    if (mode === 'db') {
-      initLookup()
-      dbLookup.style.display = ''
-      lookup?.reset()
-    } else {
-      dbLookup.style.display = 'none'
-      pendingLogoSlug = null
-      pendingHasLabelLogo = false
-    }
-    lookupToast.style.display = 'none'
-  })
-  overlay.querySelector('[data-manufacturer-cancel]')!.addEventListener('click', close)
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) close()
-  })
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault()
-    const session = dialogSession
-    const isCurrent = () => session === dialogSession && overlay.open
-    const logoSlug = pendingLogoSlug
-    const hasLabelLogo = pendingHasLabelLogo
-    const data = {
-      name: nameInput.value,
-      url: urlInput.value || null,
-      empty_spool_weight_g: emptyWeightInput.value ? Number(emptyWeightInput.value) : null,
-      spool_material: materialInput.value || null,
-      spool_outer_diameter_mm: outerDiameterInput.value ? Number(outerDiameterInput.value) : null,
-      spool_width_mm: widthInput.value ? Number(widthInput.value) : null,
-    }
-    error.classList.add('hidden')
-    submit.disabled = true
-    submit.textContent = t('common.saving')
-    try {
-      const response = await fetch(current ? `/api/v1/manufacturers/${current.id}` : '/api/v1/manufacturers', {
-        method: current ? 'PATCH' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': getCsrfToken(),
-        },
-        credentials: 'include',
-        signal: getAbortSignal(),
-        body: JSON.stringify(data),
+    form.scrollTop = 0
+    if (editing) inputs.name.focus()
+    for (const source of sources) {
+      const link = links[source.key]
+      if (!link) continue
+      void source.load(link.id, controller.signal).then(entry => {
+        if (activeSession !== session || !overlay.open || catalogLinks(current?.custom_fields)[source.key]?.id !== link.id) return
+        committedEntries[source.key] = entry
+        if (pendingLogos.has(source) || links[source.key]?.id !== link.id) return
+        entries[source.key] = entry
+        const host = sourceContainer.querySelectorAll<HTMLElement>('.manufacturer-source')[sources.indexOf(source)]
+        if (host) renderSourceRecord(source, host)
+        logo()
+      }).catch(err => {
+        if (activeSession !== session || isAbortError(err)) return
+        const host = sourceContainer.querySelectorAll('.manufacturer-source')[sources.indexOf(source)]
+        if (host) host.querySelector<HTMLElement>('.manufacturer-source-error')!.textContent = t('manufacturers.failedCatalog')
       })
-      if (!response.ok) {
-        const errorData = (await response.json().catch(() => ({}))) as {
-          detail?: { message?: string }
-          message?: string
-        }
-        throw new Error(errorData.detail?.message || errorData.message || t('manufacturers.failedSave'))
-      }
-      const saved = (await response.json()) as Manufacturer
-      if (logoSlug) {
-        try {
-          await fetch(`/api/v1/manufacturers/${saved.id}/download-logo`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': getCsrfToken(),
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              slug: logoSlug,
-              has_label_logo: hasLabelLogo,
-            }),
-          })
-        } catch {
-          console.warn('Logo download failed (non-critical)')
-        }
+    }
+  }
+  overlay.querySelector('[data-manufacturer-close]')!.addEventListener('click', close)
+  overlay.querySelector('[data-manufacturer-edit]')!.addEventListener('click', () => setMode(true))
+  overlay.querySelector('[data-manufacturer-cancel]')!.addEventListener('click', () => {
+    if (busy) return
+    if (!current) { close(); return }
+    resetDraft()
+    setMode(false); renderSources(); logo(); error.classList.add('hidden')
+  })
+  overlay.addEventListener('cancel', event => { event.preventDefault(); close() })
+  overlay.addEventListener('click', event => { if (event.target === overlay) close() })
+  form.addEventListener('input', update)
+  form.addEventListener('change', update)
+  form.addEventListener('submit', async event => {
+    event.preventDefault()
+    if (!editing || busy || !form.reportValidity()) return
+    const activeSave = ++saveSequence
+    const activeSession = session
+    const isCurrent = () => activeSave === saveSequence && activeSession === session && overlay.open
+    const data: Record<string, unknown> = values()
+    delete data.contact_email; delete data.description
+    data.url = data.url || null; data.spool_material = data.spool_material || null
+    const profile = { contact_email: inputs.contact_email.value, description: inputs.description.value }
+    if (Object.keys(links).length || profile.contact_email || profile.description || current?.custom_fields?.manufacturer_profile) {
+      data.custom_fields = withManufacturerMetadata(current?.custom_fields, profile, links)
+    }
+    const logoJobs = [...pendingLogos].filter(([source]) => selectedLogos.has(source.key))
+    busy = true; update(); error.classList.add('hidden')
+    try {
+      const saved = await request<Manufacturer>(current ? `/manufacturers/${current.id}` : '/manufacturers', { method: current ? 'PATCH' : 'POST', body: JSON.stringify(data), signal: controller.signal })
+      let logoFailed = false
+      for (const [source, entry] of logoJobs) {
+        try { await source.saveLogo?.(saved.id, entry) } catch { logoFailed = true }
       }
       invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
       const active = isCurrent()
-      if (active) close()
+      if (active) {
+        const wasNew = !current
+        // Mutation responses do not calculate aggregates; retain the list's inventory stats.
+        const stats = Object.fromEntries(['filament_count', 'spool_count', 'archived_spool_count', 'materials', 'total_price_available', 'total_price_all'].filter(key => current?.[key] !== undefined).map(key => [key, current![key]]))
+        current = { ...current, ...saved, ...stats }
+        if (logoJobs.some(([source]) => source.saveLogo) && !logoFailed) {
+          const refreshed = await request<Manufacturer>(`/manufacturers/${saved.id}`, { signal: controller.signal }).catch(() => null)
+          if (refreshed) current = { ...current, logo_url: refreshed.logo_url, label_logo_url: refreshed.label_logo_url }
+        }
+        busy = false
+        if (wasNew && !logoFailed) close()
+        else {
+          committedEntries = { ...entries }
+          resetDraft()
+          setMode(false); renderStats(); renderSources(); logo()
+          if (logoFailed) showError(t('manufacturers.savedLogoFailed'))
+        }
+      }
       await options.onSaved(saved, active)
     } catch (err) {
-      if (!isCurrent() || isAbortError(err)) return
-      error.textContent = err instanceof Error ? err.message : t('manufacturers.failedSave')
-      error.classList.remove('hidden')
+      if (isCurrent() && !isAbortError(err)) showError(err instanceof Error ? err.message : t('manufacturers.failedSave'))
     } finally {
-      submit.disabled = false
-      submit.textContent = t('common.save')
+      // A previous host refresh must not unlock a newer pending save.
+      if (activeSave === saveSequence) { busy = false; update() }
     }
   })
-
   return { open, close }
-}
-
-function getCsrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
-  return match ? decodeURIComponent(match[1]) : ''
 }

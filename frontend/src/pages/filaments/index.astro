@@ -249,6 +249,12 @@ import Layout from '../../layouts/Layout.astro'
     let allSpoolStatusIds: string[] = []
 
     const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('clear_filters') === '1') {
+      savedFilterState = null
+      columnFilters = {}
+      currentPage = 1
+      removeFilterUrlParams('clear_filters')
+    }
     const filterManufacturerId = urlParams.get('manufacturer_id')
     const normalizeSavedValues = (value: unknown): string[] => {
       if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0)

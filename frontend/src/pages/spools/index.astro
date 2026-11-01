@@ -304,6 +304,12 @@ import Layout from '../../layouts/Layout.astro'
     let splHeaderFilters: HeaderFilterController | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('clear_filters') === '1') {
+      savedFilterState = null
+      columnFilters = {}
+      currentPage = 1
+      removeFilterUrlParams('clear_filters')
+    }
     const normalizeSavedValues = (value: unknown): string[] => {
       if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
       return typeof value === 'string' && value.length > 0 ? [value] : []
@@ -632,6 +638,11 @@ import Layout from '../../layouts/Layout.astro'
         const response = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error(`Failed to load spool statuses (${response.status})`)
         statuses = await response.json()
+        const scope = urlParams.get('status_scope')
+        if (['active', 'archived', 'all'].includes(scope || '')) {
+          columnFilters.status = multiColumnFilter(statuses.filter(status => scope === 'all' || (status.key === 'archived') === (scope === 'archived')).map(status => String(status.id)))
+          splHeaderFilters?.setValue('status', columnFilters.status)
+        }
         splHeaderFilters?.setOptions('status', statuses.map((status) => {
           const i18nKey = `spools.status${status.key.charAt(0).toUpperCase() + status.key.slice(1)}`
           return { value: String(status.id), label: t(i18nKey) || status.label }
@@ -1063,7 +1074,10 @@ import Layout from '../../layouts/Layout.astro'
           type: 'multi',
           options: [],
           initialValue: columnFilters.status,
-          onApply: (value) => applyColumnFilter('status', value),
+          onApply: (value) => {
+            removeFilterUrlParams('status_scope')
+            applyColumnFilter('status', value)
+          },
         },
         {
           key: 'location',
@@ -1216,13 +1230,13 @@ import Layout from '../../layouts/Layout.astro'
       onClearColumns: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
-        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material')
+        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
         applyFiltersAndRender()
       },
       onClearAll: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
-        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material')
+        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
         applyFiltersAndRender()
       },
     })

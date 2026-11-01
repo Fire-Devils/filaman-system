@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -255,6 +255,31 @@ async def search_manufacturers(
     if search:
         params["search"] = search
     return await _proxy_get("/manufacturers", params)
+
+
+@router.get("/manufacturers/{manufacturer_id}")
+async def get_manufacturer(manufacturer_id: int, _principal: PrincipalDep):
+    """Read one catalog record without fetching the catalog sync snapshot."""
+    return await _proxy_get(f"/manufacturers/{manufacturer_id}")
+
+
+@router.get("/manufacturer-logos/{slug}/{kind}")
+async def manufacturer_logo(
+    _principal: PrincipalDep,
+    slug: str = Path(pattern=r"^[a-zA-Z0-9_-]{1,255}$"),
+    kind: str = Path(pattern=r"^(web|label)$"),
+):
+    url = f"{settings.filamentdb_url.rstrip('/')}/uploads/logos/{kind}/{slug}.png"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPError:
+        raise HTTPException(status_code=404, detail="Logo not found")
+    return Response(response.content, media_type="image/png", headers={
+        "Cache-Control": "private, max-age=86400",
+        "Content-Security-Policy": "sandbox", "X-Content-Type-Options": "nosniff",
+    })
 
 
 @router.get("/filaments")
