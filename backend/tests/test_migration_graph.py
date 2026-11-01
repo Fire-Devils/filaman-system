@@ -12,7 +12,7 @@ def test_migration_graph_has_one_head():
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
 
     assert ScriptDirectory.from_config(config).get_heads() == [
-        "add_filament_print_requests"
+        "add_user_ui_preferences"
     ]
 
 

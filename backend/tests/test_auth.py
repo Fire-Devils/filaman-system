@@ -243,6 +243,45 @@ class TestAuthMe:
         assert response.status_code == 401
 
 
+class TestMePreferences:
+    @pytest.mark.asyncio
+    async def test_preferences_roundtrip(self, auth_client):
+        client, csrf = auth_client
+
+        initial = await client.get("/api/v1/me/preferences")
+        assert initial.status_code == 200
+        assert initial.json() == {"dashboard_hidden_widgets": []}
+
+        updated = await client.patch(
+            "/api/v1/me/preferences",
+            json={"dashboard_hidden_widgets": ["filamentStats", "filamentTypes", "filamentStats"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["dashboard_hidden_widgets"] == ["filamentStats", "filamentTypes"]
+
+        again = await client.get("/api/v1/me/preferences")
+        assert again.json()["dashboard_hidden_widgets"] == ["filamentStats", "filamentTypes"]
+
+    @pytest.mark.asyncio
+    async def test_preferences_reject_invalid_widget_id(self, auth_client):
+        client, csrf = auth_client
+
+        response = await client.patch(
+            "/api/v1/me/preferences",
+            json={"dashboard_hidden_widgets": ["bad id!"]},
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_preferences_unauthenticated(self, client: AsyncClient):
+        response = await client.get("/api/v1/me/preferences")
+
+        assert response.status_code == 401
+
+
 class TestAuthLogout:
     @pytest.mark.asyncio
     async def test_logout_success(self, auth_client, db_session):

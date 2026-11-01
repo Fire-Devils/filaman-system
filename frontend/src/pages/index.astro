@@ -48,7 +48,13 @@ interface PaginatedResponse<T> {
       transform: scale(1.1);
     }
   </style>
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
+    <div id="widget-menu" style="position: relative;">
+      <button id="widget-menu-btn" class="fm-btn fm-btn-outline" type="button" data-i18n="dashboard.customize">Customize</button>
+      <div id="widget-menu-list" style="display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 200; min-width: 200px; max-height: 400px; overflow-y: auto; padding: 8px 0; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+    </div>
+  </div>
   
   <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
     <div class="fm-card fm-card-hover" style="display: flex; align-items: center; gap: 20px; cursor: pointer;" onclick="window.location.href='/spools'">
@@ -108,21 +114,21 @@ interface PaginatedResponse<T> {
   </div>
   
   <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-    <div class="fm-card">
+    <div class="fm-card" data-widget="lowStockSpools">
       <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--error-text);" data-i18n="dashboard.lowStockSpools">Spulen (fast leer)</h2>
       <div id="low-stock-spools" style="max-height: 280px; overflow-y: auto;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
     
-    <div class="fm-card">
+    <div class="fm-card" data-widget="manufacturersWithSpools">
       <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.manufacturersWithSpools">Hersteller (nicht leer)</h2>
       <div id="manufacturers-with-spools" style="max-height: 280px; overflow-y: auto;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
       </div>
     </div>
     
-    <div class="fm-card">
+    <div class="fm-card" data-widget="filamentTypes">
       <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentTypes">Filament-Arten</h2>
       <div id="filament-types" style="max-height: 280px; overflow-y: auto;">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
@@ -130,16 +136,16 @@ interface PaginatedResponse<T> {
     </div>
   </div>
 
-  <div class="grid grid-cols-2 gap-5" style="margin-top: 24px;">
+  <div class="grid grid-cols-2 gap-5" id="dash-split" style="margin-top: 24px;">
     <div class="flex flex-col gap-5">
-      <div class="fm-card">
+      <div class="fm-card" data-widget="spoolStatus">
         <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.spoolStatus">Spulen-Status</h2>
         <div id="spool-status" style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
           <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
         </div>
       </div>
       
-      <div class="fm-card">
+      <div class="fm-card" data-widget="locationStats">
         <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.locationStats">Lagerorte</h2>
         <div id="location-stats" style="overflow-y: auto;">
           <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
@@ -147,7 +153,7 @@ interface PaginatedResponse<T> {
       </div>
     </div>
     
-    <div class="fm-card overflow-y-auto" style="max-height: 400px;">
+    <div class="fm-card overflow-y-auto" data-widget="filamentStats" style="max-height: 400px;">
       <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentStats">Filament-Statistik</h2>
       <div id="filament-stats">
         <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
@@ -195,6 +201,7 @@ interface PaginatedResponse<T> {
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../lib/cache'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import { getMe, hasPermission } from '../lib/auth'
+    import { api } from '../lib/api'
 
     let allSpools: any[] = []
     let allFilaments: any[] = []
@@ -225,6 +232,104 @@ interface PaginatedResponse<T> {
         })
       })
       applyFilamentScope()
+    }
+
+    // Widget visibility is stored per user on the server (/me/preferences);
+    // the hidden list means new widgets are visible by default.
+    let hiddenWidgets = new Set<string>()
+
+    function widgetTitle(card: HTMLElement): string {
+      return card.querySelector('h2')?.textContent?.trim() || card.dataset.widget || ''
+    }
+
+    function applyWidgetVisibility() {
+      const cards = document.querySelectorAll<HTMLElement>('[data-widget]')
+      cards.forEach(card => {
+        card.style.display = hiddenWidgets.has(card.dataset.widget!) ? 'none' : ''
+      })
+      document.querySelectorAll<HTMLInputElement>('#widget-menu-list input').forEach(box => {
+        box.checked = !hiddenWidgets.has(box.dataset.widgetId!)
+      })
+      // Collapse the 2-column block when one side has nothing left to show.
+      const split = document.getElementById('dash-split')
+      if (split) {
+        const visible = Array.from(split.children).filter(col =>
+          Array.from(col.matches('[data-widget]') ? [col] : col.querySelectorAll('[data-widget]'))
+            .some(c => (c as HTMLElement).style.display !== 'none'))
+        ;(split as HTMLElement).style.display = visible.length === 0 ? 'none' : ''
+        ;(split as HTMLElement).style.gridTemplateColumns = visible.length === 1 ? '1fr' : ''
+        Array.from(split.children).forEach(col => {
+          (col as HTMLElement).style.display = visible.includes(col) ? '' : 'none'
+        })
+      }
+    }
+
+    async function saveHiddenWidgets(previous: Set<string>) {
+      applyWidgetVisibility()
+      try {
+        await api.patch('/me/preferences', { dashboard_hidden_widgets: [...hiddenWidgets] })
+      } catch (error) {
+        console.error('Failed to save dashboard preferences:', error)
+        hiddenWidgets = previous
+        applyWidgetVisibility()
+      }
+    }
+
+    function setWidgetVisible(id: string, visible: boolean) {
+      const previous = new Set(hiddenWidgets)
+      if (visible) hiddenWidgets.delete(id)
+      else hiddenWidgets.add(id)
+      return saveHiddenWidgets(previous)
+    }
+
+    function buildWidgetControls() {
+      const menu = document.getElementById('widget-menu-list')!
+      document.querySelectorAll<HTMLElement>('[data-widget]').forEach(card => {
+        const id = card.dataset.widget!
+        const label = document.createElement('label')
+        label.style.cssText = 'display: flex; gap: 8px; align-items: center; padding: 4px 12px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; user-select: none;'
+        const menuBox = document.createElement('input')
+        menuBox.type = 'checkbox'
+        menuBox.className = 'fm-checkbox'
+        menuBox.dataset.widgetId = id
+        menuBox.addEventListener('change', () => setWidgetVisible(id, menuBox.checked))
+        label.append(menuBox, widgetTitle(card))
+        menu.append(label)
+      })
+
+      const resetDiv = document.createElement('div')
+      resetDiv.style.cssText = 'border-top: 1px solid var(--border); margin-top: 6px; padding: 6px 12px 2px;'
+      const resetBtn = document.createElement('button')
+      resetBtn.type = 'button'
+      resetBtn.className = 'fm-btn fm-btn-outline'
+      resetBtn.style.cssText = 'width: 100%; font-size: 0.8rem; padding: 4px 8px;'
+      resetBtn.textContent = t('dashboard.resetWidgets')
+      resetBtn.addEventListener('click', () => {
+        const previous = hiddenWidgets
+        hiddenWidgets = new Set<string>()
+        void saveHiddenWidgets(previous)
+      })
+      resetDiv.append(resetBtn)
+      menu.append(resetDiv)
+
+      const btn = document.getElementById('widget-menu-btn')!
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
+      })
+      document.addEventListener('click', () => { menu.style.display = 'none' })
+      menu.addEventListener('click', e => e.stopPropagation())
+    }
+
+    async function initWidgetVisibility() {
+      buildWidgetControls()
+      try {
+        const prefs = await api.get<{ dashboard_hidden_widgets: string[] }>('/me/preferences')
+        hiddenWidgets = new Set(prefs.dashboard_hidden_widgets)
+      } catch (error) {
+        console.error('Failed to load dashboard preferences:', error)
+      }
+      applyWidgetVisibility()
     }
 
     function getFilamentName(filamentId: number): string {
@@ -557,6 +662,7 @@ interface PaginatedResponse<T> {
       await initI18n()
       await initCurrency()
       initFilamentScopePills()
+      await initWidgetVisibility()
       await loadDashboardData()
       showChangelogIfNeeded()
     }

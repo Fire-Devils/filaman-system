@@ -44,6 +44,7 @@ class User(Base, TimestampMixin):
     locked_until: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    ui_preferences: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     oauth_identities: Mapped[list["OAuthIdentity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
