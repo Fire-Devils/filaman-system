@@ -1,6 +1,32 @@
 {
   "versions": [
     {
+      "version": "2.0.0",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Besonderer Dank an akira69: Das Layout von Filamenten und Spulen wurde komplett überarbeitet. Die Ansichten zum Anzeigen und Bearbeiten sind übersichtlicher, Standardfelder (z. B. Eigenschaften, Spulentypen und Bilder aus dem Katalog) sind neu geordnet, und die detaillierte Spulendarstellung zeigt weitere Kennzahlen. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Deutlich bessere Darstellung auf Smartphone und Tablet. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Druckereinstellungen und Slicer-Profile sind jetzt an einer Stelle zusammengefasst. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Etiketten-Platzhalter sind nach Typ geordnet; bestehende Vorlagen funktionieren unverändert weiter. Die Etiketten-API nutzt ein Papierdrucker-Symbol. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Importe aus Spoolman und dem Katalog übernehmen die neuen Standardfelder und laufen schneller." },
+          { "type": "fix", "text": "Gewählte Standardwerte im Etiketten-Designer gehen beim Laden nicht mehr verloren." },
+          { "type": "fix", "text": "Kompatible Treiberparameter von Plugins werden beim Update sicher übernommen." },
+          { "type": "fix", "text": "FilaManDB-Aktualisierungen finden Filamente auch nach einer Änderung des Materialnamens wieder zuverlässig. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Special thanks to akira69: the layout of filaments and spools has been completely reworked. Viewing and editing are clearer, standard fields (e.g. properties, spool types and images from the catalog) are reorganized, and the detailed spool view shows additional metrics. (Contributed by akira69)" },
+          { "type": "improved", "text": "Much better display on smartphones and tablets. (Contributed by akira69)" },
+          { "type": "improved", "text": "Printer settings and slicer profiles are now combined in one place. (Contributed by akira69)" },
+          { "type": "improved", "text": "Label placeholders are organized by type; existing templates keep working unchanged. The label API uses a paper printer icon. (Contributed by akira69)" },
+          { "type": "improved", "text": "Imports from Spoolman and the catalog adopt the new standard fields and run faster." },
+          { "type": "fix", "text": "Defaults selected in the label designer are no longer lost while loading." },
+          { "type": "fix", "text": "Compatible driver parameters of plugins are migrated safely on update." },
+          { "type": "fix", "text": "FilaManDB updates reliably find filaments again after a material name changes. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "1.6.0",
       "date": "",
       "changes": {
