@@ -88,16 +88,23 @@ describe('restored extra-field token picker', () => {
     expect(document.querySelector('[data-extra-field-source="filament"]')!.textContent).toContain('No Filament System Extra Fields are configured.')
   })
 
-  it('limits long custom groups with Show all / Show fewer without losing their tokens', async () => {
+  it('keeps all custom tokens searchable in a native collapsible group', async () => {
     await setup({ entityType: 'filament', extraFields: Array.from({ length: 13 }, (_, index) => ({
       key: `filament.field${index}`, label: `Field ${String(index).padStart(2, '0')}`, source: 'filament', value: '',
     })) })
-    expect(extraTokens()).toHaveLength(12)
-    document.querySelector<HTMLButtonElement>('.ds-custom-fields-toggle')!.click()
     expect(extraTokens()).toHaveLength(13)
     expect(extraTokens()[12].dataset.fieldToken).toBe('{extra.filament.field12}')
-    document.querySelector<HTMLButtonElement>('.ds-custom-fields-toggle')!.click()
-    expect(extraTokens()).toHaveLength(12)
+    const group = extraTokens()[12].closest('details')!
+    expect(group.open).toBe(true)
+    group.open = false
+    const search = document.querySelector<HTMLInputElement>('#freeform-field-search')!
+    search.value = 'field12'
+    search.dispatchEvent(new Event('input'))
+    expect(group.open).toBe(true)
+    expect(extraTokens().filter(chip => !chip.hidden)).toHaveLength(1)
+    search.value = ''
+    search.dispatchEvent(new Event('input'))
+    expect(group.open).toBe(false)
   })
 
   it('restricts filament batch catalogs to filament system fields, including refreshes', async () => {

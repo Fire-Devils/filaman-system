@@ -48,7 +48,19 @@ export async function loadRequestedPrintLabel(
   if (!editor.loadPreset(preset.name, false)) throw new Error('Selected label preset is unavailable')
 }
 
+export function createLabelDataReadiness() {
+  let ready = false
+  let resolve!: () => void
+  const pending = new Promise<void>(done => { resolve = done })
+  return {
+    isReady: () => ready,
+    wait: () => pending,
+    markReady: () => { ready = true; resolve() },
+  }
+}
+
 export interface SingleLabelPreviewRuntimeOptions {
+  isReady?: () => boolean
   label: HTMLElement
   getSource: () => PrintLabelSource
   renderStandard: (isStale: () => boolean) => void | Promise<void>
@@ -61,6 +73,7 @@ export function createSingleLabelPreviewRuntime(options: SingleLabelPreviewRunti
   let renderVersion = 0
 
   const refresh = () => {
+    if (options.isReady && !options.isReady()) return Promise.resolve()
     const source = options.getSource()
     const version = ++renderVersion
     const isStale = () => version !== renderVersion || source !== options.getSource()
@@ -81,6 +94,7 @@ export function createSingleLabelPreviewRuntime(options: SingleLabelPreviewRunti
 }
 
 export interface BatchLabelPreviewRuntimeOptions<T, TDesign> {
+  isReady?: () => boolean
   getActiveMode: () => PrintWorkspaceMode
   getPreviewIndex: () => number
   getWorkspaceState: (mode: PrintWorkspaceMode) => PrintWorkspaceSnapshot<T>
@@ -98,6 +112,7 @@ export function createBatchLabelPreviewRuntime<T, TDesign>(options: BatchLabelPr
 
   return {
     async render(mode = options.getActiveMode(), output = false) {
+      if (options.isReady && !options.isReady()) return
       const version = ++renderVersion
       const state = options.getWorkspaceState(mode)
       const stale = () => version !== renderVersion

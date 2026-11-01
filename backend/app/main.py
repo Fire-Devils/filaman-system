@@ -5,9 +5,12 @@ import os
 import tempfile
 import time
 from contextlib import asynccontextmanager
+from math import isfinite
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -434,6 +437,25 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    # JSON decoding can overflow a number before request validation rejects it.
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": jsonable_encoder(
+                exc.errors(),
+                custom_encoder={
+                    float: lambda value: value if isfinite(value) else str(value)
+                },
+            )
+        },
+    )
+
 
 cors_origins: list[str] = []
 if settings.cors_origins == "*":

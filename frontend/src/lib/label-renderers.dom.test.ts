@@ -12,7 +12,7 @@ import {
   getDesignerLabelDimensions,
   renderDesignerLabel,
 } from './label-designer'
-import { renderStandardLabel } from './label-standard'
+import { API_DEFAULT_LABEL_SETTINGS, buildStandardLabelDataFromFlat, renderStandardLabel } from './label-standard'
 import type { LabelDesignV2 } from './freeform-label/types'
 
 const PAGE_STYLE_SENTINEL = '/* pre-existing page style */'
@@ -41,6 +41,30 @@ function expectNoBrowserPrintCss() {
 }
 
 describe('label renderers', () => {
+  it.each([
+    ['透明', '聚乳酸', '透明 聚乳酸'],
+    ['Прозрачный', 'ПЛА', 'Прозрачный ПЛА'],
+    ['شفاف', 'بلاستيك', 'شفاف بلاستيك'],
+    ['क', 'का', 'क का'],
+    ['١٢', '٣٤', '١٢ ٣٤'],
+    ['Cafe\u0301', 'Café', 'Cafe\u0301'],
+    ['Cafe\u0301', 'Cafe', 'Cafe\u0301 Cafe'],
+    ['PET-G', 'PETG', 'PET-G'],
+    ['ПЛА', 'пла', 'ПЛА'],
+    ['!!!', '???', '!!! ???'],
+    ['\u0301', '\u0301', '\u0301 \u0301'],
+    ['', '聚乳酸', '聚乳酸'],
+    ['透明', '', '透明'],
+    ['', '', ''],
+  ])('preserves distinct material text for %s / %s', async (designation, material, expected) => {
+    await renderStandardLabel({
+      element: document.querySelector<HTMLElement>('#label')!,
+      settings: { ...API_DEFAULT_LABEL_SETTINGS, showQR: false },
+      data: buildStandardLabelDataFromFlat({ id: 1, designation, material }),
+    })
+    expect(document.querySelector('.label-designation')?.textContent).toBe(expected)
+  })
+
   it('reads physical dimensions from a v2 freeform design', () => {
     expect(getDesignerLabelDimensions({
       version: 2,
@@ -54,9 +78,9 @@ describe('label renderers', () => {
       element: document.querySelector<HTMLElement>('#label')!,
       data: {
         id: '1',
-        designation: 'Sample PLA',
+        designation: 'PET-G',
         manufacturer: 'FilaMan',
-        material: 'PLA',
+        material: 'PETG',
         colorName: 'Black',
         hexCode: '000000',
         colorHexes: '#000000',
@@ -80,6 +104,7 @@ describe('label renderers', () => {
     })
 
     expectNoBrowserPrintCss()
+    expect(document.querySelector('.label-designation')?.textContent).toBe('PET-G')
   })
 
   it('rejects legacy settings instead of retaining the old runtime renderer', async () => {

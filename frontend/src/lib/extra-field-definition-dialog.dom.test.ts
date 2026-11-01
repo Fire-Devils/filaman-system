@@ -45,6 +45,28 @@ afterEach(() => {
 })
 
 describe('shared Extra Field definition dialog', () => {
+  it('does not steal focus after the user starts editing another field', async () => {
+    const dialog = createExtraFieldDefinitionDialog({ mode: 'entity' })
+    dialog.open({ title: 'Edit', draft: draft(), onSubmit() {} })
+    const label = document.querySelector<HTMLInputElement>('.extra-field-dialog-label')!
+    label.focus()
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    expect(document.activeElement).toBe(label)
+  })
+
+  it('uses a modal child and restores focus on cancellation', () => {
+    const trigger = document.createElement('button')
+    document.body.append(trigger)
+    trigger.focus()
+    const dialog = createExtraFieldDefinitionDialog({ mode: 'entity' })
+    dialog.open({ title: 'Add', draft: draft(), onSubmit() {} })
+    const overlay = document.querySelector<HTMLDialogElement>('dialog')!
+    expect(overlay).not.toBeNull()
+    expect(overlay.open).toBe(true)
+    overlay.dispatchEvent(new Event('cancel', { cancelable: true }))
+    expect(overlay.open).toBe(false)
+    expect(document.activeElement).toBe(trigger)
+  })
   it('preserves an unchanged timezone-bearing datetime default', async () => {
     const submission: { value?: ExtraFieldDefinitionDialogResult } = {}
     const dialog = createExtraFieldDefinitionDialog({ mode: 'system' })

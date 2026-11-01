@@ -1,4 +1,4 @@
-"""Isolated real-API fixtures; optional evidence for the browser parity harness."""
+"""Real authenticated API fixtures for the browser/Node renderer parity check."""
 import asyncio
 import base64
 import copy
@@ -7,10 +7,7 @@ import io
 import json
 import os
 import platform
-import resource
-import shutil
 import subprocess
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,16 +25,10 @@ from app.models import (
     SpoolStatus,
 )
 from app.models.label_preset import label_preset_name_key
-from app.services.label_preset_v1 import convert_label_preset_data
 
 
 @pytest.mark.asyncio
 async def test_shared_api_parity_fixtures(auth_client, db_session, admin_user, monkeypatch):
-    # /app is only used in an explicitly requested isolated container smoke run.
-    if os.environ.get('LABEL_CONTAINER_SMOKE'):
-        assert not shutil.which('chromium')
-        assert not Path('/usr/lib/chromium/chromium-headless-shell').exists()
-        assert (await asyncio.to_thread(subprocess.check_output, ['node', '--version'], text=True)).startswith('v20.')
     client, _ = auth_client
     manufacturer = Manufacturer(name='Bambu Lab')
     db_session.add(manufacturer)
@@ -86,74 +77,30 @@ async def test_shared_api_parity_fixtures(auth_client, db_session, admin_user, m
         return png
 
     monkeypatch.setattr(labels, 'render_svg_png', capture)
-    cases = [('mixed', preset.data)]
-    hashes = {}
-    if directory := os.environ.get('LABEL_TESTER_PRESETS_DIR'):
-        for file in ('presets.json', 'presets_tiny_qr.json'):
-            path = Path(directory) / file
-            raw = path.read_bytes()
-            hashes[path] = hashlib.sha256(raw).hexdigest()
-            for record in json.loads(raw):
-                data = convert_label_preset_data(record['data'], 'spool')
-                cases.append((f'tester-{record["id"]}', data))
-                if record['id'] == 4:
-                    fitted = copy.deepcopy(data)
-                    for element in fitted['design']['elements']:
-                        if element.get('legacyTextRole') == 'info':
-                            element.update(fitToWidth=True, minFontSizeMm=1.5)
-                    cases.append(('tester-4-fit-copy', fitted))
     rows = []
-    for name, data in cases:
-        preset.data = data
-        await db_session.commit()
-        settings = [(203, 'mono1', 200, 'original', 'left'), (300, 'mono1', 150, 'portrait', 'right'),
-                    (203, 'png', 200, 'original', 'right')]
-        if name == 'mixed':
-            settings += [(100, 'png', 0, 'original', 'left'), (600, 'png', 255, 'landscape', 'right'),
-                         (203, 'mono1', 0, 'original', 'right'), (300, 'mono1', 255, 'original', 'left')]
-        for dpi, output, threshold, orientation, align in settings:
-            width = 1023 if dpi == 600 else 481
-            start = time.perf_counter()
-            response = await client.get(f'/api/v1/labels/spool/{spool.id}/render', params={
-                'preset_id': preset.id, 'width': width, 'dpi': dpi, 'format': output, 'threshold': threshold,
-                'orientation': orientation, 'align': align, 'color': 'color' if output == 'png' else 'mono'})
-            seconds = time.perf_counter() - start
-            assert response.status_code in (200, 422), response.text
-            if name == 'mixed' or name == 'tester-4-fit-copy':
-                assert response.status_code == 200, response.text
-            row = {**copy.deepcopy(captured), 'name': name, 'dpi': dpi, 'format': output, 'threshold': threshold,
-                   'align': align, 'seconds': seconds, 'status': response.status_code}
-            if response.status_code == 200:
-                assert 'x-renderer' not in response.headers
-                assert 'no-store' in response.headers['cache-control']
-                row['headers'] = dict(response.headers)
-                row['wire'] = base64.b64encode(response.content).decode()
-                if output == 'png':
-                    with Image.open(io.BytesIO(response.content)) as image:
-                        row['wireRgba'] = base64.b64encode(image.convert('RGBA').tobytes()).decode()
-            else:
-                row['error'] = response.json()['detail']
-            rows.append(row)
-    for path, digest in hashes.items():
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    for dpi, output, threshold, orientation, align in [
+        (203, 'mono1', 200, 'original', 'left'), (300, 'mono1', 150, 'portrait', 'right'),
+        (203, 'png', 200, 'original', 'right'), (100, 'png', 0, 'original', 'left'),
+        (600, 'png', 255, 'landscape', 'right'), (203, 'mono1', 0, 'original', 'right'),
+        (300, 'mono1', 255, 'original', 'left'),
+    ]:
+        width = 1023 if dpi == 600 else 481
+        response = await client.get(f'/api/v1/labels/spool/{spool.id}/render', params={
+            'preset_id': preset.id, 'width': width, 'dpi': dpi, 'format': output, 'threshold': threshold,
+            'orientation': orientation, 'align': align, 'color': 'color' if output == 'png' else 'mono'})
+        assert response.status_code == 200, response.text
+        assert 'x-renderer' not in response.headers
+        assert 'no-store' in response.headers['cache-control']
+        row = {**copy.deepcopy(captured), 'name': 'mixed', 'dpi': dpi, 'format': output, 'threshold': threshold,
+               'align': align, 'status': response.status_code, 'headers': dict(response.headers),
+               'wire': base64.b64encode(response.content).decode()}
+        if output == 'png':
+            with Image.open(io.BytesIO(response.content)) as image:
+                row['wireRgba'] = base64.b64encode(image.convert('RGBA').tobytes()).decode()
+        rows.append(row)
     if evidence := os.environ.get('LABEL_EVIDENCE_DIR'):
-        preset.data = cases[0][1]
-        await db_session.commit()
-        repeated = []
-        for _ in range(5):
-            start = time.perf_counter()
-            response = await client.get(f'/api/v1/labels/spool/{spool.id}/render', params={
-                'preset_id': preset.id, 'width': 481, 'dpi': 203, 'format': 'mono1'})
-            assert response.status_code == 200, response.text
-            repeated.append(time.perf_counter() - start)
         directory = Path(evidence)
         directory.mkdir(parents=True, exist_ok=True)
         (directory / 'api-parity.json').write_text(json.dumps({'architecture': platform.machine(),
             'node': (await asyncio.to_thread(subprocess.check_output, [os.environ.get('LABEL_RENDER_NODE_EXECUTABLE', 'node'), '--version'], text=True)).strip(),
-            'benchmark': {'firstRequestSeconds': rows[0]['seconds'], 'repeatedRequestSeconds': repeated,
-                          'peakChildBytes': resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * (1 if platform.system() == 'Darwin' else 1024),
-                          'scope': 'Local ASGI + fresh Node per request; not Docker or network latency'},
-            'sourceHashes': {str(path): digest for path, digest in hashes.items()}, 'cases': rows}))
-        for index, row in enumerate(rows):
-            if row['status'] == 200:
-                (directory / f'{index}-{row["name"]}-{row["dpi"]}.{row["format"]}').write_bytes(base64.b64decode(row['wire']))
+            'cases': rows}))

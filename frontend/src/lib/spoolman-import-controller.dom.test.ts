@@ -135,6 +135,25 @@ it("preserves preview headers, overflow counts, and partial-definition notices",
   expect(fieldHtml).toContain("spoolman.extraFieldRetainedConflict");
 });
 
+it("offers a per-field storage action for a standard-field candidate", () => {
+  const html = renderExtraFieldPreview(
+    [
+      {
+        target_type: "filament",
+        key: "dry",
+        label: "Drying Temperature",
+        field_type: "integer",
+        status: "standard",
+        standard_field: "drying_temp_c",
+      },
+    ],
+    { typedDefinitionsAvailable: true, missingTargets: [] },
+    (key) => key,
+  );
+  expect(html).toContain('data-key="dry"');
+  expect(html).toContain('<option value="preserve"');
+});
+
 it("preserves detailed import and transparency result copy", () => {
   const t = (key: string) =>
     key === "spoolman.colorAssignmentsRepaired"

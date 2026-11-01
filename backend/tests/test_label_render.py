@@ -12,6 +12,7 @@ from app.api.v1.labels import _mono1
 from app.core.security import generate_token_secret, hash_token
 from app.main import app
 from app.models import (
+    AppSettings,
     Color,
     Device,
     Filament,
@@ -26,6 +27,39 @@ from app.models import (
 )
 from app.models.label_preset import label_preset_name_key
 from app.services.label_preset_v1 import convert_label_preset_data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("currency", [None, "USD"])
+async def test_label_payload_includes_purchase_currency(auth_client, db_session, monkeypatch, currency):
+    from app.api.v1 import labels
+
+    client, _ = auth_client
+    settings = await db_session.get(AppSettings, 1)
+    if settings:
+        await db_session.delete(settings)
+        await db_session.flush()
+    if currency:
+        db_session.add(AppSettings(id=1, currency=currency))
+    manufacturer = Manufacturer(name="Currency")
+    db_session.add(manufacturer)
+    await db_session.flush()
+    filament = Filament(manufacturer_id=manufacturer.id, designation="PLA", material_type="PLA", diameter_mm=1.75)
+    db_session.add(filament)
+    await db_session.flush()
+    status = await db_session.scalar(select(SpoolStatus).where(SpoolStatus.key == "active"))
+    spool = Spool(filament_id=filament.id, status_id=status.id, purchase_price=12.5)
+    db_session.add(spool)
+    await db_session.commit()
+    image = BytesIO()
+    Image.new("RGB", (480, 320), "white").save(image, format="PNG")
+    renderer = AsyncMock(return_value=image.getvalue())
+    monkeypatch.setattr(labels, "render_svg_png", renderer)
+    response = await client.get(f"/api/v1/labels/spool/{spool.id}/render?width=480&preset_id=0")
+    assert response.status_code == 200
+    payload = renderer.call_args.args[0]
+    assert payload["purchaseCurrency"] == (currency or "EUR")
+    assert payload["spool"]["purchase_price"] == 12.5
 
 
 def test_mono1_pads_partial_row_with_white():

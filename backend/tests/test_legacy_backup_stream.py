@@ -288,3 +288,27 @@ def test_legacy_stream_closes_current_tables_when_import_fails():
     ):
         raise RuntimeError("import failed")
     assert all(table.closed for table in tables.values())
+
+
+@pytest.mark.parametrize("missing_table,expected_status", [
+    ("filament_printer_initializations", 200),
+    ("manufacturers", 422),
+])
+async def test_jsonl_restore_accepts_only_the_optional_initialization_count_missing(
+    auth_client, tmp_path, monkeypatch, missing_table, expected_status
+):
+    monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
+    client, token = auth_client
+    exported = await client.get(
+        "/api/v1/admin/system/backup/export-inventory?format=jsonl"
+    )
+    assert exported.status_code == 200
+    records = [json.loads(line) for line in exported.content.splitlines()]
+    records[-1]["counts"].pop(missing_table)
+    content = b"".join(json.dumps(record).encode() + b"\n" for record in records)
+    response = await client.post(
+        "/api/v1/admin/system/backup/import-inventory",
+        files={"file": ("backup.jsonl", content, "application/x-ndjson")},
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == expected_status, response.text

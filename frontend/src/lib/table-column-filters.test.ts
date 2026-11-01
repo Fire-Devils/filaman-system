@@ -11,6 +11,13 @@ import {
 } from './table-column-filters'
 
 describe('Persisted table filters', () => {
+  it('discards numeric operators unsupported by a server-backed column', () => {
+    const value = { type: 'number', operator: 'neq', value: '50', valueTo: '' }
+    expect(sanitizeColumnFilters({ metric: value }, [
+      { key: 'metric', type: 'number', numberOperators: ['eq', 'gte', 'lte', 'between'] },
+    ])).toEqual({})
+    expect(sanitizeColumnFilters({ metric: value }, [{ key: 'metric', type: 'number' }])).toEqual({ metric: value })
+  })
   it('discards removed filters and values whose type no longer matches the column', () => {
     const filters = {
       colors: { type: 'multi', values: ['Blue'] },

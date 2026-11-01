@@ -1,0 +1,15 @@
+---
+interface Props {
+  mode: 'create' | 'edit'
+  cancelHref: string
+}
+const { mode, cancelHref } = Astro.props
+---
+
+<div class="detail-page-actions" role="group" aria-label="Actions" data-i18n-aria-label="common.actions">
+  {mode === 'edit' && <button id="btn-edit-filament" type="button" class="detail-icon-button" aria-label="Edit" data-i18n-aria-label="common.edit" title="Edit" data-i18n-title="common.edit" aria-pressed="true"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></button>}
+  <button id="submit-btn" type="submit" form="filament-form" class="fm-btn fm-btn-primary" disabled={mode === 'edit'} data-i18n={mode === 'create' ? 'filaments.createFilament' : 'common.save'}>
+    {mode === 'create' ? 'Create Filament' : 'Save'}
+  </button>
+  <a id="filament-form-cancel" href={cancelHref} data-discard-printer-draft class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</a>
+</div>

@@ -1,17 +1,14 @@
 /**
  * Production SVG layout acceptance in a browser, using real bundled fonts.
- * Run from frontend: PLAYWRIGHT_MODULE=/path/to/playwright-core \
- * CHROME_EXECUTABLE_PATH=/path/to/chrome node scripts/check-label-layout.mjs
+ * Run from frontend: CHROME_EXECUTABLE_PATH=/path/to/chrome npm run check:label-layout
  * Uses installed esbuild, bundled fonts, and an existing Playwright/Chrome runtime.
  */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
+import { chromium } from 'playwright-core'
 
-const require = createRequire(import.meta.url)
-const { build } = require('esbuild')
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
 const frontend = fileURLToPath(new URL('../', import.meta.url))
 const bundle = await build({
   stdin: {

@@ -25,6 +25,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     bindDesignerPreviewNavigation,
     bindLabelPrintWorkspaceTabs,
     createBatchLabelPreviewRuntime,
+    createLabelDataReadiness,
     getPrintDesignerDesign,
     initPrintDesignerEditor,
   } from '../../lib/label-print-workspace'
@@ -74,7 +75,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     type PrintWorkspaceMode,
     writeStorageValue,
   } from '../../lib/label-print-page'
-  import { isBuiltInLabelField } from '../../lib/label-extra-fields'
+  import { buildLegacyLabelAliases, isBuiltInLabelField } from '../../lib/label-extra-fields'
   import {
     FILAMENT_LABEL_PRESETS_KEY,
     hydrateLabelPresetStorage,
@@ -117,7 +118,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     'filament',
   )
 
-  type ExtraFieldDef = SystemExtraFieldDef
+  type ExtraFieldDef = SystemExtraFieldDef & { legacyAlias?: boolean }
   type FilamentBatchSettings = LabelSettingsState & { zoom?: unknown }
   type ApiObject = Record<string, unknown>
   type ApiFilament = ApiObject & {
@@ -133,6 +134,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   const initialMode: PrintWorkspaceMode = readPrintWorkspaceMode('filaman-label-active-tab')
   let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
   const previewRenders = createPreviewRenderCoordinator()
+  const labelDataReadiness = createLabelDataReadiness()
   const workspace = createPrintWorkspaceCoordinator({
     initialMode,
     getItems: () => filaments,
@@ -148,7 +150,10 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   // Extra field definitions for filaments only. The Standard Label tab is
   // reduced to common fields; Label Designer still receives all fields.
   let efDefs: ExtraFieldDef[] = []
+  let settingsLoaded = ids.length === 0
   const systemFieldKeys = new Set<string>()
+  let systemDefinitions: SystemExtraFieldDef[] = []
+  const legacyFieldKeys = new Set<string>()
   const efCheckMap: Record<string, HTMLInputElement> = {}
 
   const STANDARD_FILAMENT_EF = REDUCED_STANDARD_FILAMENT_EXTRA_FIELD_DEFS
@@ -158,12 +163,13 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   function getExtraFieldDefinitionMap(): Record<string, SystemExtraFieldDef> {
     return buildSystemExtraFieldDefinitionMap(
-      efDefs,
-      def => systemFieldKeys.has(def.key),
+      systemDefinitions,
+      () => true,
     )
   }
 
   function saveSettings() {
+    if (!settingsLoaded) return
     writeStorageValue(SETTINGS_KEY, JSON.stringify({
       ...captureLabelSettings(settingsControls, efCheckMap),
       _v: SETTINGS_VERSION,
@@ -172,6 +178,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   function loadSettings() {
+    settingsLoaded = true
     const settings = readVersionedLabelSettings<FilamentBatchSettings>(
       SETTINGS_KEY,
       SETTINGS_VERSION,
@@ -211,7 +218,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   function getBatchDesignerExtraFields(): DesignerExtraField[] {
     const fields = new Map<string, DesignerExtraField>()
     for (const def of efDefs) {
-      if (STANDARD_FILAMENT_EF_KEYS.has(def.key)) continue
+      if (STANDARD_FILAMENT_EF_KEYS.has(def.key) || legacyFieldKeys.has(`filament.${def.key}`)) continue
       const key = `filament.${def.key}`
       fields.set(key, {
         key,
@@ -231,8 +238,11 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     const recordDefinitions = normalizeEntityExtraFieldDefinitions(
       filament.custom_field_definitions,
     )
+    const aliases = buildLegacyLabelAliases(filament, filament, 'filament', getExtraFieldDefinitionMap())
     for (const def of efDefs) {
       if (!efCheckMap[efMapKey(def.key)]?.checked) continue
+      const alias = aliases.find(field => field.key === `filament.${def.key}`)
+      if (alias) { if (alias.value) result.push(alias); continue }
       // Standard fields use shared reduced definitions; system custom fields use custom_fields[key].
       const stdDef = STANDARD_FILAMENT_EF.find(s => s.key === def.key)
       const customValue = getExtraFieldValue(custom, def.key)
@@ -346,6 +356,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   const batchPreview = createBatchLabelPreviewRuntime({
+    isReady: labelDataReadiness.isReady,
     getActiveMode: workspace.getActiveMode,
     getPreviewIndex: workspace.getPreviewIndex,
     getWorkspaceState: workspace.getState,
@@ -384,14 +395,20 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   async function loadExtraFieldDefs() {
     try {
-      const defs = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.json())
-      const customDefs = normalizeSystemExtraFieldDefinitions(defs)
-        .filter(def => !isBuiltInLabelField('filament', def.key, def.label))
+      const defs = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => [])
+      systemDefinitions = normalizeSystemExtraFieldDefinitions(defs)
+      const aliases = filaments.flatMap(filament => buildLegacyLabelAliases(filament, filament, 'filament', getExtraFieldDefinitionMap()))
+      aliases.forEach(field => legacyFieldKeys.add(field.key))
+      const selected = readVersionedLabelSettings<FilamentBatchSettings>(SETTINGS_KEY, SETTINGS_VERSION)?.extraFields as Record<string, boolean> | undefined
+      const historicalDefs = [...new Map(aliases.filter(field => selected?.[efMapKey(field.key.slice('filament.'.length))])
+        .map(field => [field.key, { key: field.key.slice('filament.'.length), label: field.label, field_type: field.fieldType || 'text', legacyAlias: true }])).values()]
+      const customDefs = systemDefinitions
+        .filter(def => !isBuiltInLabelField('filament', def.key, def.label) && !legacyFieldKeys.has(`filament.${def.key}`))
       const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
       systemFieldKeys.clear()
       customDefs.forEach(def => systemFieldKeys.add(def.key))
       // Batch selectors are centrally governed: built-ins first, then System Extra Fields.
-      efDefs = [...standardDefs, ...customDefs]
+      efDefs = [...standardDefs, ...customDefs, ...historicalDefs]
       if (efDefs.length === 0) return
 
       const titleEl = document.getElementById('ef-section-title')!
@@ -411,7 +428,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         }
       }
 
-      addFieldRows(standardDefs, container)
+      addFieldRows([...standardDefs, ...historicalDefs], container)
 
       if (customDefs.length > 0) {
         const customTitle = document.createElement('h3')
@@ -490,6 +507,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     collection: {
       getItems: workspace.getOutputItems,
       prepare: async () => {
+        await labelDataReadiness.wait()
         await previewRenders.settle()
         if (workspace.getActiveMode() === 'designer') await renderBatchPreview('designer', true)
       },
@@ -529,6 +547,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   if (ids.length === 0) {
     countEl.textContent = t('labelPrint.noFilamentsSelected')
+    labelDataReadiness.markReady()
   } else {
     countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
     ids.forEach(id => previewLabelsHost.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
@@ -545,7 +564,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
     loadSettings()
     await prefetchLogos()
-    tabControls.activate(initialMode)
+    labelDataReadiness.markReady()
+    tabControls.activate(tabControls.getActiveMode())
   }
 
   bindLabelSettingsEvents({

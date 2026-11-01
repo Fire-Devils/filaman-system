@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from app.services.spoolman_projection import adapt_installed_spoolman
+
 from app.api.v1.admin import router as admin_router
 from app.api.v1.app_settings_admin import public_router as app_settings_public_router
 from app.api.v1.app_settings_admin import router as app_settings_admin_router
@@ -121,6 +123,7 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
         importlib.invalidate_caches()
 
         module = importlib.import_module(f"{plugin_key}.router")
+        adapt_installed_spoolman(module, plugin_key, manifest)
         plugin_router = getattr(module, "router", None)
         if plugin_router is None:
             _logger.warning(
@@ -260,6 +263,7 @@ def _mount_plugin_routers() -> None:
             mount_prefix = manifest.get("mount_prefix")
 
             module = importlib.import_module(f"{plugin_key}.router")
+            adapt_installed_spoolman(module, plugin_key, manifest)
             plugin_router = getattr(module, "router", None)
             if plugin_router is None:
                 _logger.warning(

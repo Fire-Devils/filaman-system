@@ -1,6 +1,7 @@
 /** Per-model Bambu cloud profile picker (shared by spool + filament pages). */
 
 import { api, ApiError, getCsrfToken } from './api'
+import { escapeHtml } from './extra-fields'
 
 export type ConnectedModel = {
   model: string
@@ -33,9 +34,11 @@ export type InitPerModelPickerOptions = {
   getCsrfToken: () => string
   getAbortSignal: () => AbortSignal | undefined
   isAbortError: (e: unknown) => boolean
-  onSaved?: () => void
+  onSaved?: () => void | Promise<void>
+  onSavingChange?: (saving: boolean) => void
   filamentId?: number
   filamentLabel?: string
+  readOnly?: boolean
 }
 
 type SelectionVisual =
@@ -58,12 +61,6 @@ type VisualMeta = {
 }
 
 type TranslateFn = (key: string) => string
-
-function escapeHtml(s: string): string {
-  return (s || '').replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string)
-  )
-}
 
 function trFmt(t: TranslateFn, key: string, vars: Record<string, string>): string {
   let text = t(key) || key
@@ -129,7 +126,7 @@ function formatCloudNameLine(
   const nozzle = cov?.nozzle_requested ?? 0.4
   const expected =
     cov?.expected_name ||
-    (baseName ? `${baseName} @BBL ${model} ${nozzle}g nozzle` : '')
+    (baseName ? `${baseName} @BBL ${model} ${nozzle} nozzle` : '')
 
   if (!baseName) {
     return ptr(t, 'profilePickerCloudNameRequirement', { model })
@@ -173,7 +170,7 @@ function renderPickerMeta(
   return `<div class="profile-picker-meta" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border,#333); font-size:0.72rem; color:var(--text-muted); line-height:1.45;">
     ${baseName ? `<div style="margin-bottom:6px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;"><span style="font-size:0.7rem;">${escapeHtml(ptr(t, 'profilePickerCloudVariants'))}</span>${renderStandardNozzleBadges(cov, baseName, t)}</div>` : ''}
     <div class="profile-picker-nozzle-line">${escapeHtml(formatNozzleLine(cov, model, t))}</div>
-    <div class="profile-picker-cloud-line" style="margin-top:4px; ${cloudStyle}">${escapeHtml(cloudLine)}</div>
+    <details class="profile-picker-technical"><summary>${escapeHtml(ptr(t, 'profilePickerCloudDetails'))}</summary><div class="profile-picker-cloud-line" style="margin-top:4px; ${cloudStyle}">${escapeHtml(cloudLine)}</div></details>
   </div>`
 }
 
@@ -210,9 +207,7 @@ function renderStandardNozzleBadges(
   return `<span class="profile-std-nozzles" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center;margin-left:4px;" title="${escapeHtml(ptr(t, 'profilePickerStdNozzleLegend'))}">${parts.join('')}</span>`
 }
 
-function rowNozzleBadge(cov: ProfileCoverage | undefined, baseName: string, t: TranslateFn): string {
-  return renderStandardNozzleBadges(cov, baseName, t)
-}
+
 
 function coverageStatus(c?: ProfileCoverage): ProfileCoverage['status'] {
   if (!c) return 'not_set'
@@ -328,13 +323,6 @@ function displayBaseForPicker(selectedBase: string): string {
   // are shown via the invalid/fallback shell state — blanking the field after a
   // successful save made it look like the override was cleared (reload fixed it).
   return selectedBase || ''
-}
-
-function renderStaleNotice(staleBase: string, model: string, t: TranslateFn): string {
-  if (!staleBase) return ''
-  return `<p class="profile-stale-notice" style="margin:0 0 8px;font-size:0.8rem;color:var(--warning-text,#b8860b);">${escapeHtml(
-    ptr(t, 'profilePickerStaleNotice', { name: staleBase, model })
-  )}</p>`
 }
 
 function committedVisual(
@@ -470,14 +458,14 @@ function updateComboVisual(
   applyShellState(shell, visual, visualMeta(visual, cov, false, t), t, cov, hidden.value, model)
 }
 
-function wireCombo(
+// Keep default/model coverage rules in their adapters while sharing input behavior.
+function bindProfileCombo(
   mount: HTMLElement,
   presets: any[],
-  cov: ProfileCoverage | undefined,
-  model: string,
   t: TranslateFn,
   onSelect: (baseName: string) => void | Promise<void>,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  updateVisual: (mode: 'committed' | 'draft' | 'saving') => void
 ) {
   const combo = mount.querySelector('.cloud-combo') as HTMLElement
   if (!combo) return
@@ -516,10 +504,10 @@ function wireCombo(
         hidden.value = base
         search.value = base
         list.style.display = 'none'
-        updateComboVisual(mount, presets, cov, t, 'saving', model)
+        updateVisual('saving')
         void Promise.resolve(onSelect(base)).catch((e: unknown) => {
           onError(formatApiError(e, t))
-          updateComboVisual(mount, presets, cov, t, 'committed', model)
+          updateVisual('committed')
         })
       })
     })
@@ -532,24 +520,29 @@ function wireCombo(
   search.addEventListener('input', () => {
     renderList(search.value)
     list.style.display = 'block'
-    updateComboVisual(
-      mount,
-      presets,
-      cov,
-      t,
-      search.value.trim() === hidden.value ? 'committed' : 'draft',
-      model
-    )
+    updateVisual(search.value.trim() === hidden.value ? 'committed' : 'draft')
   })
   search.addEventListener('blur', () => {
     setTimeout(() => {
       list.style.display = 'none'
       search.value = hidden.value
-      updateComboVisual(mount, presets, cov, t, 'committed', model)
+      updateVisual('committed')
     }, 150)
   })
 
-  updateComboVisual(mount, presets, cov, t, 'committed', model)
+  updateVisual('committed')
+}
+
+function wireCombo(
+  mount: HTMLElement,
+  presets: any[],
+  cov: ProfileCoverage | undefined,
+  model: string,
+  t: TranslateFn,
+  onSelect: (baseName: string) => void | Promise<void>,
+  onError: (message: string) => void
+) {
+  bindProfileCombo(mount, presets, t, onSelect, onError, mode => updateComboVisual(mount, presets, cov, t, mode, model))
 }
 
 async function fetchConnectedModels(
@@ -602,8 +595,13 @@ async function apiPostWithCsrf(
   path: string,
   body: unknown
 ): Promise<any> {
-  const csrfToken = await ensureCsrfToken(opts)
-  return api.post(path, body, { csrfToken })
+  opts.onSavingChange?.(true)
+  try {
+    const csrfToken = await ensureCsrfToken(opts)
+    const result = await api.post(path, body, { csrfToken, signal: opts.getAbortSignal() })
+    await opts.onSaved?.()
+    return result
+  } finally { opts.onSavingChange?.(false) }
 }
 
 async function saveDefaultProfile(
@@ -691,30 +689,20 @@ async function loadCloudPresetsForModel(
 }
 
 function rowHeaderBadge(
-  model: string,
   c: ProfileCoverage | undefined,
   baseName: string,
   t: TranslateFn
 ): string {
   const raw = baseName || c?.base_name || ''
-  const badges = rowNozzleBadge(c, raw, t)
-  if (!c) return badges
+  if (!c) return ''
   const visual = committedVisual(raw, [], c)
-  if (visual === 'empty' || visual === 'invalid') return badges
+  if (visual === 'empty' || visual === 'invalid') return ''
   const meta = visualMeta(visual, c, false, t)
-  return `${badges}<span class="profile-row-badge" title="${escapeHtml(meta.hint || meta.label)}" style="font-size:0.7rem;padding:1px 7px;border-radius:999px;border:1px solid ${meta.border};color:${meta.iconColor};">${escapeHtml(meta.label)}</span>`
+  return `<span class="profile-row-badge" title="${escapeHtml(meta.hint || meta.label)}" style="font-size:0.7rem;padding:1px 7px;border-radius:999px;border:1px solid ${meta.border};color:${meta.iconColor};">${escapeHtml(meta.label)}</span>`
 }
 
-function renderPickerHelp(connectedModels: ConnectedModel[], t: TranslateFn): string {
-  const modelList =
-    connectedModels.map((m) => m.model).join(', ') ||
-    ptr(t, 'profilePickerConnectedModelsFallback')
-  return `<div class="profile-picker-help" style="margin-bottom:16px; padding:12px 14px; border-radius:8px; border:1px solid var(--border,#333); background:rgba(255,255,255,0.03); font-size:0.78rem; color:var(--text-muted); line-height:1.5;">
-    <strong style="color:var(--text);">${escapeHtml(ptr(t, 'profilePickerHelpTitle'))}</strong> — ${escapeHtml(ptr(t, 'profilePickerHelpIntro', { models: modelList }))}
-    ${escapeHtml(ptr(t, 'profilePickerHelpResolve'))}
-    ${escapeHtml(ptr(t, 'profilePickerHelpOverride'))}
-    ${escapeHtml(ptr(t, 'profilePickerHelpStock040'))}
-  </div>`
+function renderPickerHelp(t: TranslateFn): string {
+  return `<p class="profile-picker-help">${escapeHtml(t('printerSetup.compactProfileHelp'))}</p>`
 }
 
 type DefaultVisual = SelectionVisual | 'partial'
@@ -1030,7 +1018,6 @@ async function runBackfillToFilament(
 }
 
 function renderDefaultCombo(
-  presets: any[],
   defaultBase: string,
   models: ConnectedModel[],
   coverage: Record<string, ProfileCoverage>,
@@ -1060,8 +1047,6 @@ function renderDefaultCombo(
 
 function updateDefaultComboVisual(
   mount: HTMLElement,
-  presets: any[],
-  defaultBase: string,
   models: ConnectedModel[],
   coverage: Record<string, ProfileCoverage>,
   t: TranslateFn,
@@ -1116,94 +1101,7 @@ function wireDefaultCombo(
   onSelect: (baseName: string) => void | Promise<void>,
   onError: (message: string) => void
 ) {
-  const combo = mount.querySelector('.cloud-combo') as HTMLElement
-  if (!combo) return
-
-  const hidden = combo.querySelector('.slicer-profile-base') as HTMLInputElement
-  const search = combo.querySelector('.cloud-combo-search') as HTMLInputElement
-  const list = combo.querySelector('.cloud-combo-list') as HTMLElement
-
-  const renderList = (query: string) => {
-    const q = query.trim().toLowerCase()
-    const matches = (q
-      ? presets.filter((p: any) =>
-          (p.displayName || p.baseName || '').toLowerCase().includes(q)
-        )
-      : presets
-    ).slice(0, 200)
-    if (matches.length === 0) {
-      list.innerHTML = `<div style="padding:8px 10px; color:var(--text-muted); font-size:0.85rem;">${escapeHtml(t('printers.noProfileMatches'))}</div>`
-      return
-    }
-    list.innerHTML = matches
-      .map((p: any) => {
-        const base = p.baseName || p.displayName || ''
-        const sel =
-          base === hidden.value
-            ? ' style="background:var(--accent-muted, rgba(59,130,246,0.15));"'
-            : ''
-        return `<div class="cloud-combo-opt" data-base="${escapeHtml(base)}"${sel}
-          style="padding:7px 10px; cursor:pointer; font-size:0.85rem;">${escapeHtml(base)}</div>`
-      })
-      .join('')
-    list.querySelectorAll('.cloud-combo-opt').forEach((opt: Element) => {
-      opt.addEventListener('mousedown', (ev: Event) => {
-        ev.preventDefault()
-        const base = (opt as HTMLElement).dataset.base || ''
-        hidden.value = base
-        search.value = base
-        list.style.display = 'none'
-        updateDefaultComboVisual(mount, presets, base, models, coverage, t, 'saving')
-        void Promise.resolve(onSelect(base)).catch((e: unknown) => {
-          onError(formatApiError(e, t))
-          updateDefaultComboVisual(
-            mount,
-            presets,
-            hidden.value,
-            models,
-            coverage,
-            t,
-            'committed'
-          )
-        })
-      })
-    })
-  }
-
-  search.addEventListener('focus', () => {
-    renderList('')
-    list.style.display = 'block'
-  })
-  search.addEventListener('input', () => {
-    renderList(search.value)
-    list.style.display = 'block'
-    updateDefaultComboVisual(
-      mount,
-      presets,
-      hidden.value,
-      models,
-      coverage,
-      t,
-      search.value.trim() === hidden.value ? 'committed' : 'draft'
-    )
-  })
-  search.addEventListener('blur', () => {
-    setTimeout(() => {
-      list.style.display = 'none'
-      search.value = hidden.value
-      updateDefaultComboVisual(mount, presets, hidden.value, models, coverage, t, 'committed')
-    }, 150)
-  })
-
-  updateDefaultComboVisual(
-    mount,
-    presets,
-    hidden.value,
-    models,
-    coverage,
-    t,
-    'committed'
-  )
+  bindProfileCombo(mount, presets, t, onSelect, onError, mode => updateDefaultComboVisual(mount, models, coverage, t, mode))
 }
 
 function renderLinkedToDefault(
@@ -1305,6 +1203,15 @@ export async function initPerModelProfilePicker(
       }
     }
 
+    if (opts.readOnly) {
+      picker.innerHTML = `<div class="per-model-profile-grid" data-model-count="${models.length}">${models.map(m => {
+        const base = profilesByModel[m.model]?.base_name || defaultBaseName
+        return `<div class="per-model-profile-row" data-model="${escapeHtml(m.model)}"><h4>${escapeHtml(m.model)}</h4>${renderLinkedCard(base, m.model, coverage[m.model], t)}</div>`
+      }).join('')}</div>`
+      section.classList.remove('hidden')
+      return rep
+    }
+
     const presetsCache: Record<string, any[]> = {}
     const rowMounts: Record<string, HTMLElement> = {}
     const rowHeaders: Record<string, HTMLElement> = {}
@@ -1339,8 +1246,6 @@ export async function initPerModelProfilePicker(
       if (defaultMount.querySelector('.default-profile-combo')) {
         updateDefaultComboVisual(
           defaultMount,
-          defaultPresets,
-          base,
           models,
           coverage,
           t,
@@ -1401,7 +1306,7 @@ export async function initPerModelProfilePicker(
         header.innerHTML = `<div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
           <span style="font-weight:600; font-size:0.9rem;">${escapeHtml(model)}</span>
           ${isOverride ? overrideBadgeHtml() : ''}
-          ${rowHeaderBadge(model, cov, badgeBase, t)}
+          ${rowHeaderBadge(cov, badgeBase, t)}
         </div>`
       }
       const row = mount.closest('.per-model-profile-row')
@@ -1464,7 +1369,6 @@ export async function initPerModelProfilePicker(
       refreshModelRowsFromDefault()
       refreshAll()
       showMsg((opts.t('common.saved') || 'Saved') + ` — ${baseName}`, false)
-      opts.onSaved?.()
       return result
     }
 
@@ -1494,7 +1398,6 @@ export async function initPerModelProfilePicker(
           ` — ${model}: ${result?.base_name || baseName}`,
         false
       )
-      opts.onSaved?.()
       return result
     }
 
@@ -1516,7 +1419,6 @@ export async function initPerModelProfilePicker(
           ` — ${ptr(t, 'profilePickerSavedUsesDefault', { model })}`,
         false
       )
-      opts.onSaved?.()
     }
 
     if (!defaultBaseName) {
@@ -1525,7 +1427,7 @@ export async function initPerModelProfilePicker(
       )?.base_name || Object.values(profilesByModel).find((e) => e?.base_name)?.base_name || ''
     }
 
-    picker.innerHTML = renderPickerHelp(models, t)
+    picker.innerHTML = renderPickerHelp(t)
     picker.style.maxWidth = '100%'
 
     const defaultSection = document.createElement('div')
@@ -1544,7 +1446,6 @@ export async function initPerModelProfilePicker(
       defaultMount.innerHTML = `<p style="margin:0;font-size:0.85rem;color:var(--text-muted);line-height:1.45;">${escapeHtml(ptr(t, 'profilePickerNoPresets'))}</p>`
     } else {
       defaultMount.innerHTML = renderDefaultCombo(
-        defaultPresets,
         defaultBaseName,
         models,
         coverage,
@@ -1619,8 +1520,7 @@ export async function initPerModelProfilePicker(
           } else {
             showMsg(opts.t('printers.backfillSuccess') || 'Saved', false)
           }
-          opts.onSaved?.()
-        } catch (e) {
+            } catch (e) {
           if (!opts.isAbortError(e)) {
             console.error('Backfill failed:', e)
             showMsg(opts.t('printers.backfillFailed') || 'Failed', true)
@@ -1670,7 +1570,7 @@ export async function initPerModelProfilePicker(
       headerTitle.innerHTML = `<div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
         <span style="font-weight:600; font-size:0.9rem;">${escapeHtml(m.model)}</span>
         ${isOverride ? overrideBadgeHtml() : ''}
-        ${rowHeaderBadge(m.model, cov, effectiveBase, t)}
+        ${rowHeaderBadge(cov, effectiveBase, t)}
       </div>`
       rowHeaders[m.model] = headerTitle
       header.appendChild(headerTitle)
@@ -1714,7 +1614,7 @@ export async function initPerModelProfilePicker(
           headerTitle.innerHTML = `<div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
             <span style="font-weight:600; font-size:0.9rem;">${escapeHtml(m.model)}</span>
             ${overrideBadgeHtml()}
-            ${rowHeaderBadge(m.model, cov, displayBase, t)}
+            ${rowHeaderBadge(cov, displayBase, t)}
           </div>`
         }
       })
