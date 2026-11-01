@@ -14,6 +14,7 @@ export interface ApiLabelRenderPayload {
   pixelWidth: number
   pixelHeight: number
   thermal?: boolean
+  purchaseCurrency?: string
 }
 
 export function prepareSvgApiInput(payload: ApiLabelRenderPayload, origin: string, assets: Record<string, SvgAsset>): SvgInput {
@@ -22,7 +23,7 @@ export function prepareSvgApiInput(payload: ApiLabelRenderPayload, origin: strin
   const kind = payload.filament ? 'filament' : 'spool'
   const data = kind === 'filament'
     ? buildFilamentDataFromApiFilament(payload.filament, payload.fieldDefinitions)
-    : buildSpoolDataFromApiSpool(payload.spool, undefined, payload.fieldDefinitions)
+    : buildSpoolDataFromApiSpool(payload.spool, undefined, payload.fieldDefinitions, payload.purchaseCurrency)
   const defaults = API_DEFAULT_LABEL_SETTINGS
   // Reuse the migration boundary; Default is request-local, never a saved/selected preset.
   const preset = normalizeDesignerPresetData(payload.preset ?? { version: 1, settings: {

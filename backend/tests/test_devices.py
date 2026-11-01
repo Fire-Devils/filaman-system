@@ -3,9 +3,11 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.api.v1.devices import _device_url
+from app.api.v1.devices import _build_extended_data, _device_url
 from app.core.security import hash_password, hash_token, verify_password_async
 from app.models import Device, Filament, Location, Manufacturer, Spool, SpoolStatus
+from app.models.printer import Printer
+from app.models.printer_params import FilamentPrinterParam
 
 
 async def _create_device(
@@ -98,6 +100,51 @@ async def _create_spool(
     await db_session.commit()
     await db_session.refresh(spool)
     return spool
+
+
+@pytest.mark.parametrize(
+    ("temperature", "expected"),
+    [
+        ("9007199254740993", ("9007199254740993", "9007199254740993")),
+        ("9" * 400, ("9" * 400, "9" * 400)),
+        ("215.0", ("215", "215")),
+        ("215.25", ("215", "215")),
+        ("215.75", ("216", "216")),
+        ("invalid", ("180", "230")),
+        ("nan", ("180", "230")),
+        ("inf", ("180", "230")),
+        ("-inf", ("180", "230")),
+    ],
+)
+async def test_rfid_temperature_projection_preserves_parameter_precision(
+    db_session, temperature, expected
+):
+    manufacturer = await _create_manufacturer(db_session)
+    filament = await _create_filament(db_session, manufacturer.id)
+    status = await _get_status(db_session, "active")
+    spool = await _create_spool(db_session, filament.id, status.id)
+    spool.filament = filament
+    printer = Printer(name="Bambu", driver_key="bambulab")
+    db_session.add(printer)
+    await db_session.flush()
+    params = [
+        FilamentPrinterParam(
+            filament_id=filament.id,
+            printer_id=printer.id,
+            param_key=f"bambu_nozzle_temp_{endpoint}",
+            param_value=temperature,
+        )
+        for endpoint in ("min", "max")
+    ]
+    db_session.add_all(params)
+    await db_session.commit()
+
+    tag = await _build_extended_data(db_session, spool, "bambu")
+
+    assert (tag["min_temp"], tag["max_temp"]) == expected
+    for param in params:
+        await db_session.refresh(param)
+        assert param.param_value == temperature
 
 
 async def _create_location(db_session, name: str = "Shelf A", identifier: str | None = None) -> Location:
@@ -827,3 +874,60 @@ class TestTagScan:
         assert device.custom_fields["last_tag_scan"]["status"] == "error"
         assert device.custom_fields["last_tag_scan"]["error_message"] == "Timeout - no tag found"
         assert device.custom_fields["last_tag_scan"]["tag_data"] is None
+
+
+@pytest.mark.parametrize('native,expected', [
+    ({'min': 216.75, 'max': 236.25}, ('217', '236')),
+    ({'min': 240, 'max': None}, ('180', '230')),
+    ({'min': None, 'max': 170}, ('180', '230')),
+    ({'min': 240.25, 'max': 260.75}, ('240', '261')),
+    ({'min': 150.25, 'max': 170.75}, ('150', '171')),
+    ({'min': 0, 'max': None}, ('0', '230')),
+    ({'min': None, 'max': 236.75}, ('180', '237')),
+    ({'min': True, 'max': 230}, ('180', '230')),
+])
+async def test_native_only_rfid_temperatures_precede_material_defaults(db_session, native, expected):
+    manufacturer = await _create_manufacturer(db_session)
+    filament = await _create_filament(db_session, manufacturer.id)
+    filament.extruder_temp_range_c = native
+    status = await _get_status(db_session, 'active')
+    spool = await _create_spool(db_session, filament.id, status.id)
+    spool.filament = filament
+    tag = await _build_extended_data(db_session, spool, 'bambu')
+    assert (tag['min_temp'], tag['max_temp']) == expected
+    # A subsequent native edit must change exported values without a printer restart.
+    filament.extruder_temp_range_c = {'min': 220.25, 'max': 240.75}
+    await db_session.commit()
+    tag = await _build_extended_data(db_session, spool, 'bambu')
+    assert (tag['min_temp'], tag['max_temp']) == ('220', '241')
+
+
+@pytest.mark.parametrize('native,key,value,expected', [
+    ({'min': 215, 'max': 215}, 'bambu_nozzle_temp_min', '225', ('225', '230')),
+    ({'min': 215, 'max': 215}, 'bambu_nozzle_temp_max', '200', ('180', '200')),
+    ({'min': 215, 'max': 215}, 'bambu_nozzle_temp_min', '225.75', ('226', '230')),
+    ({'min': 215, 'max': 215}, 'bambu_nozzle_temp_max', '200.25', ('180', '200')),
+    ({'min': 215, 'max': 215}, 'bambu_nozzle_temp_min', '0', ('0', '215')),
+    ({'min': 240, 'max': 260}, 'bambu_nozzle_temp_max', None, ('180', '230')),
+    ({'min': 150, 'max': 170}, 'bambu_nozzle_temp_min', '', ('180', '230')),
+])
+async def test_rfid_native_fallback_does_not_invert_calibration(
+    db_session, native, key, value, expected
+):
+    manufacturer = await _create_manufacturer(db_session)
+    filament = await _create_filament(db_session, manufacturer.id)
+    filament.extruder_temp_range_c = native
+    status = await _get_status(db_session, 'active')
+    spool = await _create_spool(db_session, filament.id, status.id)
+    spool.filament = filament
+    printer = Printer(name='Bambuddy', driver_key='bambuddy')
+    db_session.add(printer)
+    await db_session.flush()
+    calibration = FilamentPrinterParam(filament_id=filament.id, printer_id=printer.id,
+                                       param_key=key, param_value=value)
+    db_session.add(calibration)
+    await db_session.commit()
+    tag = await _build_extended_data(db_session, spool, 'bambu')
+    assert (tag['min_temp'], tag['max_temp']) == expected
+    await db_session.refresh(calibration)
+    assert calibration.param_value == value

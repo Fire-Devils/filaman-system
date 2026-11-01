@@ -17,7 +17,10 @@
     "check:label-layout": "node scripts/check-label-layout.mjs",
     "check:editor-workspace": "node scripts/check-editor-workspace.mjs",
     "check:pc-print-prompt": "node scripts/check-pc-print-prompt.mjs",
-    "check:browser": "npm run check:label-layout && npm run check:editor-workspace && npm run check:pc-print-prompt"
+    "check:details": "node scripts/check-detail-toolbar.mjs && node scripts/check-filament-form.mjs && node scripts/check-spool-edit.mjs && node scripts/check-filament-spool-image.mjs && node scripts/check-spool-metrics.mjs",
+    "check:label-output": "node scripts/check-label-output.mjs",
+    "check:label-api-parity": "node scripts/check-shared-label-api.mjs",
+    "check:browser": "npm run check:label-layout && npm run check:editor-workspace && npm run check:pc-print-prompt && npm run check:label-output && npm run check:details"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",

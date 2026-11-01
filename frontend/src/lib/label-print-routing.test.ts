@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import { readFileSync } from 'node:fs'
-import { fileURLToPath, URL as NodeURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { renderPrintPage, runPrintPage } from './label-print-test-support'
 
 import LabelSheetOutputSettings from '../components/LabelSheetOutputSettings.astro'
 import StandardLabelSettingsPanel from '../components/StandardLabelSettingsPanel.astro'
@@ -26,8 +27,6 @@ import {
   type LabelSheetSettings,
 } from './label-sheet'
 import { setLang } from './i18n'
-
-const componentsDirectory = fileURLToPath(new NodeURL('../components/', import.meta.url))
 
 it('routes one selected record to its single-label printer, not the batch printer', () => {
   expect(singleLabelPrintUrl('spool', [17])).toBe('/spools/17/print')
@@ -104,6 +103,73 @@ afterEach(() => {
   vi.unstubAllGlobals()
   document.head.innerHTML = ''
   document.body.innerHTML = ''
+})
+
+describe('single print page pending Defaults', () => {
+  for (const entity of ['filament', 'spool'] as const) for (const pending of ['entity', 'definitions']) for (const handoff of [false, true]) {
+    it(`${entity} Defaults survives pending ${pending} (handoff ${handoff}) and preserves a later user choice`, async () => {
+      history.replaceState(null, '', `/${entity}s/8/print`)
+      sessionStorage.clear()
+      if (handoff) sessionStorage.setItem(entity === 'filament' ? 'filaman-filament-label-extra-fields' : 'filaman-label-extra-fields', JSON.stringify({
+        entityId: '8', fields: [{ key: 'filament.note', label: 'Note', source: 'filament', value: 'Keep dry' }],
+      }))
+      vi.stubGlobal('QRCode', class { static CorrectLevel = { H: 2 } })
+      const settingsKey = entity === 'filament' ? 'filaman-filament-label-settings' : 'filaman-label-settings'
+      localStorage.setItem(settingsKey, JSON.stringify({ _v: 2, extraFields: { 'filament.dry_temp': true }, showQR: false }))
+      await renderPrintPage(entity)
+      let release!: () => void
+      const gate = new Promise<void>(resolve => { release = resolve })
+      let waiting = false
+      const filament = { id: 8, designation: 'Test PLA', material_type: 'PLA', drying_temp_c: 55,
+        custom_fields: { note: 'Keep dry' }, label_field_aliases: {
+          dry_temp: { target: 'drying_temp_c', definition: { label: 'Drying temperature', field_type: 'number', config: { unit: '°C', decimal_places: 1 } } },
+        } }
+      vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
+        const path = String(input)
+        const entityRequest = /\/(filaments|spools)\/8$/.test(path)
+        const definitionRequest = path.includes('/system-extra-fields')
+        if ((pending === 'entity' && entityRequest) || (pending === 'definitions' && definitionRequest)) {
+          waiting = true
+          await gate
+        }
+        if (entityRequest) return Response.json(entity === 'filament' ? filament : { id: 8, filament_id: 8, filament, remaining_weight_g: 123 })
+        if (path === '/api/v1/locations') return Response.json({ items: [], total: 0 })
+        if (path.endsWith('/public-info')) return Response.json({ currency: 'EUR' })
+        return Response.json([])
+      }))
+      let editor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | undefined
+      const completion = runPrintPage(entity, false, {
+        initPrintDesignerEditor: async (options: Parameters<typeof initPrintDesignerEditor>[0]) => {
+          editor = await initPrintDesignerEditor(options)
+          return editor
+        },
+      })
+      await vi.waitFor(() => expect(waiting).toBe(true))
+      document.querySelector<HTMLButtonElement>('#btn-reset')!.click()
+      const material = document.querySelector<HTMLInputElement>('#check-mat')!
+      material.checked = false
+      material.dispatchEvent(new Event('change'))
+      if (handoff) document.querySelector<HTMLInputElement>('[id="check-ef-filament.note"]')!.click()
+      release()
+      await completion
+      try {
+        await vi.waitFor(() => expect(document.querySelector('[id="check-ef-filament.note"]')).not.toBeNull())
+        await vi.waitFor(() => expect(document.querySelector('.label-designation')?.textContent).toBe('Test PLA'))
+        expect(document.querySelector('[id="check-ef-filament.dry_temp"]:checked')).toBeNull()
+        expect(document.querySelector('.label-extra-fields')?.textContent ?? '').not.toContain('55.0')
+        await vi.waitFor(() => expect(localStorage.getItem(settingsKey)).not.toBeNull())
+        expect(JSON.parse(localStorage.getItem(settingsKey)!).extraFields['filament.dry_temp']).not.toBe(true)
+        expect(material.checked).toBe(false)
+        const note = document.querySelector<HTMLInputElement>('[id="check-ef-filament.note"]')!
+        expect(note.checked).toBe(handoff)
+        if (!handoff) note.click()
+        await vi.waitFor(() => expect(document.querySelector('.label-extra-fields')?.textContent).toContain('Keep dry'))
+      } finally {
+        editor?.destroy()
+        window.dispatchEvent(new Event('pagehide'))
+      }
+    })
+  }
 })
 
 describe('label sheet preview styling', () => {
@@ -447,56 +513,6 @@ describe('first-class print workspace navigation', () => {
     }
   })
 
-  it.each([
-    '../pages/spools/[id]/print.astro',
-    '../pages/filaments/[id]/print.astro',
-  ])('%s initializes logo state before the editor can render restored designs', path => {
-    const source = readFileSync(
-      fileURLToPath(new URL(path, import.meta.url)),
-      'utf8',
-    )
-
-    expect(source.indexOf('let labelLogoLoaded = false')).toBeLessThan(
-      source.indexOf('designerEditor = await initPrintDesignerEditor({'),
-    )
-  })
-
-  it.each([
-    ['../pages/spools/[id]/print.astro', "? singlePreview.refresh()", false],
-    ['../pages/filaments/[id]/print.astro', "? singlePreview.refresh()", false],
-    ['../pages/spools/print.astro', 'onChange: renderBatchPreview,', true],
-    ['../pages/filaments/print.astro', 'onChange: renderBatchPreview,', true],
-  ] as const)('%s delegates a settling designer render promise before interaction binding', (path, callback, batch) => {
-    const source = readFileSync(
-      fileURLToPath(new URL(path, import.meta.url)),
-      'utf8',
-    )
-
-    expect(source).toContain(callback)
-    if (batch) {
-      expect(source).toContain('createBatchLabelPreviewRuntime({')
-      expect(source).toContain('previewRenders.run(() => batchPreview.render(mode, output))')
-      expect(source.indexOf("const countEl = document.getElementById('label-count')!")).toBeLessThan(
-        source.indexOf('designerEditor = await initPrintDesignerEditor({'),
-      )
-      expect(source.indexOf('const ids =')).toBeLessThan(
-        source.indexOf('designerEditor = await initPrintDesignerEditor({'),
-      )
-    } else expect(source).toContain('renderDesigner: isStale => previewRenders.run(() => renderDesignerPreview(isStale))')
-  })
-
-  it('mounts the v2 designer sidebar in the shared print shell', () => {
-    const shellPath = '../components/LabelPrintPageShell.astro'
-    const source = readFileSync(
-      fileURLToPath(new URL(shellPath, import.meta.url)),
-      'utf8',
-    )
-
-    expect(source).toContain("import DesignerSidebar from './freeform-label/DesignerSidebar.astro'")
-    expect(source).toContain('<DesignerSidebar />')
-    expect(source).not.toContain('<LabelDesignerEditor')
-  })
-
   it('renders Standard, Designer, and Label Sheets as accessible tabs', async () => {
     const container = await AstroContainer.create()
     document.body.innerHTML = await container.renderToString(PrintSidebar, {
@@ -684,33 +700,6 @@ describe('first-class print workspace navigation', () => {
     })
     expect(document.querySelector<HTMLSelectElement>('#sheet-designer-preset')!.value).toBe('spool:Shared')
   })
-})
-
-describe('compact responsive print layout', () => {
-  it('keeps controls beside a shrinking preview and keeps mobile actions touch-sized', () => {
-    const base = readFileSync(`${componentsDirectory}LabelPrintBaseStyles.astro`, 'utf8')
-    const single = readFileSync(`${componentsDirectory}SingleLabelPrintStyles.astro`, 'utf8')
-    const batch = readFileSync(`${componentsDirectory}BatchLabelPrintStyles.astro`, 'utf8')
-    const sheet = readFileSync(`${componentsDirectory}LabelSheetOutputSettings.astro`, 'utf8')
-    const styles = `${base}\n${single}\n${batch}\n${sheet}`
-
-    expect(styles).toMatch(/@media \(max-width: 900px\)/)
-    expect(styles).toMatch(/\.preview-container\s*\{[^}]*min-width:\s*0/s)
-    expect(styles).toMatch(/\.print-page:not\(:has\(#freeform-designer-workspace\.is-active\)\)\s*\{[^}]*flex-direction:\s*column/s)
-    expect(styles).toMatch(/\.print-page-single:not\(:has\(#freeform-designer-workspace\.is-active\)\) \.preview-container/)
-    expect(styles).toMatch(/\.print-page-batch:not\(:has\(#freeform-designer-workspace\.is-active\)\) \.preview-container/)
-    expect(styles).toMatch(/\.fm-btn\s*\{[^}]*min-height:\s*44px/s)
-    expect(styles).toMatch(/\.tab-btn\s*\{[^}]*white-space:\s*normal[^}]*overflow-wrap:\s*anywhere/s)
-    expect(styles).toMatch(/#sheet-label-size\s*\{[^}]*display:\s*grid/s)
-    expect(styles).toMatch(/\.sheet-label-size-value\s*\{[^}]*white-space:\s*nowrap/s)
-  })
-
-  it('collapses the Shape label with the other compact add tools', () => {
-    const workspace = readFileSync(`${componentsDirectory}freeform-label/DesignerWorkspace.astro`, 'utf8')
-
-    expect(workspace).toMatch(/\[data-designer-add\]:not\(\[data-designer-add='text'\]\).*\[data-shape-menu-trigger\].*\.freeform-tool-label/s)
-  })
-
 })
 
 async function createSheetDesignerHarness() {

@@ -3,9 +3,11 @@ import importlib
 import inspect
 import json
 import logging
+import math
 import shutil
 import sys
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +24,11 @@ from app.models import Printer
 from app.models.filament import Filament, FilamentColor
 from app.models.plugin import InstalledPlugin
 from app.models.printer import PrinterSlot, PrinterSlotAssignment
-from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
+from app.models.printer_params import (
+    FilamentPrinterInitialization,
+    FilamentPrinterParam,
+    SpoolPrinterParam,
+)
 from app.models.spool import Spool
 from app.models.system_extra_field import SystemExtraField
 from app.plugins.base import BaseDriver
@@ -31,6 +37,7 @@ from app.services.spoolman_extra_field_mapping import (
     SpoolmanFieldError,
     convert_spoolman_value,
 )
+from app.services.spoolman_projection import owns_retained_source
 from app.utils.colors import visible_rgb_hex_or_legacy
 
 logger = logging.getLogger(__name__)
@@ -311,12 +318,16 @@ class PluginManager:
                     # canonical 255-0 / 255-1 rows exist, so AMS View and the
                     # printer page stop listing four External bays on H2C/H2D.
                     all_slots = (
-                        await db.execute(
-                            select(PrinterSlot).where(
-                                PrinterSlot.printer_id == printer_id
+                        (
+                            await db.execute(
+                                select(PrinterSlot).where(
+                                    PrinterSlot.printer_id == printer_id
+                                )
                             )
                         )
-                    ).scalars().all()
+                        .scalars()
+                        .all()
+                    )
                     active_indexes = {
                         (s.custom_fields or {}).get("slot_index")
                         for s in all_slots
@@ -417,7 +428,9 @@ class PluginManager:
                 if ams_info:
                     printer = await db.get(Printer, printer_id)
                     if printer:
-                        if active_spool_id_raw is not None and isinstance(ams_info, dict):
+                        if active_spool_id_raw is not None and isinstance(
+                            ams_info, dict
+                        ):
                             ams_info = {
                                 **ams_info,
                                 "active_spool_id": active_spool_id,
@@ -658,8 +671,7 @@ class PluginManager:
 
     def get_health(self) -> dict[int, dict[str, Any]]:
         self.health_status = {
-            printer_id: driver.health()
-            for printer_id, driver in self.drivers.items()
+            printer_id: driver.health() for printer_id, driver in self.drivers.items()
         }
         return dict(self.health_status)
 
@@ -757,6 +769,24 @@ class PluginManager:
             return []
         return field_def.get("options")
 
+    def get_printer_parameter_fields(self, driver_key: str, target_type: str | None = None) -> list[dict[str, Any]]:
+        """Read declared driver fields without global ownership or a running driver."""
+        manifest = self._load_plugin_json(driver_key)
+        config = (manifest or {}).get("printer_params", {})
+        if target_type and target_type not in config.get("target_types", []):
+            return []
+        return [
+            {
+                "key": field["key"],
+                "label": field["label"],
+                "field_type": field.get("field_type", "text"),
+                "options": self._resolve_options(driver_key, field),
+                "config": field.get("config"),
+            }
+            for field in config.get("fields", [])
+            if not target_type or field.get("target_type", target_type) == target_type
+        ]
+
     async def _ensure_plugin_extra_fields(self, driver_key: str) -> None:
         """Create or update plugin-defined SystemExtraFields from plugin.json.
 
@@ -781,19 +811,7 @@ class PluginManager:
         if not target_types or not field_defs:
             return
 
-        # Build resolved field definitions (with dropdown options loaded)
-        resolved_fields: list[dict[str, Any]] = []
-        for fdef in field_defs:
-            options = self._resolve_options(driver_key, fdef)
-            resolved_fields.append(
-                {
-                    "key": fdef["key"],
-                    "label": fdef["label"],
-                    "field_type": fdef.get("field_type", "text"),
-                    "options": options,
-                    "config": fdef.get("config"),
-                }
-            )
+        resolved_fields = self.get_printer_parameter_fields(driver_key)
 
         async with async_session_maker() as db:
             # Create or update field definitions
@@ -920,12 +938,14 @@ class PluginManager:
         printer_params_cfg = plugin_json.get("printer_params", {})
         migration = printer_params_cfg.get("migration", {})
         legacy_renames = migration.get("legacy_renames", {})
+        allowed_keys = self._bambu_parameter_keys(driver_key, printer_params_cfg)
+        if allowed_keys == set():
+            return
 
-        # Build rename map: includes legacy_renames + spoolman-specific renames
-        # (bambu_idx in spoolman is actually tray_info_idx)
-        RENAME_KEYS = {**legacy_renames}
+        # Only BambuLab treats the legacy Spoolman material index as tray_info_idx.
+        RENAME_KEYS = dict(legacy_renames)
         if driver_key == "bambulab":
-            RENAME_KEYS["bambu_idx"] = "bambu_tray_idx"  # spoolman-specific rename
+            RENAME_KEYS["bambu_idx"] = "bambu_tray_idx"
 
         KEEP_IN_CUSTOM_FIELDS: set[str] = {
             # Bambuddy profile metadata — not printer calibration params.
@@ -951,20 +971,33 @@ class PluginManager:
             if not printers:
                 return
 
-            # --- Fix legacy param_key names from earlier migrations ---
-            for old_key, new_key in legacy_renames.items():
-                await db.execute(
-                    update(FilamentPrinterParam)
-                    .where(FilamentPrinterParam.param_key == old_key)
-                    .values(param_key=new_key)
-                )
-                await db.execute(
-                    update(SpoolPrinterParam)
-                    .where(SpoolPrinterParam.param_key == old_key)
-                    .values(param_key=new_key)
-                )
+            printer_ids = [p.id for p in printers]
+            # Rename only this driver's rows; an existing destination is authoritative.
+            for model, entity_key in (
+                (FilamentPrinterParam, "filament_id"),
+                (SpoolPrinterParam, "spool_id"),
+            ):
+                if not legacy_renames:
+                    break
+                rows = list(await db.scalars(select(model).where(
+                    model.printer_id.in_(printer_ids),
+                    model.param_key.in_([*legacy_renames, *legacy_renames.values()]),
+                )))
+                existing = {
+                    (getattr(row, entity_key), row.printer_id, row.param_key)
+                    for row in rows
+                }
+                for row in rows:
+                    new_key = legacy_renames.get(row.param_key)
+                    if not new_key or (allowed_keys is not None and new_key not in allowed_keys):
+                        continue
+                    identity = (getattr(row, entity_key), row.printer_id, new_key)
+                    if identity in existing:
+                        await db.delete(row)
+                    else:
+                        row.param_key = new_key
+                        existing.add(identity)
             await db.commit()
-            logger.debug("Legacy param_key renames applied (if any)")
 
             # --- Restore identity keys misfiled as printer params by older versions ---
             await self._restore_kept_keys_from_params(
@@ -973,6 +1006,7 @@ class PluginManager:
                 SpoolPrinterParam.spool_id,
                 Spool,
                 KEEP_IN_CUSTOM_FIELDS,
+                printer_ids,
             )
             await self._restore_kept_keys_from_params(
                 db,
@@ -980,39 +1014,91 @@ class PluginManager:
                 FilamentPrinterParam.filament_id,
                 Filament,
                 KEEP_IN_CUSTOM_FIELDS,
+                printer_ids,
             )
-            printer_ids = [p.id for p in printers]
-
             # --- Filaments ---
+            filaments = await self._lock_filament_temperature_initialization(db)
+            if any(f.extruder_temp_range_c or f.bed_temp_range_c for f in filaments):
+                # Native defaults must not hide inherited calibration on unstarted printers.
+                for printer_id in printer_ids:
+                    await self._copy_params_to_new_printer(driver_key, printer_id, session=db)
+            # Missing calibration rows can mean the user cleared them after initialization.
             result = await db.execute(
-                select(Filament).where(Filament.custom_fields.isnot(None))
+                select(
+                    FilamentPrinterInitialization.filament_id,
+                    FilamentPrinterInitialization.printer_id,
+                ).where(FilamentPrinterInitialization.printer_id.in_(printer_ids)).with_for_update()
             )
-            filaments = result.scalars().all()
+            initialized_temperatures = set(result.all())
+            filament_param_keys = {
+                "bambu_nozzle_temp_min",
+                "bambu_nozzle_temp_max",
+                "bambu_bed_temp",
+            }
+            for filament in filaments:
+                filament_param_keys.update(
+                    self._extract_bambu_params(
+                        self._bambu_migration_source_fields(filament, allowed_keys, RENAME_KEYS),
+                        KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
+                    )
+                )
+            existing_filament_params = {
+                (row.filament_id, row.printer_id, row.param_key): row
+                for row in await db.scalars(
+                    select(FilamentPrinterParam).where(
+                        FilamentPrinterParam.printer_id.in_(printer_ids),
+                        FilamentPrinterParam.param_key.in_(filament_param_keys),
+                    ).with_for_update().execution_options(populate_existing=True)
+                )
+            }
             migrated_filaments = 0
 
             for filament in filaments:
                 bambu_params, preserve_invalid_nozzle_range = (
                     self._extract_bambu_migration(
-                        filament.custom_fields, KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
+                        self._bambu_migration_source_fields(filament, allowed_keys, RENAME_KEYS),
+                        KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
                     )
                 )
-                if not bambu_params:
+                if allowed_keys is not None:
+                    bambu_params = {k: v for k, v in bambu_params.items() if k in allowed_keys}
+                native_temperatures = self._native_bambu_temperature_params(filament, allowed_keys)
+                if not bambu_params and not native_temperatures:
                     continue
 
                 await self._upsert_bambu_params(
                     db,
                     FilamentPrinterParam,
-                    FilamentPrinterParam.filament_id,
+                    existing_filament_params,
                     filament.id,
                     "filament_id",
                     printer_ids,
                     bambu_params,
+                    fallback_params=native_temperatures,
+                    fallback_printer_ids={
+                        printer_id
+                        for printer_id in printer_ids
+                        if (filament.id, printer_id) not in initialized_temperatures
+                    },
                 )
-                self._clean_bambu_keys_from_cf(
-                    filament,
-                    KEEP_IN_CUSTOM_FIELDS,
-                    preserve_nozzle_temperature=preserve_invalid_nozzle_range,
-                )
+                if native_temperatures:
+                    for printer_id in printer_ids:
+                        if (filament.id, printer_id) not in initialized_temperatures:
+                            db.add(
+                                FilamentPrinterInitialization(
+                                    filament_id=filament.id, printer_id=printer_id
+                                )
+                            )
+                            initialized_temperatures.add((filament.id, printer_id))
+                if bambu_params:
+                    self._clean_bambu_keys_from_cf(
+                        filament,
+                        KEEP_IN_CUSTOM_FIELDS,
+                        preserve_nozzle_temperature=preserve_invalid_nozzle_range,
+                        source_fields=self._bambu_migration_source_fields(
+                            filament, allowed_keys, RENAME_KEYS, for_cleanup=True,
+                        ),
+                    )
                 migrated_filaments += 1
 
             # --- Spools ---
@@ -1020,21 +1106,41 @@ class PluginManager:
                 select(Spool).where(Spool.custom_fields.isnot(None))
             )
             spools = result.scalars().all()
+            spool_param_keys = {
+                key
+                for spool in spools
+                for key in self._extract_bambu_params(
+                    self._bambu_migration_source_fields(spool, allowed_keys, RENAME_KEYS),
+                    KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
+                )
+            }
+            existing_spool_params = {
+                (row.spool_id, row.printer_id, row.param_key): row
+                for row in await db.scalars(
+                    select(SpoolPrinterParam).where(
+                        SpoolPrinterParam.printer_id.in_(printer_ids),
+                        SpoolPrinterParam.param_key.in_(spool_param_keys),
+                    )
+                )
+            }
             migrated_spools = 0
 
             for spool in spools:
                 bambu_params, preserve_invalid_nozzle_range = (
                     self._extract_bambu_migration(
-                        spool.custom_fields, KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
+                        self._bambu_migration_source_fields(spool, allowed_keys, RENAME_KEYS),
+                        KEEP_IN_CUSTOM_FIELDS, RENAME_KEYS
                     )
                 )
+                if allowed_keys is not None:
+                    bambu_params = {k: v for k, v in bambu_params.items() if k in allowed_keys}
                 if not bambu_params:
                     continue
 
                 await self._upsert_bambu_params(
                     db,
                     SpoolPrinterParam,
-                    SpoolPrinterParam.spool_id,
+                    existing_spool_params,
                     spool.id,
                     "spool_id",
                     printer_ids,
@@ -1044,6 +1150,9 @@ class PluginManager:
                     spool,
                     KEEP_IN_CUSTOM_FIELDS,
                     preserve_nozzle_temperature=preserve_invalid_nozzle_range,
+                    source_fields=self._bambu_migration_source_fields(
+                        spool, allowed_keys, RENAME_KEYS, for_cleanup=True,
+                    ),
                 )
                 migrated_spools += 1
 
@@ -1062,12 +1171,16 @@ class PluginManager:
         entity_column: Any,
         entity_model: type[Filament] | type[Spool],
         keep_keys: set[str],
+        printer_ids: list[int],
     ) -> None:
         """Move keep_keys back from printer_params into custom_fields.
 
         Existing custom_fields values win; the param rows are deleted either way."""
         result = await db.execute(
-            select(param_model).where(param_model.param_key.in_(list(keep_keys)))
+            select(param_model).where(
+                param_model.param_key.in_(list(keep_keys)),
+                param_model.printer_id.in_(printer_ids),
+            )
         )
         rows = result.scalars().all()
         if not rows:
@@ -1103,44 +1216,200 @@ class PluginManager:
     async def _upsert_bambu_params(
         db: AsyncSession,
         param_model: type[FilamentPrinterParam] | type[SpoolPrinterParam],
-        entity_column: Any,
+        existing_params: dict[tuple[int, int, str], Any],
         entity_id: int,
         entity_id_field: str,
         printer_ids: list[int],
         params: dict[str, str],
+        *,
+        fallback_params: dict[str, str] | None = None,
+        fallback_printer_ids: set[int] | None = None,
     ) -> None:
         """Persist every desired entity/printer/parameter value before cleanup."""
-        existing_result = await db.execute(
-            select(param_model).where(
-                entity_column == entity_id,
-                param_model.printer_id.in_(printer_ids),
-                param_model.param_key.in_(list(params)),
-            )
-        )
-        existing_params = {
-            (row.printer_id, row.param_key): row
-            for row in existing_result.scalars().all()
-        }
-
         for printer_id in printer_ids:
-            for param_key, param_value in params.items():
-                existing = existing_params.get((printer_id, param_key))
+            use_fallback = (
+                fallback_printer_ids is None or printer_id in fallback_printer_ids
+            )
+            desired_params = params
+            if use_fallback and fallback_params:
+                calibrated_params = dict(params)
+                for key in {*fallback_params, "bambu_nozzle_temp_min", "bambu_nozzle_temp_max"}:
+                    existing = existing_params.get((entity_id, printer_id, key))
+                    if existing is not None:
+                        calibrated_params[key] = existing.param_value
+                desired_params = {
+                    **PluginManager._bambu_temperature_fallbacks(fallback_params, calibrated_params),
+                    **params,
+                }
+            for param_key, param_value in desired_params.items():
+                existing = existing_params.get((entity_id, printer_id, param_key))
                 if existing is not None:
-                    existing.param_value = param_value
                     continue
-                db.add(
-                    param_model(
-                        **{
-                            entity_id_field: entity_id,
-                            "printer_id": printer_id,
-                            "param_key": param_key,
-                            "param_value": param_value,
-                        }
-                    )
+                row = param_model(
+                    **{
+                        entity_id_field: entity_id,
+                        "printer_id": printer_id,
+                        "param_key": param_key,
+                        "param_value": param_value,
+                    }
                 )
+                db.add(row)
+                existing_params[(entity_id, printer_id, param_key)] = row
 
         # Do not remove source values until every desired row has passed DB validation.
         await db.flush()
+
+    @staticmethod
+    async def _lock_filament_temperature_initialization(
+        db: AsyncSession, filament_ids: list[int] | None = None,
+    ) -> list[Filament]:
+        # SQLite ignores FOR UPDATE; the no-op write serializes startup and explicit edits.
+        filters = () if filament_ids is None else (Filament.id.in_(filament_ids),)
+        await db.execute(update(Filament).where(*filters).values(
+            id=Filament.id, updated_at=Filament.updated_at,
+        ).execution_options(synchronize_session=False))
+        return list(await db.scalars(select(Filament).where(*filters)
+                                    .with_for_update().execution_options(populate_existing=True)))
+
+    async def initialize_filament_temperatures(
+        self, db: AsyncSession, filament_id: int, printer_id: int,
+        pending_values: dict[str, str | None] | None = None,
+    ) -> None:
+        """Seed untouched native defaults in the caller's explicit-mutation transaction."""
+        printer = await db.get(Printer, printer_id)
+        if not printer or not printer.driver_key:
+            return
+        allowed_keys = self._bambu_parameter_keys(printer.driver_key)
+        temperature_keys = {'bambu_nozzle_temp_min', 'bambu_nozzle_temp_max', 'bambu_bed_temp'}
+        intended_keys = temperature_keys if pending_values is None else temperature_keys.intersection(pending_values)
+        if allowed_keys is not None and not intended_keys.intersection(allowed_keys):
+            return
+        filaments = await self._lock_filament_temperature_initialization(db, [filament_id])
+        initialized = await db.scalar(select(FilamentPrinterInitialization).where(
+            FilamentPrinterInitialization.filament_id == filament_id,
+            FilamentPrinterInitialization.printer_id == printer_id,
+        ).with_for_update().execution_options(populate_existing=True))
+        if not filaments or initialized is not None:
+            return
+        native = self._native_bambu_temperature_params(filaments[0], allowed_keys)
+        existing = {
+            (row.filament_id, row.printer_id, row.param_key): row
+            for row in await db.scalars(select(FilamentPrinterParam).where(
+                FilamentPrinterParam.filament_id == filament_id,
+                FilamentPrinterParam.printer_id == printer_id,
+            ).with_for_update().execution_options(populate_existing=True))
+        }
+        calibrated = {key[2]: row.param_value for key, row in existing.items()}
+        native = self._bambu_temperature_fallbacks(native, {**calibrated, **(pending_values or {})})
+        await self._upsert_bambu_params(
+            db, FilamentPrinterParam, existing, filament_id, "filament_id", [printer_id], {},
+            fallback_params=native,
+        )
+        db.add(FilamentPrinterInitialization(filament_id=filament_id, printer_id=printer_id))
+
+    def _bambu_parameter_keys(self, driver_key: str, config: dict | None = None) -> set[str] | None:
+        if config is None:
+            config = (self._load_plugin_json(driver_key) or {}).get("printer_params", {})
+        fields = config.get("fields")
+        if not fields and driver_key == "bambulab":
+            return None  # Keep legacy BambuLab manifests working without declarations.
+        return {field["key"] for field in fields or [] if field["key"].startswith("bambu_")}
+
+    @staticmethod
+    def _bambu_migration_source_fields(
+        entity: Filament | Spool, allowed_keys: set[str] | None, rename_keys: dict[str, str],
+        *, for_cleanup: bool = False,
+    ) -> dict:
+        """Retained promotion snapshots and undeclared extras are not calibration."""
+        aliases = getattr(entity, "label_field_aliases", None) or {}
+        definitions = entity.custom_field_definitions or {}
+        temperature_keys = {
+            "nozzle_temperature": {"bambu_nozzle_temp_min", "bambu_nozzle_temp_max"},
+            "settings_extruder_temp": {"bambu_nozzle_temp_min", "bambu_nozzle_temp_max"},
+            "settings_bed_temp": {"bambu_bed_temp"},
+        }
+
+        def eligible(key, value, prefix=""):
+            targets = temperature_keys.get(key, {rename_keys.get(key, key)})
+            return not owns_retained_source(
+                aliases.get(prefix + key), value, definitions.get(prefix + key)
+            ) and (
+                allowed_keys is None
+                or (targets <= allowed_keys if for_cleanup else bool(targets & allowed_keys))
+            )
+
+        cf = entity.custom_fields or {}
+        source = {k: v for k, v in cf.items() if eligible(k, v)}
+        extra = cf.get("spoolman_extra")
+        if isinstance(extra, dict):
+            source["spoolman_extra"] = {
+                k: v for k, v in extra.items() if eligible(k, v, "spoolman_extra.")
+            }
+        return source
+
+    @staticmethod
+    def _bambu_temperature_fallbacks(
+        native_params: dict[str, str], calibrated_params: dict[str, str | None],
+        fallback_params: dict[str, Any] | None = None,
+    ) -> dict[str, str]:
+        """Keep native endpoints only when compatible with the surviving opposite bound."""
+        opposites = {
+            "bambu_nozzle_temp_min": "bambu_nozzle_temp_max",
+            "bambu_nozzle_temp_max": "bambu_nozzle_temp_min",
+        }
+        candidates = {key: value for key, value in native_params.items() if key not in calibrated_params}
+        effective_params = {
+            **(fallback_params or {}),
+            **candidates,
+            **{key: value for key, value in calibrated_params.items() if value not in (None, "")},
+        }
+        fallback = {}
+        for key, value in candidates.items():
+            try:
+                opposite = float(effective_params.get(opposites.get(key)))
+            except (TypeError, ValueError, OverflowError):
+                pass
+            else:
+                if math.isfinite(opposite) and (
+                    (key.endswith("_min") and float(value) > opposite)
+                    or (key.endswith("_max") and float(value) < opposite)
+                ):
+                    continue
+            fallback[key] = value
+        return fallback
+
+    @staticmethod
+    def _native_bambu_temperature_params(
+        filament: Filament, allowed_keys: set[str] | None = None
+    ) -> dict[str, str]:
+        """Use native temperatures only below legacy fields and printer overrides."""
+        params = {}
+        for raw_range, min_key, max_key in (
+            (
+                filament.extruder_temp_range_c,
+                "bambu_nozzle_temp_min",
+                "bambu_nozzle_temp_max",
+            ),
+            (filament.bed_temp_range_c, "bambu_bed_temp", None),
+        ):
+            if not isinstance(raw_range, dict):
+                continue
+            try:
+                temperature_range = convert_spoolman_value(raw_range, "float_range")
+            except SpoolmanFieldError:
+                continue
+            minimum, maximum = temperature_range["min"], temperature_range["max"]
+            # Bambu has one bed target; prefer the lower available endpoint.
+            if max_key is None and minimum is None:
+                minimum = maximum
+            if minimum is not None:
+                params[min_key] = str(minimum).removesuffix(".0")
+            if max_key is not None and maximum is not None:
+                params[max_key] = str(maximum).removesuffix(".0")
+        return {
+            key: value for key, value in params.items()
+            if allowed_keys is None or key in allowed_keys
+        }
 
     @staticmethod
     def _extract_bambu_params(
@@ -1172,7 +1441,7 @@ class PluginManager:
         params: dict[str, str] = {}
         # From spoolman_extra (lower priority)
         for k, v in spoolman_extra.items():
-            if k.startswith("bambu_") and k not in keep_keys and v:
+            if k.startswith("bambu_") and k not in keep_keys and v is not None and v != "":
                 mapped_key = str(rename_keys.get(k, k))
                 params[mapped_key] = str(v)
         # From top-level (higher priority, overwrites spoolman_extra)
@@ -1181,7 +1450,7 @@ class PluginManager:
                 k.startswith("bambu_")
                 and k not in keep_keys
                 and k != "spoolman_extra"
-                and v
+                and v is not None and v != ""
             ):
                 mapped_key = str(rename_keys.get(k, k))
                 params[mapped_key] = str(v)
@@ -1189,7 +1458,7 @@ class PluginManager:
         # Migrate settings_bed_temp -> bambu_bed_temp (low priority, bambu_* wins)
         if "bambu_bed_temp" not in params:
             bed_temp = cf.get("settings_bed_temp")
-            if bed_temp:
+            if bed_temp is not None and bed_temp != "":
                 params["bambu_bed_temp"] = str(bed_temp)
 
         # Migrate nozzle temperatures (priority: bambu_* > spoolman_extra.nozzle_temperature > settings_extruder_temp > old bambu_nozzle_temp)
@@ -1216,7 +1485,7 @@ class PluginManager:
         if "bambu_nozzle_temp_min" not in params:
             if nozzle_min is not None:
                 params["bambu_nozzle_temp_min"] = str(nozzle_min)
-            elif cf.get("settings_extruder_temp"):
+            elif cf.get("settings_extruder_temp") is not None and cf["settings_extruder_temp"] != "":
                 params["bambu_nozzle_temp_min"] = str(cf["settings_extruder_temp"])
             else:
                 # Fallback: old bambu_nozzle_temp value
@@ -1229,7 +1498,7 @@ class PluginManager:
         if "bambu_nozzle_temp_max" not in params:
             if nozzle_max is not None:
                 params["bambu_nozzle_temp_max"] = str(nozzle_max)
-            elif cf.get("settings_extruder_temp"):
+            elif cf.get("settings_extruder_temp") is not None and cf["settings_extruder_temp"] != "":
                 params["bambu_nozzle_temp_max"] = str(cf["settings_extruder_temp"])
 
         return params, preserve_invalid_nozzle_range
@@ -1240,9 +1509,11 @@ class PluginManager:
         keep_keys: set[str],
         *,
         preserve_nozzle_temperature: bool = False,
+        source_fields: dict | None = None,
     ) -> None:
         """Remove migrated bambu_* keys from entity custom_fields."""
         cf = entity.custom_fields or {}
+        source_fields = cf if source_fields is None else source_fields
 
         # Remove top-level bambu_* keys (except keep_keys)
         # Keys to remove after migration (bambu_* except keep_keys + settings_* temps)
@@ -1255,10 +1526,13 @@ class PluginManager:
             k: v
             for k, v in cf.items()
             if not (
-                (k.startswith("bambu_") and k not in keep_keys)
-                or (
-                    k in SETTINGS_MIGRATE_KEYS
-                    and not (preserve_nozzle_temperature and k == "nozzle_temperature")
+                k in source_fields
+                and (
+                    (k.startswith("bambu_") and k not in keep_keys)
+                    or (
+                        k in SETTINGS_MIGRATE_KEYS
+                        and not (preserve_nozzle_temperature and k == "nozzle_temperature")
+                    )
                 )
             )
         }
@@ -1270,8 +1544,11 @@ class PluginManager:
             cleaned = {
                 k: v
                 for k, v in spoolman_extra.items()
-                if not (k.startswith("bambu_") and k not in keep_keys)
-                and (k not in SPOOLMAN_MIGRATE_KEYS or preserve_nozzle_temperature)
+                if k not in source_fields.get("spoolman_extra", {})
+                or (
+                    not (k.startswith("bambu_") and k not in keep_keys)
+                    and (k not in SPOOLMAN_MIGRATE_KEYS or preserve_nozzle_temperature)
+                )
             }
             if cleaned:
                 new_cf["spoolman_extra"] = cleaned
@@ -1285,6 +1562,8 @@ class PluginManager:
         self,
         driver_key: str,
         printer_id: int,
+        *,
+        session: AsyncSession | None = None,
     ) -> None:
         """Copy printer_params from an existing printer of the same driver to a new one.
 
@@ -1293,14 +1572,17 @@ class PluginManager:
         Also searches soft-deleted printers as fallback source (for 'data kept' scenario).
         Idempotent — skips if printer already has params.
         """
-        async with async_session_maker() as db:
+        owns_session = session is None
+        async with (async_session_maker() if owns_session else nullcontext(session)) as db:
+            if owns_session:
+                await self._lock_filament_temperature_initialization(db)
             # Check if this printer already has any params
             existing = await db.execute(
                 select(FilamentPrinterParam.id)
                 .where(
                     FilamentPrinterParam.printer_id == printer_id,
                 )
-                .limit(1)
+                .limit(1).with_for_update()
             )
             has_filament_params = existing.scalar_one_or_none() is not None
 
@@ -1309,7 +1591,7 @@ class PluginManager:
                 .where(
                     SpoolPrinterParam.printer_id == printer_id,
                 )
-                .limit(1)
+                .limit(1).with_for_update()
             )
             has_spool_params = existing.scalar_one_or_none() is not None
 
@@ -1325,7 +1607,7 @@ class PluginManager:
                 )
                 if not include_deleted:
                     query = query.where(Printer.deleted_at.is_(None))
-                result = await db.execute(query)
+                result = await db.execute(query.with_for_update())
                 candidate_ids = [row[0] for row in result.all()]
 
                 for cid in candidate_ids:
@@ -1334,7 +1616,7 @@ class PluginManager:
                         .where(
                             FilamentPrinterParam.printer_id == cid,
                         )
-                        .limit(1)
+                        .limit(1).with_for_update()
                     )
                     if check.scalar_one_or_none() is not None:
                         source_id = cid
@@ -1348,12 +1630,16 @@ class PluginManager:
             copied_filament = 0
             copied_spool = 0
 
-            # Copy filament params
+            # Copy filament params, excluding pairs already initialized and then cleared.
             if not has_filament_params:
+                initialized = select(FilamentPrinterInitialization.filament_id).where(
+                    FilamentPrinterInitialization.printer_id == printer_id,
+                ).with_for_update()
                 result = await db.execute(
                     select(FilamentPrinterParam).where(
                         FilamentPrinterParam.printer_id == source_id,
-                    )
+                        FilamentPrinterParam.filament_id.notin_(initialized),
+                    ).with_for_update().execution_options(populate_existing=True)
                 )
                 for param in result.scalars().all():
                     db.add(
@@ -1371,7 +1657,7 @@ class PluginManager:
                 result = await db.execute(
                     select(SpoolPrinterParam).where(
                         SpoolPrinterParam.printer_id == source_id,
-                    )
+                    ).with_for_update().execution_options(populate_existing=True)
                 )
                 for param in result.scalars().all():
                     db.add(
@@ -1385,7 +1671,8 @@ class PluginManager:
                     copied_spool += 1
 
             if copied_filament or copied_spool:
-                await db.commit()
+                if owns_session:
+                    await db.commit()
                 logger.info(
                     f"Copied printer_params from printer {source_id} to {printer_id}: "
                     f"{copied_filament} filament params, {copied_spool} spool params"
@@ -1404,7 +1691,8 @@ class PluginManager:
         Fallback order:
         1. Spool-level printer_params for this printer
         2. Filament-level printer_params for this printer
-        3. Values already in filament_data (unchanged)
+        3. Declared native temperatures for pairs not initialized or cleared
+        4. Values already in filament_data
         """
         async with async_session_maker() as db:
             # 1. Get spool to find filament_id
@@ -1413,6 +1701,14 @@ class PluginManager:
                 return filament_data
 
             filament_id = spool.filament_id
+            initialized = await db.get(FilamentPrinterInitialization, (filament_id, printer_id))
+            native_params = {}
+            if initialized is None:
+                printer = await db.get(Printer, printer_id)
+                filament = await db.get(Filament, filament_id)
+                if printer and filament:
+                    allowed_keys = self._bambu_parameter_keys(printer.driver_key)
+                    native_params = self._native_bambu_temperature_params(filament, allowed_keys)
 
             # 2. Load filament-level params for this printer
             result = await db.execute(
@@ -1435,7 +1731,16 @@ class PluginManager:
             spool_params = {p.param_key: p.param_value for p in result.scalars().all()}
 
         # 4. Merge: spool_params override filament_params
-        merged_params = {**filament_params, **spool_params}
+        calibrated_params = {**filament_params, **spool_params}
+        caller_params = {
+            key: filament_data.get(key) if filament_data.get(key) not in (None, "")
+            else filament_data.get(key.removeprefix("bambu_"))
+            for key in ("bambu_nozzle_temp_min", "bambu_nozzle_temp_max")
+        }
+        merged_params = {
+            **self._bambu_temperature_fallbacks(native_params, calibrated_params, caller_params),
+            **calibrated_params,
+        }
 
         # 5. Only set non-empty values into filament_data
         enriched = {**filament_data}

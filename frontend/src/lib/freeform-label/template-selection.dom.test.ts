@@ -389,16 +389,15 @@ describe('optional template fragments', () => {
     expect(empty.querySelectorAll('span[style*="padding"]')).toHaveLength(0)
   })
 
-  // Exhaustive combinations; needs headroom when the suite runs in parallel.
-  it('preserves clipboard identity for literals, fields, and complete conditional blocks in every style', { timeout: 20_000 }, () => {
-    const wrappers = [
-      ['', ''], ['[b]', '[/b]'], ['[i]', '[/i]'], ['__', '__'], ['^^', '^^'], ['==', '=='], ['@@', '@@'],
-      ...['Space Grotesk', 'Fraunces', 'Roboto Condensed', 'Space Mono'].map(font => [`[font=${font}]`, '[/font]']),
-      ['[size=120]', '[/size]'], ['[b]^^[i]__', '__[/i]^^[/b]'],
-      ['[size=120]==', '==[/size]'], ['==[size=120]', '[/size]=='],
-      ['[size=120]@@', '@@[/size]'], ['@@[size=120]', '[/size]@@'],
-      ['[size=120][font=Fraunces]', '[/font][/size]'], ['[font=Fraunces][size=120]', '[/size][/font]'],
-    ]
+  const clipboardWrappers = [
+    ['', ''], ['[b]', '[/b]'], ['[i]', '[/i]'], ['__', '__'], ['^^', '^^'], ['==', '=='], ['@@', '@@'],
+    ...['Space Grotesk', 'Fraunces', 'Roboto Condensed', 'Space Mono'].map(font => [`[font=${font}]`, '[/font]']),
+    ['[size=120]', '[/size]'], ['[b]^^[i]__', '__[/i]^^[/b]'],
+    ['[size=120]==', '==[/size]'], ['==[size=120]', '[/size]=='],
+    ['[size=120]@@', '@@[/size]'], ['@@[size=120]', '[/size]@@'],
+    ['[size=120][font=Fraunces]', '[/font][/size]'], ['[font=Fraunces][size=120]', '[/size][/font]'],
+  ]
+  it.each(clipboardWrappers)('preserves literal, field and conditional clipboard identity in %s style', (opening, closing) => {
     const read = (root: HTMLElement) => {
       const characters: Array<{ node: Node; offset: number; character: string; styles: string[] }> = []
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -420,7 +419,7 @@ describe('optional template fragments', () => {
         backgrounds: [...root.querySelectorAll('span[style*="padding"]')].map(node => node.textContent),
       }
     }
-    for (const [opening, closing] of wrappers) for (const source of [
+    for (const source of [
       `${opening}a{P{filament.color}S}z${closing}`,
       `a${opening}{P{filament.color}S}${closing}z`,
       `a{${opening}P{filament.color}S${closing}}z`,
@@ -809,10 +808,9 @@ describe('source range formatting', () => {
 
 
 describe('selection formatting state', () => {
-  // Exhaustive combinations; needs headroom when the suite runs in parallel.
-  it('preserves text, styles, and selection through every ordered pair of overlapping format operations', { timeout: 20_000 }, () => {
-    const modifiers = ['bold', 'italic', 'underline', 'caps', 'inverse', 'colorInverse'] as const
-    const operations = [...modifiers, 'Fraunces', 'Space Mono'] as const
+  const modifiers = ['bold', 'italic', 'underline', 'caps', 'inverse', 'colorInverse'] as const
+  const operations = [...modifiers, 'Fraunces', 'Space Mono'] as const
+  it.each(operations.flatMap(first => operations.map(second => [first, second] as const)))('preserves text, styles and selection for %s → %s', (first, second) => {
     const spans = [[0, 2], [1, 4], [2, 5]] as const
     type Styles = Record<typeof modifiers[number], boolean> & { font: string }
     const read = (root: HTMLElement) => {
@@ -834,8 +832,7 @@ describe('selection formatting state', () => {
     }
     const root = document.createElement('div')
     document.body.append(root)
-    for (const initial of ['abcde', '[if={id}]abcde[/if]', 'a[if={id}]bcd[/if]e'])
-      for (const first of operations) for (const second of operations) for (const a of spans) for (const b of spans) {
+    for (const initial of ['abcde', '[if={id}]abcde[/if]', 'a[if={id}]bcd[/if]e']) for (const a of spans) for (const b of spans) {
       let source = initial
       const expected: Styles[] = Array.from('abcde', () => ({ bold: false, italic: false, underline: false, caps: false, inverse: false, colorInverse: false, font: '' }))
       for (const [operation, [from, to]] of [[first, a], [second, b], [second, b], [first, a]] as const) {

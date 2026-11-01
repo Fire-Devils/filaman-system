@@ -27,3 +27,6 @@ class AppSettings(Base, TimestampMixin):
     bambu_unmatched_profile_fallback: Mapped[str] = mapped_column(
         String(20), default="generic", nullable=False
     )
+    filament_lookup_source: Mapped[str] = mapped_column(
+        String(20), default="filamandb", nullable=False
+    )

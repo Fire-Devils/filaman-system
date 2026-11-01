@@ -26,6 +26,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     bindDesignerPreviewNavigation,
     bindLabelPrintWorkspaceTabs,
     createBatchLabelPreviewRuntime,
+    createLabelDataReadiness,
     getPrintDesignerDesign,
     initPrintDesignerEditor,
   } from '../../lib/label-print-workspace'
@@ -77,7 +78,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     buildSpoolStandardModelFields,
     SPOOL_BUILT_IN_LABEL_FIELD_DEFS,
   } from '../../lib/spool-label-data'
-  import { isBuiltInLabelField } from '../../lib/label-extra-fields'
+  import { buildLegacyLabelAliases, isBuiltInLabelField } from '../../lib/label-extra-fields'
   import {
     FILAMENT_LABEL_PRESETS_KEY,
     hydrateLabelPresetStorage,
@@ -98,6 +99,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     type EntityExtraFieldDefinitions,
   } from '../../lib/entity-extra-fields'
   import { t, initI18n } from '../../lib/i18n'
+  import { getCurrency, initCurrency } from '../../lib/format'
 
   const SETTINGS_KEY = 'filaman-label-settings'
   const DESIGNER_PRESETS_KEY = SPOOL_LABEL_PRESETS_KEY
@@ -124,7 +126,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     'spool',
   )
 
-  type ExtraFieldDef = SystemExtraFieldDef & { target_type: 'spool' | 'filament' }
+  type ExtraFieldDef = SystemExtraFieldDef & { target_type: 'spool' | 'filament'; legacyAlias?: boolean }
   type SpoolBatchSettings = LabelSettingsState & { zoom?: unknown }
   type ApiObject = Record<string, unknown>
   type ApiFilament = ApiObject & {
@@ -149,6 +151,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   const initialMode: PrintWorkspaceMode = readPrintWorkspaceMode('filaman-label-active-tab')
   let designerEditor: Awaited<ReturnType<typeof initPrintDesignerEditor>> | null = null
   const previewRenders = createPreviewRenderCoordinator()
+  const labelDataReadiness = createLabelDataReadiness()
   const workspace = createPrintWorkspaceCoordinator({
     initialMode,
     getItems: () => spools,
@@ -163,7 +166,10 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   // Extra field definitions from API: {key, label, target_type}
   let efDefs: ExtraFieldDef[] = []
+  let settingsLoaded = ids.length === 0
   const systemFieldKeys = new Set<string>()
+  let systemDefinitions: ExtraFieldDef[] = []
+  const legacyFieldKeys = new Set<string>()
   // Per-field checkbox state: key -> {checkbox, checked}
   const efCheckMap: Record<string, HTMLInputElement> = {}
 
@@ -177,17 +183,18 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       filament: {},
     }
     maps.spool = buildSystemExtraFieldDefinitionMap(
-      efDefs.filter(def => def.target_type === 'spool'),
-      def => systemFieldKeys.has(efMapKey('spool', def.key)),
+      systemDefinitions.filter(def => def.target_type === 'spool'),
+      () => true,
     )
     maps.filament = buildSystemExtraFieldDefinitionMap(
-      efDefs.filter(def => def.target_type === 'filament'),
-      def => systemFieldKeys.has(efMapKey('filament', def.key)),
+      systemDefinitions.filter(def => def.target_type === 'filament'),
+      () => true,
     )
     return maps
   }
 
   function saveSettings() {
+    if (!settingsLoaded) return
     writeStorageValue(SETTINGS_KEY, JSON.stringify({
       ...captureLabelSettings(settingsControls, efCheckMap),
       zoom: String(previewZoom.getZoom()),
@@ -195,6 +202,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   function loadSettings() {
+    settingsLoaded = true
     try {
       const s = JSON.parse(readStorageValue(SETTINGS_KEY) || 'null') as SpoolBatchSettings | null
       if (!s) return
@@ -228,6 +236,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     const fields = new Map<string, DesignerExtraField>()
     for (const def of efDefs) {
       const key = `${def.target_type}.${def.key}`
+      if (legacyFieldKeys.has(key)) continue
       fields.set(key, {
         key,
         label: def.label,
@@ -242,7 +251,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   function getExtraFieldsForSpool(spool: ApiSpool): {key: string, label: string, value: string}[] {
     const result: {key: string, label: string, value: string}[] = []
-    const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+    const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
     const spoolRecordDefinitions = normalizeEntityExtraFieldDefinitions(
       spool.custom_field_definitions,
     )
@@ -258,9 +267,16 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       if (val) result.push({ key, label, value: val })
     }
 
+    const fieldMaps = getExtraFieldDefinitionMaps()
+    const aliases = [
+      ...buildLegacyLabelAliases(spool, spool.filament ?? {}, 'spool', fieldMaps.spool),
+      ...buildLegacyLabelAliases(spool.filament ?? {}, spool.filament ?? {}, 'filament', fieldMaps.filament),
+    ]
     for (const def of efDefs) {
       const cb = efCheckMap[efMapKey(def.target_type, def.key)]
       if (!cb?.checked) continue
+      const alias = aliases.find(field => field.key === `${def.target_type}.${def.key}`)
+      if (alias) { if (alias.value) result.push(alias); continue }
 
       let rendered: { label: string; value: string } | null = null
       if (def.target_type === 'spool' && spool.custom_fields) {
@@ -301,7 +317,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   function buildStandardDataFromSpool(spool: ApiSpool) {
-    const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+    const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
     return buildStandardLabelDataFromFlat({
       id: data.id,
       designation: data.designation,
@@ -316,7 +332,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   function buildDesignerDataFromSpool(spool: ApiSpool) {
-    const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+    const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
     return buildSpoolDesignerDataFromLabelData({
       ...data,
       extraFields: buildDesignerExtraFieldsFromApiSpool(spool, getExtraFieldDefinitionMaps()),
@@ -328,7 +344,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     entityPath: 'spools',
     getId: spool => spool?.id,
     getLogoManufacturerId: spool => {
-      const data = buildSpoolLabelDataFromApi(spool, labelLookups)
+      const data = buildSpoolLabelDataFromApi(spool, labelLookups, '', getCurrency())
       const id = Number(data.mfr_id || data.manufacturer_id)
       return Number.isFinite(id) && id > 0 ? id : null
     },
@@ -390,6 +406,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   }
 
   const batchPreview = createBatchLabelPreviewRuntime({
+    isReady: labelDataReadiness.isReady,
     getActiveMode: workspace.getActiveMode,
     getPreviewIndex: workspace.getPreviewIndex,
     getWorkspaceState: workspace.getState,
@@ -428,15 +445,27 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
   async function loadExtraFieldDefs() {
     try {
       const [spoolDefs, filamentDefs] = await Promise.all([
-        fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.json()),
-        fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.json()),
+        fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
       ])
-      const allDefs = [
+      systemDefinitions = [
         ...normalizeSystemExtraFieldDefinitions(spoolDefs).map(def => ({ ...def, target_type: 'spool' as const })),
         ...normalizeSystemExtraFieldDefinitions(filamentDefs).map(def => ({ ...def, target_type: 'filament' as const })),
-      ].filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label))
+      ]
+      const fieldMaps = getExtraFieldDefinitionMaps()
+      const aliases = spools.flatMap(spool => [
+        ...buildLegacyLabelAliases(spool, spool.filament ?? {}, 'spool', fieldMaps.spool),
+        ...buildLegacyLabelAliases(spool.filament ?? {}, spool.filament ?? {}, 'filament', fieldMaps.filament),
+      ])
+      aliases.forEach(field => legacyFieldKeys.add(field.key))
+      const selected = (JSON.parse(readStorageValue(SETTINGS_KEY) || 'null') as SpoolBatchSettings | null)?.extraFields as Record<string, boolean> | undefined
+      const historicalDefs = [...new Map(aliases.filter(field => selected?.[field.key.replace(/^(spool|filament)\./, '$1:')])
+        .map(field => [field.key, { key: field.key.replace(/^(spool|filament)\./, ''), label: field.label,
+          field_type: field.fieldType || 'text', target_type: field.source as 'spool' | 'filament', legacyAlias: true }])).values()]
+      const allDefs = [...systemDefinitions.filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label)
+        && !legacyFieldKeys.has(`${def.target_type}.${def.key}`)), ...historicalDefs]
       systemFieldKeys.clear()
-      allDefs.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))
+      systemDefinitions.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))
       if (allDefs.length === 0) return
 
       efDefs = allDefs
@@ -578,6 +607,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     collection: {
       getItems: workspace.getOutputItems,
       prepare: async () => {
+        await labelDataReadiness.wait()
         await previewRenders.settle()
         if (workspace.getActiveMode() === 'designer') await renderBatchPreview('designer', true)
       },
@@ -641,6 +671,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
   if (ids.length === 0) {
     countEl.textContent = t('labelPrint.noSpoolsSelected')
+    labelDataReadiness.markReady()
   } else {
     countEl.textContent = t('labelPrint.labelsLoading', { count: String(ids.length) })
     ids.forEach(id => previewLabelsHost.insertAdjacentHTML('beforeend', makeLabelHtml(id)))
@@ -652,6 +683,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
         return await r.json()
       })),
       loadSpoolLabelLookups(),
+      initCurrency(),
     ])
     labelLookups = loadedLookups
     spools = spoolResults.filter(r => r.status === 'fulfilled').map(r => (r as PromiseFulfilledResult<ApiSpool>).value)
@@ -661,7 +693,8 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
 
     loadSettings()
     await prefetchLogos()
-    tabControls.activate(initialMode)
+    labelDataReadiness.markReady()
+    tabControls.activate(tabControls.getActiveMode())
   }
 
   bindLabelSettingsEvents({

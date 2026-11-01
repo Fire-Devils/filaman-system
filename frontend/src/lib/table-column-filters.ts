@@ -41,6 +41,7 @@ export type HeaderFilterDefinition = {
   label: string
   columnSelector: string
   type: ColumnFilterValue['type']
+  numberOperators?: NumberFilterOperator[]
   multiDisplay?: 'default' | 'colors'
   searchable?: boolean
   autocomplete?: boolean
@@ -300,7 +301,7 @@ export function isColumnFilterActive(value: ColumnFilterValue | null | undefined
 
 export function sanitizeColumnFilters(
   saved: unknown,
-  definitions: Array<Pick<HeaderFilterDefinition, 'key' | 'type'>>,
+  definitions: Array<Pick<HeaderFilterDefinition, 'key' | 'type' | 'numberOperators'>>,
 ): Record<string, ColumnFilterValue> {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
   const types = new Map(definitions.map(({ key, type }) => [key, type]))
@@ -328,6 +329,8 @@ export function sanitizeColumnFilters(
     }
     if (type !== 'multi' && type !== 'color' && (!('operator' in value) || !('value' in value) || typeof value.value !== 'string')) return
     const savedOperator = (value as { operator?: unknown }).operator
+    const allowedNumbers = definitions.find(definition => definition.key === key)?.numberOperators
+    if (type === 'number' && allowedNumbers && !allowedNumbers.some(operator => operator === savedOperator)) return
     if (type === 'text' && !TEXT_OPERATORS.some(({ value: operator }) => operator === savedOperator)) return
     if (type === 'number' && !NUMBER_OPERATORS.some(({ value: operator }) => operator === savedOperator)) return
     if (type === 'date' && !DATE_OPERATORS.some(({ value: operator }) => operator === savedOperator)) return
@@ -406,15 +409,13 @@ function positionFilterPanel(state: FilterState) {
     disclosurePanel.style.removeProperty('max-height')
   }
   const sidecarGap = sidecar?.offsetWidth ? sidecar.offsetWidth + 8 : 0
-  const left = Math.max(8, Math.min(rect.right - state.panel.offsetWidth, window.innerWidth - state.panel.offsetWidth - sidecarGap - 8))
+  const maxLeft = window.innerWidth - state.panel.offsetWidth - sidecarGap - 8
+  const left = Math.max(8, Math.min(rect.left <= maxLeft ? rect.left : rect.right - state.panel.offsetWidth, maxLeft))
   const panelHeight = state.panel.offsetHeight
-  const belowHeight = Math.max(80, window.innerHeight - rect.bottom - 14)
-  const aboveHeight = Math.max(80, rect.top - 14)
-  const placeBelow = belowHeight >= Math.min(panelHeight, 240) || belowHeight >= aboveHeight
-  const availableHeight = placeBelow ? belowHeight : aboveHeight
-  const top = placeBelow
-    ? rect.bottom + 6
-    : Math.max(8, rect.top - Math.min(panelHeight, availableHeight) - 6)
+  const viewportBottom = window.innerHeight - 8
+  const visibleHeight = Math.min(panelHeight, viewportBottom - 8)
+  const top = Math.max(8, Math.min(rect.bottom + 6, viewportBottom - visibleHeight))
+  const availableHeight = viewportBottom - top
   state.panel.style.setProperty('--fm-filter-max-height', `${availableHeight}px`)
   state.panel.style.left = `${left}px`
   state.panel.style.top = `${top}px`
@@ -521,6 +522,7 @@ function createFilterActions(
       event.preventDefault()
       applyFilter()
     } else if (event.key === 'Escape') {
+      event.preventDefault()
       event.stopPropagation()
       close()
       state.trigger.focus()
@@ -544,6 +546,8 @@ export function bindColorFilterButton(
 
   const panel = document.createElement('div')
   panel.className = 'fm-header-filter-panel'
+  if (trigger.closest('.fm-modal-overlay')) panel.classList.add('fm-header-filter-panel-modal')
+  if (trigger.hasAttribute('data-filter-sidecar')) panel.classList.add('fm-header-filter-panel-sidecar')
   panel.id = `fm-header-filter-panel-${nextPanelId++}`
   panel.setAttribute('role', 'dialog')
   panel.setAttribute('aria-label', t('filters.filterColumn', { label }))
@@ -582,7 +586,7 @@ export function bindColorFilterButton(
   const close = () => closeFilterPanel(state)
   const { actions, clearFilter } = createFilterActions(state, close)
   panel.appendChild(actions)
-  document.body.appendChild(panel)
+  ;(trigger.closest('dialog') || document.body).appendChild(panel)
 
   trigger.addEventListener('click', (event) => {
     event.stopPropagation()
@@ -1477,7 +1481,7 @@ function buildTypedControls(state: FilterState) {
   const operators = state.def.type === 'text'
     ? TEXT_OPERATORS
     : state.def.type === 'number'
-      ? NUMBER_OPERATORS
+      ? NUMBER_OPERATORS.filter(item => !state.def.numberOperators || state.def.numberOperators.includes(item.value))
       : DATE_OPERATORS
   operator.innerHTML = operators.map((item) => `<option value="${item.value}">${t(item.labelKey)}</option>`).join('')
 
