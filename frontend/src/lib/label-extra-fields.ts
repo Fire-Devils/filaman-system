@@ -1,5 +1,5 @@
 import { buildEntityExtraFieldsForPrint, getExtraFieldValue } from './entity-extra-fields'
-import { isUnsafeExtraFieldPath, renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
+import { isIntegrationExtraFieldPath, isUnsafeExtraFieldPath, renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
 
 export type LabelExtraFieldSource = 'spool' | 'filament'
 export type LabelExtraFieldOrigin = 'system' | 'custom'
@@ -117,12 +117,13 @@ export function buildLabelExtraFields(
     .map(field => scopeLabelExtraField(field, source)).filter(field => !aliasKeys.has(field.key))]
 }
 
-/** Historical choices stay available only while their saved selection is enabled. */
+/** Historical and integration choices stay available only while their saved selection is enabled. */
 export function standardLabelExtraFields<T extends LabelExtraFieldCatalogItem>(
   fields: T[], selected: Record<string, unknown>, defaultSource: LabelExtraFieldSource = 'filament',
 ): T[] {
   return dedupeLabelExtraFields(fields, defaultSource)
-    .filter(field => !field.legacyAlias || selected[field.key] === true)
+    .filter(field => selected[field.key] === true || (!field.legacyAlias
+      && !isIntegrationExtraFieldPath(field.key.replace(/^(spool|filament)\./, ''))))
 }
 
 export interface LabelExtraFieldCatalogGroup<T extends LabelExtraFieldCatalogItem = LabelExtraFieldCatalogItem> {
@@ -171,7 +172,7 @@ export function buildLabelExtraFieldCatalogGroups<T extends LabelExtraFieldCatal
     for (const source of sources) {
       const unique = new Map<string, T>()
       for (const field of fields) {
-        if (field.legacyAlias) continue
+        if (field.legacyAlias || isIntegrationExtraFieldPath(field.key.replace(/^(spool|filament)\./, ''))) continue
         const fieldSource = field.source === 'spool' || field.source === 'filament'
           ? field.source
           : options.entityType

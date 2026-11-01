@@ -71,7 +71,8 @@ for (const entity of ['filament', 'spool'] as const) {
       expect(dialog.open).toBe(true)
       if (timing === 'before-open') {
         expect(dialog.textContent).not.toContain('Generic PLA')
-        if (operation === 'set') expect(dialog.textContent).toContain('Matte PLA')
+        expect(dialog.textContent).not.toContain('Matte PLA')
+        expect(dialog.textContent).not.toContain('bambu_profiles_by_model')
       } else commitProfile()
       const expected = { ...persisted.custom_fields, note: 'Wet' }
       const note = dialog.querySelector<HTMLInputElement>('[data-key="note"]')!

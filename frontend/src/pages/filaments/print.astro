@@ -81,7 +81,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     hydrateLabelPresetStorage,
     SPOOL_LABEL_PRESETS_KEY,
   } from '../../lib/label-preset-storage'
-  import { type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import { isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
     buildSystemExtraFieldDefinitionMap,
     getExtraFieldValue,
@@ -403,6 +403,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       const historicalDefs = [...new Map(aliases.filter(field => selected?.[efMapKey(field.key.slice('filament.'.length))])
         .map(field => [field.key, { key: field.key.slice('filament.'.length), label: field.label, field_type: field.fieldType || 'text', legacyAlias: true }])).values()]
       const customDefs = systemDefinitions
+        .filter(def => !isIntegrationExtraFieldPath(def.key) || selected?.[efMapKey(def.key)] === true)
         .filter(def => !isBuiltInLabelField('filament', def.key, def.label) && !legacyFieldKeys.has(`filament.${def.key}`))
       const standardDefs = STANDARD_FILAMENT_EF.map(s => ({ key: s.key, label: s.label }))
       systemFieldKeys.clear()

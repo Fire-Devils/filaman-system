@@ -304,7 +304,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { escapeHtml, renderFieldInput } from '../../lib/extra-fields'
+    import { escapeHtml, isIntegrationExtraFieldPath, renderFieldInput } from '../../lib/extra-fields'
     import {
       collectExtraFieldPayload,
       createEntityExtraFieldEditor,
@@ -592,7 +592,7 @@ import Layout from '../../layouts/Layout.astro'
         ] as const)
         
         if (!systemFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
-        systemFields = await systemFieldsRes.json()
+        systemFields = (await systemFieldsRes.json()).filter((field: { key: string }) => !isIntegrationExtraFieldPath(field.key))
         entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
         renderSystemFields()
         

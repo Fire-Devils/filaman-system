@@ -35,6 +35,33 @@ export function isUnsafeExtraFieldPath(path: string): boolean {
   return path.split('.').some(segment => !segment || RESERVED_EXTRA_FIELD_PATH_SEGMENTS.has(segment))
 }
 
+// Exact roots keep unrelated user fields (including similarly named nested fields) visible.
+const INTEGRATION_EXTRA_FIELD_ROOTS = new Set([
+  'filamentdb_id',
+  'spoolman_id',
+  'spoolman_external_id',
+  'bambu_shop_source_url',
+  'bambu_shop_image_url',
+  'bambu_shop_image_checked_at',
+  'bambu_image_resolver_version',
+  'filament_image_url',
+  'filament_image_source_url',
+  'filament_image_provider',
+  'filament_image_checked_at',
+  'bambu_profile_base_name',
+  'bambu_profiles_by_model',
+  'bambu_slicer_filament',
+  'bambu_slicer_filament_name',
+  'bambu_color_name',
+  'bambu_rfid_tag_1',
+  'bambu_rfid_tag_2',
+])
+
+export function isIntegrationExtraFieldPath(path: string): boolean {
+  // Legacy Spoolman extras mix user fields with plugin metadata.
+  return INTEGRATION_EXTRA_FIELD_ROOTS.has(path.replace(/^spoolman_extra\./, '').split('.')[0])
+}
+
 export function hasOwnFieldValue(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key)
 }

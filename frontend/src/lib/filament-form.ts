@@ -9,7 +9,7 @@ import {
   prepareExtraFieldUpdate,
   type EntityExtraFieldPayload,
 } from './entity-extra-fields'
-import { collectSystemFieldValues, escapeHtml, parseNumericRangeInputs, renderFieldInput, type SystemExtraFieldDef } from './extra-fields'
+import { collectSystemFieldValues, escapeHtml, isIntegrationExtraFieldPath, parseNumericRangeInputs, renderFieldInput, type SystemExtraFieldDef } from './extra-fields'
 import {
   bindFilamentDbLookupToManufacturer,
   checkFilamentDbActive,
@@ -829,7 +829,7 @@ export function createFilamentFormController(options: {
       addManufacturerOption = bindManufacturerCreateOption(manufacturerSelect, () => manufacturerDialog?.open())
     }
     // Apply the complete reference snapshot only after every required read succeeds.
-    systemFields = definitions
+    systemFields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
     allColors = colors.items
     renderColorGrid()
     for (const option of Array.from(manufacturerSelect.options)) {

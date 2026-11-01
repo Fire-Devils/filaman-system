@@ -25,19 +25,22 @@ afterEach(() => {
 
 type Entity = 'filament' | 'spool'
 
-async function startPage(entity: Entity, batch: boolean, options: { failed?: boolean; ordinary?: boolean; apiDefault?: boolean } = {}) {
-  const { failed = false, ordinary = false, apiDefault = false } = options
+async function startPage(entity: Entity, batch: boolean, options: { failed?: boolean; ordinary?: boolean; apiDefault?: boolean; metadata?: boolean } = {}) {
+  const { failed = false, ordinary = false, apiDefault = false, metadata = false } = options
   history.replaceState(null, '', batch ? `/${entity}s/print?ids=8,9` : `/${entity}s/8/print${apiDefault ? '?scale_print=1' : ''}`)
   localStorage.clear()
   sessionStorage.clear()
   vi.stubGlobal('QRCode', class { static CorrectLevel = { H: 2 } })
   sessionStorage.setItem(entity === 'filament' ? 'filaman-filament-label-extra-fields' : 'filaman-label-extra-fields', JSON.stringify({
-    entityId: '8', fields: [{ key: 'filament.dry_temp', label: 'Drying temperature', source: 'filament', value: '55.0 °F' }],
+    entityId: '8', fields: [metadata
+      ? { key: 'filament.spoolman_id', label: 'spoolman_id', source: 'filament', value: '8' }
+      : { key: 'filament.dry_temp', label: 'Drying temperature', source: 'filament', value: '55.0 °F' }],
   }))
   const design = createDefaultLabelDesign(entity)
   design.elements = design.elements.filter(element => element.type === 'text').slice(0, 1)
   const text = design.elements[0]
-  if (text.type === 'text') text.template = ordinary ? '{filament.name}' : '{extra.filament.dry_temp}'
+  if (text.type === 'text') text.template = metadata ? 'ID: {extra.filament.spoolman_id}'
+    : ordinary ? '{filament.name}' : '{extra.filament.dry_temp}'
   localStorage.setItem(`filaman-${entity}-label-designer-v1`, JSON.stringify({ version: 2, design }))
   const settingsKey = entity === 'filament' ? 'filaman-filament-label-settings' : 'filaman-label-settings'
   const savedSettings = JSON.stringify({ _v: 2, width: '93', height: '22', showQR: false, extraFields: { 'filament.dry_temp': true } })
@@ -48,7 +51,7 @@ async function startPage(entity: Entity, batch: boolean, options: { failed?: boo
   let waiting = false
   const oldDefinition = { label: 'Drying temperature', field_type: 'number', config: { unit: '°C', decimal_places: 1 } }
   const filament = { id: 8, designation: 'Test PLA', material_type: 'PLA', drying_temp_c: 65,
-    custom_fields: { dry_temp: 55 }, label_field_aliases: { dry_temp: {
+    custom_fields: { dry_temp: 55, ...(metadata ? { spoolman_id: 8 } : {}) }, label_field_aliases: { dry_temp: {
       target: 'drying_temp_c', definition: oldDefinition,
       wire: { value: 55, source: ['dry_temp'], definition: oldDefinition },
     } } }
@@ -137,6 +140,19 @@ for (const entity of ['filament', 'spool'] as const) for (const batch of [false,
 }
 
 for (const entity of ['filament', 'spool'] as const) {
+  it(`${entity} single preserves saved designer metadata tokens without Standard selections`, async () => {
+    const page = await startPage(entity, false, { metadata: true })
+    try {
+      document.querySelector<HTMLButtonElement>('#tab-btn-designer')!.click()
+      page.release()
+      await page.completion
+      await page.collection!.prepare()
+      expect((await renderSvgElementOutput(page.label(), 1417, 945, false)).text.map(row => row.text).join('')).toContain('ID: 8')
+      expect(document.querySelector('#check-ef-filament\\.spoolman_id')).toBeNull()
+      expect(document.querySelector('[data-field-token="{extra.filament.spoolman_id}"]')).toBeNull()
+    } finally { await page.dispose() }
+  })
+
   it(`${entity} API defaults remain isolated from saved choices after metadata settles`, async () => {
     const page = await startPage(entity, false, { apiDefault: true })
     try {
