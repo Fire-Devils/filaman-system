@@ -1,98 +1,39 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
+import FormDialog from '../../components/FormDialog.astro'
 ---
 
-<Layout title="FilaMan - System">
+<Layout title="FilaMan - Plugins">
   <style>
-    /* Toggle Switch */
-    .fm-toggle {
-      position: relative;
-      display: inline-block;
-      width: 40px;
-      height: 22px;
-      flex-shrink: 0;
-    }
-    .fm-toggle input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-    .fm-toggle-slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background: var(--border);
-      border-radius: 999px;
-      transition: background 0.2s;
-    }
-    .fm-toggle-slider::before {
-      content: "";
-      position: absolute;
-      left: 3px;
-      bottom: 3px;
-      width: 16px;
-      height: 16px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-    .fm-toggle input:checked + .fm-toggle-slider {
-      background: var(--accent);
-    }
-    .fm-toggle input:checked + .fm-toggle-slider::before {
-      transform: translateX(18px);
-    }
-    .fm-toggle input:disabled + .fm-toggle-slider {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    /* Spinner neben Toggle */
-    .toggle-spinner {
-      display: none;
-      width: 16px;
-      height: 16px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: toggle-spin 0.6s linear infinite;
-      margin-left: 8px;
-      vertical-align: middle;
-    }
-    .toggle-spinner.visible {
-      display: inline-block;
-    }
-    @keyframes toggle-spin {
-      to { transform: rotate(360deg); }
-    }
+    .plugin-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .plugin-table { width: 100%; }
+    .plugin-table :global(td:first-child) { min-width: 180px; }
+    :global(.plugin-actions) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    :global(.plugin-detail-row) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+    :global(.plugin-detail-value) { text-align: right; overflow-wrap: anywhere; }
+    :global(.plugin-schema) { margin-top: 8px; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px; font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .plugin-message { margin-bottom: 16px; }
+    .plugin-drop-zone { display: block; border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 20px; text-align: center; cursor: pointer; }
+    .plugin-drop-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .plugin-divider { display: flex; align-items: center; gap: 12px; font-size: .8rem; color: var(--text-muted); }
+    .plugin-divider hr { flex: 1; border: 0; border-top: 1px solid var(--border); }
+    .toggle-spinner { display: none; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: toggle-spin .6s linear infinite; margin-left: 8px; }
+    .toggle-spinner.visible { display: inline-block; }
+    @keyframes toggle-spin { to { transform: rotate(360deg); } }
   </style>
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-  
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.systemPlugins">Plugins</h1>
-    <div style="display: flex; gap: 8px;">
-      <button
-        id="btn-check-updates"
-        class="fm-btn fm-btn-outline"
-        data-i18n="admin.pluginCheckUpdates"
-      >
-        Check for Updates
-      </button>
-      <button
-        id="btn-install"
-        class="fm-btn fm-btn-primary"
-        data-i18n="admin.installPlugin"
-      >
-        Install Plugin
-      </button>
+  <div class="fm-admin-page">
+  <AdminHeader titleKey="admin.systemPlugins" title="Plugins">
+    <div class="plugin-toolbar-actions">
+      <button id="btn-check-updates" class="fm-btn fm-btn-outline" data-i18n="admin.pluginCheckUpdates">Check for Updates</button>
+      <button id="btn-install" class="fm-btn fm-btn-primary" data-i18n="admin.installPlugin">Install Plugin</button>
     </div>
-  </div>
-  
+  </AdminHeader>
+  <div id="plugin-message" class="plugin-message hidden" role="status"></div>
   <!-- Plugin-Liste -->
   <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
-      <thead style="background: var(--bg-soft);">
+    <table class="fm-table fm-admin-table plugin-table">
+      <thead>
         <tr>
           <th data-i18n="common.name">Name</th>
           <th data-i18n="admin.pluginVersion">Version</th>
@@ -111,31 +52,28 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <!-- Install Modal -->
-  <div id="install-modal" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.installPlugin">Install Plugin</h3>
-      
-      <form id="install-form" style="display: flex; flex-direction: column; gap: 16px;">
+  <FormDialog id="install-modal" titleId="install-title" titleKey="admin.installPlugin" title="Install Plugin">
+    <Fragment slot="actions">
+      <button type="submit" form="install-form" id="install-submit" class="fm-btn fm-btn-primary" disabled data-i18n="admin.installPlugin">Install Plugin</button>
+      <button type="button" id="install-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+      <form id="install-form" class="fm-compact-form">
         <!-- Registry Plugin Auswahl -->
         <div>
-          <label class="fm-label" data-i18n="admin.pluginFromRegistry">Install from Registry</label>
-          <select id="registry-select" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); font-size: 0.9rem;">
+          <label for="registry-select" class="fm-label" data-i18n="admin.pluginFromRegistry">Install from Registry</label>
+          <select id="registry-select" class="fm-select">
             <option value="" data-i18n="admin.pluginSelectFromRegistry">-- Select a plugin --</option>
           </select>
           <p id="registry-status" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;"></p>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
-          <span style="color: var(--text-muted); font-size: 0.85rem;" data-i18n="admin.pluginOrUpload">or upload manually</span>
-          <hr style="flex: 1; border: none; border-top: 1px solid var(--border);" />
-        </div>
+        <div class="plugin-divider"><hr /><span data-i18n="admin.pluginOrUpload">or upload manually</span><hr /></div>
 
         <!-- ZIP Upload -->
         <div>
-          <label class="fm-label" data-i18n="admin.pluginZipFile">Plugin ZIP File</label>
-          <div id="drop-zone" style="border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 32px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;">
-            <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;" data-i18n="admin.pluginDropHint">Drag & Drop ZIP file here or click to select</p>
+          <label for="file-input" class="fm-label" data-i18n="admin.pluginZipFile">Plugin ZIP File</label>
+          <div id="drop-zone" class="plugin-drop-zone" role="button" tabindex="0" aria-labelledby="plugin-file-hint">
+            <p id="plugin-file-hint" class="fm-field-hint" data-i18n="admin.pluginDropHint">Drag & Drop ZIP file here or click to select</p>
             <p id="file-name" style="margin: 8px 0 0; font-weight: 600; color: var(--text); display: none;"></p>
             <input type="file" id="file-input" accept=".zip,application/zip" style="display: none;" />
           </div>
@@ -161,57 +99,60 @@ import Layout from '../../layouts/Layout.astro'
           <p id="progress-text" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; text-align: center;" data-i18n="admin.pluginUploading">Uploading...</p>
         </div>
         
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="install-submit" class="fm-btn fm-btn-primary" disabled data-i18n="admin.installPlugin">Install Plugin</button>
-          <button type="button" id="install-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-        </div>
       </form>
-    </div>
-  </div>
+  </FormDialog>
   
-  <!-- Detail Modal -->
-  <div id="detail-modal" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 32rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="detail-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;">Plugin Details</h3>
-      <div id="detail-content" style="display: flex; flex-direction: column; gap: 12px; font-size: 0.9rem;"></div>
-      <div style="margin-top: 16px;">
-        <button type="button" id="detail-close" class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button>
-      </div>
-    </div>
+  <FormDialog id="detail-modal" titleId="detail-title" titleKey="admin.pluginDetails" title="Plugin Details">
+    <Fragment slot="actions"><button type="button" id="detail-close" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button></Fragment>
+    <div id="detail-content" class="fm-compact-form"></div>
+  </FormDialog>
   </div>
-  
+
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { navHrefFor } from '../../lib/plugin-nav'
+    import { api, request } from '../../lib/api'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { tableAction } from '../../lib/table-actions'
     await initI18n()
 
-    let plugins: any[] = []
+    interface Plugin {
+      plugin_key: string; name: string; version: string; plugin_type: string; is_active: boolean
+      description?: string | null; author?: string | null; installed_by?: number | null; installed_at: string
+      page_url?: string | null; driver_key?: string | null; homepage?: string | null; license?: string | null
+      config_schema?: Record<string, unknown> | null
+    }
+    interface RegistryPlugin {
+      plugin_key: string; name: string; version: string; download_url: string
+      update_available: boolean; is_installed: boolean; installed_version?: string | null
+    }
+    interface InstallResult { plugin: { name: string; version: string }; message: string }
+    const fm = window as unknown as { __fmConfirm: (message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }) => Promise<boolean> }
+    let plugins: Plugin[] = []
     let selectedFile: File | null = null
-    let availablePlugins: any[] = []
+    let availablePlugins: RegistryPlugin[] = []
     let selectedRegistryUrl: string = ''
     let updateMap: Record<string, { version: string; download_url: string }> = {}
     
-    function getCsrfToken(): string {
-      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
-      return match ? decodeURIComponent(match[1]) : ''
+    let installing = false
+    const installDialog = bindFormDialog(document.getElementById('install-modal') as HTMLDialogElement, { canClose: () => !installing })
+    const detailDialog = bindFormDialog(document.getElementById('detail-modal') as HTMLDialogElement)
+    function showMessage(message: string, error = false) {
+      const host = document.getElementById('plugin-message')!
+      host.className = `plugin-message ${error ? 'fm-alert-error' : 'fm-alert-success'}`
+      host.setAttribute('role', error ? 'alert' : 'status')
+      host.textContent = message
     }
-    
-    function escapeHtml(str: string): string {
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
-    }
-    
+
     // ----------------------------------------------------------------
     //  Plugin-Liste laden und rendern
     // ----------------------------------------------------------------
     
     async function loadPlugins() {
       try {
-        const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
-        if (!response.ok) throw new Error('Failed to fetch plugins')
-        plugins = await response.json()
+        plugins = await api.get<Plugin[]>('/admin/system/plugins')
         renderPlugins()
       } catch (error) {
         if (isAbortError(error)) return
@@ -253,18 +194,20 @@ import Layout from '../../layouts/Layout.astro'
           <td style="color: var(--text-muted);">${escapeHtml(p.author || '-')}</td>
           <td>
             <div style="display: flex; align-items: center;">
-              <label class="fm-toggle" title="${p.is_active ? t('admin.pluginDeactivate') : t('admin.pluginActivate')}">
-                <input type="checkbox" class="toggle-active" data-key="${escapeHtml(p.plugin_key)}" ${p.is_active ? 'checked' : ''} />
+              <label class="fm-toggle" title="${escapeHtml(p.is_active ? t('admin.pluginDeactivate') : t('admin.pluginActivate'))}">
+                <input type="checkbox" class="toggle-active" aria-label="${escapeHtml(p.name)}: ${escapeHtml(t('common.status'))}" data-key="${escapeHtml(p.plugin_key)}" ${p.is_active ? 'checked' : ''} />
                 <span class="fm-toggle-slider"></span>
               </label>
               <span class="toggle-spinner" data-spinner-key="${escapeHtml(p.plugin_key)}"></span>
             </div>
           </td>
-          <td style="text-align: right; white-space: nowrap;">
-            ${updateMap[p.plugin_key] ? `<button data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-primary" style="font-size: 0.8rem; padding: 4px 12px; margin-right: 12px;">${t('admin.pluginUpdateTo').replace('{version}', updateMap[p.plugin_key].version)}</button>` : ''}
-            <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.pluginDetails')}</button>
-            ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-btn fm-btn-primary" style="font-size: 0.8rem; padding: 4px 12px; margin-right: 12px;">${t('common.open')}</a>` : ''}
-            ${p.installed_by != null ? `<button data-key="${escapeHtml(p.plugin_key)}" data-name="${escapeHtml(p.name)}" class="btn-uninstall" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('admin.uninstallPlugin')}</button>` : ''}
+          <td>
+            <div class="plugin-actions">
+            ${updateMap[p.plugin_key] ? `<button data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px">${escapeHtml(t('admin.pluginUpdateTo').replace('{version}', updateMap[p.plugin_key].version))}</button>` : ''}
+            <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail fm-row-action" aria-label="${escapeHtml(t('admin.pluginDetails'))}" title="${escapeHtml(t('admin.pluginDetails'))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button>
+            ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px">${escapeHtml(t('common.open'))}</a>` : ''}
+            ${p.installed_by != null ? tableAction('delete', { key: p.plugin_key, name: p.name }, { title: t('admin.uninstallPlugin') }) : ''}
+            </div>
           </td>
         </tr>
       `}).join('')
@@ -289,25 +232,14 @@ import Layout from '../../layouts/Layout.astro'
           btnEl.textContent = t('admin.pluginUpdating')
 
           try {
-            const response = await fetch('/api/v1/admin/system/plugins/install-from-registry', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              body: JSON.stringify({ download_url: info.download_url }),
-              signal: getAbortSignal(),
-            })
-
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({}))
-              throw new Error(data.detail?.message || t('admin.pluginInstallFailed'))
-            }
-
+            await api.post('/admin/system/plugins/install-from-registry', { download_url: info.download_url })
+            showMessage(`${t('common.successTitle')}: ${plugins.find(plugin => plugin.plugin_key === key)?.name || key} · ${info.version}`)
             delete updateMap[key]
             loadPlugins()
-          } catch (err: any) {
+          } catch (err) {
             if (isAbortError(err)) return
             console.error('Plugin update failed:', err)
-            await (window as any).__fmAlert(err.message || t('admin.pluginInstallFailed'))
+            showMessage(err instanceof Error ? err.message : t('admin.pluginInstallFailed'), true)
             btnEl.disabled = false
             btnEl.textContent = t('admin.pluginUpdateTo').replace('{version}', info.version)
           }
@@ -315,35 +247,24 @@ import Layout from '../../layouts/Layout.astro'
       })
 
       // Uninstall-Buttons
-      document.querySelectorAll('.btn-uninstall').forEach(btn => {
+      document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const key = (e.currentTarget as HTMLButtonElement).dataset.key!
           const name = (e.currentTarget as HTMLButtonElement).dataset.name!
           
           const msg = t('admin.confirmUninstall').replace('{name}', name)
-          if (!(await (window as any).__fmConfirm(msg))) return
+          if (!(await fm.__fmConfirm(msg))) return
           
           // Ask whether to also delete plugin data
-          const deleteData = await (window as any).__fmConfirm(t('admin.confirmUninstallDeleteData'), { title: t('admin.uninstallPlugin'), okLabel: t('common.yes') || 'Yes', isDanger: false })
+          const deleteData = await fm.__fmConfirm(t('admin.confirmUninstallDeleteData'), { title: t('admin.uninstallPlugin'), okLabel: t('common.yes') || 'Yes', isDanger: false })
           const qs = deleteData ? '?delete_data=true' : ''
           
           try {
-            const response = await fetch(`/api/v1/admin/system/plugins/${key}${qs}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({}))
-              throw new Error(data.detail?.message || t('admin.pluginUninstallFailed'))
-            }
-            
+            await api.delete(`/admin/system/plugins/${key}${qs}`)
             loadPlugins()
-          } catch (err: any) {
+          } catch (err) {
             if (isAbortError(err)) return
-            await (window as any).__fmAlert(err.message || t('admin.pluginUninstallFailed'))
+            showMessage(err instanceof Error ? err.message : t('admin.pluginUninstallFailed'), true)
           }
         })
       })
@@ -367,7 +288,7 @@ import Layout from '../../layouts/Layout.astro'
                 const info = await infoResp.json()
                 if (info.count > 0) {
                   const msg = t('admin.pluginDeactivateConfirm').replace('{count}', info.count)
-                  const confirmed = await (window as any).__fmConfirm(msg, {
+                  const confirmed = await fm.__fmConfirm(msg, {
                     title: t('admin.pluginDeactivate'),
                     isDanger: true,
                   })
@@ -377,7 +298,7 @@ import Layout from '../../layouts/Layout.astro'
                   }
                 }
               }
-            } catch (err: any) {
+            } catch (err) {
               if (isAbortError(err)) return
               // Bei Fehler trotzdem fortfahren (Vorschau ist optional)
             }
@@ -388,22 +309,8 @@ import Layout from '../../layouts/Layout.astro'
           if (spinner) spinner.classList.add('visible')
           
           try {
-            const response = await fetch(`/api/v1/admin/system/plugins/${key}/active`, {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': getCsrfToken(),
-              },
-              credentials: 'include',
-              body: JSON.stringify({ is_active: newState }),
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({}))
-              throw new Error(data.detail?.message || t('admin.pluginToggleFailed'))
-            }
-            
+            await api.patch(`/admin/system/plugins/${key}/active`, { is_active: newState })
+
             // Lokalen State aktualisieren
             const plugin = plugins.find(p => p.plugin_key === key)
             if (plugin) plugin.is_active = newState
@@ -412,11 +319,11 @@ import Layout from '../../layouts/Layout.astro'
             const label = checkbox.closest('.fm-toggle') as HTMLElement
             if (label) label.title = newState ? t('admin.pluginDeactivate') : t('admin.pluginActivate')
             
-          } catch (err: any) {
+          } catch (err) {
             if (isAbortError(err)) return
             // Bei Fehler: Checkbox zuruecksetzen
             checkbox.checked = !newState
-            await (window as any).__fmAlert(err.message || t('admin.pluginToggleFailed'))
+            showMessage(err instanceof Error ? err.message : t('admin.pluginToggleFailed'), true)
           } finally {
             checkbox.disabled = false
             if (spinner) spinner.classList.remove('visible')
@@ -445,15 +352,15 @@ import Layout from '../../layouts/Layout.astro'
         { label: t('admin.pluginAuthor'), value: plugin.author || '-' },
         ...(plugin.driver_key ? [{ label: t('admin.pluginDriver'), value: plugin.driver_key }] : []),
         { label: t('admin.pluginDescription'), value: plugin.description || '-' },
-        { label: t('admin.pluginHomepage'), value: plugin.homepage ? `<a href="${escapeHtml(plugin.homepage)}" target="_blank" style="color: var(--accent);">${escapeHtml(plugin.homepage)}</a>` : '-' },
+        { label: t('admin.pluginHomepage'), value: plugin.homepage || '-', link: true },
         { label: t('admin.pluginLicense'), value: plugin.license || '-' },
         { label: t('admin.pluginInstalledAt'), value: new Date(plugin.installed_at).toLocaleString() },
       ]
       
       content.innerHTML = rows.map(r => `
-        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
-          <span style="color: var(--text-muted); font-weight: 500;">${escapeHtml(r.label)}</span>
-          <span style="text-align: right;">${r.value}</span>
+        <div class="plugin-detail-row">
+          <span style="color:var(--text-muted)">${escapeHtml(r.label)}</span>
+          <span class="plugin-detail-value">${r.link && /^https?:\/\//i.test(String(r.value)) ? `<a href="${escapeHtml(String(r.value))}" target="_blank" rel="noopener noreferrer">${escapeHtml(String(r.value))}</a>` : escapeHtml(String(r.value))}</span>
         </div>
       `).join('')
       
@@ -462,20 +369,13 @@ import Layout from '../../layouts/Layout.astro'
         content.innerHTML += `
           <div style="margin-top: 8px;">
             <span style="font-weight: 600; font-size: 0.9rem;" data-i18n="admin.pluginConfigSchema">Configuration Schema</span>
-            <div style="margin-top: 8px; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto;">${escapeHtml(JSON.stringify(plugin.config_schema, null, 2))}</div>
+            <pre class="plugin-schema">${escapeHtml(JSON.stringify(plugin.config_schema, null, 2))}</pre>
           </div>
         `
       }
       
-      document.getElementById('detail-modal')!.classList.add('open')
+      detailDialog.open()
     }
-    
-    document.getElementById('detail-close')?.addEventListener('click', () => {
-      document.getElementById('detail-modal')!.classList.remove('open')
-    })
-    document.getElementById('detail-modal')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) document.getElementById('detail-modal')!.classList.remove('open')
-    })
     
     // ----------------------------------------------------------------
     //  Install-Modal: Drag & Drop, Dateiauswahl, Upload
@@ -492,16 +392,8 @@ import Layout from '../../layouts/Layout.astro'
     // Oeffnen
     document.getElementById('btn-install')?.addEventListener('click', () => {
       resetInstallModal()
-      document.getElementById('install-modal')!.classList.add('open')
+      installDialog.open()
       loadAvailablePlugins()
-    })
-    
-    document.getElementById('install-cancel')?.addEventListener('click', () => {
-      document.getElementById('install-modal')!.classList.remove('open')
-    })
-    
-    document.getElementById('install-modal')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) document.getElementById('install-modal')!.classList.remove('open')
     })
     
     function resetInstallModal() {
@@ -523,6 +415,9 @@ import Layout from '../../layouts/Layout.astro'
     
     // Klick auf Drop-Zone oeffnet Dateiauswahl
     dropZone.addEventListener('click', () => fileInput.click())
+    dropZone.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInput.click() }
+    })
     
     // Drag & Drop
     dropZone.addEventListener('dragover', (e) => {
@@ -594,9 +489,14 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('install-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      // Registry oder ZIP?
+      if (installing || (!selectedRegistryUrl && !selectedFile)) return
       const useRegistry = selectedRegistryUrl && !selectedFile
-      
+      installing = true
+      const form = document.getElementById('install-form') as HTMLFormElement
+      const cancel = document.getElementById('install-cancel') as HTMLButtonElement
+      form.inert = true
+      form.setAttribute('aria-busy', 'true')
+      cancel.disabled = true
       installSubmit.disabled = true
       installSubmit.textContent = t('admin.pluginInstalling')
       
@@ -606,45 +506,16 @@ import Layout from '../../layouts/Layout.astro'
       progressBar.style.width = '30%'
       
       try {
-        let response: Response
-
+        let result: InstallResult
         if (useRegistry) {
           progressBar.style.width = '50%'
-          response = await fetch('/api/v1/admin/system/plugins/install-from-registry', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': getCsrfToken(),
-            },
-            credentials: 'include',
-            body: JSON.stringify({ download_url: selectedRegistryUrl }),
-            signal: getAbortSignal(),
-          })
-        } else if (selectedFile) {
-          const formData = new FormData()
-          formData.append('file', selectedFile)
-          progressBar.style.width = '60%'
-          response = await fetch('/api/v1/admin/system/plugins/install', {
-            method: 'POST',
-            headers: { 'X-CSRF-Token': getCsrfToken() },
-            credentials: 'include',
-            body: formData,
-            signal: getAbortSignal(),
-          })
+          result = await api.post<InstallResult>('/admin/system/plugins/install-from-registry', { download_url: selectedRegistryUrl })
         } else {
-          return
+          const formData = new FormData()
+          formData.append('file', selectedFile!)
+          progressBar.style.width = '60%'
+          result = await request<InstallResult>('/admin/system/plugins/install', { method: 'POST', body: formData })
         }
-        
-        progressBar.style.width = '90%'
-        
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({ detail: { message: 'Unknown error' } }))
-          const msg = data.detail?.message || data.message || t('admin.pluginInstallFailed')
-          throw new Error(msg)
-        }
-        
-        const result = await response.json()
-        
         progressBar.style.width = '100%'
         
         // Erfolg anzeigen
@@ -657,18 +528,20 @@ import Layout from '../../layouts/Layout.astro'
           ${escapeHtml(result.message)}
         `
         
-        // Nach kurzer Verzoegerung schliessen und Liste aktualisieren
-        setTimeout(() => {
-          document.getElementById('install-modal')!.classList.remove('open')
-          loadPlugins()
-        }, 1500)
-        
-      } catch (err: any) {
+        selectedFile = null
+        selectedRegistryUrl = ''
+        showMessage(result.message || t('common.successTitle'))
+        loadPlugins()
+      } catch (err) {
         if (isAbortError(err)) return
-        showValidationError(err.message)
+        showValidationError(err instanceof Error ? err.message : t('admin.pluginInstallFailed'))
         progressDiv.style.display = 'none'
       } finally {
-        installSubmit.disabled = false
+        installing = false
+        form.inert = false
+        form.setAttribute('aria-busy', 'false')
+        cancel.disabled = false
+        installSubmit.disabled = !selectedFile && !selectedRegistryUrl
         installSubmit.textContent = t('admin.installPlugin')
       }
     })
@@ -680,9 +553,7 @@ import Layout from '../../layouts/Layout.astro'
     async function loadAvailablePlugins() {
       registryStatus.textContent = t('common.loading')
       try {
-        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include', signal: getAbortSignal() })
-        if (!response.ok) throw new Error('Failed to fetch available plugins')
-        availablePlugins = await response.json()
+        availablePlugins = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
 
         // Dropdown befuellen
         registrySelect.innerHTML = `<option value="" data-i18n="admin.pluginSelectFromRegistry">-- ${t('admin.pluginSelectFromRegistry')} --</option>`
@@ -735,9 +606,7 @@ import Layout from '../../layouts/Layout.astro'
       btn.textContent = t('admin.pluginCheckingUpdates')
 
       try {
-        const response = await fetch('/api/v1/admin/system/plugins/available', { credentials: 'include', signal: getAbortSignal() })
-        if (!response.ok) throw new Error('Failed to fetch')
-        const available: any[] = await response.json()
+        const available = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
 
         const updates = available.filter(p => p.update_available)
 
@@ -748,10 +617,10 @@ import Layout from '../../layouts/Layout.astro'
         }
 
         if (updates.length === 0) {
-          await (window as any).__fmAlert(t('admin.pluginUpToDate'))
+          showMessage(t('admin.pluginUpToDate'))
         } else {
           const msg = t('admin.pluginUpdatesAvailable').replace('{count}', String(updates.length))
-          await (window as any).__fmAlert(msg)
+          showMessage(msg)
         }
 
         // Re-render plugins to show update buttons
@@ -759,7 +628,7 @@ import Layout from '../../layouts/Layout.astro'
       } catch (err) {
         if (isAbortError(err)) return
         console.error('Update check failed:', err)
-        await (window as any).__fmAlert(t('admin.pluginRegistryFailed'))
+        showMessage(err instanceof Error ? err.message : t('admin.pluginRegistryFailed'), true)
       } finally {
         btn.disabled = false
         btn.textContent = t('admin.pluginCheckUpdates')
