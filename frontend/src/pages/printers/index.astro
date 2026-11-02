@@ -79,9 +79,10 @@ import Layout from '../../layouts/Layout.astro'
   </FormDialog>
 
   <script>
+    import type { AppDialogs } from '../../lib/form-dialog'
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { buildDriverConfigPayload, isStructuredProp, type SchemaProperty, type FieldValue } from '../../lib/driver-config-form'
+    import { buildDriverConfigPayload, renderDriverConfigFields, type DriverSchema, type SchemaProperty, type FieldValue } from '../../lib/driver-config-form'
     import { escapeHtml } from '../../lib/extra-fields'
     import { tableAction } from '../../lib/table-actions'
     import { bindFormDialog } from '../../lib/form-dialog'
@@ -94,14 +95,9 @@ import Layout from '../../layouts/Layout.astro'
 
     interface SlotSummary { external_spool?: boolean; ams_type?: string; ams_units?: { ams_id: number; tray_count: number }[] }
     interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
-    interface DriverSchema { properties?: Record<string, SchemaProperty>; required?: string[] }
     interface DriverPlugin { driver_key?: string | null; name: string; is_active: boolean; config_schema?: DriverSchema | null }
     interface DriverHealth extends SlotSummary { running?: boolean; connected?: boolean; ams_count?: number; slot_count?: number }
-    const dialogs = window as unknown as {
-      __fmConfirm: (message: string, options: { checkbox: { label: string } }) => Promise<{ confirmed: boolean; checked: boolean }>
-      __fmAlert: (message: string) => Promise<boolean>
-      __fmSuccess: (message: string) => Promise<boolean>
-    }
+    const dialogs = window as unknown as AppDialogs
     let printers: PrinterRecord[] = []
     let allPlugins: DriverPlugin[] = []
     /**
@@ -398,107 +394,9 @@ import Layout from '../../layouts/Layout.astro'
       if (!driverKey) return
 
       const schema = allPlugins.find(p => p.driver_key === driverKey)?.config_schema
-      const properties = schema?.properties
-      if (!properties) return
-      editingConfigSchema = properties
-      const required = schema?.required || []
-      
-      for (const [key, prop] of Object.entries(properties)) {
-        const div = document.createElement('div')
-        
-        const label = document.createElement('label')
-        label.className = 'fm-label'
-        label.setAttribute('for', `config-${key}`)
-        label.textContent = (prop.title || key) + (required.includes(key) ? ' *' : '')
-        div.appendChild(label)
-        
-        const currentValue = existingConfig ? existingConfig[key] : undefined
-
-        if (isStructuredProp(prop, currentValue ?? prop.default)) {
-          // Read-only: no input element, so the save loop cannot clobber it.
-          const pre = document.createElement('pre')
-          pre.className = 'fm-input'
-          pre.style.cssText = 'margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto;'
-          pre.textContent = JSON.stringify(currentValue ?? prop.default ?? null, null, 2)
-          div.appendChild(pre)
-
-          const note = document.createElement('div')
-          note.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
-          note.textContent = t('printers.configReadOnly')
-          div.appendChild(note)
-
-          if (prop.description) {
-            const hint = document.createElement('div')
-            hint.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
-            hint.textContent = prop.description
-            div.appendChild(hint)
-          }
-
-          container.appendChild(div)
-          continue
-        }
-
-        // Bestimme den vorausgewählten Wert
-        let selectedValue = ''
-        if (currentValue !== undefined && currentValue !== null) {
-          selectedValue = String(currentValue)
-        } else if (prop.default !== undefined) {
-          selectedValue = String(prop.default)
-        }
-
-        if (prop.type === 'boolean') {
-          const input = document.createElement('input')
-          input.id = `config-${key}`
-          input.name = key
-          input.className = 'fm-checkbox'
-          input.type = 'checkbox'
-          input.checked = currentValue === true || (currentValue === undefined && prop.default === true)
-          div.appendChild(input)
-        } else if (prop.enum && Array.isArray(prop.enum)) {
-          // Enum → <select> Dropdown
-          const select = document.createElement('select')
-          select.id = `config-${key}`
-          select.name = key
-          select.className = 'fm-input'
-          if (required.includes(key)) select.required = true
-          
-          const enumNames = prop.enumNames || prop.enum
-          prop.enum.forEach((val, i) => {
-            const opt = document.createElement('option')
-            opt.value = String(val)
-            opt.textContent = String(enumNames[i] ?? val)
-            if (String(val) === selectedValue) opt.selected = true
-            select.appendChild(opt)
-          })
-          div.appendChild(select)
-        } else {
-          const input = document.createElement('input')
-          input.id = `config-${key}`
-          input.name = key
-          input.className = 'fm-input'
-          
-          if (prop.type === 'integer' || prop.type === 'number') {
-            input.type = 'number'
-            if (prop.minimum !== undefined) input.min = String(prop.minimum)
-            if (prop.maximum !== undefined) input.max = String(prop.maximum)
-          } else {
-            input.type = 'text'
-          }
-          
-          if (required.includes(key)) input.required = true
-          input.value = selectedValue
-          div.appendChild(input)
-        }
-        
-        if (prop.description) {
-          const hint = document.createElement('div')
-          hint.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
-          hint.textContent = prop.description
-          div.appendChild(hint)
-        }
-        
-        container.appendChild(div)
-      }
+      if (!schema?.properties) return
+      editingConfigSchema = schema.properties
+      container.innerHTML = renderDriverConfigFields(schema, editingConfigValues, driverKey)
     }
 
     await loadDrivers()

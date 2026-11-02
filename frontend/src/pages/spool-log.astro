@@ -3,26 +3,8 @@ import Layout from '../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Spool Log">
-  <style>
-    .filter-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
-      align-items: center;
-    }
-  </style>
   <style is:global>
-    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
-    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages :is(a, button) { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages :is(a, button):hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
-    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
     .fm-table .col-spool-id { width: 8rem; white-space: nowrap; }
-    #spool-log-table th { white-space: nowrap; }
-    #spool-log-table .fm-header-filter-wrap { display: inline-flex; float: none; vertical-align: middle; }
-    .pagination-pages button { border: 0; background: none; font: inherit; cursor: pointer; }
   </style>
   <div class="fm-list-toolbar">
     <h1 data-i18n="spoolLog.title">Spool Log</h1>

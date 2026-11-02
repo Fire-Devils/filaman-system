@@ -1,3 +1,12 @@
+export interface AppDialogs {
+  __fmConfirm: {
+    (message: string, options: { title?: string; okLabel?: string; isDanger?: boolean; checkbox: { label: string; checked?: boolean } }): Promise<{ confirmed: boolean; checked: boolean }>
+    (message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }): Promise<boolean>
+  }
+  __fmAlert: (message: string) => Promise<boolean>
+  __fmSuccess: (message: string) => Promise<boolean>
+}
+
 /** Native modality keeps closed sibling dialogs out of the keyboard focus order. */
 export function bindFormDialog(dialog: HTMLDialogElement, options: {
   canClose?: () => boolean

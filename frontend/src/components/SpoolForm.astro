@@ -1,12 +1,11 @@
 ---
-import { buildSpoolDetailSections } from '../lib/spool-detail'
+import { buildSpoolDetailSections, renderSpoolFieldInput } from '../lib/spool-detail'
 import en from '../i18n/en.json'
 import '../styles/spool-form.css'
 const sections = buildSpoolDetailSections({ low_weight_threshold_g: 100 })
 const label = (key: string) => en.spools[key.replace('spools.', '') as keyof typeof en.spools]
-const materials = { Plastic: 'spools.spoolMaterialPlastic', Cardboard: 'spools.spoolMaterialCardboard', Metal: 'spools.spoolMaterialMetal', Other: 'spools.spoolMaterialOther' }
 ---
-<div id="spool-create-page">
+<div id="spool-create-page" class="fm-detail-content">
   <div class="fm-list-toolbar"><h1 data-i18n="spools.newSpool">New Spool</h1></div>
   <form id="spool-form" class="fm-settings-stack" novalidate>
     <section class="fm-card filament-spec-card spool-profile-card">
@@ -42,9 +41,7 @@ const materials = { Plastic: 'spools.spoolMaterialPlastic', Cardboard: 'spools.s
               </div> :
               <label class="filament-spec-row" for={row.key}>
                 <span class="filament-spec-label" data-i18n={row.labelKey}>{label(row.labelKey)}</span>
-                {row.field?.type === 'select' ? <select id={row.key} name={row.key} class="fm-select spool-edit-input">
-                  {row.field.options?.map(option => <option value={option} data-i18n={materials[option as keyof typeof materials]}>{option || '—'}</option>)}
-                </select> : row.field?.unit ? <span class="spool-input-unit"><input id={row.key} name={row.key} type={row.field.type} step={row.field.step} value={row.key === 'low_weight_threshold_g' ? '100' : ''} class="fm-input spool-edit-input" /><span>{row.field.unit}</span></span> : <input id={row.key} name={row.key} type={row.field?.type} step={row.field?.step} class="fm-input spool-edit-input" />}
+                <Fragment set:html={renderSpoolFieldInput(row, row.key === 'low_weight_threshold_g' ? 100 : '', label, row.key)} />
               </label>)}
             {section.key === 'identity' && <label class="filament-spec-row" for="location_id"><span class="filament-spec-label" data-i18n="spools.location">Location</span><select id="location_id" name="location_id" class="fm-select spool-edit-input"><option value="" data-i18n="spools.noLocation">No location</option></select></label>}
           </div>

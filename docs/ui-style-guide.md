@@ -16,6 +16,9 @@ Use the existing filament/spool detail pages and shared compact forms as the ref
 
 ## Layout and density
 
+- Shared values live in `frontend/src/styles/global.css`: content/reading widths, section/field/control gaps, section padding, heading typography and regular/compact input sizes. Use those custom properties and shared classes instead of copying pixel values into a page.
+- Use `.fm-detail-content` on bounded detail/create content. Keep wide table pages at the available width with `.fm-table-scroll`; use `.fm-admin-page-wide` when a wide Admin table needs it.
+
 - Standard content width: up to **1110px**, aligned toward the sidebar. Compact forms and long reading content: up to **48rem**. Wide data tables may use the available width.
 - Align list titles to the normal content edge. Optional Back-to-parent links sit above the title (`AdminHeader`), not in an outlined icon button beside it.
 - Keep small metadata editors compact within their section, rather than stretching inputs to the page edge; the Role Name/Description editor uses **32rem** maximum width.

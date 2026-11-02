@@ -27,7 +27,7 @@ import SpoolForm from '../../components/SpoolForm.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { escapeHtml, isIntegrationExtraFieldPath, renderFieldInput } from '../../lib/extra-fields'
+    import { isIntegrationExtraFieldPath, renderSystemFieldRow, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       collectExtraFieldPayload,
       createEntityExtraFieldEditor,
@@ -69,7 +69,7 @@ import SpoolForm from '../../components/SpoolForm.astro'
     })
 
     let filaments: any[] = []
-    let systemFields: any[] = []
+    let systemFields: SystemExtraFieldDef[] = []
     let submitting = false
 
     const filamentHiddenInput = document.getElementById('filament_id') as HTMLInputElement
@@ -98,13 +98,13 @@ import SpoolForm from '../../components/SpoolForm.astro'
       if (preselectedId) setFilamentDropdownVisual(Number(preselectedId))
     }
 
-    function flattenObject(obj: any, prefix = '', res: any = {}) {
+    function flattenObject(obj: Record<string, unknown>, prefix = '', res: Record<string, unknown> = {}) {
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const val = obj[key]
           const newKey = prefix ? `${prefix}.${key}` : key
           if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-            flattenObject(val, newKey, res)
+            flattenObject(val as Record<string, unknown>, newKey, res)
           } else {
             res[newKey] = val
           }
@@ -113,7 +113,7 @@ import SpoolForm from '../../components/SpoolForm.astro'
       return res
     }
 
-    function renderSystemFields(flat: Record<string, any> = {}, raw?: Record<string, any>) {
+    function renderSystemFields(flat: Record<string, unknown> = {}, raw?: Record<string, unknown>) {
       const container = document.getElementById('system-fields-container') as HTMLDivElement | null
       const grid = document.getElementById('system-fields-grid') as HTMLDivElement | null
       if (!container || !grid) return
@@ -122,19 +122,7 @@ import SpoolForm from '../../components/SpoolForm.astro'
         return
       }
       container.style.display = 'block'
-      grid.innerHTML = ''
-      
-      systemFields.forEach((field: any) => {
-        const div = document.createElement('div')
-        const rawValue = raw ? getExtraFieldValue(raw, field.key) : null
-        const inputHtml = renderFieldInput(field, rawValue, flat)
-        if (field.field_type === 'checkbox') {
-          div.innerHTML = inputHtml
-        } else {
-          div.innerHTML = `<label class="fm-label">${escapeHtml(field.label)}</label>${inputHtml}`
-        }
-        grid.appendChild(div)
-      })
+      grid.innerHTML = systemFields.map(field => renderSystemFieldRow(field, raw ? getExtraFieldValue(raw, field.key) : null, flat)).join('')
     }
 
     function applyDuplicateSpoolData() {
@@ -251,8 +239,8 @@ import SpoolForm from '../../components/SpoolForm.astro'
         ] as const)
         
         if (!systemFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
-        systemFields = (await systemFieldsRes.json()).filter((field: { key: string }) => !isIntegrationExtraFieldPath(field.key))
-        entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
+        systemFields = (await systemFieldsRes.json()).filter((field: SystemExtraFieldDef) => !isIntegrationExtraFieldPath(field.key))
+        entityExtraFields.setSystemFieldKeys(systemFields.map(field => field.key))
         renderSystemFields()
         
         if (filamentsData) {

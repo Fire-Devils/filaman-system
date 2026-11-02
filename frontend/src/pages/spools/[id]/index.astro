@@ -21,7 +21,7 @@ const { id } = Astro.params
   </div>
 
   
-  <div id="spool-content">
+  <div id="spool-content" class="fm-detail-content">
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
   
@@ -153,8 +153,9 @@ const { id } = Astro.params
   </style>
 
   <script>
+    import type { AppDialogs } from '../../../lib/form-dialog'
     import { t, getLang, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, isIntegrationExtraFieldPath, renderFieldInput } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, isIntegrationExtraFieldPath, renderSystemFieldRow, type SystemExtraFieldDef } from '../../../lib/extra-fields'
     import { createEntityExtraFieldsDialog, loadEntitySystemFields } from '../../../lib/entity-extra-fields-dialog'
     import {
       buildEntityExtraFieldsForPrint,
@@ -170,8 +171,8 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
     import { formatSpoolMetrics, renderSpoolReel, spoolRemainingWeight } from '../../../lib/spool-reel'
-    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
-    import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, type SpoolDetailRow } from '../../../lib/spool-detail'
+    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
+    import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, renderSpoolFieldInput, type SpoolDetailRow } from '../../../lib/spool-detail'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
     import { changedNativeFields, createDetailEditSession, setFormFieldValue } from '../../../lib/detail-edit'
@@ -209,7 +210,7 @@ const { id } = Astro.params
     // RFID state
     let activeDevices: any[] = []
     let currentRfidSpoolId: any = null
-    let spoolSystemFieldMap: Record<string, any> = {}
+    let spoolSystemFieldMap: Record<string, SystemExtraFieldDef> = {}
     const initialEditSection = new URLSearchParams(window.location.search).get('section')
     const extraFieldsDialogRequested = initialEditSection === 'extra-fields'
     let editing = new URLSearchParams(window.location.search).get('edit') === '1' && !extraFieldsDialogRequested
@@ -220,7 +221,7 @@ const { id } = Astro.params
 
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
     let updatePrinterSaveState = () => {}
-    let filamentSystemFieldMap: Record<string, any> = {}
+    let filamentSystemFieldMap: Record<string, SystemExtraFieldDef> = {}
     // Pending slot assignment state (for animated ring feedback)
     let pendingSlotAssign: { slotIndex: string; printerId: number; expectedColor: string } | null = null
     let pendingSlotTimeout: ReturnType<typeof setTimeout> | null = null
@@ -320,22 +321,6 @@ const { id } = Astro.params
       return l ? l.name : `#${locationId}`
     }
 
-    function safeExternalUrl(value: unknown): string {
-      if (typeof value !== 'string') return ''
-      try {
-        const url = new URL(value, window.location.origin)
-        return url.protocol === 'http:' || url.protocol === 'https:' ? escapeExtraFieldHtml(url.href) : ''
-      } catch {
-        return ''
-      }
-    }
-
-    function renderFilamentDetailRow(row: { labelKey: string; value: string; href?: string }): string {
-      const href = safeExternalUrl(row.href)
-      const value = escapeExtraFieldHtml(row.value)
-      return `<div class="filament-spec-row"><span class="filament-spec-label">${t(row.labelKey)}</span><span class="filament-spec-value">${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>` : value}</span></div>`
-    }
-
     function renderSpoolField(row: SpoolDetailRow): string {
       if (!editing || !row.field) {
         if (row.key === 'rfid_uid' || row.key === 'rfid_uid_2') {
@@ -356,13 +341,7 @@ const { id } = Astro.params
           <small id="spool-core-weight-help" style="display: block; color: var(--text-muted); font-size: .72rem; font-weight: 400; line-height: 1.35;">${escapeExtraFieldHtml(t('spools.spoolCoreWeightHint'))}</small>
         </span>`
       }
-      if (row.field.type === 'select') {
-        const materialLabels: Record<string, string> = { Plastic: 'spools.spoolMaterialPlastic', Cardboard: 'spools.spoolMaterialCardboard', Metal: 'spools.spoolMaterialMetal', Other: 'spools.spoolMaterialOther' }
-        return `<select class="fm-select spool-edit-input" name="${row.key}">${row.field.options?.map((option) => `<option value="${option}" ${rawValue === option ? 'selected' : ''}>${option ? escapeExtraFieldHtml(materialLabels[option] ? t(materialLabels[option]) : option) : '—'}</option>`).join('')}</select>`
-      }
-      const value = row.field.type === 'date' && rawValue ? String(rawValue).split('T')[0] : rawValue ?? ''
-      const input = `<input class="fm-input spool-edit-input" name="${row.key}" type="${row.field.type}" ${row.field.step ? `step="${row.field.step}"` : ''} value="${escapeExtraFieldHtml(String(value))}">`
-      return row.field.unit ? `<span class="spool-input-unit">${input}<span>${escapeExtraFieldHtml(row.field.unit)}</span></span>` : input
+      return renderSpoolFieldInput(row, rawValue, t)
     }
 
     function renderExtraFields(): string {
@@ -371,7 +350,7 @@ const { id } = Astro.params
       if (!editing) {
         return `<section class="fm-card filament-spec-card spool-extra-fields-card"><h2 class="filament-spec-title spool-section-heading"><span>${t('common.extraFields')}</span><button id="btn-edit-extra-fields" type="button" class="fm-btn fm-btn-outline" style="font-size: .72rem; padding: 3px 8px;">${t('common.manageFields')}</button></h2><div class="filament-spec-rows">${rows || `<div style="padding: 8px 0; color: var(--text-muted); font-size: .82rem;">${t('spools.noSpecificExtraFields')}</div>`}</div></section>`
       }
-      const systemFields = Object.values(spoolSystemFieldMap).filter(field => !isIntegrationExtraFieldPath(field.key)).map((field: any) => `<div><label class="fm-label">${escapeExtraFieldHtml(field.label)}</label>${renderFieldInput(field, getExtraFieldValue(customFields, field.key))}</div>`).join('')
+      const systemFields = Object.values(spoolSystemFieldMap).filter(field => !isIntegrationExtraFieldPath(field.key)).map(field => renderSystemFieldRow(field, getExtraFieldValue(customFields, field.key))).join('')
       return `<section id="spool-extra-fields-editor" class="fm-card filament-spec-card spool-extra-fields-card spool-extra-fields-editor">
         <h2 class="filament-spec-title spool-section-heading"><span>${t('spools.specificExtraFields')}</span><button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: .8rem; padding: 4px 10px;">+ ${t('common.add')}</button></h2>
         <div id="spool-system-fields-editor" class="spool-system-fields-editor">${systemFields}</div>
@@ -480,7 +459,7 @@ const { id } = Astro.params
       })
       document.getElementById('btn-rfid')?.addEventListener('click', () => {
         if (activeDevices.length === 0) {
-          ;(window as any).__fmAlert(t('rfid.noDeviceOnline'))
+          ;(window as unknown as AppDialogs).__fmAlert(t('rfid.noDeviceOnline'))
           return
         }
         window.openRfidModal?.()
@@ -765,7 +744,7 @@ const { id } = Astro.params
         translate: t,
         spoolTitleKey: 'filaments.packagingDefaults',
       })
-      const filamentSectionsHtml = filamentSections.map((section) => `<section class="fm-card filament-spec-card"><h3 class="filament-spec-title">${t(section.titleKey)}</h3><div class="filament-spec-rows">${section.rows.map(renderFilamentDetailRow).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(spool.filament?.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div></section>`).join('')
+      const filamentSectionsHtml = filamentSections.map((section) => `<section class="fm-card filament-spec-card"><h3 class="filament-spec-title">${t(section.titleKey)}</h3><div class="filament-spec-rows">${section.rows.map(row => renderFilamentDetailRow(row, t)).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(spool.filament?.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div></section>`).join('')
       const filamentExtraFieldRows = renderDetailExtraFieldRows(
         spool.filament?.custom_fields ?? {},
         spool.filament?.custom_field_definitions ?? {},
@@ -906,11 +885,11 @@ const { id } = Astro.params
           if (response.ok) {
             window.location.href = '/spools'
           } else {
-            await (window as any).__fmAlert(t('spools.failedDelete'))
+            await (window as unknown as AppDialogs).__fmAlert(t('spools.failedDelete'))
           }
         } catch {
           // user-initiated action — show error even on abort
-          await (window as any).__fmAlert(t('spools.failedDelete'))
+          await (window as unknown as AppDialogs).__fmAlert(t('spools.failedDelete'))
         }
         })
       }
@@ -1047,7 +1026,7 @@ const { id } = Astro.params
       if (editing || pendingSpoolActions || changingSpoolEdit) return
       await runSpoolAction(async () => {
         const msg = t('rfid.confirmRemoveTag', { uid: formatRfidUid(uid) })
-        const ok = (window as any).__fmConfirm ? await (window as any).__fmConfirm(msg) : confirm(msg)
+        const ok = (window as unknown as AppDialogs).__fmConfirm ? await (window as unknown as AppDialogs).__fmConfirm(msg) : confirm(msg)
         if (!ok) return
         const res = await fetch(`/api/v1/spools/${spool.id}`, {
           method: 'PATCH',
@@ -1056,7 +1035,7 @@ const { id } = Astro.params
           body: JSON.stringify(slot === 1 ? { rfid_uid: null } : { rfid_uid_2: null }),
         })
         if (!res.ok) {
-          ;(window as any).__fmAlert?.(t('rfid.removeTagError'))
+          ;(window as unknown as AppDialogs).__fmAlert?.(t('rfid.removeTagError'))
           return
         }
         window.location.reload()

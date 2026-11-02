@@ -17,10 +17,10 @@ export function getStaticPaths() {
   <style is:global>
     #printer-content .fm-section-header { flex-wrap: wrap; }
     #printer-content h1, #printer-content h2, #printer-content dd { overflow-wrap: anywhere; }
-    #printer-content .printer-config-values, #printer-content #config-form { max-width: 48rem; }
+    #printer-content .printer-config-values, #printer-content #config-form { max-width: var(--reading-max-width); }
     #printer-content dl { margin: 0; }
     #printer-content dd { margin: 0; min-width: 0; }
-    #printer-content .printer-config-values { display: grid; gap: 14px; }
+    #printer-content .printer-config-values { display: grid; gap: var(--field-gap); }
     #printer-content .printer-metadata { display: flex; flex-wrap: wrap; gap: 16px 32px; }
     #printer-content .printer-metadata dt { color: var(--text-muted); font-size: .85rem; margin-bottom: 4px; }
     #printer-content .printer-metadata dd { font-weight: 600; }
@@ -29,11 +29,12 @@ export function getStaticPaths() {
     #printer-content .printer-connection-status, #printer-content .printer-health-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   </style>
   <script>
+    import type { AppDialogs } from '../../lib/form-dialog'
     import { t, initI18n, getLang } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { copyText } from '../../lib/clipboard'
     import { bindFormState } from '../../lib/form-state'
-    import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
+    import { buildDriverConfigPayload, isStructuredProp, renderDriverConfigFields, type DriverSchema, type FieldValue } from '../../lib/driver-config-form'
     await initI18n()
 
     const id = window.location.pathname.split('/').filter(Boolean).pop()!
@@ -41,13 +42,18 @@ export function getStaticPaths() {
       window.location.href = '/printers'
     }
 
-    let printer: any = null
-    let pluginSchema: any = null
+    interface SlotAssignment { present?: boolean; spool_id?: number | null; spool_name?: string | null; material_type?: string | null; color_hex?: string | null; tray_color?: string | null; tray_type?: string | null; tray_info_idx?: string | null; setting_id?: string | null; cali_idx?: number | null; nozzle_temp_min?: number | null; nozzle_temp_max?: number | null }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; slots?: { slot_no: number; name?: string | null; assignment?: SlotAssignment | null }[] }
+    interface DriverHealth { running?: boolean; connected?: boolean; printer_model?: string; external_spool?: boolean; ams_type?: string; sync_actions?: { action: string; label: string; label_de?: string; variant?: string }[]; ams_units?: { ams_id: number; tray_count: number; serial?: string; humidity?: number | null; temp?: number | null }[] }
+    interface DebugEntry { ts: string; dir: string; topic: string; payload: unknown }
+    const dialogs = window as unknown as AppDialogs
+    let printer: PrinterRecord
+    let pluginSchema: DriverSchema | null = null
     let editingConfig = false
     let configState: ReturnType<typeof bindFormState> | null = null
-    let driverHealth: any = null
+    let driverHealth: DriverHealth | null = null
     let debugOpen = false
-    let debugLog: any[] = []
+    let debugLog: DebugEntry[] = []
     let debugPollTimer: number | null = null
     let healthPollTimer: number | null = null
     let lastDebugTs: string | null = null
@@ -91,8 +97,8 @@ export function getStaticPaths() {
       try {
         const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) return
-        const plugins = await response.json()
-        const plugin = plugins.find((p: any) => p.driver_key === printer.driver_key)
+        const plugins: { driver_key?: string | null; config_schema?: DriverSchema | null }[] = await response.json()
+        const plugin = plugins.find(p => p.driver_key === printer.driver_key)
         pluginSchema = plugin?.config_schema || null
       } catch {
         pluginSchema = null
@@ -105,22 +111,21 @@ export function getStaticPaths() {
         return `<p style="color: var(--text-muted); font-size: 0.9rem;">${t('printers.noConfig')}</p>`
       }
 
-      const props = pluginSchema.properties as Record<string, any>
+      const props = pluginSchema.properties
       let html = '<dl class="printer-config-values">'
 
       for (const [key, prop] of Object.entries(props)) {
         const value = config[key]
         if (value === undefined || value === null) continue
-        const label = escapeHtml((prop as any).title || key)
+        const label = escapeHtml(prop.title || key)
         const isSecret = key.toLowerCase().includes('code') || key.toLowerCase().includes('password') || key.toLowerCase().includes('secret') || key.toLowerCase().includes('token')
-        const p = prop as any
         let displayValue = isSecret ? '••••••••' : escapeHtml(String(value))
-        if (!isSecret && isStructuredProp(p, value)) {
+        if (!isSecret && isStructuredProp(prop, value)) {
           displayValue = `<pre style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto;">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`
-        } else if (p.enum && Array.isArray(p.enum) && p.enumNames) {
+        } else if (prop.enum && Array.isArray(prop.enum) && prop.enumNames) {
           // Enum: Display-Name statt interner Wert anzeigen
-          const idx = p.enum.indexOf(value)
-          if (idx >= 0 && p.enumNames[idx]) displayValue = escapeHtml(String(p.enumNames[idx]))
+          const idx = prop.enum.indexOf(value)
+          if (idx >= 0 && prop.enumNames[idx]) displayValue = escapeHtml(String(prop.enumNames[idx]))
         }
         html += `
           <div class="fm-settings-row">
@@ -136,57 +141,13 @@ export function getStaticPaths() {
     function renderConfigEdit(): string {
       if (!pluginSchema?.properties) return ''
 
-      const props = pluginSchema.properties as Record<string, any>
-      const required: string[] = pluginSchema.required || []
-      const config = printer.driver_config || {}
-      let html = '<form id="config-form" class="fm-compact-form">'
-
-      for (const [key, prop] of Object.entries(props)) {
-        const p = prop as any
-        const isRequired = required.includes(key)
-        const rawValue = config[key] ?? p.default
-        // '' keeps the text/select/number branches rendering an empty field;
-        // structured props use rawValue so an absent value stays null, not "".
-        const value = rawValue ?? ''
-        const label = escapeHtml(p.title || key) + (isRequired ? ' *' : '')
-
-        html += `<div>`
-        html += `<label class="fm-label" for="config-${key}">${label}</label>`
-
-        if (isStructuredProp(p, rawValue)) {
-          // No name attribute: the save loop must not find an element for this key.
-          html += `<pre id="config-${key}" style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto; background: var(--bg-muted, transparent);">${escapeHtml(JSON.stringify(rawValue ?? null, null, 2))}</pre>`
-          html += `<p class="fm-field-hint">${t('printers.configReadOnly')} <a href="/admin/system">${t('nav.plugins')} (${escapeHtml(printer.driver_key)})</a></p>`
-        } else if (p.type === 'boolean') {
-          const checked = value === true || value === 'true' ? ' checked' : ''
-          html += `<input class="fm-checkbox" id="config-${key}" name="${key}" type="checkbox"${checked}>`
-        } else if (p.enum && Array.isArray(p.enum)) {
-          const enumNames: string[] = p.enumNames || p.enum
-          const options = p.enum.map((val: string, i: number) => {
-            const selected = String(val) === String(value) ? ' selected' : ''
-            return `<option value="${escapeHtml(String(val))}"${selected}>${escapeHtml(String(enumNames[i] ?? val))}</option>`
-          }).join('')
-          html += `<select class="fm-input" id="config-${key}" name="${key}"${isRequired ? ' required' : ''}>${options}</select>`
-        } else if (p.type === 'integer' || p.type === 'number') {
-          html += `<input class="fm-input" id="config-${key}" name="${key}" type="number" value="${escapeHtml(String(value))}"${p.minimum !== undefined ? ` min="${p.minimum}"` : ''}${p.maximum !== undefined ? ` max="${p.maximum}"` : ''}${isRequired ? ' required' : ''}>`
-        } else {
-          html += `<input class="fm-input" id="config-${key}" name="${key}" type="text" value="${escapeHtml(String(value))}"${isRequired ? ' required' : ''}>`
-        }
-
-        if (p.description) {
-          html += `<p class="fm-field-hint">${escapeHtml(p.description)}</p>`
-        }
-        html += '</div>'
-      }
-
-      html += `
+      return `<form id="config-form" class="fm-compact-form">${renderDriverConfigFields(pluginSchema, printer.driver_config || {}, printer.driver_key)}
         <div class="fm-list-controls">
           <button type="submit" class="fm-btn fm-btn-primary">${t('common.save')}</button>
           <button type="button" id="btn-cancel-config" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>
           <span id="config-save-msg" class="hidden" role="status" aria-live="polite" style="font-size: 0.85rem;"></span>
         </div>
       </form>`
-      return html
     }
 
     function showConfigMessage(text: string, isError: boolean) {
@@ -235,11 +196,11 @@ export function getStaticPaths() {
       let slotsSection = ''
       if (printer.slots && printer.slots.length > 0) {
         const slotItems = printer.slots
-          .sort((a: any, b: any) => a.slot_no - b.slot_no)
-          .map((s: any) => {
+          .sort((a, b) => a.slot_no - b.slot_no)
+          .map((s) => {
             const a = s.assignment
             const isExt = s.slot_no >= 1000
-            const slotLabel = escapeHtml(s.name || (isExt ? t('printers.externalSlot') : t('printers.slotLabel').replace('{no}', s.slot_no)))
+            const slotLabel = escapeHtml(s.name || (isExt ? t('printers.externalSlot') : t('printers.slotLabel').replace('{no}', String(s.slot_no))))
 
             // Color indicator from assignment
             let colorDot = ''
@@ -309,7 +270,7 @@ export function getStaticPaths() {
 
         slotsSection = `
           <section class="fm-card fm-section">
-            <header class="fm-section-header"><h2>${t('printers.slots').replace('{count}', printer.slots.length)}</h2></header>
+            <header class="fm-section-header"><h2>${t('printers.slots').replace('{count}', String(printer.slots.length))}</h2></header>
             <div class="fm-section-body printer-items">
               ${slotItems}
             </div>
@@ -345,7 +306,7 @@ export function getStaticPaths() {
               <div class="fm-list-controls">
                 ${startStopBtn}
                 <button id="btn-debug-console" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.debugConsole')}</button>
-                ${isRunning ? (driverHealth?.sync_actions || []).map((a: any) => {
+                ${isRunning ? (driverHealth?.sync_actions || []).map((a) => {
                   const label = getLang() === 'de' ? (a.label_de || a.label) : a.label
                   const variant = a.variant === 'danger' ? 'fm-btn-danger' : 'fm-btn-outline'
                   return `<button class="fm-btn ${variant} btn-sync-action" data-action="${escapeHtml(a.action)}" style="font-size: 0.85rem;">${escapeHtml(label)}</button>`
@@ -355,8 +316,8 @@ export function getStaticPaths() {
             ${driverHealth?.running && driverHealth?.connected ? `
               <div id="health-summary" class="fm-section-body printer-health-summary">
                 ${driverHealth.printer_model || driverHealth.external_spool ? `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg-soft);border-radius:999px;font-size:0.8rem;color:var(--text-muted);">${driverHealth.printer_model ? escapeHtml(driverHealth.printer_model) : ''}${driverHealth.printer_model && driverHealth.external_spool ? ' · ' : ''}${driverHealth.external_spool ? '1 ext. Slot' : ''}</span>` : ''}
-                ${(driverHealth.ams_units || []).map((u: any) => {
-                  const amsLabel = (driverHealth.ams_type === 'AMS Lite') ? 'AMS Lite' : ('AMS ' + (u.ams_id + 1))
+                ${(driverHealth.ams_units || []).map((u) => {
+                  const amsLabel = (driverHealth?.ams_type === 'AMS Lite') ? 'AMS Lite' : ('AMS ' + (u.ams_id + 1))
                   const parts = [amsLabel, u.tray_count + ' Slots']
                   if (u.serial) parts.push('SN: ' + u.serial)
                   return '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg-soft);border-radius:999px;font-size:0.8rem;color:var(--text-muted);">' + parts.join(' · ') + '</span>'
@@ -369,9 +330,9 @@ export function getStaticPaths() {
 
       // AMS-Einheiten Section
       let amsSection = ''
-      if (driverHealth?.running && driverHealth?.connected && driverHealth?.ams_units?.length > 0) {
-        const amsType = driverHealth.ams_type || 'AMS'
-        const amsItems = driverHealth.ams_units.map((ams: any) => {
+      if (driverHealth?.running && driverHealth?.connected && driverHealth?.ams_units?.length) {
+        const amsType = driverHealth?.ams_type || 'AMS'
+        const amsItems = driverHealth.ams_units.map((ams) => {
           const humidity = ams.humidity != null ? `${ams.humidity}%` : '\u2014'
           const temp = ams.temp != null ? `${ams.temp}\u00b0C` : '\u2014'
           const amsLabel = amsType === 'AMS Lite' ? 'AMS Lite' : `${amsType} ${ams.ams_id + 1}`
@@ -467,7 +428,7 @@ export function getStaticPaths() {
 
     function bindActions() {
       document.getElementById('btn-delete')?.addEventListener('click', async () => {
-        const result = await (window as any).__fmConfirm(t('printers.confirmDelete'), {
+        const result = await dialogs.__fmConfirm(t('printers.confirmDelete'), {
           checkbox: { label: t('printers.confirmDeleteParams') },
         })
         if (!result || !result.confirmed) return
@@ -484,10 +445,10 @@ export function getStaticPaths() {
           if (response.ok) {
             window.location.href = '/printers'
           } else {
-            await (window as any).__fmAlert(t('printers.failedDelete'))
+            await dialogs.__fmAlert(t('printers.failedDelete'))
           }
         } catch {
-          await (window as any).__fmAlert(t('printers.failedDelete'))
+          await dialogs.__fmAlert(t('printers.failedDelete'))
         }
       })
       
@@ -507,10 +468,10 @@ export function getStaticPaths() {
           if (response.ok) {
             loadPrinter()
           } else {
-            await (window as any).__fmAlert(t('printers.failedUpdate'))
+            await dialogs.__fmAlert(t('printers.failedUpdate'))
           }
         } catch {
-          await (window as any).__fmAlert(t('printers.failedUpdate'))
+          await dialogs.__fmAlert(t('printers.failedUpdate'))
         }
       })
 
@@ -552,9 +513,9 @@ export function getStaticPaths() {
           await new Promise(r => setTimeout(r, 1000))
           await loadDriverHealth()
           renderPrinter()
-        } catch (err: any) {
+        } catch (err) {
           if (isAbortError(err)) return
-          await (window as any).__fmAlert(err.message || t('printers.failedUpdate'))
+          await dialogs.__fmAlert((err instanceof Error && err.message) || t('printers.failedUpdate'))
           btn.disabled = false
         }
       })
@@ -654,9 +615,9 @@ export function getStaticPaths() {
           }
           await loadDriverHealth()
           renderPrinter()
-        } catch (err: any) {
+        } catch (err) {
           if (isAbortError(err)) return
-          await (window as any).__fmAlert(err.message || t('printers.failedUpdate'))
+          await dialogs.__fmAlert((err instanceof Error && err.message) || t('printers.failedUpdate'))
         } finally {
           btn.disabled = false
           btn.textContent = originalText
@@ -671,7 +632,7 @@ export function getStaticPaths() {
           const data = await response.json()
           const hasData = (data.filament_params && Object.keys(data.filament_params).length > 0) || (data.spool_params && Object.keys(data.spool_params).length > 0)
           if (!hasData) {
-            await (window as any).__fmAlert(t('printers.noParamsToExport'))
+            await dialogs.__fmAlert(t('printers.noParamsToExport'))
             return
           }
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -684,7 +645,7 @@ export function getStaticPaths() {
           document.body.removeChild(a)
           URL.revokeObjectURL(url)
         } catch {
-          await (window as any).__fmAlert(t('printers.importFailed'))
+          await dialogs.__fmAlert(t('printers.importFailed'))
         }
       })
 
@@ -709,9 +670,9 @@ export function getStaticPaths() {
           })
           if (!response.ok) throw new Error('Failed')
           const result = await response.json()
-          await (window as any).__fmAlert(t('printers.importSuccess').replace('{count}', String(result.imported || 0)))
+          await dialogs.__fmAlert(t('printers.importSuccess').replace('{count}', String(result.imported || 0)))
         } catch {
-          await (window as any).__fmAlert(t('printers.importFailed'))
+          await dialogs.__fmAlert(t('printers.importFailed'))
         }
         input.value = ''
       })
@@ -725,7 +686,7 @@ export function getStaticPaths() {
 
     function bindConfigForm() {
       const form = document.getElementById('config-form') as HTMLFormElement
-      const props = pluginSchema.properties as Record<string, any>
+      const props = pluginSchema?.properties || {}
       configState = bindFormState(form, form.querySelector<HTMLButtonElement>('[type="submit"]')!)
       configState.reset()
       document.getElementById('btn-cancel-config')?.addEventListener('click', () => {
@@ -741,14 +702,13 @@ export function getStaticPaths() {
         const saveState = configState!
         const currentConfig = printer.driver_config || {}
 
-        const edited: Record<string, any> = {}
+        const edited: Record<string, FieldValue> = {}
         for (const [key, prop] of Object.entries(props)) {
-          const p = prop as any
           const el = form.elements.namedItem(key) as HTMLInputElement
           if (!el) continue
-          if (p.type === 'boolean') {
+          if (prop.type === 'boolean') {
             edited[key] = el.checked
-          } else if (p.type === 'integer' || p.type === 'number') {
+          } else if (prop.type === 'integer' || prop.type === 'number') {
             edited[key] = el.value ? Number(el.value) : null
           } else {
             edited[key] = el.value || null
@@ -831,7 +791,7 @@ export function getStaticPaths() {
             : `/api/v1/printers/${id}/driver/debug`
           const response = await fetch(url, { credentials: 'include', signal: getAbortSignal() })
           if (response.ok) {
-            const entries: any[] = await response.json()
+            const entries: DebugEntry[] = await response.json()
             if (entries.length > 0) {
               debugLog = debugLog.concat(entries)
               // Keep only last 500

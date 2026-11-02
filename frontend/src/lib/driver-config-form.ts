@@ -1,23 +1,7 @@
-/**
- * Driver config forms are generated from a plugin's JSON `config_schema`.
- *
- * The form only ever had branches for enum, integer and number, so everything
- * else fell through to a text input rendered with String(value). For a property
- * whose type is `array` or `object` that reads "[object Object]", and saving the
- * form wrote that string back — destroying config the user never touched. The
- * bundled Moonraker driver's `slot_targets` is `"type": "array"`, so this was
- * not hypothetical.
- *
- * Such properties are rendered read-only and carried through the save unchanged.
- * Carrying them explicitly matters: the backend replaces `driver_config`
- * wholesale, so merely skipping the key would delete the property rather than
- * preserve it.
- *
- * Used by src/pages/printers/[id].astro (inline edit) and
- * src/pages/printers/index.astro (create/edit modal), which build their forms
- * separately but must agree on which properties are editable.
- */
+import { escapeHtml } from './extra-fields'
+import { t } from './i18n'
 
+// Structured config stays read-only because saves replace driver_config wholesale.
 export interface SchemaProperty {
   type?: string
   title?: string
@@ -27,6 +11,37 @@ export interface SchemaProperty {
   enumNames?: string[]
   minimum?: number
   maximum?: number
+}
+
+export interface DriverSchema {
+  properties?: Record<string, SchemaProperty>
+  required?: string[]
+}
+
+/** Shared controls; each page keeps its own form state and save handler. */
+export function renderDriverConfigFields(schema: DriverSchema, config: Record<string, unknown>, driverKey: string): string {
+  return Object.entries(schema.properties || {}).map(([key, prop]) => {
+    const name = escapeHtml(key)
+    const id = `config-${name}`
+    const required = schema.required?.includes(key) ? ' required' : ''
+    const rawValue = config[key] ?? prop.default
+    const value = escapeHtml(String(rawValue ?? ''))
+    let control: string
+    if (isStructuredProp(prop, rawValue)) {
+      control = `<pre id="${id}" style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto;">${escapeHtml(JSON.stringify(rawValue ?? null, null, 2))}</pre>
+        <p class="fm-field-hint">${t('printers.configReadOnly')} <a href="/admin/system">${t('nav.plugins')} (${escapeHtml(driverKey)})</a></p>`
+    } else if (prop.type === 'boolean') {
+      control = `<input class="fm-checkbox" id="${id}" name="${name}" type="checkbox"${rawValue === true || rawValue === 'true' ? ' checked' : ''}>`
+    } else if (Array.isArray(prop.enum)) {
+      const options = prop.enum.map((option, i) => `<option value="${escapeHtml(String(option))}"${String(option) === String(rawValue ?? '') ? ' selected' : ''}>${escapeHtml(String(prop.enumNames?.[i] ?? option))}</option>`).join('')
+      control = `<select class="fm-input" id="${id}" name="${name}"${required}>${options}</select>`
+    } else {
+      const numeric = prop.type === 'integer' || prop.type === 'number'
+      const bounds = numeric ? `${prop.minimum !== undefined ? ` min="${escapeHtml(String(prop.minimum))}"` : ''}${prop.maximum !== undefined ? ` max="${escapeHtml(String(prop.maximum))}"` : ''}` : ''
+      control = `<input class="fm-input" id="${id}" name="${name}" type="${numeric ? 'number' : 'text'}" value="${value}"${bounds}${required}>`
+    }
+    return `<div><label class="fm-label" for="${id}">${escapeHtml(prop.title || key)}${required ? ' *' : ''}</label>${control}${prop.description ? `<p class="fm-field-hint">${escapeHtml(prop.description)}</p>` : ''}</div>`
+  }).join('')
 }
 
 /**

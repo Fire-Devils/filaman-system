@@ -27,7 +27,7 @@ import FormSection from '../../components/FormSection.astro'
           <th data-i18n="admin.fieldType" data-sort="field_type" class="col-field_type">Type</th>
           <th data-i18n="admin.defaultValue" data-sort="default_value" class="col-default_value">Default Value</th>
           <th data-i18n="admin.source" data-sort="source" class="col-source">Source</th>
-          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          <th data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="fields-table">
@@ -50,7 +50,7 @@ import FormSection from '../../components/FormSection.astro'
           <th data-i18n="admin.fieldType" data-sort="field_type" class="col-field_type">Type</th>
           <th data-i18n="admin.defaultValue" data-sort="default_value" class="col-default_value">Default Value</th>
           <th data-i18n="admin.source" data-sort="source" class="col-source">Source</th>
-          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          <th data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="managed-fields-table">
@@ -284,7 +284,7 @@ import FormSection from '../../components/FormSection.astro'
               <td><span class="fm-pill">${escapeHtml(fieldTypeLabel(field.field_type))}</span>${optionsInfo}</td>
               <td style="color:var(--text-muted)">${escapeHtml(formatExtraFieldDefaultValue(field))}</td>
               <td style="color:var(--text-muted)">${field.source ? `<a href="/admin/system" style="color:var(--accent)">${escapeHtml(field.source)}</a>` : '—'}</td>
-              <td style="text-align:right">${actions}</td>
+              <td>${actions}</td>
             </tr>`
         })
         .join('') : `<tr><td colspan="7">${escapeHtml(t('admin.noFieldsDefined'))}</td></tr>`

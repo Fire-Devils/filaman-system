@@ -1,3 +1,5 @@
+import { escapeHtml } from './extra-fields'
+
 export interface SpoolDetailField {
   type: 'number' | 'text' | 'date' | 'select'
   step?: string
@@ -92,6 +94,27 @@ export function buildSpoolDetailSections(spool: SpoolDetailData, display: SpoolD
       ],
     },
   ]
+}
+
+const materialLabels: Record<string, string> = {
+  Plastic: 'spools.spoolMaterialPlastic',
+  Cardboard: 'spools.spoolMaterialCardboard',
+  Metal: 'spools.spoolMaterialMetal',
+  Other: 'spools.spoolMaterialOther',
+}
+
+export function renderSpoolFieldInput(row: SpoolDetailRow, rawValue: unknown, translate: (key: string) => string, id?: string): string {
+  if (!row.field) return ''
+  const attrs = `${id ? ` id="${escapeHtml(id)}"` : ''} name="${escapeHtml(row.key)}"`
+  if (row.field.type === 'select') {
+    return `<select class="fm-select spool-edit-input"${attrs}>${(row.field.options ?? []).map(option => {
+      const labelKey = materialLabels[option]
+      return `<option value="${escapeHtml(option)}"${rawValue === option ? ' selected' : ''}${labelKey ? ` data-i18n="${labelKey}"` : ''}>${option ? escapeHtml(labelKey ? translate(labelKey) : option) : '—'}</option>`
+    }).join('')}</select>`
+  }
+  const value = row.field.type === 'date' && rawValue ? String(rawValue).split('T')[0] : rawValue ?? ''
+  const input = `<input class="fm-input spool-edit-input"${attrs} type="${row.field.type}"${row.field.step ? ` step="${escapeHtml(row.field.step)}"` : ''} value="${escapeHtml(String(value))}">`
+  return row.field.unit ? `<span class="spool-input-unit">${input}<span>${escapeHtml(row.field.unit)}</span></span>` : input
 }
 
 const numericFields = [
