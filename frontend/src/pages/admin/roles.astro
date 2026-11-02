@@ -5,60 +5,72 @@ import FormDialog from '../../components/FormDialog.astro'
 import FormSection from '../../components/FormSection.astro'
 ---
 <Layout title="FilaMan - Admin Roles">
-  <style>
-    #role-edit-form, .role-picker { max-width: 32rem; }
-    #role-edit-form > div, .role-picker { grid-template-columns: 9rem minmax(0, 1fr); }
-    @media (max-width: 640px) { #role-edit-form > div, .role-picker { grid-template-columns: minmax(0, 1fr); } }
-    .role-summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; color: var(--text-muted); font-size: .85rem; }
-    .role-summary code { color: var(--text); }
-    .role-permissions-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-    :global(.role-permission-group) { min-width: 0; border: 0; border-top: 1px solid var(--border); padding: 8px 0 0; }
-    :global(.role-permission-group legend) { padding-right: 8px; font-size: .8rem; font-weight: 600; text-transform: capitalize; }
-    :global(.role-permission) { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: .8rem; overflow-wrap: anywhere; }
-    :global(.role-permission input) { margin-top: 3px; flex-shrink: 0; accent-color: var(--accent); }
-    :global(.role-permission small) { display: block; color: var(--text-muted); font-size: .75rem; }
+  <style is:global>
+    .fm-main:has(> .role-toolbar) { scrollbar-gutter: stable; }
+    .role-toolbar-context, .role-toolbar-actions { display: grid; min-width: 0; }
+    .role-toolbar-context { flex: 1; }
+    .role-toolbar-context > *, .role-toolbar-actions > * { grid-area: 1 / 1; }
+    .role-toolbar-actions > * { justify-self: end; }
+    .role-edit-actions { display: flex; align-items: center; gap: var(--control-gap); }
+    .role-toolbar-inactive { visibility: hidden; pointer-events: none; }
+    #role-edit-context { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+    .role-blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--control-gap); margin-bottom: var(--section-gap); }
+    .role-block { min-width: 0; padding: var(--section-heading-padding) var(--section-padding); }
+    .role-block-heading { display: flex; align-items: center; gap: var(--control-gap); }
+    .role-block-heading strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; }
+    .role-description { margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: .8rem; }
+    .role-system { flex-shrink: 0; color: var(--text-muted); font-size: .7rem; }
+    .role-block.is-editing { outline: 1px solid var(--success-text); border-color: var(--success-text); background: color-mix(in srgb, var(--success-text) 7%, var(--bg-elevated)); }
+    .role-block.is-editing .role-edit { color: var(--success-text); opacity: 1; }
+    .role-editor[hidden] { display: none; }
+    .role-editor-fields { display: grid; gap: var(--section-gap); min-width: 0; border: 0; padding: 0; margin: 0; }
+    .role-metadata { max-width: 32rem; }
+    .role-metadata > div { grid-template-columns: 9rem minmax(0, 1fr); }
+    .role-permissions-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--section-gap); }
+    .role-permission-group { min-width: 0; border: 0; border-top: 1px solid var(--border); padding: 8px 0 0; }
+    .role-permission-group legend { padding-right: 8px; font-size: .8rem; font-weight: 600; text-transform: capitalize; }
+    .role-permission { display: flex; align-items: flex-start; gap: var(--control-gap); padding: 5px 0; font-size: .8rem; overflow-wrap: anywhere; }
+    .role-permission input { margin-top: 3px; flex-shrink: 0; accent-color: var(--accent); }
+    .role-permission small { display: block; color: var(--text-muted); font-size: .75rem; }
     @container detail-page (max-width: 52rem) { .role-permissions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @container detail-page (max-width: 34rem) { .role-permissions-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) { .role-metadata > div { grid-template-columns: minmax(0, 1fr); } }
   </style>
-  <div class="fm-admin-page">
-    <AdminHeader titleKey="admin.rolesPerms" title="Roles & Permissions">
+  <div class="detail-page-toolbar role-toolbar">
+    <div class="role-toolbar-context">
+      <a id="roles-back" href="/admin" class="detail-back-link">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
+      <span id="role-edit-context" class="role-toolbar-inactive" aria-live="polite"></span>
+    </div>
+    <div class="role-toolbar-actions">
       <button id="btn-new-role" class="fm-btn fm-btn-primary" data-i18n="admin.createRole">Create Role</button>
-    </AdminHeader>
+      <div id="role-edit-actions" class="role-edit-actions role-toolbar-inactive" inert aria-hidden="true">
+        <button id="role-save" type="submit" form="role-edit-form" class="fm-btn fm-btn-primary" disabled data-i18n="common.save">Save</button>
+        <button id="role-cancel" type="button" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <div class="fm-admin-page fm-detail-content">
+    <AdminHeader titleKey="admin.rolesPerms" title="Roles & Permissions" back={false} />
     <div id="page-error" class="fm-alert-error hidden" role="alert"></div>
-    <div class="fm-settings-stack">
+    <div id="role-blocks" class="role-blocks" role="list"></div>
+    <form id="role-edit-form" class="fm-settings-stack role-editor" hidden>
+      <div id="role-error" class="fm-alert-error hidden" role="alert"></div>
+      <fieldset id="role-edit-fields" class="role-editor-fields" disabled>
       <FormSection titleKey="admin.rolesTitle" title="Roles">
         <Fragment slot="actions">
-          <div class="fm-header-actions">
-            <button id="edit-role" class="fm-btn fm-btn-outline" disabled data-i18n="admin.editRole">Edit Role</button>
-            <div id="role-edit-actions" class="fm-header-actions hidden">
-              <button id="role-save" type="submit" form="role-edit-form" class="fm-btn fm-btn-primary" disabled data-i18n="common.save">Save</button>
-              <button id="role-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-            </div>
-            <button id="role-delete" class="fm-row-action fm-row-action-danger hidden" data-i18n-aria-label="admin.deleteRole" data-i18n-title="admin.deleteRole" aria-label="Delete Role" title="Delete Role"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6"/></svg></button>
-          </div>
+          <button id="role-delete" type="button" hidden class="fm-row-action fm-row-action-danger" data-i18n-aria-label="admin.deleteRole" data-i18n-title="admin.deleteRole" aria-label="Delete Role" title="Delete Role"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="/icons.svg#icon-trash" /></svg></button>
         </Fragment>
-        <div class="role-picker fm-settings-row"><label for="role-select" class="fm-label" data-i18n="admin.rolesTitle">Roles</label><select id="role-select" class="fm-select" disabled></select></div>
-        <div id="role-summary" class="role-summary"></div>
-        <form id="role-edit-form" class="fm-compact-form hidden">
+        <div class="fm-compact-form role-metadata">
+          <div><span class="fm-label" data-i18n="admin.roleKey">Key</span><code id="role-edit-key"></code></div>
           <div><label for="role-edit-name" class="fm-label" data-i18n="admin.roleName">Name</label><input id="role-edit-name" class="fm-input" required /></div>
           <div><label for="role-edit-description" class="fm-label" data-i18n="admin.roleDescription">Description</label><input id="role-edit-description" class="fm-input" /></div>
-        </form>
-        <div id="role-error" class="fm-alert-error hidden" role="alert"></div>
+        </div>
       </FormSection>
       <FormSection titleKey="admin.permissions" title="Permissions" id="permissions-header">
-        <Fragment slot="actions">
-          <div class="fm-header-actions">
-            <button id="edit-permissions" class="fm-btn fm-btn-outline" disabled data-i18n="admin.editPermissions">Edit Permissions</button>
-            <div id="permissions-edit-actions" class="fm-header-actions hidden">
-              <button id="permissions-save" type="submit" form="permissions-form" class="fm-btn fm-btn-primary" disabled data-i18n="common.save">Save</button>
-              <button id="permissions-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-            </div>
-          </div>
-        </Fragment>
-        <form id="permissions-form"><div id="permissions-checkboxes" class="role-permissions-grid"></div></form>
-        <div id="permissions-error" class="fm-alert-error hidden" role="alert"></div>
+        <div id="permissions-checkboxes" class="role-permissions-grid"></div>
       </FormSection>
-    </div>
+      </fieldset>
+    </form>
     <FormDialog id="role-modal" titleId="role-modal-title" titleKey="admin.createRole" title="Create Role">
       <Fragment slot="actions">
         <button id="role-modal-submit" type="submit" form="role-modal-form" class="fm-btn fm-btn-primary" disabled data-i18n="common.save">Save</button>
@@ -77,7 +89,7 @@ import FormSection from '../../components/FormSection.astro'
     import { api } from '../../lib/api'
     import { isAbortError } from '../../lib/abort'
     import { escapeHtml } from '../../lib/extra-fields'
-    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormDialog, type AppDialogs } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
     await initI18n()
 
@@ -85,193 +97,193 @@ import FormSection from '../../components/FormSection.astro'
     interface Permission { key: string; description: string | null; category: string | null }
     interface RoleDetail extends Role { permissions: string[] }
     const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
-    const roleSelect = byId<HTMLSelectElement>('role-select')
     const roleForm = byId<HTMLFormElement>('role-edit-form')
-    const permissionForm = byId<HTMLFormElement>('permissions-form')
     const createForm = byId<HTMLFormElement>('role-modal-form')
     const roleState = bindFormState(roleForm, byId<HTMLButtonElement>('role-save'))
-    const permissionState = bindFormState(permissionForm, byId<HTMLButtonElement>('permissions-save'))
     const createState = bindFormState(createForm, byId<HTMLButtonElement>('role-modal-submit'))
     const createDialog = bindFormDialog(byId<HTMLDialogElement>('role-modal'), { canClose: () => !createState.busy })
-    const fm = window as unknown as { __fmConfirm: (message: string) => Promise<boolean> }
+    const fm = window as unknown as AppDialogs
     let roles: Role[] = []
     let permissions: Permission[] = []
     let selectedRole: Role | undefined
     let selectedPermissions: string[] | null = null
-    let editing: 'role' | 'permissions' | null = null
+    let loading = false
     let deleting = false
     let roleRequest = 0
-    const busy = () => deleting || roleState.busy || permissionState.busy || createState.busy
+    const busy = () => deleting || roleState.busy || createState.busy
     const hide = (id: string, hidden: boolean) => byId(id).classList.toggle('hidden', hidden)
+    const metadata = () => ({ name: byId<HTMLInputElement>('role-edit-name').value, description: byId<HTMLInputElement>('role-edit-description').value || null })
+    const checkedPermissions = () => [...roleForm.querySelectorAll<HTMLInputElement>('.perm-checkbox:checked')].map(input => input.value)
+    const permissionSignature = (keys: string[]) => JSON.stringify([...keys].sort())
     function showError(id: string, cause: unknown) {
-      const host = byId(id)
-      host.textContent = cause instanceof Error ? cause.message : String(cause)
+      byId(id).textContent = cause instanceof Error ? cause.message : String(cause)
       hide(id, false)
     }
-    function updateControls() {
-      const locked = busy() || editing !== null
-      roleSelect.disabled = locked || roles.length === 0
-      byId<HTMLButtonElement>('btn-new-role').disabled = locked
-      byId<HTMLButtonElement>('edit-role').disabled = busy() || !selectedRole
-      byId<HTMLButtonElement>('edit-permissions').disabled = busy() || selectedPermissions === null
-      byId<HTMLButtonElement>('role-cancel').disabled = busy()
-      byId<HTMLButtonElement>('permissions-cancel').disabled = busy()
-      byId<HTMLButtonElement>('role-delete').disabled = busy()
-      hide('edit-role', editing !== null)
-      hide('edit-permissions', editing !== null)
-      hide('role-edit-actions', editing !== 'role')
-      hide('permissions-edit-actions', editing !== 'permissions')
-      hide('role-delete', !selectedRole || selectedRole.is_system || editing !== null)
-      hide('role-edit-form', editing !== 'role')
-      hide('role-summary', editing === 'role')
+    function inactive(id: string, value: boolean) {
+      const element = byId(id)
+      element.classList.toggle('role-toolbar-inactive', value)
+      element.inert = value
+      element.setAttribute('aria-hidden', String(value))
     }
-    function renderRole() {
-      byId('role-summary').innerHTML = selectedRole
-        ? `<code>${escapeHtml(selectedRole.key)}</code>${selectedRole.is_system ? `<span class="fm-pill" title="${escapeHtml(t('admin.systemRoleHint'))}">${escapeHtml(t('admin.systemRole'))}</span>` : ''}<span>${escapeHtml(selectedRole.description || '—')}</span>`
-        : escapeHtml(t('admin.noRoles'))
-      byId('permissions-header').textContent = selectedRole ? `${t('admin.permissionsForRole')}: ${selectedRole.name}` : t('admin.permissions')
+    function updateControls() {
+      inactive('role-edit-actions', !selectedRole)
+      inactive('role-edit-context', !selectedRole)
+      inactive('btn-new-role', !!selectedRole)
+      inactive('roles-back', !!selectedRole)
+      byId<HTMLButtonElement>('btn-new-role').disabled = busy() || !!selectedRole
+      byId<HTMLButtonElement>('role-cancel').disabled = busy()
+      byId<HTMLButtonElement>('role-delete').disabled = busy() || loading
+      byId('role-delete').hidden = !selectedRole || selectedRole.is_system
+      roleForm.hidden = !selectedRole
+      roleForm.inert = busy() || loading
+      byId<HTMLFieldSetElement>('role-edit-fields').disabled = loading || selectedPermissions === null
+      roleState.update()
+      if (!selectedRole || loading || selectedPermissions === null) byId<HTMLButtonElement>('role-save').disabled = true
+      byId('role-edit-context').textContent = selectedRole ? t('admin.editingRole', { name: selectedRole.name }) : ''
+      if (selectedRole) byId('permissions-header').textContent = `${t('admin.permissionsForRole')}: ${selectedRole.name}`
+      document.querySelectorAll<HTMLButtonElement>('[data-role-id]').forEach(button => {
+        const active = Number(button.dataset.roleId) === selectedRole?.id
+        button.setAttribute('aria-expanded', String(active))
+        button.closest('article')!.classList.toggle('is-editing', active)
+        button.disabled = busy() || !!selectedRole && (!active || loading || selectedPermissions !== null)
+      })
+    }
+    function renderRoles() {
+      byId('role-blocks').innerHTML = roles.length ? roles.map(role => {
+        const label = escapeHtml(`${t('admin.editRole')}: ${role.name}`)
+        return `<article class="fm-card role-block" role="listitem"><div class="role-block-heading"><strong title="${escapeHtml(role.name)}">${escapeHtml(role.name)}</strong>${role.is_system ? `<span class="role-system" title="${escapeHtml(t('admin.systemRoleHint'))}">${escapeHtml(t('admin.systemRole'))}</span>` : ''}<button type="button" class="fm-row-action role-edit" data-role-id="${role.id}" aria-label="${label}" title="${label}" aria-expanded="false" aria-controls="role-edit-form"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="/icons.svg#icon-edit" /></svg></button></div><p class="role-description" title="${escapeHtml(role.description || '—')}">${escapeHtml(role.description || '—')}</p></article>`
+      }).join('') : `<p class="fm-field-hint">${escapeHtml(t('admin.noRoles'))}</p>`
       updateControls()
     }
     function renderPermissions() {
       const host = byId('permissions-checkboxes')
-      if (selectedPermissions === null) {
-        host.textContent = selectedRole ? t('common.loading') : ''
-        return
-      }
+      if (selectedPermissions === null) { host.textContent = t('common.loading'); return }
       const grouped = new Map<string, Permission[]>()
       for (const permission of permissions) {
         const category = permission.category || 'other'
         if (!grouped.has(category)) grouped.set(category, [])
         grouped.get(category)!.push(permission)
       }
-      host.innerHTML = [...grouped].map(([category, entries]) => `<fieldset class="role-permission-group"><legend>${escapeHtml(category)}</legend>${entries.map(permission => `<label class="role-permission"><input type="checkbox" class="perm-checkbox" value="${escapeHtml(permission.key)}" ${selectedPermissions!.includes(permission.key) ? 'checked' : ''} ${editing === 'permissions' ? '' : 'disabled'} /><span><code>${escapeHtml(permission.key)}</code>${permission.description ? `<small>${escapeHtml(permission.description)}</small>` : ''}</span></label>`).join('')}</fieldset>`).join('')
-      permissionState.reset()
+      host.innerHTML = [...grouped].map(([category, entries]) => `<fieldset class="role-permission-group"><legend>${escapeHtml(category)}</legend>${entries.map(permission => `<label class="role-permission"><input type="checkbox" class="perm-checkbox" value="${escapeHtml(permission.key)}" ${selectedPermissions!.includes(permission.key) ? 'checked' : ''} /><span><code>${escapeHtml(permission.key)}</code>${permission.description ? `<small>${escapeHtml(permission.description)}</small>` : ''}</span></label>`).join('')}</fieldset>`).join('')
     }
-    async function selectRole(id: number | undefined) {
-      selectedRole = roles.find(role => role.id === id)
-      roleSelect.value = selectedRole ? String(selectedRole.id) : ''
+    function closeEditor() {
+      const id = selectedRole?.id
+      ++roleRequest
+      selectedRole = undefined
       selectedPermissions = null
-      editing = null
+      loading = false
       hide('role-error', true)
-      hide('permissions-error', true)
-      renderRole()
-      renderPermissions()
-      const request = ++roleRequest
+      updateControls()
+      document.querySelector<HTMLButtonElement>(`[data-role-id="${id}"]`)?.focus()
+    }
+    async function selectRole(id: number) {
+      if (busy() || selectedRole && (selectedRole.id !== id || loading || selectedPermissions !== null)) return
+      selectedRole = roles.find(role => role.id === id)
       if (!selectedRole) return
+      const request = ++roleRequest
+      loading = true
+      selectedPermissions = null
+      hide('role-error', true)
+      byId('role-edit-key').textContent = selectedRole.key
+      byId<HTMLInputElement>('role-edit-name').value = selectedRole.name
+      byId<HTMLInputElement>('role-edit-description').value = selectedRole.description || ''
+      renderPermissions()
+      updateControls()
       try {
         const detail = await api.get<RoleDetail>(`/admin/roles/${id}`)
-        // A slower previous selection must never replace the current role's permissions.
         if (request !== roleRequest) return
         selectedPermissions = detail.permissions || []
         renderPermissions()
+        roleState.reset()
+        loading = false
+        updateControls()
+        byId('role-edit-name').focus({ preventScroll: true })
       } catch (error) {
         if (request !== roleRequest || isAbortError(error)) return
+        loading = false
         byId('permissions-checkboxes').textContent = ''
-        showError('permissions-error', error)
+        showError('role-error', error)
+        updateControls()
       }
-      updateControls()
     }
-    async function loadData(preferredId = selectedRole?.id) {
+    async function loadData(preferredId?: number) {
       hide('page-error', true)
       try {
         ;[roles, permissions] = await Promise.all([api.get<Role[]>('/admin/roles'), api.get<Permission[]>('/admin/permissions')])
-        roleSelect.innerHTML = roles.map(role => `<option value="${role.id}">${escapeHtml(role.name)}</option>`).join('')
-        await selectRole(roles.find(role => role.id === preferredId)?.id ?? roles[0]?.id)
+        renderRoles()
+        if (preferredId) await selectRole(preferredId)
       } catch (error) {
         if (!isAbortError(error)) showError('page-error', error)
       }
     }
-    roleSelect.addEventListener('change', () => {
-      if (busy() || editing) { roleSelect.value = String(selectedRole?.id || ''); return }
-      selectRole(Number(roleSelect.value))
+    byId('role-blocks').addEventListener('click', event => {
+      const button = (event.target as Element).closest<HTMLButtonElement>('[data-role-id]')
+      if (button && !button.disabled) selectRole(Number(button.dataset.roleId))
     })
-    byId('edit-role').addEventListener('click', () => {
-      if (!selectedRole || busy()) return
-      editing = 'role'
-      byId<HTMLInputElement>('role-edit-name').value = selectedRole.name
-      byId<HTMLInputElement>('role-edit-description').value = selectedRole.description || ''
-      roleState.reset()
-      updateControls()
-      byId('role-edit-name').focus()
-    })
-    byId('role-cancel').addEventListener('click', () => {
-      if (busy()) return
-      editing = null
-      hide('role-error', true)
-      updateControls()
-      byId('edit-role').focus()
-    })
+    byId('role-cancel').addEventListener('click', () => { if (!busy()) closeEditor() })
     roleForm.addEventListener('submit', async event => {
       event.preventDefault()
-      if (!selectedRole || editing !== 'role' || busy() || !roleForm.reportValidity() || roleForm.dataset.dirty !== 'true') return
+      const role = selectedRole
+      if (!role || loading || selectedPermissions === null || busy() || !roleForm.reportValidity() || roleForm.dataset.dirty !== 'true') return
       roleState.setBusy(true)
       updateControls()
       hide('role-error', true)
+      let partlySaved = false
       try {
-        const payload = { name: byId<HTMLInputElement>('role-edit-name').value, description: byId<HTMLInputElement>('role-edit-description').value || null }
-        const saved = await api.patch<Role>(`/admin/roles/${selectedRole.id}`, payload)
-        Object.assign(selectedRole, saved)
-        roleSelect.selectedOptions[0].textContent = selectedRole.name
-        editing = null
-        roleState.reset()
-        renderRole()
-        byId('edit-role').focus()
+        const values = metadata()
+        if (values.name !== role.name || values.description !== role.description) {
+          Object.assign(role, await api.patch<Role>(`/admin/roles/${role.id}`, values))
+          partlySaved = true
+          renderRoles()
+        }
+        const selected = checkedPermissions()
+        const known = new Set(permissions.map(permission => permission.key))
+        if (permissionSignature(selected) !== permissionSignature(selectedPermissions.filter(key => known.has(key)))) {
+          const payload = [...selected, ...selectedPermissions.filter(key => !known.has(key))]
+          const result = await api.put<{ permissions?: string[] }>(`/admin/roles/${role.id}/permissions`, payload)
+          selectedPermissions = result.permissions || payload
+        }
+        closeEditor()
       } catch (error) {
-        if (!isAbortError(error)) showError('role-error', error)
+        if (!isAbortError(error)) {
+          // A successful first request is now the baseline; keep unsaved permission edits retryable.
+          const draft = metadata(), checked = checkedPermissions()
+          byId<HTMLInputElement>('role-edit-name').value = role.name
+          byId<HTMLInputElement>('role-edit-description').value = role.description || ''
+          const inputs = roleForm.querySelectorAll<HTMLInputElement>('.perm-checkbox')
+          inputs.forEach(input => { input.checked = selectedPermissions!.includes(input.value) })
+          roleState.reset()
+          byId<HTMLInputElement>('role-edit-name').value = draft.name
+          byId<HTMLInputElement>('role-edit-description').value = draft.description || ''
+          inputs.forEach(input => { input.checked = checked.includes(input.value) })
+          showError('role-error', `${partlySaved ? t('admin.roleSavePartial') + ' ' : ''}${error instanceof Error ? error.message : String(error)}`)
+        }
       } finally {
         roleState.setBusy(false)
         updateControls()
-      }
-    })
-    byId('edit-permissions').addEventListener('click', () => {
-      if (selectedPermissions === null || busy()) return
-      editing = 'permissions'
-      renderPermissions()
-      updateControls()
-      permissionForm.querySelector<HTMLInputElement>('input')?.focus()
-    })
-    byId('permissions-cancel').addEventListener('click', () => {
-      if (busy()) return
-      editing = null
-      hide('permissions-error', true)
-      renderPermissions()
-      updateControls()
-      byId('edit-permissions').focus()
-    })
-    permissionForm.addEventListener('submit', async event => {
-      event.preventDefault()
-      if (!selectedRole || editing !== 'permissions' || busy() || permissionForm.dataset.dirty !== 'true') return
-      permissionState.setBusy(true)
-      updateControls()
-      hide('permissions-error', true)
-      const selected = [...permissionForm.querySelectorAll<HTMLInputElement>('.perm-checkbox:checked')].map(input => input.value)
-      try {
-        const result = await api.put<{ permissions?: string[] }>(`/admin/roles/${selectedRole.id}/permissions`, selected)
-        selectedPermissions = result.permissions || selected
-        editing = null
-        renderPermissions()
-      } catch (error) {
-        if (!isAbortError(error)) showError('permissions-error', error)
-      } finally {
-        permissionState.setBusy(false)
-        updateControls()
+        if (!selectedRole) document.querySelector<HTMLButtonElement>(`[data-role-id="${role.id}"]`)?.focus()
       }
     })
     byId('role-delete').addEventListener('click', async () => {
       const role = selectedRole
-      if (!role || role.is_system || busy() || editing) return
-      if (!(await fm.__fmConfirm(t('admin.confirmDeleteRole')))) return
+      if (!role || role.is_system || busy() || loading) return
+      if (!(await fm.__fmConfirm(t('admin.confirmDeleteRole'))) || busy() || selectedRole !== role) return
       deleting = true
       updateControls()
       try {
         await api.delete(`/admin/roles/${role.id}`)
+        closeEditor()
         await loadData()
       } catch (error) {
         if (!isAbortError(error)) showError('role-error', error)
-      } finally { deleting = false; updateControls() }
+      } finally {
+        deleting = false
+        updateControls()
+        if (!selectedRole) byId('btn-new-role').focus()
+      }
     })
     byId('btn-new-role').addEventListener('click', () => {
-      if (busy() || editing) return
+      if (busy() || selectedRole) return
       createForm.reset()
       hide('role-modal-error', true)
       createState.reset()
@@ -298,6 +310,7 @@ import FormSection from '../../components/FormSection.astro'
         if (!isAbortError(error)) showError('role-modal-error', error)
       } finally { createState.setBusy(false); updateControls() }
     })
+    updateControls()
     loadData()
   </script>
 </Layout>

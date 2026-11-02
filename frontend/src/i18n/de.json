@@ -1035,6 +1035,8 @@
     "permissions": "Berechtigungen",
     "createRole": "Rolle erstellen",
     "editRole": "Rolle bearbeiten",
+    "editingRole": "Bearbeiten: {name}",
+    "roleSavePartial": "Einige Änderungen wurden gespeichert. Die übrigen Eingaben bleiben erhalten; erneut speichern, um fortzufahren.",
     "deleteRole": "Löschen",
     "roleName": "Name",
     "roleNamePlaceholder": "z.B. Redakteur",

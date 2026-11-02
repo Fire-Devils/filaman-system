@@ -1034,6 +1034,8 @@
     "permissions": "Permissions",
     "createRole": "Create Role",
     "editRole": "Edit Role",
+    "editingRole": "Editing: {name}",
+    "roleSavePartial": "Some changes were saved. Your remaining edits are kept; retry Save to finish.",
     "deleteRole": "Delete",
     "roleName": "Name",
     "roleNamePlaceholder": "e.g. Editor",
