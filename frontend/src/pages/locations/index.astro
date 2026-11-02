@@ -42,9 +42,9 @@ import Layout from '../../layouts/Layout.astro'
         to { transform: rotate(360deg); }
       }
     </style>
-    <table class="fm-table">
+    <table class="fm-table fm-admin-table">
       <thead>
-        <tr style="background: var(--bg-soft);">
+        <tr>
           <th class="col-name" data-i18n="locations.name">Name</th>
           <th class="col-identifier" data-i18n="locations.identifier">Identifier</th>
           <th class="col-spools" style="text-align: right;" data-i18n="locations.spools">Spools</th>
@@ -124,8 +124,15 @@ import Layout from '../../layouts/Layout.astro'
     const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
     const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
-    let locations: any[] = []
-    let activeDevices: any[] = []
+    interface LocationRecord { id: number; name: string; identifier: string | null; spool_count: number }
+    interface ActiveDevice { id: number; name: string; ip_address: string | null }
+    const dialogs = window as unknown as {
+      __fmConfirm: (message: string) => Promise<boolean>
+      __fmAlert: (message: string) => Promise<boolean>
+      openRfidModal: (locationId: number) => void
+    }
+    let locations: LocationRecord[] = []
+    let activeDevices: ActiveDevice[] = []
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -146,7 +153,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadLocations() {
       try {
-        const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
+        const data = await cachedFetchAllPages<LocationRecord>(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         locations = data.items
         renderLocations()
       } catch (error) {
@@ -219,7 +226,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          if (!(await (window as any).__fmConfirm(t('locations.confirmDelete')))) return
+          if (!(await dialogs.__fmConfirm(t('locations.confirmDelete')))) return
           
           try {
             const response = await fetch(`/api/v1/locations/${id}`, {
@@ -231,7 +238,7 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              await (window as any).__fmAlert(data.message || t('locations.failedDelete'))
+              await dialogs.__fmAlert(data.message || t('locations.failedDelete'))
               return
             }
             
@@ -239,7 +246,7 @@ import Layout from '../../layouts/Layout.astro'
             invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
             loadLocations()
           } catch {
-            await (window as any).__fmAlert(t('locations.failedDelete'))
+            await dialogs.__fmAlert(t('locations.failedDelete'))
           }
         })
       })
@@ -263,9 +270,6 @@ import Layout from '../../layouts/Layout.astro'
       nameInput.focus()
     }
     
-    function closeModal() {
-      formDialog.close()
-    }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     
@@ -308,11 +312,11 @@ import Layout from '../../layouts/Layout.astro'
         // Invalidate cache after successful save
         invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
         formState.setBusy(false)
-        closeModal()
+        formDialog.close()
         loadLocations()
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('locations.failedSave')
         error.classList.remove('hidden')
       } finally {
         formState.setBusy(false)
@@ -334,7 +338,7 @@ import Layout from '../../layouts/Layout.astro'
       },
     })
     
-    ;(window as any).openRfidModal = (locationId: number) => {
+    ;dialogs.openRfidModal = (locationId: number) => {
       currentRfidLocationId = locationId
       rfidAbort?.abort()
       rfidAbort = new AbortController()

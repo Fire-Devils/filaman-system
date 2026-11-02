@@ -1,11 +1,10 @@
 ---
 import Layout from '../layouts/Layout.astro'
 import FormSection from '../components/FormSection.astro'
-import SettingsTitle from '../components/SettingsTitle.astro'
 ---
 <Layout title="FilaMan - Settings">
 <div class="fm-settings-page fm-settings-profile">
-  <header class="fm-settings-toolbar"><SettingsTitle titleKey="settings.title" title="Settings" /></header>
+  <div class="fm-list-toolbar"><h1 data-i18n="settings.title">Settings</h1></div>
   <div class="fm-settings-stack">
     <FormSection titleKey="settings.profile" title="Profile">
       <Fragment slot="actions"><button
@@ -214,9 +213,9 @@ import SettingsTitle from '../components/SettingsTitle.astro'
 
         profileSuccess.textContent = t('settings.profileSaved')
         profileSuccess.classList.remove('hidden')
-      } catch (error: any) {
+      } catch (error) {
         if (isAbortError(error)) return
-        profileError.textContent = error.message
+        profileError.textContent = error instanceof Error ? error.message : t('settings.profileFailed')
         profileError.classList.remove('hidden')
       } finally {
         profileState.setBusy(false)
@@ -284,9 +283,9 @@ import SettingsTitle from '../components/SettingsTitle.astro'
         passwordSuccess.classList.remove('hidden')
         passwordForm.reset()
         passwordState.reset()
-      } catch (error: any) {
+      } catch (error) {
         if (isAbortError(error)) return
-        passwordError.textContent = error.message
+        passwordError.textContent = error instanceof Error ? error.message : t('settings.passwordFailed')
         passwordError.classList.remove('hidden')
       } finally {
         passwordState.setBusy(false)

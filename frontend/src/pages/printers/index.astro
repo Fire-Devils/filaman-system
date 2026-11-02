@@ -25,9 +25,9 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
+    <table class="fm-table fm-admin-table">
       <thead>
-        <tr style="background: var(--bg-soft);">
+        <tr>
           <th data-i18n="printers.name">Name</th>
           <th data-i18n="printers.driver">Driver</th>
           <th data-i18n="common.status">Status</th>
@@ -81,7 +81,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
+    import { buildDriverConfigPayload, isStructuredProp, type SchemaProperty, type FieldValue } from '../../lib/driver-config-form'
     import { escapeHtml } from '../../lib/extra-fields'
     import { tableAction } from '../../lib/table-actions'
     import { bindFormDialog } from '../../lib/form-dialog'
@@ -92,15 +92,25 @@ import Layout from '../../layouts/Layout.astro'
     const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
     const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
-    let printers: any[] = []
-    let allPlugins: any[] = []
+    interface SlotSummary { external_spool?: boolean; ams_type?: string; ams_units?: { ams_id: number; tray_count: number }[] }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
+    interface DriverSchema { properties?: Record<string, SchemaProperty>; required?: string[] }
+    interface DriverPlugin { driver_key?: string | null; name: string; is_active: boolean; config_schema?: DriverSchema | null }
+    interface DriverHealth extends SlotSummary { running?: boolean; connected?: boolean; ams_count?: number; slot_count?: number }
+    const dialogs = window as unknown as {
+      __fmConfirm: (message: string, options: { checkbox: { label: string } }) => Promise<{ confirmed: boolean; checked: boolean }>
+      __fmAlert: (message: string) => Promise<boolean>
+      __fmSuccess: (message: string) => Promise<boolean>
+    }
+    let printers: PrinterRecord[] = []
+    let allPlugins: DriverPlugin[] = []
     /**
      * The config the modal was opened with, and the schema it was rendered from.
      * Both are needed on save: structured properties have no input element, so
      * their stored value has to be carried through explicitly.
      */
-    let editingConfigSchema: Record<string, any> | null = null
-    let editingConfigValues: Record<string, any> = {}
+    let editingConfigSchema: Record<string, SchemaProperty> | null = null
+    let editingConfigValues: Record<string, unknown> = {}
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -127,7 +137,7 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
-    function renderSlotTags(summary: any): string {
+    function renderSlotTags(summary: SlotSummary | null | undefined): string {
       if (!summary) return '\u2014'
       const tags: string[] = []
       const tagStyle = 'display:inline-block;padding:2px 8px;font-size:0.7rem;border-radius:999px;background:var(--bg-soft);color:var(--text-muted);margin-right:4px;white-space:nowrap;'
@@ -144,7 +154,7 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     async function fetchHealthForAll() {
-      await Promise.all(printers.map(async (p: any) => {
+      await Promise.all(printers.map(async p => {
         const badge = document.getElementById(`online-badge-${p.id}`)
         const slotsEl = document.getElementById(`slots-info-${p.id}`)
         if (!badge) return
@@ -155,7 +165,7 @@ import Layout from '../../layouts/Layout.astro'
             badge.style.color = 'var(--text-muted)'
             return
           }
-          const health = await resp.json()
+          const health: DriverHealth = await resp.json()
           if (health.running && health.connected) {
             badge.textContent = t('common.online')
             badge.style.color = '#22c55e'
@@ -228,8 +238,8 @@ import Layout from '../../layouts/Layout.astro'
           try {
             const resp = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
             if (resp.ok) {
-              const printer = await resp.json()
-              openModal(id, printer.name, printer.driver_key, printer.driver_config)
+              const printer: PrinterRecord = await resp.json()
+              openModal(id, printer.name, printer.driver_key, printer.driver_config || undefined)
             }
           } catch {}
         })
@@ -240,7 +250,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          const result = await (window as any).__fmConfirm(t('printers.confirmDelete'), {
+          const result = await dialogs.__fmConfirm(t('printers.confirmDelete'), {
             checkbox: { label: t('printers.confirmDeleteParams') },
           })
           if (!result || !result.confirmed) return
@@ -256,19 +266,19 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              await (window as any).__fmAlert(data.message || t('printers.failedDelete'))
+              await dialogs.__fmAlert(data.message || t('printers.failedDelete'))
               return
             }
             
             loadPrinters()
           } catch {
-            await (window as any).__fmAlert(t('printers.failedDelete'))
+            await dialogs.__fmAlert(t('printers.failedDelete'))
           }
         })
       })
     }
     
-    function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, any>) {
+    function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, unknown>) {
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('printer-id') as HTMLInputElement
       const nameInput = document.getElementById('printer-name') as HTMLInputElement
@@ -288,9 +298,6 @@ import Layout from '../../layouts/Layout.astro'
       nameInput.focus()
     }
     
-    function closeModal() {
-      formDialog.close()
-    }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     
@@ -304,15 +311,15 @@ import Layout from '../../layouts/Layout.astro'
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
       const configContainer = document.getElementById('config-fields')!
-      const configInputs = configContainer.querySelectorAll('input, select, textarea')
-      let driver_config: Record<string, any> | undefined = undefined
+      const configInputs = configContainer.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
+      let driver_config: Record<string, unknown> | undefined = undefined
       // No schema means no driver config to send — leave the field out entirely
       // rather than submitting an empty object that would clear what is stored.
       if (editingConfigSchema && Object.keys(editingConfigSchema).length > 0) {
-        const edited: Record<string, any> = {}
-        configInputs.forEach((el: any) => {
+        const edited: Record<string, FieldValue> = {}
+        configInputs.forEach(el => {
           const key = el.name
-          if (el.type === 'checkbox') {
+          if (el instanceof HTMLInputElement && el.type === 'checkbox') {
             edited[key] = el.checked
           } else if (el.type === 'number') {
             edited[key] = el.value ? Number(el.value) : null
@@ -328,7 +335,7 @@ import Layout from '../../layouts/Layout.astro'
           edited
         )
       }
-      const data: any = { name, driver_key }
+      const data: { name: string; driver_key: string; driver_config?: Record<string, unknown> } = { name, driver_key }
       if (driver_config) data.driver_config = driver_config
       
       error.classList.add('hidden')
@@ -357,11 +364,11 @@ import Layout from '../../layouts/Layout.astro'
         }
         
         formState.setBusy(false)
-        closeModal()
+        formDialog.close()
         loadPrinters()
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('printers.failedSave')
         error.classList.remove('hidden')
       } finally {
         formState.setBusy(false)
@@ -375,29 +382,28 @@ import Layout from '../../layouts/Layout.astro'
         const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) return
         allPlugins = await response.json()
-        const drivers = allPlugins.filter((p: any) => p.driver_key && p.is_active)
+        const drivers = allPlugins.filter(p => p.driver_key && p.is_active)
         select.innerHTML = '<option value="">' + t('printers.selectDriver') + '</option>'
-          + drivers.map((d: any) => `<option value="${d.driver_key}">${d.name}</option>`).join('')
+          + drivers.map(d => `<option value="${d.driver_key}">${d.name}</option>`).join('')
       } catch {
         console.error('Failed to load drivers')
       }
     }
 
-    function renderConfigFields(driverKey: string, existingConfig?: Record<string, any>) {
+    function renderConfigFields(driverKey: string, existingConfig?: Record<string, unknown>) {
       const container = document.getElementById('config-fields')!
       container.innerHTML = ''
       editingConfigSchema = null
       editingConfigValues = existingConfig || {}
       if (!driverKey) return
 
-      const plugin = allPlugins.find((p: any) => p.driver_key === driverKey)
-      if (!plugin?.config_schema?.properties) return
-
-      const schema = plugin.config_schema
-      editingConfigSchema = schema.properties
-      const required: string[] = schema.required || []
+      const schema = allPlugins.find(p => p.driver_key === driverKey)?.config_schema
+      const properties = schema?.properties
+      if (!properties) return
+      editingConfigSchema = properties
+      const required = schema?.required || []
       
-      for (const [key, prop] of Object.entries(schema.properties) as [string, any][]) {
+      for (const [key, prop] of Object.entries(properties)) {
         const div = document.createElement('div')
         
         const label = document.createElement('label')
@@ -456,8 +462,8 @@ import Layout from '../../layouts/Layout.astro'
           select.className = 'fm-input'
           if (required.includes(key)) select.required = true
           
-          const enumNames: string[] = prop.enumNames || prop.enum
-          prop.enum.forEach((val: string, i: number) => {
+          const enumNames = prop.enumNames || prop.enum
+          prop.enum.forEach((val, i) => {
             const opt = document.createElement('option')
             opt.value = String(val)
             opt.textContent = String(enumNames[i] ?? val)
@@ -505,7 +511,7 @@ import Layout from '../../layouts/Layout.astro'
       btn.disabled = true
       btn.textContent = '...'
       // Reset all online badges to '—' before reconnecting
-      printers.forEach((p: any) => {
+      printers.forEach(p => {
         const badge = document.getElementById(`online-badge-${p.id}`)
         if (badge) {
           badge.textContent = '—'
@@ -514,7 +520,7 @@ import Layout from '../../layouts/Layout.astro'
       })
       try {
         await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include', signal: getAbortSignal() })
-        await (window as any).__fmSuccess(t('printers.reconnectDone'))
+        await dialogs.__fmSuccess(t('printers.reconnectDone'))
       } catch {}
       await fetchHealthForAll()
       btn.disabled = false

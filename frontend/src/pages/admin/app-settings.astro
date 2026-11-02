@@ -1,12 +1,11 @@
 ---
 import Layout from '../../layouts/Layout.astro'
 import FormSection from '../../components/FormSection.astro'
-import SettingsTitle from '../../components/SettingsTitle.astro'
 ---
 <Layout title="FilaMan - App Settings">
 <div class="fm-settings-page">
-  <header class="fm-settings-toolbar">
-    <div><a href="/admin">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a><SettingsTitle titleKey="admin.appSettingsTitle" title="App Settings" /></div>
+  <header class="fm-list-toolbar">
+    <div><a href="/admin" class="fm-admin-back">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a><h1 data-i18n="admin.appSettingsTitle">App Settings</h1></div>
     <button type="submit" form="app-settings-form" id="save-btn" disabled class="fm-btn fm-btn-primary" data-i18n="admin.appSettingsSave">Save</button>
   </header>
   <form id="app-settings-form" class="fm-settings-grid">

@@ -1,10 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs'
-import { createSourceFile, isImportDeclaration, ScriptTarget, transpileModule } from 'typescript'
-import { experimental_AstroContainer as AstroContainer } from 'astro/container'
-import FormDialog from '../components/FormDialog.astro'
-import FormSection from '../components/FormSection.astro'
-import ColorEditorFields from '../components/ColorEditorFields.astro'
+import { bootAstroPage } from '../../tests/helpers/astro-page'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as dialog from './form-dialog'
 import * as state from './form-state'
@@ -16,43 +11,24 @@ import * as escape from './extra-fields'
 import * as actions from './table-actions'
 import * as colors from './colors'
 import * as filters from './table-column-filters'
+import { api } from './api'
+import { createExtraFieldDefinitionDialog } from './extra-field-definition-dialog'
+import { copyText } from './clipboard'
 
 const calls: { path: string; init?: RequestInit }[] = []
 let failSave = false
+let fixtureColorHex = '#12345680'
 let intercept: ((path: string, init?: RequestInit) => Response | Promise<Response> | undefined) | undefined
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
-  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters,
-  fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: '#12345680', usage_count: 1 }] }),
+  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, api, createExtraFieldDefinitionDialog, copyText,
+  fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
   cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', spool_count: 1 }] }),
 }
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-async function boot(path: string) {
-  const container = await AstroContainer.create()
-  const page = readFileSync(`src/pages/${path}.astro`, 'utf8')
-  let html = page.match(/<Layout[^>]*>([\s\S]*?)<script>/)![1]
-  for (const match of [...html.matchAll(/<FormDialog([^>]*)>([\s\S]*?)<\/FormDialog>/g)]) {
-    const props = Object.fromEntries([...match[1].matchAll(/(\w+)="([^"]*)"/g)].map(attr => [attr[1], attr[2]]))
-    const actions = match[2].match(/<Fragment slot="actions">([\s\S]*?)<\/Fragment>/)![1]
-    const body = match[2].replace(/<Fragment slot="actions">[\s\S]*?<\/Fragment>/, '')
-    html = html.replace(match[0], await container.renderToString(FormDialog, { props, slots: { actions, default: body } }))
-  }
-  for (const match of [...html.matchAll(/<FormSection([^>]*)>([\s\S]*?)<\/FormSection>/g)]) {
-    const props = Object.fromEntries([...match[1].matchAll(/(\w+)="([^"]*)"/g)].map(attr => [attr[1], attr[2]]))
-    const actions = match[2].match(/<Fragment slot="actions">([\s\S]*?)<\/Fragment>/)?.[1] || ''
-    const body = match[2].replace(/<Fragment slot="actions">[\s\S]*?<\/Fragment>/, '')
-    html = html.replace(match[0], await container.renderToString(FormSection, { props, slots: { actions, default: body } }))
-  }
-  if (html.includes('<ColorEditorFields')) html = html.replace('<ColorEditorFields idPrefix="color" />', await container.renderToString(ColorEditorFields, { props: { idPrefix: 'color' } }))
-  document.body.innerHTML = html
-  const source = page.match(/<script>([\s\S]*?)<\/script>/)![1]
-  const parsed = createSourceFile('page.ts', source, ScriptTarget.Latest, true)
-  const production = parsed.statements.filter(node => !isImportDeclaration(node)).map(node => node.getText(parsed)).join('\n')
-  await new AsyncFunction(...Object.keys(dependencies), transpileModule(production, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText)(...Object.values(dependencies))
-}
+const boot = (path: string) => bootAstroPage(path, dependencies)
 function change(id: string, value: string | boolean) {
   const input = document.getElementById(id) as HTMLInputElement
   if (typeof value === 'boolean') input.checked = value
@@ -65,6 +41,7 @@ function writes() { return calls.filter(call => call.init?.method && call.init.m
 beforeEach(() => {
   calls.length = 0
   failSave = false
+  fixtureColorHex = '#12345680'
   intercept = undefined
   localStorage.clear()
   localStorage.setItem('lang', 'en')
@@ -74,7 +51,7 @@ beforeEach(() => {
     calls.push({ path, init })
     const overridden = intercept?.(path, init)
     if (overridden) return overridden
-    if (init?.method) return failSave ? Response.json({ message: 'Save failed' }, { status: 400 }) : Response.json({ success: true })
+    if (init?.method && init.method !== 'GET') return failSave ? Response.json({ message: 'Save failed' }, { status: 400 }) : Response.json({ success: true })
     if (path === '/api/v1/me') return Response.json({ email: 'test@example.com', display_name: 'Test', language: 'en' })
     if (path.includes('app-settings')) return Response.json(settings)
     if (path.includes('/admin/system/plugins')) return Response.json([{ driver_key: 'moonraker', plugin_type: 'printer_driver', is_active: true, config_schema: { properties: { url: { type: 'string' }, enabled: { type: 'boolean' }, targets: { type: 'array' } } } }])
@@ -209,4 +186,148 @@ it('ignores a late RFID write response after Escape and reopening the dialog', a
   expect(document.querySelector<HTMLButtonElement>('#rfid-confirm')!.disabled).toBe(false)
   expect(document.querySelector('#rfid-status')!.classList.contains('hidden')).toBe(true)
   document.querySelector<HTMLButtonElement>('#rfid-cancel')!.click()
+})
+
+it('keeps user management usable when the role catalog is forbidden, without changing roles', async () => {
+  const user = { id: 7, email: 'editor@example.com', display_name: 'Editor', roles: ['operator'], is_superadmin: false, is_active: true }
+  intercept = (path, init) => {
+    if (path === '/api/v1/admin/roles') return Response.json({ detail: 'Role management required' }, { status: 403 })
+    if (path === '/api/v1/admin/users' && init?.method === 'GET') return Response.json({ items: [user] })
+    if (path === '/api/v1/admin/users/7' && init?.method === 'GET') return Response.json(user)
+    if (path === '/api/v1/me') return Response.json({ id: 1, email: 'admin@example.com', display_name: 'Admin', is_active: true, is_superadmin: false, roles: ['user_admin'] })
+  }
+  await boot('admin/users')
+  await vi.waitFor(() => expect(document.querySelector('#users-table')!.textContent).toContain(user.email))
+  expect(document.querySelector('#users-table')!.textContent).toContain('operator')
+  expect(document.querySelector('.btn-delete')).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('.btn-reset')!.click()
+  change('reset-password', 'example-password')
+  submit('reset-form')
+  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#password-modal')!.open).toBe(false))
+  expect(writes()[0].path).toBe('/api/v1/admin/users/7/reset-password')
+  document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#user-id')!.value).toBe('7'))
+  expect(document.querySelector('#roles-checkboxes')!.textContent).toBe(i18n.t('admin.rolesUnavailable'))
+  change('user-display-name', 'Updated editor')
+  submit('modal-form')
+  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(false))
+  expect(JSON.parse(String(writes()[1].init!.body))).toEqual({ email: user.email, display_name: 'Updated editor', is_superadmin: false })
+  expect(writes().some(call => call.path.endsWith('/roles'))).toBe(false)
+})
+
+it('keeps the user draft open when role assignment fails, then retries without creating another user', async () => {
+  let rejectRoles = true
+  const user = { id: 7, email: 'editor@example.com', display_name: 'Editor', roles: ['editor'], is_superadmin: false, is_active: true }
+  intercept = (path, init) => {
+    if (path === '/api/v1/admin/roles') return Response.json([{ key: 'editor', name: 'Editor' }])
+    if (path === '/api/v1/admin/users' && (!init?.method || init.method === 'GET')) return Response.json({ items: [user] })
+    if (path === '/api/v1/admin/users/7' && (!init?.method || init.method === 'GET')) return Response.json(user)
+    if (path === '/api/v1/admin/users/7/roles' && init?.method === 'PUT') return rejectRoles
+      ? Response.json({ detail: { message: 'Role update denied' } }, { status: 403 }) : Response.json({ success: true })
+  }
+  await boot('admin/users')
+  await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#user-email')!.value).toBe(user.email))
+  change('user-display-name', 'Updated editor')
+  submit('modal-form')
+  await vi.waitFor(() => expect(document.querySelector('#modal-error')!.textContent).toBe('Role update denied'))
+  expect(document.querySelector<HTMLInputElement>('#user-display-name')!.value).toBe('Updated editor')
+  expect(document.querySelector<HTMLButtonElement>('#modal-submit')!.disabled).toBe(false)
+  rejectRoles = false
+  submit('modal-form')
+  await vi.waitFor(() => expect(writes().filter(call => call.path.endsWith('/roles'))).toHaveLength(2))
+  expect(writes().some(call => call.init?.method === 'POST')).toBe(false)
+})
+
+it('keeps a newly created user identity after failed role assignment so retry cannot create a duplicate', async () => {
+  let rejectRoles = true
+  let created = false
+  intercept = (path, init) => {
+    if (path === '/api/v1/admin/users' && init?.method === 'POST') { created = true; return Response.json({ id: 7 }) }
+    if (path === '/api/v1/admin/users' && (!init?.method || init.method === 'GET')) return Response.json({ items: created ? [{ id: 7, email: 'new@example.com', is_active: true }] : [] })
+    if (path === '/api/v1/admin/roles') return Response.json([])
+    if (path.endsWith('/users/7/roles') && init?.method === 'PUT') return rejectRoles
+      ? Response.json({ detail: 'Could not assign roles' }, { status: 503 }) : Response.json({ success: true })
+  }
+  await boot('admin/users')
+  await vi.waitFor(() => expect(document.querySelector('#users-table')!.textContent).toContain(i18n.t('admin.noUsers')))
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click()
+  change('user-email', 'new@example.com')
+  change('user-password', 'example-password')
+  submit('modal-form')
+  await vi.waitFor(() => expect(document.querySelector('#modal-error')!.textContent).toBe('Could not assign roles'))
+  await vi.waitFor(() => expect(document.querySelector('#users-table')!.textContent).toContain('new@example.com'))
+  expect(document.querySelector<HTMLInputElement>('#user-id')!.value).toBe('7')
+  expect(document.querySelector<HTMLInputElement>('#user-password')!.value).toBe('')
+  rejectRoles = false
+  submit('modal-form')
+  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(false))
+  expect(writes().filter(call => call.path === '/api/v1/admin/users' && call.init?.method === 'POST')).toHaveLength(1)
+})
+it('keeps plugin definitions separate and protected while searching and sorting all definitions', async () => {
+  intercept = path => path === '/api/v1/system-extra-fields' ? Response.json([
+    { id: 1, target_type: 'spool', key: 'inspection', label: 'Inspection', field_type: 'text', default_value: null, source: null },
+    { id: 2, target_type: 'filament', key: 'bambuddy.flow', label: 'Flow', field_type: 'number', default_value: '0.98', source: 'bambuddy' },
+  ]) : undefined
+  await boot('admin/extra-fields')
+  expect(document.querySelector('#fields-table')!.textContent).toContain('Inspection')
+  expect(document.querySelector('#fields-table')!.textContent).not.toContain('bambuddy')
+  expect(document.querySelector('#managed-fields-table .btn-edit')).toBeNull()
+  expect(document.querySelector<HTMLAnchorElement>('#managed-fields-table a')!.getAttribute('href')).toBe('/admin/system')
+  change('fields-search', 'bambuddy')
+  expect(document.querySelector('#fields-table')!.textContent).not.toContain('Inspection')
+  expect(document.querySelector('#managed-fields-table')!.textContent).toContain('Flow')
+  change('fields-search', '')
+  const applyDefaultFilter = (operator: string) => {
+    document.querySelector<HTMLButtonElement>('#fields-list .col-default_value .fm-header-filter-trigger')!.click()
+    const panel = document.querySelector<HTMLElement>('.fm-header-filter-panel.open')!
+    const select = panel.querySelector<HTMLSelectElement>('.fm-header-filter-operator')!
+    select.value = operator
+    select.dispatchEvent(new Event('change'))
+    Array.from(panel.querySelectorAll('button')).find(button => button.textContent === i18n.t('filters.apply'))!.click()
+  }
+  applyDefaultFilter('isEmpty')
+  expect(document.querySelector('#fields-table')!.textContent).toContain('Inspection')
+  expect(document.querySelector('#managed-fields-table')!.textContent).not.toContain('Flow')
+  applyDefaultFilter('isNotEmpty')
+  expect(document.querySelector('#fields-table')!.textContent).not.toContain('Inspection')
+  expect(document.querySelector('#managed-fields-table')!.textContent).toContain('Flow')
+  expect(writes()).toHaveLength(0)
+})
+it('keeps the OIDC secret when saving other settings and resets Save after success', async () => {
+  intercept = (path, init) => path.includes('/oidc-settings/') ? Response.json(init?.method === 'PUT'
+    ? { has_client_secret: true } : { enabled: false, issuer_url: 'https://identity.example', client_id: 'app', scopes: 'openid email profile', button_text: 'Sign in', has_client_secret: true }) : undefined
+  await boot('admin/oidc')
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#client-id')!.value).toBe('app'))
+  expect([...document.querySelector<HTMLInputElement>('#oidc-enabled')!.labels!].some(label => label.textContent?.includes('Enabled'))).toBe(true)
+  for (const id of ['issuer-url', 'client-secret', 'scopes', 'button-text', 'callback-url']) {
+    const input = document.getElementById(id)!
+    for (const hint of input.getAttribute('aria-describedby')!.split(' ')) {
+      expect(input.closest('.oidc-control')!.contains(document.getElementById(hint))).toBe(true)
+    }
+  }
+  expect(document.querySelector<HTMLButtonElement>('#save-btn')!.form).toBe(document.getElementById('oidc-form'))
+  expect(document.querySelector<HTMLButtonElement>('#save-btn')!.disabled).toBe(true)
+  change('button-text', 'Sign in with SSO')
+  submit('oidc-form')
+  await vi.waitFor(() => expect(writes()).toHaveLength(1))
+  expect(JSON.parse(String(writes()[0].init!.body))).not.toHaveProperty('client_secret')
+  await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#save-btn')!.disabled).toBe(true))
+})
+
+it('mutes Save after reverting an opaque color through the opacity controls', async () => {
+  fixtureColorHex = '#FF0000'
+  await boot('filaments/colors')
+  await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
+  const save = document.querySelector<HTMLButtonElement>('#modal-submit')!
+  expect(save.disabled).toBe(true)
+  change('color-alpha-enabled', true)
+  change('color-alpha-value', '50')
+  expect(save.disabled).toBe(false)
+  change('color-alpha-enabled', false)
+  expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#FF0000')
+  expect(save.disabled).toBe(true)
+  expect(writes()).toHaveLength(0)
 })

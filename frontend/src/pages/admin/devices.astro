@@ -1,162 +1,100 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
+import FormDialog from '../../components/FormDialog.astro'
 ---
-
 <Layout title="FilaMan - Admin Devices">
-  <style>
-    .device-dialog {
-      width: calc(100% - 2rem);
-      max-width: 28rem;
-      max-height: calc(100vh - 2rem);
-      margin: auto;
-      padding: 24px;
-      color: var(--text);
-      overflow-y: auto;
-    }
+  <div class="fm-admin-page">
+    <AdminHeader titleKey="admin.deviceTokens" title="Device Tokens">
+      <button type="button" id="btn-new" class="fm-btn fm-btn-primary" data-i18n="admin.createDevice">Create Device</button>
+    </AdminHeader>
+    <div class="fm-card fm-admin-table">
+      <table class="fm-table">
+        <thead><tr>
+          <th data-i18n="common.name">Name</th><th data-i18n="common.status">Status</th>
+          <th data-i18n="admin.ipAddress">IP Address</th><th data-i18n="admin.autoAssign">Auto-Assign</th>
+          <th data-i18n="admin.lastUsed">Last Used</th><th style="text-align:right" data-i18n="common.actions">Actions</th>
+        </tr></thead>
+        <tbody id="devices-table"><tr><td colspan="6" data-i18n="common.loading">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 
-    .device-dialog::backdrop {
-      background: rgba(0, 0, 0, 0.55);
-    }
-  </style>
+  <template id="device-editor-template">
+    <form id="edit-form" class="fm-inline-editor fm-compact-form">
+        <div class="fm-admin-actions device-edit-heading">
+          <strong data-i18n="admin.editDevice">Edit Device</strong>
+          <button type="submit" id="edit-submit" class="fm-btn fm-btn-primary" disabled data-i18n="common.save">Save</button>
+          <button type="button" id="edit-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+        </div>
+        <div><label for="edit-device-name" class="fm-label" data-i18n="common.name">Name</label><input type="text" id="edit-device-name" required class="fm-input" /></div>
+        <div class="fm-settings-row"><label for="edit-auto-assign" data-i18n="admin.autoAssignEnabled">Enable Auto-Assign</label><label class="fm-toggle"><input type="checkbox" id="edit-auto-assign" /><span class="fm-toggle-slider"></span></label></div>
+        <div id="edit-timeout-group"><label for="edit-auto-timeout" class="fm-label" data-i18n="admin.autoAssignTimeout">Timeout (seconds)</label><input type="number" id="edit-auto-timeout" min="10" max="300" step="1" class="fm-input" /></div>
+        <div id="edit-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </template>
 
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-  
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.deviceTokens">Device Tokens</h1>
-    <button
-      id="btn-new"
-      class="fm-btn fm-btn-primary"
-      data-i18n="admin.createDevice"
-    >
-      Create Device
-    </button>
-  </div>
-  
-  <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
-      <thead style="background: var(--bg-soft);">
-        <tr>
-          <th data-i18n="common.name">Name</th>
-          <th data-i18n="common.status">Status</th>
-          <th data-i18n="admin.ipAddress">IP Address</th>
-          <th data-i18n="admin.autoAssign">Auto-Assign</th>
-          <th data-i18n="admin.lastUsed">Last Used</th>
-          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="devices-table">
-        <tr>
-          <td colspan="6" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  
-  <dialog id="modal-container" class="fm-card device-dialog" aria-labelledby="modal-title">
-    <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.createDevice">Create Device</h3>
-    <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
-      <div>
-        <label for="device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
-        <input type="text" id="device-name" required class="fm-input" />
-      </div>
+  <FormDialog id="modal-container" titleId="modal-title" titleKey="admin.createDevice" title="Create Device">
+    <Fragment slot="actions">
+      <button type="submit" form="modal-form" id="modal-submit" class="fm-btn fm-btn-primary" disabled data-i18n="common.create">Create</button>
+      <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-dialog-close data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="modal-form" class="fm-compact-form">
+      <div><label for="device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label><input type="text" id="device-name" required class="fm-input" /></div>
       <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
-      <div style="display: flex; gap: 12px;">
-        <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.create">Create</button>
-        <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-      </div>
     </form>
-  </dialog>
-  
-  <dialog id="token-modal" class="fm-card device-dialog" aria-labelledby="token-modal-title">
-    <h3 id="token-modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.tokenCreated">Device Token Created</h3>
-    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;" data-i18n="admin.tokenWarning">Copy this token now. It will not be shown again.</p>
+  </FormDialog>
+  <FormDialog id="token-modal" titleId="token-modal-title" titleKey="admin.tokenCreated" title="Device Token Created">
+    <Fragment slot="actions"><button type="button" id="token-close" class="fm-btn fm-btn-outline" data-i18n="common.close">Close</button></Fragment>
+    <p class="fm-field-hint" data-i18n="admin.tokenWarning">Copy this token now. It will not be shown again.</p>
     <label for="token-display" class="fm-visually-hidden" data-i18n="admin.deviceCode">Device code</label>
-    <input readonly class="fm-input" style="font-family: monospace; font-size: 0.85rem; margin-bottom: 16px;" id="token-display" />
-    <div id="token-copy-error" class="fm-alert-error hidden" role="alert" style="margin-bottom: 16px;"></div>
-    <button type="button" id="token-copy" class="fm-btn fm-btn-primary" style="width: 100%;" data-i18n="admin.copyToClipboard">Copy to Clipboard</button>
-    <button type="button" id="token-close" class="fm-btn fm-btn-outline" style="width: 100%; margin-top: 8px;" data-i18n="common.close">Close</button>
-  </dialog>
-  
-  <dialog id="edit-modal" class="fm-card device-dialog" aria-labelledby="edit-modal-title">
-    <h3 id="edit-modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.editDevice">Edit Device</h3>
-    <form id="edit-form" style="display: flex; flex-direction: column; gap: 16px;">
-      <input type="hidden" id="edit-device-id" />
-      <div>
-        <label for="edit-device-name" class="fm-label"><span data-i18n="common.name">Name</span> *</label>
-        <input type="text" id="edit-device-name" required class="fm-input" />
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <input type="checkbox" id="edit-auto-assign" style="width: 18px; height: 18px; cursor: pointer;" />
-        <label for="edit-auto-assign" style="cursor: pointer; font-size: 0.9rem;" data-i18n="admin.autoAssignEnabled">Enable Auto-Assign</label>
-      </div>
-      <div id="edit-timeout-group">
-        <label for="edit-auto-timeout" class="fm-label"><span data-i18n="admin.autoAssignTimeout">Timeout (seconds)</span></label>
-        <input type="number" id="edit-auto-timeout" min="10" max="300" step="1" class="fm-input" />
-      </div>
-      <div id="edit-error" class="fm-alert-error hidden" role="alert"></div>
-      <div style="display: flex; gap: 12px;">
-        <button type="submit" id="edit-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
-        <button type="button" id="edit-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-      </div>
-    </form>
-  </dialog>
-  
+    <input readonly class="fm-input" id="token-display" />
+    <div id="token-copy-error" class="fm-alert-error hidden" role="alert"></div>
+    <button type="button" id="token-copy" class="fm-btn fm-btn-primary" data-i18n="admin.copyToClipboard">Copy to Clipboard</button>
+  </FormDialog>
+  <style>
+    .device-edit-heading { justify-content: flex-end; }
+    .device-edit-heading strong { margin-right: auto; }
+    #edit-auto-timeout { width: 7rem; }
+    #edit-timeout-group[hidden] { display: none; }
+    #token-display { font-family: monospace; }
+  </style>
   <script>
-    import { t, initI18n } from '../../lib/i18n'
+    import { t, initI18n, translatePage } from '../../lib/i18n'
     import { isAbortError } from '../../lib/abort'
     import { copyText } from '../../lib/clipboard'
     import { escapeHtml } from '../../lib/extra-fields'
     import { api, fetchAllPages } from '../../lib/api'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormState } from '../../lib/form-state'
+    import { tableAction } from '../../lib/table-actions'
     await initI18n()
 
     interface DeviceRecord {
-      id: number
-      name: string
-      is_active: boolean
-      registration_pending: boolean
-      ip_address: string | null
-      auto_assign_enabled: boolean
-      auto_assign_timeout: number
-      last_used_at: string | null
-      is_online: boolean
+      id: number; name: string; is_active: boolean; registration_pending: boolean
+      ip_address: string | null; auto_assign_enabled: boolean; auto_assign_timeout: number
+      last_used_at: string | null; is_online: boolean
     }
-
     type DeviceAdminWindow = {
       __fmAlert: (message: string) => Promise<boolean>
       __fmConfirm: (message: string) => Promise<boolean>
     }
-
     const dialogWindow = window as unknown as DeviceAdminWindow
-    const createModal = document.getElementById('modal-container') as HTMLDialogElement
+    const createForm = document.getElementById('modal-form') as HTMLFormElement
+    const createButton = document.getElementById('modal-submit') as HTMLButtonElement
+    const createState = bindFormState(createForm, createButton)
+    const createDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !createState.busy })
     const tokenModal = document.getElementById('token-modal') as HTMLDialogElement
-    const editModal = document.getElementById('edit-modal') as HTMLDialogElement
-    const modals = [createModal, tokenModal, editModal]
+    let tokenAcknowledged = false
+    // A one-time code needs explicit acknowledgement and must not remain in hidden markup.
+    const tokenDialog = bindFormDialog(tokenModal, {
+      canClose: () => tokenAcknowledged,
+      onClose: () => { (document.getElementById('token-display') as HTMLInputElement).value = '' },
+    })
     let devices: DeviceRecord[] = []
-    let returnFocus: HTMLElement | null = null
+    let editor: { row: HTMLTableRowElement; state: ReturnType<typeof bindFormState>; opener: HTMLButtonElement } | null = null
+    let pendingAction = true
 
-    function openModal(modal: HTMLDialogElement, initialFocus: HTMLElement) {
-      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      modal.showModal()
-      initialFocus.focus()
-    }
-
-    function closeModal(modal: HTMLDialogElement) {
-      modal.close()
-    }
-
-    modals.forEach(modal => {
-      modal.addEventListener('close', () => {
-        returnFocus?.focus()
-        returnFocus = null
-      })
-    })
-
-    tokenModal.addEventListener('cancel', event => {
-      event.preventDefault()
-    })
-    
     async function loadDevices() {
       try {
         devices = (await fetchAllPages<DeviceRecord>('/api/v1/admin/devices')).items
@@ -164,221 +102,156 @@ import Layout from '../../layouts/Layout.astro'
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load devices:', error)
-        document.getElementById('devices-table')!.innerHTML = `
-          <tr><td colspan="6" role="alert" style="text-align: center; color: var(--error-text);">
-            ${t('admin.failedLoadDevices')}
-          </td></tr>
-        `
+        document.getElementById('devices-table')!.innerHTML = `<tr><td colspan="6" role="alert" style="color:var(--error-text)">${escapeHtml(t('admin.failedLoadDevices'))}</td></tr>`
       }
     }
-    
     function renderDevices() {
       const tbody = document.getElementById('devices-table')!
-      
-      if (devices.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">${t('admin.noDevices')}</td></tr>`
-        return
-      }
-      
-      tbody.innerHTML = devices.map(d => {
-        // Determine status
-        let statusLabel = t('common.active')
-        let statusColor = 'var(--accent-2)' // Green
-        
-        if (!d.is_active) {
-          if (d.registration_pending) {
-            statusLabel = t('admin.pending')
-            statusColor = 'orange'
-          } else {
-            statusLabel = t('admin.inactive')
-            statusColor = 'var(--error-text)'
-          }
-        } else if (d.is_online) {
-          statusLabel = t('common.online')
-          statusColor = 'var(--accent-2)'
-        } else {
-          statusLabel = t('common.offline')
-          statusColor = 'var(--text-muted)'
-        }
-        const deviceHost = d.ip_address?.includes(':') ? `[${d.ip_address}]` : d.ip_address
-        
-        return `
-        <tr>
-          <td>${escapeHtml(d.name)}</td>
-          <td>
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${statusColor}; border: 1px solid ${statusColor}40;">
-              ${statusLabel}
-            </span>
-          </td>
-          <td style="font-family: monospace; font-size: 0.85rem;">
-            ${deviceHost ? `<a href="http://${escapeHtml(deviceHost)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: none;">${escapeHtml(d.ip_address!)}</a>` : '-'}
-          </td>
-          <td>
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${d.auto_assign_enabled ? 'var(--accent-2)' : 'var(--text-muted)'}; border: 1px solid ${d.auto_assign_enabled ? 'var(--accent-2)' : 'var(--text-muted)'}40;">
-              ${d.auto_assign_enabled ? t('common.on') : t('common.off')}
-            </span>
-          </td>
-          <td style="color: var(--text-muted); font-size: 0.85rem;">${d.last_used_at ? new Date(d.last_used_at).toLocaleString() : t('common.never')}</td>
-          <td style="text-align: right; white-space: nowrap;">
-            <button data-id="${d.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 8px;">${t('common.edit')}</button>
-            <button data-id="${d.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
-          </td>
-        </tr>
-      `
-      }).join('')
-      
-      document.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const button = e.currentTarget as HTMLButtonElement
-          const id = parseInt(button.dataset.id!)
-          
+      tbody.innerHTML = devices.length ? devices.map(device => {
+        const status = !device.is_active ? device.registration_pending ? 'admin.pending' : 'admin.inactive' : device.is_online ? 'common.online' : 'common.offline'
+        const statusColor = !device.is_active ? device.registration_pending ? 'var(--accent-3)' : 'var(--error-text)' : device.is_online ? 'var(--accent-2)' : 'var(--text-muted)'
+        const host = device.ip_address?.includes(':') ? `[${device.ip_address}]` : device.ip_address
+        return `<tr data-device-id="${device.id}">
+          <td>${escapeHtml(device.name)}</td>
+          <td><span class="fm-pill" style="color:${statusColor};border-color:${statusColor}">${escapeHtml(t(status))}</span></td>
+          <td style="font-family:monospace">${host ? `<a href="http://${escapeHtml(host)}" target="_blank" rel="noopener noreferrer">${escapeHtml(device.ip_address!)}</a>` : '—'}</td>
+          <td><span class="fm-pill">${escapeHtml(t(device.auto_assign_enabled ? 'common.on' : 'common.off'))}</span></td>
+          <td>${device.last_used_at ? escapeHtml(new Date(device.last_used_at).toLocaleString()) : escapeHtml(t('common.never'))}</td>
+          <td style="text-align:right"><span class="fm-row-actions">${tableAction('edit', { id: device.id })}${tableAction('delete', { id: device.id })}</span></td>
+        </tr>`
+      }).join('') : `<tr><td colspan="6">${escapeHtml(t('admin.noDevices'))}</td></tr>`
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach(button => button.addEventListener('click', () => {
+        const device = devices.find(item => item.id === Number(button.dataset.id))
+        if (device && !editor && !pendingAction) openEditor(device, button)
+      }))
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-delete').forEach(button => button.addEventListener('click', async () => {
+        if (editor || pendingAction) return
+        pendingAction = true
+        updateRowActions()
+        try {
           if (!(await dialogWindow.__fmConfirm(t('admin.confirmDeleteDevice')))) return
-          
-          try {
-            await api.delete(`/admin/devices/${id}`)
-            loadDevices()
-          } catch (err: unknown) {
-            if (isAbortError(err)) return
-            console.error('Delete device error:', err)
-            await dialogWindow.__fmAlert(
-              err instanceof Error ? err.message : t('admin.failedDeleteDevice'),
-            )
-          }
-        })
-      })
-      
-      document.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const button = e.currentTarget as HTMLButtonElement
-          const id = parseInt(button.dataset.id!)
-          const device = devices.find(d => d.id === id)
-          if (!device) return
-          
-          ;(document.getElementById('edit-device-id') as HTMLInputElement).value = String(device.id)
-          ;(document.getElementById('edit-device-name') as HTMLInputElement).value = device.name
-          ;(document.getElementById('edit-auto-assign') as HTMLInputElement).checked = device.auto_assign_enabled || false
-          ;(document.getElementById('edit-auto-timeout') as HTMLInputElement).value = String(device.auto_assign_timeout || 60)
-          toggleTimeoutVisibility()
-          openModal(
-            editModal,
-            document.getElementById('edit-device-name')!,
-          )
-        })
-      })
+          await api.delete(`/admin/devices/${button.dataset.id}`)
+          await loadDevices()
+        }
+        catch (error) {
+          if (!isAbortError(error)) await dialogWindow.__fmAlert(error instanceof Error ? error.message : t('admin.failedDeleteDevice'))
+        } finally { pendingAction = false; updateRowActions() }
+      }))
+      updateRowActions()
     }
-    
+    function updateRowActions() {
+      document.querySelectorAll<HTMLButtonElement>('#devices-table .btn-edit, #devices-table .btn-delete, #btn-new').forEach(button => { button.disabled = pendingAction || editor !== null })
+    }
+    function closeEditor() {
+      if (!editor || editor.state.busy) return
+      const { row, opener } = editor
+      editor = null
+      row.remove()
+      updateRowActions()
+      if (opener.isConnected) opener.focus()
+    }
+    function openEditor(device: DeviceRecord, opener: HTMLButtonElement) {
+      const template = document.getElementById('device-editor-template') as HTMLTemplateElement
+      const row = document.createElement('tr')
+      row.id = 'device-editor-row'
+      const cell = row.insertCell()
+      cell.colSpan = 6
+      const form = template.content.firstElementChild!.cloneNode(true) as HTMLFormElement
+      cell.append(form)
+      opener.closest('tr')!.after(row)
+      translatePage()
+      const name = row.querySelector<HTMLInputElement>('#edit-device-name')!
+      const autoAssign = row.querySelector<HTMLInputElement>('#edit-auto-assign')!
+      const timeout = row.querySelector<HTMLInputElement>('#edit-auto-timeout')!
+      const group = row.querySelector<HTMLElement>('#edit-timeout-group')!
+      const submit = row.querySelector<HTMLButtonElement>('#edit-submit')!
+      const cancel = row.querySelector<HTMLButtonElement>('#edit-cancel')!
+      const error = row.querySelector<HTMLElement>('#edit-error')!
+      name.value = device.name
+      autoAssign.checked = device.auto_assign_enabled
+      timeout.value = String(device.auto_assign_timeout || 60)
+      const toggleTimeout = () => { group.hidden = !autoAssign.checked }
+      toggleTimeout()
+      autoAssign.addEventListener('change', toggleTimeout)
+      const state = bindFormState(form, submit)
+      state.reset()
+      editor = { row, state, opener }
+      updateRowActions()
+      cancel.addEventListener('click', closeEditor)
+      form.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closeEditor() } })
+      form.addEventListener('submit', async event => {
+        event.preventDefault()
+        if (state.busy || submit.disabled || !form.reportValidity()) return
+        error.classList.add('hidden')
+        pendingAction = true
+        state.setBusy(true)
+        cancel.disabled = true
+        submit.textContent = t('common.saving')
+        try {
+          await api.put(`/admin/devices/${device.id}`, { name: name.value, auto_assign_enabled: autoAssign.checked, auto_assign_timeout: parseInt(timeout.value) || 60 })
+          state.setBusy(false)
+          closeEditor()
+          await loadDevices()
+        } catch (failure) {
+          if (!isAbortError(failure)) { error.textContent = failure instanceof Error ? failure.message : t('admin.failedUpdateDevice'); error.classList.remove('hidden') }
+        } finally {
+          pendingAction = false
+          state.setBusy(false)
+          cancel.disabled = false
+          submit.textContent = t('common.save')
+          updateRowActions()
+          if (!editor) document.querySelector<HTMLButtonElement>(`tr[data-device-id="${device.id}"] .btn-edit`)?.focus()
+        }
+      })
+      name.focus()
+    }
     function showToken(token: string) {
-      const display = document.getElementById('token-display') as HTMLInputElement
-      const copyButton = document.getElementById('token-copy') as HTMLButtonElement
-      
-      display.value = token
-      copyButton.textContent = t('admin.copyToClipboard')
+      tokenAcknowledged = false
+      ;(document.getElementById('token-display') as HTMLInputElement).value = token
+      const copy = document.getElementById('token-copy') as HTMLButtonElement
+      copy.textContent = t('admin.copyToClipboard')
       document.getElementById('token-copy-error')!.classList.add('hidden')
-      openModal(tokenModal, copyButton)
+      tokenDialog.open()
+      copy.focus()
     }
-    
-    document.getElementById('token-copy')?.addEventListener('click', async () => {
+    document.getElementById('token-copy')!.addEventListener('click', async () => {
       const display = document.getElementById('token-display') as HTMLInputElement
-      const copyError = document.getElementById('token-copy-error')!
+      const error = document.getElementById('token-copy-error')!
       if (await copyText(display.value)) {
-        copyError.classList.add('hidden')
-        ;(document.getElementById('token-copy') as HTMLButtonElement).textContent = t('admin.copied')
-      } else {
-        copyError.textContent = t('admin.copyFailed')
-        copyError.classList.remove('hidden')
-        display.select()
-      }
+        error.classList.add('hidden')
+        document.getElementById('token-copy')!.textContent = t('admin.copied')
+      } else { error.textContent = t('admin.copyFailed'); error.classList.remove('hidden'); display.select() }
     })
-    
-    document.getElementById('token-close')?.addEventListener('click', () => {
-      closeModal(tokenModal)
+    document.getElementById('token-close')!.addEventListener('click', () => { tokenAcknowledged = true; tokenDialog.close() })
+    document.getElementById('btn-new')!.addEventListener('click', () => {
+      if (editor || pendingAction) return
+      createForm.reset()
+      document.getElementById('modal-error')!.classList.add('hidden')
+      createState.reset()
+      createDialog.open()
+      document.getElementById('device-name')!.focus()
     })
-    
-    function toggleTimeoutVisibility() {
-      const checked = (document.getElementById('edit-auto-assign') as HTMLInputElement).checked
-      const group = document.getElementById('edit-timeout-group')!
-      group.style.display = checked ? 'block' : 'none'
-    }
-    
-    document.getElementById('edit-auto-assign')?.addEventListener('change', toggleTimeoutVisibility)
-    
-    document.getElementById('edit-cancel')?.addEventListener('click', () => {
-      closeModal(editModal)
-    })
-    
-    document.getElementById('edit-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      
-      const deviceId = (document.getElementById('edit-device-id') as HTMLInputElement).value
-      const name = (document.getElementById('edit-device-name') as HTMLInputElement).value
-      const autoAssign = (document.getElementById('edit-auto-assign') as HTMLInputElement).checked
-      const timeout = parseInt((document.getElementById('edit-auto-timeout') as HTMLInputElement).value) || 60
-      
-      const error = document.getElementById('edit-error') as HTMLDivElement
-      const submitBtn = document.getElementById('edit-submit') as HTMLButtonElement
-      
+    createForm.addEventListener('submit', async event => {
+      event.preventDefault()
+      if (pendingAction || editor || createState.busy || createButton.disabled || !createForm.reportValidity()) return
+      const error = document.getElementById('modal-error')!
       error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.saving')
-      
+      pendingAction = true
+      updateRowActions()
+      createState.setBusy(true)
+      createButton.textContent = t('common.creating')
       try {
-        await api.put(`/admin/devices/${deviceId}`, {
-          name,
-          auto_assign_enabled: autoAssign,
-          auto_assign_timeout: timeout,
-        })
-        
-        closeModal(editModal)
-        loadDevices()
-      } catch (err: unknown) {
-        if (isAbortError(err)) return
-        error.textContent = err instanceof Error ? err.message : t('admin.failedUpdateDevice')
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.save')
-      }
-    })
-    
-    document.getElementById('btn-new')?.addEventListener('click', () => {
-      ;(document.getElementById('device-name') as HTMLInputElement).value = ''
-      openModal(
-        createModal,
-        document.getElementById('device-name')!,
-      )
-    })
-    
-    document.getElementById('modal-cancel')?.addEventListener('click', () => {
-      closeModal(createModal)
-    })
-    
-    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      
-      const name = (document.getElementById('device-name') as HTMLInputElement).value
-      
-      const error = document.getElementById('modal-error') as HTMLDivElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
-      
-      error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.creating')
-      
-      try {
+        const name = (document.getElementById('device-name') as HTMLInputElement).value
         const data = await api.post<{ device_code: string }>('/admin/devices', { name })
-        closeModal(createModal)
+        createState.setBusy(false)
+        createDialog.close()
         showToken(data.device_code)
-        loadDevices()
-      } catch (err: unknown) {
-        if (isAbortError(err)) return
-        error.textContent = err instanceof Error ? err.message : t('admin.failedCreateDevice')
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.create')
-      }
+        await loadDevices()
+      } catch (failure) {
+        if (!isAbortError(failure)) { error.textContent = failure instanceof Error ? failure.message : t('admin.failedCreateDevice'); error.classList.remove('hidden') }
+      } finally { pendingAction = false; createState.setBusy(false); createButton.textContent = t('common.create'); updateRowActions() }
     })
-    
-    loadDevices()
+    updateRowActions()
+    loadDevices().finally(() => { pendingAction = false; updateRowActions() })
   </script>
 </Layout>

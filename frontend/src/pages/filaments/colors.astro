@@ -6,12 +6,7 @@ import Layout from '../../layouts/Layout.astro'
 
 <Layout title="FilaMan - Manage Colors">
   <div class="fm-list-toolbar">
-    <div style="display: flex; align-items: center; gap: 16px;">
-      <a href="/filaments" class="fm-btn fm-btn-outline" style="padding: 8px;" data-i18n-title="common.back">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      </a>
-      <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="colors.title">Manage Colors</h1>
-    </div>
+    <h1 data-i18n="colors.title">Manage Colors</h1>
     <div class="fm-list-controls">
       <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="colors.addColor">Add Color</button>
@@ -19,9 +14,9 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div class="fm-card" style="padding: 0;">
-    <table class="fm-table" id="colors-list-table">
+    <table class="fm-table fm-admin-table" id="colors-list-table">
       <thead>
-        <tr style="background: var(--bg-soft);">
+        <tr>
           <th data-i18n="colors.name" data-sort="name" class="sortable col-name">Name</th>
           <th data-i18n="colors.hexCode" data-sort="hex_code" class="sortable col-hex">Hex Code</th>
           <th data-i18n="colors.usage" data-sort="usage_count" class="sortable col-usage">Usage</th>
@@ -72,16 +67,19 @@ import Layout from '../../layouts/Layout.astro'
     const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
     const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
-    let colors: any[] = []
-    let sortKey: string | null = 'name'
+    interface ColorRecord { id: number; name: string; hex_code: string; usage_count: number }
+    type ColorSortKey = 'name' | 'hex_code' | 'usage_count'
+    const dialogs = window as unknown as { __fmConfirm: (message: string) => Promise<boolean>; __fmAlert: (message: string) => Promise<boolean> }
+    const isSortKey = (key: unknown): key is ColorSortKey => key === 'name' || key === 'hex_code' || key === 'usage_count'
+    let colors: ColorRecord[] = []
+    let sortKey: ColorSortKey | null = 'name'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
     let columnFilters: Record<string, ColumnFilterValue> = {}
     let colorHeaderFilters: HeaderFilterController | null = null
-    const colorSortKeys = new Set(['name', 'hex_code', 'usage_count'])
 
     try {
-      const saved = JSON.parse(localStorage.getItem('filaman-sort-colors') || 'null')
-      if (colorSortKeys.has(saved?.key) && (saved.direction === 'asc' || saved.direction === 'desc')) {
+      const saved: unknown = JSON.parse(localStorage.getItem('filaman-sort-colors') || 'null')
+      if (saved && typeof saved === 'object' && 'key' in saved && isSortKey(saved.key) && 'direction' in saved && (saved.direction === 'asc' || saved.direction === 'desc')) {
         sortKey = saved.key
         sortDirection = saved.direction
       }
@@ -94,7 +92,7 @@ import Layout from '../../layouts/Layout.astro'
     
     async function loadColors() {
       try {
-        const data = await fetchAllPages('/api/v1/colors')
+        const data = await fetchAllPages<ColorRecord>('/api/v1/colors')
         colors = data.items
         colorHeaderFilters?.setOptions('name', colors.map(color => ({
           value: String(color.id),
@@ -119,17 +117,16 @@ import Layout from '../../layouts/Layout.astro'
     function renderColors() {
       const tbody = document.getElementById('colors-table')!
       let visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
-        const value = key === 'name' ? String(color.id) : color[key]
+        const value = key === 'name' ? String(color.id) : isSortKey(key) ? color[key] : undefined
         return matchesColumnFilter(value, filter)
       }))
       if (sortKey && sortDirection) {
         const direction = sortDirection
+        const key = sortKey
         visibleColors = [...visibleColors].sort((a, b) => {
-          const left = a[sortKey!] ?? ''
-          const right = b[sortKey!] ?? ''
-          const comparison = typeof left === 'number'
-            ? left - right
-            : String(left).localeCompare(String(right), undefined, { sensitivity: 'base' })
+          const comparison = key === 'usage_count'
+            ? a.usage_count - b.usage_count
+            : a[key].localeCompare(b[key], undefined, { sensitivity: 'base' })
           return direction === 'asc' ? comparison : -comparison
         })
       }
@@ -181,7 +178,7 @@ import Layout from '../../layouts/Layout.astro'
           
           if (usage > 0) return
           
-          if (!(await (window as any).__fmConfirm(t('colors.confirmDelete')))) return
+          if (!(await dialogs.__fmConfirm(t('colors.confirmDelete')))) return
           
           try {
             const response = await fetch(`/api/v1/colors/${id}`, {
@@ -193,13 +190,13 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              await (window as any).__fmAlert(data.message || t('colors.failedDelete'))
+              await dialogs.__fmAlert(data.message || t('colors.failedDelete'))
               return
             }
             
             loadColors()
           } catch {
-            await (window as any).__fmAlert(t('colors.failedDelete'))
+            await dialogs.__fmAlert(t('colors.failedDelete'))
           }
         })
       })
@@ -247,7 +244,8 @@ import Layout from '../../layouts/Layout.astro'
       table.tHead?.addEventListener('click', event => {
         const header = (event.target as HTMLElement).closest<HTMLElement>('th[data-sort]')
         if (!header) return
-        const key = header.dataset.sort!
+        const key = header.dataset.sort
+        if (!isSortKey(key)) return
         if (sortKey !== key) {
           sortKey = key
           sortDirection = 'asc'
@@ -293,9 +291,6 @@ import Layout from '../../layouts/Layout.astro'
       nameInput.focus()
     }
     
-    function closeModal() {
-      formDialog.close()
-    }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
     
@@ -317,6 +312,10 @@ import Layout from '../../layouts/Layout.astro'
       alphaInput,
       alphaValueInput: alphaValue,
       alphaHexInput: alphaHex,
+    })
+    // Revert hidden alpha values too, so an opaque color can return to a clean state.
+    alphaEnabled.addEventListener('change', () => {
+      if (!alphaEnabled.checked) colorControls.syncFromHex()
     })
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
@@ -354,11 +353,11 @@ import Layout from '../../layouts/Layout.astro'
         }
         
         formState.setBusy(false)
-        closeModal()
+        formDialog.close()
         loadColors()
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('colors.failedSave')
         error.classList.remove('hidden')
       } finally {
         formState.setBusy(false)

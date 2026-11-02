@@ -1,0 +1,11 @@
+---
+interface Props { titleKey: string; title: string; back?: boolean }
+const { titleKey, title, back = true } = Astro.props
+---
+<header class="fm-admin-toolbar">
+  <div>
+    {back && <a href="/admin" class="fm-admin-back">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>}
+    <h1 data-i18n={titleKey}>{title}</h1>
+  </div>
+  <div class="fm-list-controls"><slot /></div>
+</header>
