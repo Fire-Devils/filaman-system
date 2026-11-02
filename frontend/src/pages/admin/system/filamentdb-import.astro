@@ -1,46 +1,43 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
+import AdminHeader from '../../../components/AdminHeader.astro'
+import FormSection from '../../../components/FormSection.astro'
 ---
 
 <Layout title="FilaMan - FilamentDB Import">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin/system" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
-  </div>
-  
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="filamentdb.title">FilamentDB Import</h1>
-  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="filamentdb.subtitle">Import manufacturers, filaments and spool details from the FilamentDB community database.</p>
+  <div class="fm-admin-page">
+  <a href="/admin/system" class="fm-admin-back">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
+  <AdminHeader titleKey="filamentdb.title" title="FilamentDB Import" back={false} />
+  <p class="fm-admin-message" style="color: var(--text-muted);" data-i18n="filamentdb.subtitle">Import manufacturers, filaments and spool details from the FilamentDB community database.</p>
 
+  <div class="fm-admin-stack">
   <!-- Step 1: Preview & Manufacturer Selection -->
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px;" id="step-manufacturers">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">1</span>
-      <span data-i18n="filamentdb.stepManufacturers">Manufacturers</span>
-    </h2>
-    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="filamentdb.previewDesc">Load the data from FilamentDB and select which manufacturers to import.</p>
-    <button id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="filamentdb.loadPreview">Load Preview</button>
-    <div id="preview-result" style="margin-top: 16px; display: none;"></div>
+  <div id="step-manufacturers">
+    <FormSection titleKey="filamentdb.stepManufacturers" title="Manufacturers">
+      <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">1</span></Fragment>
+    <p class="fm-field-hint" data-i18n="filamentdb.previewDesc">Load the data from FilamentDB and select which manufacturers to import.</p>
+    <button style="justify-self: start;" id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="filamentdb.loadPreview">Load Preview</button>
+    <div id="preview-result" style="display: none;"></div>
+    </FormSection>
   </div>
 
   <!-- Step 2: Filament Selection -->
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-filaments">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">2</span>
-      <span data-i18n="filamentdb.stepFilaments">Filaments</span>
-    </h2>
-    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="filamentdb.selectFilamentsDesc">Fine-tune your selection — deselect individual filaments you don't need.</p>
+  <div id="step-filaments" style="opacity: 0.5; pointer-events: none;">
+    <FormSection titleKey="filamentdb.stepFilaments" title="Filaments">
+      <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">2</span></Fragment>
+    <p class="fm-field-hint" data-i18n="filamentdb.selectFilamentsDesc">Fine-tune your selection — deselect individual filaments you don't need.</p>
     <div id="filament-list" style="display: none;"></div>
     <div id="no-mfr-hint" style="color: var(--text-muted); font-size: 0.9rem; font-style: italic;" data-i18n="filamentdb.noManufacturersSelected">Select at least one manufacturer in step 1.</div>
+    </FormSection>
   </div>
 
   <!-- Step 3: Settings & Import -->
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-import">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">3</span>
-      <span data-i18n="filamentdb.stepImport">Settings &amp; Import</span>
-    </h2>
+  <div id="step-import" style="opacity: 0.5; pointer-events: none;">
+    <FormSection titleKey="filamentdb.stepImport" title="Settings &amp; Import">
+      <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">3</span></Fragment>
 
     <!-- Spool Detail Target -->
-    <div style="margin-bottom: 20px;">
+    <div class="fm-compact-form">
       <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0 0 6px;" data-i18n="filamentdb.spoolDetailTarget">Spool Detail Target</h3>
       <p style="color: var(--text-muted); margin-bottom: 12px; font-size: 0.85rem;" data-i18n="filamentdb.spoolDetailDesc">Choose where to apply spool profile data (empty weight, diameter, width, material).</p>
       <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -69,15 +66,15 @@ import Layout from '../../../layouts/Layout.astro'
     </div>
 
     <!-- Summary -->
-    <div id="import-summary" style="padding: 12px 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--border); margin-bottom: 16px;">
+    <div id="import-summary" style="padding: 12px 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--border);">
       <strong data-i18n="filamentdb.importSummary">Import Summary</strong>
       <div id="summary-text" style="font-size: 0.9rem; color: var(--text-muted); margin-top: 4px;"></div>
     </div>
 
-    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="filamentdb.importDesc">Start the import. Existing data will not be overwritten.</p>
+    <p class="fm-field-hint" data-i18n="filamentdb.importDesc">Start the import. Existing data will not be overwritten.</p>
 
     <!-- Diff-Bereich fuer existierende Filamente -->
-    <div id="diff-section" style="display: none; margin-bottom: 16px;">
+    <div id="diff-section" style="display: none;">
       <div id="diff-loading" style="padding: 16px; text-align: center; color: var(--text-muted); display: none;">
         <div style="margin-bottom: 8px;" data-i18n="filamentdb.loadingDiff">Checking for changes...</div>
         <div style="width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto;"></div>
@@ -85,14 +82,18 @@ import Layout from '../../../layouts/Layout.astro'
       <div id="diff-content"></div>
     </div>
 
-    <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.checkImport">Check</button>
-    <div id="import-progress" style="margin-top: 16px; display: none;">
+    <button style="justify-self: start;" id="btn-import" class="fm-btn fm-btn-primary" data-i18n="filamentdb.checkImport">Check</button>
+    <div id="import-progress" style="display: none;">
       <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
         <div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div>
       </div>
       <p id="import-status" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; text-align: center;" data-i18n="filamentdb.importing">Importing...</p>
     </div>
-    <div id="import-result" style="margin-top: 16px; display: none;"></div>
+    <div id="import-result" style="display: none;"></div>
+    </FormSection>
+  </div>
+
+  </div>
   </div>
 
   <script>
@@ -298,7 +299,7 @@ import Layout from '../../../layouts/Layout.astro'
             <button class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 12px;" id="btn-sel-none">${escapeHtml(t('filamentdb.deselectAll'))}</button>
             <span style="font-size: 0.85rem; color: var(--text-muted); align-self: center; margin-left: auto;" id="mfr-count"></span>
           </div>
-          <div id="mfr-list" style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm);"></div>
+          <div id="mfr-list" style="border: 1px solid var(--border); border-radius: var(--radius-sm);"></div>
         </div>
       `
 
@@ -542,7 +543,7 @@ import Layout from '../../../layouts/Layout.astro'
                 <button class="fm-btn fm-btn-outline fil-sel-none" data-mfr="${mfrId}" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
               </div>
             </div>
-            <div style="max-height: 300px; overflow-y: auto;">
+            <div>
         `
 
         for (const f of fils) {
@@ -765,7 +766,7 @@ import Layout from '../../../layouts/Layout.astro'
               <button class="fm-btn fm-btn-outline" id="diff-sel-none" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(t('filamentdb.deselectAll'))}</button>
             </div>
           </div>
-          <div style="max-height: 400px; overflow-y: auto;">
+          <div>
       `
 
       // Filamente mit Aenderungen
@@ -1017,7 +1018,7 @@ import Layout from '../../../layouts/Layout.astro'
 
     function resultCard(label: string, created: number, skipped: number, updated?: number): string {
       return `
-        <div style="background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+        <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
           <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(label)}</div>
           <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent);">${created}</div>
           <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.created'))}</div>
@@ -1029,7 +1030,7 @@ import Layout from '../../../layouts/Layout.astro'
 
     function logoCard(downloaded: number, failed: number): string {
       return `
-        <div style="background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
+        <div style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-align: center;">
           <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">${escapeHtml(t('filamentdb.logos'))}</div>
           <div style="font-size: 1.3rem; font-weight: 700; color: var(--accent);">${downloaded}</div>
           <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.downloaded'))}</div>
