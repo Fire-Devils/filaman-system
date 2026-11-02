@@ -189,7 +189,7 @@ const { id } = Astro.params
 
   <script>
     import { t, getLang, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, renderFieldInput } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, isIntegrationExtraFieldPath, renderFieldInput } from '../../../lib/extra-fields'
     import { createEntityExtraFieldsDialog, loadEntitySystemFields } from '../../../lib/entity-extra-fields-dialog'
     import {
       buildEntityExtraFieldsForPrint,
@@ -406,7 +406,7 @@ const { id } = Astro.params
       if (!editing) {
         return `<section class="fm-card filament-spec-card spool-extra-fields-card"><h2 class="filament-spec-title spool-section-heading"><span>${t('common.extraFields')}</span><button id="btn-edit-extra-fields" type="button" class="fm-btn fm-btn-outline" style="font-size: .72rem; padding: 3px 8px;">${t('common.manageFields')}</button></h2><div class="filament-spec-rows">${rows || `<div style="padding: 8px 0; color: var(--text-muted); font-size: .82rem;">${t('spools.noSpecificExtraFields')}</div>`}</div></section>`
       }
-      const systemFields = Object.values(spoolSystemFieldMap).map((field: any) => `<div><label class="fm-label">${escapeExtraFieldHtml(field.label)}</label>${renderFieldInput(field, getExtraFieldValue(customFields, field.key))}</div>`).join('')
+      const systemFields = Object.values(spoolSystemFieldMap).filter(field => !isIntegrationExtraFieldPath(field.key)).map((field: any) => `<div><label class="fm-label">${escapeExtraFieldHtml(field.label)}</label>${renderFieldInput(field, getExtraFieldValue(customFields, field.key))}</div>`).join('')
       return `<section id="spool-extra-fields-editor" class="fm-card filament-spec-card spool-extra-fields-card spool-extra-fields-editor">
         <h2 class="filament-spec-title spool-section-heading"><span>${t('spools.specificExtraFields')}</span><button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: .8rem; padding: 4px 10px;">+ ${t('common.add')}</button></h2>
         <div id="spool-system-fields-editor" class="spool-system-fields-editor">${systemFields}</div>

@@ -163,7 +163,7 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
-    import { escapeHtml, formatNumericRange, type SystemExtraFieldDef } from '../../lib/extra-fields'
+    import { escapeHtml, formatNumericRange, isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
@@ -1058,7 +1058,8 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const res = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
-        const fields: SystemExtraFieldDef[] = await res.json()
+        const definitions: SystemExtraFieldDef[] = await res.json()
+        const fields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
         if (fields.length === 0) return
         filamentExtraFields = fields
         const extraGroup: ColumnGroup = {

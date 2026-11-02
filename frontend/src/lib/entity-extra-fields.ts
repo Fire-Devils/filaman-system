@@ -3,6 +3,7 @@ import {
   collectSystemFieldValues,
   escapeHtml,
   hasOwnFieldValue,
+  isIntegrationExtraFieldPath,
   isUnsafeExtraFieldPath,
   renderFieldDisplay,
   renderFieldPlainText,
@@ -428,6 +429,7 @@ export function renderEntityExtraFieldRows(
   return Object.entries(definitions ?? {})
     .filter(
       ([key]) =>
+        !isIntegrationExtraFieldPath(key) &&
         !extraFieldPathOverlaps(key, excludedKeys) &&
         getExtraFieldValue(customFields, key) !== undefined,
     )
@@ -454,6 +456,7 @@ export function renderUnregisteredExtraFieldRows(
   return flattenExtraFieldValues(customFields, normalizedDefinitions)
     .filter(
       field =>
+        !isIntegrationExtraFieldPath(field.key) &&
         !field.definition &&
         !extraFieldPathOverlaps(field.key, excluded),
     )
@@ -479,7 +482,8 @@ export function renderDetailExtraFieldRows(
 ): string {
   const systemKeys = new Set(Object.keys(systemDefinitions))
   const systemRows = Object.values(systemDefinitions)
-    .filter(definition => getExtraFieldValue(customFields, definition.key) !== undefined)
+    .filter(definition => !isIntegrationExtraFieldPath(definition.key)
+      && getExtraFieldValue(customFields, definition.key) !== undefined)
     .map(definition => {
       const display = renderFieldDisplay(definition, getExtraFieldValue(customFields, definition.key)) || '—'
       return `
@@ -561,6 +565,8 @@ export function createEntityExtraFieldEditor(options: {
 }): EntityExtraFieldEditor {
   const { container, addButton } = options
   let drafts: DraftField[] = []
+  let metadataValues: Record<string, unknown> = {}
+  let metadataDefinitions: EntityExtraFieldDefinitions = {}
   let systemKeys = new Set<string>()
   const dialog = createExtraFieldDefinitionDialog({ mode: 'entity' })
 
@@ -584,7 +590,7 @@ export function createEntityExtraFieldEditor(options: {
 
   function validateDialogResult(result: ExtraFieldDefinitionDialogResult, currentId?: number): void {
     const key = result.key.trim()
-    if (isUnsafeExtraFieldPath(key)) {
+    if (isUnsafeExtraFieldPath(key) || isIntegrationExtraFieldPath(key) || key === 'spoolman_extra') {
       throw new Error(t('admin.extraFieldKeyReserved'))
     }
     if (isSystemKey(key, systemKeys)) {
@@ -696,15 +702,23 @@ export function createEntityExtraFieldEditor(options: {
       const values = customFields ?? {}
       const defs = definitions ?? {}
       const excludedKeys = new Set([...systemKeys, ...Object.keys(defs)])
+      // Hidden integration values bypass the editor's text conversion and survive whole-column saves.
+      metadataValues = Object.fromEntries(Object.entries(values).filter(([key]) => isIntegrationExtraFieldPath(key)))
+      metadataDefinitions = Object.fromEntries(Object.entries(defs).filter(([key]) => isIntegrationExtraFieldPath(key)))
+      const legacy = values.spoolman_extra
+      if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+        const nestedMetadata = Object.fromEntries(Object.entries(legacy).filter(([key]) => isIntegrationExtraFieldPath(key)))
+        if (Object.keys(nestedMetadata).length) metadataValues.spoolman_extra = nestedMetadata
+      }
       drafts = []
 
       for (const [key, definition] of Object.entries(defs)) {
-        if (isSystemKey(key, systemKeys)) continue
+        if (isSystemKey(key, systemKeys) || isIntegrationExtraFieldPath(key)) continue
         drafts.push(createDraft(key, getExtraFieldValue(values, key), definition))
       }
       const remaining = flattenUnregisteredValues(values, excludedKeys)
       for (const [key, value] of Object.entries(remaining)) {
-        if (isSystemKey(key, systemKeys)) continue
+        if (isSystemKey(key, systemKeys) || isIntegrationExtraFieldPath(key)) continue
         drafts.push(createDraft(key, renderUnknownFieldPlainText(value)))
       }
       render()
@@ -719,13 +733,13 @@ export function createEntityExtraFieldEditor(options: {
     },
     getPayload() {
       const values: Record<string, unknown> = {}
-      const definitions: EntityExtraFieldDefinitions = {}
+      const definitions: EntityExtraFieldDefinitions = { ...metadataDefinitions }
       const seen = new Set<string>()
 
       for (const draft of drafts) {
         const key = draft.key.trim()
         if (!key) continue
-        if (isUnsafeExtraFieldPath(key)) {
+        if (isUnsafeExtraFieldPath(key) || isIntegrationExtraFieldPath(key) || key === 'spoolman_extra') {
           return reportValidationError(t('admin.extraFieldKeyReserved'))
         }
         const overlapsLocalKey = [...seen].some(
@@ -745,7 +759,7 @@ export function createEntityExtraFieldEditor(options: {
       }
 
       return {
-        customFields: Object.keys(values).length ? unflattenFieldValues(values) : null,
+        customFields: mergeExtraFieldValues(metadataValues, unflattenFieldValues(values)),
         customFieldDefinitions: Object.keys(definitions).length ? definitions : null,
       }
     },

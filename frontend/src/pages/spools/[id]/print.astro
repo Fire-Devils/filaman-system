@@ -299,7 +299,7 @@ export function getStaticPaths() {
     ? parsedClassicSettings.extraFields as Record<string, boolean>
     : {}
 
-  extraFields = standardLabelExtraFields([...extraFields, ...legacyAliases], savedExtraFieldSettings, 'spool')
+  const standardExtraFields = standardLabelExtraFields([...extraFields, ...legacyAliases], savedExtraFieldSettings, 'spool')
 
   const scopeAttr = (() => {
     const existing = document.querySelector('.fm-checkbox-group')
@@ -362,7 +362,7 @@ export function getStaticPaths() {
   }
 
   for (const source of ['spool', 'filament']) {
-    for (const ef of extraFields.filter(item => getExtraFieldSource(item.source) === source)) {
+    for (const ef of standardExtraFields.filter(item => getExtraFieldSource(item.source) === source)) {
       addExtraFieldCheckbox(ef)
     }
   }
@@ -407,7 +407,7 @@ export function getStaticPaths() {
   document.getElementById('label-show-color')!.textContent = translate('spools.showColor')
   document.getElementById('label-show-color-swatch')!.textContent = translate('spools.showColorSwatch', 'Color Swatch')
   document.getElementById('label-show-color-hex')!.textContent = translate('labelPrint.checkColorHex', 'Color Hex')
-  if (extraFields.length > 0) {
+  if (standardExtraFields.length > 0) {
     document.getElementById('title-extra-fields')!.textContent = translate('spools.extraFieldsLabel')
   }
   const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
@@ -634,23 +634,24 @@ export function getStaticPaths() {
         const selected = { ...savedExtraFieldSettings, ...Object.fromEntries(
           extraFieldChecks.map(field => [field.key, field.checkbox.checked]),
         ) }
-        extraFields = standardLabelExtraFields([
+        extraFields = dedupeLabelExtraFields([
           ...buildLabelExtraFields(sd, sd.filament ?? {}, 'spool', spoolSystemDefinitions, true),
           ...buildLabelExtraFields(sd.filament ?? {}, sd.filament ?? {}, 'filament', filamentSystemDefinitions, true),
           ...extraFields,
-        ], selected, 'spool')
+        ], 'spool')
+        const standardExtraFields = standardLabelExtraFields(extraFields, selected, 'spool')
         for (const group of extraFieldGroups.values()) {
           if (group.container !== extraFieldsCheckboxes) { group.title.remove(); group.container.remove() }
         }
         extraFieldGroups.clear()
         extraFieldsCheckboxes.innerHTML = ''
         extraFieldChecks.length = 0
-        for (const field of extraFields) {
+        for (const field of standardExtraFields) {
           addExtraFieldCheckbox(field)
           extraFieldChecks.at(-1)!.checkbox.checked = selected[field.key] === true
         }
-        extraFieldsTitle.style.display = extraFields.length ? '' : 'none'
-        extraFieldsCheckboxes.style.display = extraFields.length ? '' : 'none'
+        extraFieldsTitle.style.display = standardExtraFields.length ? '' : 'none'
+        extraFieldsCheckboxes.style.display = standardExtraFields.length ? '' : 'none'
 
         // Rebuild token areas in the designer so extra-field chips appear.
         designerEditor.refreshExtraFields(getDesignerExtraFields())

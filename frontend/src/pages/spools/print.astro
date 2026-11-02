@@ -89,7 +89,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     loadSpoolLabelLookups,
     type SpoolLabelLookups,
   } from '../../lib/spool-label-lookups'
-  import { type SystemExtraFieldDef } from '../../lib/extra-fields'
+  import { isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
   import {
     buildSystemExtraFieldDefinitionMap,
     getExtraFieldValue,
@@ -462,7 +462,9 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       const historicalDefs = [...new Map(aliases.filter(field => selected?.[field.key.replace(/^(spool|filament)\./, '$1:')])
         .map(field => [field.key, { key: field.key.replace(/^(spool|filament)\./, ''), label: field.label,
           field_type: field.fieldType || 'text', target_type: field.source as 'spool' | 'filament', legacyAlias: true }])).values()]
-      const allDefs = [...systemDefinitions.filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label)
+      const allDefs = [...systemDefinitions
+        .filter(def => !isIntegrationExtraFieldPath(def.key) || selected?.[efMapKey(def.target_type, def.key)] === true)
+        .filter(def => !isBuiltInLabelField(def.target_type, def.key, def.label)
         && !legacyFieldKeys.has(`${def.target_type}.${def.key}`)), ...historicalDefs]
       systemFieldKeys.clear()
       systemDefinitions.forEach(def => systemFieldKeys.add(efMapKey(def.target_type, def.key)))

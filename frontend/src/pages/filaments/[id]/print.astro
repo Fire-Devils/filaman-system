@@ -284,13 +284,13 @@ export function getStaticPaths() {
     : {}
 
   legacyAliases = extraFields.filter(field => field.legacyAlias)
-  extraFields = standardLabelExtraFields([...extraFields, ...legacyAliases], savedExtraFieldSettings, 'filament')
+  const standardExtraFields = standardLabelExtraFields([...extraFields, ...legacyAliases], savedExtraFieldSettings, 'filament')
 
-  if (extraFields.length > 0) {
+  if (standardExtraFields.length > 0) {
     extraFieldsTitle.style.display = ''
     extraFieldsCheckboxes.style.display = ''
 
-    for (const ef of extraFields) {
+    for (const ef of standardExtraFields) {
       const cb = appendLabelSettingsCheckbox({
         container: extraFieldsCheckboxes,
         id: `check-ef-${ef.key}`,
@@ -342,7 +342,7 @@ export function getStaticPaths() {
   document.getElementById('label-show-color')!.textContent = translate('spools.showColor', 'Color')
   document.getElementById('label-show-color-swatch')!.textContent = translate('spools.showColorSwatch', 'Color Swatch')
   document.getElementById('label-show-color-hex')!.textContent = translate('labelPrint.checkColorHex', 'Color Hex')
-  if (extraFields.length > 0) {
+  if (standardExtraFields.length > 0) {
     document.getElementById('title-extra-fields')!.textContent = translate('filaments.extraFieldsLabel', 'Filament Extra Fields')
   }
   const backBtn = document.getElementById('btn-back') as HTMLAnchorElement
@@ -486,22 +486,23 @@ export function getStaticPaths() {
       const selected = { ...savedExtraFieldSettings, ...Object.fromEntries(
         extraFieldChecks.map(field => [field.key, field.checkbox.checked]),
       ) }
-      extraFields = standardLabelExtraFields([
+      extraFields = dedupeLabelExtraFields([
         ...(apiFilament ? buildFilamentExtraFieldsForPrint(apiFilament, systemDefinitions)
           : buildReducedStandardFilamentExtraFieldsFromLabelData(labelData)),
         ...extraFields,
-      ], selected)
+      ], 'filament')
+      const standardExtraFields = standardLabelExtraFields(extraFields, selected)
       extraFieldsCheckboxes.innerHTML = ''
       extraFieldChecks.length = 0
-      for (const ef of extraFields) {
+      for (const ef of standardExtraFields) {
         const checkbox = appendLabelSettingsCheckbox({
           container: extraFieldsCheckboxes, id: `check-ef-${ef.key}`, label: ef.label,
           checked: selected[ef.key] === true, onChange: singlePreview.refresh,
         })
         extraFieldChecks.push({ ...ef, checkbox })
       }
-      extraFieldsTitle.style.display = extraFields.length ? '' : 'none'
-      extraFieldsCheckboxes.style.display = extraFields.length ? '' : 'none'
+      extraFieldsTitle.style.display = standardExtraFields.length ? '' : 'none'
+      extraFieldsCheckboxes.style.display = standardExtraFields.length ? '' : 'none'
       designerEditor.refreshExtraFields(getDesignerExtraFields())
     }
 
