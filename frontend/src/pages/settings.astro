@@ -1,14 +1,23 @@
 ---
 import Layout from '../layouts/Layout.astro'
+import FormSection from '../components/FormSection.astro'
+import SettingsTitle from '../components/SettingsTitle.astro'
 ---
-
 <Layout title="FilaMan - Settings">
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="settings.title">Settings</h1>
-  
-  <div style="display: grid; gap: 24px; max-width: 640px;">
-    <div class="fm-card" style="padding: 24px;">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="settings.profile">Profile</h2>
-      <form id="profile-form" style="display: grid; gap: 16px;">
+<div class="fm-settings-page fm-settings-profile">
+  <header class="fm-settings-toolbar"><SettingsTitle titleKey="settings.title" title="Settings" /></header>
+  <div class="fm-settings-stack">
+    <FormSection titleKey="settings.profile" title="Profile">
+      <Fragment slot="actions"><button
+          type="submit" form="profile-form"
+          id="profile-btn" disabled
+          class="fm-btn fm-btn-primary"
+
+          data-i18n="settings.saveProfile"
+        >
+          Save Profile
+        </button></Fragment>
+      <form id="profile-form" class="fm-compact-form">
         <div>
           <label for="email" class="fm-label" data-i18n="settings.email">Email</label>
           <input
@@ -18,7 +27,7 @@ import Layout from '../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        
+
         <div>
           <label for="display_name" class="fm-label" data-i18n="settings.displayName">Display Name</label>
           <input
@@ -28,7 +37,7 @@ import Layout from '../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        
+
         <div>
           <label for="language" class="fm-label" data-i18n="settings.language">Language</label>
           <select
@@ -42,67 +51,40 @@ import Layout from '../layouts/Layout.astro'
             <option value="fr" data-i18n="settings.langFr">Français</option>
           </select>
         </div>
-        
-        <div id="profile-error" class="fm-alert-error hidden"></div>
+
+        <div id="profile-error" class="fm-alert-error hidden" role="alert"></div>
         <div id="profile-success" class="fm-alert-success hidden"></div>
-        
-        <button
-          type="submit"
-          id="profile-btn"
-          class="fm-btn fm-btn-primary"
-          style="justify-self: start;"
-          data-i18n="settings.saveProfile"
-        >
-          Save Profile
-        </button>
+
+
       </form>
-    </div>
-    
-    <a href="/settings/api-keys" style="text-decoration: none; color: inherit;">
-      <div class="fm-card" style="padding: 24px; cursor: pointer; transition: box-shadow 0.15s;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <h2 style="font-weight: 600; margin: 0 0 6px 0;" data-i18n="settings.apiKeys">API Keys</h2>
-            <p style="color: var(--color-text-muted); margin: 0; font-size: 0.9rem;" data-i18n="settings.apiKeysDesc">Manage API keys for external integrations like Bambuddy</p>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-muted); flex-shrink: 0;"><path d="M9 18l6-6-6-6"/></svg>
-        </div>
-      </div>
+    </FormSection>
+    <a href="/settings/api-keys" class="fm-settings-link fm-card fm-section">
+      <header class="fm-section-header"><h2 data-i18n="settings.apiKeys">API Keys</h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></header>
+      <div class="fm-section-body"><p class="fm-field-hint" data-i18n="settings.apiKeysDesc">Manage API keys for external integrations like Bambuddy</p></div>
     </a>
-
-    <div class="fm-card" style="padding: 24px;">
-      <h2 style="font-weight: 600; margin: 0 0 6px 0;" data-i18n="settings.tagScanner">Tag scanner</h2>
-      <p style="color: var(--color-text-muted); margin: 0 0 20px 0; font-size: 0.9rem;" data-i18n="settings.tagScannerDesc">
-        Applies to this browser only.
-      </p>
-
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-        <div style="flex: 1;">
-          <label for="scanner-auto-open" style="font-weight: 500;" data-i18n="settings.scannerAutoOpen">Open the spool that was scanned</label>
-          <p style="color: var(--color-text-muted); margin: 4px 0 0 0; font-size: 0.85rem;" data-i18n="settings.scannerAutoOpenHint">
-            Put a spool on the scale and this browser follows to it.
-          </p>
-        </div>
-        <label class="fm-toggle">
-          <input type="checkbox" id="scanner-auto-open" />
-          <span class="fm-toggle-slider"></span>
-        </label>
+    <FormSection titleKey="settings.tagScanner" title="Tag scanner">
+      <p class="fm-field-hint" data-i18n="settings.tagScannerDesc">Applies to this browser only.</p>
+      <div class="fm-settings-row">
+        <label for="scanner-auto-open" data-i18n="settings.scannerAutoOpen">Open the spool that was scanned</label>
+        <label class="fm-toggle"><input type="checkbox" id="scanner-auto-open" /><span class="fm-toggle-slider"></span></label>
+        <p class="fm-field-hint" data-i18n="settings.scannerAutoOpenHint">Put a spool on the scale and this browser follows to it.</p>
       </div>
-
-      <div style="margin-top: 20px;">
-        <label for="scanner-device" class="fm-label" data-i18n="settings.scannerDevice">Reader</label>
-        <select id="scanner-device" class="fm-input">
-          <option value="" data-i18n="settings.scannerDeviceAny">Whichever scanned last</option>
-        </select>
-        <p style="color: var(--color-text-muted); margin: 6px 0 0 0; font-size: 0.85rem;" data-i18n="settings.scannerDeviceHint">
-          Pick one if several scales are in use and this screen should follow only one of them.
-        </p>
+      <div class="fm-settings-row"><label for="scanner-device" data-i18n="settings.scannerDevice">Reader</label>
+        <select id="scanner-device" class="fm-select"><option value="" data-i18n="settings.scannerDeviceAny">Whichever scanned last</option></select>
+        <p class="fm-field-hint" data-i18n="settings.scannerDeviceHint">Pick one if several scales are in use and this screen should follow only one of them.</p>
       </div>
-    </div>
+    </FormSection>
+    <FormSection titleKey="settings.changePassword" title="Change Password">
+      <Fragment slot="actions"><button
+          type="submit" form="password-form"
+          id="password-btn" disabled
+          class="fm-btn fm-btn-primary"
 
-    <div class="fm-card" style="padding: 24px;">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="settings.changePassword">Change Password</h2>
-      <form id="password-form" style="display: grid; gap: 16px;">
+          data-i18n="settings.changePassword"
+        >
+          Change Password
+        </button></Fragment>
+      <form id="password-form" class="fm-compact-form">
         <div>
           <label for="current_password" class="fm-label" data-i18n="settings.currentPassword">Current Password</label>
           <input
@@ -114,7 +96,7 @@ import Layout from '../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        
+
         <div>
           <label for="new_password" class="fm-label" data-i18n="settings.newPassword">New Password</label>
           <input
@@ -127,7 +109,7 @@ import Layout from '../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        
+
         <div>
           <label for="confirm_password" class="fm-label" data-i18n="settings.confirmPassword">Confirm New Password</label>
           <input
@@ -140,25 +122,18 @@ import Layout from '../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        
-        <div id="password-error" class="fm-alert-error hidden"></div>
+
+        <div id="password-error" class="fm-alert-error hidden" role="alert"></div>
         <div id="password-success" class="fm-alert-success hidden"></div>
-        
-        <button
-          type="submit"
-          id="password-btn"
-          class="fm-btn fm-btn-primary"
-          style="justify-self: start;"
-          data-i18n="settings.changePassword"
-        >
-          Change Password
-        </button>
+
+
       </form>
-    </div>
+    </FormSection>
   </div>
-  
+</div>
   <script>
     import { t, initI18n } from '../lib/i18n'
+    import { bindFormState } from '../lib/form-state'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import {
       getBoundReaderId,
@@ -172,41 +147,44 @@ import Layout from '../layouts/Layout.astro'
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
     }
-    
+
     async function loadProfile() {
       try {
         const response = await fetch('/api/v1/me', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error('Failed to load profile')
-        
+
         const user = await response.json()
         ;(document.getElementById('email') as HTMLInputElement).value = user.email
         ;(document.getElementById('display_name') as HTMLInputElement).value = user.display_name || ''
         ;(document.getElementById('language') as HTMLSelectElement).value = user.language
+        profileState.reset()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load profile:', error)
       }
     }
-    
+
     const profileForm = document.getElementById('profile-form') as HTMLFormElement
     const profileError = document.getElementById('profile-error') as HTMLDivElement
     const profileSuccess = document.getElementById('profile-success') as HTMLDivElement
     const profileBtn = document.getElementById('profile-btn') as HTMLButtonElement
-    
+    const profileState = bindFormState(profileForm, profileBtn)
+
     profileForm.addEventListener('submit', async (e) => {
       e.preventDefault()
-      
+
+      if (profileState.busy || profileBtn.disabled || !profileForm.reportValidity()) return
       const formData = new FormData(profileForm)
       const data = {
         display_name: formData.get('display_name') || null,
         language: formData.get('language'),
       }
-      
+
       profileError.classList.add('hidden')
       profileSuccess.classList.add('hidden')
-      profileBtn.disabled = true
+      profileState.setBusy(true)
       profileBtn.textContent = t('common.saving')
-      
+
       try {
         const response = await fetch('/api/v1/me', {
           method: 'PATCH',
@@ -218,13 +196,14 @@ import Layout from '../layouts/Layout.astro'
           signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
-        
+
         if (!response.ok) {
           const errorData = await response.json().catch(() => null)
           const msg = errorData?.message || errorData?.detail || t('settings.profileFailed')
           throw new Error(typeof msg === 'string' ? msg : t('settings.profileFailed'))
         }
-        
+
+        profileState.reset()
         // If language changed, store and reload so the entire UI updates
         const selectedLang = formData.get('language') as string
         if (selectedLang !== localStorage.getItem('lang')) {
@@ -232,7 +211,7 @@ import Layout from '../layouts/Layout.astro'
           window.location.reload()
           return
         }
-        
+
         profileSuccess.textContent = t('settings.profileSaved')
         profileSuccess.classList.remove('hidden')
       } catch (error: any) {
@@ -240,46 +219,49 @@ import Layout from '../layouts/Layout.astro'
         profileError.textContent = error.message
         profileError.classList.remove('hidden')
       } finally {
-        profileBtn.disabled = false
+        profileState.setBusy(false)
         profileBtn.textContent = t('settings.saveProfile')
       }
     })
-    
+
     const passwordForm = document.getElementById('password-form') as HTMLFormElement
     const passwordError = document.getElementById('password-error') as HTMLDivElement
     const passwordSuccess = document.getElementById('password-success') as HTMLDivElement
     const passwordBtn = document.getElementById('password-btn') as HTMLButtonElement
-    
+    const passwordState = bindFormState(passwordForm, passwordBtn)
+    passwordState.reset()
+
     passwordForm.addEventListener('submit', async (e) => {
       e.preventDefault()
-      
+
+      if (passwordState.busy || passwordBtn.disabled || !passwordForm.reportValidity()) return
       const formData = new FormData(passwordForm)
       const newPassword = formData.get('new_password') as string
       const confirmPassword = formData.get('confirm_password') as string
-      
+
       passwordError.classList.add('hidden')
       passwordSuccess.classList.add('hidden')
-      
+
       if (newPassword !== confirmPassword) {
         passwordError.textContent = t('settings.passwordsNoMatch')
         passwordError.classList.remove('hidden')
         return
       }
-      
+
       if (newPassword.length < 8) {
         passwordError.textContent = t('settings.passwordTooShort')
         passwordError.classList.remove('hidden')
         return
       }
-      
+
       const data = {
         current_password: formData.get('current_password'),
         new_password: newPassword,
       }
-      
-      passwordBtn.disabled = true
+
+      passwordState.setBusy(true)
       passwordBtn.textContent = t('settings.changingPassword')
-      
+
       try {
         const response = await fetch('/api/v1/me/change-password', {
           method: 'POST',
@@ -291,26 +273,27 @@ import Layout from '../layouts/Layout.astro'
           signal: getAbortSignal(),
           body: JSON.stringify(data),
         })
-        
+
         if (!response.ok) {
           const errorData = await response.json().catch(() => null)
           const msg = errorData?.message || errorData?.detail || t('settings.passwordFailed')
           throw new Error(typeof msg === 'string' ? msg : t('settings.passwordFailed'))
         }
-        
+
         passwordSuccess.textContent = t('settings.passwordChanged')
         passwordSuccess.classList.remove('hidden')
         passwordForm.reset()
+        passwordState.reset()
       } catch (error: any) {
         if (isAbortError(error)) return
         passwordError.textContent = error.message
         passwordError.classList.remove('hidden')
       } finally {
-        passwordBtn.disabled = false
+        passwordState.setBusy(false)
         passwordBtn.textContent = t('settings.changePassword')
       }
     })
-    
+
     // ── Tag scanner ────────────────────────────────────────────────────
     // Stored in this browser, not on the account: the kiosk on the wall and the
     // laptop in the workshop want opposite things from the same login.

@@ -85,6 +85,67 @@ beforeEach(() => {
 })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren() })
 
+it('retains failed profile drafts and keeps profile, password and scanner saves separate', async () => {
+  await boot('settings')
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#display_name')!.value).toBe('Test'))
+  const save = document.querySelector<HTMLButtonElement>('#profile-btn')!
+  expect(save.disabled).toBe(true)
+  change('display_name', 'Updated')
+  expect(save.disabled).toBe(false)
+  expect(document.querySelector<HTMLButtonElement>('#password-btn')!.disabled).toBe(true)
+  failSave = true
+  submit('profile-form')
+  await vi.waitFor(() => expect(document.querySelector('#profile-error')!.textContent).toBe('Save failed'))
+  expect(save.disabled).toBe(false)
+  expect(writes()[0].path).toBe('/api/v1/me')
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ display_name: 'Updated', language: 'en' })
+  failSave = false
+  submit('profile-form')
+  await vi.waitFor(() => expect(document.querySelector('#profile-success')!.classList.contains('hidden')).toBe(false))
+  expect(save.disabled).toBe(true)
+  const count = writes().length
+  change('scanner-auto-open', true)
+  expect(writes()).toHaveLength(count)
+  expect(scanner.isAutoOpenEnabled()).toBe(true)
+})
+it('saves visible app settings without resetting the hidden lookup preference', async () => {
+  intercept = (path, init) => path.includes('/app-settings') && !init?.method
+    ? Response.json({ ...settings, filament_lookup_source: 'disabled' }) : undefined
+  await boot('admin/app-settings')
+  await vi.waitFor(() => expect(document.querySelector<HTMLInputElement>('#rfid-display-colons')!.checked).toBe(true))
+  const save = document.querySelector<HTMLButtonElement>('#save-btn')!
+  expect(save.disabled).toBe(true)
+  change('currency', 'USD')
+  expect(save.disabled).toBe(false)
+  change('currency', 'EUR')
+  expect(save.disabled).toBe(true)
+  change('default-spool-core-weight', '60')
+  submit('app-settings-form')
+  await vi.waitFor(() => expect(writes()).toHaveLength(1))
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({
+    login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool',
+    rfid_extended_data_enabled: false, rfid_display_colons: true,
+    default_spool_core_weight_g: 60, bambu_unmatched_profile_fallback: 'generic',
+  })
+  await vi.waitFor(() => expect(save.disabled).toBe(true))
+  expect(document.querySelector('#form-message')!.classList.contains('fm-settings-wide')).toBe(true)
+})
+it('links API Keys back to Settings and reveals a new token only in its disclosure panel', async () => {
+  intercept = (path, init) => path === '/api/v1/me/api-keys'
+    ? Response.json(init?.method === 'POST' ? { token: 'new-test-token' } : [{ id: 1, name: 'Integration <test>', created_at: null, last_used_at: null }]) : undefined
+  const QrCode = Object.assign(vi.fn(), { CorrectLevel: { M: 0 } })
+  await bootAstroPage('settings/api-keys', { ...dependencies, ensureQrCodeLoaded: async () => {}, getQrCodeConstructor: () => QrCode })
+  await vi.waitFor(() => expect(document.querySelector('#keys-tbody')!.textContent).toContain('Integration <test>'))
+  const back = document.querySelector('[data-i18n="apiKeys.backToSettings"]')!.closest('a')!
+  expect(back?.getAttribute('href')).toBe('/settings')
+  expect(document.querySelector('#new-token-container')!.classList.contains('hidden')).toBe(true)
+  change('key_name', 'New integration')
+  submit('create-key-form')
+  await vi.waitFor(() => expect(document.querySelector('#new-token-container')!.classList.contains('hidden')).toBe(false))
+  expect(document.querySelector<HTMLInputElement>('#new-token-input')!.value).toBe('new-test-token')
+  expect(document.querySelector('#keys-tbody')!.textContent).not.toContain('new-test-token')
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'New integration' })
+})
 it('retains structured driver config when editing through the printer dialog', async () => {
   await boot('printers/index')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
