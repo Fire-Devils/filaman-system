@@ -6,23 +6,33 @@ export function getStaticPaths() {
     {params: {id: 'detail'}},
   ];
 }
-
-const { id } = Astro.params
 ---
 
 <Layout title="FilaMan - Printer">
-  <div style="margin-bottom: 24px;">
-    <a href="/printers" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="printers.backToPrinters">Back to Printers</span></a>
-  </div>
-  
-  <div id="printer-content">
+  <div id="printer-content" class="fm-admin-page fm-settings-page">
+    <a href="/printers" class="fm-admin-back">&larr; <span data-i18n="printers.backToPrinters">Back to Printers</span></a>
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
-  
+
+  <style is:global>
+    #printer-content .fm-section-header { flex-wrap: wrap; }
+    #printer-content h1, #printer-content h2, #printer-content dd { overflow-wrap: anywhere; }
+    #printer-content .printer-config-values, #printer-content #config-form { max-width: 48rem; }
+    #printer-content dl { margin: 0; }
+    #printer-content dd { margin: 0; min-width: 0; }
+    #printer-content .printer-config-values { display: grid; gap: 14px; }
+    #printer-content .printer-metadata { display: flex; flex-wrap: wrap; gap: 16px 32px; }
+    #printer-content .printer-metadata dt { color: var(--text-muted); font-size: .85rem; margin-bottom: 4px; }
+    #printer-content .printer-metadata dd { font-weight: 600; }
+    #printer-content .printer-items { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+    #printer-content .printer-item { min-width: 0; padding-top: 12px; border-top: 1px solid var(--border); }
+    #printer-content .printer-connection-status, #printer-content .printer-health-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  </style>
   <script>
     import { t, initI18n, getLang } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { copyText } from '../../lib/clipboard'
+    import { bindFormState } from '../../lib/form-state'
     import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
     await initI18n()
 
@@ -34,6 +44,7 @@ const { id } = Astro.params
     let printer: any = null
     let pluginSchema: any = null
     let editingConfig = false
+    let configState: ReturnType<typeof bindFormState> | null = null
     let driverHealth: any = null
     let debugOpen = false
     let debugLog: any[] = []
@@ -58,7 +69,7 @@ const { id } = Astro.params
         
         if (!response.ok) {
           if (response.status === 404) {
-            document.getElementById('printer-content')!.innerHTML = `<div style="color: var(--error-text);">${t('printers.notFound')}</div>`
+            document.getElementById('printer-content')!.innerHTML = `<a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a><div role="alert" style="color: var(--error-text);">${t('printers.notFound')}</div>`
             return
           }
           throw new Error('Failed to fetch printer')
@@ -72,7 +83,7 @@ const { id } = Astro.params
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load printer:', error)
-        document.getElementById('printer-content')!.innerHTML = `<div style="color: var(--error-text);">${t('printers.failedLoadSingle')}</div>`
+        document.getElementById('printer-content')!.innerHTML = `<a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a><div role="alert" style="color: var(--error-text);">${t('printers.failedLoadSingle')}</div>`
       }
     }
 
@@ -95,7 +106,7 @@ const { id } = Astro.params
       }
 
       const props = pluginSchema.properties as Record<string, any>
-      let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">'
+      let html = '<dl class="printer-config-values">'
 
       for (const [key, prop] of Object.entries(props)) {
         const value = config[key]
@@ -112,13 +123,13 @@ const { id } = Astro.params
           if (idx >= 0 && p.enumNames[idx]) displayValue = escapeHtml(String(p.enumNames[idx]))
         }
         html += `
-          <div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">${label}</div>
-            <div style="font-size: 1rem; font-weight: 500; margin-top: 2px;">${displayValue}</div>
+          <div class="fm-settings-row">
+            <dt class="fm-label">${label}</dt>
+            <dd>${displayValue}</dd>
           </div>`
       }
 
-      html += '</div>'
+      html += '</dl>'
       return html
     }
 
@@ -128,7 +139,7 @@ const { id } = Astro.params
       const props = pluginSchema.properties as Record<string, any>
       const required: string[] = pluginSchema.required || []
       const config = printer.driver_config || {}
-      let html = '<form id="config-form" style="display: grid; gap: 12px; max-width: 480px;">'
+      let html = '<form id="config-form" class="fm-compact-form">'
 
       for (const [key, prop] of Object.entries(props)) {
         const p = prop as any
@@ -144,8 +155,8 @@ const { id } = Astro.params
 
         if (isStructuredProp(p, rawValue)) {
           // No name attribute: the save loop must not find an element for this key.
-          html += `<pre class="fm-input" id="config-${key}" style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto; background: var(--bg-muted, transparent);">${escapeHtml(JSON.stringify(rawValue ?? null, null, 2))}</pre>`
-          html += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${t('printers.configReadOnly')}</div>`
+          html += `<pre id="config-${key}" style="margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto; background: var(--bg-muted, transparent);">${escapeHtml(JSON.stringify(rawValue ?? null, null, 2))}</pre>`
+          html += `<p class="fm-field-hint">${t('printers.configReadOnly')} <a href="/admin/system">${t('nav.plugins')} (${escapeHtml(printer.driver_key)})</a></p>`
         } else if (p.type === 'boolean') {
           const checked = value === true || value === 'true' ? ' checked' : ''
           html += `<input class="fm-checkbox" id="config-${key}" name="${key}" type="checkbox"${checked}>`
@@ -163,16 +174,16 @@ const { id } = Astro.params
         }
 
         if (p.description) {
-          html += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${escapeHtml(p.description)}</div>`
+          html += `<p class="fm-field-hint">${escapeHtml(p.description)}</p>`
         }
         html += '</div>'
       }
 
       html += `
-        <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+        <div class="fm-list-controls">
           <button type="submit" class="fm-btn fm-btn-primary">${t('common.save')}</button>
           <button type="button" id="btn-cancel-config" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>
-          <span id="config-save-msg" class="hidden" style="font-size: 0.85rem;"></span>
+          <span id="config-save-msg" class="hidden" role="status" aria-live="polite" style="font-size: 0.85rem;"></span>
         </div>
       </form>`
       return html
@@ -189,37 +200,36 @@ const { id } = Astro.params
     
     function renderPrinter() {
       const container = document.getElementById('printer-content')!
+      const configEditor = editingConfig ? document.getElementById('config-content')?.closest('section') : null
 
       let configSection = ''
-      if (pluginSchema?.properties) {
+      if (pluginSchema?.properties || configEditor) {
         configSection = `
-          <div class="fm-card" style="margin-top: 24px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="font-size: 1.2rem; font-weight: 600;">${t('printers.configuration')}</h2>
+          <section class="fm-card fm-section">
+            <header class="fm-section-header">
+              <h2>${t('printers.configuration')}</h2>
               <button id="btn-edit-config" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.editConfig')}</button>
+            </header>
+            <div id="config-content" class="fm-section-body">
+              ${renderConfigView()}
             </div>
-            <div id="config-content">
-              ${editingConfig ? renderConfigEdit() : renderConfigView()}
-            </div>
-          </div>`
+          </section>`
       }
 
       let paramsSection = ''
       if (printer.driver_key) {
         paramsSection = `
-          <div class="fm-card" style="margin-top: 24px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="font-size: 1.2rem; font-weight: 600;">${t('printers.printerParameters')}</h2>
-              <div style="display: flex; gap: 8px;">
+          <section class="fm-card fm-section">
+            <header class="fm-section-header">
+              <h2>${t('printers.printerParameters')}</h2>
+              <div class="fm-list-controls">
                 <button id="btn-export-params" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.exportParams')}</button>
-                <label id="btn-import-params" class="fm-btn fm-btn-outline" style="font-size: 0.85rem; cursor: pointer;">
-                  ${t('printers.importParams')}
-                  <input type="file" accept=".json" id="import-params-file" style="display: none;" />
-                </label>
+                <button type="button" id="btn-import-params" class="fm-btn fm-btn-outline">${t('printers.importParams')}</button>
+                <input type="file" accept=".json" id="import-params-file" hidden />
               </div>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.paramsManagement')}</p>
-          </div>`
+            </header>
+            <div class="fm-section-body"><p class="fm-field-hint">${t('printers.paramsManagement')}</p></div>
+          </section>`
       }
 
       let slotsSection = ''
@@ -265,7 +275,7 @@ const { id } = Astro.params
 
             // Status badge
             const presentBadge = a?.present
-              ? `<span style="padding:2px 8px;font-size:0.7rem;border-radius:999px;background:var(--bg-soft);color:#22c55e;">${t('printers.slotOccupied')}</span>`
+              ? `<span style="padding:2px 8px;font-size:0.7rem;border-radius:999px;background:var(--bg-soft);color:var(--success-text);">${t('printers.slotOccupied')}</span>`
               : `<span style="padding:2px 8px;font-size:0.7rem;border-radius:999px;background:var(--bg-soft);color:var(--text-muted);">${t('printers.slotEmpty')}</span>`
 
             // Tray details (meta fields)
@@ -286,7 +296,7 @@ const { id } = Astro.params
             }
 
             return `
-              <div class="fm-card" style="padding:12px 14px;">
+              <div class="printer-item">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                   <div style="font-weight:600;font-size:0.95rem;">${slotLabel}</div>
                   ${presentBadge}
@@ -298,12 +308,12 @@ const { id } = Astro.params
           .join('')
 
         slotsSection = `
-          <div style="margin-top: 24px;">
-            <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 12px;">${t('printers.slots').replace('{count}', printer.slots.length)}</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
+          <section class="fm-card fm-section">
+            <header class="fm-section-header"><h2>${t('printers.slots').replace('{count}', printer.slots.length)}</h2></header>
+            <div class="fm-section-body printer-items">
               ${slotItems}
             </div>
-          </div>`
+          </section>`
       }
 
       // Connection status section
@@ -315,7 +325,7 @@ const { id } = Astro.params
           statusDot = 'background: var(--text-muted);'
           statusText = t('printers.driverNotRunning')
         } else if (driverHealth.connected) {
-          statusDot = 'background: #22c55e;'
+          statusDot = 'background: var(--success-text);'
           statusText = t('printers.connected')
         } else {
           statusDot = 'background: var(--error-text);'
@@ -326,13 +336,13 @@ const { id } = Astro.params
           ? `<button id="btn-driver-toggle" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.stopDriver')}</button>`
           : `<button id="btn-driver-toggle" class="fm-btn fm-btn-primary" style="font-size: 0.85rem;">${t('printers.startDriver')}</button>`
         connectionSection = `
-          <div class="fm-card" style="margin-top: 24px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div style="display: flex; align-items: center; gap: 8px;">
+          <section class="fm-card fm-section">
+            <header class="fm-section-header">
+              <h2 class="printer-connection-status">
                 <span id="health-dot" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; ${statusDot}"></span>
-                <span id="health-text" style="font-weight: 600;">${statusText}</span>
-              </div>
-              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <span id="health-text">${statusText}</span>
+              </h2>
+              <div class="fm-list-controls">
                 ${startStopBtn}
                 <button id="btn-debug-console" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.debugConsole')}</button>
                 ${isRunning ? (driverHealth?.sync_actions || []).map((a: any) => {
@@ -341,9 +351,9 @@ const { id } = Astro.params
                   return `<button class="fm-btn ${variant} btn-sync-action" data-action="${escapeHtml(a.action)}" style="font-size: 0.85rem;">${escapeHtml(label)}</button>`
                 }).join('') : ''}
               </div>
-            </div>
+            </header>
             ${driverHealth?.running && driverHealth?.connected ? `
-              <div id="health-summary" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+              <div id="health-summary" class="fm-section-body printer-health-summary">
                 ${driverHealth.printer_model || driverHealth.external_spool ? `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg-soft);border-radius:999px;font-size:0.8rem;color:var(--text-muted);">${driverHealth.printer_model ? escapeHtml(driverHealth.printer_model) : ''}${driverHealth.printer_model && driverHealth.external_spool ? ' · ' : ''}${driverHealth.external_spool ? '1 ext. Slot' : ''}</span>` : ''}
                 ${(driverHealth.ams_units || []).map((u: any) => {
                   const amsLabel = (driverHealth.ams_type === 'AMS Lite') ? 'AMS Lite' : ('AMS ' + (u.ams_id + 1))
@@ -353,7 +363,7 @@ const { id } = Astro.params
                 }).join('')}
               </div>
             ` : ''}
-          </div>`
+          </section>`
       }
 
 
@@ -366,7 +376,7 @@ const { id } = Astro.params
           const temp = ams.temp != null ? `${ams.temp}\u00b0C` : '\u2014'
           const amsLabel = amsType === 'AMS Lite' ? 'AMS Lite' : `${amsType} ${ams.ams_id + 1}`
           return `
-            <div class="fm-card" style="padding: 12px 16px;">
+            <div class="printer-item">
               <div style="font-weight: 600; font-size: 0.95rem;">${amsLabel}</div>
               ${ams.serial ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">SN: ${escapeHtml(ams.serial)}</div>` : ''}
               <div style="display: flex; gap: 14px; margin-top: 8px; font-size: 0.8rem; color: var(--text-muted);">
@@ -377,12 +387,12 @@ const { id } = Astro.params
             </div>`
         }).join('')
         amsSection = `
-          <div style="margin-top: 24px;">
-            <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 12px;">${amsType} (${driverHealth.ams_units.length})</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;">
+          <section class="fm-card fm-section">
+            <header class="fm-section-header"><h2>${amsType} (${driverHealth.ams_units.length})</h2></header>
+            <div class="fm-section-body printer-items">
               ${amsItems}
             </div>
-          </div>`
+          </section>`
       }
       // Debug console section (hidden by default)
       let debugConsoleSection = ''
@@ -400,54 +410,47 @@ const { id } = Astro.params
                   <span style="color: var(--text-muted); font-size: 0.7rem; flex: 1;">${escapeHtml(entry.topic)}</span>
                   <button class="btn-copy-debug" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:2px 6px;line-height:1;flex-shrink:0;" title="Copy">&#x29C9;</button>
                 </div>
-                <pre style="margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--text); max-height: 200px; overflow-y: auto;">${escapeHtml(payloadStr)}</pre>
+                <pre style="margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--text);">${escapeHtml(payloadStr)}</pre>
               </div>`
             }).join('')
 
         debugConsoleSection = `
-          <div class="fm-card" style="margin-top: 24px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <h2 style="font-size: 1.2rem; font-weight: 600;">${t('printers.debugConsoleTitle')}</h2>
-              <div style="display: flex; gap: 8px;">
+          <section class="fm-card fm-section">
+            <header class="fm-section-header">
+              <h2>${t('printers.debugConsoleTitle')}</h2>
+              <div class="fm-list-controls">
                 <button id="btn-clear-debug" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('printers.clearLog')}</button>
                 <button id="btn-close-debug" class="fm-btn fm-btn-outline" style="font-size: 0.85rem;">${t('common.close')}</button>
               </div>
-            </div>
-            <div id="debug-log-container" style="background: var(--bg-deep, var(--bg-soft)); border-radius: 8px; max-height: 400px; overflow-y: auto; font-family: monospace;">
+            </header>
+            <div class="fm-section-body"><div id="debug-log-container" style="background: var(--bg-deep, var(--bg-soft)); border-radius: 8px; max-height: 400px; overflow-y: auto; font-family: monospace;">
               ${logHtml}
-            </div>
-          </div>`
+            </div></div>
+          </section>`
       }
 
       container.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;">
+        <header class="fm-admin-toolbar">
           <div>
-            <h1 style="font-size: 1.8rem; font-weight: 700; font-family: var(--font-serif);">${escapeHtml(printer.name)}</h1>
+            <a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a>
+            <h1>${escapeHtml(printer.name)}</h1>
           </div>
-          <div style="display: flex; gap: 8px;">
+          <div class="fm-list-controls">
             <button id="btn-toggle-active" class="${printer.is_active ? 'fm-btn fm-btn-outline' : 'fm-btn fm-btn-primary'}">
               ${printer.is_active ? t('printers.deactivate') : t('printers.activate')}
             </button>
-            <button id="btn-delete" class="fm-btn fm-btn-danger">
-              ${t('common.delete')}
-            </button>
+            <button id="btn-delete" class="fm-btn fm-btn-danger">${t('common.delete')}</button>
           </div>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('printers.driver')}</div>
-            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">${escapeHtml(printer.driver_key)}</div>
-          </div>
-          <div class="fm-card">
-            <div style="font-size: 0.85rem; color: var(--text-muted);">${t('common.status')}</div>
-            <div style="font-size: 1.15rem; font-weight: 600; margin-top: 4px;">
-              <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); ${printer.is_active ? 'color: var(--accent-2);' : 'color: var(--error-text);'}">
+        </header>
+        <div class="fm-settings-stack">
+          <dl class="printer-metadata">
+            <div><dt>${t('printers.driver')}</dt><dd>${escapeHtml(printer.driver_key)}</dd></div>
+            <div><dt>${t('common.status')}</dt><dd>
+              <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${printer.is_active ? 'var(--success-text)' : 'var(--error-text)'};">
                 ${printer.is_active ? t('common.active') : t('common.inactive')}
               </span>
-            </div>
-          </div>
-        </div>
+            </dd></div>
+          </dl>
 
         ${configSection}
         ${paramsSection}
@@ -455,8 +458,10 @@ const { id } = Astro.params
         ${amsSection}
         ${slotsSection}
         ${debugConsoleSection}
+        </div>
       `
       
+      if (configEditor) document.getElementById('config-content')?.closest('section')?.replaceWith(configEditor)
       bindActions()
     }
 
@@ -509,20 +514,17 @@ const { id } = Astro.params
         }
       })
 
-      document.getElementById('btn-edit-config')?.addEventListener('click', () => {
+      if (!editingConfig) document.getElementById('btn-edit-config')?.addEventListener('click', () => {
+        if (configState?.busy) return
         editingConfig = !editingConfig
         const configContent = document.getElementById('config-content')!
         if (editingConfig) {
           configContent.innerHTML = renderConfigEdit()
           bindConfigForm()
         } else {
-          configContent.innerHTML = renderConfigView()
+          renderPrinter()
         }
       })
-
-      if (editingConfig) {
-        bindConfigForm()
-      }
 
       // Driver start/stop button
       document.getElementById('btn-driver-toggle')?.addEventListener('click', async () => {
@@ -686,6 +688,10 @@ const { id } = Astro.params
         }
       })
 
+      document.getElementById('btn-import-params')?.addEventListener('click', () => {
+        document.getElementById('import-params-file')?.click()
+      })
+
       // Import params file input
       document.getElementById('import-params-file')?.addEventListener('change', async (e) => {
         const input = e.target as HTMLInputElement
@@ -718,15 +724,21 @@ const { id } = Astro.params
     }
 
     function bindConfigForm() {
+      const form = document.getElementById('config-form') as HTMLFormElement
+      const props = pluginSchema.properties as Record<string, any>
+      configState = bindFormState(form, form.querySelector<HTMLButtonElement>('[type="submit"]')!)
+      configState.reset()
       document.getElementById('btn-cancel-config')?.addEventListener('click', () => {
+        if (configState?.busy) return
         editingConfig = false
-        document.getElementById('config-content')!.innerHTML = renderConfigView()
+        renderPrinter()
+        document.getElementById('btn-edit-config')?.focus()
       })
 
-      document.getElementById('config-form')?.addEventListener('submit', async (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault()
-        const form = e.target as HTMLFormElement
-        const props = pluginSchema.properties as Record<string, any>
+        if (configState?.busy || form.dataset.dirty !== 'true' || !form.reportValidity()) return
+        const saveState = configState!
         const currentConfig = printer.driver_config || {}
 
         const edited: Record<string, any> = {}
@@ -745,6 +757,10 @@ const { id } = Astro.params
         // Structured properties have no input; buildDriverConfigPayload takes
         // them from the stored config so the save cannot drop them.
         const driver_config = buildDriverConfigPayload(props, currentConfig, edited)
+        saveState.setBusy(true)
+        document.getElementById('printer-content')!.inert = true
+        const editButton = document.getElementById('btn-edit-config') as HTMLButtonElement
+        editButton.disabled = true
 
         try {
           const response = await fetch(`/api/v1/printers/${id}`, {
@@ -775,6 +791,10 @@ const { id } = Astro.params
           }
         } catch {
           showConfigMessage(t('printers.failedUpdate'), true)
+        } finally {
+          saveState.setBusy(false)
+          document.getElementById('printer-content')!.inert = false
+          editButton.disabled = false
         }
       })
     }
@@ -831,7 +851,7 @@ const { id } = Astro.params
                       <span style="color: var(--text-muted); font-size: 0.7rem; flex: 1;">${escapeHtml(entry.topic)}</span>
                       <button class="btn-copy-debug" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:2px 6px;line-height:1;flex-shrink:0;" title="Copy">&#x29C9;</button>
                     </div>
-                    <pre style="margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--text); max-height: 200px; overflow-y: auto;">${escapeHtml(payloadStr)}</pre>
+                    <pre style="margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; color: var(--text);">${escapeHtml(payloadStr)}</pre>
                   </div>`
                 }).join('')
                 container.insertAdjacentHTML('beforeend', newHtml)
