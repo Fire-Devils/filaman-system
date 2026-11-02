@@ -3,35 +3,55 @@ import Layout from '../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Spool Log">
+  <style>
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+  </style>
   <style is:global>
     .pagination-container { display: flex; justify-content: space-between; align-items: center; }
     .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+    .pagination-pages :is(a, button) { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
+    .pagination-pages :is(a, button):hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
     .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
     .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
-    .fm-table .col-spool-id { width: 6ch; max-width: 6ch; white-space: nowrap; padding: 10px 4px 10px 8px; }
+    .fm-table .col-spool-id { width: 8rem; white-space: nowrap; }
+    #spool-log-table th { white-space: nowrap; }
+    #spool-log-table .fm-header-filter-wrap { display: inline-flex; float: none; vertical-align: middle; }
+    .pagination-pages button { border: 0; background: none; font: inherit; cursor: pointer; }
   </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="spoolLog.title">Spool Log</h1>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="spoolLog.title">Spool Log</h1>
   </div>
 
+  <div class="filter-bar">
+    <div class="fm-filter-search-wrap">
+      <input type="search" id="filter-search" class="fm-input fm-input-search" data-i18n-placeholder="spoolLog.searchPlaceholder" data-i18n-aria-label="spoolLog.searchPlaceholder" aria-label="Search spool log" placeholder="Search spool, material, manufacturer or note…" maxlength="200" />
+      <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
+    </div>
+    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
+    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
+  </div>
   <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
     <div class="pagination-container" id="pagination-top" style="flex: 1;"></div>
   </div>
 
-  <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
+  <div class="fm-card fm-table-scroll" style="padding: 0;">
+    <table id="spool-log-table" class="fm-table fm-admin-table">
       <thead>
-        <tr style="background: var(--bg-soft);">
-          <th class="col-spool-id" data-i18n="spoolLog.spool">Spool</th>
-          <th data-i18n="spools.colMfrColor">Mfr. Color</th>
-          <th data-i18n="spools.manufacturer">Manufacturer</th>
-          <th data-i18n="spools.material">Material</th>
-          <th data-i18n="spoolLog.eventType">Type</th>
-          <th data-i18n="spoolLog.eventDate">Date</th>
-          <th data-i18n="spoolLog.eventWeight">Weight</th>
-          <th data-i18n="spoolLog.eventNote">Note</th>
+        <tr>
+          <th class="sortable col-spool-id" data-sort="spool" data-i18n="spoolLog.spool">Spool</th>
+          <th class="sortable col-mfr-color" data-sort="mfr_color" data-i18n="spools.colMfrColor">Mfr. Color</th>
+          <th class="sortable col-manufacturer" data-sort="manufacturer" data-i18n="spools.manufacturer">Manufacturer</th>
+          <th class="sortable col-material" data-sort="material" data-i18n="spools.material">Material</th>
+          <th class="sortable col-event-type" data-sort="event_type" data-i18n="spoolLog.eventType">Type</th>
+          <th class="sortable col-event-at" data-sort="event_at" data-i18n="spoolLog.eventDate">Date</th>
+          <th class="sortable col-weight" data-sort="weight" data-i18n="spoolLog.eventWeight">Weight</th>
+          <th class="sortable col-note" data-sort="note" data-i18n="spoolLog.eventNote">Note</th>
         </tr>
       </thead>
       <tbody id="events-table">
@@ -48,17 +68,39 @@ import Layout from '../layouts/Layout.astro'
     import { t, initI18n, translatePage } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import { toColorSwatchBackground } from '../lib/colors'
+    import { escapeHtml } from '../lib/extra-fields'
+    import { bindTableFilterControls, initHeaderColumnFilters, isColumnFilterActive, syncHeaderSortButtons, type ColumnFilterValue, type HeaderFilterDefinition } from '../lib/table-column-filters'
 
     await initI18n()
 
+    interface EventColor { name: string; hex_code: string }
+    interface LogEvent {
+      id: number; spool_id: number; event_type: string; event_at: string
+      manufacturer_name: string | null; manufacturer_color_name: string | null
+      material_type: string | null; colors: EventColor[]
+      measured_weight_g: number | null; delta_weight_g: number | null; note: string | null
+    }
+
     let currentPage = 1
+    let requestSequence = 0
+    let sortKey = 'event_at'
+    let sortDirection: 'asc' | 'desc' = 'desc'
+    let columnFilters: Record<string, ColumnFilterValue> = {}
     const allowedPageSizes = [25, 50, 100, 150, 200]
     let pageSize = parseInt(localStorage.getItem('filaman-pagesize-spool-log') || '50', 10)
     if (!allowedPageSizes.includes(pageSize)) pageSize = 50
 
     async function loadEvents() {
+      const sequence = ++requestSequence
+      const params = new URLSearchParams({ page: String(currentPage), page_size: String(pageSize), sort_by: sortKey, sort_order: sortDirection })
+      const search = (document.getElementById('filter-search') as HTMLInputElement).value.trim()
+      if (search) params.set('search', search)
+      if (Object.keys(columnFilters).length) {
+        params.set('filters', JSON.stringify(columnFilters))
+        params.set('timezone_name', Intl.DateTimeFormat().resolvedOptions().timeZone)
+      }
       try {
-        const response = await fetch(`/api/v1/spools/all-events?page=${currentPage}&page_size=${pageSize}`, {
+        const response = await fetch(`/api/v1/spools/all-events?${params}`, {
           credentials: 'include',
           signal: getAbortSignal(),
         })
@@ -66,17 +108,18 @@ import Layout from '../layouts/Layout.astro'
         if (!response.ok) throw new Error('Failed to fetch events')
 
         const data = await response.json()
+        if (sequence !== requestSequence) return
         renderEvents(data.items)
         renderPagination(data.total, data.page)
       } catch (error) {
-        if (isAbortError(error)) return
+        if (isAbortError(error) || sequence !== requestSequence) return
         console.error('Failed to load events:', error)
         const tbody = document.getElementById('events-table')!
         tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--error-text);">${t('spoolLog.failedLoad')}</td></tr>`
       }
     }
 
-    function renderEvents(events: any[]) {
+    function renderEvents(events: LogEvent[]) {
       const tbody = document.getElementById('events-table')!
 
       if (events.length === 0) {
@@ -99,28 +142,18 @@ import Layout from '../layouts/Layout.astro'
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.manufacturer_name) || '-'}</td>
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.material_type) || '-'}</td>
           <td style="padding: 12px;">
-            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${e.event_type}</span>
+            <span class="fm-pill" style="${getEventTypeStyle(e.event_type)}">${escapeHtml(e.event_type)}</span>
           </td>
           <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
             ${new Date(e.event_at).toLocaleString()}
           </td>
           <td style="padding: 12px; font-family: monospace; font-size: 0.85rem;">
-            ${e.measured_weight_g !== null ? e.measured_weight_g.toFixed(0) + 'g' : ''}
-            ${e.delta_weight_g !== null ? (e.delta_weight_g > 0 ? '+' : '') + e.delta_weight_g.toFixed(0) + 'g' : ''}
+            ${e.measured_weight_g !== null ? e.measured_weight_g + ' g' : ''}
+            ${e.delta_weight_g !== null ? (e.delta_weight_g > 0 ? '+' : '') + e.delta_weight_g + ' g' : ''}
           </td>
-          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${e.note || '-'}</td>
+          <td style="padding: 12px; font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(e.note) || '-'}</td>
         </tr>
       `).join('')
-    }
-
-    function escapeHtml(value: any): string {
-      if (value === null || value === undefined) return ''
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
     }
 
     function normalizeHexColor(hex: string | null | undefined): string {
@@ -129,7 +162,7 @@ import Layout from '../layouts/Layout.astro'
       return value.startsWith('#') ? value : `#${value}`
     }
 
-    function renderColorDots(colors: any[] | null | undefined): string {
+    function renderColorDots(colors: EventColor[] | null | undefined): string {
       if (!colors || colors.length === 0) return ''
       return colors.map(c => {
         if (!c) return ''
@@ -141,7 +174,7 @@ import Layout from '../layouts/Layout.astro'
     }
 
     function renderMfrColorCell(
-      colors: any[] | null | undefined,
+      colors: EventColor[] | null | undefined,
       manufacturerColorName: string | null | undefined
     ): string {
       const dots = renderColorDots(colors)
@@ -182,7 +215,7 @@ import Layout from '../layouts/Layout.astro'
         return `<div style="font-size: 0.8rem; color: var(--text-muted);">${total} ${t('spoolLog.title')}</div>`
       }
       if (totalPages <= 1) {
-        const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
+        const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<button type="button" class="page-link page-size-link" data-size="${s}">${s}</button>`).join('')
         return `
           <div style="font-size: 0.8rem; color: var(--text-muted);">${total} ${t('spoolLog.title')}</div>
           <div></div>
@@ -196,18 +229,18 @@ import Layout from '../layouts/Layout.astro'
       const pageItems = pageNumbers.map(p => {
         if (p === '\u2026') return `<span class="page-ellipsis">\u2026</span>`
         if (p === page) return `<span class="page-current">${p}</span>`
-        return `<a class="page-link" data-page="${p}">${p}</a>`
+        return `<button type="button" class="page-link" data-page="${p}">${p}</button>`
       }).join('')
-      const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
+      const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<button type="button" class="page-link page-size-link" data-size="${s}">${s}</button>`).join('')
       return `
         <div style="font-size: 0.8rem; color: var(--text-muted);">
           ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
         </div>
         <div class="pagination-pages">
           <span style="color: var(--text-muted);">${t('common.page')}:</span>
-          ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
+          ${page > 1 ? `<button type="button" class="page-link page-prev" aria-label="${escapeHtml(t('common.previous'))}">\u2039</button>` : ''}
           ${pageItems}
-          ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
+          ${page < totalPages ? `<button type="button" class="page-link page-next" aria-label="${escapeHtml(t('common.next'))}">\u203A</button>` : ''}
         </div>
         <div class="pagination-pages">
           <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
@@ -255,6 +288,45 @@ import Layout from '../layouts/Layout.astro'
       })
     }
 
+    const table = document.getElementById('spool-log-table') as HTMLTableElement
+    function applyFilters() { currentPage = 1; void loadEvents() }
+    const definitions: HeaderFilterDefinition[] = [
+      ['spool', 'spoolLog.spool', 'col-spool-id', 'number'],
+      ['mfr_color', 'spools.colMfrColor', 'col-mfr-color', 'text'],
+      ['manufacturer', 'spools.manufacturer', 'col-manufacturer', 'text'],
+      ['material', 'spools.material', 'col-material', 'text'],
+      ['event_type', 'spoolLog.eventType', 'col-event-type', 'text'],
+      ['event_at', 'spoolLog.eventDate', 'col-event-at', 'date'],
+      ['weight', 'spoolLog.eventWeight', 'col-weight', 'number'],
+      ['note', 'spoolLog.eventNote', 'col-note', 'text'],
+    ].map(([key, label, column, type]) => ({
+      key, label: t(label), columnSelector: `th.${column}`, type: type as 'text' | 'number' | 'date',
+      onApply(value: ColumnFilterValue) {
+        if (isColumnFilterActive(value)) columnFilters[key] = value
+        else delete columnFilters[key]
+        applyFilters()
+      },
+    }))
+    const headerFilters = initHeaderColumnFilters(table, definitions)
+    function syncSort() {
+      table.querySelectorAll('th[data-sort]').forEach(cell => {
+        cell.classList.toggle('sort-asc', cell.getAttribute('data-sort') === sortKey && sortDirection === 'asc')
+        cell.classList.toggle('sort-desc', cell.getAttribute('data-sort') === sortKey && sortDirection === 'desc')
+      })
+      syncHeaderSortButtons(table, sortKey, sortDirection)
+    }
+    table.tHead?.addEventListener('click', event => {
+      const header = (event.target as HTMLElement).closest<HTMLElement>('th[data-sort]')
+      if (!header) return
+      const key = header.dataset.sort!
+      sortDirection = sortKey === key && sortDirection === 'asc' ? 'desc' : 'asc'
+      sortKey = key
+      syncSort()
+      applyFilters()
+    })
+    function clearColumns() { columnFilters = {}; headerFilters.resetAll(); applyFilters() }
+    bindTableFilterControls({ onApply: applyFilters, onClearColumns: clearColumns, onClearAll: clearColumns })
+    syncSort()
     translatePage()
     loadEvents()
   </script>

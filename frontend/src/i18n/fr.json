@@ -1236,6 +1236,7 @@
     "noPrinters": "Aucune imprimante active."
   },
   "spoolLog": {
+    "searchPlaceholder": "Rechercher une bobine, un matériau, un fabricant ou une note…",
     "title": "Journal",
     "spool": "Bobine",
     "eventType": "Type",
