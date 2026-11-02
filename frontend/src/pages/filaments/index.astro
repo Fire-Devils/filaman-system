@@ -6,6 +6,20 @@ import Layout from '../../layouts/Layout.astro'
   <style>
     .sortable { cursor: pointer; user-select: none; }
     .sortable:hover { background: var(--bg-hover); }
+    .spool-selection-only[hidden] { display: none; }
+    :global(.filament-spool-select) {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      color: var(--text-muted);
+      vertical-align: middle;
+    }
+    :global(.filament-spool-select:hover) { color: var(--text); }
+    :global(.filament-spool-select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+    :global(.filament-spool-select:active) { color: var(--success-text); background: var(--success-bg); }
   </style>
   <style is:global>
     .pagination-container { display: flex; justify-content: space-between; align-items: center; }
@@ -40,13 +54,15 @@ import Layout from '../../layouts/Layout.astro'
     .bulk-action-bar.visible { transform: translateY(0); }
     .bulk-action-bar .bulk-count { font-weight: 600; margin-right: 8px; white-space: nowrap; }
   </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="filaments.title">Filaments</h1>
-    <div style="display: flex; gap: 12px;">
+  <a id="spool-selection-back" href="/spools" class="fm-admin-back spool-selection-only" hidden>&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="filaments.title">Filaments</h1>
+    <div class="fm-list-controls">
       <a href="/filaments/colors" class="fm-btn fm-btn-outline" data-i18n="filaments.manageColors">
         Manage Colors
       </a>
-      <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
+      <a id="spool-selection-import" href="/spools/new?from_tag=1" class="fm-btn fm-btn-outline spool-selection-only" hidden data-i18n="spools.importFromTag">Import from Tag</a>
+      <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
         Add Filament
       </a>
     </div>
@@ -250,6 +266,21 @@ import Layout from '../../layouts/Layout.astro'
 
     const urlParams = new URLSearchParams(window.location.search)
     const filterManufacturerId = urlParams.get('manufacturer_id')
+    const selectForSpool = urlParams.get('select_for_spool') === '1'
+    const createFilamentHref = selectForSpool ? '/filaments/new?create_spool=1' : '/filaments/new'
+    if (selectForSpool) {
+      const title = document.querySelector('h1')!
+      title.dataset.i18n = 'spools.selectFilament'
+      title.textContent = t('spools.selectFilament')
+      document.title = `FilaMan - ${t('spools.selectFilament')}`
+      document.querySelectorAll<HTMLElement>('.spool-selection-only').forEach(element => { element.hidden = false })
+      document.getElementById('spool-selection-back')!.addEventListener('click', () => sessionStorage.removeItem('filaman_spool_create_draft'))
+      document.getElementById('add-filament')!.setAttribute('href', createFilamentHref)
+      const selectionHeader = document.getElementById('bulk-select-all')!.closest('th')!
+      selectionHeader.textContent = ''
+      selectionHeader.setAttribute('aria-label', t('common.select'))
+      document.getElementById('bulk-action-bar')!.style.display = 'none'
+    }
     const normalizeSavedValues = (value: unknown): string[] => {
       if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
       return typeof value === 'string' && value.length > 0 ? [value] : []
@@ -581,7 +612,7 @@ import Layout from '../../layouts/Layout.astro'
         tbody.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--text-muted);">
-              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
@@ -595,9 +626,13 @@ import Layout from '../../layouts/Layout.astro'
 
     function renderFilamentRow(f: any): string {
       const currency = f.price_currency || getCurrency()
+      const href = selectForSpool ? `/spools/new?filament_id=${f.id}` : `/filaments/${f.id}`
+      const selectionLabel = escapeHtml(`${t('common.select')}: ${f.manufacturer?.name || ''} ${f.material_type || ''} ${f.designation || ''}`)
       return `
-        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
-          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" /></td>
+        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='${href}'">
+          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">${selectForSpool
+            ? `<a href="${href}" class="filament-spool-select" aria-label="${selectionLabel}" title="${selectionLabel}"><svg width="28" height="28" aria-hidden="true"><use href="/icons.svg#icon-status" /></svg></a>`
+            : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" />`}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.manufacturer?.name || '-')}</td>
           <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(f.manufacturer.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.material_type)}</td>
@@ -652,7 +687,7 @@ import Layout from '../../layouts/Layout.astro'
         tbody.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--text-muted);">
-              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
@@ -1124,6 +1159,7 @@ import Layout from '../../layouts/Layout.astro'
 
     // ── Bulk Selection & Actions ──────────────────────────────
     function updateBulkBar() {
+      if (selectForSpool) return
       const bar = document.getElementById('bulk-action-bar')!
       const countEl = document.getElementById('bulk-count')!
       const selectAllCb = document.getElementById('bulk-select-all') as HTMLInputElement
@@ -1143,6 +1179,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function toggleFilamentSelection(id: number, checked: boolean) {
+      if (selectForSpool) return
       if (checked) {
         selectedFilamentIds.add(id)
       } else {

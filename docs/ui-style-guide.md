@@ -9,6 +9,7 @@ Use the existing filament/spool detail pages and shared compact forms as the ref
 | Full-page list | Plain title and compact actions above the table (`.fm-list-toolbar`; `AdminHeader` on Admin pages). Softly contrasting column headers (`--bg-soft`), a bottom rule and bare row-action icons. Add filter/sort controls where useful. No tinted page-title strip. |
 | Bounded content section | `FormSection`: softly tinted heading (`--bg-soft`), body (`--bg-elevated`), shared border and radius. Keep nested subsections lighter: a small heading and divider, not another full card. |
 | Settings form | Bounded readable width; use shared row layout. Use the same plain title and action row as full-page lists, without a separate Settings header style. Save reflects actual changes. |
+| New spool | Select an existing filament through the filament list, retaining search, filters and Add Filament. Reuse the spool editor's field definitions and styles; keep creation-only quantity, location and tag import in the create flow. |
 | Complex create/edit form | `FormDialog` with title and Save/Cancel in its sticky header. Desktop popup; full-screen on small screens. |
 | Simple record metadata | In-place edit with explicit Save/Cancel. Keep the record context and field order, retain the draft after failure, and return focus on cancellation. |
 | Dashboard | Styling changes preserve existing fields and grouping unless a layout change is explicitly approved. Apply the shared type, borders and spacing; color communicates status. |
