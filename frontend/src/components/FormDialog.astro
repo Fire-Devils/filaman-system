@@ -1,0 +1,17 @@
+---
+interface Props {
+  id: string
+  titleId: string
+  titleKey: string
+  title: string
+  wide?: boolean
+}
+const { id, titleId, titleKey, title, wide = false } = Astro.props
+---
+<dialog id={id} class:list={['fm-form-dialog', { 'fm-form-dialog-wide': wide }]} aria-labelledby={titleId}>
+  <header class="fm-section-header fm-form-dialog-header">
+    <h2 id={titleId} data-i18n={titleKey}>{title}</h2>
+    <div class="fm-header-actions"><slot name="actions" /></div>
+  </header>
+  <div class="fm-section-body"><slot /></div>
+</dialog>

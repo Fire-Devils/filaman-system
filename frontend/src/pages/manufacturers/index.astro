@@ -27,11 +27,13 @@ import Layout from '../../layouts/Layout.astro'
     .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
     .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
   </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
-    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
-      Add Manufacturer
-    </button>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="manufacturers.title">Manufacturers</h1>
+    <div class="fm-list-controls">
+      <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
+        Add Manufacturer
+      </button>
+    </div>
   </div>
 
   <div class="filter-bar">

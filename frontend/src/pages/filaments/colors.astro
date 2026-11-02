@@ -1,17 +1,18 @@
 ---
 import ColorEditorFields from '../../components/ColorEditorFields.astro'
+import FormDialog from '../../components/FormDialog.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Manage Colors">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+  <div class="fm-list-toolbar">
     <div style="display: flex; align-items: center; gap: 16px;">
       <a href="/filaments" class="fm-btn fm-btn-outline" style="padding: 8px;" data-i18n-title="common.back">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </a>
-      <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="colors.title">Manage Colors</h1>
+      <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="colors.title">Manage Colors</h1>
     </div>
-    <div style="display: flex; gap: 12px;">
+    <div class="fm-list-controls">
       <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="colors.addColor">Add Color</button>
     </div>
@@ -35,25 +36,18 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 40rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="colors.addColor">Add Color</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+  <FormDialog id="modal-container" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
+    <Fragment slot="actions">
+      <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" id="modal-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="modal-form" class="fm-compact-form">
         <input type="hidden" id="color-id" />
         <ColorEditorFields idPrefix="color" />
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
-            Save
-          </button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-  
+        <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
@@ -69,7 +63,14 @@ import Layout from '../../layouts/Layout.astro'
       type ColumnFilterValue,
       type HeaderFilterController,
     } from '../../lib/table-column-filters'
+    import { tableAction } from '../../lib/table-actions'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormState } from '../../lib/form-state'
     await initI18n()
+
+    const modalForm = document.getElementById('modal-form') as HTMLFormElement
+    const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
+    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
     let colors: any[] = []
     let sortKey: string | null = 'name'
@@ -157,24 +158,7 @@ import Layout from '../../layouts/Layout.astro'
             ${t('colors.usedIn', { count: c.usage_count })}
           </td>
           <td style="padding: 12px; text-align: right;">
-            <button 
-              data-id="${escapeHtml(String(c.id))}"
-              data-name="${escapeHtml(c.name)}"
-              data-hex="${escapeHtml(c.hex_code)}"
-              class="btn-edit" 
-              style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;"
-            >
-              ${t('common.edit')}
-            </button>
-            <button 
-              data-id="${escapeHtml(String(c.id))}"
-              data-usage="${escapeHtml(String(c.usage_count))}"
-              class="btn-delete" 
-              style="color: ${c.usage_count > 0 ? 'var(--text-muted)' : 'var(--error-text)'}; background: none; border: none; cursor: ${c.usage_count > 0 ? 'not-allowed' : 'pointer'};"
-              ${c.usage_count > 0 ? `title="${t('colors.inUseWarning')}"` : ''}
-            >
-              ${t('common.delete')}
-            </button>
+            <div class="fm-row-actions">${tableAction('edit', { id: c.id })}${tableAction('delete', { id: c.id, usage: c.usage_count }, { disabled: c.usage_count > 0, title: c.usage_count > 0 ? t('colors.inUseWarning') : undefined })}</div>
           </td>
         </tr>
       `).join('')
@@ -184,11 +168,8 @@ import Layout from '../../layouts/Layout.astro'
       document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
-          openModal(
-            parseInt(target.dataset.id!),
-            target.dataset.name!,
-            target.dataset.hex!
-          )
+          const color = colors.find(color => color.id === Number(target.dataset.id))
+          if (color) openModal(color.id, color.name, color.hex_code)
         })
       })
       
@@ -296,7 +277,6 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     function openModal(id: number | null = null, name: string = '', hex: string = '#000000') {
-      const container = document.getElementById('modal-container')!
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('color-id') as HTMLInputElement
       const nameInput = document.getElementById('color-name') as HTMLInputElement
@@ -308,16 +288,16 @@ import Layout from '../../layouts/Layout.astro'
       colorControls.reset(normalizeHexCode(hex) || '#000000')
       error.classList.add('hidden')
       
-      container.classList.add('open')
+      formState.reset()
+      formDialog.open()
       nameInput.focus()
     }
     
     function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
+      formDialog.close()
     }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     
     // Sync picker, opacity slider, and hex input
     const hexInput = document.getElementById('color-hex') as HTMLInputElement
@@ -349,7 +329,8 @@ import Layout from '../../layouts/Layout.astro'
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
       error.classList.add('hidden')
-      submitBtn.disabled = true
+      if (formState.busy || !modalForm.reportValidity()) return
+      formState.setBusy(true)
       submitBtn.textContent = t('common.saving')
       
       try {
@@ -372,6 +353,7 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.message || t('colors.failedSave'))
         }
         
+        formState.setBusy(false)
         closeModal()
         loadColors()
       } catch (err: any) {
@@ -379,7 +361,7 @@ import Layout from '../../layouts/Layout.astro'
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
-        submitBtn.disabled = false
+        formState.setBusy(false)
         submitBtn.textContent = t('common.save')
       }
     })

@@ -1,11 +1,12 @@
 ---
+import FormDialog from '../../components/FormDialog.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Printers">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printers.title">Printers</h1>
-    <div style="display: flex; gap: 8px;">
+  <div class="fm-list-toolbar">
+    <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printers.title">Printers</h1>
+    <div class="fm-list-controls">
       <button
         id="btn-check-all"
         class="fm-btn fm-btn-outline"
@@ -43,10 +44,12 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="printers.addPrinter">Add Printer</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+  <FormDialog id="modal-container" titleId="modal-title" titleKey="printers.addPrinter" title="Add Printer" >
+    <Fragment slot="actions">
+      <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" id="modal-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="modal-form" class="fm-compact-form">
         <input type="hidden" id="printer-id" />
         <div>
           <label for="printer-name" class="fm-label" data-i18n="printers.name">
@@ -71,24 +74,23 @@ import Layout from '../../layouts/Layout.astro'
           </select>
         </div>
         <div id="config-fields" style="display: flex; flex-direction: column; gap: 12px;"></div>
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
-            Save
-          </button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-  
+        <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { tableAction } from '../../lib/table-actions'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormState } from '../../lib/form-state'
     await initI18n()
+
+    const modalForm = document.getElementById('modal-form') as HTMLFormElement
+    const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
+    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
     let printers: any[] = []
     let allPlugins: any[] = []
@@ -198,9 +200,9 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = printers.map(p => `
         <tr style="cursor: pointer;" onclick="window.location='/printers/${p.id}'">
-          <td style="padding: 12px; font-weight: 500;">${p.name}</td>
+          <td style="padding: 12px; font-weight: 500;">${escapeHtml(p.name)}</td>
           <td style="padding: 12px;">
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);">${p.driver_key}</span>
+            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);">${escapeHtml(p.driver_key)}</span>
           </td>
           <td style="padding: 12px;">
             <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${p.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
@@ -214,8 +216,7 @@ import Layout from '../../layouts/Layout.astro'
             <span id="slots-info-${p.id}" style="font-size: 0.8rem;">${renderSlotTags(p.custom_fields?.slot_summary)}</span>
           </td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
-            <button data-id="${p.id}" data-name="${p.name}" data-driver="${p.driver_key}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
-            <button data-id="${p.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
+            <div class="fm-row-actions">${tableAction('edit', { id: p.id })}${tableAction('delete', { id: p.id })}</div>
           </td>
         </tr>
       `).join('')
@@ -268,7 +269,6 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, any>) {
-      const container = document.getElementById('modal-container')!
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('printer-id') as HTMLInputElement
       const nameInput = document.getElementById('printer-name') as HTMLInputElement
@@ -283,16 +283,16 @@ import Layout from '../../layouts/Layout.astro'
       
       renderConfigFields(driver, config)
       
-      container.classList.add('open')
+      formState.reset()
+      formDialog.open()
       nameInput.focus()
     }
     
     function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
+      formDialog.close()
     }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -332,7 +332,8 @@ import Layout from '../../layouts/Layout.astro'
       if (driver_config) data.driver_config = driver_config
       
       error.classList.add('hidden')
-      submitBtn.disabled = true
+      if (formState.busy || !modalForm.reportValidity()) return
+      formState.setBusy(true)
       submitBtn.textContent = t('common.saving')
       
       try {
@@ -355,6 +356,7 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.message || t('printers.failedSave'))
         }
         
+        formState.setBusy(false)
         closeModal()
         loadPrinters()
       } catch (err: any) {
@@ -362,7 +364,7 @@ import Layout from '../../layouts/Layout.astro'
         error.textContent = err.message
         error.classList.remove('hidden')
       } finally {
-        submitBtn.disabled = false
+        formState.setBusy(false)
         submitBtn.textContent = t('common.save')
       }
     })
