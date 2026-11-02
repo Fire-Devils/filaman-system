@@ -3,6 +3,7 @@ import { bootAstroPage } from '../../tests/helpers/astro-page'
 import { afterEach, expect, it, vi } from 'vitest'
 import { bindFormDialog } from './form-dialog'
 import { escapeHtml } from './extra-fields'
+import { hasPermission } from './auth'
 
 interface DashboardActions {
   openSpoolModal: (type: 'problem') => Promise<void>
@@ -14,7 +15,7 @@ interface DashboardActions {
 async function boot(canArchive = false) {
   const fetch = vi.fn(async (_path: string, init?: RequestInit) => init?.method
     ? Response.json({ detail: 'Not permitted' }, { status: 403 })
-    : Response.json({ spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, filament_count_active: 1, filament_count_used: 0, total_value_available: 3, manufacturers_with_spools: [], low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }], filament_types: [], location_stats: [], filament_stats: [] }))
+    : Response.json({ spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, filament_count_active: 1, filament_count_used: 0, total_value_available: 3, manufacturers_with_spools: [{ id: 7, name: 'Maker <clear>', spool_count: 2 }], low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }], filament_types: [{ material_type: 'Empty-only type', count: 4 }], location_stats: [{ location_id: 9, location_name: 'Dry <box>', spool_count: 4, total_weight_g: 2500 }], filament_stats: [{ filament_type: 'PLA', spool_count: 2, total_weight_g: 1500 }, { filament_type: 'PETG <clear>', spool_count: 1, total_weight_g: 250 }] }))
   const dependencies = {
     t: (key: string) => key, initI18n: async () => {}, getLang: () => 'en',
     formatPrice: (value: number) => `€${value}`, getCurrency: () => 'EUR', initCurrency: async () => {},
@@ -24,7 +25,8 @@ async function boot(canArchive = false) {
       : { items: [{ id: 3, filament_id: 2, remaining_weight_g: 50, low_weight_threshold_g: 100 }], total: 1 },
     fetchSequential: async (jobs: (() => Promise<unknown>)[]) => { const result = []; for (const job of jobs) result.push(await job()); return result },
     CACHE_KEYS: { FILAMENTS: 'filaments' }, getAbortSignal: () => undefined,
-    isAbortError: () => false, getMe: async () => ({}), hasPermission: () => canArchive,
+    isAbortError: () => false,
+    getMe: async () => ({ is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }), hasPermission,
     bindFormDialog, escapeHtml, fetch,
   }
   await bootAstroPage('index', dependencies)
@@ -33,8 +35,15 @@ async function boot(canArchive = false) {
 }
 afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren(); localStorage.clear() })
 
-it('keeps scope controls accessible and opens an escaped, read-only drilldown without archive permission', async () => {
+it('renders safe material statistics and scope controls, and opens a read-only drilldown without archive permission', async () => {
   await boot()
+  expect(document.querySelector('#filament-types')).toBeNull()
+  const rows = [...document.querySelectorAll('#filament-stats tbody tr')]
+  expect(rows.map(row => [...row.querySelectorAll('td')].map(cell => cell.textContent)))
+    .toEqual([['PLA', '2', '1.5 kg'], ['PETG <clear>', '1', '250 g']])
+  expect(rows[1].querySelector('a')!.getAttribute('href')).toBe('/spools?material=PETG%20%3Cclear%3E')
+  expect(document.querySelector('#filament-stats')!.textContent).not.toContain('Empty-only type')
+
   document.querySelector<HTMLButtonElement>('[data-scope="active"]')!.click()
   expect(document.querySelector('#stat-total-filaments')!.textContent).toBe('1')
   expect(document.querySelector('[data-scope="active"]')!.getAttribute('aria-pressed')).toBe('true')
@@ -42,7 +51,6 @@ it('keeps scope controls accessible and opens an escaped, read-only drilldown wi
   opener.focus()
   opener.click()
   await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#spool-modal')!.open).toBe(true))
-  expect(document.querySelector('#spool-modal')!.classList.contains('fm-form-dialog-wide')).toBe(true)
   expect(document.querySelector('#modal-content img')).toBeNull()
   expect(document.querySelector('#modal-content')!.textContent).toContain('<img src=x onerror=alert(1)>')
   expect(document.querySelector('#modal-content a')!.getAttribute('href')).toBe('/spools/3')
@@ -51,6 +59,24 @@ it('keeps scope controls accessible and opens an escaped, read-only drilldown wi
   document.querySelector<HTMLDialogElement>('#spool-modal')!.dispatchEvent(new Event('cancel', { cancelable: true }))
   expect(document.querySelector<HTMLDialogElement>('#spool-modal')!.open).toBe(false)
   expect(document.activeElement).toBe(opener)
+})
+
+it('labels manufacturer counts and preserves safe manufacturer drilldowns', async () => {
+  await boot()
+  const table = document.querySelector('#manufacturers-with-spools')!
+  expect([...table.querySelectorAll('th')].map(cell => cell.textContent)).toEqual(['dashboard.manufacturer', 'dashboard.spools'])
+  expect(table.querySelector('a')!.textContent).toBe('Maker <clear>')
+  expect(table.querySelector('a')!.getAttribute('href')).toBe('/spools?manufacturer_id=7')
+  expect(table.querySelector('td:last-child')!.textContent).toBe('2')
+})
+
+it('renders compact location summaries with safe names, counts, weights and drilldowns', async () => {
+  await boot()
+  const location = document.querySelector('#location-stats li')!
+  expect(location.querySelector('a')!.textContent).toBe('Dry <box>')
+  expect(location.querySelector('a')!.getAttribute('href')).toBe('/spools?location_id=9')
+  expect([...location.querySelectorAll('span')].map(span => span.textContent)).toEqual(['4 dashboard.spools', '2.5 kg'])
+  expect(location.querySelector('box')).toBeNull()
 })
 
 it('retains the archive request contract and leaves failed rows available for retry', async () => {

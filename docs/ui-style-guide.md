@@ -12,7 +12,7 @@ Use the existing filament/spool detail pages and shared compact forms as the ref
 | New spool | Select an existing filament through the filament list, retaining search, filters and Add Filament. Reuse the spool editor's field definitions and styles; keep creation-only quantity, location and tag import in the create flow. |
 | Complex create/edit form | `FormDialog` with title and Save/Cancel in its sticky header. Desktop popup; full-screen on small screens. |
 | Simple record metadata | In-place edit with explicit Save/Cancel. Keep the record context and field order, retain the draft after failure, and return focus on cancellation. |
-| Dashboard | Styling changes preserve existing fields and grouping unless a layout change is explicitly approved. Apply the shared type, borders and spacing; color communicates status. |
+| Dashboard | Four summary cards in one desktop row. Summary cards, Spool Status/Locations and inventory lists share column tracks and gutters so panel edges align. Low-stock Spools spans the first two tracks; Manufacturers and Filament Statistics each use one. Use matching row heights and bounded scrolling. At intermediate widths, Low-stock Spools spans both columns; stack cards on small screens. Use shared type, borders and spacing; color communicates status. |
 
 ## Layout and density
 
@@ -56,6 +56,7 @@ Use the existing filament/spool detail pages and shared compact forms as the ref
 
 - Reuse column filter/sort helpers. Filtering paginated records must apply to the complete dataset before pagination and counts, with deterministic ordering.
 - Keep a column's heading, sort button and filter button on one line. The search/action toolbar may wrap when needed; wide tables should scroll inside their own container (`.fm-table-scroll`), without widening the whole page or clipping columns.
+- Dashboard inventory lists use **32px rows** with **4px 6px** cell padding through `--table-cell-padding`; other dashboard tables use **4px 8px** padding. Keep numeric columns compact and remaining weights visible during horizontal scrolling. Other tables retain the normal shared padding.
 - Preserve existing routes, request/response shapes, empty-secret behavior and backend validation when changing presentation.
 - Verify loading, empty, populated, unchanged, changed, reverted, saving and failed states. Check keyboard operation, hidden controls, long translated labels, desktop/tablet/mobile layouts and the three themes. Confirm sticky actions remain reachable after scrolling.
 - Capture real before/after screenshots at matching viewport/data/theme states. Mark evidence pending when browser access is unavailable; do not present old screenshots as the current code.

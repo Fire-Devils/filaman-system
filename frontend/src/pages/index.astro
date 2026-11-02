@@ -40,27 +40,22 @@ import FormDialog from '../components/FormDialog.astro'
     </div>
 
     <div class="dashboard-overview">
-      <FormSection titleKey="dashboard.lowStockSpools" title="Low-stock spools">
-        <div id="low-stock-spools" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
+      <FormSection titleKey="dashboard.spoolStatus" title="Spool status">
+        <div id="spool-status" class="dashboard-status"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
-      <FormSection titleKey="dashboard.manufacturersWithSpools" title="Manufacturers with available spools">
-        <div id="manufacturers-with-spools" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
-      </FormSection>
-      <FormSection titleKey="dashboard.filamentTypes" title="Filament types">
-        <div id="filament-types" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
+      <FormSection titleKey="dashboard.locationStats" title="Locations">
+        <div id="location-stats" class="dashboard-locations"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
     </div>
     <div class="dashboard-details">
-      <div class="dashboard-stack">
-        <FormSection titleKey="dashboard.spoolStatus" title="Spool status">
-          <div id="spool-status" class="dashboard-status"><p data-i18n="common.loading">Loading...</p></div>
-        </FormSection>
-        <FormSection titleKey="dashboard.locationStats" title="Locations">
-          <div id="location-stats" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
-        </FormSection>
-      </div>
-      <FormSection titleKey="dashboard.filamentStats" title="Filament statistics">
-        <div id="filament-stats" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
+      <FormSection id="low-stock-title" titleKey="dashboard.lowStockSpools" title="Low-stock spools" class="dashboard-low-stock">
+        <div id="low-stock-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection id="manufacturers-title" titleKey="nav.manufacturers" title="Manufacturers">
+        <div id="manufacturers-with-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="manufacturers-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection id="filament-stats-title" titleKey="dashboard.filamentStats" title="Filament statistics">
+        <div id="filament-stats" class="dashboard-table dashboard-list" role="region" aria-labelledby="filament-stats-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
     </div>
   </div>
@@ -79,9 +74,9 @@ import FormDialog from '../components/FormDialog.astro'
   </FormDialog>
 
   <style>
-    .dashboard-page { width: 100%; max-width: 1110px; }
-    .dashboard-title { font: 700 1.8rem var(--font-serif); margin: 0 0 20px; }
-    .dashboard-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .dashboard-page { --dashboard-columns: repeat(2, minmax(0, 1.2fr)) minmax(0, 1fr) minmax(0, 1.1fr); width: 100%; max-width: var(--content-max-width); }
+    .dashboard-title { font: 700 var(--page-title-size) var(--font-serif); margin: 0 0 20px; }
+    .dashboard-metrics { display: grid; grid-template-columns: var(--dashboard-columns); gap: 12px; }
     .dashboard-metric { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px; color: var(--text); text-decoration: none; text-align: left; }
     button.dashboard-metric { width: 100%; font: inherit; cursor: pointer; }
     .dashboard-metric > div { min-width: 0; }
@@ -96,20 +91,50 @@ import FormDialog from '../components/FormDialog.astro'
     #stat-low-spools { color: var(--error-text); }
     #stat-empty-spools { color: var(--text-muted); }
     .dashboard-scope { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-    .dashboard-overview, .dashboard-details { display: grid; gap: 16px; align-items: start; margin-top: 16px; }
-    .dashboard-overview { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
-    .dashboard-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .dashboard-stack { display: grid; gap: 16px; min-width: 0; }
-    .dashboard-table { min-width: 0; overflow-x: auto; }
+    .dashboard-overview, .dashboard-details { display: grid; grid-template-columns: var(--dashboard-columns); gap: var(--section-gap); column-gap: 12px; align-items: start; margin-top: var(--section-gap); }
+    .dashboard-overview > :global(.fm-section), .dashboard-details > :global(.dashboard-low-stock) { grid-column: span 2; }
+    .dashboard-stack { display: grid; gap: var(--section-gap); min-width: 0; }
+    .dashboard-table { --table-cell-padding: 4px 8px; min-width: 0; overflow-x: auto; }
     .dashboard-table :global(.fm-table) { width: 100%; font-size: .85rem; }
     .dashboard-table :global(th) { background: var(--bg-soft); }
+    .dashboard-list { --table-cell-padding: 4px 6px; max-height: 26rem; overflow: auto; scrollbar-gutter: stable; }
+    .dashboard-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dashboard-list :global(.fm-table) { table-layout: fixed; }
+    .dashboard-list :global(th), .dashboard-list :global(td) { height: 32px; box-sizing: border-box; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dashboard-list :global(th) { position: sticky; top: 0; z-index: 1; font-size: .75rem; letter-spacing: normal; text-transform: none; }
+    #low-stock-spools :global(.fm-table) { min-width: 460px; }
+    #low-stock-spools :global(td:last-child) { position: sticky; right: 0; background: var(--bg-elevated); }
+    #low-stock-spools :global(th:last-child) { right: 0; z-index: 2; }
+    .dashboard-list :global(a) { display: block; overflow: hidden; text-overflow: ellipsis; }
+    #low-stock-spools :global(th:first-child) { width: 64px; }
+    #low-stock-spools :global(th:nth-child(3)) { width: 110px; }
+    #low-stock-spools :global(th:last-child) { width: 78px; }
+    #manufacturers-with-spools :global(th:last-child) { width: 64px; }
+    #filament-stats :global(th:nth-child(2)) { width: 64px; }
+    #filament-stats :global(th:last-child) { width: 78px; }
     .dashboard-table :global(a) { color: var(--accent); text-decoration: none; }
     .dashboard-table :global(a:hover) { text-decoration: underline; }
     .dashboard-table :global(p) { color: var(--text-muted); margin: 0; }
-    .dashboard-status { display: flex; flex-wrap: wrap; justify-content: space-evenly; gap: 16px; }
+    .dashboard-status { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--control-gap); text-align: center; }
+    .dashboard-locations :global(ul) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; }
+    .dashboard-locations :global(li) { min-width: 0; }
+    .dashboard-locations :global(a) { color: var(--accent); text-decoration: none; font-size: .85rem; overflow-wrap: anywhere; }
+    .dashboard-locations :global(a:hover) { text-decoration: underline; }
+    .dashboard-locations :global(li > div) { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text-muted); font-size: .75rem; margin-top: 4px; }
+    .dashboard-locations :global(p) { color: var(--text-muted); margin: 0; }
     .dashboard-changelog-version { margin: 0; color: var(--text-muted); font-size: .85rem; }
-    @container detail-page (max-width: 60rem) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @container detail-page (max-width: 43rem) { .dashboard-details { grid-template-columns: minmax(0, 1fr); } }
+    @container detail-page (max-width: 65rem) {
+      .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .dashboard-overview, .dashboard-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dashboard-overview > :global(.fm-section) { grid-column: auto; }
+      .dashboard-details > :global(.dashboard-low-stock) { grid-column: 1 / -1; }
+    }
+    @container detail-page (max-width: 52rem) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container detail-page (max-width: 43rem) {
+      .dashboard-overview, .dashboard-details { grid-template-columns: minmax(0, 1fr); }
+      .dashboard-list { max-height: 22rem; }
+      .dashboard-locations :global(ul) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
     @media (max-width: 420px) { .dashboard-metric { gap: 8px; padding: 12px; } .dashboard-metric > svg, .dashboard-metric-icon svg { width: 24px; height: 24px; } .dashboard-problem-counts { gap: 10px; } .dashboard-problem-counts > div + div { padding-left: 10px; } }
   </style>
   <script>
@@ -132,7 +157,6 @@ import FormDialog from '../components/FormDialog.astro'
       filament_stats: { filament_type: string; spool_count: number; total_weight_g: number }[]
       manufacturers_with_spools: { id: number; name: string; spool_count: number }[]
       low_stock_spools: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; remaining_weight_g: number }[]
-      filament_types: { material_type: string; count: number }[]
     }
     interface DashboardWindow {
       openSpoolModal: (type: 'problem') => Promise<void>
@@ -231,20 +255,20 @@ import FormDialog from '../components/FormDialog.astro'
           <table class="fm-table">
             <thead>
               <tr>
-                <th style="padding: 8px;">ID</th>
-                <th style="padding: 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
-                ${canArchive ? `<th style="padding: 8px; text-align: right;">${t('common.actions')}</th>` : ''}
+                <th>ID</th>
+                <th>${t('dashboard.filament')}</th>
+                <th style="text-align: right;">${t('dashboard.remaining')}</th>
+                ${canArchive ? `<th style="text-align: right;">${t('common.actions')}</th>` : ''}
               </tr>
             </thead>
             <tbody>
               ${filteredSpools.map(s => `
                 <tr data-spool-id="${s.id}">
-                  <td style="padding: 8px;"><a href="/spools/${s.id}">#${s.id}</a></td>
-                  <td style="padding: 8px;"><a href="/spools/${s.id}">${escapeHtml(getFilamentName(s.filament_id))}</a></td>
-                  <td style="padding: 8px; text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)} g</td>
+                  <td><a href="/spools/${s.id}">#${s.id}</a></td>
+                  <td><a href="/spools/${s.id}">${escapeHtml(getFilamentName(s.filament_id))}</a></td>
+                  <td style="text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)} g</td>
                   ${canArchive ? `
-                  <td style="padding: 8px; text-align: right;">
+                  <td style="text-align: right;">
                     <button class="fm-btn fm-btn-outline" style="padding: 4px 10px; font-size: 0.75rem;" onclick="archiveSpool(${s.id})">
                       ${t('dashboard.archive')}
                     </button>
@@ -366,7 +390,7 @@ import FormDialog from '../components/FormDialog.astro'
             { key: 'empty', label: t('dashboard.statusEmpty'), color: 'var(--text-muted)', count: dist.empty, hint: '0g' },
           ]
           statusContainer.innerHTML = statusItems.map(s => `
-            <div style="text-align: center; min-width: 60px;">
+            <div>
               <div style="font-size: 1.5rem; font-weight: 700; color: ${s.color};">${s.count}</div>
               <div style="font-size: 0.7rem; color: var(--text-muted);">${s.label}</div>
               <div style="font-size: 0.6rem; color: var(--text-muted); opacity: 0.7;">${s.hint}</div>
@@ -377,39 +401,32 @@ import FormDialog from '../components/FormDialog.astro'
           if (!dashboardData.location_stats || dashboardData.location_stats.length === 0) {
             locationStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
           } else {
-            locationStatsContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
-              <thead><tr>
-                <th style="padding: 6px 8px;">${t('locations.name') || 'Location'}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.spools')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
-              </tr></thead>
-              <tbody>` +
+            locationStatsContainer.innerHTML = `<ul>` +
               dashboardData.location_stats.map(l =>
-                `<tr>
-                  <td style="padding: 6px 8px;"><a href="/spools?location_id=${l.location_id}">${escapeHtml(l.location_name)}</a></td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${l.spool_count}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(l.total_weight_g)}</td>
-                </tr>`
+                `<li>
+                  <a href="/spools?location_id=${l.location_id}">${escapeHtml(l.location_name)}</a>
+                  <div><span>${l.spool_count} ${t('dashboard.spools')}</span><span>${formatWeight(l.total_weight_g)}</span></div>
+                </li>`
               ).join('') +
-              `</tbody></table>`
+              `</ul>`
           }
 
           const filamentStatsContainer = document.getElementById('filament-stats')!
           if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
             filamentStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
           } else {
-            filamentStatsContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+            filamentStatsContainer.innerHTML = `<table class="fm-table">
               <thead><tr>
-                <th style="padding: 6px 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.spools')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+                <th>${t('dashboard.filament')}</th>
+                <th style="text-align: right;">${t('dashboard.spools')}</th>
+                <th style="text-align: right;">${t('dashboard.remaining')}</th>
               </tr></thead>
               <tbody>` +
               dashboardData.filament_stats.map(f =>
                 `<tr>
-                  <td style="padding: 6px 8px;"><a href="/spools?material=${escapeHtml(encodeURIComponent(f.filament_type))}">${escapeHtml(f.filament_type)}</a></td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${f.spool_count}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
+                  <td><a href="/spools?material=${escapeHtml(encodeURIComponent(f.filament_type))}" title="${escapeHtml(f.filament_type)}">${escapeHtml(f.filament_type)}</a></td>
+                  <td style="text-align: right; font-family: monospace;">${f.spool_count}</td>
+                  <td style="text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
                 </tr>`
               ).join('') +
               `</tbody></table>`
@@ -419,9 +436,10 @@ import FormDialog from '../components/FormDialog.astro'
           if (dashboardData.manufacturers_with_spools.length === 0) {
             mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
           } else {
-            mfrContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` +
+            mfrContainer.innerHTML = `<table class="fm-table">
+              <thead><tr><th>${t('dashboard.manufacturer')}</th><th style="text-align: right;">${t('dashboard.spools')}</th></tr></thead><tbody>` +
               dashboardData.manufacturers_with_spools.map(m =>
-                `<tr><td><a href="/spools?manufacturer_id=${m.id}">${escapeHtml(m.name)}</a></td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
+                `<tr><td><a href="/spools?manufacturer_id=${m.id}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</a></td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
               ).join('') +
               `</tbody></table>`
           }
@@ -430,32 +448,21 @@ import FormDialog from '../components/FormDialog.astro'
           if (dashboardData.low_stock_spools.length === 0) {
             mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
           } else {
-            mfrLowStockContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+            mfrLowStockContainer.innerHTML = `<table class="fm-table">
               <thead><tr>
-                <th style="padding: 6px 8px;">${t('dashboard.spool')}</th>
-                <th style="padding: 6px 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 6px 8px;">${t('dashboard.manufacturer')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+                <th>${t('dashboard.spool')}</th>
+                <th>${t('dashboard.filament')}</th>
+                <th>${t('dashboard.manufacturer')}</th>
+                <th style="text-align: right;">${t('dashboard.remaining')}</th>
               </tr></thead>
               <tbody>` +
               dashboardData.low_stock_spools.map(s =>
                 `<tr>
-                  <td style="padding: 6px 8px;"><a href="/spools/${s.spool_id}">#${s.spool_id}</a></td>
-                  <td style="padding: 6px 8px;">${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})</td>
-                  <td style="padding: 6px 8px;">${escapeHtml(s.manufacturer_name)}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
+                  <td><a href="/spools/${s.spool_id}">#${s.spool_id}</a></td>
+                  <td title="${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})">${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})</td>
+                  <td title="${escapeHtml(s.manufacturer_name)}">${escapeHtml(s.manufacturer_name)}</td>
+                  <td style="text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
                 </tr>`
-              ).join('') +
-              `</tbody></table>`
-          }
-
-          const typesContainer = document.getElementById('filament-types')!
-          if (dashboardData.filament_types.length === 0) {
-            typesContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
-          } else {
-            typesContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` +
-              dashboardData.filament_types.map(t =>
-                `<tr><td><a href="/spools?material=${escapeHtml(encodeURIComponent(t.material_type))}">${escapeHtml(t.material_type)}</a></td><td style="text-align: right; font-family: monospace;">${t.count}</td></tr>`
               ).join('') +
               `</tbody></table>`
           }

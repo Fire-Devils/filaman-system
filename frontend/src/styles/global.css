@@ -1685,7 +1685,7 @@ html[data-theme="light"] .pc-print-prompt-age:not(.is-expiring) {
 .fm-table th,
 .fm-table td {
   text-align: left;
-  padding: 10px 12px;
+  padding: var(--table-cell-padding, 10px 12px);
   border-bottom: 1px solid var(--border);
 }
 
