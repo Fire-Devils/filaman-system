@@ -301,6 +301,7 @@ export function createFilamentDbLookup<T = unknown>(opts: LookupOptions<T>): Loo
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') e.preventDefault()
     if (e.key === 'Escape') {
       dropdown.style.display = 'none'
       input.blur()

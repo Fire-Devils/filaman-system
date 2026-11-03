@@ -347,3 +347,19 @@ def test_catalog_spool_profile_id_is_retained_and_invalid_values_ignored():
     assert standard_filamentdb_fields({'spool_profile_id': 735, 'spool_profile_image_file': '735.png'})['filamentdb_spool_profile_id'] == 735
     for value in [True, 0, -1, '735']:
         assert 'filamentdb_spool_profile_id' not in standard_filamentdb_fields({'spool_profile': {'id': value}})
+
+
+@pytest.mark.asyncio
+async def test_manufacturer_detail_preserves_catalog_metadata(monkeypatch):
+    record = {"id": 119, "name": "Bambu Lab", "slug": "bambu-lab", "description": None,
+              "contact_email": None, "has_web_logo": True, "has_label_logo": True,
+              "is_active": True, "is_verified": False, "filament_count": 659}
+    calls = []
+
+    async def get(path, params=None):
+        calls.append(path)
+        return record
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", get)
+    assert await filamentdb_proxy.get_manufacturer(119, _principal=None) == record
+    assert calls == ["/manufacturers/119"]

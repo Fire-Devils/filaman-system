@@ -5,6 +5,29 @@ import { describe, expect, it, vi } from 'vitest'
 import * as filamentLookup from './filamentdb-lookup'
 import type { LookupInstance } from './filamentdb-lookup'
 
+describe('catalog lookup keyboard handling', () => {
+  it.each([
+    ['Enter', true],
+    ['Escape', false],
+    ['Tab', false],
+    ['a', false],
+  ])('cancels implicit form submission only for Enter: %s', (key, canceled) => {
+    document.body.innerHTML = '<form><div></div><button type="submit">Save</button></form>'
+    const lookup = filamentLookup.createFilamentDbLookup({
+      container: document.querySelector('div')!,
+      endpoint: '/filamentdb/manufacturers',
+      renderItem: () => '',
+      onSelect: () => {},
+    })
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+
+    document.querySelector('input')!.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(canceled)
+    lookup.destroy()
+  })
+})
+
 describe('manufacturer filament lookup', () => {
   it('shows and rebuilds the search field as the manufacturer changes', () => {
     document.body.innerHTML = `
