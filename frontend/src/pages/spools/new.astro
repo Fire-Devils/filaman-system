@@ -1,296 +1,19 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import SpoolForm from '../../components/SpoolForm.astro'
 
 ---
 
 <Layout title="FilaMan - New Spool">
-  <div style="margin-bottom: 24px;">
-    <a href="/spools" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
+  <div class="detail-page-toolbar">
+    <a href="/spools" class="detail-back-link">&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
+    <div class="detail-page-actions">
+      <button type="submit" form="spool-form" id="submit-btn" disabled class="fm-btn fm-btn-primary" data-i18n="spools.createSpool">Create Spool</button>
+      <a href="/spools" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</a>
+    </div>
   </div>
-  
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="spools.newSpool">New Spool</h1>
-  
-  <div class="fm-card" style="max-width: 640px; padding: 24px;">
-    <button
-      type="button"
-      id="btn-import-from-tag"
-      class="fm-btn"
-      style="width: 100%; margin-bottom: 20px; background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; opacity: 0.45;"
-      data-i18n="spools.importFromTag"
-    >
-      Von Tag übernehmen
-    </button>
-    <form id="spool-form" novalidate style="display: grid; gap: 16px;">
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div>
-          <label class="fm-label" data-i18n="spools.filament">Filament *</label>
-          <input type="hidden" id="filament_id" name="filament_id" />
-          <div id="filament-dropdown" style="position: relative;">
-            <div id="filament-dropdown-trigger" class="fm-select" tabindex="0"
-                 style="display: flex; align-items: center; gap: 6px; text-align: left; overflow: hidden; white-space: nowrap;">
-              <span id="filament-dropdown-text" style="opacity: 0.6;" data-i18n="spools.selectFilament">Select filament...</span>
-            </div>
-            <div id="filament-dropdown-panel" style="display: none; position: absolute; z-index: 1000; top: calc(100% + 2px); left: 0; right: 0; background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
-              <div style="padding: 8px; background: var(--input-bg); border-bottom: 1px solid var(--border);">
-                <input type="text" id="filament-dropdown-search" class="fm-input" style="height: 32px; font-size: 0.85rem; padding: 4px 10px;" placeholder="Search filament..." data-i18n-placeholder="filamentdbLookup.searchFilament" />
-              </div>
-              <div id="filament-dropdown-options" style="max-height: 280px; overflow-y: auto; padding: 4px 0;"></div>
-            </div>
-          </div>
-        </div>
+  <SpoolForm />
 
-        <div>
-          <label for="initial_total_weight_g" class="fm-label" data-i18n="spools.initialWeight">Initial Total Weight (g)</label>
-          <input
-            type="number"
-            id="initial_total_weight_g"
-            name="initial_total_weight_g"
-            step="1"
-            data-i18n-placeholder="spools.initialWeightPlaceholder"
-            placeholder="e.g. 1250"
-            class="fm-input"
-          />
-        </div>
-      </div>
-      
-      <!-- Spool Dimensions -->
-      <div class="fm-card" style="padding: 16px; margin-top: 8px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 class="fm-label" style="font-size: 1rem; margin: 0; color: var(--text);" data-i18n="common.spoolDefaultSettings">Spool Properties</h3>
-          <button type="button" id="btn-spool-profile-lookup" class="fm-btn fm-btn-outline" style="font-size: 0.75rem; padding: 4px 10px;">
-            <span data-i18n="filamentdbLookup.loadFromDb">Load from FilaManDB</span>
-          </button>
-        </div>
-        <div id="spool-profile-lookup-section" style="display: none; margin-bottom: 16px;">
-          <div id="spool-profile-lookup-container"></div>
-          <div id="spool-profile-lookup-toast" class="fdb-toast" style="display: none;"></div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div>
-            <label for="empty_spool_weight_g" class="fm-label" data-i18n="spools.emptySpoolWeight">Empty Spool Weight (g)</label>
-            <input
-              type="number"
-              id="empty_spool_weight_g"
-              name="empty_spool_weight_g"
-              step="1"
-              data-i18n-placeholder="spools.emptySpoolWeightPlaceholder"
-              placeholder="e.g. 250"
-              class="fm-input"
-            />
-          </div>
-          <div>
-            <label class="fm-label" data-i18n="spools.spoolCoreWeight">Core / Adapter Weight (g)</label>
-            <div style="display: flex; align-items: center; gap: 8px; margin: 6px 0 8px;">
-              <input type="checkbox" id="uses_spool_core" style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;" />
-              <label for="uses_spool_core" style="font-size: 0.875rem; cursor: pointer; margin: 0;" data-i18n="spools.usesSpoolCore">Uses spool core / adapter</label>
-            </div>
-            <div id="spool_core_weight_container" style="display: none;">
-              <input
-                type="number"
-                id="spool_core_weight_g"
-                name="spool_core_weight_g"
-                step="1"
-                min="0"
-                placeholder="Global default"
-                data-i18n-placeholder="spools.spoolCoreWeightPlaceholder"
-                class="fm-input"
-              />
-              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" data-i18n="spools.spoolCoreWeightHint">Weight of cardboard inner tube, spool holder, or scale adapter — always on the scale when weighing. Leave blank to use the global default.</div>
-            </div>
-          </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-          <div>
-            <label for="spool_material" class="fm-label" data-i18n="spools.spoolMaterial">Spool Material</label>
-            <select id="spool_material" name="spool_material" class="fm-select">
-              <option value="">-</option>
-              <option value="Plastic" data-i18n="spools.spoolMaterialPlastic">Plastic</option>
-              <option value="Cardboard" data-i18n="spools.spoolMaterialCardboard">Cardboard</option>
-              <option value="Metal" data-i18n="spools.spoolMaterialMetal">Metal</option>
-              <option value="Other" data-i18n="spools.spoolMaterialOther">Other</option>
-            </select>
-          </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
-          <div>
-            <label for="spool_outer_diameter_mm" class="fm-label" data-i18n="spools.spoolOuterDiameter">Spool Outer Diameter (mm)</label>
-            <input
-              type="number"
-              id="spool_outer_diameter_mm"
-              name="spool_outer_diameter_mm"
-              step="0.1"
-              class="fm-input"
-            />
-          </div>
-          <div>
-            <label for="spool_width_mm" class="fm-label" data-i18n="spools.spoolWidth">Spool Width (mm)</label>
-            <input
-              type="number"
-              id="spool_width_mm"
-              name="spool_width_mm"
-              step="0.1"
-              class="fm-input"
-            />
-          </div>
-        </div>
-      </div>
-      
-      <div>
-        <label for="location_id" class="fm-label" data-i18n="spools.location">Location</label>
-        <select 
-          id="location_id" 
-          name="location_id"
-          class="fm-select"
-        >
-          <option value="" data-i18n="spools.noLocation">No location</option>
-        </select>
-      </div>
-      
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div>
-          <label for="lot_number" class="fm-label" data-i18n="spools.lotNumber">Lot Number</label>
-          <input
-            type="text"
-            id="lot_number"
-            name="lot_number"
-            data-i18n-placeholder="spools.lotNumberPlaceholder"
-            placeholder="e.g. LOT-2024-001"
-            class="fm-input"
-          />
-        </div>
-
-        <div>
-          <label for="external_id" class="fm-label" data-i18n="spools.externalId">External ID</label>
-          <input
-            type="text"
-            id="external_id"
-            name="external_id"
-            data-i18n-placeholder="spools.externalIdPlaceholder"
-            placeholder="e.g. MY-SPOOL-001"
-            class="fm-input"
-          />
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div>
-          <label for="purchase_date" class="fm-label" data-i18n="spools.purchaseDate">Purchase Date</label>
-          <input
-            type="date"
-            id="purchase_date"
-            name="purchase_date"
-            class="fm-input"
-          />
-        </div>
-        
-        <div>
-          <label for="purchase_price" class="fm-label" data-i18n="spools.purchasePrice">Purchase Price</label>
-          <input
-            type="number"
-            id="purchase_price"
-            name="purchase_price"
-            step="0.01"
-            class="fm-input"
-          />
-        </div>
-      </div>
-
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div>
-          <label for="low_weight_threshold_g" class="fm-label" data-i18n="spools.lowThreshold">Low Weight Threshold (g)</label>
-          <input
-            type="number"
-            id="low_weight_threshold_g"
-            name="low_weight_threshold_g"
-            value="100"
-            step="1"
-            class="fm-input"
-          />
-        </div>
-        <div>
-          <label for="rfid_uid" class="fm-label" data-i18n="spools.rfidUid">RFID UID</label>
-          <input
-            type="text"
-            id="rfid_uid"
-            name="rfid_uid"
-            data-i18n-placeholder="spools.rfidUidPlaceholder"
-            placeholder="e.g. 04A2B3C4D5"
-            class="fm-input"
-          />
-        </div>
-        <div>
-          <label for="rfid_uid_2" class="fm-label" data-i18n="spools.rfidUid2">RFID UID (2nd tag)</label>
-          <input
-            type="text"
-            id="rfid_uid_2"
-            name="rfid_uid_2"
-            data-i18n-placeholder="spools.rfidUidPlaceholder"
-            placeholder="e.g. 04A2B3C4D5"
-            class="fm-input"
-          />
-        </div>
-      </div>
-
-      <!-- System Fields -->
-      <div id="system-fields-container" style="display: none; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
-        <h3 class="fm-label" style="font-size: 1rem; margin-bottom: 12px;" data-i18n="common.systemFields">System Fields</h3>
-        <div id="system-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <!-- Dynamic system fields go here -->
-        </div>
-      </div>
-
-      <!-- Custom Fields -->
-      <div style="border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <label class="fm-label" style="margin: 0;" data-i18n="spools.specificExtraFields">Spool-specific extra fields</label>
-          <button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: 0.8rem; padding: 4px 10px;">
-            + <span data-i18n="common.add">Add</span>
-          </button>
-        </div>
-        <p style="margin: -4px 0 12px; color: var(--text-muted); font-size: 0.82rem;">
-          <span data-i18n="spools.specificExtraFieldsHelp">These typed fields apply only to this spool.</span>
-          <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="spools.manageSystemExtraFields">Create/Manage cross-spool System Extra Fields here</a>
-        </p>
-        <div id="custom-fields-container" style="display: grid; gap: 8px;">
-          <!-- Dynamic fields go here -->
-        </div>
-      </div>
-      
-      <div id="error-message" class="fm-alert-error hidden"></div>
-      
-      <div style="display: flex; gap: 12px; padding-top: 8px; align-items: center; flex-wrap: wrap;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <label for="spool_quantity" class="fm-label" style="margin: 0; white-space: nowrap; font-size: 0.85rem;" data-i18n="spools.quantity">Quantity</label>
-          <input
-            type="number"
-            id="spool_quantity"
-            name="spool_quantity"
-            value="1"
-            min="1"
-            step="1"
-            class="fm-input"
-            style="width: 70px; padding: 6px 8px;"
-          />
-        </div>
-        <button
-          type="submit"
-          id="submit-btn"
-          class="fm-btn fm-btn-primary"
-          data-i18n="spools.createSpool"
-        >
-          Create Spool
-        </button>
-        <a
-          href="/spools"
-          class="fm-btn fm-btn-outline"
-          data-i18n="common.cancel"
-        >
-          Cancel
-        </a>
-      </div>
-    </form>
-  </div>
-  
   <!-- Modal: Von Tag übernehmen -->
   <div id="import-tag-modal" class="fm-modal-overlay">
     <div class="fm-modal" style="max-width: 440px;">
@@ -304,7 +27,7 @@ import Layout from '../../layouts/Layout.astro'
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { escapeHtml, isIntegrationExtraFieldPath, renderFieldInput } from '../../lib/extra-fields'
+    import { isIntegrationExtraFieldPath, renderSystemFieldRow, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       collectExtraFieldPayload,
       createEntityExtraFieldEditor,
@@ -313,13 +36,19 @@ import Layout from '../../layouts/Layout.astro'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../lib/cache'
     import { assignableLocations } from '../../lib/driver-managed-locations'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../lib/filamentdb-lookup'
-    import { toColorSwatchBackground } from '../../lib/colors'
     import { initCurrency, suggestSpoolPurchasePrice } from '../../lib/format'
+    const params = new URLSearchParams(window.location.search)
+    let duplicateFilamentId: unknown = null
+    try {
+      duplicateFilamentId = JSON.parse(sessionStorage.getItem('filaman_duplicate_spool') || 'null')?.filament_id
+    } catch (error) {
+      console.error('Failed to read duplicate spool filament:', error)
+    }
+    if (!params.get('filament_id') && params.get('from_tag') !== '1' && !duplicateFilamentId) {
+      window.location.replace('/filaments?select_for_spool=1')
+    } else {
     await initI18n()
     const appCurrency = await initCurrency()
-
-    const filamentDbActive = await checkFilamentDbActive()
 
     // Set default purchase_date to today
     const purchaseDateInput = document.getElementById('purchase_date') as HTMLInputElement
@@ -327,7 +56,7 @@ import Layout from '../../layouts/Layout.astro'
       purchaseDateInput.value = new Date().toISOString().split('T')[0]
     }
 
-    const filamentId = new URLSearchParams(window.location.search).get('filament_id')
+    const filamentId = params.get('filament_id')
     
     // Custom Fields
     const customFieldsContainer = document.getElementById('custom-fields-container') as HTMLDivElement
@@ -340,216 +69,42 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     let filaments: any[] = []
-    let systemFields: any[] = []
+    let systemFields: SystemExtraFieldDef[] = []
+    let submitting = false
 
-    // ── Spool Profile Lookup ──
-    let spoolProfileLookup: LookupInstance | null = null
-    const btnSpoolProfileLookup = document.getElementById('btn-spool-profile-lookup')!
-    const spoolProfileSection = document.getElementById('spool-profile-lookup-section')!
-    const spoolProfileContainer = document.getElementById('spool-profile-lookup-container')!
-    const spoolProfileToast = document.getElementById('spool-profile-lookup-toast')!
-    let spoolProfileLookupOpen = false
-
-    // Hide spool profile lookup button if FilamentDB plugin is inactive
-    if (!filamentDbActive) {
-      btnSpoolProfileLookup.style.display = 'none'
-    }
-
-    btnSpoolProfileLookup.addEventListener('click', () => {
-      spoolProfileLookupOpen = !spoolProfileLookupOpen
-      if (spoolProfileLookupOpen) {
-        spoolProfileSection.style.display = ''
-        if (!spoolProfileLookup) {
-          spoolProfileLookup = createFilamentDbLookup({
-            container: spoolProfileContainer,
-            endpoint: '/filamentdb/spool-profiles',
-            placeholder: t('filamentdbLookup.searchSpoolProfile'),
-            minChars: 0,
-            pageSize: 100,
-            renderItem: (item: any) => {
-              const weight = item.empty_weight_g ? `${item.empty_weight_g}g` : ''
-              const material = item.spool_material || ''
-              const diameter = item.outer_diameter_mm ? `${item.outer_diameter_mm}mm` : ''
-              const details = [weight, material, diameter].filter(Boolean).join(' · ')
-              const imageHtml = item.image_file
-                ? `<img class="fdb-lookup-item-image" src="/api/v1/filamentdb/spool-profile-image?image_file=${encodeURIComponent(item.image_file)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display=''" /><span class="fdb-lookup-item-image-placeholder" style="display:none">&#x1F4E6;</span>`
-                : `<span class="fdb-lookup-item-image-placeholder">&#x1F4E6;</span>`
-              return `<div class="fdb-lookup-item-with-image">${imageHtml}<div class="fdb-lookup-item-text"><div class="fdb-lookup-item-name">${item.name || '?'}</div><div class="fdb-lookup-item-sub">${details}</div></div></div>`
-            },
-            onSelect: (item: any) => {
-              // Fill spool property fields
-              if (item.empty_weight_g != null) {
-                (document.getElementById('empty_spool_weight_g') as HTMLInputElement).value = String(item.empty_weight_g)
-              }
-              if (item.spool_material) {
-                (document.getElementById('spool_material') as HTMLSelectElement).value = item.spool_material
-              }
-              if (item.outer_diameter_mm != null) {
-                (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = String(item.outer_diameter_mm)
-              }
-              if (item.width_mm != null) {
-                (document.getElementById('spool_width_mm') as HTMLInputElement).value = String(item.width_mm)
-              }
-              spoolProfileToast.className = 'fdb-toast fdb-toast-success'
-              spoolProfileToast.textContent = t('filamentdbLookup.spoolProfileLoaded')
-              spoolProfileToast.style.display = ''
-            },
-          })
-        } else {
-          spoolProfileLookup.reset()
-        }
-      } else {
-        spoolProfileSection.style.display = 'none'
-        spoolProfileToast.style.display = 'none'
-      }
-    })
-
-    // ── Custom Filament Dropdown ──
-    const filamentDropdown = document.getElementById('filament-dropdown')!
-    const filamentTrigger = document.getElementById('filament-dropdown-trigger')!
-    const filamentPanel = document.getElementById('filament-dropdown-panel')!
-    const filamentSearchInput = document.getElementById('filament-dropdown-search') as HTMLInputElement
-    const filamentOptionsContainer = document.getElementById('filament-dropdown-options')!
     const filamentHiddenInput = document.getElementById('filament_id') as HTMLInputElement
     const filamentDropdownText = document.getElementById('filament-dropdown-text')!
-    let filamentDropdownOpen = false
-
-    function renderFilamentColorDots(f: any): string {
-      if (!f.colors || f.colors.length === 0) return ''
-      return f.colors.map((fc: any) => {
-        const c = fc.color
-        if (!c) return ''
-        return `<span title="${fc.display_name_override || c.name || ''}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${toColorSwatchBackground(c.hex_code)};outline:0.5px solid #fff;flex-shrink:0;margin-right:8px;vertical-align:-1px;"></span>`
-      }).join('')
-    }
-
-    function openFilamentDropdown() {
-      filamentPanel.style.display = ''
-      filamentDropdownOpen = true
-      filamentSearchInput.value = ''
-      filterFilamentOptions('')
-      setTimeout(() => filamentSearchInput.focus(), 10)
-    }
-
-    function closeFilamentDropdown() {
-      filamentPanel.style.display = 'none'
-      filamentDropdownOpen = false
-    }
-
-    function toggleFilamentDropdown() {
-      if (filamentDropdownOpen) closeFilamentDropdown()
-      else openFilamentDropdown()
-    }
-
-    function filterFilamentOptions(query: string) {
-      const words = query.toLowerCase().trim().split(/\s+/).filter((w) => w.length > 0)
-      const groups = filamentOptionsContainer.querySelectorAll<HTMLElement>('[data-group]')
-      groups.forEach((group) => {
-        const options = group.querySelectorAll<HTMLElement>('[data-filament-id]')
-        let anyVisible = false
-        options.forEach((opt) => {
-          const searchText = opt.dataset.search?.toLowerCase() || ''
-          const match = words.length === 0 || words.every((w) => searchText.includes(w))
-          opt.style.display = match ? '' : 'none'
-          if (match) anyVisible = true
-        })
-        group.style.display = anyVisible ? '' : 'none'
-      })
-    }
 
     function setFilamentDropdownVisual(id: number) {
+      const filament = filaments.find(item => item.id === id)
+      if (!filament) return
       filamentHiddenInput.value = String(id)
-      const f = filaments.find((fil: any) => fil.id === id)
-      if (f) {
-        const dots = renderFilamentColorDots(f)
-        filamentDropdownText.innerHTML = `${dots ? dots + ' ' : ''}<span style="overflow:hidden;text-overflow:ellipsis;">${f.designation} (${f.material_type})</span>`
-        filamentDropdownText.style.opacity = '1'
-        filamentDropdownText.removeAttribute('data-i18n')
-      }
-      filamentOptionsContainer.querySelectorAll<HTMLElement>('[data-filament-id]').forEach((opt) => {
-        const isSelected = opt.dataset.filamentId === String(id)
-        opt.style.background = isSelected ? 'var(--bg-soft)' : ''
-        opt.style.fontWeight = isSelected ? '500' : ''
-      })
+      filamentDropdownText.textContent = `${filament.manufacturer?.name || ''} ${filament.designation} (${filament.material_type})`.trim()
+      filamentDropdownText.removeAttribute('data-i18n')
+      const details = document.getElementById('spool-create-details') as HTMLFieldSetElement
+      details.hidden = false
+      details.disabled = false
+      submitBtn.disabled = submitting
     }
 
     function selectFilament(id: number) {
       setFilamentDropdownVisual(id)
-      closeFilamentDropdown()
       applyFilamentDefaults(id)
+      applyDuplicateSpoolData()
+      restoreSpoolDraft()
     }
 
-    function populateFilamentDropdown(items: any[], preselectedId?: string | null) {
-      filamentOptionsContainer.innerHTML = ''
-      const grouped: Record<string, any[]> = {}
-      items.forEach((f: any) => {
-        const mfgName = f.manufacturer?.name || t('common.unknown')
-        if (!grouped[mfgName]) grouped[mfgName] = []
-        grouped[mfgName].push(f)
-      })
-      const sortedMfgs = Object.keys(grouped).sort()
-      sortedMfgs.forEach((mfgName) => {
-        const groupEl = document.createElement('div')
-        groupEl.dataset.group = mfgName
-        const header = document.createElement('div')
-        header.textContent = mfgName
-        header.style.cssText = 'padding: 6px 12px; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; user-select: none;'
-        groupEl.appendChild(header)
-        const sortedFilaments = grouped[mfgName].sort((a: any, b: any) => a.designation.localeCompare(b.designation))
-        sortedFilaments.forEach((f: any) => {
-          const optEl = document.createElement('div')
-          optEl.dataset.filamentId = String(f.id)
-          optEl.dataset.search = `${f.designation} ${f.material_type} ${mfgName} ${f.manufacturer_color_name || ''}`
-          optEl.style.cssText = 'display: flex; align-items: center; gap: 20px; padding: 8px 12px; cursor: pointer; font-size: 0.9rem;'
-          const dots = renderFilamentColorDots(f)
-          optEl.innerHTML = `${dots}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.designation} (${f.material_type})</span>`
-          optEl.addEventListener('mouseenter', () => {
-            if (optEl.dataset.filamentId !== filamentHiddenInput.value) optEl.style.background = 'var(--bg-soft)'
-          })
-          optEl.addEventListener('mouseleave', () => {
-            if (optEl.dataset.filamentId !== filamentHiddenInput.value) optEl.style.background = ''
-          })
-          optEl.addEventListener('click', () => selectFilament(f.id))
-          groupEl.appendChild(optEl)
-        })
-        filamentOptionsContainer.appendChild(groupEl)
-      })
-      if (preselectedId) {
-        setFilamentDropdownVisual(parseInt(preselectedId))
-      }
+    function applySelectedFilament(preselectedId?: string | null) {
+      if (preselectedId) setFilamentDropdownVisual(Number(preselectedId))
     }
 
-    filamentTrigger.addEventListener('click', toggleFilamentDropdown)
-    filamentTrigger.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault()
-        toggleFilamentDropdown()
-      } else if (e.key === 'Escape') {
-        closeFilamentDropdown()
-      }
-    })
-    filamentSearchInput.addEventListener('input', (e) => {
-      filterFilamentOptions((e.target as HTMLInputElement).value)
-    })
-    filamentSearchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        closeFilamentDropdown()
-        filamentTrigger.focus()
-      }
-    })
-    document.addEventListener('click', (e) => {
-      if (filamentDropdownOpen && !filamentDropdown.contains(e.target as Node)) {
-        closeFilamentDropdown()
-      }
-    })
-
-    function flattenObject(obj: any, prefix = '', res: any = {}) {
+    function flattenObject(obj: Record<string, unknown>, prefix = '', res: Record<string, unknown> = {}) {
       for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
           const val = obj[key]
           const newKey = prefix ? `${prefix}.${key}` : key
           if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-            flattenObject(val, newKey, res)
+            flattenObject(val as Record<string, unknown>, newKey, res)
           } else {
             res[newKey] = val
           }
@@ -558,7 +113,7 @@ import Layout from '../../layouts/Layout.astro'
       return res
     }
 
-    function renderSystemFields(flat: Record<string, any> = {}, raw?: Record<string, any>) {
+    function renderSystemFields(flat: Record<string, unknown> = {}, raw?: Record<string, unknown>) {
       const container = document.getElementById('system-fields-container') as HTMLDivElement | null
       const grid = document.getElementById('system-fields-grid') as HTMLDivElement | null
       if (!container || !grid) return
@@ -567,19 +122,111 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       container.style.display = 'block'
-      grid.innerHTML = ''
-      
-      systemFields.forEach((field: any) => {
-        const div = document.createElement('div')
-        const rawValue = raw ? getExtraFieldValue(raw, field.key) : null
-        const inputHtml = renderFieldInput(field, rawValue, flat)
-        if (field.field_type === 'checkbox') {
-          div.innerHTML = inputHtml
-        } else {
-          div.innerHTML = `<label class="fm-label">${escapeHtml(field.label)}</label>${inputHtml}`
+      grid.innerHTML = systemFields.map(field => renderSystemFieldRow(field, raw ? getExtraFieldValue(raw, field.key) : null, flat)).join('')
+    }
+
+    function applyDuplicateSpoolData() {
+      // ── Apply duplicate data from sessionStorage ──
+      const dupRaw = sessionStorage.getItem('filaman_duplicate_spool')
+      if (dupRaw) {
+        try {
+          const dup = JSON.parse(dupRaw)
+
+          // Filament
+          if (dup.filament_id) {
+            setFilamentDropdownVisual(Number(dup.filament_id))
+          }
+          if (!filamentHiddenInput.value) return
+
+          // Initial Total Weight
+          if (dup.initial_total_weight_g != null) {
+            (document.getElementById('initial_total_weight_g') as HTMLInputElement).value = String(dup.initial_total_weight_g)
+          }
+
+          // Empty Spool Weight
+          if (dup.empty_spool_weight_g != null) {
+            (document.getElementById('empty_spool_weight_g') as HTMLInputElement).value = String(dup.empty_spool_weight_g)
+          }
+
+          // Spool Core Weight
+          {
+            const dupCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
+            const dupCoreContainer = document.getElementById('spool_core_weight_container')!
+            const dupCoreInput = document.getElementById('spool_core_weight_g') as HTMLInputElement
+            if (dup.spool_core_weight_g === 0) {
+              dupCoreCheckbox.checked = false
+              dupCoreContainer.style.display = 'none'
+              dupCoreInput.value = ''
+            } else {
+              dupCoreCheckbox.checked = true
+              dupCoreContainer.style.display = 'block'
+              dupCoreInput.value = dup.spool_core_weight_g != null ? String(dup.spool_core_weight_g) : ''
+            }
+          }
+
+          // Spool Material
+          if (dup.spool_material) {
+            (document.getElementById('spool_material') as HTMLSelectElement).value = dup.spool_material
+          }
+
+          // Spool Outer Diameter
+          if (dup.spool_outer_diameter_mm != null) {
+            (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = String(dup.spool_outer_diameter_mm)
+          }
+
+          // Spool Width
+          if (dup.spool_width_mm != null) {
+            (document.getElementById('spool_width_mm') as HTMLInputElement).value = String(dup.spool_width_mm)
+          }
+
+          // Location is intentionally NOT copied from duplicate. AMS/slot
+          // locations must be set only when the driver assigns after a scan+place.
+
+          // Lot Number
+          if (dup.lot_number) {
+            (document.getElementById('lot_number') as HTMLInputElement).value = dup.lot_number
+          }
+
+          // External ID
+          if (dup.external_id) {
+            (document.getElementById('external_id') as HTMLInputElement).value = dup.external_id
+          }
+
+          // Purchase Price
+          if (dup.purchase_price != null) {
+            (document.getElementById('purchase_price') as HTMLInputElement).value = String(dup.purchase_price)
+          }
+
+          // Purchase Date
+          if (dup.purchase_date) {
+            (document.getElementById('purchase_date') as HTMLInputElement).value = dup.purchase_date
+          }
+
+          // Low Weight Threshold
+          if (dup.low_weight_threshold_g != null) {
+            (document.getElementById('low_weight_threshold_g') as HTMLInputElement).value = String(dup.low_weight_threshold_g)
+          }
+
+          // RFID UID (only when explicitly included, e.g. from empty spool template)
+          if (dup.rfid_uid) {
+            (document.getElementById('rfid_uid') as HTMLInputElement).value = dup.rfid_uid
+          }
+          if (dup.rfid_uid_2) {
+            (document.getElementById('rfid_uid_2') as HTMLInputElement).value = dup.rfid_uid_2
+          }
+
+          // Custom Fields (non-system) + System Fields
+          if (dup.custom_fields && typeof dup.custom_fields === 'object') {
+            // Prefill system fields from duplicate
+            const dupFlat = flattenObject(dup.custom_fields)
+            renderSystemFields(dupFlat, dup.custom_fields)
+          }
+          entityExtraFields.setData(dup.custom_fields, dup.custom_field_definitions)
+          sessionStorage.removeItem('filaman_duplicate_spool')
+        } catch (e) {
+          console.error('Failed to apply duplicate spool data:', e)
         }
-        grid.appendChild(div)
-      })
+      }
     }
 
     async function loadOptions() {
@@ -592,13 +239,13 @@ import Layout from '../../layouts/Layout.astro'
         ] as const)
         
         if (!systemFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
-        systemFields = (await systemFieldsRes.json()).filter((field: { key: string }) => !isIntegrationExtraFieldPath(field.key))
-        entityExtraFields.setSystemFieldKeys(systemFields.map((field: any) => field.key))
+        systemFields = (await systemFieldsRes.json()).filter((field: SystemExtraFieldDef) => !isIntegrationExtraFieldPath(field.key))
+        entityExtraFields.setSystemFieldKeys(systemFields.map(field => field.key))
         renderSystemFields()
         
         if (filamentsData) {
           filaments = filamentsData.items
-          populateFilamentDropdown(filamentsData.items, filamentId)
+          applySelectedFilament(filamentId)
           if (filamentId) {
             applyFilamentDefaults(parseInt(filamentId))
           }
@@ -615,106 +262,8 @@ import Layout from '../../layouts/Layout.astro'
           })
         }
 
-        // ── Apply duplicate data from sessionStorage ──
-        const dupRaw = sessionStorage.getItem('filaman_duplicate_spool')
-        if (dupRaw) {
-          sessionStorage.removeItem('filaman_duplicate_spool')
-          try {
-            const dup = JSON.parse(dupRaw)
-
-            // Filament
-            if (dup.filament_id) {
-              setFilamentDropdownVisual(Number(dup.filament_id))
-            }
-
-            // Initial Total Weight
-            if (dup.initial_total_weight_g != null) {
-              (document.getElementById('initial_total_weight_g') as HTMLInputElement).value = String(dup.initial_total_weight_g)
-            }
-
-            // Empty Spool Weight
-            if (dup.empty_spool_weight_g != null) {
-              (document.getElementById('empty_spool_weight_g') as HTMLInputElement).value = String(dup.empty_spool_weight_g)
-            }
-
-            // Spool Core Weight
-            {
-              const dupCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
-              const dupCoreContainer = document.getElementById('spool_core_weight_container')!
-              const dupCoreInput = document.getElementById('spool_core_weight_g') as HTMLInputElement
-              if (dup.spool_core_weight_g === 0) {
-                dupCoreCheckbox.checked = false
-                dupCoreContainer.style.display = 'none'
-                dupCoreInput.value = ''
-              } else {
-                dupCoreCheckbox.checked = true
-                dupCoreContainer.style.display = 'block'
-                dupCoreInput.value = dup.spool_core_weight_g != null ? String(dup.spool_core_weight_g) : ''
-              }
-            }
-
-            // Spool Material
-            if (dup.spool_material) {
-              (document.getElementById('spool_material') as HTMLSelectElement).value = dup.spool_material
-            }
-
-            // Spool Outer Diameter
-            if (dup.spool_outer_diameter_mm != null) {
-              (document.getElementById('spool_outer_diameter_mm') as HTMLInputElement).value = String(dup.spool_outer_diameter_mm)
-            }
-
-            // Spool Width
-            if (dup.spool_width_mm != null) {
-              (document.getElementById('spool_width_mm') as HTMLInputElement).value = String(dup.spool_width_mm)
-            }
-
-            // Location is intentionally NOT copied from duplicate. AMS/slot
-            // locations must be set only when the driver assigns after a scan+place.
-
-            // Lot Number
-            if (dup.lot_number) {
-              (document.getElementById('lot_number') as HTMLInputElement).value = dup.lot_number
-            }
-
-            // External ID
-            if (dup.external_id) {
-              (document.getElementById('external_id') as HTMLInputElement).value = dup.external_id
-            }
-
-            // Purchase Price
-            if (dup.purchase_price != null) {
-              (document.getElementById('purchase_price') as HTMLInputElement).value = String(dup.purchase_price)
-            }
-
-            // Purchase Date
-            if (dup.purchase_date) {
-              (document.getElementById('purchase_date') as HTMLInputElement).value = dup.purchase_date
-            }
-
-            // Low Weight Threshold
-            if (dup.low_weight_threshold_g != null) {
-              (document.getElementById('low_weight_threshold_g') as HTMLInputElement).value = String(dup.low_weight_threshold_g)
-            }
-
-            // RFID UID (only when explicitly included, e.g. from empty spool template)
-            if (dup.rfid_uid) {
-              (document.getElementById('rfid_uid') as HTMLInputElement).value = dup.rfid_uid
-            }
-            if (dup.rfid_uid_2) {
-              (document.getElementById('rfid_uid_2') as HTMLInputElement).value = dup.rfid_uid_2
-            }
-
-            // Custom Fields (non-system) + System Fields
-            if (dup.custom_fields && typeof dup.custom_fields === 'object') {
-              // Prefill system fields from duplicate
-              const dupFlat = flattenObject(dup.custom_fields)
-              renderSystemFields(dupFlat, dup.custom_fields)
-            }
-            entityExtraFields.setData(dup.custom_fields, dup.custom_field_definitions)
-          } catch (e) {
-            console.error('Failed to apply duplicate spool data:', e)
-          }
-        }
+        applyDuplicateSpoolData()
+        restoreSpoolDraft()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load options:', error)
@@ -782,6 +331,52 @@ import Layout from '../../layouts/Layout.astro'
     const errorMessage = document.getElementById('error-message') as HTMLElement
     const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement
 
+    document.querySelectorAll<HTMLAnchorElement>('.detail-page-toolbar a[href="/spools"]').forEach(link => {
+      link.addEventListener('click', () => sessionStorage.removeItem('filaman_spool_create_draft'))
+    })
+
+    form.querySelectorAll<HTMLAnchorElement>('a[href="/filaments?select_for_spool=1"], a[href="/filaments/new?create_spool=1"]').forEach(link => {
+      link.addEventListener('click', event => {
+        if (submitting) { event.preventDefault(); return }
+        const extraFields = collectExtraFieldPayload(document.getElementById('system-fields-grid')!, entityExtraFields)
+        if (!extraFields) { event.preventDefault(); return }
+        try {
+          sessionStorage.setItem('filaman_spool_create_draft', JSON.stringify({
+            fields: Object.fromEntries(new FormData(form)),
+            usesSpoolCore: usesCoreCheckbox.checked,
+            ...extraFields,
+          }))
+        } catch (error) {
+          event.preventDefault()
+          errorMessage.textContent = error instanceof Error ? error.message : t('common.errorTitle')
+          errorMessage.classList.remove('hidden')
+        }
+      })
+    })
+
+    function restoreSpoolDraft() {
+      if (!filamentHiddenInput.value) return
+      const raw = sessionStorage.getItem('filaman_spool_create_draft')
+      if (!raw) return
+      try {
+        const draft = JSON.parse(raw)
+        for (const [name, value] of Object.entries(draft.fields)) {
+          if (name === 'filament_id') continue
+          const input = form.elements.namedItem(name)
+          if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLTextAreaElement) input.value = String(value)
+        }
+        usesCoreCheckbox.checked = draft.usesSpoolCore
+        coreWeightContainer.style.display = usesCoreCheckbox.checked ? 'block' : 'none'
+        renderSystemFields(flattenObject(draft.customFields || {}), draft.customFields)
+        entityExtraFields.setData(draft.customFields, draft.customFieldDefinitions)
+        if (draft.fields.filament_id !== filamentHiddenInput.value) applyFilamentDefaults(Number(filamentHiddenInput.value))
+        sessionStorage.removeItem('filaman_spool_create_draft')
+      } catch (error) {
+        errorMessage.textContent = error instanceof Error ? error.message : t('common.errorTitle')
+        errorMessage.classList.remove('hidden')
+      }
+    }
+
     // Wire checkbox toggle for core weight field
     const usesCoreCheckbox = document.getElementById('uses_spool_core') as HTMLInputElement
     const coreWeightContainer = document.getElementById('spool_core_weight_container')!
@@ -791,6 +386,7 @@ import Layout from '../../layouts/Layout.astro'
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault()
+      if (submitting || submitBtn.disabled || !filaments.some(item => item.id === Number(filamentHiddenInput.value))) return
       
       const formData = new FormData(form)
       const selectedFilamentId = parseInt(formData.get('filament_id') as string)
@@ -859,6 +455,7 @@ import Layout from '../../layouts/Layout.astro'
       data.quantity = quantity
       
       errorMessage.classList.add('hidden')
+      submitting = true
       submitBtn.disabled = true
       submitBtn.textContent = t('common.creating')
       
@@ -900,7 +497,8 @@ import Layout from '../../layouts/Layout.astro'
         errorMessage.textContent = (error instanceof Error ? error.message : null) || t('spools.failedCreate')
         errorMessage.classList.remove('hidden')
       } finally {
-        submitBtn.disabled = false
+        submitting = false
+        submitBtn.disabled = !filaments.some(item => item.id === Number(filamentHiddenInput.value))
         submitBtn.textContent = t('spools.createSpool')
       }
     })
@@ -1129,7 +727,7 @@ import Layout from '../../layouts/Layout.astro'
       invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
       const filamentsData = await cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments')
       filaments = filamentsData.items
-      populateFilamentDropdown(filamentsData.items, String(filamentId))
+      applySelectedFilament(String(filamentId))
     }
 
     async function applyTagDataToForm(tagData: any) {
@@ -1208,7 +806,9 @@ import Layout from '../../layouts/Layout.astro'
     btnImportTagClose?.addEventListener('click', closeImportTagModal)
     importTagModal?.addEventListener('click', (e) => { if (e.target === importTagModal) closeImportTagModal() })
 
-    loadOptions()
+    await loadOptions()
     checkActiveDevicesForImport()
+    if (params.get('from_tag') === '1') openImportTagModal()
+    }
   </script>
 </Layout>

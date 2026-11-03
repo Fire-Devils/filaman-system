@@ -1,192 +1,142 @@
 ---
 import Layout from '../layouts/Layout.astro'
-
-interface Spool {
-  id: number
-  filament_id: number
-  status_id: number
-  remaining_weight_g: number | null
-  low_weight_threshold_g: number
-  lot_number: string | null
-  rfid_uid: string | null
-  rfid_uid_2?: string | null
-  external_id: string | null
-}
-
-interface Filament {
-  id: number
-  designation: string
-  type: string
-  manufacturer_id: number
-}
-
-interface Status {
-  id: number
-  key: string
-  label: string
-}
-
-interface SpoolWithFilament extends Spool {
-  filament?: Filament
-  status?: Status
-}
-
-interface PaginatedResponse<T> {
-  items: T[]
-  total: number
-  page: number
-  page_size: number
-}
+import FormSection from '../components/FormSection.astro'
+import FormDialog from '../components/FormDialog.astro'
 ---
 
 <Layout title="FilaMan - Dashboard">
+  <div class="dashboard-page">
+    <h1 class="dashboard-title" data-i18n="dashboard.title">Dashboard</h1>
+    <div class="dashboard-metrics">
+      <a class="fm-card dashboard-metric" href="/spools">
+        <svg width="32" height="32" class="db-icon" aria-hidden="true"><use href="/icons.svg#icon-spools" /></svg>
+        <div><strong id="stat-total-spools">—</strong><span data-i18n="dashboard.totalSpools">Total Spools</span></div>
+      </a>
+      <div class="fm-card dashboard-metric">
+        <a class="dashboard-metric-icon" href="/filaments" aria-label="Filaments" data-i18n-aria-label="dashboard.filaments"><svg width="32" height="32" class="db-icon" aria-hidden="true"><use href="/icons.svg#icon-filaments" /></svg></a>
+        <div>
+          <a href="/filaments" class="dashboard-metric-count" id="stat-total-filaments">—</a><span data-i18n="dashboard.filaments">Filaments</span>
+          <div id="filament-scope-toggle" class="dashboard-scope">
+            <button type="button" data-scope="all" class="fm-scope-pill" data-i18n="dashboard.filamentScopeAll">All</button>
+            <button type="button" data-scope="active" class="fm-scope-pill" data-i18n="dashboard.filamentScopeActive">Active</button>
+            <button type="button" data-scope="used" class="fm-scope-pill" data-i18n="dashboard.filamentScopeUsed">Used</button>
+          </div>
+        </div>
+      </div>
+      <button type="button" id="problem-spools" class="fm-card dashboard-metric dashboard-problems" aria-haspopup="dialog">
+        <svg width="32" height="32" class="db-icon" aria-hidden="true"><use href="/icons.svg#icon-spools" /></svg>
+        <div>
+          <div class="dashboard-problem-counts">
+            <div><strong id="stat-low-spools">—</strong><span data-i18n="dashboard.statusLow">Low</span></div>
+            <div><strong id="stat-empty-spools">—</strong><span data-i18n="dashboard.statusEmpty">Empty</span></div>
+          </div>
+          <span data-i18n="dashboard.lowAndEmptySpools">Low &amp; Empty Spools</span>
+        </div>
+      </button>
+      <div class="fm-card dashboard-metric">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="dashboard-value-icon" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></svg>
+        <div><strong id="stat-total-value">—</strong><span data-i18n="dashboard.totalValue">Total Value (available)</span></div>
+      </div>
+    </div>
+
+    <div class="dashboard-overview">
+      <FormSection titleKey="dashboard.spoolStatus" title="Spool status">
+        <div id="spool-status" class="dashboard-status"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection titleKey="dashboard.locationStats" title="Locations">
+        <div id="location-stats" class="dashboard-locations"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+    </div>
+    <div class="dashboard-details">
+      <FormSection id="low-stock-title" titleKey="dashboard.lowStockSpools" title="Low-stock spools" class="dashboard-low-stock">
+        <div id="low-stock-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection id="manufacturers-title" titleKey="nav.manufacturers" title="Manufacturers">
+        <div id="manufacturers-with-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="manufacturers-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+      <FormSection id="filament-stats-title" titleKey="dashboard.filamentStats" title="Filament statistics">
+        <div id="filament-stats" class="dashboard-table dashboard-list" role="region" aria-labelledby="filament-stats-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
+    </div>
+  </div>
+
+  <FormDialog id="spool-modal" titleId="modal-title" titleKey="dashboard.lowAndEmptySpools" title="Low & Empty Spools" wide>
+    <Fragment slot="actions"><button type="button" class="fm-btn fm-btn-outline" data-dialog-close data-i18n="common.close">Close</button></Fragment>
+    <div id="modal-content" class="dashboard-table"><p data-i18n="common.loading">Loading...</p></div>
+    <div id="modal-footer" class="hidden"><button type="button" id="btn-archive-all" class="fm-btn fm-btn-warning" data-i18n="dashboard.archiveAll">Archive All</button></div>
+  </FormDialog>
+
+  <FormDialog id="fm-changelog-overlay" titleId="fm-changelog-title" titleKey="changelog.popupTitle" title="What's New">
+    <Fragment slot="actions"><button type="button" id="fm-changelog-close" class="fm-btn fm-btn-primary" data-dialog-close data-i18n="changelog.dismiss">Got it</button></Fragment>
+    <p id="fm-changelog-version" class="dashboard-changelog-version"></p>
+    <div id="fm-changelog-list" class="dashboard-stack"></div>
+    <a href="/admin/system/changelog" class="fm-btn fm-btn-outline" data-i18n="changelog.viewAll">All Changes</a>
+  </FormDialog>
+
   <style>
-    .db-icon {
-      transition: transform var(--transition), fill var(--transition);
+    .dashboard-page { --dashboard-columns: repeat(2, minmax(0, 1.2fr)) minmax(0, 1fr) minmax(0, 1.1fr); width: 100%; max-width: var(--content-max-width); }
+    .dashboard-title { font: 700 var(--page-title-size) var(--font-serif); margin: 0 0 20px; }
+    .dashboard-metrics { display: grid; grid-template-columns: var(--dashboard-columns); gap: 12px; }
+    .dashboard-metric { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 16px; color: var(--text); text-decoration: none; text-align: left; }
+    button.dashboard-metric { width: 100%; font: inherit; cursor: pointer; }
+    .dashboard-metric > div { min-width: 0; }
+    .dashboard-metric strong, .dashboard-metric-count { display: block; color: var(--text); font-size: 1.5rem; font-weight: 700; line-height: 1.25; text-decoration: none; overflow-wrap: anywhere; }
+    .dashboard-metric span { display: block; color: var(--text-muted); font-size: .8rem; }
+    .db-icon { flex-shrink: 0; fill: var(--accent); }
+    .dashboard-metric-icon { display: flex; }
+    .dashboard-value-icon { flex-shrink: 0; color: var(--accent); }
+    .dashboard-problems .db-icon { fill: var(--error-text); }
+    .dashboard-problem-counts { display: flex; gap: 16px; margin-bottom: 2px; }
+    .dashboard-problem-counts > div + div { padding-left: 16px; border-left: 1px solid var(--border); }
+    #stat-low-spools { color: var(--error-text); }
+    #stat-empty-spools { color: var(--text-muted); }
+    .dashboard-scope { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .dashboard-overview, .dashboard-details { display: grid; grid-template-columns: var(--dashboard-columns); gap: var(--section-gap); column-gap: 12px; align-items: start; margin-top: var(--section-gap); }
+    .dashboard-overview > :global(.fm-section), .dashboard-details > :global(.dashboard-low-stock) { grid-column: span 2; }
+    .dashboard-stack { display: grid; gap: var(--section-gap); min-width: 0; }
+    .dashboard-table { --table-cell-padding: 4px 8px; min-width: 0; overflow-x: auto; }
+    .dashboard-table :global(.fm-table) { width: 100%; font-size: .85rem; }
+    .dashboard-table :global(th) { background: var(--bg-soft); }
+    .dashboard-list { --table-cell-padding: 4px 6px; max-height: 26rem; overflow: auto; scrollbar-gutter: stable; }
+    .dashboard-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dashboard-list :global(.fm-table) { table-layout: fixed; }
+    .dashboard-list :global(th), .dashboard-list :global(td) { height: 32px; box-sizing: border-box; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dashboard-list :global(th) { position: sticky; top: 0; z-index: 1; font-size: .75rem; letter-spacing: normal; text-transform: none; }
+    #low-stock-spools :global(.fm-table) { min-width: 460px; }
+    #low-stock-spools :global(td:last-child) { position: sticky; right: 0; background: var(--bg-elevated); }
+    #low-stock-spools :global(th:last-child) { right: 0; z-index: 2; }
+    .dashboard-list :global(a) { display: block; overflow: hidden; text-overflow: ellipsis; }
+    #low-stock-spools :global(th:first-child) { width: 64px; }
+    #low-stock-spools :global(th:nth-child(3)) { width: 110px; }
+    #low-stock-spools :global(th:last-child) { width: 78px; }
+    #manufacturers-with-spools :global(th:last-child) { width: 64px; }
+    #filament-stats :global(th:nth-child(2)) { width: 64px; }
+    #filament-stats :global(th:last-child) { width: 78px; }
+    .dashboard-table :global(a) { color: var(--accent); text-decoration: none; }
+    .dashboard-table :global(a:hover) { text-decoration: underline; }
+    .dashboard-table :global(p) { color: var(--text-muted); margin: 0; }
+    .dashboard-status { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--control-gap); text-align: center; }
+    .dashboard-locations :global(ul) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; }
+    .dashboard-locations :global(li) { min-width: 0; }
+    .dashboard-locations :global(a) { color: var(--accent); text-decoration: none; font-size: .85rem; overflow-wrap: anywhere; }
+    .dashboard-locations :global(a:hover) { text-decoration: underline; }
+    .dashboard-locations :global(li > div) { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--text-muted); font-size: .75rem; margin-top: 4px; }
+    .dashboard-locations :global(p) { color: var(--text-muted); margin: 0; }
+    .dashboard-changelog-version { margin: 0; color: var(--text-muted); font-size: .85rem; }
+    @container detail-page (max-width: 65rem) {
+      .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .dashboard-overview, .dashboard-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dashboard-overview > :global(.fm-section) { grid-column: auto; }
+      .dashboard-details > :global(.dashboard-low-stock) { grid-column: 1 / -1; }
     }
-    .fm-card-hover:hover .db-icon {
-      transform: scale(1.1);
+    @container detail-page (max-width: 52rem) { .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container detail-page (max-width: 43rem) {
+      .dashboard-overview, .dashboard-details { grid-template-columns: minmax(0, 1fr); }
+      .dashboard-list { max-height: 22rem; }
+      .dashboard-locations :global(ul) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
+    @media (max-width: 420px) { .dashboard-metric { gap: 8px; padding: 12px; } .dashboard-metric > svg, .dashboard-metric-icon svg { width: 24px; height: 24px; } .dashboard-problem-counts { gap: 10px; } .dashboard-problem-counts > div + div { padding-left: 10px; } }
   </style>
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="dashboard.title">Dashboard</h1>
-  
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
-    <div class="fm-card fm-card-hover" style="display: flex; align-items: center; gap: 20px; cursor: pointer;" onclick="window.location.href='/spools'">
-      <svg width="36" height="36" style="fill: var(--accent); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
-      <div>
-        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-spools">-</div>
-        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalSpools">Total Spools</div>
-      </div>
-    </div>
-
-    <div class="fm-card" style="display: flex; align-items: center; gap: 20px;">
-      <svg width="36" height="36" style="fill: var(--accent-2); transition: transform 0.2s ease; cursor: pointer;" class="db-icon" onclick="window.location.href='/filaments'"><use href="/icons.svg#icon-filaments"></use></svg>
-      <div>
-        <div style="font-size: 1.6rem; font-weight: 700; cursor: pointer;" id="stat-total-filaments" onclick="window.location.href='/filaments'">-</div>
-        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.filaments">Filaments</div>
-        <div id="filament-scope-toggle" style="display: flex; gap: 4px; margin-top: 6px;">
-          <button data-scope="all"    class="fm-scope-pill" data-i18n="dashboard.filamentScopeAll">All</button>
-          <button data-scope="active" class="fm-scope-pill" data-i18n="dashboard.filamentScopeActive">Active</button>
-          <button data-scope="used"   class="fm-scope-pill" data-i18n="dashboard.filamentScopeUsed">Used</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="fm-card fm-card-hover" style="cursor: pointer; display: flex; align-items: center; gap: 20px;" onclick="openSpoolModal('problem')">
-      <svg width="36" height="36" style="fill: var(--error-text); transition: transform 0.2s ease;" class="db-icon"><use href="/icons.svg#icon-spools"></use></svg>
-      <div>
-        <div style="display: flex; align-items: baseline; gap: 12px;">
-          <div style="display: flex; flex-direction: column; align-items: center;">
-            <div style="font-size: 1.6rem; font-weight: 700; color: var(--error-text);" id="stat-low-spools">-</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: -4px;" data-i18n="dashboard.statusLow">Low</div>
-          </div>
-          <div style="height: 20px; width: 1px; background: var(--border); align-self: center;"></div>
-          <div style="display: flex; flex-direction: column; align-items: center;">
-            <div style="font-size: 1.6rem; font-weight: 700; color: #6b7280;" id="stat-empty-spools">-</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: -4px;" data-i18n="dashboard.statusEmpty">Empty</div>
-          </div>
-        </div>
-        <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;" data-i18n="dashboard.lowAndEmptySpools">Low & Empty Spools</div>
-      </div>
-    </div>
-
-    <div class="fm-card" style="display: flex; align-items: center; gap: 20px;">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" class="db-icon">
-        <ellipse cx="15.5" cy="14.5" rx="6.5" ry="2.5"/>
-        <path d="M9 14.5v4c0 1.38 2.91 2.5 6.5 2.5s6.5-1.12 6.5-2.5v-4"/>
-        <ellipse cx="8.5" cy="5.5" rx="6.5" ry="2.5"/>
-        <path d="M2 5.5v13c0 1.38 2.91 2.5 6.5 2.5"/>
-        <path d="M2 9.8c0 1.38 2.91 2.5 6.5 2.5 1.5 0 2.9-.29 4-.75"/>
-        <path d="M2 14.2c0 1.38 2.91 2.5 6.5 2.5H9"/>
-        <path d="M15 5.5v5.5"/>
-      </svg>
-      <div>
-        <div style="font-size: 1.6rem; font-weight: 700;" id="stat-total-value">-</div>
-        <div style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="dashboard.totalValue">Total Value (available)</div>
-      </div>
-    </div>
-  </div>
-  
-  <div style="margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-    <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0; color: var(--error-text);" data-i18n="dashboard.lowStockSpools">Spulen (fast leer)</h2>
-      <div id="low-stock-spools" style="max-height: 280px; overflow-y: auto;">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-      </div>
-    </div>
-    
-    <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.manufacturersWithSpools">Hersteller (nicht leer)</h2>
-      <div id="manufacturers-with-spools" style="max-height: 280px; overflow-y: auto;">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-      </div>
-    </div>
-    
-    <div class="fm-card">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentTypes">Filament-Arten</h2>
-      <div id="filament-types" style="max-height: 280px; overflow-y: auto;">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-2 gap-5" style="margin-top: 24px;">
-    <div class="flex flex-col gap-5">
-      <div class="fm-card">
-        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.spoolStatus">Spulen-Status</h2>
-        <div id="spool-status" style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
-          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-        </div>
-      </div>
-      
-      <div class="fm-card">
-        <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.locationStats">Lagerorte</h2>
-        <div id="location-stats" style="overflow-y: auto;">
-          <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-        </div>
-      </div>
-    </div>
-    
-    <div class="fm-card overflow-y-auto" style="max-height: 400px;">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="dashboard.filamentStats">Filament-Statistik</h2>
-      <div id="filament-stats">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Spool Modal -->
-  <div id="spool-modal" class="fm-modal-overlay">
-    <div class="fm-modal" style="max-width: 800px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h2 id="modal-title" style="margin: 0; font-weight: 600; font-size: 1.1rem;">Spulen</h2>
-        <button onclick="closeSpoolModal()" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 4px 8px; color: var(--text-muted);">✕</button>
-      </div>
-      <div id="modal-content" style="max-height: 60vh; overflow-y: auto;">
-        <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
-      </div>
-      <div id="modal-footer" style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 16px;" class="hidden">
-        <button id="btn-archive-all" class="fm-btn fm-btn-warning" style="width: 100%;"></button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Changelog Modal (shown once per version) -->
-  <div id="fm-changelog-overlay" class="fm-modal-overlay">
-    <div class="fm-modal" style="max-width: 520px;">
-      <h3 class="fm-modal-title" style="display: flex; align-items: center; gap: 8px;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        <span data-i18n="changelog.popupTitle">What's New</span>
-      </h3>
-      <p id="fm-changelog-version" style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 16px;"></p>
-      <div id="fm-changelog-list" style="display: grid; gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 4px;"></div>
-      <div class="fm-modal-actions" style="margin-top: 16px;">
-        <a href="/admin/system/changelog" class="fm-btn fm-btn-outline" data-i18n="changelog.viewAll">All Changes</a>
-        <button id="fm-changelog-close" class="fm-btn fm-btn-primary" data-i18n="changelog.dismiss">Got it</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     import { t, initI18n, getLang } from '../lib/i18n'
     import { formatPrice, getCurrency, initCurrency } from '../lib/format'
@@ -195,10 +145,41 @@ interface PaginatedResponse<T> {
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../lib/cache'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import { getMe, hasPermission } from '../lib/auth'
+    import { bindFormDialog } from '../lib/form-dialog'
+    import { escapeHtml } from '../lib/extra-fields'
 
-    let allSpools: any[] = []
-    let allFilaments: any[] = []
-    let filamentCounts = { all: 0, active: 0, used: 0 }
+    interface DashboardSpool { id: number; filament_id: number; remaining_weight_g: number | null; low_weight_threshold_g: number }
+    interface DashboardFilament { id: number; designation: string; material_type: string | null }
+    interface DashboardStats {
+      filament_count_active: number; filament_count_used: number; total_value_available: number
+      spool_distribution: Record<'full' | 'normal' | 'low' | 'critical' | 'empty', number>
+      location_stats: { location_id: number; location_name: string; spool_count: number; total_weight_g: number }[]
+      filament_stats: { filament_type: string; spool_count: number; total_weight_g: number }[]
+      manufacturers_with_spools: { id: number; name: string; spool_count: number }[]
+      low_stock_spools: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; remaining_weight_g: number }[]
+    }
+    interface DashboardWindow {
+      openSpoolModal: (type: 'problem') => Promise<void>
+      closeSpoolModal: () => void
+      archiveSpool: (id: number) => Promise<void>
+      archiveAll: (ids: number[]) => Promise<void>
+      __fmConfirm: (message: string, options?: { okLabel?: string; isDanger?: boolean }) => Promise<boolean>
+      __fmAlert?: (message: string) => Promise<boolean>
+    }
+    const dashboardWindow = window as unknown as DashboardWindow
+
+    let archivePending = false
+    const spoolElement = document.getElementById('spool-modal') as HTMLDialogElement
+    const spoolDialog = bindFormDialog(spoolElement, { canClose: () => !archivePending })
+    const changelogElement = document.getElementById('fm-changelog-overlay') as HTMLDialogElement
+    const changelogDialog = bindFormDialog(changelogElement)
+    spoolElement.addEventListener('click', event => { if (event.target === spoolElement) spoolDialog.close() })
+    changelogElement.addEventListener('click', event => { if (event.target === changelogElement) changelogDialog.close() })
+    document.getElementById('problem-spools')!.addEventListener('click', () => dashboardWindow.openSpoolModal('problem'))
+
+    let allSpools: DashboardSpool[] = []
+    let allFilaments: DashboardFilament[] = []
+    const filamentCounts = { all: 0, active: 0, used: 0 }
 
     // Archiving from the dashboard is a status change, same permission the
     // backend requires on /spools/{id}/status and /spools/bulk/status.
@@ -213,6 +194,7 @@ interface PaginatedResponse<T> {
       document.getElementById('stat-total-filaments')!.textContent = String(count)
       document.querySelectorAll<HTMLButtonElement>('.fm-scope-pill').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.scope === scope)
+        btn.setAttribute('aria-pressed', String(btn.dataset.scope === scope))
       })
     }
 
@@ -245,21 +227,22 @@ interface PaginatedResponse<T> {
     }
 
     // Modal functions
-    (window as any).openSpoolModal = async function(type: 'problem') {
+    dashboardWindow.openSpoolModal = async function(type: 'problem') {
+      if (archivePending) return
       await canArchiveReady
+      if (archivePending) return
 
-      const modal = document.getElementById('spool-modal') as HTMLElement
       const title = document.getElementById('modal-title') as HTMLElement
       const content = document.getElementById('modal-content') as HTMLElement
       const footer = document.getElementById('modal-footer') as HTMLElement
       const bulkBtn = document.getElementById('btn-archive-all') as HTMLButtonElement
 
-      let filteredSpools: any[] = []
+      let filteredSpools: DashboardSpool[] = []
 
       if (type === 'problem') {
         title.textContent = t('dashboard.lowAndEmptySpools')
-        filteredSpools = allSpools.filter(s => 
-          s.remaining_weight_g !== null && 
+        filteredSpools = allSpools.filter(s =>
+          s.remaining_weight_g !== null &&
           s.remaining_weight_g <= s.low_weight_threshold_g
         )
       }
@@ -272,20 +255,20 @@ interface PaginatedResponse<T> {
           <table class="fm-table">
             <thead>
               <tr>
-                <th style="padding: 8px;">ID</th>
-                <th style="padding: 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 8px; text-align: right;">${t('dashboard.remaining')}</th>
-                ${canArchive ? `<th style="padding: 8px; text-align: right;">${t('common.actions')}</th>` : ''}
+                <th>ID</th>
+                <th>${t('dashboard.filament')}</th>
+                <th style="text-align: right;">${t('dashboard.remaining')}</th>
+                ${canArchive ? `<th style="text-align: right;">${t('common.actions')}</th>` : ''}
               </tr>
             </thead>
             <tbody>
               ${filteredSpools.map(s => `
                 <tr data-spool-id="${s.id}">
-                  <td style="padding: 8px; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">#${s.id}</td>
-                  <td style="padding: 8px; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">${getFilamentName(s.filament_id)}</td>
-                  <td style="padding: 8px; text-align: right; font-family: monospace; cursor: pointer;" onclick="window.location.href='/spools/${s.id}'">${s.remaining_weight_g?.toFixed(0)}g</td>
+                  <td><a href="/spools/${s.id}">#${s.id}</a></td>
+                  <td><a href="/spools/${s.id}">${escapeHtml(getFilamentName(s.filament_id))}</a></td>
+                  <td style="text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)} g</td>
                   ${canArchive ? `
-                  <td style="padding: 8px; text-align: right;">
+                  <td style="text-align: right;">
                     <button class="fm-btn fm-btn-outline" style="padding: 4px 10px; font-size: 0.75rem;" onclick="archiveSpool(${s.id})">
                       ${t('dashboard.archive')}
                     </button>
@@ -301,135 +284,89 @@ interface PaginatedResponse<T> {
         if (canArchive) {
           footer.classList.remove('hidden')
           bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
-          bulkBtn.onclick = () => archiveAll(filteredSpools.map(s => s.id))
+          bulkBtn.onclick = () => dashboardWindow.archiveAll(filteredSpools.map(s => s.id))
         } else {
           footer.classList.add('hidden')
         }
       }
 
-      modal.classList.add('open')
+      spoolDialog.open()
     }
 
-    async function archiveSpool(id: number) {
-      if (!(await (window as any).__fmConfirm(t('dashboard.confirmArchiveOne') || t('dashboard.archive') + '?', {
-        okLabel: t('dashboard.archive'),
-        isDanger: false
-      }))) return
-
-      const btn = document.querySelector(`tr[data-spool-id="${id}"] button`) as HTMLButtonElement
-      if (btn) {
-        btn.disabled = true
-        btn.textContent = '...'
-      }
+    async function archiveSpools(ids: number | number[]) {
+      if (archivePending || !canArchive || !spoolElement.open) return
+      const bulk = Array.isArray(ids)
+      const row = bulk ? null : spoolElement.querySelector(`tr[data-spool-id="${ids}"]`)
+      const btn = bulk ? document.getElementById('btn-archive-all') : row?.querySelector('button')
+      const controls = [...spoolElement.querySelectorAll('button'), document.getElementById('problem-spools') as HTMLButtonElement]
+      archivePending = true
+      spoolElement.setAttribute('aria-busy', 'true')
+      controls.forEach(button => { button.disabled = true })
+      let succeeded = false
 
       try {
-        const response = await fetch(`/api/v1/spools/${id}/status`, {
+        if (!(await dashboardWindow.__fmConfirm(t(bulk ? 'dashboard.confirmArchiveAll' : 'dashboard.confirmArchiveOne'), {
+          okLabel: t('dashboard.archive'),
+          isDanger: false
+        }))) return
+        if (btn) btn.textContent = bulk ? t('dashboard.archiving') : '...'
+
+        const response = await fetch(bulk ? '/api/v1/spools/bulk/status' : `/api/v1/spools/${ids}/status`, {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'X-CSRF-Token': getCsrfToken()
           },
           credentials: 'include',
-          body: JSON.stringify({ status: 'archived' }),
+          body: JSON.stringify(bulk ? { spool_ids: ids, status: 'archived' } : { status: 'archived' }),
           signal: getAbortSignal(),
         })
 
-        if (response.ok) {
-          const row = document.querySelector(`tr[data-spool-id="${id}"]`)
+        if (!response.ok) {
+          await dashboardWindow.__fmAlert?.(t('dashboard.archiveError'))
+          return
+        }
+        succeeded = true
+        if (!bulk) {
           row?.remove()
           const tbody = document.querySelector('#modal-content tbody')
           if (tbody && tbody.children.length === 0) {
             document.getElementById('modal-content')!.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
             document.getElementById('modal-footer')!.classList.add('hidden')
           }
-          loadDashboardData()
-        } else {
-          // e.g. 403 when the role lacks the status-change permission
-          await (window as any).__fmAlert?.(t('dashboard.archiveError'))
-          if (btn) {
-            btn.disabled = false
-            btn.textContent = t('dashboard.archive')
-          }
         }
+        void loadDashboardData()
       } catch (err) {
         if (isAbortError(err)) return
-        console.error('Failed to archive spool:', err)
-        if (btn) {
-          btn.disabled = false
-          btn.textContent = t('dashboard.archive')
-        }
-      }
-    }
-    (window as any).archiveSpool = archiveSpool
-
-    async function archiveAll(ids: number[]) {
-      if (!(await (window as any).__fmConfirm(t('dashboard.confirmArchiveAll'), { 
-        okLabel: t('dashboard.archive'),
-        isDanger: false 
-      }))) return
-
-      const bulkBtn = document.getElementById('btn-archive-all') as HTMLButtonElement
-      bulkBtn.disabled = true
-      bulkBtn.textContent = t('dashboard.archiving')
-
-      try {
-        const response = await fetch('/api/v1/spools/bulk/status', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': getCsrfToken()
-          },
-          credentials: 'include',
-          body: JSON.stringify({ spool_ids: ids, status: 'archived' }),
-          signal: getAbortSignal(),
-        })
-
-        if (response.ok) {
-          (window as any).closeSpoolModal()
-          loadDashboardData()
-        } else {
-          // e.g. 403 when the role lacks the status-change permission
-          await (window as any).__fmAlert?.(t('dashboard.archiveError'))
-        }
-      } catch (err) {
-        if (isAbortError(err)) return
-        console.error('Failed bulk archive:', err)
+        console.error('Failed to archive spools:', err)
+        await dashboardWindow.__fmAlert?.(t('dashboard.archiveError'))
       } finally {
-        bulkBtn.disabled = false
-        bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
+        archivePending = false
+        spoolElement.setAttribute('aria-busy', 'false')
+        controls.forEach(button => { button.disabled = false })
+        if (btn) btn.textContent = t(bulk ? 'dashboard.archiveAll' : 'dashboard.archive')
+        if (bulk && succeeded) spoolDialog.close()
       }
     }
-    (window as any).archiveAll = archiveAll
+    dashboardWindow.archiveSpool = id => archiveSpools(id)
+    dashboardWindow.archiveAll = ids => archiveSpools(ids)
 
-    ;(window as any).closeSpoolModal = function() {
-      const modal = document.getElementById('spool-modal') as HTMLElement
-      modal.classList.remove('open')
-    }
-
-    // Close on escape
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') (window as any).closeSpoolModal()
-    })
-
-    // Close on backdrop click
-    document.getElementById('spool-modal')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) (window as any).closeSpoolModal()
-    })
+    ;dashboardWindow.closeSpoolModal = () => spoolDialog.close()
 
     async function loadDashboardData() {
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [spoolsData, filamentsData, dashboardRes] = await fetchSequential([
-          () => cachedFetchAllPages('spools-dashboard', '/api/v1/spools'),
-          () => cachedFetchAllPages(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
+          () => cachedFetchAllPages<DashboardSpool>('spools-dashboard', '/api/v1/spools'),
+          () => cachedFetchAllPages<DashboardFilament>(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
           () => fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include', signal: getAbortSignal() }),
         ] as const)
-        
-        const dashboardData = dashboardRes.ok ? await dashboardRes.json() : null
-        
+
+        const dashboardData: DashboardStats | null = dashboardRes.ok ? await dashboardRes.json() : null
+
         allSpools = spoolsData.items
         allFilaments = filamentsData.items
-        
+
         document.getElementById('stat-total-spools')!.textContent = String(spoolsData.total)
         filamentCounts.all = filamentsData.total
         if (dashboardData) {
@@ -437,23 +374,23 @@ interface PaginatedResponse<T> {
           filamentCounts.used = dashboardData.filament_count_used ?? 0
         }
         applyFilamentScope()
-        
+
         if (dashboardData) {
           const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
           document.getElementById('stat-low-spools')!.textContent = (dist.low + dist.critical).toString()
           document.getElementById('stat-empty-spools')!.textContent = dist.empty.toString()
           document.getElementById('stat-total-value')!.textContent = formatPrice(dashboardData.total_value_available, getCurrency())
-          
+
           const statusContainer = document.getElementById('spool-status')!
           const statusItems = [
-            { key: 'full', label: t('dashboard.statusFull'), color: '#22c55e', count: dist.full, hint: '>75%' },
-            { key: 'normal', label: t('dashboard.statusNormal'), color: '#3b82f6', count: dist.normal, hint: '50-75%' },
-            { key: 'low', label: t('dashboard.statusLow'), color: '#eab308', count: dist.low, hint: '< Min' },
-            { key: 'critical', label: t('dashboard.statusCritical'), color: '#ef4444', count: dist.critical, hint: '< 50% Min' },
-            { key: 'empty', label: t('dashboard.statusEmpty'), color: '#6b7280', count: dist.empty, hint: '0g' },
+            { key: 'full', label: t('dashboard.statusFull'), color: 'var(--success-text)', count: dist.full, hint: '>75%' },
+            { key: 'normal', label: t('dashboard.statusNormal'), color: 'var(--info-text)', count: dist.normal, hint: '50-75%' },
+            { key: 'low', label: t('dashboard.statusLow'), color: 'var(--accent-3)', count: dist.low, hint: '< Min' },
+            { key: 'critical', label: t('dashboard.statusCritical'), color: 'var(--error-text)', count: dist.critical, hint: '< 50% Min' },
+            { key: 'empty', label: t('dashboard.statusEmpty'), color: 'var(--text-muted)', count: dist.empty, hint: '0g' },
           ]
           statusContainer.innerHTML = statusItems.map(s => `
-            <div style="text-align: center; min-width: 60px;">
+            <div>
               <div style="font-size: 1.5rem; font-weight: 700; color: ${s.color};">${s.count}</div>
               <div style="font-size: 0.7rem; color: var(--text-muted);">${s.label}</div>
               <div style="font-size: 0.6rem; color: var(--text-muted); opacity: 0.7;">${s.hint}</div>
@@ -464,39 +401,32 @@ interface PaginatedResponse<T> {
           if (!dashboardData.location_stats || dashboardData.location_stats.length === 0) {
             locationStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
           } else {
-            locationStatsContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
-              <thead><tr>
-                <th style="padding: 6px 8px;">${t('locations.name') || 'Location'}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.spools')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
-              </tr></thead>
-              <tbody>` + 
-              dashboardData.location_stats.map((l: any) => 
-                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?location_id=${l.location_id}'">
-                  <td style="padding: 6px 8px;">${l.location_name}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${l.spool_count}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(l.total_weight_g)}</td>
-                </tr>`
+            locationStatsContainer.innerHTML = `<ul>` +
+              dashboardData.location_stats.map(l =>
+                `<li>
+                  <a href="/spools?location_id=${l.location_id}">${escapeHtml(l.location_name)}</a>
+                  <div><span>${l.spool_count} ${t('dashboard.spools')}</span><span>${formatWeight(l.total_weight_g)}</span></div>
+                </li>`
               ).join('') +
-              `</tbody></table>`
+              `</ul>`
           }
 
           const filamentStatsContainer = document.getElementById('filament-stats')!
           if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
             filamentStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
           } else {
-            filamentStatsContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+            filamentStatsContainer.innerHTML = `<table class="fm-table">
               <thead><tr>
-                <th style="padding: 6px 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.spools')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+                <th>${t('dashboard.filament')}</th>
+                <th style="text-align: right;">${t('dashboard.spools')}</th>
+                <th style="text-align: right;">${t('dashboard.remaining')}</th>
               </tr></thead>
-              <tbody>` + 
-              dashboardData.filament_stats.map((f: any) => 
-                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?material=${encodeURIComponent(f.filament_type)}'">
-                  <td style="padding: 6px 8px;">${f.filament_type}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${f.spool_count}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
+              <tbody>` +
+              dashboardData.filament_stats.map(f =>
+                `<tr>
+                  <td><a href="/spools?material=${escapeHtml(encodeURIComponent(f.filament_type))}" title="${escapeHtml(f.filament_type)}">${escapeHtml(f.filament_type)}</a></td>
+                  <td style="text-align: right; font-family: monospace;">${f.spool_count}</td>
+                  <td style="text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
                 </tr>`
               ).join('') +
               `</tbody></table>`
@@ -506,9 +436,10 @@ interface PaginatedResponse<T> {
           if (dashboardData.manufacturers_with_spools.length === 0) {
             mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
           } else {
-            mfrContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
-              dashboardData.manufacturers_with_spools.map((m: any) => 
-                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?manufacturer_id=${m.id}'"><td>${m.name}</td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
+            mfrContainer.innerHTML = `<table class="fm-table">
+              <thead><tr><th>${t('dashboard.manufacturer')}</th><th style="text-align: right;">${t('dashboard.spools')}</th></tr></thead><tbody>` +
+              dashboardData.manufacturers_with_spools.map(m =>
+                `<tr><td><a href="/spools?manufacturer_id=${m.id}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</a></td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
               ).join('') +
               `</tbody></table>`
           }
@@ -517,32 +448,21 @@ interface PaginatedResponse<T> {
           if (dashboardData.low_stock_spools.length === 0) {
             mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
           } else {
-            mfrLowStockContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;">
+            mfrLowStockContainer.innerHTML = `<table class="fm-table">
               <thead><tr>
-                <th style="padding: 6px 8px;">${t('dashboard.spool')}</th>
-                <th style="padding: 6px 8px;">${t('dashboard.filament')}</th>
-                <th style="padding: 6px 8px;">${t('dashboard.manufacturer')}</th>
-                <th style="padding: 6px 8px; text-align: right;">${t('dashboard.remaining')}</th>
+                <th>${t('dashboard.spool')}</th>
+                <th>${t('dashboard.filament')}</th>
+                <th>${t('dashboard.manufacturer')}</th>
+                <th style="text-align: right;">${t('dashboard.remaining')}</th>
               </tr></thead>
-              <tbody>` + 
-              dashboardData.low_stock_spools.map((s: any) => 
-                `<tr style="cursor: pointer;" onclick="window.location.href='/spools/${s.spool_id}'">
-                  <td style="padding: 6px 8px;">#${s.spool_id}</td>
-                  <td style="padding: 6px 8px;">${s.filament_designation} (${s.filament_type})</td>
-                  <td style="padding: 6px 8px;">${s.manufacturer_name}</td>
-                  <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
+              <tbody>` +
+              dashboardData.low_stock_spools.map(s =>
+                `<tr>
+                  <td><a href="/spools/${s.spool_id}">#${s.spool_id}</a></td>
+                  <td title="${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})">${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})</td>
+                  <td title="${escapeHtml(s.manufacturer_name)}">${escapeHtml(s.manufacturer_name)}</td>
+                  <td style="text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
                 </tr>`
-              ).join('') +
-              `</tbody></table>`
-          }
-
-          const typesContainer = document.getElementById('filament-types')!
-          if (dashboardData.filament_types.length === 0) {
-            typesContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
-          } else {
-            typesContainer.innerHTML = `<table class="fm-table" style="font-size: 0.85rem;"><tbody>` + 
-              dashboardData.filament_types.map((t: any) => 
-                `<tr style="cursor: pointer;" onclick="window.location.href='/spools?material=${encodeURIComponent(t.material_type)}'"><td>${t.material_type}</td><td style="text-align: right; font-family: monospace;">${t.count}</td></tr>`
               ).join('') +
               `</tbody></table>`
           }
@@ -565,7 +485,7 @@ interface PaginatedResponse<T> {
       const seenVersion = localStorage.getItem('changelog-seen-version')
       if (!VERSION || seenVersion === VERSION) return
 
-      const currentVersion = changelogData.versions.find((v: any) => v.version === VERSION)
+      const currentVersion = changelogData.versions.find(v => v.version === VERSION)
       if (!currentVersion) return
 
       const lang = getLang() || 'en'
@@ -573,8 +493,6 @@ interface PaginatedResponse<T> {
       const changes = localizedChanges[lang] || localizedChanges['en'] || []
       if (changes.length === 0) return
 
-      const overlay = document.getElementById('fm-changelog-overlay')
-      if (!overlay) return
       const versionEl = document.getElementById('fm-changelog-version')!
       const listEl = document.getElementById('fm-changelog-list')!
       const closeBtn = document.getElementById('fm-changelog-close')!
@@ -582,41 +500,33 @@ interface PaginatedResponse<T> {
       versionEl.textContent = `v${VERSION} \u2014 ${currentVersion.date}`
 
       const typeIcons: Record<string, { icon: string; color: string }> = {
-        feature: { icon: '\u2726', color: 'var(--success-text, #22c55e)' },
-        fix: { icon: '\u2713', color: 'var(--info-text, #3b82f6)' },
-        change: { icon: '\u21BB', color: 'var(--warning-text, #f59e0b)' },
-        breaking: { icon: '!', color: 'var(--error-text, #ef4444)' },
+        feature: { icon: '\u2726', color: 'var(--success-text)' },
+        fix: { icon: '\u2713', color: 'var(--info-text)' },
+        change: { icon: '\u21BB', color: 'var(--accent-3)' },
+        breaking: { icon: '!', color: 'var(--error-text)' },
       }
 
-      listEl.innerHTML = changes.map((c: any) => {
+      listEl.innerHTML = changes.map(c => {
         const style = typeIcons[c.type] || typeIcons.change
         return `<div style="display:flex;align-items:start;gap:10px;padding:8px 12px;background:var(--bg-soft);border-radius:8px;border:1px solid var(--border);">
           <span style="color:${style.color};font-weight:700;font-size:1rem;line-height:1.4;flex-shrink:0;">${style.icon}</span>
-          <span style="font-size:0.85rem;line-height:1.4;">${c.text}</span>
+          <span style="font-size:0.85rem;line-height:1.4;">${escapeHtml(c.text)}</span>
         </div>`
       }).join('')
 
       closeBtn.addEventListener('click', () => {
-        overlay.classList.remove('open')
+        changelogDialog.close()
         localStorage.setItem('changelog-seen-version', VERSION)
       })
 
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.classList.remove('open')
-      })
-
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && overlay.classList.contains('open')) overlay.classList.remove('open')
-      })
-
-      overlay.classList.add('open')
+      changelogDialog.open()
     }
     init()
 
     // Live-Update via SSE: Daten automatisch neu laden
     let _dashboardReloadTimer: ReturnType<typeof setTimeout> | null = null
     window.addEventListener('filaman:data-changed', (e: Event) => {
-      const { event } = (e as CustomEvent).detail ?? {}
+      const { event } = (e as CustomEvent<{ event?: string }>).detail ?? {}
       if (event === 'spools_changed' || event === 'filaments_changed') {
         if (_dashboardReloadTimer) clearTimeout(_dashboardReloadTimer)
         _dashboardReloadTimer = setTimeout(() => loadDashboardData(), 300)

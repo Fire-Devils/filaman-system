@@ -1,5 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
 ---
 
 <Layout title="FilaMan - API Documentation">
@@ -8,11 +9,8 @@ import Layout from '../../layouts/Layout.astro'
 
     /* Container */
     #swagger-container {
-      margin-top: 16px;
-      border-radius: 12px;
+      padding: 0;
       overflow: hidden;
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
     }
 
     /* ── Hide default Swagger topbar ──────────────────────────────── */
@@ -147,12 +145,14 @@ import Layout from '../../layouts/Layout.astro'
     }
   </style>
 
-  <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 16px 0 8px; font-family: var(--font-serif);" data-i18n="admin.apiDocsTitle">API Documentation</h1>
+  <div class="fm-admin-page">
+  <AdminHeader titleKey="admin.apiDocsTitle" title="API Documentation" />
   <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 16px;" data-i18n="admin.apiDocsDesc">Interactive documentation for the FilaMan REST API.</p>
 
-  <div id="swagger-container">
+  <div id="swagger-container" class="fm-card">
     <div id="swagger-loading" data-i18n="admin.apiDocsLoading">Loading API documentation...</div>
+  </div>
+
   </div>
 
   <script>

@@ -2,6 +2,7 @@
 import Layout from '../../../layouts/Layout.astro'
 import DetailScrollIdentity from '../../../components/DetailScrollIdentity.astro'
 import PrinterSetup from '../../../components/PrinterSetup.astro'
+import '../../../styles/spool-form.css'
 
 export function getStaticPaths() {
   return [
@@ -20,7 +21,7 @@ const { id } = Astro.params
   </div>
 
   
-  <div id="spool-content">
+  <div id="spool-content" class="fm-detail-content">
     <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
   </div>
   
@@ -149,47 +150,12 @@ const { id } = Astro.params
       box-shadow: 0 0 0 2px #ef4444;
       border: 2px solid #ef4444 !important;
     }
-    .spool-edit-input { width: min(12rem, 100%); min-width: 5.5ch; padding: 5px 8px; text-align: right; }
-    .spool-edit-input[type="number"] { width: calc(8ch + 18px); flex: 0 0 auto; appearance: textfield; -moz-appearance: textfield; }
-    .spool-edit-input[type="number"]::-webkit-inner-spin-button,
-    .spool-edit-input[type="number"]::-webkit-outer-spin-button { margin: 0; appearance: none; }
-    select.spool-edit-input { padding-right: 2.2rem; text-align: left; }
-    .spool-edit-field { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-    .spool-input-unit { display: inline-flex; align-items: stretch; gap: 6px; }
-    .spool-input-unit > span { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 0 5px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text-muted); font-size: .75rem; font-weight: 650; white-space: nowrap; }
-    .spool-core-row { grid-template-columns: 1fr; align-items: start; gap: 6px; }
-    .spool-core-edit { width: 100%; max-width: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; text-align: left; }
-    .spool-core-edit > span:first-child { white-space: normal; }
-    .spool-core-edit small { flex-basis: 100%; max-width: 44rem; }
-    .filament-spec-row:has(> .spool-input-unit, > input[type="number"]) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-    .filament-spec-row:has(> .spool-input-unit, > input[type="number"]) > .filament-spec-label { flex: 1 1 8rem; }
-    .filament-spec-row > .spool-input-unit, .filament-spec-row > input[type="number"] { margin-left: auto; }
-    .spool-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .spool-extra-fields-card { grid-column: 1 / -1; }
-    .spool-extra-fields-editor { padding-bottom: 16px; }
-    .spool-system-fields-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 12px 16px 0; }
-    .spool-extra-fields-help { margin: 12px 16px; color: var(--text-muted); font-size: .8rem; }
-    .spool-extra-fields-help a { color: var(--accent); }
-    #spool-custom-fields-editor { padding-inline: 16px; }
-    .spool-profile-card { overflow: visible; }
-    .spool-profile-lookup { margin-inline: -16px; padding: 12px 16px; border-block: 1px solid var(--border); background: color-mix(in srgb, var(--bg-soft) 65%, transparent); }
-    .spool-profile-lookup .fdb-lookup-dropdown { position: static; max-height: 18rem; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); box-shadow: none; }
-    .spool-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 28px 0 12px; }
-    .spool-detail-heading h2 { margin: 0; font-size: 1.05rem; }
-    .spool-detail-heading > a { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .spool-filament-panel .spool-detail-heading { margin: 0 0 12px; }
-    @container (max-width: 28rem) {
-      .filament-spec-row:has(> .spool-edit-input:not([type="number"])) { grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 6px; }
-      .spool-edit-input:not([type="number"]) { width: 100%; min-width: 0; }
-    }
-    @media (max-width: 640px) {
-      .spool-system-fields-editor { grid-template-columns: 1fr; }
-    }
   </style>
 
   <script>
+    import type { AppDialogs } from '../../../lib/form-dialog'
     import { t, getLang, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml, isIntegrationExtraFieldPath, renderFieldInput } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, isIntegrationExtraFieldPath, renderSystemFieldRow, type SystemExtraFieldDef } from '../../../lib/extra-fields'
     import { createEntityExtraFieldsDialog, loadEntitySystemFields } from '../../../lib/entity-extra-fields-dialog'
     import {
       buildEntityExtraFieldsForPrint,
@@ -205,8 +171,8 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
     import { formatSpoolMetrics, renderSpoolReel, spoolRemainingWeight } from '../../../lib/spool-reel'
-    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage } from '../../../lib/filament-detail'
-    import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, type SpoolDetailRow } from '../../../lib/spool-detail'
+    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
+    import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, renderSpoolFieldInput, type SpoolDetailRow } from '../../../lib/spool-detail'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
     import { createFilamentDbLookup, type LookupInstance, checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
     import { changedNativeFields, createDetailEditSession, setFormFieldValue } from '../../../lib/detail-edit'
@@ -244,7 +210,7 @@ const { id } = Astro.params
     // RFID state
     let activeDevices: any[] = []
     let currentRfidSpoolId: any = null
-    let spoolSystemFieldMap: Record<string, any> = {}
+    let spoolSystemFieldMap: Record<string, SystemExtraFieldDef> = {}
     const initialEditSection = new URLSearchParams(window.location.search).get('section')
     const extraFieldsDialogRequested = initialEditSection === 'extra-fields'
     let editing = new URLSearchParams(window.location.search).get('edit') === '1' && !extraFieldsDialogRequested
@@ -255,7 +221,7 @@ const { id } = Astro.params
 
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
     let updatePrinterSaveState = () => {}
-    let filamentSystemFieldMap: Record<string, any> = {}
+    let filamentSystemFieldMap: Record<string, SystemExtraFieldDef> = {}
     // Pending slot assignment state (for animated ring feedback)
     let pendingSlotAssign: { slotIndex: string; printerId: number; expectedColor: string } | null = null
     let pendingSlotTimeout: ReturnType<typeof setTimeout> | null = null
@@ -355,22 +321,6 @@ const { id } = Astro.params
       return l ? l.name : `#${locationId}`
     }
 
-    function safeExternalUrl(value: unknown): string {
-      if (typeof value !== 'string') return ''
-      try {
-        const url = new URL(value, window.location.origin)
-        return url.protocol === 'http:' || url.protocol === 'https:' ? escapeExtraFieldHtml(url.href) : ''
-      } catch {
-        return ''
-      }
-    }
-
-    function renderFilamentDetailRow(row: { labelKey: string; value: string; href?: string }): string {
-      const href = safeExternalUrl(row.href)
-      const value = escapeExtraFieldHtml(row.value)
-      return `<div class="filament-spec-row"><span class="filament-spec-label">${t(row.labelKey)}</span><span class="filament-spec-value">${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>` : value}</span></div>`
-    }
-
     function renderSpoolField(row: SpoolDetailRow): string {
       if (!editing || !row.field) {
         if (row.key === 'rfid_uid' || row.key === 'rfid_uid_2') {
@@ -391,13 +341,7 @@ const { id } = Astro.params
           <small id="spool-core-weight-help" style="display: block; color: var(--text-muted); font-size: .72rem; font-weight: 400; line-height: 1.35;">${escapeExtraFieldHtml(t('spools.spoolCoreWeightHint'))}</small>
         </span>`
       }
-      if (row.field.type === 'select') {
-        const materialLabels: Record<string, string> = { Plastic: 'spools.spoolMaterialPlastic', Cardboard: 'spools.spoolMaterialCardboard', Metal: 'spools.spoolMaterialMetal', Other: 'spools.spoolMaterialOther' }
-        return `<select class="fm-select spool-edit-input" name="${row.key}">${row.field.options?.map((option) => `<option value="${option}" ${rawValue === option ? 'selected' : ''}>${option ? escapeExtraFieldHtml(materialLabels[option] ? t(materialLabels[option]) : option) : '—'}</option>`).join('')}</select>`
-      }
-      const value = row.field.type === 'date' && rawValue ? String(rawValue).split('T')[0] : rawValue ?? ''
-      const input = `<input class="fm-input spool-edit-input" name="${row.key}" type="${row.field.type}" ${row.field.step ? `step="${row.field.step}"` : ''} value="${escapeExtraFieldHtml(String(value))}">`
-      return row.field.unit ? `<span class="spool-input-unit">${input}<span>${escapeExtraFieldHtml(row.field.unit)}</span></span>` : input
+      return renderSpoolFieldInput(row, rawValue, t)
     }
 
     function renderExtraFields(): string {
@@ -406,7 +350,7 @@ const { id } = Astro.params
       if (!editing) {
         return `<section class="fm-card filament-spec-card spool-extra-fields-card"><h2 class="filament-spec-title spool-section-heading"><span>${t('common.extraFields')}</span><button id="btn-edit-extra-fields" type="button" class="fm-btn fm-btn-outline" style="font-size: .72rem; padding: 3px 8px;">${t('common.manageFields')}</button></h2><div class="filament-spec-rows">${rows || `<div style="padding: 8px 0; color: var(--text-muted); font-size: .82rem;">${t('spools.noSpecificExtraFields')}</div>`}</div></section>`
       }
-      const systemFields = Object.values(spoolSystemFieldMap).filter(field => !isIntegrationExtraFieldPath(field.key)).map((field: any) => `<div><label class="fm-label">${escapeExtraFieldHtml(field.label)}</label>${renderFieldInput(field, getExtraFieldValue(customFields, field.key))}</div>`).join('')
+      const systemFields = Object.values(spoolSystemFieldMap).filter(field => !isIntegrationExtraFieldPath(field.key)).map(field => renderSystemFieldRow(field, getExtraFieldValue(customFields, field.key))).join('')
       return `<section id="spool-extra-fields-editor" class="fm-card filament-spec-card spool-extra-fields-card spool-extra-fields-editor">
         <h2 class="filament-spec-title spool-section-heading"><span>${t('spools.specificExtraFields')}</span><button type="button" id="btn-add-field" class="fm-btn fm-btn-outline" style="font-size: .8rem; padding: 4px 10px;">+ ${t('common.add')}</button></h2>
         <div id="spool-system-fields-editor" class="spool-system-fields-editor">${systemFields}</div>
@@ -515,7 +459,7 @@ const { id } = Astro.params
       })
       document.getElementById('btn-rfid')?.addEventListener('click', () => {
         if (activeDevices.length === 0) {
-          ;(window as any).__fmAlert(t('rfid.noDeviceOnline'))
+          ;(window as unknown as AppDialogs).__fmAlert(t('rfid.noDeviceOnline'))
           return
         }
         window.openRfidModal?.()
@@ -800,7 +744,7 @@ const { id } = Astro.params
         translate: t,
         spoolTitleKey: 'filaments.packagingDefaults',
       })
-      const filamentSectionsHtml = filamentSections.map((section) => `<section class="fm-card filament-spec-card"><h3 class="filament-spec-title">${t(section.titleKey)}</h3><div class="filament-spec-rows">${section.rows.map(renderFilamentDetailRow).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(spool.filament?.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div></section>`).join('')
+      const filamentSectionsHtml = filamentSections.map((section) => `<section class="fm-card filament-spec-card"><h3 class="filament-spec-title">${t(section.titleKey)}</h3><div class="filament-spec-rows">${section.rows.map(row => renderFilamentDetailRow(row, t)).join('')}${section.key === 'spool' ? renderFilamentSpoolImage(spool.filament?.filamentdb_spool_image_file, t('filamentdbLookup.spoolImage')) : ''}</div></section>`).join('')
       const filamentExtraFieldRows = renderDetailExtraFieldRows(
         spool.filament?.custom_fields ?? {},
         spool.filament?.custom_field_definitions ?? {},
@@ -941,11 +885,11 @@ const { id } = Astro.params
           if (response.ok) {
             window.location.href = '/spools'
           } else {
-            await (window as any).__fmAlert(t('spools.failedDelete'))
+            await (window as unknown as AppDialogs).__fmAlert(t('spools.failedDelete'))
           }
         } catch {
           // user-initiated action — show error even on abort
-          await (window as any).__fmAlert(t('spools.failedDelete'))
+          await (window as unknown as AppDialogs).__fmAlert(t('spools.failedDelete'))
         }
         })
       }
@@ -1082,7 +1026,7 @@ const { id } = Astro.params
       if (editing || pendingSpoolActions || changingSpoolEdit) return
       await runSpoolAction(async () => {
         const msg = t('rfid.confirmRemoveTag', { uid: formatRfidUid(uid) })
-        const ok = (window as any).__fmConfirm ? await (window as any).__fmConfirm(msg) : confirm(msg)
+        const ok = (window as unknown as AppDialogs).__fmConfirm ? await (window as unknown as AppDialogs).__fmConfirm(msg) : confirm(msg)
         if (!ok) return
         const res = await fetch(`/api/v1/spools/${spool.id}`, {
           method: 'PATCH',
@@ -1091,7 +1035,7 @@ const { id } = Astro.params
           body: JSON.stringify(slot === 1 ? { rfid_uid: null } : { rfid_uid_2: null }),
         })
         if (!res.ok) {
-          ;(window as any).__fmAlert?.(t('rfid.removeTagError'))
+          ;(window as unknown as AppDialogs).__fmAlert?.(t('rfid.removeTagError'))
           return
         }
         window.location.reload()

@@ -375,6 +375,12 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
   return result
 }
 
+/** Checkbox controls already include their label. */
+export function renderSystemFieldRow(field: SystemExtraFieldDef, rawValue: unknown, flat: Record<string, unknown> = {}): string {
+  const label = field.field_type === 'checkbox' ? '' : `<label class="fm-label">${escapeHtml(field.label)}</label>`
+  return `<div>${label}${renderFieldInput(field, rawValue, flat)}</div>`
+}
+
 /**
  * Render the appropriate <input> / <select> / <textarea> for a system extra field.
  *
@@ -398,7 +404,7 @@ export function renderFieldInput(
   const minAttr = cfg.min_bound != null ? ` min="${cfg.min_bound}"` : ''
   const maxAttr = cfg.max_bound != null ? ` max="${cfg.max_bound}"` : ''
   const unitHtml = unit
-    ? `<span style="color:var(--text-muted);font-size:0.85rem;flex-shrink:0">${escapeHtml(unit)}</span>`
+    ? `<span class="fm-input-unit-label">${escapeHtml(unit)}</span>`
     : ''
 
   const defaultValue = parseExtraFieldDefaultValue(field)

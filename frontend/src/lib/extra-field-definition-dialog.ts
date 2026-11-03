@@ -1,3 +1,4 @@
+import { bindFormState } from './form-state'
 import {
   collectSystemFieldValues,
   escapeHtml,
@@ -101,7 +102,7 @@ export function extraFieldDefinitionFromDialogDraft(
 
 export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   const overlay = document.createElement('dialog')
-  overlay.className = 'fm-modal-overlay'
+  overlay.className = 'fm-form-dialog fm-form-dialog-wide'
   overlay.innerHTML = `
     <style>
       .extra-field-dialog-lockable { position: relative; }
@@ -126,9 +127,15 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
         background-image: none;
       }
     </style>
-    <div class="fm-card" style="width:100%;max-width:30rem;margin:0 1rem;padding:24px;max-height:90vh;overflow-y:auto">
-      <h3 class="extra-field-dialog-title" style="font-size:1.15rem;font-weight:600;margin-bottom:16px"></h3>
-      <form class="extra-field-dialog-form" style="display:flex;flex-direction:column;gap:16px">
+    <form class="extra-field-dialog-form">
+      <header class="fm-section-header fm-form-dialog-header">
+        <h2 class="extra-field-dialog-title"></h2>
+        <div class="fm-header-actions">
+          <button type="submit" class="fm-btn fm-btn-primary extra-field-dialog-submit">${escapeHtml(translate('common.save', 'Save'))}</button>
+          <button type="button" class="fm-btn fm-btn-outline extra-field-dialog-cancel" data-dialog-close>${escapeHtml(translate('common.cancel', 'Cancel'))}</button>
+        </div>
+      </header>
+      <div class="fm-section-body fm-compact-form">
         <div class="extra-field-dialog-target-row">
           <label class="fm-label">${escapeHtml(translate('admin.targetType', 'Target Type'))} *</label>
           <div class="extra-field-dialog-lockable" data-lock-control="identity">
@@ -213,13 +220,9 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
           <span>${escapeHtml(translate('admin.systemFieldLockNote', 'Target type, JSON key, and field type cannot be changed after creation. Delete and recreate the field to change them. The same key can be reused, but creation is blocked if retained values are incompatible with the new type.'))}</span>
         </div>
 
-        <div class="fm-alert-error hidden extra-field-dialog-error"></div>
-        <div style="display:flex;gap:12px">
-          <button type="submit" class="fm-btn fm-btn-primary extra-field-dialog-submit">${escapeHtml(translate('common.save', 'Save'))}</button>
-          <button type="button" class="fm-btn fm-btn-outline extra-field-dialog-cancel">${escapeHtml(translate('common.cancel', 'Cancel'))}</button>
-        </div>
-      </form>
-    </div>
+        <div class="fm-alert-error hidden extra-field-dialog-error" role="alert"></div>
+      </div>
+    </form>
   `
   document.body.appendChild(overlay)
 
@@ -249,6 +252,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   const submit = overlay.querySelector<HTMLButtonElement>('.extra-field-dialog-submit')!
   const cancel = overlay.querySelector<HTMLButtonElement>('.extra-field-dialog-cancel')!
 
+  const formState = bindFormState(form, submit)
   let current: OpenDialogOptions | null = null
   let draft: ExtraFieldDefinitionDialogDraft | null = null
 
@@ -506,8 +510,8 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   let returnFocus: HTMLElement | null = null
   let parentDialog: HTMLDialogElement | null = null
   function close(): void {
+    if (formState.busy) return
     overlay.close()
-    overlay.classList.remove('open')
     if (returnFocus?.isConnected) returnFocus.focus()
     else parentDialog?.querySelector<HTMLElement>('button, input, select')?.focus()
     returnFocus = null
@@ -559,7 +563,7 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
   })
   form.addEventListener('submit', async event => {
     event.preventDefault()
-    if (!current || !draft) return
+    if (!current || !draft || formState.busy) return
     syncDefault()
     if (!syncValue()) return
     syncDefinition()
@@ -595,25 +599,27 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
     }
 
     error.classList.add('hidden')
-    submit.disabled = true
+    formState.setBusy(true)
     submit.textContent = translate('common.saving', 'Saving…')
     try {
       await current.onSubmit({
         ...draft,
         defaultValue: draft.defaultValue ?? null,
       })
+      formState.setBusy(false)
       close()
     } catch (caught) {
       error.textContent = caught instanceof Error ? caught.message : String(caught)
       error.classList.remove('hidden')
     } finally {
-      submit.disabled = false
+      formState.setBusy(false)
       submit.textContent = translate('common.save', 'Save')
     }
   })
 
   return {
     open(openOptions: OpenDialogOptions): void {
+      if (formState.busy) return
       overlay.setAttribute('aria-label', openOptions.title)
       returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
       parentDialog = returnFocus?.closest('dialog') ?? null
@@ -648,8 +654,8 @@ export function createExtraFieldDefinitionDialog(options: DialogOptions) {
       fieldType.disabled = Boolean(openOptions.lockType)
       error.classList.add('hidden')
       renderTypeUi()
+      formState.reset()
       overlay.showModal()
-      overlay.classList.add('open')
       ;(openOptions.lockIdentity ? label : key).focus()
     },
     close,

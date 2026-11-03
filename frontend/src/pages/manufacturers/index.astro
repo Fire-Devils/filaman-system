@@ -3,35 +3,13 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Manufacturers">
-  <style>
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: var(--bg-hover); }
-    .filter-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
-      align-items: center;
-    }
-    .filter-bar .fm-input-search {
-      flex: 1;
-      min-width: 200px;
-      max-width: 400px;
-    }
-  </style>
-  <style is:global>
-    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
-    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
-    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
-  </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
-    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
-      Add Manufacturer
-    </button>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="manufacturers.title">Manufacturers</h1>
+    <div class="fm-list-controls">
+      <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
+        Add Manufacturer
+      </button>
+    </div>
   </div>
 
   <div class="filter-bar">
@@ -106,7 +84,9 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { checkFilamentDbActive } from '../../lib/filamentdb-lookup'
-    import { createManufacturerDialog } from '../../lib/manufacturer-dialog'
+    import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
+    import type { AppDialogs } from '../../lib/form-dialog'
+    const dialogWindow = window as unknown as AppDialogs
     await initI18n()
     await initCurrency()
 
@@ -116,7 +96,17 @@ import Layout from '../../layouts/Layout.astro'
       onSaved: () => loadManufacturers(),
     })
 
-    let manufacturers: any[] = []
+    type ManufacturerRow = Manufacturer & {
+      logo_url?: string | null
+      filament_count: number
+      spool_count: number
+      archived_spool_count: number
+      total_price_available: number
+      total_price_all: number
+      materials: string[]
+      material_types?: string[]
+    }
+    let manufacturers: ManufacturerRow[] = []
     let sortKey: string | null = 'name'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
 
@@ -198,20 +188,20 @@ import Layout from '../../layouts/Layout.astro'
       if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
-    function getSortValue(item: any, key: string): any {
+    function getSortValue(item: ManufacturerRow, key: string): unknown {
       if (key === 'materials') return item.material_types?.length ?? 0
       return item[key]
     }
 
-    function sortManufacturers(items: any[]): any[] {
+    function sortManufacturers(items: ManufacturerRow[]): ManufacturerRow[] {
       if (!sortKey || !sortDirection) return items
       const sortBy = sortKey
       return [...items].sort((a, b) => {
         const aVal = getSortValue(a, sortBy) ?? ''
         const bVal = getSortValue(b, sortBy) ?? ''
         let cmp = 0
-        if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
-        else cmp = aVal - bVal
+        if (typeof aVal === 'string') cmp = aVal.localeCompare(String(bVal))
+        else cmp = Number(aVal) - Number(bVal)
         return sortDirection === 'asc' ? cmp : -cmp
       })
     }
@@ -226,7 +216,7 @@ import Layout from '../../layouts/Layout.astro'
       return { search }
     }
 
-    function filterManufacturers(items: any[]): any[] {
+    function filterManufacturers(items: ManufacturerRow[]): ManufacturerRow[] {
       const { search } = getFilterValues()
       const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
 
@@ -246,7 +236,7 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    function getManufacturerFilterValue(manufacturer: any, key: string): unknown {
+    function getManufacturerFilterValue(manufacturer: ManufacturerRow, key: string): unknown {
       if (key === 'name') return manufacturer.name
       if (key === 'url') return manufacturer.url
       if (key === 'filaments') return manufacturer.filament_count
@@ -258,8 +248,8 @@ import Layout from '../../layouts/Layout.astro'
       return null
     }
 
-    function updateHeaderFilterOptions(items: any[]) {
-      const nameOptions: HeaderFilterOption[] = [...new Set(items.map((mf: any) => mf.name || '').filter(Boolean))]
+    function updateHeaderFilterOptions(items: ManufacturerRow[]) {
+      const nameOptions: HeaderFilterOption[] = [...new Set(items.map((mf) => mf.name || '').filter(Boolean))]
         .sort((a, b) => a.localeCompare(b))
         .map((name) => ({ value: name, label: name }))
       const materials = new Set<string>()
@@ -275,7 +265,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadManufacturers() {
       try {
-        const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
+        const data = await cachedFetchAllPages<ManufacturerRow>(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         manufacturers = data.items
         updateHeaderFilterOptions(manufacturers)
         if (isInitialLoad) {
@@ -466,7 +456,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
 
-          if (!(await (window as any).__fmConfirm(t('manufacturers.confirmDelete')))) return
+          if (!(await dialogWindow.__fmConfirm(t('manufacturers.confirmDelete')))) return
 
           try {
             // First attempt to delete normally
@@ -479,7 +469,7 @@ import Layout from '../../layouts/Layout.astro'
 
             // If conflict (409), prompt for cascade delete
             if (response.status === 409) {
-              const confirmCascade = await (window as any).__fmConfirm(
+              const confirmCascade = await dialogWindow.__fmConfirm(
                 t('manufacturers.confirmCascadeDelete'),
                 { 
                   title: t('common.confirmTitle'), 
@@ -501,7 +491,7 @@ import Layout from '../../layouts/Layout.astro'
 
             if (!response.ok) {
               const data = await response.json().catch(() => ({}))
-              await (window as any).__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
+              await dialogWindow.__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
               return
             }
 
@@ -509,7 +499,7 @@ import Layout from '../../layouts/Layout.astro'
             invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
             loadManufacturers()
           } catch {
-            await (window as any).__fmAlert(t('manufacturers.failedDelete'))
+            await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
           }
         })
       })

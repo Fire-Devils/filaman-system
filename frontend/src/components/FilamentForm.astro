@@ -12,7 +12,7 @@ const { mode } = Astro.props
 type InputAttributes = HTMLAttributes<'input'>
 ---
 
-    <form id="filament-form" class="filament-editor-form">
+    <form id="filament-form" class="filament-editor-form fm-detail-content">
       <header id="filament-editor-hero" class="filament-hero filament-editor-hero">
         <div class="filament-hero-layout">
           <div class="filament-editor-heading">
@@ -197,7 +197,7 @@ type InputAttributes = HTMLAttributes<'input'>
           <span data-i18n="filaments.specificExtraFieldsHelp">These typed fields apply only to this filament.</span>
           <a href="/admin/extra-fields" style="color: var(--accent);" data-i18n="filaments.manageSystemExtraFields">Create/Manage cross-filament System Extra Fields here</a>
         </p>
-        <div id="custom-fields-container" style="display: grid; gap: 8px;">
+        <div id="custom-fields-container" style="display: grid; gap: var(--control-gap);">
           <!-- Dynamic fields go here -->
         </div>
       </div>
@@ -312,7 +312,7 @@ type InputAttributes = HTMLAttributes<'input'>
   .filament-form-sections {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    gap: var(--section-gap);
     align-items: start;
     width: 100%;
     max-width: 90rem;
@@ -346,10 +346,10 @@ type InputAttributes = HTMLAttributes<'input'>
   #custom-type-wrapper.hidden { display: none; }
   :global(#filament-form .filament-form-section-body .fm-input),
   :global(#filament-form .filament-form-section-body .fm-select) {
-    height: 30px;
-    min-height: 30px;
-    padding: 3px 7px;
-    font-size: .78rem;
+    height: var(--input-compact-height);
+    min-height: var(--input-compact-height);
+    padding: var(--input-compact-padding-block) var(--input-compact-padding-inline);
+    font-size: var(--input-compact-font-size);
   }
   :global(#filament-form .filament-form-section-body .fm-input::placeholder) {
     color: var(--text-muted);
@@ -363,24 +363,10 @@ type InputAttributes = HTMLAttributes<'input'>
   .filament-form-check { grid-template-columns: minmax(0, 1fr) auto !important; cursor: pointer; }
   .filament-form-check input { grid-column: 2; grid-row: 1; }
   .filament-form-check span { grid-column: 1; grid-row: 1; font-size: .8rem; }
-  .filament-range-inputs { display: grid; grid-template-columns: repeat(2, minmax(5.5ch, 1fr)); gap: 6px; min-width: 0; }
-  .filament-unit-input { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+  .filament-range-inputs { display: grid; grid-template-columns: repeat(2, minmax(5.5ch, 1fr)); gap: var(--inline-gap); min-width: 0; }
+  .filament-unit-input { display: flex; align-items: stretch; gap: var(--inline-gap); min-width: 0; }
   .filament-unit-input > :first-child { flex: 1 1 auto; min-width: 0; }
   .filament-unit-input > input[type="number"] { min-width: 5.5ch; }
-  .filament-unit-input > span {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    padding: 0 5px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg-soft);
-    color: var(--text-muted);
-    font-size: .75rem;
-    font-weight: 650;
-    white-space: nowrap;
-  }
   .filament-form-section-body > .filament-form-number {
     display: flex;
     flex-wrap: wrap;
@@ -440,19 +426,19 @@ type InputAttributes = HTMLAttributes<'input'>
   .filament-color-dialog-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
+    gap: var(--field-gap);
     padding: 16px 18px;
   }
   .filament-color-meta-row {
     display: grid;
     grid-template-columns: minmax(205px, .8fr) minmax(325px, 1.2fr);
-    gap: 14px;
+    gap: var(--field-gap);
     min-width: 560px;
     overflow-x: auto;
   }
   .filament-color-meta-row > [data-dirty-key],
   .filament-color-mode-group > [data-dirty-key] { min-width: 0; }
-  .filament-color-mode-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-width: 0; }
+  .filament-color-mode-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--field-gap); min-width: 0; }
   .filament-color-meta-field { display: grid; align-content: start; gap: 5px; min-width: 0; }
   #multi-color-options[hidden] { display: none; }
   .filament-color-meta-field > .fm-label { display: flex; align-items: baseline; gap: 4px; margin: 0; white-space: nowrap; font-size: .68rem; }
@@ -471,13 +457,13 @@ type InputAttributes = HTMLAttributes<'input'>
   .filament-color-picker { min-width: 0; }
   .filament-existing-color-picker { transition: opacity var(--transition); }
   .filament-existing-color-picker.is-inactive { opacity: .38; }
-  .filament-color-picker-heading { display: flex; align-items: baseline; gap: 8px; }
+  .filament-color-picker-heading { display: flex; align-items: baseline; gap: var(--control-gap); }
   .filament-color-picker-heading h3 { margin: 0; color: var(--text); font-size: .9rem; }
   .filament-color-search-row,
   .filament-color-action-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--control-gap);
     margin: 8px 0;
   }
   .filament-color-search-row .fm-header-filter-search { min-width: 0; margin: 0; flex: 1 1 auto; }

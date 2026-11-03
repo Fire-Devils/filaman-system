@@ -1,11 +1,12 @@
 ---
+import FormDialog from '../../components/FormDialog.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Printers">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printers.title">Printers</h1>
-    <div style="display: flex; gap: 8px;">
+  <div class="fm-list-toolbar">
+    <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printers.title">Printers</h1>
+    <div class="fm-list-controls">
       <button
         id="btn-check-all"
         class="fm-btn fm-btn-outline"
@@ -24,9 +25,9 @@ import Layout from '../../layouts/Layout.astro'
   </div>
   
   <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
+    <table class="fm-table fm-admin-table">
       <thead>
-        <tr style="background: var(--bg-soft);">
+        <tr>
           <th data-i18n="printers.name">Name</th>
           <th data-i18n="printers.driver">Driver</th>
           <th data-i18n="common.status">Status</th>
@@ -43,10 +44,12 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="printers.addPrinter">Add Printer</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+  <FormDialog id="modal-container" titleId="modal-title" titleKey="printers.addPrinter" title="Add Printer" >
+    <Fragment slot="actions">
+      <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" id="modal-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="modal-form" class="fm-compact-form">
         <input type="hidden" id="printer-id" />
         <div>
           <label for="printer-name" class="fm-label" data-i18n="printers.name">
@@ -71,34 +74,39 @@ import Layout from '../../layouts/Layout.astro'
           </select>
         </div>
         <div id="config-fields" style="display: flex; flex-direction: column; gap: 12px;"></div>
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
-            Save
-          </button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-  
+        <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
   <script>
+    import type { AppDialogs } from '../../lib/form-dialog'
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { buildDriverConfigPayload, isStructuredProp } from '../../lib/driver-config-form'
+    import { buildDriverConfigPayload, renderDriverConfigFields, type DriverSchema, type SchemaProperty, type FieldValue } from '../../lib/driver-config-form'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { tableAction } from '../../lib/table-actions'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormState } from '../../lib/form-state'
     await initI18n()
 
-    let printers: any[] = []
-    let allPlugins: any[] = []
+    const modalForm = document.getElementById('modal-form') as HTMLFormElement
+    const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
+    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
+
+    interface SlotSummary { external_spool?: boolean; ams_type?: string; ams_units?: { ams_id: number; tray_count: number }[] }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; custom_fields?: (Record<string, unknown> & { slot_summary?: SlotSummary | null }) | null }
+    interface DriverPlugin { driver_key?: string | null; name: string; is_active: boolean; config_schema?: DriverSchema | null }
+    interface DriverHealth extends SlotSummary { running?: boolean; connected?: boolean; ams_count?: number; slot_count?: number }
+    const dialogs = window as unknown as AppDialogs
+    let printers: PrinterRecord[] = []
+    let allPlugins: DriverPlugin[] = []
     /**
      * The config the modal was opened with, and the schema it was rendered from.
      * Both are needed on save: structured properties have no input element, so
      * their stored value has to be carried through explicitly.
      */
-    let editingConfigSchema: Record<string, any> | null = null
-    let editingConfigValues: Record<string, any> = {}
+    let editingConfigSchema: Record<string, SchemaProperty> | null = null
+    let editingConfigValues: Record<string, unknown> = {}
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -125,7 +133,7 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
-    function renderSlotTags(summary: any): string {
+    function renderSlotTags(summary: SlotSummary | null | undefined): string {
       if (!summary) return '\u2014'
       const tags: string[] = []
       const tagStyle = 'display:inline-block;padding:2px 8px;font-size:0.7rem;border-radius:999px;background:var(--bg-soft);color:var(--text-muted);margin-right:4px;white-space:nowrap;'
@@ -142,7 +150,7 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     async function fetchHealthForAll() {
-      await Promise.all(printers.map(async (p: any) => {
+      await Promise.all(printers.map(async p => {
         const badge = document.getElementById(`online-badge-${p.id}`)
         const slotsEl = document.getElementById(`slots-info-${p.id}`)
         if (!badge) return
@@ -153,7 +161,7 @@ import Layout from '../../layouts/Layout.astro'
             badge.style.color = 'var(--text-muted)'
             return
           }
-          const health = await resp.json()
+          const health: DriverHealth = await resp.json()
           if (health.running && health.connected) {
             badge.textContent = t('common.online')
             badge.style.color = '#22c55e'
@@ -198,9 +206,9 @@ import Layout from '../../layouts/Layout.astro'
       
       tbody.innerHTML = printers.map(p => `
         <tr style="cursor: pointer;" onclick="window.location='/printers/${p.id}'">
-          <td style="padding: 12px; font-weight: 500;">${p.name}</td>
+          <td style="padding: 12px; font-weight: 500;">${escapeHtml(p.name)}</td>
           <td style="padding: 12px;">
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);">${p.driver_key}</span>
+            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--text-muted);">${escapeHtml(p.driver_key)}</span>
           </td>
           <td style="padding: 12px;">
             <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${p.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
@@ -214,8 +222,7 @@ import Layout from '../../layouts/Layout.astro'
             <span id="slots-info-${p.id}" style="font-size: 0.8rem;">${renderSlotTags(p.custom_fields?.slot_summary)}</span>
           </td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
-            <button data-id="${p.id}" data-name="${p.name}" data-driver="${p.driver_key}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
-            <button data-id="${p.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
+            <div class="fm-row-actions">${tableAction('edit', { id: p.id })}${tableAction('delete', { id: p.id })}</div>
           </td>
         </tr>
       `).join('')
@@ -227,8 +234,8 @@ import Layout from '../../layouts/Layout.astro'
           try {
             const resp = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
             if (resp.ok) {
-              const printer = await resp.json()
-              openModal(id, printer.name, printer.driver_key, printer.driver_config)
+              const printer: PrinterRecord = await resp.json()
+              openModal(id, printer.name, printer.driver_key, printer.driver_config || undefined)
             }
           } catch {}
         })
@@ -239,7 +246,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          const result = await (window as any).__fmConfirm(t('printers.confirmDelete'), {
+          const result = await dialogs.__fmConfirm(t('printers.confirmDelete'), {
             checkbox: { label: t('printers.confirmDeleteParams') },
           })
           if (!result || !result.confirmed) return
@@ -255,20 +262,19 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              await (window as any).__fmAlert(data.message || t('printers.failedDelete'))
+              await dialogs.__fmAlert(data.message || t('printers.failedDelete'))
               return
             }
             
             loadPrinters()
           } catch {
-            await (window as any).__fmAlert(t('printers.failedDelete'))
+            await dialogs.__fmAlert(t('printers.failedDelete'))
           }
         })
       })
     }
     
-    function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, any>) {
-      const container = document.getElementById('modal-container')!
+    function openModal(id: number | null = null, name: string = '', driver: string = '', config?: Record<string, unknown>) {
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('printer-id') as HTMLInputElement
       const nameInput = document.getElementById('printer-name') as HTMLInputElement
@@ -283,16 +289,13 @@ import Layout from '../../layouts/Layout.astro'
       
       renderConfigFields(driver, config)
       
-      container.classList.add('open')
+      formState.reset()
+      formDialog.open()
       nameInput.focus()
     }
     
-    function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
-    }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -304,15 +307,15 @@ import Layout from '../../layouts/Layout.astro'
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
       const configContainer = document.getElementById('config-fields')!
-      const configInputs = configContainer.querySelectorAll('input, select, textarea')
-      let driver_config: Record<string, any> | undefined = undefined
+      const configInputs = configContainer.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')
+      let driver_config: Record<string, unknown> | undefined = undefined
       // No schema means no driver config to send — leave the field out entirely
       // rather than submitting an empty object that would clear what is stored.
       if (editingConfigSchema && Object.keys(editingConfigSchema).length > 0) {
-        const edited: Record<string, any> = {}
-        configInputs.forEach((el: any) => {
+        const edited: Record<string, FieldValue> = {}
+        configInputs.forEach(el => {
           const key = el.name
-          if (el.type === 'checkbox') {
+          if (el instanceof HTMLInputElement && el.type === 'checkbox') {
             edited[key] = el.checked
           } else if (el.type === 'number') {
             edited[key] = el.value ? Number(el.value) : null
@@ -328,11 +331,12 @@ import Layout from '../../layouts/Layout.astro'
           edited
         )
       }
-      const data: any = { name, driver_key }
+      const data: { name: string; driver_key: string; driver_config?: Record<string, unknown> } = { name, driver_key }
       if (driver_config) data.driver_config = driver_config
       
       error.classList.add('hidden')
-      submitBtn.disabled = true
+      if (formState.busy || !modalForm.reportValidity()) return
+      formState.setBusy(true)
       submitBtn.textContent = t('common.saving')
       
       try {
@@ -355,14 +359,15 @@ import Layout from '../../layouts/Layout.astro'
           throw new Error(errorData.message || t('printers.failedSave'))
         }
         
-        closeModal()
+        formState.setBusy(false)
+        formDialog.close()
         loadPrinters()
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('printers.failedSave')
         error.classList.remove('hidden')
       } finally {
-        submitBtn.disabled = false
+        formState.setBusy(false)
         submitBtn.textContent = t('common.save')
       }
     })
@@ -373,124 +378,25 @@ import Layout from '../../layouts/Layout.astro'
         const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) return
         allPlugins = await response.json()
-        const drivers = allPlugins.filter((p: any) => p.driver_key && p.is_active)
+        const drivers = allPlugins.filter(p => p.driver_key && p.is_active)
         select.innerHTML = '<option value="">' + t('printers.selectDriver') + '</option>'
-          + drivers.map((d: any) => `<option value="${d.driver_key}">${d.name}</option>`).join('')
+          + drivers.map(d => `<option value="${d.driver_key}">${d.name}</option>`).join('')
       } catch {
         console.error('Failed to load drivers')
       }
     }
 
-    function renderConfigFields(driverKey: string, existingConfig?: Record<string, any>) {
+    function renderConfigFields(driverKey: string, existingConfig?: Record<string, unknown>) {
       const container = document.getElementById('config-fields')!
       container.innerHTML = ''
       editingConfigSchema = null
       editingConfigValues = existingConfig || {}
       if (!driverKey) return
 
-      const plugin = allPlugins.find((p: any) => p.driver_key === driverKey)
-      if (!plugin?.config_schema?.properties) return
-
-      const schema = plugin.config_schema
+      const schema = allPlugins.find(p => p.driver_key === driverKey)?.config_schema
+      if (!schema?.properties) return
       editingConfigSchema = schema.properties
-      const required: string[] = schema.required || []
-      
-      for (const [key, prop] of Object.entries(schema.properties) as [string, any][]) {
-        const div = document.createElement('div')
-        
-        const label = document.createElement('label')
-        label.className = 'fm-label'
-        label.setAttribute('for', `config-${key}`)
-        label.textContent = (prop.title || key) + (required.includes(key) ? ' *' : '')
-        div.appendChild(label)
-        
-        const currentValue = existingConfig ? existingConfig[key] : undefined
-
-        if (isStructuredProp(prop, currentValue ?? prop.default)) {
-          // Read-only: no input element, so the save loop cannot clobber it.
-          const pre = document.createElement('pre')
-          pre.className = 'fm-input'
-          pre.style.cssText = 'margin: 0; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; overflow-x: auto;'
-          pre.textContent = JSON.stringify(currentValue ?? prop.default ?? null, null, 2)
-          div.appendChild(pre)
-
-          const note = document.createElement('div')
-          note.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
-          note.textContent = t('printers.configReadOnly')
-          div.appendChild(note)
-
-          if (prop.description) {
-            const hint = document.createElement('div')
-            hint.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
-            hint.textContent = prop.description
-            div.appendChild(hint)
-          }
-
-          container.appendChild(div)
-          continue
-        }
-
-        // Bestimme den vorausgewählten Wert
-        let selectedValue = ''
-        if (currentValue !== undefined && currentValue !== null) {
-          selectedValue = String(currentValue)
-        } else if (prop.default !== undefined) {
-          selectedValue = String(prop.default)
-        }
-
-        if (prop.type === 'boolean') {
-          const input = document.createElement('input')
-          input.id = `config-${key}`
-          input.name = key
-          input.className = 'fm-checkbox'
-          input.type = 'checkbox'
-          input.checked = currentValue === true || (currentValue === undefined && prop.default === true)
-          div.appendChild(input)
-        } else if (prop.enum && Array.isArray(prop.enum)) {
-          // Enum → <select> Dropdown
-          const select = document.createElement('select')
-          select.id = `config-${key}`
-          select.name = key
-          select.className = 'fm-input'
-          if (required.includes(key)) select.required = true
-          
-          const enumNames: string[] = prop.enumNames || prop.enum
-          prop.enum.forEach((val: string, i: number) => {
-            const opt = document.createElement('option')
-            opt.value = String(val)
-            opt.textContent = String(enumNames[i] ?? val)
-            if (String(val) === selectedValue) opt.selected = true
-            select.appendChild(opt)
-          })
-          div.appendChild(select)
-        } else {
-          const input = document.createElement('input')
-          input.id = `config-${key}`
-          input.name = key
-          input.className = 'fm-input'
-          
-          if (prop.type === 'integer' || prop.type === 'number') {
-            input.type = 'number'
-            if (prop.minimum !== undefined) input.min = String(prop.minimum)
-            if (prop.maximum !== undefined) input.max = String(prop.maximum)
-          } else {
-            input.type = 'text'
-          }
-          
-          if (required.includes(key)) input.required = true
-          input.value = selectedValue
-          div.appendChild(input)
-        }
-        
-        if (prop.description) {
-          const hint = document.createElement('div')
-          hint.style.cssText = 'font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;'
-          hint.textContent = prop.description
-          div.appendChild(hint)
-        }
-        
-        container.appendChild(div)
-      }
+      container.innerHTML = renderDriverConfigFields(schema, editingConfigValues, driverKey)
     }
 
     await loadDrivers()
@@ -503,7 +409,7 @@ import Layout from '../../layouts/Layout.astro'
       btn.disabled = true
       btn.textContent = '...'
       // Reset all online badges to '—' before reconnecting
-      printers.forEach((p: any) => {
+      printers.forEach(p => {
         const badge = document.getElementById(`online-badge-${p.id}`)
         if (badge) {
           badge.textContent = '—'
@@ -512,7 +418,7 @@ import Layout from '../../layouts/Layout.astro'
       })
       try {
         await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include', signal: getAbortSignal() })
-        await (window as any).__fmSuccess(t('printers.reconnectDone'))
+        await dialogs.__fmSuccess(t('printers.reconnectDone'))
       } catch {}
       await fetchHealthForAll()
       btn.disabled = false

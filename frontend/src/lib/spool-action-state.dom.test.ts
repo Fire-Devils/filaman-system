@@ -9,13 +9,13 @@ import { loadEntitySystemFields } from './entity-extra-fields-dialog';
 import * as detail from './spool-detail';
 import * as filament from './filament-detail';
 import * as reel from './spool-reel';
-import { escapeHtml, isIntegrationExtraFieldPath, renderFieldInput } from './extra-fields';
+import { escapeHtml, isIntegrationExtraFieldPath, renderSystemFieldRow } from './extra-fields';
 const source = readFileSync('src/pages/spools/[id]/index.astro', 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1];
 const parsed = createSourceFile('detail.ts', source, ScriptTarget.Latest, true);
 const names = ['loadData', 'getStatusLabel', 'getLocationName', 'safeExternalUrl', 'renderFilamentDetailRow', 'renderSpoolField', 'renderExtraFields', 'bindSpoolContentActions', 'exitEditMode', 'refreshSpoolSnapshot', 'setupInlineEditor', 'renderRemainingSummary', 'renderSpool', 'setupActions', 'showModal', 'refreshRemainingWeight', 'updateSpoolActionState', 'runSpoolAction', 'saveTrayParamsToEntity', 'handleImportTrayToSpool', 'handleImportTrayToSpoolAndFilament'];
 const production = parsed.statements.filter(node => isFunctionDeclaration(node) && names.includes(node.name?.text || '') || isExpressionStatement(node) && ["document.getElementById('modal-form')?.addEventListener('submit'", "document.getElementById('rfid-cancel')?.addEventListener", "document.getElementById('rfid-confirm')?.addEventListener"].some(prefix => node.getText(parsed).startsWith(prefix)) || isExpressionStatement(node) && ['.removeRfidTag =', '.openRfidModal ='].some(assignment => node.getText(parsed).includes(assignment))).map(node => node.getText(parsed)).join('\n');
 const build = new Function('runtime', `
- const {editSession,changedNativeFields,setFormFieldValue,fetchSequential,buildSpoolDetailSections,buildSpoolUpdatePayload,formatSpoolDate,buildFilamentDetailSections,buildFilamentHeaderName,buildFilamentHeroStyle,formatHeaderId,getFilamentColors,renderFilamentHeaderColors,renderFilamentSpoolImage,formatSpoolMetrics,renderSpoolReel,spoolRemainingWeight,escapeExtraFieldHtml,renderFieldInput,isIntegrationExtraFieldPath,prepareExtraFieldUpdate,loadEntitySystemFields}=runtime;
+ const {editSession,changedNativeFields,setFormFieldValue,fetchSequential,buildSpoolDetailSections,buildSpoolUpdatePayload,formatSpoolDate,renderSpoolFieldInput,buildFilamentDetailSections,buildFilamentHeaderName,buildFilamentHeroStyle,formatHeaderId,getFilamentColors,renderFilamentHeaderColors,renderFilamentSpoolImage,renderFilamentDetailRow,safeExternalUrl,formatSpoolMetrics,renderSpoolReel,spoolRemainingWeight,escapeExtraFieldHtml,isIntegrationExtraFieldPath, renderSystemFieldRow,prepareExtraFieldUpdate,loadEntitySystemFields}=runtime;
  const id='17',t=key=>key,getLang=()=> 'en',getCurrency=()=> 'USD',formatPrice=String,formatRfidUid=String;
  const getAbortSignal=()=>undefined,isAbortError=()=>false,getCsrfToken=()=>'',assignableLocations=items=>items;
  const CACHE_KEYS={LOCATIONS:'locations',FILAMENTS:'filaments'},cachedFetchAllPages=async key=>({items:key==='filaments'?runtime.filaments:[],total:0});
@@ -44,7 +44,7 @@ async function setup(override?: (input: string, init?: RequestInit) => Promise<R
         const url = new URL(input, 'http://localhost');
         return Promise.resolve(Response.json(url.pathname === '/api/v1/spools/17' ? saved : url.pathname.endsWith('/statuses') ? [{ id: 1, key: 'opened', label: 'Opened' }] : url.pathname.endsWith('/devices/active') ? [{ id: 1, name: 'Fixture RFID' }] : []));
     }));
-    const runtime = build({ changedNativeFields, setFormFieldValue, editSession: createDetailEditSession('/api/v1/spools/17?include_metrics=true', () => 'spools.failedLoadSingle'), fetchSequential, ...detail, ...filament, ...reel, escapeExtraFieldHtml: escapeHtml, renderFieldInput, isIntegrationExtraFieldPath, prepareExtraFieldUpdate, loadEntitySystemFields, afterNativeSave, filaments: [f, { ...f, id: 4, designation: 'After filament' }] });
+    const runtime = build({ changedNativeFields, setFormFieldValue, editSession: createDetailEditSession('/api/v1/spools/17?include_metrics=true', () => 'spools.failedLoadSingle'), fetchSequential, ...detail, ...filament, ...reel, escapeExtraFieldHtml: escapeHtml, isIntegrationExtraFieldPath, renderSystemFieldRow, prepareExtraFieldUpdate, loadEntitySystemFields, afterNativeSave, filaments: [f, { ...f, id: 4, designation: 'After filament' }] });
     await runtime.loadData();
     return { runtime, saved, hasPending: () => !!resolvePost, resolvePost: (response: Response) => resolvePost(response) };
 }

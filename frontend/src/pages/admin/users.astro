@@ -1,26 +1,18 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
+import FormDialog from '../../components/FormDialog.astro'
 ---
 
 <Layout title="FilaMan - Admin Users">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-  
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.users">Users</h1>
-    <button
-      id="btn-new"
-      class="fm-btn fm-btn-primary"
-      data-i18n="admin.addUser"
-    >
-      Add User
-    </button>
-  </div>
-  
+  <div class="fm-admin-page">
+  <AdminHeader titleKey="admin.users" title="Users">
+    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="admin.addUser">Add User</button>
+  </AdminHeader>
+  <p id="users-message" class="hidden fm-admin-message" role="status"></p>
   <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
-      <thead style="background: var(--bg-soft);">
+    <table class="fm-table fm-admin-table">
+      <thead>
         <tr>
           <th data-i18n="admin.email">Email</th>
           <th data-i18n="admin.displayName">Display Name</th>
@@ -37,10 +29,13 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px; max-height: 90vh; overflow-y: auto;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="admin.addUser">Add User</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+  </div>
+  <FormDialog id="modal-container" titleId="modal-title" titleKey="admin.addUser" title="Add User">
+    <Fragment slot="actions">
+      <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" id="modal-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="modal-form" class="fm-compact-form">
         <input type="hidden" id="user-id" />
         <div>
           <label for="user-email" class="fm-label"><span data-i18n="admin.email">Email</span> *</label>
@@ -56,7 +51,7 @@ import Layout from '../../layouts/Layout.astro'
         </div>
         <div>
           <label class="fm-label" data-i18n="admin.roles">Roles</label>
-          <div id="roles-checkboxes" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          <div id="roles-checkboxes" class="fm-check-list"></div>
         </div>
         <div>
           <label style="display: flex; align-items: center; gap: 8px;">
@@ -64,282 +59,184 @@ import Layout from '../../layouts/Layout.astro'
             <span style="font-size: 0.875rem; color: var(--text);" data-i18n="admin.superadmin">Superadmin</span>
           </label>
         </div>
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
-  
+        <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+  <FormDialog id="password-modal" titleId="password-modal-title" titleKey="admin.resetPw" title="Reset Password">
+    <Fragment slot="actions">
+      <button type="submit" form="reset-form" id="reset-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="reset-form" class="fm-compact-form">
+      <input type="hidden" id="reset-user-id" />
+      <div><label for="reset-password" class="fm-label" data-i18n="admin.password">Password</label>
+        <input id="reset-password" class="fm-input" type="password" autocomplete="new-password" required minlength="8" /></div>
+      <p id="reset-error" class="fm-alert-error hidden" role="alert"></p>
+    </form>
+  </FormDialog>
   <script>
     import { t, initI18n } from '../../lib/i18n'
-    import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { isAbortError } from '../../lib/abort'
+    import { api } from '../../lib/api'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { tableAction } from '../../lib/table-actions'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormState } from '../../lib/form-state'
     await initI18n()
 
-    let users: any[] = []
-    let roles: any[] = []
-    let currentUser: any = null
-    
-    function getCsrfToken(): string {
-      const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
-      return match ? decodeURIComponent(match[1]) : ''
+    interface UserRecord { id: number; email: string; display_name: string | null; is_superadmin: boolean; is_active: boolean; roles?: string[] }
+    interface RoleRecord { key: string; name: string }
+    let users: UserRecord[] = []
+    let roles: RoleRecord[] | null = null
+    let rolesEditable = false
+    let currentUser: UserRecord | null = null
+    let openRequest = 0
+    const form = document.getElementById('modal-form') as HTMLFormElement
+    const save = document.getElementById('modal-submit') as HTMLButtonElement
+    const formState = bindFormState(form, save)
+    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, {
+      canClose: () => !formState.busy,
+      onClose: () => { openRequest++; (document.getElementById('user-password') as HTMLInputElement).value = '' },
+    })
+    const resetForm = document.getElementById('reset-form') as HTMLFormElement
+    const resetState = bindFormState(resetForm, document.getElementById('reset-submit') as HTMLButtonElement)
+    const resetDialog = bindFormDialog(document.getElementById('password-modal') as HTMLDialogElement, {
+      canClose: () => !resetState.busy,
+      onClose: () => resetForm.reset(),
+    })
+    function message(text: string, failed = false) {
+      const node = document.getElementById('users-message')!
+      node.textContent = text
+      node.className = `fm-admin-message ${failed ? 'fm-alert-error' : 'fm-alert-success'}`
+      node.setAttribute('role', failed ? 'alert' : 'status')
     }
-    
     async function loadData() {
       try {
-        const [usersRes, rolesRes, meRes] = await Promise.all([
-          fetch('/api/v1/admin/users', { credentials: 'include', signal: getAbortSignal() }),
-          fetch('/api/v1/admin/roles', { credentials: 'include', signal: getAbortSignal() }),
-          fetch('/api/v1/me', { credentials: 'include', signal: getAbortSignal() }),
+        const [userData, roleData, me] = await Promise.all([
+          api.get<{ items: UserRecord[] }>('/admin/users'),
+          api.get<RoleRecord[]>('/admin/roles').catch(() => null),
+          api.get<UserRecord>('/me').catch(() => null),
         ])
-        
-        if (!usersRes.ok) throw new Error('Failed to fetch users')
-        
-        users = await usersRes.json().then(d => d.items)
-        roles = await rolesRes.json()
-        currentUser = meRes.ok ? await meRes.json() : null
-        
+        users = userData.items
+        roles = roleData
+        currentUser = me
         renderUsers()
-        renderRoleCheckboxes()
       } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load data:', error)
+        if (!isAbortError(error)) message(error instanceof Error ? error.message : t('admin.noUsers'), true)
       }
     }
-    
-    function escapeHtml(str: string): string {
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
-    }
-    
     function renderUsers() {
-      const tbody = document.getElementById('users-table')!
-      
-      if (users.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">${escapeHtml(t('admin.noUsers'))}</td></tr>`
-        return
-      }
-      
-      tbody.innerHTML = users.map(u => `
+      document.getElementById('users-table')!.innerHTML = users.length ? users.map(user => `
         <tr>
-          <td>${escapeHtml(u.email)}</td>
-          <td style="color: var(--text-muted);">${escapeHtml(u.display_name || '-')}</td>
-          <td>
-            <span style="padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: ${u.is_active ? 'var(--accent-2)' : 'var(--error-text)'};">
-              ${u.is_active ? t('common.active') : t('common.inactive')}
-            </span>
-            ${u.is_superadmin ? `<span style="margin-left: 4px; padding: 2px 8px; font-size: 0.75rem; border-radius: 999px; background: var(--bg-soft); color: var(--accent);">${t('admin.superadmin')}</span>` : ''}
-          </td>
-          <td style="color: var(--text-muted);">-</td>
-          <td style="text-align: right;">
-            <button data-id="${u.id}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
-            <button data-id="${u.id}" class="btn-reset" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('admin.resetPw')}</button>
-            ${currentUser && currentUser.id !== u.id ? `
-              <button data-id="${u.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
-            ` : ''}
-          </td>
-        </tr>
-      `).join('')
-      
-      document.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => openModal(parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)))
-      })
-      
-      document.querySelectorAll('.btn-reset').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          const newPassword = prompt(t('admin.resetPwPrompt'))
-          if (!newPassword || newPassword.length < 8) {
-            if (newPassword !== null) await (window as any).__fmAlert(t('admin.resetPwTooShort'))
-            return
-          }
-          
-          try {
-            const response = await fetch(`/api/v1/admin/users/${id}/reset-password`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              body: JSON.stringify({ new_password: newPassword }),
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) throw new Error('Failed to reset password')
-            await (window as any).__fmAlert(t('admin.resetPwSuccess'))
-          } catch {
-            await (window as any).__fmAlert(t('admin.resetPwFailed'))
-          }
-        })
-      })
-
-      document.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const id = parseInt((e.currentTarget as HTMLButtonElement).dataset.id!)
-          
-          if (!(await (window as any).__fmConfirm(t('admin.deleteUserConfirm')))) return
-          
-          try {
-            const response = await fetch(`/api/v1/admin/users/${id}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) {
-              const data = await response.json()
-              const msg = data.detail?.message || t('admin.failedDeleteUser')
-              await (window as any).__fmAlert(msg)
-              return
-            }
-            
-            loadData()
-          } catch {
-            await (window as any).__fmAlert(t('admin.failedDeleteUser'))
-          }
-        })
-      })
+          <td>${escapeHtml(user.email)}</td>
+          <td>${escapeHtml(user.display_name || '—')}</td>
+          <td><span class="fm-pill" style="color:${user.is_active ? 'var(--accent)' : 'var(--text-muted)'}">${t(user.is_active ? 'common.active' : 'common.inactive')}</span>
+            ${user.is_superadmin ? `<span class="fm-pill">${t('admin.superadmin')}</span>` : ''}</td>
+          <td>${escapeHtml(user.roles?.map(key => roles?.find(role => role.key === key)?.name || key).join(', ') || '—')}</td>
+          <td style="text-align:right"><span class="fm-row-actions">
+            ${tableAction('edit', { id: user.id })}
+            <button type="button" data-id="${user.id}" class="btn-reset fm-btn fm-btn-outline" style="padding:3px 8px;font-size:.75rem">${t('admin.resetPw')}</button>
+            ${currentUser && currentUser.id !== user.id ? tableAction('delete', { id: user.id }) : ''}
+          </span></td>
+        </tr>`).join('') : `<tr><td colspan="5">${escapeHtml(t('admin.noUsers'))}</td></tr>`
+      document.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach(button => button.addEventListener('click', () => openModal(Number(button.dataset.id))))
+      document.querySelectorAll<HTMLButtonElement>('.btn-reset').forEach(button => button.addEventListener('click', () => {
+        resetForm.reset()
+        ;(document.getElementById('reset-user-id') as HTMLInputElement).value = button.dataset.id!
+        document.getElementById('reset-error')!.classList.add('hidden')
+        resetState.reset()
+        resetDialog.open()
+      }))
+      document.querySelectorAll<HTMLButtonElement>('.btn-delete').forEach(button => button.addEventListener('click', async () => {
+        if (!(await (window as unknown as { __fmConfirm: (message: string) => Promise<boolean> }).__fmConfirm(t('admin.deleteUserConfirm')))) return
+        try { await api.delete(`/admin/users/${button.dataset.id}`); await loadData() }
+        catch (error) { if (!isAbortError(error)) message(error instanceof Error ? error.message : t('admin.failedDeleteUser'), true) }
+      }))
     }
-    
-    function renderRoleCheckboxes(selectedRoles: string[] = []) {
-      const container = document.getElementById('roles-checkboxes')!
-      container.innerHTML = roles.map(r => `
-        <label style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" value="${r.key}" class="role-checkbox" ${selectedRoles.includes(r.key) ? 'checked' : ''} />
-          <span style="font-size: 0.875rem; color: var(--text);">${r.name}</span>
-        </label>
-      `).join('')
+    function renderRoleCheckboxes(selected: string[] = []) {
+      // Save only assignments offered by this editor, even if a background refresh reloads roles.
+      rolesEditable = roles !== null
+      document.getElementById('roles-checkboxes')!.innerHTML = roles ? roles.map(role => `
+        <label><input type="checkbox" value="${escapeHtml(role.key)}" class="role-checkbox" ${selected.includes(role.key) ? 'checked' : ''} />${escapeHtml(role.name)}</label>
+      `).join('') : `<p class="fm-field-hint">${escapeHtml(t('admin.rolesUnavailable'))}</p>`
     }
-    
     async function openModal(id: number | null = null) {
-      const container = document.getElementById('modal-container')!
-      const title = document.getElementById('modal-title')!
-      const idInput = document.getElementById('user-id') as HTMLInputElement
-      const emailInput = document.getElementById('user-email') as HTMLInputElement
-      const passwordInput = document.getElementById('user-password') as HTMLInputElement
-      const passwordField = document.getElementById('password-field')!
-      const displayNameInput = document.getElementById('user-display-name') as HTMLInputElement
-      const superadminInput = document.getElementById('user-superadmin') as HTMLInputElement
-      const error = document.getElementById('modal-error')!
-      
-      error.classList.add('hidden')
-      
-      if (id) {
-        title.textContent = t('admin.editUser')
-        passwordField.classList.add('hidden')
-        passwordInput.required = false
-        
-        const response = await fetch(`/api/v1/admin/users/${id}`, { credentials: 'include', signal: getAbortSignal() })
-        const user = await response.json()
-        
-        idInput.value = String(id)
-        emailInput.value = user.email
-        displayNameInput.value = user.display_name || ''
-        superadminInput.checked = user.is_superadmin
-        renderRoleCheckboxes(user.roles || [])
-      } else {
-        title.textContent = t('admin.addUser')
-        passwordField.classList.remove('hidden')
-        passwordInput.required = true
-        
-        idInput.value = ''
-        emailInput.value = ''
-        passwordInput.value = ''
-        displayNameInput.value = ''
-        superadminInput.checked = false
-        renderRoleCheckboxes()
-      }
-      
-      container.classList.add('open')
-    }
-    
-    function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
-    }
-    
-    document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
-    document.getElementById('modal-container')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeModal()
-    })
-    
-    document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      
-      const id = (document.getElementById('user-id') as HTMLInputElement).value
-      const email = (document.getElementById('user-email') as HTMLInputElement).value
-      const password = (document.getElementById('user-password') as HTMLInputElement).value
-      const displayName = (document.getElementById('user-display-name') as HTMLInputElement).value || null
-      const isSuperadmin = (document.getElementById('user-superadmin') as HTMLInputElement).checked
-      const selectedRoles = Array.from(document.querySelectorAll('.role-checkbox:checked')).map((cb: any) => cb.value)
-      
-      const error = document.getElementById('modal-error') as HTMLDivElement
-      const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
-      
-      error.classList.add('hidden')
-      submitBtn.disabled = true
-      submitBtn.textContent = t('common.saving')
-      
+      const request = ++openRequest
       try {
-        if (id) {
-          const updateRes = await fetch(`/api/v1/admin/users/${id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              body: JSON.stringify({ email, display_name: displayName, is_superadmin: isSuperadmin }),
-              signal: getAbortSignal(),
-            })
-          
-          if (!updateRes.ok) {
-            const data = await updateRes.json()
-            throw new Error(data.detail?.message || data.message || t('admin.failedUpdateUser'))
-          }
-          
-          await fetch(`/api/v1/admin/users/${id}/roles`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-            credentials: 'include',
-            body: JSON.stringify(selectedRoles),
-            signal: getAbortSignal(),
-          })
-        } else {
-          const response = await fetch('/api/v1/admin/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-            credentials: 'include',
-            body: JSON.stringify({ email, password, display_name: displayName, is_superadmin: isSuperadmin }),
-            signal: getAbortSignal(),
-          })
-          
-          if (!response.ok) {
-            const data = await response.json()
-            throw new Error(data.message || t('admin.failedCreateUser'))
-          }
-          
-          const user = await response.json()
-          await fetch(`/api/v1/admin/users/${user.id}/roles`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-            credentials: 'include',
-            body: JSON.stringify(selectedRoles),
-            signal: getAbortSignal(),
-          })
-        }
-        
-        closeModal()
-        loadData()
-      } catch (err: any) {
-        if (isAbortError(err)) return
-        error.textContent = err.message
-        error.classList.remove('hidden')
-      } finally {
-        submitBtn.disabled = false
-        submitBtn.textContent = t('common.save')
+        const user = id ? await api.get<UserRecord>(`/admin/users/${id}`) : null
+        if (request !== openRequest) return
+        form.reset()
+        ;(document.getElementById('user-id') as HTMLInputElement).value = user ? String(user.id) : ''
+        ;(document.getElementById('user-email') as HTMLInputElement).value = user?.email || ''
+        ;(document.getElementById('user-display-name') as HTMLInputElement).value = user?.display_name || ''
+        ;(document.getElementById('user-superadmin') as HTMLInputElement).checked = user?.is_superadmin || false
+        ;(document.getElementById('user-password') as HTMLInputElement).required = !user
+        document.getElementById('password-field')!.classList.toggle('hidden', Boolean(user))
+        document.getElementById('modal-title')!.textContent = t(user ? 'admin.editUser' : 'admin.addUser')
+        document.getElementById('modal-error')!.classList.add('hidden')
+        renderRoleCheckboxes(user?.roles)
+        formState.reset()
+        formDialog.open()
+      } catch (error) {
+        if (!isAbortError(error)) message(error instanceof Error ? error.message : t('admin.failedUpdateUser'), true)
       }
+    }
+    document.getElementById('btn-new')!.addEventListener('click', () => openModal())
+    form.addEventListener('submit', async event => {
+      event.preventDefault()
+      if (formState.busy || save.disabled || !form.reportValidity()) return
+      const idInput = document.getElementById('user-id') as HTMLInputElement
+      const payload = {
+        email: (document.getElementById('user-email') as HTMLInputElement).value,
+        display_name: (document.getElementById('user-display-name') as HTMLInputElement).value || null,
+        is_superadmin: (document.getElementById('user-superadmin') as HTMLInputElement).checked,
+      }
+      const selectedRoles = [...form.querySelectorAll<HTMLInputElement>('.role-checkbox:checked')].map(input => input.value)
+      const error = document.getElementById('modal-error')!
+      error.classList.add('hidden')
+      formState.setBusy(true)
+      let detailsSaved = false
+      try {
+        if (idInput.value) await api.patch(`/admin/users/${idInput.value}`, payload)
+        else {
+          const created = await api.post<UserRecord>('/admin/users', { ...payload, password: (document.getElementById('user-password') as HTMLInputElement).value })
+          // Keep the created identity if assigning roles fails, so retry cannot create a duplicate.
+          idInput.value = String(created.id)
+          ;(document.getElementById('user-password') as HTMLInputElement).value = ''
+          ;(document.getElementById('user-password') as HTMLInputElement).required = false
+          document.getElementById('password-field')!.classList.add('hidden')
+          document.getElementById('modal-title')!.textContent = t('admin.editUser')
+        }
+        detailsSaved = true
+        if (rolesEditable) await api.put(`/admin/users/${idInput.value}/roles`, selectedRoles)
+        formState.setBusy(false)
+        formDialog.close()
+        await loadData()
+      } catch (err) {
+        if (isAbortError(err)) return
+        error.textContent = err instanceof Error ? err.message : t('admin.failedUpdateUser')
+        error.classList.remove('hidden')
+        // Details may already exist even when the separate roles request failed.
+        if (detailsSaved) await loadData()
+      } finally { formState.setBusy(false) }
     })
-    
+    resetForm.addEventListener('submit', async event => {
+      event.preventDefault()
+      if (resetState.busy || !resetForm.reportValidity()) return
+      const error = document.getElementById('reset-error')!
+      error.classList.add('hidden')
+      resetState.setBusy(true)
+      try {
+        await api.post(`/admin/users/${(document.getElementById('reset-user-id') as HTMLInputElement).value}/reset-password`, { new_password: (document.getElementById('reset-password') as HTMLInputElement).value })
+        resetState.setBusy(false)
+        resetDialog.close()
+        message(t('admin.resetPwSuccess'))
+      } catch (err) {
+        if (isAbortError(err)) return
+        error.textContent = err instanceof Error ? err.message : t('admin.resetPwFailed')
+        error.classList.remove('hidden')
+      } finally { resetState.setBusy(false) }
+    })
     loadData()
   </script>
 </Layout>

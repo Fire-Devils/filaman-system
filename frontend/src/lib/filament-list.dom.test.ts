@@ -10,6 +10,7 @@ const source = readFileSync('src/pages/filaments/index.astro', 'utf8')
 const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function getPageNumbers'))
 const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', `
   const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', t = () => '';
+  const selectForSpool = false, createFilamentHref = '/filaments/new';
   const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
   ${transpileModule(script, {}).outputText}
   return { renderFilaments, renderGroupedFilaments };
