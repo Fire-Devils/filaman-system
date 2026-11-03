@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Symbole werden nach einem FilaMan-Update zuverlässig neu geladen, statt veraltet oder fehlend angezeigt zu werden. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Katalog-Suchergebnisse im Hersteller-Popup bleiben jetzt vollständig sichtbar und bedienbar. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Icons are now reliably refreshed after a FilaMan update instead of appearing outdated or missing. (Contributed by akira69)" },
+          { "type": "fix", "text": "Catalog search results in the manufacturer popup now stay fully visible and usable. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.0.1",
       "date": "",
       "changes": {
