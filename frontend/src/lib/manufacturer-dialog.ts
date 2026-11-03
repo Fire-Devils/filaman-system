@@ -55,7 +55,7 @@ export function createManufacturerDialog(options: {
   const sources = options.sources ?? (options.filamentDbActive ? [filamentDbSource()] : [])
   const e = escapeHtml
   const label = (key: string) => e(t(key))
-  const icon = (name: string) => `<svg aria-hidden="true"><use href="/icons.svg#icon-${name}"/></svg>`
+  const icon = (name: string) => `<svg aria-hidden="true"><use href="/icons.svg?v=2#icon-${name}"/></svg>`
   const fields = [
     ['name', 'manufacturers.name', 'text', ''],
     ['url', 'manufacturers.url', 'url', ''],

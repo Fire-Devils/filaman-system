@@ -59,7 +59,7 @@ it.each(['', '?select_for_spool=1', '?select_for_spool=0'])('keeps list navigati
       expect(select?.getAttribute('aria-label')).toContain('PLA "silk"')
       expect(select?.getAttribute('title')).toBe(select?.getAttribute('aria-label'))
       expect(select?.textContent).toBe('')
-      expect(select?.querySelector('svg[aria-hidden="true"] use')?.getAttribute('href')).toBe('/icons.svg#icon-status')
+      expect(select?.querySelector('svg[aria-hidden="true"] use')?.getAttribute('href')).toBe('/icons.svg?v=2#icon-status')
       expect(select?.getAttribute('onclick')).toBeNull()
       expect(select?.getAttribute('tabindex')).toBeNull()
       expect(row.querySelector('.bulk-checkbox')).toBeNull()

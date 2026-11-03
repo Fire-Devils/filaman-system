@@ -321,7 +321,7 @@
 .manufacturer-identity .manufacturer-value {
   flex: 1;
 }
-.manufacturer-dialog:not(.is-editing) .fm-input {
+.manufacturer-dialog:not(.is-editing) .manufacturer-field .fm-input {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
@@ -337,6 +337,10 @@
 }
 .manufacturer-source {
   margin-top: 12px;
+}
+.manufacturer-source .fdb-lookup-dropdown {
+  position: static;
+  margin-top: 4px;
 }
 .manufacturer-source-summary {
   display: flex;
