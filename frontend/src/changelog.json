@@ -1,6 +1,32 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Das Dashboard lässt sich anpassen: Einzelne Bereiche können ein- und ausgeblendet werden. Die Auswahl wird pro Benutzer gespeichert und gilt auf allen Geräten." },
+          { "type": "feature", "text": "Die Hersteller-Ansicht zeigt und bearbeitet Hersteller jetzt in einem gemeinsamen Popup, das den Katalog berücksichtigt. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Das Spulen-Protokoll lässt sich jetzt durchsuchen und filtern, bevor es seitenweise angezeigt wird. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Einheitlicheres Bedienkonzept: Dialoge, Listen, Formulare, Verwaltungsseiten, Profil- und Anwendungseinstellungen sowie das Dashboard sehen jetzt gleich aus und verhalten sich gleich. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Rollen werden kompakter dargestellt, und die Speichern-Schaltflächen bleiben beim Bearbeiten sichtbar. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Die Spulendarstellung der Plugins zeigt die volle Spule einheitlich, und Druckerdetails behalten ungespeicherte Eingaben. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Plugin-Updates melden ihr Ergebnis jetzt verständlicher, und fehlgeschlagene Eingaben gehen nicht verloren. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Technische Integrationsdaten erscheinen nicht mehr als eigene Zusatzfelder an Spulen. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "The dashboard can be customised: individual sections can be shown or hidden. The choice is saved per user and applies on all devices." },
+          { "type": "feature", "text": "The manufacturers view now shows and edits manufacturers in a shared popup that takes the catalog into account. (Contributed by akira69)" },
+          { "type": "improved", "text": "The spool log can now be searched and filtered before it is shown page by page. (Contributed by akira69)" },
+          { "type": "improved", "text": "More consistent interface: dialogs, lists, forms, admin pages, profile and application settings as well as the dashboard now look and behave the same. (Contributed by akira69)" },
+          { "type": "improved", "text": "Roles are displayed more compactly, and the save buttons stay visible while editing. (Contributed by akira69)" },
+          { "type": "improved", "text": "Plugins show the full spool in a consistent way, and printer details keep unsaved input. (Contributed by akira69)" },
+          { "type": "fix", "text": "Plugin updates report their result more clearly, and failed input is no longer lost. (Contributed by akira69)" },
+          { "type": "fix", "text": "Technical integration data no longer shows up as separate extra fields on spools. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.0.0",
       "date": "",
       "changes": {
