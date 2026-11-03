@@ -188,6 +188,8 @@
     "spools": "Spulen",
     "spoolStatus": "Spulen-Status",
     "filamentStats": "Filament-Statistik",
+    "customize": "Anpassen",
+    "resetWidgets": "Auf Standard zurücksetzen",
     "locationStats": "Lagerorte",
     "statusFull": "Voll",
     "statusNormal": "Normal",

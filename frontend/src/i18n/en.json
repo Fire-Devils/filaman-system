@@ -187,6 +187,8 @@
     "spools": "Spools",
     "spoolStatus": "Spool Status",
     "filamentStats": "Filament Statistics",
+    "customize": "Customize",
+    "resetWidgets": "Reset to default",
     "locationStats": "Locations",
     "statusFull": "Full",
     "statusNormal": "Normal",

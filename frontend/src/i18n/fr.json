@@ -187,6 +187,8 @@
     "spools": "Bobines",
     "spoolStatus": "Statut des bobines",
     "filamentStats": "Statistiques des filaments",
+    "customize": "Personnaliser",
+    "resetWidgets": "Réinitialiser par défaut",
     "locationStats": "Emplacements",
     "statusFull": "Pleine",
     "statusNormal": "Normale",
