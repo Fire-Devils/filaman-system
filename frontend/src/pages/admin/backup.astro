@@ -1,17 +1,14 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
+import FormSection from '../../components/FormSection.astro'
 ---
 
 <Layout title="FilaMan - Database Backup">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-  
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.databaseBackup">Database Backup & Restore</h1>
-  
+  <div class="fm-admin-page fm-admin-page-compact fm-admin-stack">
+  <AdminHeader titleKey="admin.databaseBackup" title="Database Backup &amp; Restore" />
   <!-- Export Section -->
-  <div class="fm-card" style="padding: 24px; margin-bottom: 24px;">
-    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.backupExport">Export Backup</h2>
+  <FormSection titleKey="admin.backupExport" title="Export Backup">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.backupExportDesc">
       Create a complete backup of all data (users, spools, filaments, settings, etc.) as JSON file.
     </p>
@@ -25,11 +22,10 @@ import Layout from '../../layouts/Layout.astro'
     <button id="btn-export-backup" class="fm-btn fm-btn-primary" data-i18n="admin.backupExportBtn">
       Export Backup
     </button>
-  </div>
+  </FormSection>
 
   <!-- Import Section -->
-  <div class="fm-card" style="padding: 24px;">
-    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.backupImport">Import Backup</h2>
+  <FormSection titleKey="admin.backupImport" title="Import Backup">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.backupImportDesc">
       Restore a previously exported backup. This will replace all existing data.
     </p>
@@ -40,8 +36,8 @@ import Layout from '../../layouts/Layout.astro'
         <span data-i18n="admin.backupDangerText">This will DELETE ALL existing data! An automatic backup will be created first.</span>
       </div>
     </div>
-    <div style="display: flex; gap: 12px; align-items: end; margin-bottom: 16px;">
-      <div style="flex: 1;">
+    <div class="fm-backup-file-row">
+      <div>
         <label style="display: block; margin-bottom: 4px; font-weight: 500; font-size: 0.875rem;">
           <span data-i18n="admin.backupImportFile">Select Backup File</span>
         </label>
@@ -62,14 +58,13 @@ import Layout from '../../layouts/Layout.astro'
       </div>
       <p id="import-status" style="margin-top: 8px; font-size: 0.875rem; color: var(--text-muted);"></p>
     </div>
-  </div>
+  </FormSection>
 
   <!-- Inventory Backup Section -->
-  <h2 style="font-size: 1.5rem; font-weight: 700; margin: 48px 0 16px; font-family: var(--font-serif);" data-i18n="admin.inventoryBackup">Inventory Data Only</h2>
+  <h2 style="font-size: 1.5rem; font-weight: 700; margin: 12px 0 0; font-family: var(--font-serif);" data-i18n="admin.inventoryBackup">Inventory Data Only</h2>
   
   <!-- Inventory Export Section -->
-  <div class="fm-card" style="padding: 24px; margin-bottom: 24px;">
-    <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.inventoryExport">Export Inventory</h3>
+  <FormSection titleKey="admin.inventoryExport" title="Export Inventory">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.inventoryExportDesc">
       Export only inventory data (manufacturers, filaments, spools, printers). No users, passwords, or API keys.
     </p>
@@ -83,11 +78,10 @@ import Layout from '../../layouts/Layout.astro'
     <button id="btn-export-inventory" class="fm-btn fm-btn-primary" data-i18n="admin.inventoryExportBtn">
       Export Inventory
     </button>
-  </div>
+  </FormSection>
 
   <!-- Inventory Import Section -->
-  <div class="fm-card" style="padding: 24px;">
-    <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.inventoryImport">Import Inventory</h3>
+  <FormSection titleKey="admin.inventoryImport" title="Import Inventory">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.inventoryImportDesc">
       Import inventory data from another FilaMan instance. Users and settings are preserved.
     </p>
@@ -98,8 +92,8 @@ import Layout from '../../layouts/Layout.astro'
         <span data-i18n="admin.inventoryWarningText">This will DELETE existing inventory data! Users and settings remain unchanged.</span>
       </div>
     </div>
-    <div style="display: flex; gap: 12px; align-items: end; margin-bottom: 16px;">
-      <div style="flex: 1;">
+    <div class="fm-backup-file-row">
+      <div>
         <label style="display: block; margin-bottom: 4px; font-weight: 500; font-size: 0.875rem;">
           <span data-i18n="admin.backupImportFile">Select Backup File</span>
         </label>
@@ -120,19 +114,18 @@ import Layout from '../../layouts/Layout.astro'
       </div>
       <p id="inventory-import-status" style="margin-top: 8px; font-size: 0.875rem; color: var(--text-muted);"></p>
     </div>
-  </div>
+  </FormSection>
 
   <!-- SQLite Backup Files Section -->
-  <div id="sqlite-backups-section" class="fm-card" style="padding: 24px; margin-top: 24px; display: none;">
-    <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.sqliteBackups">SQLite Backups</h2>
+  <div id="sqlite-backups-section" style="display:none"><FormSection titleKey="admin.sqliteBackups" title="SQLite Backups">
     <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.875rem;" data-i18n="admin.sqliteBackupsDesc">
       Automatic SQLite database backups. These are created daily and before updates.
     </p>
     <div id="sqlite-backups-loading" style="text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="common.loading">Loading...</div>
     <div id="sqlite-backups-empty" style="display: none; text-align: center; padding: 24px; color: var(--text-muted);" data-i18n="admin.sqliteBackupsEmpty">No backup files found.</div>
     <div id="sqlite-backups-table-wrap" style="display: none; overflow-x: auto;">
-      <table class="fm-table">
-        <thead style="background: var(--bg-soft);">
+      <table class="fm-table fm-admin-table">
+        <thead>
           <tr>
             <th data-i18n="admin.sqliteBackupFile">File</th>
             <th data-i18n="admin.sqliteBackupDate">Date</th>
@@ -143,8 +136,9 @@ import Layout from '../../layouts/Layout.astro'
         <tbody id="sqlite-backups-tbody"></tbody>
       </table>
     </div>
-  </div>
+  </FormSection></div>
 
+  </div>
   <script>
     import { initI18n, t } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'

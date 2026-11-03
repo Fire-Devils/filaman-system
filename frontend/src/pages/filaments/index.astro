@@ -4,49 +4,30 @@ import Layout from '../../layouts/Layout.astro'
 
 <Layout title="FilaMan - Filaments">
   <style>
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: var(--bg-hover); }
-  </style>
-  <style is:global>
-    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
-    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
-    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
-  </style>
-  <style>
-    .filter-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
+    .spool-selection-only[hidden] { display: none; }
+    :global(.filament-spool-select) {
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      color: var(--text-muted);
+      vertical-align: middle;
     }
-    .filter-bar .fm-input-search {
-      flex: 1;
-      min-width: 200px;
-      max-width: 400px;
-    }
-    .bulk-checkbox { cursor: pointer; vertical-align: middle; }
-    tr.bulk-selected { background: var(--bg-hover) !important; }
-    .bulk-action-bar {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-      background: var(--bg-elevated); border-top: 2px solid var(--accent);
-      padding: 12px 24px; display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-      transform: translateY(100%); transition: transform 0.2s ease;
-    }
-    .bulk-action-bar.visible { transform: translateY(0); }
-    .bulk-action-bar .bulk-count { font-weight: 600; margin-right: 8px; white-space: nowrap; }
+    :global(.filament-spool-select:hover) { color: var(--text); }
+    :global(.filament-spool-select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+    :global(.filament-spool-select:active) { color: var(--success-text); background: var(--success-bg); }
   </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="filaments.title">Filaments</h1>
-    <div style="display: flex; gap: 12px;">
+  <a id="spool-selection-back" href="/spools" class="fm-admin-back spool-selection-only" hidden>&larr; <span data-i18n="spools.backToSpools">Back to Spools</span></a>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="filaments.title">Filaments</h1>
+    <div class="fm-list-controls">
       <a href="/filaments/colors" class="fm-btn fm-btn-outline" data-i18n="filaments.manageColors">
         Manage Colors
       </a>
-      <a href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
+      <a id="spool-selection-import" href="/spools/new?from_tag=1" class="fm-btn fm-btn-outline spool-selection-only" hidden data-i18n="spools.importFromTag">Import from Tag</a>
+      <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
         Add Filament
       </a>
     </div>
@@ -163,7 +144,7 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
-    import { escapeHtml, formatNumericRange, type SystemExtraFieldDef } from '../../lib/extra-fields'
+    import { escapeHtml, formatNumericRange, isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
@@ -181,6 +162,8 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { filamentColorValues, toColorSwatchBackground } from '../../lib/colors'
+    import type { AppDialogs } from '../../lib/form-dialog'
+    const dialogWindow = window as unknown as AppDialogs
     await initI18n()
 
     let currentPage = 1
@@ -191,7 +174,30 @@ import Layout from '../../layouts/Layout.astro'
         return allowedPageSizes.includes(saved) ? saved : 50
       } catch { return 50 }
     })()
-    let allFilaments: any[] = []
+    type FilamentColor = { display_name_override?: string | null; color?: { name: string; hex_code: string } | null }
+    type Filament = {
+      id: number
+      manufacturer_id: number
+      manufacturer?: { name: string; logo_url?: string | null } | null
+      designation: string
+      material_type: string
+      material_subgroup: string | null
+      manufacturer_color_name: string | null
+      finish_type: string | null
+      diameter_mm: number
+      price: number | null
+      price_currency?: string | null
+      spool_count: number
+      spool_status_ids: number[]
+      colors: FilamentColor[]
+      manufacturer_sku?: string | null
+      ams_compatibility?: string[] | null
+      build_plate_compatibility?: string[] | null
+      spool_material?: string | null
+      custom_fields: Record<string, unknown> | null
+      [key: string]: unknown
+    }
+    let allFilaments: Filament[] = []
     let filamentExtraFields: SystemExtraFieldDef[] = []
     let totalFilaments = 0
     let sortKey: string | null = null
@@ -249,7 +255,28 @@ import Layout from '../../layouts/Layout.astro'
     let allSpoolStatusIds: string[] = []
 
     const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('clear_filters') === '1') {
+      savedFilterState = null
+      columnFilters = {}
+      currentPage = 1
+      removeFilterUrlParams('clear_filters')
+    }
     const filterManufacturerId = urlParams.get('manufacturer_id')
+    const selectForSpool = urlParams.get('select_for_spool') === '1'
+    const createFilamentHref = selectForSpool ? '/filaments/new?create_spool=1' : '/filaments/new'
+    if (selectForSpool) {
+      const title = document.querySelector('h1')!
+      title.dataset.i18n = 'spools.selectFilament'
+      title.textContent = t('spools.selectFilament')
+      document.title = `FilaMan - ${t('spools.selectFilament')}`
+      document.querySelectorAll<HTMLElement>('.spool-selection-only').forEach(element => { element.hidden = false })
+      document.getElementById('spool-selection-back')!.addEventListener('click', () => sessionStorage.removeItem('filaman_spool_create_draft'))
+      document.getElementById('add-filament')!.setAttribute('href', createFilamentHref)
+      const selectionHeader = document.getElementById('bulk-select-all')!.closest('th')!
+      selectionHeader.textContent = ''
+      selectionHeader.setAttribute('aria-label', t('common.select'))
+      document.getElementById('bulk-action-bar')!.style.display = 'none'
+    }
     const normalizeSavedValues = (value: unknown): string[] => {
       if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
       return typeof value === 'string' && value.length > 0 ? [value] : []
@@ -303,7 +330,7 @@ import Layout from '../../layouts/Layout.astro'
       if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
-    function getSortValue(item: any, key: string): any {
+    function getSortValue(item: Filament, key: string): unknown {
       if (key === 'manufacturer') return item.manufacturer?.name || ''
       if (key === 'type') return item.material_type || ''
       if (key === 'colors') {
@@ -317,7 +344,7 @@ import Layout from '../../layouts/Layout.astro'
       return item[key]
     }
 
-    function sortFilaments(filaments: any[]): any[] {
+    function sortFilaments(filaments: Filament[]): Filament[] {
       if (!sortKey || !sortDirection) return filaments
       if (sortKey === 'spool_count') return filaments  // server-only sort: skip client re-sort
       const sortBy = sortKey
@@ -328,8 +355,8 @@ import Layout from '../../layouts/Layout.astro'
         if (aVal == null && bVal == null) cmp = 0
         else if (aVal == null) cmp = 1
         else if (bVal == null) cmp = -1
-        else if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
-        else cmp = aVal - bVal
+        else if (typeof aVal === 'string') cmp = aVal.localeCompare(String(bVal))
+        else cmp = Number(aVal) - Number(bVal)
         return sortDirection === 'asc' ? cmp : -cmp
       })
     }
@@ -361,7 +388,7 @@ import Layout from '../../layouts/Layout.astro'
       return true
     }
 
-    function getFilamentFilterValue(filament: any, key: string): unknown {
+    function getFilamentFilterValue(filament: Filament, key: string): unknown {
       if (key === 'manufacturer') return String(filament.manufacturer_id)
       if (key === 'type') return filament.material_type
       if (key === 'designation') return filament.designation
@@ -384,7 +411,7 @@ import Layout from '../../layouts/Layout.astro'
       return null
     }
 
-    function filterFilaments(filaments: any[]): any[] {
+    function filterFilaments(filaments: Filament[]): Filament[] {
       const activeFilters = Object.entries(columnFilters).filter(([key, value]) => isEffectiveColumnFilterActive(key, value))
       return filaments.filter((filament) => activeFilters.every(([key, filter]) =>
         matchesColumnFilter(getFilamentFilterValue(filament, key), filter)))
@@ -509,7 +536,7 @@ import Layout from '../../layouts/Layout.astro'
 
         if (needsAllData) {
           // Load all matching filaments for client-side color filter / group-by
-          const data = await fetchAllPages<any>(`/api/v1/filaments?${params}`)
+          const data = await fetchAllPages<Filament>(`/api/v1/filaments?${params}`)
           if (requestId !== filterRequestId) return
           allFilaments = data.items
           totalFilaments = data.total
@@ -563,7 +590,7 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
     
-    function renderColorDots(colors: any[]): string {
+    function renderColorDots(colors: FilamentColor[]): string {
       if (!colors || colors.length === 0) return '-'
       return colors.map(fc => {
         const c = fc.color
@@ -572,7 +599,7 @@ import Layout from '../../layouts/Layout.astro'
       }).join('')
     }
 
-    function renderFilaments(filaments: any[]) {
+    function renderFilaments(filaments: Filament[]) {
       const tbody = document.getElementById('filaments-table')!
       
       if (filaments.length === 0) {
@@ -581,7 +608,7 @@ import Layout from '../../layouts/Layout.astro'
         tbody.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--text-muted);">
-              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
@@ -593,11 +620,15 @@ import Layout from '../../layouts/Layout.astro'
       filResize.refreshColumns()
     }
 
-    function renderFilamentRow(f: any): string {
+    function renderFilamentRow(f: Filament): string {
       const currency = f.price_currency || getCurrency()
+      const href = selectForSpool ? `/spools/new?filament_id=${f.id}` : `/filaments/${f.id}`
+      const selectionLabel = escapeHtml(`${t('common.select')}: ${f.manufacturer?.name || ''} ${f.material_type || ''} ${f.designation || ''}`)
       return `
-        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/filaments/${f.id}'">
-          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" /></td>
+        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='${href}'">
+          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">${selectForSpool
+            ? `<a href="${href}" class="filament-spool-select" aria-label="${selectionLabel}" title="${selectionLabel}"><svg width="28" height="28" aria-hidden="true"><use href="/icons.svg#icon-status" /></svg></a>`
+            : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" />`}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.manufacturer?.name || '-')}</td>
           <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(f.manufacturer.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.material_type)}</td>
@@ -634,16 +665,16 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-spool_outer" style="padding: 12px;">${f.spool_outer_diameter_mm != null ? `${f.spool_outer_diameter_mm} mm` : '-'}</td>
           <td class="col-spool_width" style="padding: 12px;">${f.spool_width_mm != null ? `${f.spool_width_mm} mm` : '-'}</td>
           <td class="col-spool_material" style="padding: 12px;">${escapeHtml(f.spool_material || '-')}</td>
-          ${((window as any).__filamentExtraFields || []).map((ef: any) => {
+          ${((window as typeof window & { __filamentExtraFields?: SystemExtraFieldDef[] }).__filamentExtraFields || []).map((ef) => {
             const val = f.custom_fields?.[ef.key]
             const display = ef.field_type === 'checkbox' ? (val ? '\u2713' : '\u2717') : (val ?? '-')
-            return `<td class="col-cf_${escapeHtml(ef.key)}" style="padding: 12px; color: var(--text-muted);">${escapeHtml(display)}</td>`
+            return `<td class="col-cf_${escapeHtml(ef.key)}" style="padding: 12px; color: var(--text-muted);">${escapeHtml(String(display))}</td>`
           }).join('')}
         </tr>
       `
     }
 
-    function renderGroupedFilaments(filaments: any[]) {
+    function renderGroupedFilaments(filaments: Filament[]) {
       const tbody = document.getElementById('filaments-table')!
 
       if (filaments.length === 0) {
@@ -652,7 +683,7 @@ import Layout from '../../layouts/Layout.astro'
         tbody.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--text-muted);">
-              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="/filaments/new" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
@@ -660,7 +691,7 @@ import Layout from '../../layouts/Layout.astro'
       }
 
       // Group by manufacturer_id
-      const groups = new Map<string, { label: string; filaments: any[] }>()
+      const groups = new Map<string, { label: string; filaments: Filament[] }>()
 
       filaments.forEach(f => {
         const groupKey = f.manufacturer_id ? String(f.manufacturer_id) : '_none'
@@ -1058,7 +1089,8 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const res = await fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
-        const fields: SystemExtraFieldDef[] = await res.json()
+        const definitions: SystemExtraFieldDef[] = await res.json()
+        const fields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
         if (fields.length === 0) return
         filamentExtraFields = fields
         const extraGroup: ColumnGroup = {
@@ -1078,7 +1110,7 @@ import Layout from '../../layouts/Layout.astro'
           })
         }
         // Store fields for renderFilamentRow access
-        ;(window as any).__filamentExtraFields = fields
+        ;(window as typeof window & { __filamentExtraFields?: SystemExtraFieldDef[] }).__filamentExtraFields = fields
         // Refresh column reorder to include new extra field columns
         filReorder.refreshColumns()
         filResize.refreshColumns()
@@ -1123,6 +1155,7 @@ import Layout from '../../layouts/Layout.astro'
 
     // ── Bulk Selection & Actions ──────────────────────────────
     function updateBulkBar() {
+      if (selectForSpool) return
       const bar = document.getElementById('bulk-action-bar')!
       const countEl = document.getElementById('bulk-count')!
       const selectAllCb = document.getElementById('bulk-select-all') as HTMLInputElement
@@ -1142,6 +1175,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function toggleFilamentSelection(id: number, checked: boolean) {
+      if (selectForSpool) return
       if (checked) {
         selectedFilamentIds.add(id)
       } else {
@@ -1152,7 +1186,7 @@ import Layout from '../../layouts/Layout.astro'
       updateBulkBar()
     }
 
-    ;(window as any).__toggleFilamentSelection = toggleFilamentSelection
+    ;(window as typeof window & { __toggleFilamentSelection: typeof toggleFilamentSelection }).__toggleFilamentSelection = toggleFilamentSelection
 
     // Select all checkbox
     document.getElementById('bulk-select-all')?.addEventListener('change', (e) => {
@@ -1220,12 +1254,12 @@ import Layout from '../../layouts/Layout.astro'
           signal: getAbortSignal(),
         })
         if (!res.ok) throw new Error('API error')
-        await (window as any).__fmSuccess(t('filaments.bulkSuccess', { count }))
+        await dialogWindow.__fmSuccess(t('filaments.bulkSuccess', { count }))
         selectedFilamentIds.clear()
         updateBulkBar()
         loadFilaments()
       } catch {
-        (window as any).__fmAlert(t('filaments.bulkError'))
+        dialogWindow.__fmAlert(t('filaments.bulkError'))
       }
     }
 
@@ -1240,7 +1274,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('bulk-btn-delete')?.addEventListener('click', async () => {
       const count = selectedFilamentIds.size
       if (count === 0) return
-      const result = await (window as any).__fmConfirm(
+      const result = await dialogWindow.__fmConfirm(
         t('filaments.bulkConfirmDelete', { count }),
         {
           title: t('filaments.bulkDelete'),
@@ -1259,12 +1293,12 @@ import Layout from '../../layouts/Layout.astro'
           signal: getAbortSignal(),
         })
         if (!res.ok) throw new Error('API error')
-        await (window as any).__fmSuccess(t('filaments.bulkDeleteSuccess', { count }))
+        await dialogWindow.__fmSuccess(t('filaments.bulkDeleteSuccess', { count }))
         selectedFilamentIds.clear()
         updateBulkBar()
         loadFilaments()
       } catch {
-        (window as any).__fmAlert(t('filaments.bulkError'))
+        dialogWindow.__fmAlert(t('filaments.bulkError'))
       }
     })
 

@@ -9,7 +9,7 @@ import {
   prepareExtraFieldUpdate,
   type EntityExtraFieldPayload,
 } from './entity-extra-fields'
-import { collectSystemFieldValues, escapeHtml, parseNumericRangeInputs, renderFieldInput, type SystemExtraFieldDef } from './extra-fields'
+import { collectSystemFieldValues, escapeHtml, parseNumericRangeInputs, isIntegrationExtraFieldPath, renderSystemFieldRow, type SystemExtraFieldDef } from './extra-fields'
 import {
   bindFilamentDbLookupToManufacturer,
   checkFilamentDbActive,
@@ -586,16 +586,7 @@ export function createFilamentFormController(options: {
       return
     }
     systemFieldsContainer.style.display = 'block'
-    systemFieldsGrid.replaceChildren()
-    for (const field of systemFields) {
-      const wrapper = document.createElement('div')
-      const rawValue = raw ? getExtraFieldValue(raw, field.key) : null
-      const control = renderFieldInput(field, rawValue, values)
-      wrapper.innerHTML = field.field_type === 'checkbox'
-        ? control
-        : `<label class="fm-label">${escapeHtml(field.label)}</label>${control}`
-      systemFieldsGrid.appendChild(wrapper)
-    }
+    systemFieldsGrid.innerHTML = systemFields.map(field => renderSystemFieldRow(field, raw ? getExtraFieldValue(raw, field.key) : null, values)).join('')
   }
 
   function showLookupToast(message: string, variant: 'success' | 'error' = 'success'): void {
@@ -829,7 +820,7 @@ export function createFilamentFormController(options: {
       addManufacturerOption = bindManufacturerCreateOption(manufacturerSelect, () => manufacturerDialog?.open())
     }
     // Apply the complete reference snapshot only after every required read succeeds.
-    systemFields = definitions
+    systemFields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
     allColors = colors.items
     renderColorGrid()
     for (const option of Array.from(manufacturerSelect.options)) {

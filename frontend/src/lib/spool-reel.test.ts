@@ -106,3 +106,32 @@ describe('approved dimensional quarter reel', () => {
     expect(getFilamentColors({ ...filament, color_mode: 'single' })).toEqual(['#FF7A1A'])
   })
 })
+
+describe('shared reel rendering', () => {
+  it('keeps the hero quarter as default and exposes the full winding without changing fill math', () => {
+    const quarter = renderSpoolReel(.5, ['#FF8800'], 'striped')
+    const full = renderSpoolReel(.5, ['#FF8800'], 'striped', { view: 'full' })
+    expect(quarter).toContain('viewBox="0 0 104 104"')
+    expect(full).toContain('viewBox="0 0 208 208"')
+    expect(full.split('L').length).toBeGreaterThan(quarter.split('L').length)
+    expect(full.split('<path').length).toBeLessThan(10)
+    expect(renderSpoolReel(0, ['#FF8800'], 'striped', { view: 'full' })).not.toContain('<path')
+  })
+  it('isolates transparent checker patterns across gallery cards and distinguishes unknown from empty', () => {
+    const first = renderSpoolReel(null, ['#00FF0080'], 'gradient', { view: 'full' })
+    const second = renderSpoolReel(null, ['#FF000080'], 'striped', { view: 'full' })
+    const id = first.match(/pattern id="([^"]+)"/)![1]
+    expect(second).not.toContain(`id="${id}"`)
+    expect(first).toContain(`url(#${id})`)
+    expect(first).toContain('rgba(0,255,0,0.5020)')
+    expect(first).toContain('/reel-flange.webp')
+  })
+})
+
+it('bounds SVG nodes and markup for a transparent gradient gallery', () => {
+  const reel = renderSpoolReel(1, ['#FF000080', '#0000FF00'], 'gradient', { view: 'full' })
+  const svg = document.createElement('div')
+  svg.innerHTML = reel
+  expect(svg.querySelectorAll('path').length).toBeLessThanOrEqual(260)
+  expect(reel.length).toBeLessThan(100 * 1024)
+})

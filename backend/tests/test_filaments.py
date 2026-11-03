@@ -1643,3 +1643,50 @@ async def test_inventory_backup_round_trip_retains_spool_type_link(auth_client, 
     assert restored['filamentdb_spool_profile_id'] == 735
     assert restored['filamentdb_spool_image_file'] == '735.png'
     assert restored['default_spool_weight_g'] == 164
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload,kind", [
+    ({"slug": "legacy-web"}, "logo"),
+    ({"slug": "label-only", "has_web_logo": False, "has_label_logo": True}, "label-logo"),
+    ({"slug": "legacy-web", "has_web_logo": False, "has_label_logo": False}, "logo"),
+])
+async def test_manufacturer_logo_download_preserves_legacy_and_label_only(auth_client, db_session, monkeypatch, tmp_path, payload, kind):
+    import httpx
+    from app.api.v1 import filaments
+
+    maker = await _create_manufacturer(db_session, "Label only")
+    calls = []
+
+    async def get(self, url, **kwargs):
+        calls.append(url)
+        return httpx.Response(200, content=b"png", request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", get)
+    monkeypatch.setattr(filaments, "MANUFACTURER_LOGO_DIR", tmp_path)
+    client, csrf = auth_client
+    label_only = kind == "label-logo"
+    response = await client.post(f"/api/v1/manufacturers/{maker.id}/download-logo", headers={"X-CSRF-Token": csrf}, json=payload)
+    assert response.status_code == 200
+    assert response.json()["logo_url"].endswith(f"/{kind}")
+    asset = await client.request("GET", response.json()["logo_url"])
+    assert asset.status_code == 200 and asset.content == b"png"
+    assert len(calls) == 1 and calls[0].endswith("/label/label-only.png" if label_only else "/web/legacy-web.png")
+    await db_session.refresh(maker)
+    assert maker.logo_file == (None if label_only else f"{maker.id}.png")
+    assert maker.label_logo_file == (f"{maker.id}_label.png" if label_only else None)
+
+
+@pytest.mark.asyncio
+async def test_manufacturer_profile_catalog_roundtrip_keeps_native_shape(auth_client):
+    client, csrf = auth_client
+    metadata = {"note": "Keep Ö & <x>", "manufacturer_profile": {"contact_email": "maker@example.test", "description": "Line 1\n日本語"}, "catalog_sources": {"filamentdb": {"id": 119}, "other": {"id": "brand-1", "future": True}}}
+    response = await client.post("/api/v1/manufacturers", headers={"X-CSRF-Token": csrf}, json={"name": "Maker Ö", "empty_spool_weight_g": 0, "custom_fields": metadata})
+    assert response.status_code == 201
+    created = response.json()
+    response = await client.patch(f"/api/v1/manufacturers/{created['id']}", headers={"X-CSRF-Token": csrf}, json={"name": "Maker edited"})
+    assert response.status_code == 200
+    assert set(response.json()) == set(created)
+    response = await client.get(f"/api/v1/manufacturers/{created['id']}")
+    assert response.json()["custom_fields"] == metadata
+    assert response.json()["empty_spool_weight_g"] == 0

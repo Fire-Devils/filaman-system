@@ -1,17 +1,16 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
+import AdminHeader from '../../../components/AdminHeader.astro'
 ---
 
 <Layout title="FilaMan - Changelog">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="changelog.title">Changelog</h1>
+  <div class="fm-admin-page fm-admin-page-compact">
+  <AdminHeader titleKey="changelog.title" title="Changelog" />
   <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="changelog.subtitle">All changes and updates to FilaMan.</p>
 
   <div id="changelog-container" style="display: grid; gap: 24px;"></div>
 
+  </div>
   <script>
     import { initI18n, getLang } from '../../../lib/i18n'
     import changelogData from '../../../changelog.json'
@@ -40,25 +39,24 @@ import Layout from '../../../layouts/Layout.astro'
       const changes = version.changes[lang as keyof typeof version.changes] || version.changes['en'] || []
 
       const card = document.createElement('div')
-      card.className = 'fm-card'
-      card.style.cssText = 'padding: 24px;'
+      card.className = 'fm-card fm-section'
 
-      const header = document.createElement('div')
-      header.style.cssText = 'display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px;'
+      const header = document.createElement('header')
+      header.className = 'fm-section-header'
       header.innerHTML = `
-        <h2 style="font-size: 1.2rem; font-weight: 700; margin: 0; font-family: var(--font-serif);">v${version.version}</h2>
+        <h2>v${version.version}</h2>
         <span style="font-size: 0.85rem; color: var(--text-muted);">${version.date}</span>
       `
 
       const list = document.createElement('div')
-      list.style.cssText = 'display: grid; gap: 8px;'
+      list.className = 'fm-section-body'
 
       for (const change of changes as Array<{ type: string; text: string }>) {
         const style = typeLabels[change.type] || typeLabels.change
         const label = style[lang as keyof typeof style] || style.en
 
         const item = document.createElement('div')
-        item.style.cssText = 'display: flex; align-items: start; gap: 10px; padding: 8px 12px; background: var(--bg-soft); border-radius: 8px; border: 1px solid var(--border);'
+        item.style.cssText = 'display: flex; align-items: start; gap: 10px; padding: 4px 0;'
         item.innerHTML = `
           <span style="color: ${style.color}; font-weight: 700; font-size: 1rem; line-height: 1.4; flex-shrink: 0;">${style.icon}</span>
           <span style="font-size: 0.75rem; font-weight: 600; color: ${style.color}; padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, ${style.color} 12%, transparent); flex-shrink: 0; line-height: 1.6;">${label}</span>

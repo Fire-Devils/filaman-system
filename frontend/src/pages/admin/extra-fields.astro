@@ -1,32 +1,33 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import AdminHeader from '../../components/AdminHeader.astro'
+import FormSection from '../../components/FormSection.astro'
 ---
 
 <Layout title="FilaMan - System Extra Fields">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="admin.extraFieldsTitle">System Extra Fields</h1>
+  <div class="fm-admin-page fm-admin-page-wide">
+  <AdminHeader titleKey="admin.extraFieldsTitle" title="System Extra Fields">
     <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="admin.addField">Add Field</button>
+  </AdminHeader>
+  <div class="fm-list-toolbar">
+    <input id="fields-search" type="search" class="fm-input" data-i18n-placeholder="admin.extraFieldsSearch" data-i18n-aria-label="admin.extraFieldsSearch" aria-label="Search fields" placeholder="Search fields" style="max-width:24rem" />
+    <button id="fields-clear" type="button" class="fm-btn fm-btn-outline" data-i18n="common.clearColumnFilters">Clear column filters</button>
   </div>
-
   <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="admin.extraFieldsHint">
     These fields will be automatically added to all filaments or spools.
   </p>
 
-  <div class="fm-card" style="padding: 0;">
-    <table class="fm-table">
-      <thead style="background: var(--bg-soft);">
+  <div class="fm-card fm-table-scroll" style="padding: 0;">
+    <table id="fields-list" class="fm-table fm-admin-table">
+      <thead>
         <tr>
-          <th data-i18n="admin.targetType">Target Type</th>
-          <th data-i18n="admin.keyJson">Key (JSON)</th>
-          <th data-i18n="admin.displayLabel">Label</th>
-          <th data-i18n="admin.fieldType">Type</th>
-          <th data-i18n="admin.defaultValue">Default Value</th>
-          <th data-i18n="admin.source">Source</th>
-          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          <th data-i18n="admin.targetType" data-sort="target_type" class="col-target_type">Target Type</th>
+          <th data-i18n="admin.keyJson" data-sort="key" class="col-key">Key (JSON)</th>
+          <th data-i18n="admin.displayLabel" data-sort="label" class="col-label">Label</th>
+          <th data-i18n="admin.fieldType" data-sort="field_type" class="col-field_type">Type</th>
+          <th data-i18n="admin.defaultValue" data-sort="default_value" class="col-default_value">Default Value</th>
+          <th data-i18n="admin.source" data-sort="source" class="col-source">Source</th>
+          <th data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="fields-table">
@@ -37,7 +38,33 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
 
+  <div style="margin-top:16px">
+    <FormSection titleKey="admin.pluginManagedFields" title="Plugin-managed fields">
+      <p class="fm-field-hint" data-i18n="admin.pluginManagedFieldsHint">These definitions belong to plugins. Manage them through the owning plugin; their values remain available on linked records.</p>
+    <div class="fm-table-scroll"><table id="managed-fields-list" class="fm-table fm-admin-table">
+      <thead>
+        <tr>
+          <th data-i18n="admin.targetType" data-sort="target_type" class="col-target_type">Target Type</th>
+          <th data-i18n="admin.keyJson" data-sort="key" class="col-key">Key (JSON)</th>
+          <th data-i18n="admin.displayLabel" data-sort="label" class="col-label">Label</th>
+          <th data-i18n="admin.fieldType" data-sort="field_type" class="col-field_type">Type</th>
+          <th data-i18n="admin.defaultValue" data-sort="default_value" class="col-default_value">Default Value</th>
+          <th data-i18n="admin.source" data-sort="source" class="col-source">Source</th>
+          <th data-i18n="common.actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="managed-fields-table">
+        <tr>
+          <td colspan="7" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+        </tr>
+      </tbody>
+    </table></div>
+    </FormSection>
+  </div>
+  </div>
   <script>
+    import { tableAction } from '../../lib/table-actions'
+    import { initHeaderColumnFilters, matchesColumnFilter, syncHeaderSortButtons, type ColumnFilterValue, type HeaderFilterController } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import {
       createExtraFieldDefinitionDialog,
@@ -218,36 +245,51 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
+    const tables = ['fields-list', 'managed-fields-list'].map(id => document.getElementById(id) as HTMLTableElement)
+    const filterKeys = ['target_type', 'key', 'label', 'field_type', 'default_value', 'source'] as const
+    let sortKey: typeof filterKeys[number] = 'label'
+    let sortDirection: 'asc' | 'desc' = 'asc'
+    let filters: Record<string, ColumnFilterValue> = {}
+    const controllers: HeaderFilterController[] = []
+    function fieldValue(field: SystemExtraFieldRecord, key: string): string {
+      if (key === 'target_type') return targetTypeLabel(field.target_type)
+      if (key === 'field_type') return fieldTypeLabel(field.field_type)
+      if (key === 'default_value') return field.default_value ? formatExtraFieldDefaultValue(field) : ''
+      return String(field[key as keyof SystemExtraFieldRecord] ?? '')
+    }
     function renderFields(): void {
-      const tbody = document.getElementById('fields-table')!
-      if (fields.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">${escapeHtml(t('admin.noFieldsDefined'))}</td></tr>`
-        return
-      }
-
-      tbody.innerHTML = fields
+      const search = (document.getElementById('fields-search') as HTMLInputElement).value.toLocaleLowerCase().trim()
+      const visible = fields.filter(field => filterKeys.some(key => fieldValue(field, key).toLocaleLowerCase().includes(search))
+        && Object.entries(filters).every(([key, value]) => matchesColumnFilter(fieldValue(field, key), value)))
+        .sort((a, b) => (sortDirection === 'asc' ? 1 : -1) * fieldValue(a, sortKey).localeCompare(fieldValue(b, sortKey), undefined, { numeric: true }))
+      for (const [index, table] of tables.entries()) {
+        syncHeaderSortButtons(table, sortKey, sortDirection)
+        const tbody = table.tBodies[0]
+        const rows = visible.filter(field => Boolean(field.source) === Boolean(index))
+        tbody.innerHTML = rows.length ? rows
         .map(field => {
           const isPluginManaged = Boolean(field.source)
           const actions = isPluginManaged
-            ? `<span title="${escapeHtml(t('admin.pluginManagedField'))}: ${escapeHtml(field.source)}" style="color:var(--text-muted);cursor:help">🔒</span>`
-            : `<button data-id="${field.id}" class="btn-edit" style="color:var(--accent);background:none;border:none;cursor:pointer;margin-right:8px">${escapeHtml(t('common.edit'))}</button><button data-id="${field.id}" class="btn-delete" style="color:var(--error-text);background:none;border:none;cursor:pointer">${escapeHtml(t('common.delete'))}</button>`
+            ? `<a class="fm-admin-back" href="/admin/system" title="${escapeHtml(t('admin.pluginManagedField'))}">${escapeHtml(t('admin.pluginManagedField'))}</a>`
+            : `<span class="fm-row-actions">${tableAction('edit', { id: field.id })}${tableAction('delete', { id: field.id })}</span>`
           const optionsInfo =
             ['dropdown', 'multiselect'].includes(field.field_type) && field.options
               ? ` <span title="${escapeHtml(field.options.join('\n'))}" style="color:var(--text-muted);cursor:help;font-size:0.8rem">(${field.options.length})</span>`
               : ''
           return `
-            <tr style="${isPluginManaged ? 'background:var(--bg-soft);opacity:0.85' : ''}">
+            <tr>
               <td><span class="fm-pill">${escapeHtml(targetTypeLabel(field.target_type))}</span></td>
               <td style="font-family:monospace;color:var(--accent-2)">${escapeHtml(field.key)}</td>
               <td>${escapeHtml(field.label)}</td>
               <td><span class="fm-pill">${escapeHtml(fieldTypeLabel(field.field_type))}</span>${optionsInfo}</td>
               <td style="color:var(--text-muted)">${escapeHtml(formatExtraFieldDefaultValue(field))}</td>
-              <td style="color:var(--text-muted)">${field.source ? escapeHtml(field.source) : '—'}</td>
-              <td style="text-align:right">${actions}</td>
+              <td style="color:var(--text-muted)">${field.source ? `<a href="/admin/system" style="color:var(--accent)">${escapeHtml(field.source)}</a>` : '—'}</td>
+              <td>${actions}</td>
             </tr>`
         })
-        .join('')
-
+        .join('') : `<tr><td colspan="7">${escapeHtml(t('admin.noFieldsDefined'))}</td></tr>`
+      }
+      const tbody = document.getElementById('fields-table')!
       tbody.querySelectorAll<HTMLButtonElement>('.btn-edit').forEach(button => {
         button.addEventListener('click', () => {
           const field = fields.find(item => item.id === Number(button.dataset.id))
@@ -308,6 +350,32 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
+    for (const table of tables) {
+      controllers.push(initHeaderColumnFilters(table, filterKeys.map(key => ({
+        key, label: table.querySelector<HTMLElement>(`.col-${key}`)!.textContent || key,
+        columnSelector: `.col-${key}`, type: 'text' as const,
+        onApply(value: ColumnFilterValue) {
+          filters[key] = value
+          for (const controller of controllers) controller.setValue(key, value)
+          renderFields()
+        },
+      }))))
+      table.tHead!.addEventListener('click', event => {
+        const header = (event.target as HTMLElement).closest<HTMLElement>('th[data-sort]')
+        if (!header) return
+        const key = header.dataset.sort as typeof sortKey
+        sortDirection = key === sortKey && sortDirection === 'asc' ? 'desc' : 'asc'
+        sortKey = key
+        renderFields()
+      })
+    }
+    document.getElementById('fields-search')!.addEventListener('input', renderFields)
+    document.getElementById('fields-clear')!.addEventListener('click', () => {
+      filters = {}
+      controllers.forEach(controller => controller.resetAll())
+      ;(document.getElementById('fields-search') as HTMLInputElement).value = ''
+      renderFields()
+    })
     document.getElementById('btn-new')?.addEventListener('click', openCreateDialog)
     await loadData()
   </script>

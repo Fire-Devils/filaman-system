@@ -3,40 +3,46 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Admin">
+  <style>
+    .admin-navigation h2 { display: flex; align-items: flex-start; gap: 10px; font-size: 1.2rem; font-weight: 600; margin-bottom: 8px; }
+    .admin-navigation h2 svg { width: 22px; height: 22px; flex: 0 0 22px; margin-top: 2px; fill: currentColor; }
+    .admin-navigation h2 span { min-width: 0; overflow-wrap: anywhere; }
+  </style>
+  <div class="fm-admin-page">
   <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; margin-bottom: 24px; font-family: var(--font-serif);" data-i18n="admin.title">Admin</h1>
   
-  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+  <div class="admin-navigation" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
     <a href="/admin/users" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.users">Users</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-users" /></svg><span data-i18n="admin.users">Users</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.usersDesc">Manage user accounts</p>
     </a>
     <a href="/admin/roles" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.rolesPerms">Roles & Permissions</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-admin" /></svg><span data-i18n="admin.rolesPerms">Roles & Permissions</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.rolesPermsDesc">Manage roles and permissions</p>
     </a>
     <a href="/admin/devices" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.devices">Devices</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-device" /></svg><span data-i18n="admin.devices">Devices</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.devicesDesc">Manage device tokens</p>
     </a>
     <a href="/admin/extra-fields" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.extraFieldsTitle">Extra Fields</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-fields" /></svg><span data-i18n="admin.extraFieldsTitle">Extra Fields</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.extraFieldsDesc">System-wide extra fields for spools and filaments</p>
     </a>
     <a href="/admin/system" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.system">System</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-plugin" /></svg><span data-i18n="admin.systemPlugins">Plugins</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.systemDesc">Plugins and system management</p>
     </a>
     <a href="/admin/backup" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.databaseBackup">Database Backup</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-database" /></svg><span data-i18n="admin.databaseBackup">Database Backup</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.backupDesc">Export and restore complete database backups</p>
     </a>
     <a href="/admin/oidc" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;" id="oidc-card">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.oidc">OIDC / SSO</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-lock" /></svg><span data-i18n="admin.oidc">OIDC / SSO</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.oidcDesc">Configure OpenID Connect Single Sign-On</p>
       <span id="oidc-https-warning" style="display: none; font-size: 0.8rem; color: var(--error-text); margin-top: 8px; display: none;" data-i18n="admin.oidcHttpsRequired">OIDC requires HTTPS</span>
     </a>
     <a href="/admin/app-settings" class="fm-card fm-card-hover" style="padding: 24px; text-decoration: none; display: block; color: inherit;">
-      <h2 style="font-size: 1.2rem; font-weight: 600; margin-bottom: 8px;" data-i18n="admin.appSettings">App Settings</h2>
+      <h2><svg aria-hidden="true" focusable="false"><use href="/icons.svg#icon-settings" /></svg><span data-i18n="admin.appSettings">App Settings</span></h2>
       <p style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="admin.appSettingsDesc">Application-wide settings like login and authentication</p>
     </a>
   </div>
@@ -89,10 +95,12 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
 
+  </div>
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     await initI18n()
+    const dialogs = window as unknown as { __fmConfirm: (message: string) => Promise<boolean>; __fmAlert: (message: string) => Promise<boolean> }
 
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -101,10 +109,10 @@ import Layout from '../../layouts/Layout.astro'
 
     document.getElementById('btn-killswitch')?.addEventListener('click', async () => {
       const msg1 = t('admin.killswitchConfirm')
-      if (!(await (window as any).__fmConfirm(msg1))) return
+      if (!(await dialogs.__fmConfirm(msg1))) return
 
       const msg2 = t('admin.killswitchConfirm2')
-      if (!(await (window as any).__fmConfirm(msg2))) return
+      if (!(await dialogs.__fmConfirm(msg2))) return
 
       const btn = document.getElementById('btn-killswitch') as HTMLButtonElement
       btn.disabled = true
@@ -139,14 +147,14 @@ import Layout from '../../layouts/Layout.astro'
           .map(([table, count]) => `${table}: ${count}`)
           .join('\n')
 
-        await (window as any).__fmAlert(
+        await dialogs.__fmAlert(
           t('admin.killswitchSuccess').replace('{count}', String(total))
           + (details ? '\n\n' + details : '')
         )
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
-        await (window as any).__fmAlert(err.message || t('admin.killswitchFailed'))
+        await dialogs.__fmAlert(err instanceof Error ? err.message : t('admin.killswitchFailed'))
       } finally {
         btn.disabled = false
         btn.textContent = t('admin.killswitchButton')
@@ -177,7 +185,7 @@ import Layout from '../../layouts/Layout.astro'
           latestEl.style.color = 'var(--success-text)'
         }
 
-        const updatablePlugins = (data.latest_plugins || []).filter((p: any) => p.update_available)
+        const updatablePlugins = (data.latest_plugins || []).filter((p: { update_available?: boolean }) => p.update_available)
         if (updatablePlugins.length > 0) {
           pluginRow.classList.remove('invisible')
           pluginCount.textContent = String(updatablePlugins.length)

@@ -1,10 +1,11 @@
 ---
+import FormDialog from '../../components/FormDialog.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Locations">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="locations.title">Locations</h1>
+  <div class="fm-list-toolbar">
+    <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="locations.title">Locations</h1>
     <button
       id="btn-new"
       class="fm-btn fm-btn-primary"
@@ -41,9 +42,9 @@ import Layout from '../../layouts/Layout.astro'
         to { transform: rotate(360deg); }
       }
     </style>
-    <table class="fm-table">
+    <table class="fm-table fm-admin-table">
       <thead>
-        <tr style="background: var(--bg-soft);">
+        <tr>
           <th class="col-name" data-i18n="locations.name">Name</th>
           <th class="col-identifier" data-i18n="locations.identifier">Identifier</th>
           <th class="col-spools" style="text-align: right;" data-i18n="locations.spools">Spools</th>
@@ -59,10 +60,12 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div id="modal-container" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="locations.addLocation">Add Location</h3>
-      <form id="modal-form" style="display: flex; flex-direction: column; gap: 16px;">
+  <FormDialog id="modal-container" titleId="modal-title" titleKey="locations.addLocation" title="Add Location" >
+    <Fragment slot="actions">
+      <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" id="modal-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="modal-form" class="fm-compact-form">
         <input type="hidden" id="location-id" />
         <div>
           <label for="location-name" class="fm-label">
@@ -85,23 +88,15 @@ import Layout from '../../layouts/Layout.astro'
             class="fm-input"
           />
         </div>
-        <div id="modal-error" class="fm-alert-error hidden"></div>
-        <div style="display: flex; gap: 12px;">
-          <button type="submit" id="modal-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">
-            Save
-          </button>
-          <button type="button" id="modal-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-  
-  <!-- RFID Modal -->
-  <div id="rfid-modal" class="fm-modal-overlay">
-    <div class="fm-card" style="width: 100%; max-width: 28rem; margin: 0 1rem; padding: 24px;">
-      <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 16px;" data-i18n="rfid.writeTag">Write RFID Tag</h3>
+        <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
+    </form>
+  </FormDialog>
+
+  <FormDialog id="rfid-modal" titleId="rfid-title" titleKey="rfid.writeTag" title="Write RFID Tag">
+    <Fragment slot="actions">
+      <button type="button" id="rfid-confirm" class="fm-btn fm-btn-primary" data-i18n="common.confirm">Confirm</button>
+      <button type="button" id="rfid-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
       <div id="rfid-content">
         <p style="margin-bottom: 16px;" id="rfid-text"></p>
         <div id="rfid-device-select-container" class="hidden">
@@ -111,23 +106,33 @@ import Layout from '../../layouts/Layout.astro'
         <div id="rfid-warning" class="fm-alert fm-alert-warning hidden" style="margin-bottom: 16px;" data-i18n="rfid.tagAlreadyExistsWarning"></div>
       </div>
       <div id="rfid-status" class="fm-alert hidden" style="margin-bottom: 16px;"></div>
-      <div style="display: flex; gap: 12px;">
-        <button id="rfid-confirm" class="fm-btn fm-btn-primary" data-i18n="common.confirm">Confirm</button>
-        <button id="rfid-cancel" class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
-      </div>
-    </div>
-  </div>
-  
+  </FormDialog>
+
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnResize } from '../../lib/column-resize'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { tableAction } from '../../lib/table-actions'
+    import { bindFormDialog } from '../../lib/form-dialog'
+    import { bindFormState } from '../../lib/form-state'
     await initI18n()
 
-    let locations: any[] = []
-    let activeDevices: any[] = []
+    const modalForm = document.getElementById('modal-form') as HTMLFormElement
+    const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
+    const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
+
+    interface LocationRecord { id: number; name: string; identifier: string | null; spool_count: number }
+    interface ActiveDevice { id: number; name: string; ip_address: string | null }
+    const dialogs = window as unknown as {
+      __fmConfirm: (message: string) => Promise<boolean>
+      __fmAlert: (message: string) => Promise<boolean>
+      openRfidModal: (locationId: number) => void
+    }
+    let locations: LocationRecord[] = []
+    let activeDevices: ActiveDevice[] = []
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -148,7 +153,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadLocations() {
       try {
-        const data = await cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
+        const data = await cachedFetchAllPages<LocationRecord>(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         locations = data.items
         renderLocations()
       } catch (error) {
@@ -196,12 +201,11 @@ import Layout from '../../layouts/Layout.astro'
 
         return `
         <tr style="cursor: pointer;" onclick="window.location='/spools?location_id=${loc.id}'">
-          <td class="col-name" style="padding: 12px; font-weight: 500;">${loc.name}</td>
-          <td class="col-identifier" style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${loc.identifier || '-'}</td>
+          <td class="col-name" style="padding: 12px; font-weight: 500;">${escapeHtml(loc.name)}</td>
+          <td class="col-identifier" style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${escapeHtml(loc.identifier || '-')}</td>
           <td class="col-spools" style="padding: 12px; text-align: right; color: var(--text-muted);">${loc.spool_count || 0}</td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
-            <button data-id="${loc.id}" data-name="${loc.name}" data-identifier="${loc.identifier || ''}" class="btn-edit" style="color: var(--accent); background: none; border: none; cursor: pointer; margin-right: 12px;">${t('common.edit')}</button>
-            <button data-id="${loc.id}" class="btn-delete" style="color: var(--error-text); background: none; border: none; cursor: pointer;">${t('common.delete')}</button>
+            <div class="fm-row-actions">${tableAction('edit', { id: loc.id })}${tableAction('delete', { id: loc.id })}</div>
           </td>
           ${rfidIcon}
         </tr>
@@ -212,11 +216,8 @@ import Layout from '../../layouts/Layout.astro'
       document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
-          openModal(
-            parseInt(target.dataset.id!),
-            target.dataset.name!,
-            target.dataset.identifier!
-          )
+          const location = locations.find(location => location.id === Number(target.dataset.id))
+          if (location) openModal(location.id, location.name, location.identifier || '')
         })
       })
       
@@ -225,7 +226,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          if (!(await (window as any).__fmConfirm(t('locations.confirmDelete')))) return
+          if (!(await dialogs.__fmConfirm(t('locations.confirmDelete')))) return
           
           try {
             const response = await fetch(`/api/v1/locations/${id}`, {
@@ -237,7 +238,7 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
-              await (window as any).__fmAlert(data.message || t('locations.failedDelete'))
+              await dialogs.__fmAlert(data.message || t('locations.failedDelete'))
               return
             }
             
@@ -245,14 +246,13 @@ import Layout from '../../layouts/Layout.astro'
             invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
             loadLocations()
           } catch {
-            await (window as any).__fmAlert(t('locations.failedDelete'))
+            await dialogs.__fmAlert(t('locations.failedDelete'))
           }
         })
       })
     }
     
     function openModal(id: number | null = null, name: string = '', identifier: string = '') {
-      const container = document.getElementById('modal-container')!
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('location-id') as HTMLInputElement
       const nameInput = document.getElementById('location-name') as HTMLInputElement
@@ -265,16 +265,13 @@ import Layout from '../../layouts/Layout.astro'
       identifierInput.value = identifier
       error.classList.add('hidden')
       
-      container.classList.add('open')
+      formState.reset()
+      formDialog.open()
       nameInput.focus()
     }
     
-    function closeModal() {
-      document.getElementById('modal-container')!.classList.remove('open')
-    }
     
     document.getElementById('btn-new')?.addEventListener('click', () => openModal())
-    document.getElementById('modal-cancel')?.addEventListener('click', closeModal)
     
     document.getElementById('modal-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
@@ -288,7 +285,8 @@ import Layout from '../../layouts/Layout.astro'
       const data = { name, identifier }
       
       error.classList.add('hidden')
-      submitBtn.disabled = true
+      if (formState.busy || !modalForm.reportValidity()) return
+      formState.setBusy(true)
       submitBtn.textContent = t('common.saving')
       
       try {
@@ -313,24 +311,37 @@ import Layout from '../../layouts/Layout.astro'
         
         // Invalidate cache after successful save
         invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
-        closeModal()
+        formState.setBusy(false)
+        formDialog.close()
         loadLocations()
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
-        error.textContent = err.message
+        error.textContent = err instanceof Error ? err.message : t('locations.failedSave')
         error.classList.remove('hidden')
       } finally {
-        submitBtn.disabled = false
+        formState.setBusy(false)
         submitBtn.textContent = t('common.save')
       }
     })
     
     // RFID Modal Logic
     let currentRfidLocationId: number | null = null
+    let rfidAbort: AbortController | null = null
+    let rfidTimer: ReturnType<typeof setTimeout> | undefined
+    const rfidDialog = bindFormDialog(document.getElementById('rfid-modal') as HTMLDialogElement, {
+      onClose() {
+        // Stop observing; the device may already have accepted the write command.
+        rfidAbort?.abort()
+        clearTimeout(rfidTimer)
+        currentRfidLocationId = null
+        ;(document.getElementById('rfid-confirm') as HTMLButtonElement).disabled = false
+      },
+    })
     
-    ;(window as any).openRfidModal = (locationId: number) => {
+    ;dialogs.openRfidModal = (locationId: number) => {
       currentRfidLocationId = locationId
-      const modal = document.getElementById('rfid-modal')!
+      rfidAbort?.abort()
+      rfidAbort = new AbortController()
       const text = document.getElementById('rfid-text')!
       const deviceSelectContainer = document.getElementById('rfid-device-select-container')!
       const deviceSelect = document.getElementById('rfid-device-select') as HTMLSelectElement
@@ -356,15 +367,13 @@ import Layout from '../../layouts/Layout.astro'
         deviceSelect.innerHTML = activeDevices.map(d => `<option value="${d.id}">${d.name} (${d.ip_address})</option>`).join('')
       }
       
-      modal.classList.add('open')
+      rfidDialog.open()
     }
     
-    document.getElementById('rfid-cancel')?.addEventListener('click', () => {
-      document.getElementById('rfid-modal')!.classList.remove('open')
-    })
     
     document.getElementById('rfid-confirm')?.addEventListener('click', async () => {
-      if (!currentRfidLocationId) return
+      if (!currentRfidLocationId || !rfidAbort || (document.getElementById('rfid-confirm') as HTMLButtonElement).disabled) return
+      const signal = AbortSignal.any([getAbortSignal(), rfidAbort.signal])
       
       const deviceId = activeDevices.length === 1 
         ? activeDevices[0].id 
@@ -374,11 +383,9 @@ import Layout from '../../layouts/Layout.astro'
       if (!device) return
       
       const confirmBtn = document.getElementById('rfid-confirm') as HTMLButtonElement
-      const cancelBtn = document.getElementById('rfid-cancel') as HTMLButtonElement
       const status = document.getElementById('rfid-status')!
       
       confirmBtn.disabled = true
-      cancelBtn.disabled = false // Keep cancel active
       
       const maxWaitSeconds = 120
       status.className = 'fm-alert fm-alert-info rfid-write-progress'
@@ -394,15 +401,6 @@ import Layout from '../../layouts/Layout.astro'
         <span class="countdown-text" id="countdown-text">${maxWaitSeconds}s</span>
       `
       
-      // Handle Cancel while waiting
-      let isPolling = true
-      const onCancel = () => {
-        isPolling = false
-        confirmBtn.disabled = false
-        status.classList.add('hidden')
-      }
-      cancelBtn.addEventListener('click', onCancel, { once: true })
-      
       try {
         const response = await fetch(`/api/v1/devices/${deviceId}/write-tag`, {
           method: 'POST',
@@ -411,11 +409,12 @@ import Layout from '../../layouts/Layout.astro'
             'X-CSRF-Token': getCsrfToken()
           },
           credentials: 'include',
-          signal: getAbortSignal(),
+          signal,
           body: JSON.stringify({ location_id: currentRfidLocationId }),
         })
         
         const result = await response.json()
+        if (signal.aborted) return
         
         if (response.ok && result.success) {
           // Polling: Check periodically for the write status
@@ -423,7 +422,7 @@ import Layout from '../../layouts/Layout.astro'
           let attempts = 0
           
           const pollForResult = async () => {
-            if (!isPolling) return
+            if (signal.aborted) return
             
             attempts++
             
@@ -449,12 +448,12 @@ import Layout from '../../layouts/Layout.astro'
             }
             
             try {
-              const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include', signal: getAbortSignal() })
+              const statusRes = await fetch(`/api/v1/devices/${deviceId}/write-status`, { credentials: 'include', signal })
               if (statusRes.ok) {
                 const statusData = await statusRes.json()
+                if (signal.aborted) return
                 
                 if (statusData.status === 'success') {
-                  isPolling = false
                   
                   if (statusData.removed_from) {
                     status.textContent = t('rfid.writeSuccessWithCleanup', { source: statusData.removed_from })
@@ -467,13 +466,9 @@ import Layout from '../../layouts/Layout.astro'
                   // Reload data
                   loadLocations()
                   
-                  setTimeout(() => {
-                    document.getElementById('rfid-modal')!.classList.remove('open')
-                    confirmBtn.disabled = false
-                  }, 3000)
+                  rfidTimer = setTimeout(() => rfidDialog.close(), 3000)
                   return
                 } else if (statusData.status === 'error') {
-                  isPolling = false
                   status.textContent = statusData.error_message || t('rfid.writeError')
                   status.className = 'fm-alert fm-alert-error'
                   confirmBtn.disabled = false
@@ -481,21 +476,20 @@ import Layout from '../../layouts/Layout.astro'
                 }
               }
             } catch (e) {
-              if (isAbortError(e)) return
+              if (signal.aborted || isAbortError(e)) return
               console.error('Polling error:', e)
             }
             
             if (attempts >= maxAttempts) {
-              isPolling = false
               status.textContent = t('rfid.deviceTimeout')
               status.className = 'fm-alert fm-alert-error'
               confirmBtn.disabled = false
             } else {
-              setTimeout(pollForResult, 2000)
+              if (!signal.aborted) rfidTimer = setTimeout(pollForResult, 2000)
             }
           }
           
-          setTimeout(pollForResult, 2000)
+          rfidTimer = setTimeout(pollForResult, 2000)
         } else {
           const msg = result.detail?.message || result.message || t('rfid.writeError')
           status.textContent = msg
@@ -503,7 +497,7 @@ import Layout from '../../layouts/Layout.astro'
           confirmBtn.disabled = false
         }
       } catch (err) {
-        if (isAbortError(err)) return
+        if (signal.aborted || isAbortError(err)) return
         status.textContent = t('rfid.writeError')
         status.className = 'fm-alert fm-alert-error'
         confirmBtn.disabled = false

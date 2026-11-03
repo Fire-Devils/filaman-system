@@ -13,6 +13,22 @@ export interface FilamentDetailRow {
   href?: string
 }
 
+export function safeExternalUrl(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  try {
+    const url = new URL(value, window.location.origin)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? escapeHtml(url.href) : ''
+  } catch {
+    return ''
+  }
+}
+
+export function renderFilamentDetailRow(row: FilamentDetailRow, translate: (key: string) => string): string {
+  const href = safeExternalUrl(row.href)
+  const value = escapeHtml(row.value)
+  return `<div class="filament-spec-row"><span class="filament-spec-label">${escapeHtml(translate(row.labelKey))}</span><span class="filament-spec-value">${href ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${value}</a>` : value}</span></div>`
+}
+
 export function spoolProfileImageUrl(filename: unknown): string {
   if (typeof filename !== 'string' || filename.length > 500 || filename.includes('..') || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(filename)) return ''
   return `/api/v1/filamentdb/spool-profile-image?image_file=${encodeURIComponent(filename)}`

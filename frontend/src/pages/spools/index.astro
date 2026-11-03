@@ -4,30 +4,6 @@ import Layout from '../../layouts/Layout.astro'
 
 <Layout title="FilaMan - Spools">
   <style>
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: var(--bg-hover); }
-  </style>
-  <style is:global>
-    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
-    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
-    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
-  </style>
-  <style>
-    .filter-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
-      align-items: center;
-    }
-    .filter-bar .fm-input-search {
-      flex: 1;
-      min-width: 200px;
-      max-width: 400px;
-    }
     .spinner {
       display: inline-block;
       width: 1.25rem;
@@ -42,22 +18,11 @@ import Layout from '../../layouts/Layout.astro'
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    .bulk-checkbox { cursor: pointer; vertical-align: middle; }
-    tr.bulk-selected { background: var(--bg-hover) !important; }
-    .bulk-action-bar {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-      background: var(--bg-elevated); border-top: 2px solid var(--accent);
-      padding: 12px 24px; display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-      transform: translateY(100%); transition: transform 0.2s ease;
-    }
-    .bulk-action-bar.visible { transform: translateY(0); }
-    .bulk-action-bar .bulk-count { font-weight: 600; margin-right: 8px; white-space: nowrap; }
   
   </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="spools.title">Spools</h1>
-    <div style="display: flex; gap: 8px;">
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="spools.title">Spools</h1>
+    <div class="fm-list-controls">
       <button id="btn-add-from-empty" class="fm-btn fm-btn-outline" data-i18n="spools.addSpoolFromEmpty">
         From Empty Spool
       </button>
@@ -210,12 +175,12 @@ import Layout from '../../layouts/Layout.astro'
     import { formatSpoolMetrics, spoolRemainingWeight } from '../../lib/spool-reel'
     import { t, getLang, initI18n, translatePage } from '../../lib/i18n'
     import { cachedFetch, CACHE_KEYS, fetchSequential, invalidateCache } from '../../lib/cache'
-    import { assignableLocations } from '../../lib/driver-managed-locations'
+    import { assignableLocations, type LocationLike } from '../../lib/driver-managed-locations'
     import { filamentColorValues, toColorSwatchBackground } from '../../lib/colors'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
-    import type { SystemExtraFieldDef } from '../../lib/extra-fields'
+    import { isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
@@ -234,6 +199,8 @@ import Layout from '../../layouts/Layout.astro'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency } from '../../lib/format'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { fetchAllPages } from '../../lib/api'
+    import type { AppDialogs } from '../../lib/form-dialog'
+    const dialogWindow = window as unknown as AppDialogs
     await initI18n()
 
     let currentPage = 1
@@ -247,7 +214,7 @@ import Layout from '../../layouts/Layout.astro'
     })()
     type SpoolStatus = { id: number; key: string; label: string }
     let statuses: SpoolStatus[] = []
-    let locations: any[] = []
+    let locations: (LocationLike & { id: number; name: string })[] = []
     type SpoolFilterScope = {
       manufacturers: HeaderFilterOption[]
       materials: string[]
@@ -259,9 +226,35 @@ import Layout from '../../layouts/Layout.astro'
       by_status: Record<string, SpoolFilterScope>
     }
     let spoolFilterFacets: SpoolFilterFacets | null = null
-    let allSpools: any[] = []
+    type SpoolFilament = {
+      id: number
+      manufacturer_id: number
+      manufacturer?: { id: number; name: string; logo_url?: string | null } | null
+      designation: string
+      material_type: string
+      manufacturer_color_name: string | null
+      colors: { display_name_override?: string | null; color?: { name: string; hex_code: string } | null }[]
+    }
+    type Spool = {
+      id: number
+      filament_id: number
+      filament?: SpoolFilament | null
+      status_id: number
+      location_id: number | null
+      remaining_weight_g: number | null
+      metrics?: import('../../lib/spool-reel').SpoolMetrics | null
+      low_weight_threshold_g: number
+      purchase_price: number | null
+      purchase_date: string | null
+      last_used_at: string | null
+      rfid_uid: string | null
+      rfid_uid_2?: string | null
+      custom_fields: Record<string, unknown> | null
+      [key: string]: unknown
+    }
+    let allSpools: Spool[] = []
     let totalSpools = 0
-    let activeDevices: any[] = []
+    let activeDevices: { id: number; name: string; ip_address: string }[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
     const selectedSpoolIds = new Set<number>()
@@ -304,6 +297,12 @@ import Layout from '../../layouts/Layout.astro'
     let splHeaderFilters: HeaderFilterController | null = null
 
     const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('clear_filters') === '1') {
+      savedFilterState = null
+      columnFilters = {}
+      currentPage = 1
+      removeFilterUrlParams('clear_filters')
+    }
     const normalizeSavedValues = (value: unknown): string[] => {
       if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
       return typeof value === 'string' && value.length > 0 ? [value] : []
@@ -367,23 +366,23 @@ import Layout from '../../layouts/Layout.astro'
       if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
-    function getFilamentForSpool(spool: any): any {
+    function getFilamentForSpool(spool: Spool): SpoolFilament | null {
       // Use embedded filament from API response
       return spool.filament || null
     }
 
-    function getManufacturerName(spool: any): string {
+    function getManufacturerName(spool: Spool): string {
       const fil = getFilamentForSpool(spool)
       if (!fil) return '-'
       return fil.manufacturer?.name || '-'
     }
 
-    function getMaterialType(spool: any): string {
+    function getMaterialType(spool: Spool): string {
       const fil = getFilamentForSpool(spool)
       return fil ? fil.material_type : '-'
     }
 
-    function getSortValue(item: any, key: string): any {
+    function getSortValue(item: Spool, key: string): unknown {
       if (key === 'filament_id') return getFilamentName(item)
       if (key === 'status') return getStatusLabel(item.status_id)
       if (key === 'remaining_weight_g') return spoolRemainingWeight(item)
@@ -400,7 +399,7 @@ import Layout from '../../layouts/Layout.astro'
       return item[key]
     }
 
-    function sortSpools(spools: any[]): any[] {
+    function sortSpools(spools: Spool[]): Spool[] {
       if (!sortKey || !sortDirection) return spools
       const sortBy = sortKey
       return [...spools].sort((a, b) => {
@@ -408,14 +407,14 @@ import Layout from '../../layouts/Layout.astro'
         const bVal = getSortValue(b, sortBy)
         if (sortBy === 'remaining_percent' || sortBy === 'remaining_length_m' || sortBy === 'remaining_weight_g') {
           if (aVal == null || bVal == null) return aVal == null ? (bVal == null ? a.id - b.id : 1) : -1
-          return (aVal - bVal) * (sortDirection === 'asc' ? 1 : -1) || a.id - b.id
+          return (Number(aVal) - Number(bVal)) * (sortDirection === 'asc' ? 1 : -1) || a.id - b.id
         }
         let cmp = 0
         if (aVal == null && bVal == null) cmp = 0
         else if (aVal == null) cmp = 1
         else if (bVal == null) cmp = -1
-        else if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
-        else cmp = aVal - bVal
+        else if (typeof aVal === 'string') cmp = aVal.localeCompare(String(bVal))
+        else cmp = Number(aVal) - Number(bVal)
         return sortDirection === 'asc' ? cmp : -cmp
       })
     }
@@ -444,7 +443,7 @@ import Layout from '../../layouts/Layout.astro'
       return hasLocalColumnFilters() || sortKey === 'colors' || sortKey === 'status'
     }
 
-    function getSpoolFilterValue(spool: any, key: string): unknown {
+    function getSpoolFilterValue(spool: Spool, key: string): unknown {
       const filament = getFilamentForSpool(spool)
       if (key === 'id') return spool.id
       if (key === 'filament') return filament ? `${filament.designation} ${filament.material_type}` : ''
@@ -471,7 +470,7 @@ import Layout from '../../layouts/Layout.astro'
       return null
     }
 
-    function filterSpools(spools: any[]): any[] {
+    function filterSpools(spools: Spool[]): Spool[] {
       const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
       return spools.filter((spool) => activeFilters.every(([key, filter]) =>
         matchesColumnFilter(getSpoolFilterValue(spool, key), filter)))
@@ -632,6 +631,11 @@ import Layout from '../../layouts/Layout.astro'
         const response = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error(`Failed to load spool statuses (${response.status})`)
         statuses = await response.json()
+        const scope = urlParams.get('status_scope')
+        if (['active', 'archived', 'all'].includes(scope || '')) {
+          columnFilters.status = multiColumnFilter(statuses.filter(status => scope === 'all' || (status.key === 'archived') === (scope === 'archived')).map(status => String(status.id)))
+          splHeaderFilters?.setValue('status', columnFilters.status)
+        }
         splHeaderFilters?.setOptions('status', statuses.map((status) => {
           const i18nKey = `spools.status${status.key.charAt(0).toUpperCase() + status.key.slice(1)}`
           return { value: String(status.id), label: t(i18nKey) || status.label }
@@ -682,7 +686,7 @@ import Layout from '../../layouts/Layout.astro'
 
         if (groupBy || needsAllSpoolData()) {
           // Grouping and client-side typed filters require the complete backend-filtered result.
-          const data = await fetchAllPages<any>(`/api/v1/spools?${params}`)
+          const data = await fetchAllPages<Spool>(`/api/v1/spools?${params}`)
           if (requestId !== filterRequestId) return
           allSpools = data.items
           totalSpools = data.total
@@ -737,7 +741,7 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
     
-    function getFilamentName(spool: any): string {
+    function getFilamentName(spool: Spool): string {
       const f = getFilamentForSpool(spool)
       return f ? `${f.designation} (${f.material_type})` : `#${spool.filament_id}`
     }
@@ -755,10 +759,10 @@ import Layout from '../../layouts/Layout.astro'
       return l ? l.name : `#${locationId}`
     }
 
-    function getColorDots(spool: any): string {
+    function getColorDots(spool: Spool): string {
       const fil = getFilamentForSpool(spool)
       if (!fil || !fil.colors || fil.colors.length === 0) return ''
-      return fil.colors.map((fc: any) => {
+      return fil.colors.map((fc) => {
         const c = fc.color
         if (!c) return ''
         return `<span title="${fc.display_name_override || c.name}" style="display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: ${toColorSwatchBackground(c.hex_code)}; border: 1px solid var(--border); vertical-align: middle; margin-right: 2px;"></span>`
@@ -777,7 +781,7 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
-    function renderSpoolRow(s: any): string {
+    function renderSpoolRow(s: Spool): string {
       const metrics = formatSpoolMetrics(s.metrics, getLang())
       const remainingWeight = spoolRemainingWeight(s)
       const isLow = remainingWeight !== null &&
@@ -816,7 +820,7 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-id" style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
           <td class="col-filament" style="padding: 12px;">${getFilamentName(s)}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${getManufacturerName(s)}</td>
-          <td class="col-logo" style="padding: 12px;">${getFilamentForSpool(s)?.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${getFilamentForSpool(s).manufacturer.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
+          <td class="col-logo" style="padding: 12px;">${getFilamentForSpool(s)?.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${fil?.manufacturer?.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-material" style="padding: 12px; color: var(--text-muted);">${getMaterialType(s)}</td>
           <td class="col-colors" style="padding: 12px;">${colorDots || '-'}</td>
           <td class="col-status" style="padding: 12px;">${getStatusLabel(s.status_id)}</td>
@@ -833,7 +837,7 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-last_used" style="padding: 12px; color: var(--text-muted);">${s.last_used_at ? new Date(s.last_used_at).toLocaleDateString() : '-'}</td>
           <td class="col-total_weight" style="padding: 12px; font-family: monospace;">${s.initial_total_weight_g != null ? s.initial_total_weight_g + 'g' : '-'}</td>
           <td class="col-empty_weight" style="padding: 12px; font-family: monospace;">${s.empty_spool_weight_g != null ? s.empty_spool_weight_g + 'g' : '-'}</td>
-          ${((window as any).__spoolExtraFields || []).map((f: any) => {
+          ${((window as typeof window & { __spoolExtraFields?: SystemExtraFieldDef[] }).__spoolExtraFields || []).map((f) => {
             const val = s.custom_fields?.[f.key]
             const display = f.field_type === 'checkbox' ? (val ? '✓' : '✗') : (val ?? '-')
             return `<td class="col-cf_${f.key}" style="padding: 12px; color: var(--text-muted);">${display}</td>`
@@ -843,7 +847,7 @@ import Layout from '../../layouts/Layout.astro'
       `
     }
     
-    function renderSpools(spools: any[]) {
+    function renderSpools(spools: Spool[]) {
       const tbody = document.getElementById('spools-table')!
       if (spools.length === 0) {
         const { search } = getFilterValues()
@@ -864,7 +868,7 @@ import Layout from '../../layouts/Layout.astro'
       splResize.refreshColumns()
     }
 
-    function renderGroupedSpools(spools: any[]) {
+    function renderGroupedSpools(spools: Spool[]) {
       const tbody = document.getElementById('spools-table')!
 
       if (spools.length === 0) {
@@ -881,7 +885,7 @@ import Layout from '../../layouts/Layout.astro'
       }
 
       // Group by filament_id + color combination (same filament = same color + material)
-      const groups = new Map<string, { label: string; colorDots: string; manufacturer: string; material: string; spools: any[] }>()
+      const groups = new Map<string, { label: string; colorDots: string; manufacturer: string; material: string; spools: Spool[] }>()
 
       spools.forEach(s => {
         const fil = getFilamentForSpool(s)
@@ -1063,7 +1067,10 @@ import Layout from '../../layouts/Layout.astro'
           type: 'multi',
           options: [],
           initialValue: columnFilters.status,
-          onApply: (value) => applyColumnFilter('status', value),
+          onApply: (value) => {
+            removeFilterUrlParams('status_scope')
+            applyColumnFilter('status', value)
+          },
         },
         {
           key: 'location',
@@ -1216,13 +1223,13 @@ import Layout from '../../layouts/Layout.astro'
       onClearColumns: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
-        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material')
+        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
         applyFiltersAndRender()
       },
       onClearAll: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
-        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material')
+        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
         applyFiltersAndRender()
       },
     })
@@ -1284,7 +1291,8 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const res = await fetch('/api/v1/system-extra-fields?target_type=spool', { credentials: 'include', signal: getAbortSignal() })
         if (!res.ok) return
-        const fields: SystemExtraFieldDef[] = await res.json()
+        const definitions: SystemExtraFieldDef[] = await res.json()
+        const fields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
         if (fields.length === 0) return
         spoolExtraFields = fields
         const extraGroup: ColumnGroup = {
@@ -1305,7 +1313,7 @@ import Layout from '../../layouts/Layout.astro'
           })
         }
         // Store fields for renderSpoolRow access
-        ;(window as any).__spoolExtraFields = fields
+        ;(window as typeof window & { __spoolExtraFields?: SystemExtraFieldDef[] }).__spoolExtraFields = fields
         // Refresh column reorder to include new extra field columns
         splReorder.refreshColumns()
         splResize.refreshColumns()
@@ -1381,7 +1389,7 @@ import Layout from '../../layouts/Layout.astro'
       updateBulkBar()
     }
 
-    ;(window as any).__toggleSpoolSelection = toggleSpoolSelection
+    ;(window as typeof window & { __toggleSpoolSelection: typeof toggleSpoolSelection }).__toggleSpoolSelection = toggleSpoolSelection
 
     // Select all checkbox
     document.getElementById('bulk-select-all')?.addEventListener('change', (e) => {
@@ -1449,13 +1457,13 @@ import Layout from '../../layouts/Layout.astro'
           body: JSON.stringify({ spool_ids: [...selectedSpoolIds], ...body })
         })
         if (!res.ok) throw new Error('API error')
-        await (window as any).__fmSuccess(t('spools.bulkSuccess', { count }))
+        await dialogWindow.__fmSuccess(t('spools.bulkSuccess', { count }))
         selectedSpoolIds.clear()
         updateBulkBar()
         loadSpools()
       } catch {
         // user-initiated action — show error even on abort
-        (window as any).__fmAlert(t('spools.bulkError'))
+        dialogWindow.__fmAlert(t('spools.bulkError'))
       }
     }
 
@@ -1463,7 +1471,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('bulk-btn-delete')?.addEventListener('click', async () => {
       const count = selectedSpoolIds.size
       if (count === 0) return
-      const result = await (window as any).__fmConfirm(
+      const result = await dialogWindow.__fmConfirm(
         t('spools.bulkConfirmDelete', { count }),
         {
           title: t('spools.bulkDelete'),
@@ -1482,13 +1490,13 @@ import Layout from '../../layouts/Layout.astro'
           body: JSON.stringify({ spool_ids: [...selectedSpoolIds], permanent: result.checked })
         })
         if (!res.ok) throw new Error('API error')
-        await (window as any).__fmSuccess(t('spools.bulkDeleteSuccess', { count }))
+        await dialogWindow.__fmSuccess(t('spools.bulkDeleteSuccess', { count }))
         selectedSpoolIds.clear()
         updateBulkBar()
         loadSpools()
       } catch {
         // user-initiated action — show error even on abort
-        (window as any).__fmAlert(t('spools.bulkError'))
+        dialogWindow.__fmAlert(t('spools.bulkError'))
       }
     })
 
@@ -1503,7 +1511,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('bulk-btn-location')?.addEventListener('click', async () => {
       if (selectedSpoolIds.size === 0) return
       // Driver-managed AMS slots are claimed by the driver, never in bulk.
-      const options = assignableLocations(locations).map((l: any) => `<option value="${l.id}">${l.name}</option>`).join('')
+      const options = assignableLocations(locations).map((l) => `<option value="${l.id}">${l.name}</option>`).join('')
       const value = await openBulkPrompt(
         t('spools.bulkSetLocation'),
         `<select class="fm-select" style="width: 100%;">${options}</select>`
@@ -1515,7 +1523,7 @@ import Layout from '../../layouts/Layout.astro'
     // Clear Location
     document.getElementById('bulk-btn-clear-location')?.addEventListener('click', async () => {
       if (selectedSpoolIds.size === 0) return
-      const confirmed = await (window as any).__fmConfirm(
+      const confirmed = await dialogWindow.__fmConfirm(
         t('spools.bulkClearLocation'),
         { title: t('spools.bulkClearLocation'), okLabel: t('common.confirm'), isDanger: false }
       )
@@ -1629,7 +1637,7 @@ import Layout from '../../layouts/Layout.astro'
     // RFID Modal Logic
     let currentRfidSpoolId: number | null = null
     
-    ;(window as any).openRfidModal = (spoolId: number) => {
+    ;(window as unknown as { openRfidModal: (spoolId: number) => void }).openRfidModal = (spoolId: number) => {
       currentRfidSpoolId = spoolId
       const modal = document.getElementById('rfid-modal')!
       const text = document.getElementById('rfid-text')!
@@ -1897,12 +1905,12 @@ import Layout from '../../layouts/Layout.astro'
     try {
       const signal = getAbortSignal()
       // Reuse already-loaded statuses or fetch if not yet available
-      let allStatuses = statuses.length > 0 ? statuses : null
+      let allStatuses: SpoolStatus[] | null = statuses.length > 0 ? statuses : null
       if (!allStatuses) {
         const statusesRes = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal })
         allStatuses = statusesRes.ok ? await statusesRes.json() : []
       }
-      const emptyStatus = (allStatuses as any[]).find((s: any) => s.key === 'empty')
+      const emptyStatus = (allStatuses || []).find((s) => s.key === 'empty')
       if (!emptyStatus) {
         fromEmptyNone.style.display = ''
         fromEmptyDropdownEl.style.display = 'none'
@@ -1910,7 +1918,7 @@ import Layout from '../../layouts/Layout.astro'
       }
 
       // Load all empty spools with pagination (API limit: 200 per page)
-      const { items: emptySpools } = await fetchAllPages<any>(`/api/v1/spools?status_id=${emptyStatus.id}`)
+      const { items: emptySpools } = await fetchAllPages<Spool>(`/api/v1/spools?status_id=${emptyStatus.id}`)
 
       if (emptySpools.length === 0) {
         fromEmptyNone.style.display = ''
@@ -1918,7 +1926,7 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
 
-      emptySpools.forEach((s: any) => {
+      emptySpools.forEach((s) => {
         const filament = s.filament
         const mfg = filament?.manufacturer?.name || ''
         const designation = filament?.designation || ''
@@ -1990,7 +1998,7 @@ import Layout from '../../layouts/Layout.astro'
       const res = await fetch(`/api/v1/spools/${selectedEmptySpoolId}`, { credentials: 'include', signal: getAbortSignal() })
       if (!res.ok) return
       const spool = await res.json()
-      const payload: Record<string, any> = {}
+      const payload: Record<string, unknown> = {}
       if (spool.empty_spool_weight_g != null) payload.empty_spool_weight_g = spool.empty_spool_weight_g
       if (spool.rfid_uid) payload.rfid_uid = spool.rfid_uid
       if (spool.rfid_uid_2) payload.rfid_uid_2 = spool.rfid_uid_2

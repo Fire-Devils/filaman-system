@@ -1,0 +1,11 @@
+---
+interface Props { titleKey: string; title: string; id?: string; class?: string; widget?: string }
+const { titleKey, title, id, class: className, widget } = Astro.props
+---
+<section class:list={['fm-card', 'fm-section', className]} data-widget={widget}>
+  <header class="fm-section-header">
+    <h2 id={id} data-i18n={titleKey}>{title}</h2>
+    <slot name="actions" />
+  </header>
+  <div class="fm-section-body"><slot /></div>
+</section>

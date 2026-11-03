@@ -1,51 +1,25 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import FormSection from '../../components/FormSection.astro'
 ---
-
 <Layout title="FilaMan - App Settings">
-
-  <!-- Responsive: stack cards on mobile -->
-  <style>
-    @media (max-width: 768px) {
-      div[style*="grid-template-columns: repeat(2, 1fr)"] {
-        grid-template-columns: 1fr !important;
-      }
-    }
-  </style>
-
-  <div style="margin-bottom: 24px;">
-    <a href="/admin" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a>
-  </div>
-
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="admin.appSettingsTitle">App Settings</h1>
-  <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 24px;" data-i18n="admin.appSettingsSubtitle">Configure application settings</p>
-
-  <form id="app-settings-form" style="display: grid; gap: 20px;">
-    <!-- Grid container for the two cards -->
-    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; align-items: start;">
-      <!-- Card 1: Login Disabled -->
-      <div class="fm-card" style="padding: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <div style="flex: 1;">
-            <label data-i18n="admin.loginDisabled" style="font-weight: 500; display: block; margin-bottom: 4px;">Disable Login</label>
-            <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;" data-i18n="admin.loginDisabledHint">When enabled, all endpoints are accessible without authentication</p>
-          </div>
-          <label class="fm-toggle">
-            <input type="checkbox" id="login-disabled" />
-            <span class="fm-toggle-slider"></span>
-          </label>
-        </div>
-        <!-- Warning (moved inside card 1) -->
-        <div id="login-warning" class="hidden" style="margin-top: 12px; padding: 12px 16px; border-radius: 8px; background: var(--error-bg); color: var(--error-text); font-size: 0.85rem; border: 1px solid var(--error-border);" data-i18n="admin.loginDisabledWarning">
-          Warning: Disabling login removes all authentication. Only use in trusted environments!
-        </div>
+<div class="fm-settings-page">
+  <header class="fm-list-toolbar">
+    <div><a href="/admin" class="fm-admin-back">&larr; <span data-i18n="admin.backToAdmin">Back to Admin</span></a><h1 data-i18n="admin.appSettingsTitle">App Settings</h1></div>
+    <button type="submit" form="app-settings-form" id="save-btn" disabled class="fm-btn fm-btn-primary" data-i18n="admin.appSettingsSave">Save</button>
+  </header>
+  <form id="app-settings-form" class="fm-settings-grid">
+    <div id="form-message" class="hidden fm-settings-wide" role="status"></div>
+    <FormSection titleKey="admin.loginDisabled" title="Disable Login" id="login-title">
+      <div class="fm-settings-row">
+        <p class="fm-field-hint" id="login-hint" data-i18n="admin.loginDisabledHint">When enabled, all endpoints are accessible without authentication</p>
+        <label class="fm-toggle"><input type="checkbox" id="login-disabled" aria-labelledby="login-title" aria-describedby="login-hint" /><span class="fm-toggle-slider"></span></label>
       </div>
-
-      <!-- Card 2: Currency Selection -->
-      <div class="fm-card" style="padding: 20px;">
-        <label data-i18n="admin.appSettingsCurrencyLabel" style="font-weight: 500; display: block; margin-bottom: 4px;">Display Currency</label>
-        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px;" data-i18n="admin.appSettingsCurrencyDescription">Select the currency for displaying prices throughout the application</p>
-        <select id="currency" class="fm-select">
+      <div id="login-warning" class="fm-alert-error hidden" data-i18n="admin.loginDisabledWarning">Warning: Disabling login removes all authentication. Only use in trusted environments!</div>
+    </FormSection>
+    <FormSection titleKey="admin.appSettingsCurrencyLabel" title="Display Currency" id="currency-title">
+      <p class="fm-field-hint" data-i18n="admin.appSettingsCurrencyDescription">Select the currency for displaying prices throughout the application</p>
+      <select id="currency" aria-labelledby="currency-title" class="fm-select">
           <option value="EUR">EUR — Euro</option>
           <option value="USD">USD — US Dollar</option>
           <option value="GBP">GBP — British Pound</option>
@@ -60,109 +34,50 @@ import Layout from '../../layouts/Layout.astro'
           <option value="CZK">CZK — Czech Koruna</option>
           <option value="BRL">BRL — Brazilian Real</option>
         </select>
+    </FormSection>
+    <FormSection titleKey="admin.rfidSettingsTitle" title="RFID Settings">
+      <div class="fm-settings-row">
+        <label for="rfid-extended-data-enabled" data-i18n="admin.rfidExtendedDataEnabled">Write extended data</label>
+        <label class="fm-toggle"><input type="checkbox" id="rfid-extended-data-enabled" /><span class="fm-toggle-slider"></span></label>
+        <p class="fm-field-hint" data-i18n="admin.rfidExtendedDataEnabledHint">When enabled, additional filament data will be written to the RFID tag.</p>
       </div>
-    </div>
-
-    <!-- Filament Lookup Card (full width) -->
-    <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.filamentLookupTitle">Filament Lookup</h2>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 12px;" data-i18n="admin.filamentLookupDesc">Choose the catalog used to search while creating a filament. This does not affect bulk imports.</p>
-      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="filament-lookup-source" data-i18n="admin.filamentLookupLabel">Search source</label>
-      <select id="filament-lookup-source" class="fm-select" style="max-width: 320px;">
-        <option value="filamandb" data-i18n="admin.filamentLookupFilaManDB">FilaManDB</option>
-        <option value="disabled" data-i18n="admin.filamentLookupDisabled">Disabled</option>
-      </select>
-    </div>
-
-    <!-- RFID Extended Data Card (full width) -->
-    <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 16px;" data-i18n="admin.rfidSettingsTitle">RFID Settings</h2>
-
-      <!-- Toggle: Extended Data aktivieren -->
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-        <div style="flex: 1;">
-          <label data-i18n="admin.rfidExtendedDataEnabled" style="font-weight: 500; display: block; margin-bottom: 4px;">Write extended data</label>
-          <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;" data-i18n="admin.rfidExtendedDataEnabledHint">When enabled, additional filament data will be written to the RFID tag.</p>
-        </div>
-        <label class="fm-toggle">
-          <input type="checkbox" id="rfid-extended-data-enabled" />
-          <span class="fm-toggle-slider"></span>
-        </label>
-      </div>
-
-      <!-- Protokoll-Auswahl -->
-      <div id="rfid-protocol-section">
-        <label data-i18n="admin.rfidProtocol" style="font-weight: 500; display: block; margin-bottom: 4px;">Protocol</label>
-        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px;" data-i18n="admin.rfidProtocolHint">Select the protocol for the extended tag data.</p>
-        <select id="rfid-protocol" class="fm-select" style="max-width: 240px;">
+      <div id="rfid-protocol-section" class="fm-settings-row">
+        <label for="rfid-protocol" data-i18n="admin.rfidProtocol">Protocol</label><select id="rfid-protocol" class="fm-select" style="max-width: 240px;">
           <option value="openspool" data-i18n="admin.rfidProtocolOpenspool">OpenSpool</option>
           <option value="filaman" data-i18n="admin.rfidProtocolFilaman">FilaMan</option>
         </select>
+        <p class="fm-field-hint" data-i18n="admin.rfidProtocolHint">Select the protocol for the extended tag data.</p>
       </div>
-
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-        <div style="flex: 1;">
-          <label data-i18n="admin.rfidDisplayColons" style="font-weight: 500; display: block; margin-bottom: 4px;">Show colons in RFID UIDs</label>
-          <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;" data-i18n="admin.rfidDisplayColonsHint">Display hexadecimal UIDs as XX:XX:XX. This does not change stored values or matching.</p>
-        </div>
-        <label class="fm-toggle">
-          <input type="checkbox" id="rfid-display-colons" />
-          <span class="fm-toggle-slider"></span>
-        </label>
+      <div class="fm-settings-row">
+        <label for="rfid-display-colons" data-i18n="admin.rfidDisplayColons">Show colons in RFID UIDs</label>
+        <label class="fm-toggle"><input type="checkbox" id="rfid-display-colons" /><span class="fm-toggle-slider"></span></label>
+        <p class="fm-field-hint" data-i18n="admin.rfidDisplayColonsHint">Display hexadecimal UIDs as XX:XX:XX. This does not change stored values or matching.</p>
       </div>
-    </div>
-
-    <!-- Spool Weight Defaults Card (full width) -->
-    <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.spoolWeightDefaultsTitle">Spool Weight Defaults</h2>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;" data-i18n="admin.spoolWeightDefaultsDesc">Global weight settings applied to all spools. Individual spools can override these on their Edit page.</p>
-
-      <div>
-        <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="default-spool-core-weight" data-i18n="admin.defaultCoreWeightLabel">Default Core / Adapter Weight (g)</label>
-        <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 8px;">
+    </FormSection>
+    <FormSection titleKey="admin.spoolWeightDefaultsTitle" title="Spool Weight Defaults">
+      <p class="fm-field-hint" data-i18n="admin.spoolWeightDefaultsDesc">Global weight settings applied to all spools. Individual spools can override these on their Edit page.</p>
+      <div class="fm-settings-row"><label for="default-spool-core-weight" data-i18n="spools.spoolCoreWeightLabel">Core / Adapter Weight</label>
+        <div class="fm-settings-number"><input type="number" id="default-spool-core-weight" step="1" min="0" placeholder="0" class="fm-input" aria-describedby="default-core-hint" /><span>g</span></div>
+      </div>
+      <p class="fm-field-hint" id="default-core-hint">
           <span data-i18n="admin.defaultCoreWeightHint">Extra weight added on top of the empty spool weight when calculating remaining filament from a scale reading. Use this for cardboard inner tubes, spool holders, or scale adapters that are always present when weighing a spool.</span>
           <br><strong data-i18n="admin.defaultCoreWeightFormulaLabel">Formula:</strong> <span data-i18n="admin.defaultCoreWeightFormula">Remaining = Scale reading − Empty spool weight − Core/adapter weight.</span>
           <br><span data-i18n="admin.defaultCoreWeightDisableHint">Leave blank or set to 0 to disable.</span>
         </p>
-        <input
-          type="number"
-          id="default-spool-core-weight"
-          step="1"
-          min="0"
-          placeholder="0 (disabled)"
-          data-i18n-placeholder="admin.defaultCoreWeightPlaceholder"
-          class="fm-input"
-          style="max-width: 200px;"
-        />
-      </div>
-    </div>
-
-    <!-- Slicer Profile Fallback Card (full width) -->
-    <div class="fm-card" style="padding: 20px;">
-      <h2 style="font-size: 1rem; font-weight: 600; margin: 0 0 4px;" data-i18n="admin.slicerProfileFallbackTitle">Slicer Profile Fallback</h2>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 16px;" data-i18n="admin.slicerProfileFallbackDesc">
-        Determines which profile is sent to a Bambu printer's AMS slot when no specific slicer
-        profile resolves for a filament (e.g. a third-party filament with no matching cloud profile
-        for the connected printer model).
-      </p>
-
-      <label style="font-weight: 500; display: block; margin-bottom: 4px;" for="bambu-unmatched-fallback" data-i18n="admin.slicerFallbackLabel">Default for unmatched filament</label>
-      <select id="bambu-unmatched-fallback" class="fm-select" style="max-width: 320px;">
+    </FormSection>
+    <FormSection titleKey="admin.slicerProfileFallbackTitle" title="Slicer Profile Fallback">
+      <p class="fm-field-hint" data-i18n="admin.slicerProfileFallbackDesc">Determines which profile is sent to a Bambu printer's AMS slot when no specific slicer profile resolves for a filament (e.g. a third-party filament with no matching cloud profile for the connected printer model).</p>
+      <div class="fm-settings-row"><label for="bambu-unmatched-fallback" data-i18n="admin.slicerFallbackLabel">Default for unmatched filament</label><select id="bambu-unmatched-fallback" class="fm-select" style="max-width: 320px;">
         <option value="generic" data-i18n="admin.slicerFallbackGeneric">Generic profile (Generic PLA, PETG, …)</option>
         <option value="bambu" data-i18n="admin.slicerFallbackBambu">Bambu profile (Bambu PLA Basic, PETG Basic, …)</option>
-      </select>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin: 8px 0 0;">
-        <span data-i18n="admin.slicerFallbackHintPre">Choose</span> <strong data-i18n="admin.slicerFallbackHintStrong">Bambu profile</strong> <span data-i18n="admin.slicerFallbackHintPost">if you prefer Bambu's own material profiles for third-party filament instead of the bland Generic ones. Falls back to Generic for materials without a Bambu-brand equivalent.</span>
-      </p>
-    </div>
-
-    <!-- Form message AND Save button OUTSIDE the cards, below the grid -->
-    <div id="form-message" class="hidden" style="padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;"></div>
-    <button type="submit" id="save-btn" class="fm-btn fm-btn-primary" style="justify-self: start; padding: 10px 28px;" data-i18n="admin.appSettingsSave">Save</button>
+      </select></div>
+      <p class="fm-field-hint"><span data-i18n="admin.slicerFallbackHintPre">Choose</span> <strong data-i18n="admin.slicerFallbackHintStrong">Bambu profile</strong> <span data-i18n="admin.slicerFallbackHintPost">if you prefer Bambu's own material profiles for third-party filament instead of the bland Generic ones. Falls back to Generic for materials without a Bambu-brand equivalent.</span></p>
+    </FormSection>
   </form>
-
+</div>
   <script>
     import { t, initI18n } from '../../lib/i18n'
+    import { bindFormState } from '../../lib/form-state'
     import { getAbortSignal } from '../../lib/abort'
     import { initCurrency } from '../../lib/format'
 
@@ -181,17 +96,17 @@ import Layout from '../../layouts/Layout.astro'
       const warningDiv = document.getElementById('login-warning')!
       const formMessage = document.getElementById('form-message')!
       const saveBtn = document.getElementById('save-btn') as HTMLButtonElement
+      const formState = bindFormState(form, saveBtn)
       const rfidExtendedDataInput = document.getElementById('rfid-extended-data-enabled') as HTMLInputElement
       const rfidProtocolSelect = document.getElementById('rfid-protocol') as HTMLSelectElement
       const rfidProtocolSection = document.getElementById('rfid-protocol-section')!
       const rfidDisplayColonsInput = document.getElementById('rfid-display-colons') as HTMLInputElement
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
-      const filamentLookupSourceSelect = document.getElementById('filament-lookup-source') as HTMLSelectElement
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
-        formMessage.className = isError ? 'fm-alert-error' : 'fm-alert-success'
+        formMessage.className = `fm-settings-wide ${isError ? 'fm-alert-error' : 'fm-alert-success'}`
         formMessage.classList.remove('hidden')
         setTimeout(() => formMessage.classList.add('hidden'), 5000)
       }
@@ -222,7 +137,7 @@ import Layout from '../../layouts/Layout.astro'
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
-          filamentLookupSourceSelect.value = data.filament_lookup_source === 'disabled' ? 'disabled' : 'filamandb'
+          formState.reset()
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
         }
@@ -234,7 +149,8 @@ import Layout from '../../layouts/Layout.astro'
       form.addEventListener('submit', async (e) => {
         e.preventDefault()
 
-        saveBtn.disabled = true
+        if (formState.busy || saveBtn.disabled || !form.reportValidity()) return
+        formState.setBusy(true)
         saveBtn.textContent = t('admin.appSettingsSaving')
 
         const rawCoreWeight = defaultSpoolCoreWeightInput.value.trim()
@@ -246,7 +162,6 @@ import Layout from '../../layouts/Layout.astro'
           rfid_display_colons: rfidDisplayColonsInput.checked,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
-          filament_lookup_source: filamentLookupSourceSelect.value,
         }
 
         try {
@@ -264,6 +179,7 @@ import Layout from '../../layouts/Layout.astro'
           if (resp.ok) {
             localStorage.setItem('currency', currencySelect.value)
             localStorage.setItem('rfid_display_colons', String(rfidDisplayColonsInput.checked))
+            formState.reset()
             showMessage(t('admin.appSettingsSaveSuccess'), false)
           } else {
             const err = await resp.json().catch(() => ({}))
@@ -278,7 +194,7 @@ import Layout from '../../layouts/Layout.astro'
         } catch {
           showMessage(t('admin.appSettingsSaveFailed'), true)
         } finally {
-          saveBtn.disabled = false
+          formState.setBusy(false)
           saveBtn.textContent = t('admin.appSettingsSave')
         }
       })

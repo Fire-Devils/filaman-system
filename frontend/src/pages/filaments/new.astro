@@ -20,6 +20,12 @@ import Layout from '../../layouts/Layout.astro'
 
     await initI18n()
 
+    const createSpool = new URLSearchParams(window.location.search).get('create_spool') === '1'
+    if (createSpool) {
+      document.querySelectorAll<HTMLAnchorElement>('.detail-back-link, #filament-form-cancel').forEach(link => {
+        link.href = '/filaments?select_for_spool=1'
+      })
+    }
     const form = document.getElementById('filament-form') as HTMLFormElement
     const csrfToken = () => {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -45,7 +51,7 @@ import Layout from '../../layouts/Layout.astro'
         }
         invalidateCachePrefix(CACHE_KEYS.FILAMENTS)
         const filament = await response.json()
-        window.location.href = `/filaments/${filament.id}`
+        window.location.href = createSpool ? `/spools/new?filament_id=${filament.id}` : `/filaments/${filament.id}`
       },
     })
 

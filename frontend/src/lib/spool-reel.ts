@@ -66,7 +66,7 @@ function point(theta: number, offset: number): [number, number] {
   return [104 + radius * Math.cos(Math.PI + theta), 104 + radius * Math.sin(Math.PI + theta)]
 }
 
-export function buildReelSegments(fraction: number, inputColors: string[], mode: 'striped' | 'gradient') {
+export function buildReelSegments(fraction: number, inputColors: string[], mode: 'striped' | 'gradient', colorSteps = 0) {
   const colors = inputColors.map(normalizeHexCode).filter(Boolean)
   if (!valid(fraction) || fraction === 0) return []
   if (!colors.length) colors.push('#00000000')
@@ -77,32 +77,50 @@ export function buildReelSegments(fraction: number, inputColors: string[], mode:
   for (let i = Math.floor(start / END * count); i < count; i++) {
     const from = Math.max(start, i / count * END), to = (i + 1) / count * END
     const progress = traveled((from + to) / 2) / TOTAL_LENGTH
+    const colorProgress = colorSteps > 1 ? Math.round(progress * (colorSteps - 1)) / (colorSteps - 1) : progress
     const bands = mode === 'striped' ? colors.length : 1
     for (let band = 0; band < bands; band++) {
       const offset = mode === 'striped' ? width * ((band + .5) / bands - .5) : 0
       result.push({ from, to, progress, band, a: point(from, offset), b: point(to, offset),
-        width: width / bands, color: reelColorAt(mode === 'striped' ? [colors[band]] : colors, progress) })
+        width: width / bands, color: reelColorAt(mode === 'striped' ? [colors[band]] : colors, colorProgress) })
     }
   }
   return result
 }
 
-export function renderSpoolReel(fraction: number | null, colors: string[], mode: 'striped' | 'gradient'): string {
-  const samples = buildReelSegments(valid(fraction) ? fraction : 1, colors, mode)
-    .filter(s => Math.min(s.a[0], s.b[0]) <= 105 && Math.min(s.a[1], s.b[1]) <= 105)
+let reelSequence = 0
+
+export function renderSpoolReel(fraction: number | null, colors: string[], mode: 'striped' | 'gradient', options: { view?: 'quarter' | 'full' } = {}): string {
+  const full = options.view === 'full'
+  const patternId = full ? `spool-reel-checker-${++reelSequence}` : 'spool-reel-checker'
+  // At gallery size, 128 color/alpha stops avoid one SVG node per winding sample.
+  const samples = buildReelSegments(valid(fraction) ? fraction : 1, colors, mode, full ? 128 : 0)
+    .filter(s => full || (Math.min(s.a[0], s.b[0]) <= 105 && Math.min(s.a[1], s.b[1]) <= 105))
   const checkerboard = samples.some(s => !s.color.endsWith(',1.0000)'))
-    ? '<defs><pattern id="spool-reel-checker" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#FFFFFF"/><path d="M0 0h4v4H0zM4 4h4v4H4z" fill="#D1D5DB"/></pattern></defs>' : ''
+    ? `<defs><pattern id="${patternId}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#FFFFFF"/><path d="M0 0h4v4H0zM4 4h4v4H4z" fill="#D1D5DB"/></pattern></defs>` : ''
+  // Gallery reels batch identical strokes to avoid thousands of SVG nodes per card.
+  const groups = new Map<string, string[]>()
+  const path = (geometry: string, attributes: string) => {
+    if (!full) return `<path d="${geometry}" ${attributes}/>`
+    const group = groups.get(attributes) ?? []
+    group.push(geometry)
+    groups.set(attributes, group)
+    return ''
+  }
+  const coordinates = (point: number[]) => full ? point.map(value => Number(value.toFixed(2))).join(',') : point.join(',')
   const paths = samples.map(s => {
-    const geometry = `d="M${s.a.join(',')}L${s.b.join(',')}" stroke-width="${s.width}" stroke-linecap="round"`
-    const backing = s.color.endsWith(',1.0000)') ? '' : `<path ${geometry} stroke="url(#spool-reel-checker)"/>`
-    return `${backing}<path ${geometry} stroke="${s.color}"/>`
+    const geometry = `M${coordinates(s.a)}L${coordinates(s.b)}`
+    const attributes = `stroke-width="${s.width}" stroke-linecap="round"`
+    const backing = s.color.endsWith(',1.0000)') ? '' : path(geometry, `${attributes} stroke="url(#${patternId})"`)
+    return backing + path(geometry, `${attributes} stroke="${s.color}"`)
   }).join('')
   const highlights = samples.map(s => {
     const alpha = Number(s.color.match(/,([^,]+)\)$/)![1])
-    return `<path d="M${s.a.join(',')}L${s.b.join(',')}" stroke="white" stroke-opacity="${alpha * .4}" stroke-width="${s.width * .18}" stroke-linecap="round"/>`
+    return path(`M${coordinates(s.a)}L${coordinates(s.b)}`, `${full ? 'transform="translate(-.24,-.24)" ' : ''}stroke="white" stroke-opacity="${alpha * .4}" stroke-width="${s.width * .18}" stroke-linecap="round"`)
   }).join('')
-  return `<span class="spool-reel-corner" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 104" aria-hidden="true" fill="none">
-    ${checkerboard}${paths}<g transform="translate(-.24,-.24)">${highlights}</g>
+  const groupedPaths = [...groups].map(([attributes, geometry]) => `<path d="${geometry.join('')}" ${attributes}/>`).join('')
+  return `<span class="${full ? 'spool-reel-full' : 'spool-reel-corner'}" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${full ? 208 : 104} ${full ? 208 : 104}" aria-hidden="true" fill="none">
+    ${checkerboard}${groupedPaths}${paths}<g transform="translate(-.24,-.24)">${highlights}</g>
     <image href="/reel-flange.webp" x="0" y="0" width="208" height="208" opacity=".42"/>
   </svg></span>`
 }

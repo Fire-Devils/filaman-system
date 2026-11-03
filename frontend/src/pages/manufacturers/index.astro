@@ -3,35 +3,13 @@ import Layout from '../../layouts/Layout.astro'
 ---
 
 <Layout title="FilaMan - Manufacturers">
-  <style>
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { background: var(--bg-hover); }
-    .filter-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 16px;
-      align-items: center;
-    }
-    .filter-bar .fm-input-search {
-      flex: 1;
-      min-width: 200px;
-      max-width: 400px;
-    }
-  </style>
-  <style is:global>
-    .pagination-container { display: flex; justify-content: space-between; align-items: center; }
-    .pagination-pages { display: flex; gap: 4px; align-items: center; font-size: 0.8rem; }
-    .pagination-pages a { color: var(--accent); cursor: pointer; padding: 2px 6px; text-decoration: none; border-radius: 3px; }
-    .pagination-pages a:hover { text-decoration: underline; background: color-mix(in srgb, var(--accent) 10%, transparent); }
-    .pagination-pages .page-current { font-weight: 700; color: var(--accent); padding: 2px 8px; background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 3px; }
-    .pagination-pages .page-ellipsis { color: var(--text-muted); padding: 0 2px; }
-  </style>
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <h1 style="font-size: 1.8rem; font-weight: 700;" data-i18n="manufacturers.title">Manufacturers</h1>
-    <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
-      Add Manufacturer
-    </button>
+  <div class="fm-list-toolbar">
+    <h1 data-i18n="manufacturers.title">Manufacturers</h1>
+    <div class="fm-list-controls">
+      <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
+        Add Manufacturer
+      </button>
+    </div>
   </div>
 
   <div class="filter-bar">
@@ -86,21 +64,6 @@ import Layout from '../../layouts/Layout.astro'
 
   <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
 
-  <!-- Info Modal -->
-  <div id="info-modal-container" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 50;">
-    <div class="fm-card" style="width: 100%; max-width: 480px; margin: 16px;">
-      <h3 id="info-modal-title" style="font-size: 1.1rem; font-weight: 600; margin-bottom: 16px;">Manufacturer Details</h3>
-      <div id="info-modal-content" style="display: grid; gap: 12px;">
-        <!-- Filled via JS -->
-      </div>
-      <div style="margin-top: 24px;">
-        <button type="button" id="info-modal-close" class="fm-btn fm-btn-outline" style="width: 100%;" data-i18n="common.close">
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
-
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { cachedFetchAllPages, invalidateCachePrefix, CACHE_KEYS } from '../../lib/cache'
@@ -121,7 +84,9 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { checkFilamentDbActive } from '../../lib/filamentdb-lookup'
-    import { createManufacturerDialog } from '../../lib/manufacturer-dialog'
+    import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
+    import type { AppDialogs } from '../../lib/form-dialog'
+    const dialogWindow = window as unknown as AppDialogs
     await initI18n()
     await initCurrency()
 
@@ -131,7 +96,17 @@ import Layout from '../../layouts/Layout.astro'
       onSaved: () => loadManufacturers(),
     })
 
-    let manufacturers: any[] = []
+    type ManufacturerRow = Manufacturer & {
+      logo_url?: string | null
+      filament_count: number
+      spool_count: number
+      archived_spool_count: number
+      total_price_available: number
+      total_price_all: number
+      materials: string[]
+      material_types?: string[]
+    }
+    let manufacturers: ManufacturerRow[] = []
     let sortKey: string | null = 'name'
     let sortDirection: 'asc' | 'desc' | null = 'asc'
 
@@ -213,20 +188,20 @@ import Layout from '../../layouts/Layout.astro'
       if (table) syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
-    function getSortValue(item: any, key: string): any {
+    function getSortValue(item: ManufacturerRow, key: string): unknown {
       if (key === 'materials') return item.material_types?.length ?? 0
       return item[key]
     }
 
-    function sortManufacturers(items: any[]): any[] {
+    function sortManufacturers(items: ManufacturerRow[]): ManufacturerRow[] {
       if (!sortKey || !sortDirection) return items
       const sortBy = sortKey
       return [...items].sort((a, b) => {
         const aVal = getSortValue(a, sortBy) ?? ''
         const bVal = getSortValue(b, sortBy) ?? ''
         let cmp = 0
-        if (typeof aVal === 'string') cmp = aVal.localeCompare(bVal)
-        else cmp = aVal - bVal
+        if (typeof aVal === 'string') cmp = aVal.localeCompare(String(bVal))
+        else cmp = Number(aVal) - Number(bVal)
         return sortDirection === 'asc' ? cmp : -cmp
       })
     }
@@ -241,7 +216,7 @@ import Layout from '../../layouts/Layout.astro'
       return { search }
     }
 
-    function filterManufacturers(items: any[]): any[] {
+    function filterManufacturers(items: ManufacturerRow[]): ManufacturerRow[] {
       const { search } = getFilterValues()
       const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
 
@@ -261,7 +236,7 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
 
-    function getManufacturerFilterValue(manufacturer: any, key: string): unknown {
+    function getManufacturerFilterValue(manufacturer: ManufacturerRow, key: string): unknown {
       if (key === 'name') return manufacturer.name
       if (key === 'url') return manufacturer.url
       if (key === 'filaments') return manufacturer.filament_count
@@ -273,8 +248,8 @@ import Layout from '../../layouts/Layout.astro'
       return null
     }
 
-    function updateHeaderFilterOptions(items: any[]) {
-      const nameOptions: HeaderFilterOption[] = [...new Set(items.map((mf: any) => mf.name || '').filter(Boolean))]
+    function updateHeaderFilterOptions(items: ManufacturerRow[]) {
+      const nameOptions: HeaderFilterOption[] = [...new Set(items.map((mf) => mf.name || '').filter(Boolean))]
         .sort((a, b) => a.localeCompare(b))
         .map((name) => ({ value: name, label: name }))
       const materials = new Set<string>()
@@ -290,7 +265,7 @@ import Layout from '../../layouts/Layout.astro'
 
     async function loadManufacturers() {
       try {
-        const data = await cachedFetchAllPages(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
+        const data = await cachedFetchAllPages<ManufacturerRow>(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         manufacturers = data.items
         updateHeaderFilterOptions(manufacturers)
         if (isInitialLoad) {
@@ -460,7 +435,7 @@ import Layout from '../../layouts/Layout.astro'
       document.querySelectorAll('.manufacturer-row').forEach(row => {
         row.addEventListener('click', () => {
           const mf = JSON.parse((row as HTMLElement).dataset.mf!)
-          openInfoModal(mf)
+          manufacturerDialog.open(mf, { mode: 'view' })
         })
       })
 
@@ -481,7 +456,7 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
 
-          if (!(await (window as any).__fmConfirm(t('manufacturers.confirmDelete')))) return
+          if (!(await dialogWindow.__fmConfirm(t('manufacturers.confirmDelete')))) return
 
           try {
             // First attempt to delete normally
@@ -494,7 +469,7 @@ import Layout from '../../layouts/Layout.astro'
 
             // If conflict (409), prompt for cascade delete
             if (response.status === 409) {
-              const confirmCascade = await (window as any).__fmConfirm(
+              const confirmCascade = await dialogWindow.__fmConfirm(
                 t('manufacturers.confirmCascadeDelete'),
                 { 
                   title: t('common.confirmTitle'), 
@@ -516,7 +491,7 @@ import Layout from '../../layouts/Layout.astro'
 
             if (!response.ok) {
               const data = await response.json().catch(() => ({}))
-              await (window as any).__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
+              await dialogWindow.__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
               return
             }
 
@@ -524,80 +499,15 @@ import Layout from '../../layouts/Layout.astro'
             invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
             loadManufacturers()
           } catch {
-            await (window as any).__fmAlert(t('manufacturers.failedDelete'))
+            await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
           }
         })
       })
       renderPagination(sorted.length, currentPage)
     }
 
-    function openInfoModal(mf: any) {
-      const container = document.getElementById('info-modal-container')!
-      const content = document.getElementById('info-modal-content')!
-      const title = document.getElementById('info-modal-title')!
-
-      title.textContent = ''
-      if (mf.logo_url) {
-        const img = document.createElement('img')
-        img.src = mf.logo_url
-        img.alt = ''
-        img.style.cssText = 'width: 64px; height: 64px; object-fit: contain; vertical-align: middle; margin-right: 12px; background: #fff; border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; padding: 4px;'
-        img.onerror = () => { img.style.display = 'none' }
-        title.appendChild(img)
-      }
-      title.appendChild(document.createTextNode(mf.name))
-
-      content.innerHTML = `
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.filaments')}</div>
-            <div style="font-size: 1.2rem; font-weight: 600;">${mf.filament_count || 0}</div>
-          </div>
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.availableSpools')}</div>
-            <div style="font-size: 1.2rem; font-weight: 600;">${mf.spool_count || 0}</div>
-          </div>
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.archivedSpools')}</div>
-            <div style="font-size: 1.2rem; font-weight: 600;">${mf.archived_spool_count || 0}</div>
-          </div>
-          <div class="fm-card" style="padding: 12px; background: var(--bg-soft);">
-             <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.materials')}</div>
-             <div style="font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${(mf.materials || []).join(', ')}">
-               ${(mf.materials || []).join(', ') || '-'}
-             </div>
-          </div>
-        </div>
-
-        <div style="display: grid; gap: 12px; margin-top: 8px;">
-          <div class="fm-card" style="border-left: 4px solid var(--accent); padding: 12px;">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.totalValueAvailable')}</div>
-            <div style="font-size: 1.4rem; font-weight: 700; color: var(--accent);">${formatPrice(mf.total_price_available, getCurrency())}</div>
-          </div>
-          <div class="fm-card" style="border-left: 4px solid var(--text-muted); padding: 12px;">
-            <div style="font-size: 0.75rem; color: var(--text-muted);">${t('manufacturers.totalSpentAllTime')}</div>
-            <div style="font-size: 1.4rem; font-weight: 700;">${formatPrice(mf.total_price_all, getCurrency())}</div>
-          </div>
-        </div>
-      `
-
-      container.style.display = 'flex'
-    }
-
-    function closeInfoModal() {
-      document.getElementById('info-modal-container')!.style.display = 'none'
-    }
-
     document.getElementById('btn-new')?.addEventListener('click', () => manufacturerDialog.open())
-    document.getElementById('info-modal-close')?.addEventListener('click', closeInfoModal)
 
-    document.getElementById('info-modal-container')?.addEventListener('click', (e) => {
-      if (e.target === e.currentTarget) closeInfoModal()
-    })
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeInfoModal()
-    })
 
     function setupHeaderFilters() {
       const table = document.querySelector('.fm-table') as HTMLTableElement | null

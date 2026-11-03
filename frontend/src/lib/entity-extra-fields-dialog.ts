@@ -5,7 +5,7 @@ import {
   type EntityExtraFieldDefinitions,
   type EntityExtraFieldPayload,
 } from './entity-extra-fields'
-import { escapeHtml, renderFieldInput, type SystemExtraFieldDef } from './extra-fields'
+import { escapeHtml, isIntegrationExtraFieldPath, renderSystemFieldRow, type SystemExtraFieldDef } from './extra-fields'
 import { t } from './i18n'
 import { getAbortSignal } from './abort'
 
@@ -138,12 +138,10 @@ export function createEntityExtraFieldsDialog(options: DialogOptions) {
       if (saving || overlay.open) return
       returnFocus = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       const values = data.customFields ?? {}
+      systemFields = Object.fromEntries(Object.entries(systemFields).filter(([key]) => !isIntegrationExtraFieldPath(key)))
       editor.setSystemFieldKeys(Object.keys(systemFields))
       systemSection.hidden = Object.keys(systemFields).length === 0
-      systemGrid.innerHTML = Object.values(systemFields).map(field => {
-        const control = renderFieldInput(field, getExtraFieldValue(values, field.key))
-        return `<div>${field.field_type === 'checkbox' ? control : `<label class="fm-label">${escapeHtml(field.label)}</label>${control}`}</div>`
-      }).join('')
+      systemGrid.innerHTML = Object.values(systemFields).map(field => renderSystemFieldRow(field, getExtraFieldValue(values, field.key))).join('')
       editor.setData(values, data.customFieldDefinitions)
       payloadBaseline = collectExtraFieldPayload(systemGrid, editor) ?? {
         customFields: data.customFields ?? null,

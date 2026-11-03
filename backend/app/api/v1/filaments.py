@@ -233,6 +233,7 @@ async def get_manufacturer_label_logo(manufacturer_id: int, _principal: Principa
 
 class DownloadLogoRequest(BaseModel):
     slug: str
+    has_web_logo: bool = True
     has_label_logo: bool = False
 
 
@@ -257,31 +258,34 @@ async def download_manufacturer_logo(
     MANUFACTURER_LOGO_DIR.mkdir(parents=True, exist_ok=True)
     base_url = settings.filamentdb_url.rstrip("/")
 
-    # Download web logo
-    logo_url = f"{base_url}/uploads/logos/web/{data.slug}.png"
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(logo_url)
-            resp.raise_for_status()
-    except (httpx.HTTPStatusError, httpx.HTTPError) as exc:
-        logger.warning(
-            "Failed to download logo for manufacturer %s (slug=%s): %s",
-            manufacturer_id,
-            data.slug,
-            exc,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "code": "logo_download_failed",
-                "message": "Could not download logo from FilamentDB",
-            },
-        )
+    # Keep legacy web-only requests working, including previously ignored false flags.
+    download_web = data.has_web_logo or not data.has_label_logo
+    if download_web:
+        # Download web logo
+        logo_url = f"{base_url}/uploads/logos/web/{data.slug}.png"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(logo_url)
+                resp.raise_for_status()
+        except (httpx.HTTPStatusError, httpx.HTTPError) as exc:
+            logger.warning(
+                "Failed to download logo for manufacturer %s (slug=%s): %s",
+                manufacturer_id,
+                data.slug,
+                exc,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "logo_download_failed",
+                    "message": "Could not download logo from FilamentDB",
+                },
+            )
 
-    # Save web logo to persistent storage
-    logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
-    logo_path.write_bytes(resp.content)
-    manufacturer.logo_file = f"{manufacturer_id}.png"
+        # Save web logo to persistent storage
+        logo_path = MANUFACTURER_LOGO_DIR / f"{manufacturer_id}.png"
+        logo_path.write_bytes(resp.content)
+        manufacturer.logo_file = f"{manufacturer_id}.png"
 
     # Download label logo (grayscale, for label printing) — non-critical
     if data.has_label_logo:
@@ -306,6 +310,10 @@ async def download_manufacturer_logo(
                 data.slug,
                 exc,
             )
+            if not download_web:
+                raise HTTPException(status_code=502, detail={
+                    "code": "logo_download_failed", "message": "Could not download label logo from FilamentDB",
+                })
 
     await db.commit()
     await db.refresh(manufacturer)
@@ -318,7 +326,8 @@ async def download_manufacturer_logo(
         data.slug,
     )
 
-    return {"ok": True, "logo_url": f"/api/v1/manufacturers/{manufacturer_id}/logo"}
+    logo_kind = "logo" if download_web else "label-logo"
+    return {"ok": True, "logo_url": f"/api/v1/manufacturers/{manufacturer_id}/{logo_kind}"}
 
 
 @router.patch("/{manufacturer_id}", response_model=ManufacturerResponse)

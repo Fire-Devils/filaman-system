@@ -834,10 +834,57 @@ async def list_all_spool_events(
     principal=RequirePermission("spool_events:read"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    search: str | None = Query(None, max_length=200),
+    sort_by: str = Query(
+        "event_at",
+        pattern="^(spool|manufacturer|material|mfr_color|event_type|event_at|weight|note)$",
+    ),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
+    filters: str | None = Query(None, max_length=10000),
+    timezone_name: str = Query("UTC", max_length=100),
 ):
+    from app.services.spool_event_filters import (
+        spool_event_filter_conditions,
+        spool_event_text_normalizer,
+    )
+
+    weight = func.coalesce(SpoolEvent.measured_weight_g, SpoolEvent.delta_weight_g)
+    columns = {
+        "spool": (SpoolEvent.spool_id, "number"),
+        "manufacturer": (Manufacturer.name, "text"),
+        "material": (Filament.material_type, "text"),
+        "mfr_color": (Filament.manufacturer_color_name, "text"),
+        "event_type": (SpoolEvent.event_type, "text"),
+        "event_at": (SpoolEvent.event_at, "date"),
+        "weight": ((SpoolEvent.measured_weight_g, SpoolEvent.delta_weight_g), "number"),
+        "note": (SpoolEvent.note, "text"),
+    }
+    query = select(SpoolEvent)
+    if search or filters or sort_by in {"manufacturer", "material", "mfr_color"}:
+        query = (
+            query.outerjoin(Spool, SpoolEvent.spool_id == Spool.id)
+            .outerjoin(Filament, Spool.filament_id == Filament.id)
+            .outerjoin(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        )
+    lower = await spool_event_text_normalizer(db) if search or filters else func.lower
+    query = query.where(*spool_event_filter_conditions(filters, columns, timezone_name, lower))
+    if search and search.strip():
+        term = search.strip().lower()
+        query = query.where(
+            or_(
+                *[
+                    lower(cast(value, String)).contains(term, autoescape=True)
+                    for column, _ in columns.values()
+                    for value in (column if isinstance(column, tuple) else (column,))
+                ]
+            )
+        )
+    # Count and paginate the same filtered query; never filter a fetched page.
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    sort_column = weight if sort_by == "weight" else columns[sort_by][0]
+    ordering = sort_column.asc() if sort_order == "asc" else sort_column.desc()
     result = await db.execute(
-        select(SpoolEvent)
-        .options(
+        query.options(
             selectinload(SpoolEvent.spool)
             .selectinload(Spool.filament)
             .options(
@@ -847,7 +894,7 @@ async def list_all_spool_events(
                 ),
             )
         )
-        .order_by(SpoolEvent.event_at.desc())
+        .order_by(ordering, SpoolEvent.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -873,11 +920,7 @@ async def list_all_spool_events(
             ]
         items.append(resp)
 
-    count_result = await db.execute(select(func.count()).select_from(SpoolEvent))
-    total = count_result.scalar() or 0
-
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
-
 
 def _spool_with_metrics(spool, percent, length, effective_weight):
     return SpoolResponse.model_validate(spool).model_copy(update={

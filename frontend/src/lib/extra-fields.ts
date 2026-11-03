@@ -35,6 +35,33 @@ export function isUnsafeExtraFieldPath(path: string): boolean {
   return path.split('.').some(segment => !segment || RESERVED_EXTRA_FIELD_PATH_SEGMENTS.has(segment))
 }
 
+// Exact roots keep unrelated user fields (including similarly named nested fields) visible.
+const INTEGRATION_EXTRA_FIELD_ROOTS = new Set([
+  'filamentdb_id',
+  'spoolman_id',
+  'spoolman_external_id',
+  'bambu_shop_source_url',
+  'bambu_shop_image_url',
+  'bambu_shop_image_checked_at',
+  'bambu_image_resolver_version',
+  'filament_image_url',
+  'filament_image_source_url',
+  'filament_image_provider',
+  'filament_image_checked_at',
+  'bambu_profile_base_name',
+  'bambu_profiles_by_model',
+  'bambu_slicer_filament',
+  'bambu_slicer_filament_name',
+  'bambu_color_name',
+  'bambu_rfid_tag_1',
+  'bambu_rfid_tag_2',
+])
+
+export function isIntegrationExtraFieldPath(path: string): boolean {
+  // Legacy Spoolman extras mix user fields with plugin metadata.
+  return INTEGRATION_EXTRA_FIELD_ROOTS.has(path.replace(/^spoolman_extra\./, '').split('.')[0])
+}
+
 export function hasOwnFieldValue(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key)
 }
@@ -348,6 +375,12 @@ export function unflattenFieldValues(flat: Record<string, unknown>): Record<stri
   return result
 }
 
+/** Checkbox controls already include their label. */
+export function renderSystemFieldRow(field: SystemExtraFieldDef, rawValue: unknown, flat: Record<string, unknown> = {}): string {
+  const label = field.field_type === 'checkbox' ? '' : `<label class="fm-label">${escapeHtml(field.label)}</label>`
+  return `<div>${label}${renderFieldInput(field, rawValue, flat)}</div>`
+}
+
 /**
  * Render the appropriate <input> / <select> / <textarea> for a system extra field.
  *
@@ -371,7 +404,7 @@ export function renderFieldInput(
   const minAttr = cfg.min_bound != null ? ` min="${cfg.min_bound}"` : ''
   const maxAttr = cfg.max_bound != null ? ` max="${cfg.max_bound}"` : ''
   const unitHtml = unit
-    ? `<span style="color:var(--text-muted);font-size:0.85rem;flex-shrink:0">${escapeHtml(unit)}</span>`
+    ? `<span class="fm-input-unit-label">${escapeHtml(unit)}</span>`
     : ''
 
   const defaultValue = parseExtraFieldDefaultValue(field)

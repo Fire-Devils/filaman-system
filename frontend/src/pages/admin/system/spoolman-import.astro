@@ -1,57 +1,56 @@
 ---
 import Layout from '../../../layouts/Layout.astro'
+import AdminHeader from '../../../components/AdminHeader.astro'
+import FormSection from '../../../components/FormSection.astro'
 import '../../../styles/spoolman-import.css'
 ---
 
 <Layout title="FilaMan - Spoolman Import">
-  <div style="margin-bottom: 24px;">
-    <a href="/admin/system" style="color: var(--accent); text-decoration: none;">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
-  </div>
+  <div class="fm-admin-page">
+  <a href="/admin/system" class="fm-admin-back">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
+  <AdminHeader titleKey="spoolman.title" title="Spoolman Import" back={false} />
+  <p class="fm-admin-message" style="color: var(--text-muted);" data-i18n="spoolman.subtitle">Import filaments, spools, manufacturers, and locations from a Spoolman instance.</p>
 
-  <h1 style="font-size: 1.8rem; font-weight: 700; margin: 0 0 8px; font-family: var(--font-serif);" data-i18n="spoolman.title">Spoolman Import</h1>
-  <p style="color: var(--text-muted); margin-bottom: 24px;" data-i18n="spoolman.subtitle">Import filaments, spools, manufacturers, and locations from a Spoolman instance.</p>
-
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px;" id="step-connection">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">1</span>
-      <span data-i18n="spoolman.stepConnection">Connection</span>
-    </h2>
-    <div style="display: flex; gap: 12px; align-items: flex-end;">
-      <div style="flex: 1;">
-        <label class="fm-label" data-i18n="spoolman.spoolmanUrl">Spoolman URL</label>
-        <input type="url" id="spoolman-url" class="fm-input" placeholder="http://192.168.1.100:7912" style="width: 100%;" />
+  <div class="fm-admin-stack">
+  <div id="step-connection">
+    <FormSection titleKey="spoolman.stepConnection" title="Connection">
+      <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">1</span></Fragment>
+    <div class="fm-settings-row">
+      <label class="fm-label" for="spoolman-url" data-i18n="spoolman.spoolmanUrl">Spoolman URL</label>
+      <div class="fm-list-controls">
+        <input type="url" id="spoolman-url" class="fm-input" placeholder="http://192.168.1.100:7912" style="flex: 1 1 16rem; min-width: 0;" />
+        <button id="btn-test" class="fm-btn fm-btn-primary" data-i18n="spoolman.testConnection">Test Connection</button>
       </div>
-      <button id="btn-test" class="fm-btn fm-btn-primary" data-i18n="spoolman.testConnection">Test Connection</button>
     </div>
     <div id="connection-result" style="margin-top: 12px; display: none;"></div>
+    </FormSection>
   </div>
 
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-preview">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">2</span>
-      <span data-i18n="spoolman.stepPreview">Preview</span>
-    </h2>
-    <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="spoolman.previewDesc">Review the data that will be imported from Spoolman.</p>
-    <button id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="spoolman.loadPreview">Load Preview</button>
-    <div id="preview-result" style="margin-top: 16px; display: none;"></div>
+  <div id="step-preview" style="opacity: 0.5; pointer-events: none;">
+    <FormSection titleKey="spoolman.stepPreview" title="Preview">
+      <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">2</span></Fragment>
+    <p class="fm-field-hint" data-i18n="spoolman.previewDesc">Review the data that will be imported from Spoolman.</p>
+    <button style="justify-self: start;" id="btn-preview" class="fm-btn fm-btn-outline" data-i18n="spoolman.loadPreview">Load Preview</button>
+    <div id="preview-result" style="display: none;"></div>
+    </FormSection>
   </div>
 
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px; opacity: 0.5; pointer-events: none;" id="step-import">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 16px;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.85rem; margin-right: 10px;">3</span>
-      <span data-i18n="spoolman.stepImport">Import</span>
-    </h2>
+  <div id="step-import" style="opacity: 0.5; pointer-events: none;">
+    <FormSection titleKey="spoolman.stepImport" title="Import">
+      <Fragment slot="actions"><span style="color: var(--text-muted); font-size: 0.85rem;" aria-hidden="true">3</span></Fragment>
     <div id="import-controls">
-      <p style="color: var(--text-muted); margin-bottom: 16px; font-size: 0.9rem;" data-i18n="spoolman.importDesc">Start the import. Existing data will not be overwritten.</p>
-      <div style="max-width:680px;margin-bottom:16px;">
+      <p class="fm-field-hint" data-i18n="spoolman.importDesc">Start the import. Existing data will not be overwritten.</p>
+      <div class="fm-settings-row" style="margin: 14px 0;">
         <label class="fm-label" for="extra-field-mode" data-i18n="spoolman.extraFieldMode">Spoolman extra fields</label>
+        <div class="fm-compact-form">
         <select id="extra-field-mode" class="fm-select" style="width:100%;">
           <option value="system" selected data-i18n="spoolman.extraFieldModeSystem">Create or reuse System Extra Fields</option>
           <option value="local" data-i18n="spoolman.extraFieldModeLocal">Create filament- or spool-specific typed fields</option>
           <option value="preserve" data-i18n="spoolman.extraFieldModePreserve">Preserve source values unchanged under spoolman_extra</option>
           <option value="legacy" data-i18n="spoolman.extraFieldModeLegacy">Legacy import: keep values under spoolman_extra</option>
         </select>
-        <p style="color:var(--text-muted);font-size:0.82rem;margin:6px 0 0;" data-i18n="spoolman.extraFieldModeHint">Choose a default here, then optionally override individual fields in the preview.</p>
+        <p class="fm-field-hint" data-i18n="spoolman.extraFieldModeHint">Choose a default here, then optionally override individual fields in the preview.</p>
+        </div>
       </div>
       <div style="display: flex; flex-wrap: wrap; gap: 10px;">
         <button id="btn-import" class="fm-btn fm-btn-primary" data-i18n="spoolman.startImport">Start Import</button>
@@ -62,25 +61,30 @@ import '../../../styles/spoolman-import.css'
         <p style="margin: 4px 0 0; color: var(--text-muted); font-size: 0.85rem;" data-i18n="spoolman.repairTransparencyDesc">Repairs only existing filament color assignments linked by spoolman_id to the connected Spoolman data. No manufacturers, locations, filaments, spools, or unrelated fields are imported.</p>
       </div>
     </div>
-    <div id="import-progress" style="margin-top: 16px; display: none;">
+    <div id="import-progress" style="display: none;">
       <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;"><div id="import-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.5s;"></div></div>
       <p id="import-status" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; text-align: center;" data-i18n="spoolman.importing">Importing...</p>
     </div>
-    <div id="import-result" style="margin-top: 16px; display: none;"></div>
+    <div id="import-result" style="display: none;"></div>
+    </FormSection>
   </div>
 
-  <div class="fm-card" style="margin-bottom: 24px; padding: 24px;" id="repair-imports">
-    <h2 style="font-size: 1.1rem; font-weight: 600; margin: 0 0 8px;" data-i18n="spoolman.repairTitle">Repair previous Spoolman imports</h2>
-    <p style="color: var(--text-muted); margin: 0 0 16px; font-size: 0.9rem;" data-i18n="spoolman.repairDesc">Convert extra values from earlier imports into native typed fields. Existing values are never overwritten.</p>
-    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:8px;">
-      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;"><input type="radio" name="repair-mode" value="server" /><span data-i18n="spoolman.repairServerMode">Use running Spoolman server</span></label>
-      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;"><input type="radio" name="repair-mode" value="offline" checked /><span data-i18n="spoolman.repairOfflineMode">Recover from stored imported data</span></label>
+  <div id="repair-imports">
+    <FormSection titleKey="spoolman.repairTitle" title="Repair previous Spoolman imports">
+    <p class="fm-field-hint" data-i18n="spoolman.repairDesc">Convert extra values from earlier imports into native typed fields. Existing values are never overwritten.</p>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;"><input type="radio" name="repair-mode" value="server" /><span data-i18n="spoolman.repairServerMode">Use running Spoolman server</span></label>
+      <label style="display:flex;align-items:center;gap:7px;cursor:pointer;"><input type="radio" name="repair-mode" value="offline" checked /><span data-i18n="spoolman.repairOfflineMode">Recover from stored imported data</span></label>
     </div>
-    <p id="repair-mode-hint" style="color:var(--text-muted);font-size:0.82rem;margin:0 0 16px;" data-i18n="spoolman.repairOfflineHint">No source server is required. Suggested mappings must be reviewed and approved individually.</p>
-    <button id="btn-repair-preview" class="fm-btn fm-btn-outline" data-i18n="spoolman.repairPreview">Scan existing imports</button>
-    <div id="repair-preview-result" style="margin-top:16px;display:none;"></div>
-    <div id="repair-actions" style="margin-top:16px;display:none;"><button id="btn-repair-execute" class="fm-btn fm-btn-primary" data-i18n="spoolman.repairApply">Apply approved repairs</button></div>
-    <div id="repair-result" style="margin-top:16px;display:none;"></div>
+    <p id="repair-mode-hint" class="fm-field-hint" data-i18n="spoolman.repairOfflineHint">No source server is required. Suggested mappings must be reviewed and approved individually.</p>
+    <button style="justify-self: start;" id="btn-repair-preview" class="fm-btn fm-btn-outline" data-i18n="spoolman.repairPreview">Scan existing imports</button>
+    <div id="repair-preview-result" style="display:none;"></div>
+    <div id="repair-actions" style="display:none;"><button id="btn-repair-execute" class="fm-btn fm-btn-primary" data-i18n="spoolman.repairApply">Apply approved repairs</button></div>
+    <div id="repair-result" style="display:none;"></div>
+    </FormSection>
+  </div>
+
+  </div>
   </div>
 
   <script>

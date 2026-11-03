@@ -1,19 +1,21 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import FormSection from '../../components/FormSection.astro'
 ---
 
 <Layout title="FilaMan - API Keys">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+  <div class="fm-settings-page fm-settings-profile">
+  <header class="fm-list-toolbar">
     <div>
-      <h1 style="font-size: 1.8rem; font-weight: 700; font-family: var(--font-serif);" data-i18n="apiKeys.title">API Keys</h1>
-      <p style="color: var(--color-text-muted); margin-top: 8px;" data-i18n="apiKeys.description">Erstelle API Keys für externe Integrationen wie Bambuddy</p>
+      <a href="/settings" class="fm-admin-back">&larr; <span data-i18n="apiKeys.backToSettings">Back to Settings</span></a>
+      <h1 data-i18n="apiKeys.title">API Keys</h1>
     </div>
-  </div>
+  </header>
   
-  <div style="display: grid; gap: 24px; max-width: 800px;">
-    <div class="fm-card" style="padding: 24px;">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="apiKeys.createNew">Create New API Key</h2>
-      <form id="create-key-form" style="display: grid; gap: 16px;">
+  <div class="fm-settings-stack">
+    <FormSection titleKey="apiKeys.createNew" title="Create New API Key">
+      <p class="fm-field-hint" data-i18n="apiKeys.description">Create API keys for external integrations like Bambuddy</p>
+      <form id="create-key-form" class="fm-compact-form">
         <div>
           <label for="key_name" class="fm-label" data-i18n="apiKeys.keyName">Key Name</label>
           <input
@@ -40,7 +42,7 @@ import Layout from '../../layouts/Layout.astro'
         </button>
       </form>
 
-      <div id="new-token-container" class="hidden" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--color-border);">
+      <div id="new-token-container" class="hidden" style="padding-top: 16px; border-top: 1px solid var(--border);">
         <div class="fm-alert-warning" style="margin-bottom: 16px;" data-i18n="apiKeys.tokenWarning">
           Dieser Token wird nur einmal angezeigt. Kopiere ihn jetzt!
         </div>
@@ -65,7 +67,7 @@ import Layout from '../../layouts/Layout.astro'
 
         <div style="margin-top: 16px;">
           <div style="font-weight: 600; margin-bottom: 4px;" data-i18n="apiKeys.qrTitle">Für die FilaMan-App scannen</div>
-          <p style="color: var(--color-text-muted); font-size: 0.875rem; margin: 0 0 12px 0;" data-i18n="apiKeys.qrHint">
+          <p class="fm-field-hint" style="margin: 0 0 12px;" data-i18n="apiKeys.qrHint">
             In der App: Anmeldung → Token → QR-Symbol im Token-Feld.
           </p>
           <!-- Fester weißer Grund: der QR-Code hat feste Farben und würde
@@ -77,33 +79,33 @@ import Layout from '../../layouts/Layout.astro'
           <div id="new-token-qr-error" class="fm-alert-error hidden" style="margin-top: 12px;"></div>
         </div>
       </div>
-    </div>
+    </FormSection>
     
-    <div class="fm-card" style="padding: 24px;">
-      <h2 style="font-weight: 600; margin: 0 0 16px 0;" data-i18n="apiKeys.existingKeys">Existing API Keys</h2>
+    <FormSection titleKey="apiKeys.existingKeys" title="Existing API Keys">
       
-      <div id="keys-loading" style="color: var(--color-text-muted);" data-i18n="common.loading">Loading...</div>
+      <div id="keys-loading" class="fm-field-hint" data-i18n="common.loading">Loading...</div>
       <div id="keys-error" class="fm-alert-error hidden"></div>
       
-      <div id="keys-table-container" class="hidden" style="overflow-x: auto;">
-        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+      <div id="keys-table-container" class="fm-table-scroll hidden">
+        <table class="fm-table fm-admin-table">
           <thead>
-            <tr style="border-bottom: 1px solid var(--color-border);">
-              <th style="padding: 12px 8px; font-weight: 600;" data-i18n="apiKeys.tableName">Name</th>
-              <th style="padding: 12px 8px; font-weight: 600;" data-i18n="apiKeys.tableCreated">Created at</th>
-              <th style="padding: 12px 8px; font-weight: 600;" data-i18n="apiKeys.tableLastUsed">Last used</th>
-              <th style="padding: 12px 8px; font-weight: 600; width: 100px;" data-i18n="apiKeys.tableActions">Actions</th>
+            <tr>
+              <th data-i18n="apiKeys.tableName">Name</th>
+              <th data-i18n="apiKeys.tableCreated">Created at</th>
+              <th data-i18n="apiKeys.tableLastUsed">Last used</th>
+              <th style="text-align: right;" data-i18n="apiKeys.tableActions">Actions</th>
             </tr>
           </thead>
           <tbody id="keys-tbody">
             <!-- Rows will be inserted here -->
           </tbody>
         </table>
-        <div id="no-keys-msg" class="hidden" style="padding: 24px 8px; color: var(--color-text-muted); text-align: center;" data-i18n="apiKeys.noKeys">
+        <div id="no-keys-msg" class="hidden" style="padding: 24px 8px; color: var(--text-muted); text-align: center;" data-i18n="apiKeys.noKeys">
           No API keys found.
         </div>
       </div>
-    </div>
+    </FormSection>
+  </div>
   </div>
   
   <script>
@@ -111,6 +113,7 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { ensureQrCodeLoaded, getQrCodeConstructor } from '../../lib/qr-code'
     import { copyText } from '../../lib/clipboard'
+    import { tableAction } from '../../lib/table-actions'
     await initI18n()
 
     function getCsrfToken(): string {
@@ -199,33 +202,25 @@ import Layout from '../../layouts/Layout.astro'
       
       keys.forEach(key => {
         const tr = document.createElement('tr')
-        tr.style.borderBottom = '1px solid var(--color-border)'
         
         const tdName = document.createElement('td')
-        tdName.style.padding = '12px 8px'
         tdName.textContent = key.name
         
         const tdCreated = document.createElement('td')
-        tdCreated.style.padding = '12px 8px'
-        tdCreated.style.color = 'var(--color-text-muted)'
+        tdCreated.style.color = 'var(--text-muted)'
         tdCreated.textContent = formatDate(key.created_at)
         
         const tdLastUsed = document.createElement('td')
-        tdLastUsed.style.padding = '12px 8px'
-        tdLastUsed.style.color = 'var(--color-text-muted)'
+        tdLastUsed.style.color = 'var(--text-muted)'
         tdLastUsed.textContent = formatDate(key.last_used_at)
         
         const tdActions = document.createElement('td')
-        tdActions.style.padding = '12px 8px'
+        tdActions.style.textAlign = 'right'
         
-        const deleteBtn = document.createElement('button')
-        deleteBtn.className = 'fm-btn fm-btn-danger'
-        deleteBtn.style.padding = '4px 8px'
-        deleteBtn.style.fontSize = '0.875rem'
-        deleteBtn.textContent = t('common.delete') || 'Delete'
+        tdActions.innerHTML = tableAction('delete', { id: key.id })
+        const deleteBtn = tdActions.querySelector('button')!
         deleteBtn.onclick = () => deleteApiKey(key.id, key.name)
         
-        tdActions.appendChild(deleteBtn)
         
         tr.appendChild(tdName)
         tr.appendChild(tdCreated)

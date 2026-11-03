@@ -33,9 +33,7 @@ async function submitDialog(): Promise<void> {
     .querySelector<HTMLFormElement>('.extra-field-dialog-form')!
     .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   await vi.waitFor(() => {
-    expect(
-      document.querySelector<HTMLButtonElement>('.extra-field-dialog-submit')?.disabled,
-    ).toBe(false)
+    expect(document.querySelector('.extra-field-dialog-form')?.getAttribute('aria-busy')).not.toBe('true')
   })
 }
 
@@ -209,4 +207,23 @@ describe('shared Extra Field definition dialog', () => {
         ?.textContent,
     ).toContain('Speichern')
   })
+})
+
+it('keeps a pending definition save modal and preserves a failed draft for retry', async () => {
+  let rejectSave!: (reason: Error) => void
+  const pending = new Promise<void>((_resolve, reject) => { rejectSave = reject })
+  const dialog = createExtraFieldDefinitionDialog({ mode: 'system' })
+  dialog.open({ title: 'Edit', draft: draft(), onSubmit: () => pending })
+  const label = document.querySelector<HTMLInputElement>('.extra-field-dialog-label')!
+  label.value = 'Updated inspection'
+  label.dispatchEvent(new Event('input', { bubbles: true }))
+  document.querySelector<HTMLFormElement>('.extra-field-dialog-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  const overlay = document.querySelector<HTMLDialogElement>('dialog')!
+  overlay.dispatchEvent(new Event('cancel', { cancelable: true }))
+  expect(overlay.open).toBe(true)
+  expect(document.querySelector<HTMLButtonElement>('.extra-field-dialog-cancel')!.disabled).toBe(true)
+  rejectSave(new Error('Could not save definition'))
+  await vi.waitFor(() => expect(document.querySelector('.extra-field-dialog-error')!.textContent).toBe('Could not save definition'))
+  expect(document.querySelector<HTMLInputElement>('.extra-field-dialog-key')!.value).toBe('inspection')
+  expect(document.querySelector<HTMLButtonElement>('.extra-field-dialog-submit')!.disabled).toBe(false)
 })
