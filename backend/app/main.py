@@ -566,7 +566,8 @@ async def add_cache_control_header(request, call_next):
         )
     if is_label_render:
         response.headers["Cache-Control"] = "no-store"
-    elif path in ("/spool-reel.js", "/plugin-fonts.css"):
+    elif path in ("/spool-reel.js", "/plugin-fonts.css", "/icons.svg"):
+        # Sprite v=2 is a one-time cache reset; future deployments revalidate.
         response.headers["Cache-Control"] = "no-cache"
     elif not is_api and (
         path.startswith("/_astro/")

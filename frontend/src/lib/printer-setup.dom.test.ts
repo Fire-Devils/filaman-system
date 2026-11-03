@@ -231,11 +231,11 @@ describe('shared printer setup', () => {
     expect(profiles.contains(printers)).toBe(false)
     expect(printers.contains(profiles)).toBe(false)
     const attribution = profiles.querySelector('[data-profile-provider]')!
-    expect(attribution.querySelector('use')?.getAttribute('href')).toBe('/icons.svg#icon-plugin')
+    expect(attribution.querySelector('use')?.getAttribute('href')).toBe('/icons.svg?v=2#icon-plugin')
     expect(attribution.querySelector('a[href="/admin/system"]')).not.toBeNull()
     expect(attribution.querySelector('a[href^="/printers/"]')).toBeNull()
     expect(printers.querySelector('a[href="/printers/1"]')?.getAttribute('aria-label')).toContain('Printer One')
-    expect(printers.querySelector('.printer-setup-driver-label use')?.getAttribute('href')).toBe('/icons.svg#icon-plugin')
+    expect(printers.querySelector('.printer-setup-driver-label use')?.getAttribute('href')).toBe('/icons.svg?v=2#icon-plugin')
     expect(printers.textContent).toContain('Driver disabled')
   })
   it('uses empty dash placeholders while keeping the source-label element beneath inputs', async () => {

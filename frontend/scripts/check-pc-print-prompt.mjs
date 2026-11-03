@@ -51,7 +51,7 @@ try {
       return route.fulfill({ contentType: 'image/png', body: Buffer.from(raster),
       headers: { 'X-Label-Width-Mm': String(dimensions.widthMm), 'X-Label-Height-Mm': String(dimensions.heightMm) } })
     }
-    if (route.request().url().endsWith('/icons.svg')) return route.fulfill({ contentType: 'image/svg+xml', body: icons })
+    if (new URL(route.request().url()).pathname === '/icons.svg') return route.fulfill({ contentType: 'image/svg+xml', body: icons })
     if (route.request().url().endsWith('/pending')) return route.fulfill({ json: pending })
     if (route.request().url().endsWith('/claim')) {
       pending = null

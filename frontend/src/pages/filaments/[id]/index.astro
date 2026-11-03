@@ -362,14 +362,14 @@ export function getStaticPaths() {
                 ${renderFilamentHeaderColors(f, t('filaments.soldAs'))}
                 <div class="detail-hero-stats">
                   <div class="detail-hero-stat"><span class="detail-stat-symbol" aria-hidden="true">⌀</span><div><span>${t('filaments.diameter')}</span><strong>${f.diameter_mm != null ? escapeExtraFieldHtml(`${f.diameter_mm} mm`) : '—'}</strong></div></div>
-                  <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=detail3#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>
+                  <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>
                 </div>
               </div>
             </div>
             <div class="detail-page-actions" role="group" aria-label="${t('common.actions')}">
-              <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></a>
-              <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button>
-              <button id="btn-delete-filament" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>
+              <a id="btn-enter-filament-edit" href="/filaments/${f.id}?edit=1" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-edit"></use></svg></a>
+              <button id="btn-duplicate-filament" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-copy"></use></svg></button>
+              <button id="btn-delete-filament" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-trash"></use></svg></button>
             </div>
           </div>
         </header>
@@ -377,8 +377,8 @@ export function getStaticPaths() {
         <section class="detail-quick-actions">
           <h2>${t('spools.quickActions')}</h2>
           <div class="detail-quick-action-buttons">
-            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary"><svg class="detail-spool-icon" aria-hidden="true"><use href="/icons.svg#icon-spools"></use></svg>${t('filaments.newSpool')}</a>
-            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-print"></use></svg>${t('filaments.printLabel') || 'Print Label'}</a>
+            <a href="/spools/new?filament_id=${f.id}" class="fm-btn fm-btn-primary"><svg class="detail-spool-icon" aria-hidden="true"><use href="/icons.svg?v=2#icon-spools"></use></svg>${t('filaments.newSpool')}</a>
+            <a id="btn-print-label" href="/filaments/${f.id}/print" class="fm-btn fm-btn-outline"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-print"></use></svg>${t('filaments.printLabel') || 'Print Label'}</a>
           </div>
         </section>
 

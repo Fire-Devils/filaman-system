@@ -58,7 +58,7 @@ import FormSection from '../../components/FormSection.astro'
       <fieldset id="role-edit-fields" class="role-editor-fields" disabled>
       <FormSection titleKey="admin.rolesTitle" title="Roles">
         <Fragment slot="actions">
-          <button id="role-delete" type="button" hidden class="fm-row-action fm-row-action-danger" data-i18n-aria-label="admin.deleteRole" data-i18n-title="admin.deleteRole" aria-label="Delete Role" title="Delete Role"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="/icons.svg#icon-trash" /></svg></button>
+          <button id="role-delete" type="button" hidden class="fm-row-action fm-row-action-danger" data-i18n-aria-label="admin.deleteRole" data-i18n-title="admin.deleteRole" aria-label="Delete Role" title="Delete Role"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="/icons.svg?v=2#icon-trash" /></svg></button>
         </Fragment>
         <div class="fm-compact-form role-metadata">
           <div><span class="fm-label" data-i18n="admin.roleKey">Key</span><code id="role-edit-key"></code></div>
@@ -151,7 +151,7 @@ import FormSection from '../../components/FormSection.astro'
     function renderRoles() {
       byId('role-blocks').innerHTML = roles.length ? roles.map(role => {
         const label = escapeHtml(`${t('admin.editRole')}: ${role.name}`)
-        return `<article class="fm-card role-block" role="listitem"><div class="role-block-heading"><strong title="${escapeHtml(role.name)}">${escapeHtml(role.name)}</strong>${role.is_system ? `<span class="role-system" title="${escapeHtml(t('admin.systemRoleHint'))}">${escapeHtml(t('admin.systemRole'))}</span>` : ''}<button type="button" class="fm-row-action role-edit" data-role-id="${role.id}" aria-label="${label}" title="${label}" aria-expanded="false" aria-controls="role-edit-form"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="/icons.svg#icon-edit" /></svg></button></div><p class="role-description" title="${escapeHtml(role.description || '—')}">${escapeHtml(role.description || '—')}</p></article>`
+        return `<article class="fm-card role-block" role="listitem"><div class="role-block-heading"><strong title="${escapeHtml(role.name)}">${escapeHtml(role.name)}</strong>${role.is_system ? `<span class="role-system" title="${escapeHtml(t('admin.systemRoleHint'))}">${escapeHtml(t('admin.systemRole'))}</span>` : ''}<button type="button" class="fm-row-action role-edit" data-role-id="${role.id}" aria-label="${label}" title="${label}" aria-expanded="false" aria-controls="role-edit-form"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><use href="/icons.svg?v=2#icon-edit" /></svg></button></div><p class="role-description" title="${escapeHtml(role.description || '—')}">${escapeHtml(role.description || '—')}</p></article>`
       }).join('') : `<p class="fm-field-hint">${escapeHtml(t('admin.noRoles'))}</p>`
       updateControls()
     }

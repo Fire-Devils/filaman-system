@@ -58,23 +58,23 @@ const { title } = Astro.props
           <!-- Navigation -->
           <nav style="display: grid; gap: 6px;">
             <a href="/" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-dashboard"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-dashboard"></use></svg></span>
               <span data-i18n="nav.dashboard">Dashboard</span>
             </a>
             <a href="/manufacturers" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-manufacturers"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-manufacturers"></use></svg></span>
               <span data-i18n="nav.manufacturers">Manufacturers</span>
             </a>
             <a href="/filaments" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-filaments"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-filaments"></use></svg></span>
               <span data-i18n="nav.filaments">Filaments</span>
             </a>
             <a href="/spools" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-spools"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-spools"></use></svg></span>
               <span data-i18n="nav.spools">Spools</span>
             </a>
             <a href="/printers" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-printers"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-printers"></use></svg></span>
               <span data-i18n="nav.printers">Printers</span>
             </a>
             <a href="/display" class="fm-nav-item">
@@ -82,7 +82,7 @@ const { title } = Astro.props
               <span data-i18n="nav.display">AMS View</span>
             </a>
             <a href="/locations" class="fm-nav-item">
-              <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-locations"></use></svg></span>
+              <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-locations"></use></svg></span>
               <span data-i18n="nav.locations">Locations</span>
             </a>
             <a href="/spool-log" class="fm-nav-item">
@@ -96,7 +96,7 @@ const { title } = Astro.props
               <hr class="fm-divider" style="margin-bottom: 8px;" />
               <div class="hide-collapsed" style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
               <a href="/admin" class="fm-nav-item">
-                <span class="fm-nav-icon"><svg><use href="/icons.svg#icon-admin"></use></svg></span>
+                <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-admin"></use></svg></span>
                 <span data-i18n="nav.adminPanel">Admin Panel</span>
               </a>
             </div>
@@ -186,7 +186,7 @@ const { title } = Astro.props
         <p class="pc-print-prompt-error" role="alert" hidden></p>
         <div class="pc-print-prompt-actions">
           <button type="button" class="fm-btn fm-btn-primary pc-print-prompt-print" disabled>
-            <svg aria-hidden="true"><use href="/icons.svg#icon-print"></use></svg><span></span>
+            <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-print"></use></svg><span></span>
           </button>
           <a class="fm-btn fm-btn-primary pc-print-prompt-download" download="label.pdf" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14" /></svg><span></span>
@@ -489,7 +489,7 @@ const { title } = Astro.props
             const a = document.createElement('a')
             a.href = navHrefFor(p.page_url)
             a.className = 'fm-nav-item'
-            a.innerHTML = `<span class="fm-nav-icon"><svg><use href="/icons.svg#icon-plugin"></use></svg></span><span>${p.name}</span>`
+            a.innerHTML = `<span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-plugin"></use></svg></span><span>${p.name}</span>`
             pluginNav.appendChild(a)
           }
 

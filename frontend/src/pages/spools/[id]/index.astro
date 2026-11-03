@@ -29,19 +29,19 @@ const { id } = Astro.params
     <h2 data-i18n="spools.quickActions">Quick Actions</h2>
     <div class="detail-quick-action-buttons">
       <button id="btn-measurement" class="fm-btn fm-btn-primary" style="background: var(--accent);">
-        <svg aria-hidden="true"><use href="/icons.svg?v=detail4#icon-record-weight"></use></svg><span data-i18n="spools.recordWeight">Record Weight</span>
+        <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-record-weight"></use></svg><span data-i18n="spools.recordWeight">Record Weight</span>
       </button>
       <button id="btn-adjustment" class="fm-btn fm-btn-outline" style="border-color: var(--accent-2); color: var(--accent-2);">
-        <svg aria-hidden="true"><use href="/icons.svg?v=detail4#icon-adjust"></use></svg><span data-i18n="spools.adjust">Adjust</span>
+        <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-adjust"></use></svg><span data-i18n="spools.adjust">Adjust</span>
       </button>
       <button id="btn-status" class="fm-btn fm-btn-outline" style="border-color: var(--accent-3); color: var(--accent-3);">
-        <svg aria-hidden="true"><use href="/icons.svg?v=detail4#icon-change-status"></use></svg><span data-i18n="spools.changeStatus">Change Status</span>
+        <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-change-status"></use></svg><span data-i18n="spools.changeStatus">Change Status</span>
       </button>
       <button id="btn-move" class="fm-btn fm-btn-outline">
-        <svg aria-hidden="true"><use href="/icons.svg?v=detail4#icon-move"></use></svg><span data-i18n="spools.move">Move</span>
+        <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-move"></use></svg><span data-i18n="spools.move">Move</span>
       </button>
       <a href={`/spools/${id}/print`} id="btn-print-label" class="fm-btn fm-btn-outline" style="border-color: #10b981; color: #10b981; text-decoration: none; display: flex; align-items: center; justify-content: center;">
-        <svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-print"></use></svg><span data-i18n="spools.printLabel">Print Label</span>
+        <svg aria-hidden="true"><use href="/icons.svg?v=2#icon-print"></use></svg><span data-i18n="spools.printLabel">Print Label</span>
       </a>
     </div>
   </div>
@@ -779,8 +779,8 @@ const { id } = Astro.params
             <button id="btn-rfid" type="button" ${editing ? 'disabled' : ''} class="detail-icon-button" style="${(spool.rfid_uid || spool.rfid_uid_2) ? 'color: #10b981;' : 'color: var(--text);'}" aria-label="${t('rfid.writeTag')}" title="${t('rfid.writeTag')}">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" aria-hidden="true"><g transform="rotate(-60 24 24)" stroke-dasharray="4 2"><circle cx="24" cy="24" r="20" pathLength="12"/><circle cx="24" cy="24" r="14" pathLength="12"/><circle cx="24" cy="24" r="8" pathLength="12"/></g><circle cx="24" cy="24" r="2.5" fill="currentColor" stroke="none"/></svg>
             </button>
-            <button id="btn-edit-spool" type="button" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}" aria-pressed="${editing}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-edit"></use></svg></button>
-            ${editing ? `<button type="submit" form="spool-inline-form" class="fm-btn fm-btn-primary" disabled>${t('common.save')}</button><button id="btn-cancel-edit" type="button" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>` : `<button id="btn-duplicate-spool" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-copy"></use></svg></button><button id="btn-delete" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=detail2#icon-trash"></use></svg></button>`}
+            <button id="btn-edit-spool" type="button" class="detail-icon-button" aria-label="${t('common.edit')}" title="${t('common.edit')}" aria-pressed="${editing}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-edit"></use></svg></button>
+            ${editing ? `<button type="submit" form="spool-inline-form" class="fm-btn fm-btn-primary" disabled>${t('common.save')}</button><button id="btn-cancel-edit" type="button" class="fm-btn fm-btn-outline">${t('common.cancel')}</button>` : `<button id="btn-duplicate-spool" type="button" class="detail-icon-button" aria-label="${t('common.duplicate')}" title="${t('common.duplicate')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-copy"></use></svg></button><button id="btn-delete" type="button" class="detail-icon-button detail-icon-danger" aria-label="${t('common.delete')}" title="${t('common.delete')}"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-trash"></use></svg></button>`}
             </div>
           </div>
         </header>
