@@ -734,39 +734,25 @@ class PluginManager:
         logger.warning(f"Could not load plugin.json for {driver_key}")
         return None
 
+    def _option_labels(self, driver_key: str, options_file: str) -> dict[str, str]:
+        """Read the plugin catalog shared by dropdowns and assignment."""
+        for base_dir in self._plugin_search_dirs():
+            try:
+                raw = json.loads((base_dir / driver_key / options_file).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            return {
+                idx: info.get("name", idx) if isinstance(info, dict) else str(info)
+                for idx, info in raw.items() if not idx.startswith("_")
+            }
+        logger.warning(f"Could not load {options_file} for {driver_key}")
+        return {}
+
     def _resolve_options(
         self, driver_key: str, field_def: dict[str, Any]
     ) -> list[str] | None:
-        """Resolve dropdown options for a field definition.
-
-        If field_def has 'options_file', loads the JSON file from the plugin directory
-        and returns the material names sorted alphabetically.  If field_def has static
-        'options', returns those.
-        """
-        options_file = field_def.get("options_file")
-        if options_file:
-            for base_dir in self._plugin_search_dirs():
-                file_path = base_dir / driver_key / options_file
-                try:
-                    raw = json.loads(file_path.read_text(encoding="utf-8"))
-                    options: list[str] = []
-                    for idx, info in raw.items():
-                        if idx.startswith("_"):  # skip comments
-                            continue
-                        name = (
-                            info.get("name", idx)
-                            if isinstance(info, dict)
-                            else str(info)
-                        )
-                        options.append(name)
-                    options.sort()
-                    return options
-                except (OSError, json.JSONDecodeError):
-                    continue
-            logger.warning(
-                f"{options_file} not found for {driver_key}; dropdown will have no options"
-            )
-            return []
+        if options_file := field_def.get("options_file"):
+            return sorted(self._option_labels(driver_key, options_file).values())
         return field_def.get("options")
 
     def get_printer_parameter_fields(self, driver_key: str, target_type: str | None = None) -> list[dict[str, Any]]:
@@ -1701,10 +1687,10 @@ class PluginManager:
                 return filament_data
 
             filament_id = spool.filament_id
+            printer = await db.get(Printer, printer_id)
             initialized = await db.get(FilamentPrinterInitialization, (filament_id, printer_id))
             native_params = {}
             if initialized is None:
-                printer = await db.get(Printer, printer_id)
                 filament = await db.get(Filament, filament_id)
                 if printer and filament:
                     allowed_keys = self._bambu_parameter_keys(printer.driver_key)
@@ -1747,6 +1733,38 @@ class PluginManager:
         for key, value in merged_params.items():
             if value is not None and value != "":
                 enriched[key] = value
+
+        # BambuLab consumes wire keys; other drivers consume the original params.
+        if printer and printer.driver_key == "bambulab":
+            material = merged_params.get("bambu_tray_idx") or merged_params.get("bambu_idx")
+            if material:
+                # Older dropdowns stored "code — name"; newer ones store the catalog name.
+                candidate = material.partition(" — ")[0].strip()
+                labels = self._option_labels("bambulab", "bambu_filaments.json")
+                code = next((idx for idx, label in labels.items() if label == candidate), candidate)
+                if len(code.split()) == 1:
+                    enriched["tray_info_idx"] = code
+                elif enriched.get("tray_info_idx") == material:
+                    # Manual assignment can also supply the unresolved label as its default.
+                    enriched["tray_info_idx"] = "GFL99"
+            if setting_id := merged_params.get("bambu_setting_id"):
+                enriched["setting_id"] = setting_id
+
+            temperatures = {}
+            for key in ("nozzle_temp_min", "nozzle_temp_max"):
+                try:
+                    value = float(merged_params.get(f"bambu_{key}"))
+                    if math.isfinite(value) and value >= 0:
+                        temperatures[key] = round(value)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+            try:
+                minimum = float(temperatures.get("nozzle_temp_min", enriched.get("nozzle_temp_min", 190)))
+                maximum = float(temperatures.get("nozzle_temp_max", enriched.get("nozzle_temp_max", 230)))
+                if minimum <= maximum:
+                    enriched.update(temperatures)
+            except (TypeError, ValueError, OverflowError):
+                pass
 
         # 6. Inject the FilaMan spool and filament IDs so plugin drivers can
         # resolve spool- AND filament-level config (e.g. per-model slicer
