@@ -1197,6 +1197,91 @@ def _declared_bambu_manager(db_session, monkeypatch, keys=None):
     return manager
 
 
+@pytest.mark.parametrize('driver_key,filament_values,spool_values,native,initialized,expected', [
+    ('bambulab', {'bambu_tray_idx': 'GFB98', 'bambu_nozzle_temp_min': '240'},
+     {'bambu_idx': 'Generic ASA', 'bambu_tray_idx': 'P618a7ac',
+      'bambu_setting_id': 'PFUSed1e487ad8098f', 'bambu_nozzle_temp_min': '250.75',
+      'bambu_nozzle_temp_max': '270.25'}, None, False,
+     {'tray_info_idx': 'P618a7ac', 'nozzle_temp_min': 251, 'nozzle_temp_max': 270,
+      'setting_id': 'PFUSed1e487ad8098f'}),
+    ('bambulab', {'bambu_idx': 'GFB98'}, {}, None, False, {'tray_info_idx': 'GFB98'}),
+    ('bambulab', {}, {'bambu_idx': 'Generic ASA'}, None, False, {'tray_info_idx': 'GFB98'}),
+    ('bambulab', {}, {'bambu_idx': 'P618a7ac'}, None, False, {'tray_info_idx': 'P618a7ac'}),
+    ('bambulab', {}, {'bambu_idx': 'GFB98 — Generic ASA'}, None, False, {'tray_info_idx': 'GFB98'}),
+    ('bambulab', {}, {'bambu_tray_idx': 'GFB98 — Generic ASA'}, None, False, {'tray_info_idx': 'GFB98'}),
+    ('bambulab', {}, {'bambu_tray_idx': 'Generic ASA'}, None, False, {'tray_info_idx': 'GFB98'}),
+    ('bambulab', {}, {'bambu_idx': 'Removed catalog label'}, None, False, {}),
+    ('bambulab', {'bambu_idx': 'GFB98', 'bambu_tray_idx': 'P618a7ac'},
+     {'bambu_tray_idx': ''}, None, False, {'tray_info_idx': 'GFB98'}),
+    ('bambulab', {'bambu_nozzle_temp_min': '225'}, {}, None, False, {'nozzle_temp_min': 225}),
+    ('bambulab', {'bambu_nozzle_temp_min': '225'},
+     {'bambu_nozzle_temp_min': None}, None, False, {}),
+    ('bambulab', {}, {'bambu_nozzle_temp_min': '0'}, None, False, {'nozzle_temp_min': 0}),
+    ('bambulab', {}, {}, {'min': 240.25, 'max': 260.75}, False,
+     {'nozzle_temp_min': 240, 'nozzle_temp_max': 261}),
+    ('bambulab', {}, {}, {'min': 240, 'max': 260}, True, {}),
+    ('bambulab', {}, {}, {'min': 240, 'max': None}, False, {}),
+    ('bambulab', {}, {'bambu_nozzle_temp_min': 'nan', 'bambu_nozzle_temp_max': 'inf'}, None, False, {}),
+    ('bambulab', {}, {'bambu_nozzle_temp_min': '-1', 'bambu_nozzle_temp_max': 'invalid'}, None, False, {}),
+    ('bambulab', {}, {'bambu_nozzle_temp_min': '', 'bambu_nozzle_temp_max': None}, None, False, {}),
+    ('bambulab', {}, {'bambu_nozzle_temp_min': '270', 'bambu_nozzle_temp_max': '250'}, None, False, {}),
+    ('bambulab', {}, {'bambu_nozzle_temp_min': '250'}, None, False, {}),
+    ('bambuddy', {}, {'bambu_tray_idx': 'P618a7ac', 'bambu_nozzle_temp_min': '225',
+                     'bambu_setting_id': 'PFUS123'}, None, False, {}),
+    ('unrelated', {}, {'bambu_tray_idx': 'P618a7ac', 'bambu_nozzle_temp_max': '270'}, None, False, {}),
+])
+async def test_bambulab_assignment_translates_resolved_parameters(
+    db_session, monkeypatch, tmp_path, driver_key, filament_values, spool_values, native, initialized, expected
+):
+    manufacturer = Manufacturer(name='Assignment parameters')
+    printer = Printer(name='Assignment printer', driver_key=driver_key)
+    db_session.add_all([manufacturer, printer])
+    await db_session.flush()
+    filament = Filament(manufacturer_id=manufacturer.id, designation='ASA+', material_type='ASA+',
+                        diameter_mm=1.75, extruder_temp_range_c=native)
+    db_session.add(filament)
+    await db_session.flush()
+    status_id = await db_session.scalar(select(SpoolStatus.id).where(SpoolStatus.key == 'active'))
+    spool = Spool(filament_id=filament.id, status_id=status_id)
+    db_session.add(spool)
+    await db_session.flush()
+    db_session.add_all([
+        FilamentPrinterParam(filament_id=filament.id, printer_id=printer.id,
+                             param_key=key, param_value=value)
+        for key, value in filament_values.items()
+    ] + [
+        SpoolPrinterParam(spool_id=spool.id, printer_id=printer.id,
+                          param_key=key, param_value=value)
+        for key, value in spool_values.items()
+    ])
+    if initialized:
+        db_session.add(FilamentPrinterInitialization(filament_id=filament.id, printer_id=printer.id))
+    await db_session.commit()
+    manager = _declared_bambu_manager(db_session, monkeypatch)
+    catalog = tmp_path / 'bambulab' / 'bambu_filaments.json'
+    catalog.parent.mkdir()
+    catalog.write_text(json.dumps({'GFB98': 'Generic ASA'}))
+    monkeypatch.setattr(manager, '_plugin_search_dirs', lambda: [tmp_path])
+    base = {'tray_info_idx': 'GFL99', 'nozzle_temp_min': 190, 'nozzle_temp_max': 230,
+            'material_type': 'ASA+', 'color': '000000', 'rfid_uid': 'AABBCCDD'}
+
+    enriched = await manager.enrich_filament_data(spool.id, printer.id, base)
+
+    assert {key: value for key, value in enriched.items() if not key.startswith('bambu_')} == {
+        **base, **expected, 'id': spool.id, 'filament_id': filament.id,
+    }
+    for key, value in {**filament_values, **spool_values}.items():
+        if value not in (None, ''):
+            assert enriched[key] == value
+    saved = {**filament_values, **spool_values}
+    manual_tray = saved.get('bambu_tray_idx') or saved.get('bambu_idx')
+    if manual_tray and driver_key == 'bambulab':
+        manual = await manager.enrich_filament_data(spool.id, printer.id, {**base, 'tray_info_idx': manual_tray})
+        assert manual['tray_info_idx'] == expected.get('tray_info_idx', 'GFL99')
+    assert base == {'tray_info_idx': 'GFL99', 'nozzle_temp_min': 190, 'nozzle_temp_max': 230,
+                    'material_type': 'ASA+', 'color': '000000', 'rfid_uid': 'AABBCCDD'}
+
+
 @pytest.mark.parametrize('driver_key', ['bambuddy', 'bambulab', 'unrelated'])
 async def test_declared_driver_migration_preserves_indices_zeros_and_unrelated_data(
     db_session, monkeypatch, driver_key
@@ -1523,14 +1608,17 @@ def test_native_fallback_preserves_uncomparable_caller_bounds(opposite):
     ) == {'bambu_nozzle_temp_min': '240'}
 
 
-@pytest.mark.parametrize('clear_key,remaining', [
-    ('bambu_nozzle_temp_min', {'bambu_nozzle_temp_max': '250', 'bambu_bed_temp': '60'}),
-    ('bambu_nozzle_temp_max', {'bambu_nozzle_temp_min': '240', 'bambu_bed_temp': '60'}),
-    ('bambu_bed_temp', {'bambu_nozzle_temp_min': '240', 'bambu_nozzle_temp_max': '250'}),
-    (None, {}),
+@pytest.mark.parametrize('clear_key,remaining,temperatures', [
+    ('bambu_nozzle_temp_min', {'bambu_nozzle_temp_max': '250', 'bambu_bed_temp': '60'},
+     {'nozzle_temp_max': 250}),
+    ('bambu_nozzle_temp_max', {'bambu_nozzle_temp_min': '240', 'bambu_bed_temp': '60'},
+     {'nozzle_temp_min': 240}),
+    ('bambu_bed_temp', {'bambu_nozzle_temp_min': '240', 'bambu_nozzle_temp_max': '250'},
+     {'nozzle_temp_min': 240, 'nozzle_temp_max': 250}),
+    (None, {}, {}),
 ])
 async def test_later_native_filament_explicit_clear_initializes_only_its_printer(
-    db_session, monkeypatch, auth_client, clear_key, remaining
+    db_session, monkeypatch, auth_client, clear_key, remaining, temperatures
 ):
     manager = _declared_bambu_manager(db_session, monkeypatch)
     monkeypatch.setattr('app.api.v1.printer_params.plugin_manager', manager)
@@ -1565,7 +1653,7 @@ async def test_later_native_filament_explicit_clear_initializes_only_its_printer
     assert {row['param_key']: row['param_value'] for row in rows.json()} == remaining
     base = {'nozzle_temp_min': 180, 'nozzle_temp_max': 260}
     enriched = await manager.enrich_filament_data(spool.id, printers[0].id, base)
-    assert enriched == {**base, **remaining, 'id': spool.id, 'filament_id': filament_id}
+    assert enriched == {**base, **remaining, **temperatures, 'id': spool.id, 'filament_id': filament_id}
     # The untouched printer still gets its own defaults, and restart keeps the clear.
     other = await manager.enrich_filament_data(spool.id, printers[1].id, base)
     assert other['bambu_nozzle_temp_min'] == '225'
