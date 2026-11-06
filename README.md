@@ -47,7 +47,7 @@ as an official Bambu RFID spool.
 - **Catalogs and Imports:** Search FilaManDB for filament specifications and import existing inventory from Spoolman.
 - **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
 - **Multi-User:** Role-based access control and tenant support.
-- **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
+- **Printer Integration:** Plugin system to connect with 3D printers and AMS units. Plugin authors can supply [custom icon assets](docs/plugin-icons.md).
 - **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
 - **Printable Labels:** Print and export spool or filament labels with QR codes, custom layouts, grouped and searchable field tokens, and label-paper sheet output.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.

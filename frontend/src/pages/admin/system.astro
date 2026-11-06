@@ -9,7 +9,9 @@ import FormDialog from '../../components/FormDialog.astro'
     .plugin-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .plugin-table { width: 100%; }
     .plugin-table :global(td:first-child) { min-width: 180px; }
+    .plugin-table :global(:is(th, td):not(:first-child)) { width: 1%; white-space: nowrap; }
     :global(.plugin-actions) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    :global(.plugin-actions > *) { flex-shrink: 0; }
     :global(.plugin-detail-row) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
     :global(.plugin-detail-value) { text-align: right; overflow-wrap: anywhere; }
     :global(.plugin-schema) { margin-top: 8px; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px; font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -112,6 +114,7 @@ import FormDialog from '../../components/FormDialog.astro'
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { navHrefFor } from '../../lib/plugin-nav'
+    import { createPluginIcon } from '../../lib/plugin-icon'
     import { api, request } from '../../lib/api'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { escapeHtml } from '../../lib/extra-fields'
@@ -122,6 +125,7 @@ import FormDialog from '../../components/FormDialog.astro'
       plugin_key: string; name: string; version: string; plugin_type: string; is_active: boolean
       description?: string | null; author?: string | null; installed_by?: number | null; installed_at: string
       page_url?: string | null; driver_key?: string | null; homepage?: string | null; license?: string | null
+      icon_url?: string | null
       config_schema?: Record<string, unknown> | null
     }
     interface RegistryPlugin {
@@ -177,6 +181,7 @@ import FormDialog from '../../components/FormDialog.astro'
       }
       
       tbody.innerHTML = plugins.map(p => {
+        const openLabel = escapeHtml(`${t('common.open')} ${p.name}`)
         const nameHtml = p.page_url
           ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" style="color: var(--accent); text-decoration: none; font-weight: 600;">${escapeHtml(p.name)}</a>`
           : `<span style="font-weight: 600;">${escapeHtml(p.name)}</span>`
@@ -184,7 +189,7 @@ import FormDialog from '../../components/FormDialog.astro'
         return `
         <tr>
           <td>
-            ${nameHtml}
+            <div class="fm-plugin-name"><span data-plugin-icon="${escapeHtml(p.plugin_key)}"></span>${nameHtml}</div>
             <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(p.description || '')}</div>
           </td>
           <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.version)}</td>
@@ -205,12 +210,17 @@ import FormDialog from '../../components/FormDialog.astro'
             <div class="plugin-actions">
             ${updateMap[p.plugin_key] ? `<button data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px">${escapeHtml(t('admin.pluginUpdateTo').replace('{version}', updateMap[p.plugin_key].version))}</button>` : ''}
             <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail fm-row-action" aria-label="${escapeHtml(t('admin.pluginDetails'))}" title="${escapeHtml(t('admin.pluginDetails'))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button>
-            ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px">${escapeHtml(t('common.open'))}</a>` : ''}
+            ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-row-action" aria-label="${openLabel}" title="${openLabel}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></a>` : ''}
             ${p.installed_by != null ? tableAction('delete', { key: p.plugin_key, name: p.name }, { title: t('admin.uninstallPlugin') }) : ''}
             </div>
           </td>
         </tr>
       `}).join('')
+
+      tbody.querySelectorAll<HTMLElement>('[data-plugin-icon]').forEach(host => {
+        const plugin = plugins.find(p => p.plugin_key === host.dataset.pluginIcon)
+        host.replaceWith(createPluginIcon(plugin?.icon_url))
+      })
       
       // Detail-Buttons
       document.querySelectorAll('.btn-detail').forEach(btn => {
@@ -344,6 +354,8 @@ import FormDialog from '../../components/FormDialog.astro'
       const content = document.getElementById('detail-content')!
       
       title.textContent = plugin.name
+      title.classList.add('fm-plugin-name')
+      title.prepend(createPluginIcon(plugin.icon_url))
       
       const rows = [
         { label: 'Plugin Key', value: plugin.plugin_key },

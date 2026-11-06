@@ -542,7 +542,7 @@ async def allow_iframe_embedding(request, call_next):
     # Allow embedding from any origin
     # This enables Bambuddy and other self-hosted integrations to display
     # FilaMan pages in iframes
-    response.headers["content-security-policy"] = "frame-ancestors *"
+    response.headers.setdefault("content-security-policy", "frame-ancestors *")
     
     return response
 

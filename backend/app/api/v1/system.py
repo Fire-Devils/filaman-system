@@ -20,7 +20,7 @@ from typing import Annotated, Any, BinaryIO, Literal, cast
 
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import DateTime, LargeBinary, delete, func, select, text
 from sqlalchemy.engine import CursorResult
@@ -127,6 +127,7 @@ class PluginNavItem(BaseModel):
     plugin_key: str
     name: str
     page_url: str
+    icon_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -144,6 +145,7 @@ class PluginResponse(BaseModel):
     plugin_type: str
     driver_key: str | None
     page_url: str | None
+    icon_url: str | None = None
     config_schema: dict | None
     capabilities: dict | None = None
     is_active: bool
@@ -206,6 +208,27 @@ async def plugin_nav(
     serialized = [PluginNavItem.model_validate(p) for p in items]
     response_cache.set("plugin_nav", serialized, ttl=600)
     return serialized
+
+
+@public_router.get("/plugin-icons/{plugin_key}")
+async def plugin_icon(plugin_key: str, db: DBSession, _principal: PrincipalDep):
+    from app.services import plugin_service
+    from app.services.plugin_icon_service import BUILTIN_ICONS_DIR, read_plugin_icon
+
+    plugin = await db.scalar(select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key))
+    if plugin is None or not plugin.icon:
+        raise HTTPException(status_code=404, detail="Plugin icon not found")
+    builtin = any(p["plugin_key"] == plugin_key for p in BUILTIN_PLUGINS)
+    base_dir = BUILTIN_ICONS_DIR if builtin else plugin_service.PLUGINS_DIR
+    try:
+        data = read_plugin_icon(base_dir / plugin.plugin_key, plugin.icon)
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="Plugin icon not found")
+    return Response(data, media_type="image/svg+xml", headers={
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-cache",
+    })
 
 
 # ------------------------------------------------------------------ #
