@@ -811,6 +811,12 @@ if not settings.debug:
                 os.path.join(static_files_path, "filaments/detail/edit/index.html")
             )
 
+        @app.get("/plugin-view/{plugin_slug}")
+        async def serve_plugin_view(plugin_slug: str):
+            return FileResponse(
+                os.path.join(static_files_path, "plugin-view/detail/index.html")
+            )
+
         @app.get("/admin/oidc")
         async def serve_admin_oidc():
             return FileResponse(

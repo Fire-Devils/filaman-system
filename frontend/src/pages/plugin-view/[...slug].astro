@@ -1,0 +1,25 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  return [{ params: { slug: 'detail' } }]
+}
+---
+
+<Layout title="FilaMan - Plugin" noPadding>
+  {/* iframe src is built client-side so we can read theme + locale from
+      localStorage / the live data-theme attribute set by Layout.astro */}
+  <iframe
+    id="plugin-iframe"
+    title="Plugin"
+    style="flex: 1; width: 100%; border: none; display: block;"
+  ></iframe>
+
+  <script>
+    import { mountIntegrationPlugin } from '../../lib/plugin-integration-shell'
+    const frame = document.getElementById('plugin-iframe') as HTMLIFrameElement
+    const slug = window.location.pathname.split('/').filter(Boolean)[1] || ''
+    try { mountIntegrationPlugin(frame, slug) }
+    catch { frame.hidden = true }
+  </script>
+</Layout>

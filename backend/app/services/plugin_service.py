@@ -62,6 +62,22 @@ ALLOWED_EXTENSIONS = {
     ".yml",
     ".toml",
     ".html",
+    # Web assets — required for integration plugins that ship a static SPA
+    ".js",
+    ".css",
+    ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".xml",
+    ".map",
 }
 
 # Pflichtfelder im Manifest (Basisfelder, gelten fuer alle Plugin-Typen)
@@ -453,8 +469,8 @@ class PluginInstallService:
                         "forbidden_extension",
                     )
 
-                # Maximale Einzeldatei-Groesse: 1 MB
-                if filepath.stat().st_size > 1 * 1024 * 1024:
+                # Maximale Einzeldatei-Groesse: 5 MB (SPA-Bundles koennen groesser sein)
+                if filepath.stat().st_size > 5 * 1024 * 1024:
                     raise PluginInstallError(
                         f"Datei zu gross: {rel_path} ({filepath.stat().st_size} Bytes)",
                         "file_too_large",

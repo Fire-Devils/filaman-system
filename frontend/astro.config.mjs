@@ -34,6 +34,10 @@ export default defineConfig({
           target: backendUrl,
           changeOrigin: true,
         },
+        '/plugins': {
+          target: backendUrl,
+          changeOrigin: true,
+        },
         '/spoolman': {
           target: backendUrl,
           changeOrigin: true,
