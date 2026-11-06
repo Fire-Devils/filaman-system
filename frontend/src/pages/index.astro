@@ -102,11 +102,16 @@ import FormDialog from '../components/FormDialog.astro'
     .dashboard-scope { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
     .dashboard-overview, .dashboard-details { display: grid; grid-template-columns: var(--dashboard-columns); gap: var(--section-gap); column-gap: 12px; align-items: start; margin-top: var(--section-gap); }
     .dashboard-overview > :global(.fm-section), .dashboard-details > :global(.dashboard-low-stock) { grid-column: span 2; }
+    .dashboard-details > :global(.fm-section) > :global(.fm-section-body) { padding-inline-end: calc(var(--section-padding) / 2); }
     .dashboard-stack { display: grid; gap: var(--section-gap); min-width: 0; }
     .dashboard-table { --table-cell-padding: 4px 8px; min-width: 0; overflow-x: auto; }
     .dashboard-table :global(.fm-table) { width: 100%; font-size: .85rem; }
     .dashboard-table :global(th) { background: var(--bg-soft); }
-    .dashboard-list { --table-cell-padding: 4px 6px; max-height: 26rem; overflow: auto; scrollbar-gutter: stable; }
+    .dashboard-list { --table-cell-padding: 4px 6px; max-height: 26rem; overflow: auto; padding-inline-end: calc(var(--section-padding) / 2); }
+    .dashboard-list::-webkit-scrollbar-track, .dashboard-list::-webkit-scrollbar-corner, .dashboard-list::-webkit-scrollbar-button { background: var(--bg-elevated); }
+    @supports not selector(::-webkit-scrollbar) {
+      .dashboard-list { scrollbar-color: var(--text-muted) var(--bg-elevated); scrollbar-width: thin; }
+    }
     .dashboard-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .dashboard-list :global(.fm-table) { table-layout: fixed; }
     .dashboard-list :global(th), .dashboard-list :global(td) { height: 32px; box-sizing: border-box; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
