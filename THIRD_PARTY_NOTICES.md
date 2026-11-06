@@ -1,6 +1,12 @@
 # Third-Party Notices
 
-FilaMan includes the following third-party software and fonts.
+FilaMan includes the following third-party software, fonts, and artwork.
+
+## Spoolman icon artwork
+
+The Spoolman Import icon adapts the published Spoolman monochrome logo.
+Copyright (c) 2023 Daniel Hultgren. The full MIT notice is bundled with the
+asset in [THIRD_PARTY_NOTICES.txt](backend/app/plugin_icons/spoolman_import/THIRD_PARTY_NOTICES.txt).
 
 ## interact.js
 

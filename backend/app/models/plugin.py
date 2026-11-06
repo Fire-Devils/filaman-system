@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import Integer, String, Text, Boolean, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,6 +24,7 @@ class InstalledPlugin(TimestampMixin, Base):
     plugin_type: Mapped[str] = mapped_column(String(30), nullable=False, default="driver")
     driver_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
     page_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(250), nullable=True)
     config_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     capabilities: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     show_in_nav: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -31,3 +33,7 @@ class InstalledPlugin(TimestampMixin, Base):
         TZDateTime(), default=func.now(), nullable=False
     )
     installed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    @property
+    def icon_url(self) -> str | None:
+        return f"/api/v1/plugin-icons/{self.plugin_key}?v={quote(self.version, safe='')}" if self.icon else None

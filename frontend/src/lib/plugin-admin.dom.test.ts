@@ -5,17 +5,18 @@ import * as dialog from './form-dialog'
 import * as api from './api'
 import * as abort from './abort'
 import * as nav from './plugin-nav'
+import * as icons from './plugin-icon'
 import * as escape from './extra-fields'
 import * as i18n from './i18n'
 import * as actions from './table-actions'
 
-const plugin = { plugin_key: 'example', name: 'Example plugin', description: '', version: '1.0', plugin_type: 'integration', author: '<b>Author</b>', is_active: true, installed_by: 1, installed_at: '2026-01-01' }
+const plugin = { plugin_key: 'example', name: 'Example plugin', icon_url: '/api/v1/plugin-icons/example?v=1.0.0', page_url: '/plugin-page/example', description: '', version: '1.0', plugin_type: 'integration', author: '<b>Author</b>', is_active: true, installed_by: 1, installed_at: '2026-01-01' }
 let updates: unknown[] = []
 let installError: Response | Promise<Response> | undefined
 const calls: { path: string; init?: RequestInit }[] = []
 const alert = vi.fn(async () => true)
 async function boot() {
-  const dependencies = { ...api, ...abort, ...nav, ...escape, ...i18n, ...dialog, ...actions, initI18n: async () => {} }
+  const dependencies = { ...api, ...abort, ...nav, ...icons, ...escape, ...i18n, ...dialog, ...actions, initI18n: async () => {} }
   await bootAstroPage('admin/system', dependencies)
   await vi.waitFor(() => expect(document.querySelector('.btn-detail')).not.toBeNull())
 }
@@ -65,12 +66,26 @@ it.each([
   expect(JSON.parse(String(write.init!.body))).toEqual({ download_url: 'https://filaman.app/example.zip' })
   expect((write.init!.headers as Record<string, string>)['X-CSRF-Token']).toBe('test-csrf')
 })
+it('offers a named icon link to the plugin page beside the row actions', async () => {
+  await boot()
+  const open = document.querySelector<HTMLAnchorElement>('#plugins-table .plugin-actions a')!
+  expect(open.getAttribute('href')).toBe('/plugin-view?p=example')
+  expect(open.getAttribute('aria-label')).toBe('Open Example plugin')
+  expect(open.title).toBe('Open Example plugin')
+  expect(open.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(open.textContent?.trim()).toBe('')
+})
 it('opens native details with plugin metadata rendered as text', async () => {
   await boot()
   document.querySelector<HTMLButtonElement>('.btn-detail')!.click()
   const details = document.querySelector<HTMLDialogElement>('#detail-modal')!
   expect(details.open).toBe(true)
   expect(details.textContent).toContain('<b>Author</b>')
+  expect(document.querySelector<HTMLImageElement>('#plugins-table .fm-plugin-icon img')?.getAttribute('src')).toBe(plugin.icon_url)
+  expect(details.querySelector<HTMLImageElement>('.fm-plugin-icon img')?.getAttribute('src')).toBe(plugin.icon_url)
+  for (const icon of document.querySelectorAll('.fm-plugin-icon')) icon.querySelector('img')?.dispatchEvent(new Event('load'))
+  expect(document.querySelector<HTMLElement>('#plugins-table .fm-plugin-icon-mask')?.style.maskImage).toContain(plugin.icon_url)
+  expect(details.querySelector<HTMLElement>('.fm-plugin-icon-mask')?.style.maskImage).toContain(plugin.icon_url)
   expect(details.querySelector('b')).toBeNull()
   document.querySelector<HTMLButtonElement>('#detail-close')!.click()
   expect(details.open).toBe(false)
