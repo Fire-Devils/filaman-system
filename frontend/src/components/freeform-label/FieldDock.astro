@@ -1,5 +1,5 @@
 ---
-import { FILAMENT_TOKENS, SPOOL_TOKENS } from '../../lib/label-token-catalog'
+import { FILAMENT_TOKENS, SPOOL_TOKENS, getLabelTokenUnit } from '../../lib/label-token-catalog'
 const sectionLabels: Record<string, string> = { identity: 'Identity', material: 'Material', packaging: 'Packaging', temperatures: 'Temperatures', drying: 'Drying', print_behavior: 'Print behavior', compatibility: 'Compatibility', inventory: 'Inventory', physical: 'Physical', purchase: 'Purchase', lifecycle: 'Lifecycle' }
 const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choice => choice.section))]
 ---
@@ -24,7 +24,7 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
   <div class="freeform-field-groups freeform-field-panel-frame">
     {(['filament', 'spool'] as const).map(source => {
       const tokens = source === 'filament' ? FILAMENT_TOKENS : SPOOL_TOKENS
-      return <div id={`freeform-field-panel-${source}`} role="tabpanel" aria-labelledby={`freeform-field-tab-${source}`} data-field-group={source} hidden={source === 'spool'}>{sections(tokens).map(section => <details open data-token-section={section}><summary data-i18n={`labelDesigner.fieldSections.${section}`}>{sectionLabels[section]}</summary><div class="freeform-built-in-fields">{tokens.filter(choice => choice.section === section).map(({ token, label }) => <button class="freeform-token-chip" type="button" data-field-token={token} title={token}>{label}</button>)}</div></details>)}<div class="freeform-extra-fields" data-extra-field-source={source}></div></div>
+      return <div id={`freeform-field-panel-${source}`} role="tabpanel" aria-labelledby={`freeform-field-tab-${source}`} data-field-group={source} hidden={source === 'spool'}>{sections(tokens).map(section => <details open data-token-section={section}><summary data-i18n={`labelDesigner.fieldSections.${section}`}>{sectionLabels[section]}</summary><div class="freeform-built-in-fields">{tokens.filter(choice => choice.section === section).map(({ token, label }) => <button class="freeform-token-chip" type="button" data-field-token={token} data-field-unit={getLabelTokenUnit(token)} title={token}>{label}</button>)}</div></details>)}<div class="freeform-extra-fields" data-extra-field-source={source}></div></div>
     })}
   </div>
  </div>
@@ -36,10 +36,18 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
   <label for="freeform-template" data-i18n="labelDesigner.template">Template</label>
   <textarea id="freeform-template" class="fm-input" rows="12" data-element-prop="template" spellcheck="false"></textarea>
  </section>
+ <div id="freeform-field-unit-popup" class="freeform-field-unit-popup" popover="auto" role="dialog" aria-label="Include unit" data-i18n-aria-label="labelDesigner.includeUnit">
+  <button type="button" data-field-unit-choice aria-label="Include unit" data-i18n-aria-label="labelDesigner.includeUnit"></button>
+  <button type="button" data-field-unit-dismiss aria-label="Keep number only" data-i18n-aria-label="labelDesigner.keepNumberOnly">×</button>
+ </div>
 </section>
 
 <style>
   .freeform-field-dock { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px #0002; flex-direction: column; margin-top: 12px; width: min(560px, 100%); }
+  .freeform-field-unit-popup { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px #0004; color: var(--text); inset: auto; margin: 0; padding: 4px; position: fixed; }
+  .freeform-field-unit-popup:popover-open { display: flex; gap: 4px; }
+  .freeform-field-unit-popup button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; min-height: 28px; padding: 3px 8px; }
+  .freeform-field-unit-popup [data-field-unit-choice] { border-color: var(--accent); color: var(--accent); }
   .freeform-field-dock[data-available='false'] { display: none !important; }
   .freeform-field-dock-header { align-items: center; display: flex; gap: 6px; padding: 6px 7px 0 0; }
   .freeform-field-dock-toggle { align-items: center; background: transparent; border: 0; color: var(--text-muted); cursor: pointer; display: flex; flex: 1; flex-shrink: 0; font-size: 0.7rem; gap: 12px; height: 32px; padding: 0 10px; text-align: left; }

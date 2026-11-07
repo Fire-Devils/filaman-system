@@ -1,4 +1,5 @@
 import { SPOOL_BUILT_IN_LABEL_FIELD_DEFS } from './spool-label-data'
+export { getLabelTokenUnit } from './label-token-units'
 
 export interface LabelTokenChoice {
   token: string

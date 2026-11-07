@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import FieldDock from '../../components/freeform-label/FieldDock.astro'
 import { renderTemplateText, type SpoolData } from '../label-template'
@@ -109,6 +109,59 @@ async function renderDock() {
 }
 
 describe('built-in field picker compatibility', () => {
+  it('offers the field unit just above the click and keeps it optional', async () => {
+    await renderDock()
+    const controller = createFreeformEditorController()
+    binding = bindFreeformEditorDom({ controller })
+    await binding.ready
+    const popup = document.querySelector<HTMLElement>('#freeform-field-unit-popup')!
+    expect(popup).not.toBeNull()
+    popup.showPopover = vi.fn()
+    popup.hidePopover = vi.fn()
+    vi.spyOn(popup, 'getBoundingClientRect').mockReturnValue({ width: 90, height: 32 } as DOMRect)
+    const token = '{filament.extruder_temp_range_c}'
+    const field = document.querySelector<HTMLButtonElement>(`[data-field-token="${token}"]`)!
+    controller.updateSelected({ template: '' })
+    controller.setTemplateSelection(0)
+    field.dispatchEvent(new MouseEvent('click', { clientX: 280, clientY: 180, detail: 1, bubbles: true }))
+    expect(controller.getSelectedElement()).toMatchObject({ template: token })
+    expect(popup.showPopover).toHaveBeenCalledOnce()
+    expect(popup.style.top).toBe('140px')
+    expect(popup.querySelector('[data-field-unit-choice]')?.textContent?.trim()).toBe('°C')
+    popup.querySelector<HTMLButtonElement>('[data-field-unit-choice]')!.click()
+    const selected = controller.getSelectedElement()
+    expect(selected).toMatchObject({ template: '{filament.extruder_temp_range_c|unit}' })
+    if (selected?.type !== 'text') throw new Error('Expected text')
+    expect(renderTemplateText(selected.template, { ...data, 'filament.extruder_temp_range_c': '220-260' })).toBe('220-260 °C')
+    expect(renderTemplateText(selected.template, data)).toBe('')
+    controller.undo()
+    expect(controller.getSelectedElement()).toMatchObject({ template: token })
+    field.click()
+    const plain = controller.getSelectedElement()
+    popup.querySelector<HTMLButtonElement>('[data-field-unit-dismiss]')!.click()
+    expect(controller.getSelectedElement()).toEqual(plain)
+  })
+
+  it('only offers units on known numeric fields and does not modify a stale insertion', async () => {
+    await renderDock()
+    const controller = createFreeformEditorController()
+    binding = bindFreeformEditorDom({ controller })
+    await binding.ready
+    const popup = document.querySelector<HTMLElement>('#freeform-field-unit-popup')!
+    expect(popup).not.toBeNull()
+    popup.showPopover = vi.fn()
+    popup.hidePopover = vi.fn()
+    for (const [token, unit] of [['{filament.density}', 'g/cm³'], ['{filament.max_volumetric_speed_mm3_s}', 'mm³/s'], ['{remaining_weight_g}', 'g']]) {
+      document.querySelector<HTMLButtonElement>(`[data-field-token="${token}"]`)!.click()
+      expect(popup.querySelector('[data-field-unit-choice]')?.textContent?.trim()).toBe(unit)
+    }
+    controller.updateSelected({ template: 'Changed after insertion' })
+    popup.querySelector<HTMLButtonElement>('[data-field-unit-choice]')!.click()
+    expect(controller.getSelectedElement()).toMatchObject({ template: 'Changed after insertion' })
+    vi.mocked(popup.showPopover).mockClear()
+    document.querySelector<HTMLButtonElement>('[data-field-token="{filament.name}"]')!.click()
+    expect(popup.showPopover).not.toHaveBeenCalled()
+  })
   it('groups every expanded filament and spool choice by function', async () => {
     await renderDock()
     const filament = document.querySelector('#freeform-field-panel-filament')!

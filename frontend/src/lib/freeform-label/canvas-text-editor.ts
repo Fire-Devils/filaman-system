@@ -493,9 +493,9 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     },
     format,
     formatFont,
-    insertField(token: string): boolean {
+    insertField(token: string, range?: TemplateSourceRange): boolean {
       if (!editingId || !options.isEditable()) return false
-      edit(token)
+      edit(token, range)
       return true
     },
     handleKeydown(event: KeyboardEvent): boolean {

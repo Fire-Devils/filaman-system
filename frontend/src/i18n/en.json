@@ -1738,6 +1738,9 @@
     "textModifiers": "Text modifiers",
     "fieldGroups": "Field groups",
     "searchFields": "Search fields",
+    "includeUnit": "Include unit",
+    "syntaxUnit": "Include the field’s known unit. Empty values stay empty.",
+    "keepNumberOnly": "Keep number only",
     "fieldSections": {
       "identity": "Identity",
       "material": "Material",

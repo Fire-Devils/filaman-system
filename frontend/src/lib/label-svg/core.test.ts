@@ -118,6 +118,14 @@ it.each(LABEL_FONT_FAMILIES)('fits temperature rows using the editor line spacin
   expect(result.height).toBeCloseTo(7.36)
 })
 
+it.each(LABEL_FONT_FAMILIES)('prints unit symbols with %s', fontFamily => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'units', type: 'text', x: 1, y: 1, w: 38, h: 20,
+    fontFamily, fontSizeMm: 2, wrap: true, template: '{filament.extruder_temp_range_c|unit}\n{filament.density|unit}\n{filament.max_volumetric_speed_mm3_s|unit}', z: 0 }] as SvgInput['preset']['design']['elements']
+  value.data = { ...value.data, 'filament.extruder_temp_range_c': '220-260', 'filament.density': '1.24', 'filament.max_volumetric_speed_mm3_s': '12' }
+  expect(render(value).text[0].lines).toEqual(['220-260 °C', '1.24 g/cm³', '12 mm³/s'])
+})
+
 it.each([203, 300])('keeps thermal QR artwork at its designed size at %s DPI', dpi => {
   const value = input()
   value.preset.design.elements = [{ id: 'qr', type: 'qr', x: 8, y: 6, w: 18, h: 18, z: 0, mode: 'simple' }] as SvgInput['preset']['design']['elements']
