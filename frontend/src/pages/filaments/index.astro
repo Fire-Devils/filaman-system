@@ -486,6 +486,7 @@ import Layout from '../../layouts/Layout.astro'
 
       } catch (e) {
         if (isAbortError(e)) return
+        filHeaderFilters?.setOptions('colors', [])
         console.error('Failed to populate filter dropdowns:', e)
       }
     }

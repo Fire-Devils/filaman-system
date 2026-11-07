@@ -2,7 +2,9 @@ import pytest
 from sqlalchemy import select
 
 from app.models import (
+    Color,
     Filament,
+    FilamentColor,
     Location,
     Manufacturer,
     Spool,
@@ -264,13 +266,70 @@ class TestSpoolCRUD:
             "materials": ["PLA"],
             "locations": [{"value": str(active_location.id), "label": "Active Shelf"}],
             "has_empty_location": False,
+            "colors": [],
+            "has_empty_colors": True,
         }
         assert data["by_status"][str(archived_status.id)] == {
             "manufacturers": [{"value": str(archived_manufacturer.id), "label": "Archived Maker"}],
             "materials": ["PETG"],
             "locations": [{"value": str(archived_location.id), "label": "Archive Shelf"}],
             "has_empty_location": False,
+            "colors": [],
+            "has_empty_colors": True,
         }
+
+    @pytest.mark.asyncio
+    async def test_filter_colors_only_include_spool_backed_colors_by_status(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        active = await _create_filament(db_session, manufacturer.id, designation="Active")
+        archived = await _create_filament(db_session, manufacturer.id, designation="Archived")
+        catalog_only = await _create_filament(db_session, manufacturer.id, designation="Catalog only")
+        uncolored = await _create_filament(db_session, manufacturer.id, designation="Uncolored")
+        blue = Color(name="Blue", hex_code="#0000FF")
+        navy = Color(name="Blue", hex_code="#000080")
+        red = Color(name="Red", hex_code="#FF0000")
+        green = Color(name="Green", hex_code="#00FF00")
+        db_session.add_all([blue, navy, red, green])
+        await db_session.flush()
+        db_session.add_all([
+            FilamentColor(filament_id=active.id, color_id=blue.id, position=1),
+            FilamentColor(filament_id=active.id, color_id=navy.id, position=2),
+            FilamentColor(filament_id=archived.id, color_id=red.id, position=1),
+            FilamentColor(filament_id=catalog_only.id, color_id=green.id, position=1),
+        ])
+        await db_session.commit()
+        opened = await _get_status(db_session, "opened")
+        archive = await _get_status(db_session, "archived")
+        await _create_spool(db_session, active.id, opened.id)
+        await _create_spool(db_session, active.id, opened.id)
+        await _create_spool(db_session, uncolored.id, opened.id)
+        await _create_spool(db_session, archived.id, archive.id)
+
+        response = await client.get("/api/v1/spools/filter-options")
+
+        assert response.status_code == 200
+        scopes = response.json()["by_status"]
+        assert scopes[str(opened.id)]["colors"] == [
+            {"value": "Blue", "label": "Blue", "color_hexes": ["#000080", "#0000FF"]},
+        ]
+        assert scopes[str(opened.id)]["has_empty_colors"] is True
+        assert scopes[str(archive.id)]["colors"] == [
+            {"value": "Red", "label": "Red", "color_hexes": ["#FF0000"]},
+        ]
+        assert scopes[str(archive.id)]["has_empty_colors"] is False
+
+        updated = await client.patch(
+            f"/api/v1/colors/{blue.id}",
+            json={"name": "Sky", "hex_code": "#00FFFF"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert updated.status_code == 200
+        refreshed = await client.get("/api/v1/spools/filter-options")
+        assert refreshed.json()["by_status"][str(opened.id)]["colors"] == [
+            {"value": "Blue", "label": "Blue", "color_hexes": ["#000080"]},
+            {"value": "Sky", "label": "Sky", "color_hexes": ["#00FFFF"]},
+        ]
 
     @pytest.mark.asyncio
     async def test_filter_options_report_spools_without_locations(self, auth_client, db_session):

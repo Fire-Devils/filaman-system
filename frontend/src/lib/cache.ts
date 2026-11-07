@@ -144,7 +144,7 @@ export const CACHE_KEYS = {
   STATUSES: 'statuses',
   FILAMENT_TYPES: 'filament-types',
   FILAMENT_FILTER_OPTIONS: 'filament-filter-options',
-  SPOOL_FILTER_OPTIONS: 'spool-filter-options',
+  SPOOL_FILTER_OPTIONS: 'spool-filter-options-v2',
 } as const
 
 // ============================================================================
