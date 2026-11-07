@@ -38,7 +38,9 @@ from app.api.v1.schemas_spool import (
     SpoolUpdate,
     StatusChangeRequest,
 )
+from app.api.v1.schemas_filament import ColorFilterStop
 from app.core.event_bus import event_bus
+from app.services.color_search import filament_color_filter, filament_has_named_color
 from app.models import (
     Color,
     Filament,
@@ -252,6 +254,7 @@ class SpoolFilterOption(BaseModel):
 
 class SpoolColorFilterOption(SpoolFilterOption):
     color_hexes: list[str]
+    color_stops: list[ColorFilterStop]
 
 
 class SpoolFilterScope(BaseModel):
@@ -302,6 +305,8 @@ async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
             Location.name,
             Color.name,
             Color.hex_code,
+            Color.id,
+            filament_has_named_color(),
         )
         .join(Filament, Filament.id == Spool.filament_id)
         .join(Manufacturer, Manufacturer.id == Filament.manufacturer_id)
@@ -321,6 +326,8 @@ async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
         location_name,
         color_name,
         color_hex,
+        color_id,
+        has_named_color,
     ) in result.all():
         scope = scopes.setdefault(
             status_id,
@@ -341,8 +348,8 @@ async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
         else:
             scope["locations"][location_id] = location_name
         if color_name:
-            scope["colors"].setdefault(color_name, set()).add(color_hex)
-        else:
+            scope["colors"].setdefault(color_name, set()).add((color_hex, color_id))
+        if not has_named_color:
             scope["has_empty_colors"] = True
 
     by_status: dict[str, SpoolFilterScope] = {}
@@ -363,8 +370,13 @@ async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
             ],
             has_empty_location=scope["has_empty_location"],
             colors=[
-                SpoolColorFilterOption(value=name, label=name, color_hexes=sorted(hexes))
-                for name, hexes in sorted(
+                SpoolColorFilterOption(
+                    value=name,
+                    label=name,
+                    color_hexes=sorted({hex_code for hex_code, _ in stops if hex_code}),
+                    color_stops=[ColorFilterStop(id=color_id, hex=hex_code) for hex_code, color_id in sorted(stops)],
+                )
+                for name, stops in sorted(
                     scope["colors"].items(), key=lambda item: item[0].casefold()
                 )
             ],
@@ -390,6 +402,9 @@ async def list_spools(
     location_id: list[str] | None = Query(None),
     location_unassigned: bool = Query(False),
     manufacturer_id: list[str] | None = Query(None),
+    color_name: list[str] | None = Query(None),
+    color_id: list[int] | None = Query(None),
+    color_unassigned: bool = Query(False),
     type: list[str] | None = Query(None),
     include_archived: bool = Query(False),
     include_metrics: bool = Query(False),
@@ -427,6 +442,10 @@ async def list_spools(
     location_ids = parse_multi_int(location_id, "location_id")
     manufacturer_ids = parse_multi_int(manufacturer_id, "manufacturer_id")
     material_types = parse_multi_str(type, "type")
+    color_condition = filament_color_filter(color_name, color_unassigned, db.get_bind().dialect.name, color_ids=color_id)
+    if color_condition is not None:
+        conditions.append(color_condition)
+        needs_filament_join = True
 
     if manufacturer_ids:
         conditions.append(Filament.manufacturer_id.in_(manufacturer_ids))

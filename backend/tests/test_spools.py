@@ -14,6 +14,71 @@ from app.models import (
 )
 
 
+@pytest.mark.asyncio
+async def test_color_browsing_keeps_spool_status_scope_and_exact_page_totals(auth_client, db_session):
+    client, _ = auth_client
+    maker = await _create_manufacturer(db_session)
+    red = Color(name='Red, Silk', hex_code='#FF0000')
+    blue = Color(name='Blue', hex_code='#0000FF')
+    db_session.add_all([red, blue])
+    await db_session.commit()
+    filament = await _create_filament(db_session, maker.id)
+    empty = await _create_filament(db_session, maker.id, designation='Empty')
+    db_session.add_all([FilamentColor(filament_id=filament.id, color_id=color.id, position=i) for i, color in enumerate([red, blue])])
+    await db_session.commit()
+    active = await _get_status(db_session, 'active')
+    archived = await _get_status(db_session, 'archived')
+    first = await _create_spool(db_session, filament.id, active.id)
+    second = await _create_spool(db_session, filament.id, active.id)
+    hidden = await _create_spool(db_session, filament.id, archived.id)
+    blank = await _create_spool(db_session, empty.id, active.id)
+    params = [('color_name', 'Red, Silk'), ('color_name', 'Blue'), ('page_size', '1')]
+    pages = [(await client.get('/api/v1/spools', params=params + [('page', str(page))])).json() for page in (1, 2)]
+    assert all(page['total'] == 2 for page in pages)
+    assert {page['items'][0]['id'] for page in pages} == {first.id, second.id}
+    scope = (await client.get('/api/v1/spools', params=[('color_name', 'Red, Silk'), ('status_id', str(archived.id))])).json()
+    assert scope['total'] == 1 and scope['items'][0]['id'] == hidden.id
+    combined = (await client.get('/api/v1/spools', params=[('color_name', 'Red, Silk'), ('color_unassigned', 'true')])).json()
+    assert combined['total'] == 3
+    assert {item['id'] for item in combined['items']} == {first.id, second.id, blank.id}
+
+
+@pytest.mark.asyncio
+async def test_spool_color_facets_and_results_distinguish_exact_stops_and_unnamed_filaments(auth_client, db_session):
+    client, _ = auth_client
+    manufacturer = await _create_manufacturer(db_session)
+    red_filament = await _create_filament(db_session, manufacturer.id, designation="Red Silk")
+    blue_filament = await _create_filament(db_session, manufacturer.id, designation="Blue Silk")
+    red, blue, blank = [Color(name=name, hex_code=hex_code) for name, hex_code in [
+        ("Silk", "#FF0000"), ("Silk", "#0066FF"), ("", "#000000"),
+    ]]
+    db_session.add_all([red, blue, blank])
+    await db_session.flush()
+    db_session.add_all([
+        FilamentColor(filament_id=red_filament.id, color_id=red.id),
+        FilamentColor(filament_id=red_filament.id, color_id=blank.id, position=2),
+        FilamentColor(filament_id=blue_filament.id, color_id=blue.id),
+    ])
+    await db_session.commit()
+    status = await _get_status(db_session, "active")
+    red_spool = await _create_spool(db_session, red_filament.id, status.id)
+    await _create_spool(db_session, blue_filament.id, status.id)
+
+    facets = (await client.get("/api/v1/spools/filter-options")).json()["by_status"][str(status.id)]
+    assert facets["has_empty_colors"] is False
+    assert facets["colors"][0]["color_stops"] == [
+        {"id": blue.id, "hex": "#0066FF"}, {"id": red.id, "hex": "#FF0000"},
+    ]
+    result = (await client.get("/api/v1/spools", params={"color_id": red.id})).json()
+    assert [item["id"] for item in result["items"]] == [red_spool.id]
+    result = (await client.get("/api/v1/filaments", params={"color_id": red.id})).json()
+    assert [item["id"] for item in result["items"]] == [red_filament.id]
+
+    for path in ("/api/v1/spools", "/api/v1/filaments"):
+        invalid = await client.get(path, params={"color_id": 2**63})
+        assert invalid.status_code == 422
+
+
 async def _create_manufacturer(db_session, name: str = "Test Manufacturer") -> Manufacturer:
     manufacturer = Manufacturer(name=name)
     db_session.add(manufacturer)
@@ -311,11 +376,11 @@ class TestSpoolCRUD:
         assert response.status_code == 200
         scopes = response.json()["by_status"]
         assert scopes[str(opened.id)]["colors"] == [
-            {"value": "Blue", "label": "Blue", "color_hexes": ["#000080", "#0000FF"]},
+            {"value": "Blue", "label": "Blue", "color_hexes": ["#000080", "#0000FF"], "color_stops": [{"id": navy.id, "hex": "#000080"}, {"id": blue.id, "hex": "#0000FF"}]},
         ]
         assert scopes[str(opened.id)]["has_empty_colors"] is True
         assert scopes[str(archive.id)]["colors"] == [
-            {"value": "Red", "label": "Red", "color_hexes": ["#FF0000"]},
+            {"value": "Red", "label": "Red", "color_hexes": ["#FF0000"], "color_stops": [{"id": red.id, "hex": "#FF0000"}]},
         ]
         assert scopes[str(archive.id)]["has_empty_colors"] is False
 
@@ -327,8 +392,8 @@ class TestSpoolCRUD:
         assert updated.status_code == 200
         refreshed = await client.get("/api/v1/spools/filter-options")
         assert refreshed.json()["by_status"][str(opened.id)]["colors"] == [
-            {"value": "Blue", "label": "Blue", "color_hexes": ["#000080"]},
-            {"value": "Sky", "label": "Sky", "color_hexes": ["#00FFFF"]},
+            {"value": "Blue", "label": "Blue", "color_hexes": ["#000080"], "color_stops": [{"id": navy.id, "hex": "#000080"}]},
+            {"value": "Sky", "label": "Sky", "color_hexes": ["#00FFFF"], "color_stops": [{"id": blue.id, "hex": "#00FFFF"}]},
         ]
 
     @pytest.mark.asyncio

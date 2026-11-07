@@ -1,3 +1,5 @@
+import type { ColumnFilterValue } from './table-column-filters'
+
 export function normalizeHexCode(value?: string | null): string {
   if (!value) return ''
 
@@ -107,6 +109,25 @@ export function filamentColorValues(
   return (filament?.colors || [])
     .map((entry) => entry.color?.[field])
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
+}
+
+export function inventoryColorMatcher(filter: Extract<ColumnFilterValue, { type: 'multi' }>) {
+  const names = new Set(filter.values)
+  const exactIds = new Set<number>()
+  for (const [name, ids] of filter.colorStopIds || []) {
+    names.delete(name)
+    for (const id of ids) exactIds.add(id)
+  }
+  return (filament: { colors?: Array<{ color_id?: number; color?: { name?: string } | null }> } | null | undefined) => {
+    let hasNamedColor = false
+    for (const { color, color_id } of filament?.colors || []) {
+      if (color_id !== undefined && exactIds.has(color_id)) return true
+      if (!color?.name) continue
+      hasNamedColor = true
+      if (names.has(color.name)) return true
+    }
+    return !hasNamedColor && names.has('')
+  }
 }
 
 export interface AlphaColorControls {

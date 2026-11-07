@@ -95,6 +95,11 @@ class ManufacturerResponse(ManufacturerSummaryResponse):
     materials: list[str] = []
 
 
+class ColorFilterStop(BaseModel):
+    id: int
+    hex: str
+
+
 class ColorCreate(BaseModel):
     name: str
     hex_code: str

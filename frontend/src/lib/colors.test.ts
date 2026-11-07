@@ -7,6 +7,7 @@ import {
   bindAlphaColorControls,
   composeHexWithAlpha,
   filamentColorValues,
+  inventoryColorMatcher,
   composeHexWithAlphaByte,
   getAlphaPercent,
   normalizeHexCode,
@@ -31,6 +32,18 @@ describe('filament table color values', () => {
   it('returns hex codes for the color-range filter', () => {
     expect(filamentColorValues(filament, 'hex_code')).toEqual(['#FF0000', '#FFFFFF00'])
   })
+})
+
+it('keeps exact color stops distinct in the inventory fallback', () => {
+  const item = (color_id: number, name = 'Silk') => ({ colors: [{ color_id, color: { name } }] })
+  const filter = { type: 'multi' as const, values: ['Silk', 'Gray', ''], colorStopIds: [['Silk', [21]]] as [string, number[]][] }
+  const matches = inventoryColorMatcher(filter)
+  expect(matches(item(21))).toBe(true)
+  expect(matches(item(21, 'Renamed'))).toBe(true)
+  expect(matches(item(22))).toBe(false)
+  expect(matches(item(22, 'Gray'))).toBe(true)
+  expect(matches(item(23, ''))).toBe(true)
+  expect(matches({ colors: [...item(22).colors, ...item(23, '').colors] })).toBe(false)
 })
 
 function createAlphaControls() {
