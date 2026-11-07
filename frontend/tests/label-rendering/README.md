@@ -75,7 +75,7 @@ With frontend dependencies installed and `CHROME_EXECUTABLE_PATH` set, run from
 
 ```sh
 node scripts/benchmark-label-preview.mjs \
-  --baseline d03bca09 --candidate 64555f10 \
+  --baseline d03bca09 --candidate 9d5d214e \
   --rounds 3 --samples 30 --output /tmp/label-preview-benchmark.json
 ```
 
