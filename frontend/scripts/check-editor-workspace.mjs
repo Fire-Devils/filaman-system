@@ -97,6 +97,21 @@ try {
       await surface.locator('[data-label-element-id="text"]').click()
       assert.ok(!JSON.parse(await json.inputValue()).template.includes('{filament.bed_temp_range_c|unit}'), 'Dismissal keeps the field unitless')
       assert.ok(JSON.parse(await json.inputValue()).template.includes('{filament.extruder_temp_range_c|unit}{filament.bed_temp_range_c}'), 'The next field stays outside the first field with a unit')
+      await surface.locator('[data-label-element-id="text"]').press('Escape')
+      for (const inline of [false, true]) {
+        if (inline) await surface.locator('[data-label-element-id="text"]').dblclick()
+        assert.equal(await surface.locator('[data-label-text-editing]').count(), Number(inline))
+        const artwork = surface.locator('[data-label-svg-raster]')
+        const previousSource = await artwork.getAttribute('src')
+        await temperature.press('Enter')
+        await popup.waitFor({ state: 'visible' })
+        await page.waitForFunction(previous => document.querySelector('#freeform-canvas-host [data-label-svg-raster]')?.getAttribute('src') !== previous, previousSource)
+        assert.ok(await popup.locator('[data-field-unit-choice]').evaluate(choice => choice === document.activeElement),
+          `Keyboard activation keeps focus on the unit choice after rendering with inline editing ${inline}`)
+        await page.keyboard.press('Enter')
+        await popup.waitFor({ state: 'hidden' })
+      }
+      assert.equal(JSON.parse(await json.inputValue()).template.split('{filament.extruder_temp_range_c|unit}').length - 1, 3)
       await page.locator('#freeform-json-expand').click()
       await json.fill(JSON.stringify(original))
       await page.locator('#freeform-json-apply').click()

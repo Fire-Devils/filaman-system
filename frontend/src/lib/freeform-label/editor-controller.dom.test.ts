@@ -1509,6 +1509,48 @@ describe('freeform editor DOM binding', () => {
     binding.destroy()
   })
 
+  it('remeasures the canvas for zoom and replacement while ignoring artwork changes', async () => {
+    await renderRealDesignerEditor()
+    const binding = bindFreeformEditorDom({ controller: makeController() })
+    try {
+      await binding.ready
+      const row = document.querySelector<HTMLElement>('.freeform-canvas-row')!
+      const host = document.querySelector<HTMLElement>('#freeform-canvas-host')!
+      const label = host.querySelector<HTMLElement>('.label-preview')!
+      Object.defineProperty(row, 'clientWidth', { value: 720 })
+      const measure = vi.spyOn(label, 'getBoundingClientRect')
+        .mockReturnValue(DOMRect.fromRect({ width: 280, height: 180 }))
+      binding.sync()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      measure.mockClear()
+
+      const artwork = document.createElement('span')
+      label.append(artwork)
+      artwork.style.left = '12px'
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(measure).not.toHaveBeenCalled()
+
+      measure.mockReturnValue(DOMRect.fromRect({ width: 420, height: 270 }))
+      label.style.transform = 'scale(1.5)'
+      await vi.waitFor(() => expect(host.style.width).toBe('420px'))
+
+      const wrapper = document.createElement('div')
+      wrapper.className = 'label-wrapper'
+      host.replaceChildren(wrapper)
+      const replacement = label.cloneNode(false) as HTMLElement
+      const measureReplacement = vi.spyOn(replacement, 'getBoundingClientRect')
+        .mockReturnValue(DOMRect.fromRect({ width: 300, height: 200 }))
+      wrapper.append(replacement)
+      await vi.waitFor(() => expect(host.style.width).toBe('300px'))
+
+      measureReplacement.mockReturnValue(DOMRect.fromRect({ width: 360, height: 240 }))
+      wrapper.style.transform = 'scale(1.2)'
+      await vi.waitFor(() => expect(host.style.width).toBe('360px'))
+    } finally {
+      binding.destroy()
+    }
+  })
+
   it('themes both filament inverse controls from the current preview data', async () => {
     await renderRealDesignerEditor()
     let data: SpoolData | null = {

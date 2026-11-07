@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { beforeAll, expect, it, vi } from 'vitest'
 import { Resvg } from '@resvg/resvg-wasm'
-import { renderSvgLabel, rasterize, rasterizePng, layoutText } from './core.mjs'
+import QRCode from 'qrcode'
+import { renderSvgLabel, renderSvgLabelLayout, rasterize, rasterizePng, layoutText } from './core.mjs'
 import { createSvgRuntime } from './runtime.mjs'
 import type { SvgInput, SvgRuntime } from './types'
 import { fixtures, data } from '../../../tests/label-rendering/fixtures.mjs'
@@ -132,6 +133,40 @@ it.each(LABEL_FONT_FAMILIES)('prints unit symbols with %s', fontFamily => {
   expect(render(value).text[0].lines).toEqual(['220-260 °C', '1.24 g/cm³', '12 mm³/s'])
 })
 
+it('reuses QR encoding for geometry changes while distinguishing content and correction levels', () => {
+  const value = input()
+  value.origin = 'https://qr-cache.test'
+  value.data = { ...value.data, id: 101 }
+  value.preset.design.elements = [{ id: 'qr', type: 'qr', x: 8, y: 6, w: 18, h: 18, z: 0,
+    mode: 'simple', linkMode: 'spool', urlTemplate: '' }]
+  const encode = vi.spyOn(QRCode, 'create')
+  try {
+    const first = renderSvgLabelLayout(value, runtime)
+    value.preset.design.elements[0].x += 1
+    const moved = renderSvgLabelLayout(value, runtime)
+    expect(moved.svg).not.toBe(first.svg)
+    expect(encode).toHaveBeenCalledTimes(1)
+
+    const thermal = renderSvgLabelLayout({ ...value, thermal: true }, runtime)
+    expect(thermal.qrs[0].level).toBe('M')
+    expect(encode).toHaveBeenCalledTimes(2)
+    const next = { ...value, data: { ...value.data, id: 102 } }
+    expect(renderSvgLabelLayout(next, runtime).qrs[0].url).toBe('https://qr-cache.test/spools/102')
+    expect(encode).toHaveBeenCalledTimes(3)
+    expect(renderSvgLabelLayout(value, runtime).svg).toBe(moved.svg)
+    expect(encode).toHaveBeenCalledTimes(3)
+
+    for (let id = 200; id < 208; id++) {
+      renderSvgLabelLayout({ ...value, data: { ...value.data, id } }, runtime)
+    }
+    expect(encode).toHaveBeenCalledTimes(11)
+    expect(renderSvgLabelLayout(value, runtime).svg).toBe(moved.svg)
+    expect(encode).toHaveBeenCalledTimes(12)
+  } finally {
+    encode.mockRestore()
+  }
+})
+
 it.each([203, 300])('keeps thermal QR artwork at its designed size at %s DPI', dpi => {
   const value = input()
   value.preset.design.elements = [{ id: 'qr', type: 'qr', x: 8, y: 6, w: 18, h: 18, z: 0, mode: 'simple' }] as SvgInput['preset']['design']['elements']
@@ -172,6 +207,40 @@ it.each([false, true])('rejects QR clearance covering another code in strict out
     value.preset.design.elements[1].x = 21
     expect(render(value).qrs.every((qr: { error?: string }) => !qr.error)).toBe(true)
   }
+})
+
+it('allows thermal QR edges to touch on a printer dot and rejects a one-dot overlap', () => {
+  const value = input()
+  value.thermal = true
+  value.data = { ...value.data, id: 295 }
+  value.pixelWidth = Math.round(80 * 203 / 25.4)
+  value.pixelHeight = Math.round(40 * 203 / 25.4)
+  value.preset.design.label = { widthMm: 80, heightMm: 40, marginMm: 0, border: false }
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 3, y: 3, w: 10, h: 10, z: 0, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+    { id: 'qr-b', type: 'qr', x: 15.3, y: 3, w: 10, h: 10, z: 1, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+  ]
+  const [first, second] = renderSvgLabelLayout(value, runtime).qrs
+  expect(first.x! + first.edge!).toBe(second.x! + 4 * second.dots)
+
+  value.preset.design.elements[1].x -= 80 / value.pixelWidth
+  expect(() => renderSvgLabelLayout(value, runtime)).toThrow(/Move QR codes farther apart/)
+})
+
+it('checks the painted thermal clearance and saved white box separately', () => {
+  const value = input()
+  value.thermal = true
+  value.data = { ...value.data, id: 295 }
+  value.pixelWidth = 800
+  value.pixelHeight = 250
+  value.preset.design.label = { widthMm: 80, heightMm: 50, marginMm: 0, border: false }
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 3, y: 3, w: 18, h: 18, z: 0, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+    { id: 'qr-b', type: 'qr', x: 14.5, y: 21.5, w: 18, h: 18, z: 1, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+  ]
+  // Unequal pixel scales make the quiet zone narrower and taller than the saved box.
+  // The diagonal code lies in the gap between the two painted rectangles.
+  expect(renderSvgLabelLayout(value, runtime).qrs).toHaveLength(2)
 })
 
 it.each([false, true])('preserves QR overlap previews and marks both offending boxes (thermal=%s)', thermal => {

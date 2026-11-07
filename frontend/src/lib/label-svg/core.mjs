@@ -268,9 +268,17 @@ function imageSvg(element, asset) {
   return `<svg x="${x}" y="${y}" width="${drawnW}" height="${drawnH}" viewBox="${crop.x * asset.width} ${crop.y * asset.height} ${crop.w * asset.width} ${crop.h * asset.height}" overflow="hidden"><image width="${asset.width}" height="${asset.height}" href="${asset.dataUrl}"/></svg>`;
 }
 
+const qrMatrices = new Map();
+
 function qrSvg(element, url, sx, sy, thermal, assets, fonts) {
   const level = thermal ? 'M' : 'H';
-  const matrix = QRCode.create(url, { errorCorrectionLevel: level }).modules;
+  const key = `${level}:${url}`;
+  let matrix = qrMatrices.get(key);
+  if (!matrix) {
+    matrix = QRCode.create(url, { errorCorrectionLevel: level }).modules;
+    if (qrMatrices.size === 8) qrMatrices.delete(qrMatrices.keys().next().value);
+    qrMatrices.set(key, matrix);
+  }
   if (!thermal) {
     const step = element.w / matrix.size, quiet = 4 * step;
     const parts = [`<rect x="${element.x - quiet}" y="${element.y - quiet}" width="${element.w + 2 * quiet}" height="${element.w + 2 * quiet}" fill="#fff"/>`];
@@ -371,12 +379,10 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
         : { x: element.x, y: element.y, w: element.w, h: element.w };
       const quietX = thermal ? 4 * result.dots / sx : 4 * element.w / result.modules;
       const quietY = thermal ? 4 * result.dots / sy : quietX;
-      // Thermal output also clears the saved box, which can exceed rounded clearance.
-      const x = thermal ? Math.min(element.x, code.x - quietX) : code.x - quietX;
-      const y = thermal ? Math.min(element.y, code.y - quietY) : code.y - quietY;
-      const right = thermal ? Math.max(element.x + element.w, code.x + code.w + quietX) : code.x + code.w + quietX;
-      const bottom = thermal ? Math.max(element.y + element.h, code.y + code.h + quietY) : code.y + code.h + quietY;
-      qrBounds.push({ code, clearance: { x, y, w: right - x, h: bottom - y } });
+      const clearance = { x: code.x - quietX, y: code.y - quietY,
+        w: code.w + 2 * quietX, h: code.h + 2 * quietY };
+      // Check the two white rectangles actually painted in thermal output.
+      qrBounds.push({ code, clearances: thermal ? [clearance, element] : [clearance] });
     } else if (element.type === 'swatch') {
       parts.push(bandsSvg(element.x, element.y, element.w, element.h, getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex']), getFilamentSwatchMode(data['filament.multi_color_style']), element.radiusMm ?? 0, 0.12));
     } else if (element.type === 'shape' && ['rectangle', 'square', 'circle', 'line'].includes(element.shape)) {
@@ -394,9 +400,14 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
       else parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.max(0, radius - stroke / 2)}" ${style}/>`);
     } else throw new Error(`Unsupported label element: ${element.type}`);
   }
-  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  // Converting aligned printer dots to millimeters can introduce roundoff at touching edges.
+  const tolerance = 1e-9;
+  const overlaps = (a, b) => a.x + tolerance < b.x + b.w && a.x + a.w > b.x + tolerance
+    && a.y + tolerance < b.y + b.h && a.y + a.h > b.y + tolerance;
   for (let i = 0; i < qrs.length; i++) for (let j = i + 1; j < qrs.length; j++) {
-    if (!overlaps(qrBounds[i].clearance, qrBounds[j].code) && !overlaps(qrBounds[j].clearance, qrBounds[i].code)) continue;
+    const first = qrBounds[i], second = qrBounds[j];
+    if (!first.clearances.some(box => overlaps(box, second.code))
+      && !second.clearances.some(box => overlaps(box, first.code))) continue;
     const error = `QR codes ${qrs[i].id} and ${qrs[j].id} overlap their clearances. Move QR codes farther apart.`;
     if (!preview) throw new Error(error);
     qrs[i].error = qrs[j].error = error;
