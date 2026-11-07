@@ -1,4 +1,5 @@
 import { getAbortSignal } from './abort'
+import type { ColumnFilterValue } from './table-column-filters'
 
 const API_BASE = '/api/v1'
 const AUTH_BASE = '/auth'
@@ -105,11 +106,24 @@ export const api = {
     request<T>(path, { ...options, method: 'DELETE' }),
 }
 
-/**
- * Fetches all pages of a paginated API endpoint.
- * Handles endpoints returning { items: T[], total: number }.
- * Uses AbortSignal for navigation cleanup.
- */
+export function colorFilterParams(filter: ColumnFilterValue | undefined, baseParams = new URLSearchParams(), path = ''): URLSearchParams | null {
+  const params = new URLSearchParams()
+  if (!filter) return params
+  if (filter.type !== 'multi') return null
+  for (const name of filter.values) {
+    if (name === '') params.set('color_unassigned', 'true')
+    else params.append('color_name', name)
+  }
+  const combined = new URLSearchParams(baseParams)
+  params.forEach((value, key) => combined.append(key, value))
+  combined.set('page', String(Number.MAX_SAFE_INTEGER))
+  combined.set('page_size', '200')
+  // shortcut: oversized selections stay client-side; use a POST query if these become common.
+  return path.length + 1 + combined.toString().length <= 2000 && filter.values.length <= 200
+    && filter.values.every(name => name.length <= 100) ? params : null
+}
+
+/** Fetch all pages with bounded concurrency and navigation cleanup. */
 export async function fetchAllPages<T = unknown>(baseUrl: string): Promise<{ items: T[], total: number }> {
   const signal = getAbortSignal()
   const separator = baseUrl.includes('?') ? '&' : '?'
@@ -117,25 +131,24 @@ export async function fetchAllPages<T = unknown>(baseUrl: string): Promise<{ ite
   const response = await fetch(firstUrl, { credentials: 'include', signal })
   if (!response.ok) throw new Error(`Failed to fetch ${baseUrl}`)
   const data = await response.json()
-  let items: T[] = data.items
+  const items: T[] = data.items
   const total: number = data.total
 
   if (total > 200) {
     const totalPages = Math.ceil(total / 200)
-    const pagePromises: Promise<T[]>[] = []
-    for (let p = 2; p <= totalPages; p++) {
-      const pageUrl = `${baseUrl}${separator}page=${p}&page_size=200`
-      pagePromises.push(
-        fetch(pageUrl, { credentials: 'include', signal })
+    for (let p = 2; p <= totalPages; p += 2) {
+      signal.throwIfAborted()
+      const additionalPages = await Promise.all(Array.from({ length: Math.min(2, totalPages - p + 1) }, (_, index) => {
+        const pageUrl = `${baseUrl}${separator}page=${p + index}&page_size=200`
+        return fetch(pageUrl, { credentials: 'include', signal })
           .then(res => {
             if (!res.ok) throw new Error(`Failed to fetch ${baseUrl}`)
             return res.json()
           })
-          .then(d => d.items)
-      )
+          .then(d => d.items as T[])
+      }))
+      additionalPages.forEach(pageItems => { items.push(...pageItems) })
     }
-    const additionalPages = await Promise.all(pagePromises)
-    additionalPages.forEach(pageItems => { items = items.concat(pageItems) })
   }
 
   return { items, total }

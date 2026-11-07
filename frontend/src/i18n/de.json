@@ -1965,6 +1965,15 @@
     "notFound": "Diese Plugin-Seite ist nicht verfügbar."
   },
   "filters": {
+    "triadicMarks": "Triadisch (2 Markierungen)",
+    "colorHarmony": "Farbharmonie",
+    "single": "Einzeln",
+    "complementary": "Komplementär",
+    "triadic": "Triadisch",
+    "selectedRange": "Gewählter Bereich",
+    "triadicRange1": "Triadischer Bereich 1",
+    "triadicRange2": "Triadischer Bereich 2",
+    "closestHueFirst": "Ähnlichster Farbton zuerst",
     "apply": "Übernehmen",
     "clear": "Löschen",
     "clearFilter": "{label} löschen",

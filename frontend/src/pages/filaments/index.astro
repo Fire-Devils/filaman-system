@@ -139,7 +139,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { fetchAllPages } from '../../lib/api'
+    import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
@@ -249,6 +249,7 @@ import Layout from '../../layouts/Layout.astro'
     } catch { /* ignore invalid data */ }
     let isInitialLoad = true
     let filterRequestId = 0
+    let colorFilterPaged = true
     let filterRenderQueued = false
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
     let filHeaderFilters: HeaderFilterController | null = null
@@ -376,7 +377,8 @@ import Layout from '../../layouts/Layout.astro'
 
     function hasLocalColumnFilters(): boolean {
       return Object.entries(columnFilters).some(([key, value]) =>
-        isEffectiveColumnFilterActive(key, value) && key !== 'manufacturer' && key !== 'type')
+        isEffectiveColumnFilterActive(key, value) && key !== 'manufacturer' && key !== 'type'
+        && !(key === 'colors' && colorFilterPaged && colorFilterParams(value) !== null))
     }
 
     // Selecting every status is equivalent to no status filter.
@@ -486,6 +488,7 @@ import Layout from '../../layouts/Layout.astro'
 
       } catch (e) {
         if (isAbortError(e)) return
+        filHeaderFilters?.setOptions('colors', [])
         console.error('Failed to populate filter dropdowns:', e)
       }
     }
@@ -529,6 +532,10 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
 
+      const colors = colorFilterParams(columnFilters.colors, params, '/api/v1/filaments')
+      colorFilterPaged = colors !== null
+      colors?.forEach((value, key) => params.append(key, value))
+
       const needsAllData = hasLocalColumnFilters() || groupBy || isClientOnlySort(sortKey)
 
       try {
@@ -543,8 +550,8 @@ import Layout from '../../layouts/Layout.astro'
           if (hasLocalColumnFilters()) {
             allFilaments = filterFilaments(allFilaments)
             totalFilaments = allFilaments.length
-            currentPage = Math.min(currentPage, Math.ceil(totalFilaments / pageSize) || 1)
           }
+          currentPage = Math.min(currentPage, Math.ceil(totalFilaments / pageSize) || 1)
         } else {
           // Normal mode: load only the current page from backend
           params.set('page', String(currentPage))

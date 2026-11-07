@@ -45,6 +45,7 @@ from app.models import (
     SpoolStatus,
 )
 from app.utils.colors import normalize_hex_color
+from app.services.color_search import filament_color_filter
 from app.utils.query_params import parse_multi_int, parse_multi_str
 
 logger = logging.getLogger(__name__)
@@ -958,6 +959,8 @@ async def list_filaments(
     page_size: int = Query(50, ge=1, le=200),
     type: list[str] | None = Query(None),
     manufacturer_id: list[str] | None = Query(None),
+    color_name: list[str] | None = Query(None),
+    color_unassigned: bool = Query(False),
     search: str | None = Query(None, max_length=200),
     sort_by: str = Query(
         "designation",
@@ -972,6 +975,9 @@ async def list_filaments(
     spool_count_subquery = None
     types = parse_multi_str(type, "type")
     manufacturer_ids = parse_multi_int(manufacturer_id, "manufacturer_id")
+    color_condition = filament_color_filter(color_name, color_unassigned, db.get_bind().dialect.name)
+    if color_condition is not None:
+        conditions.append(color_condition)
 
     if types:
         conditions.append(Filament.material_type.in_(types))
