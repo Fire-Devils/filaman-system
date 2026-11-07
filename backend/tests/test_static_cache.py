@@ -15,6 +15,8 @@ from starlette.staticfiles import StaticFiles
         ("/spool-reel.js?v=2", "no-cache"),
         ("/plugin-fonts.css", "no-cache"),
         ("/plugin-fonts.css?v=2", "no-cache"),
+        ("/color-harmonies.js", "no-cache"),
+        ("/color-harmonies.css", "no-cache"),
         ("/icons.svg", "no-cache"),
         ("/icons.svg?v=2", "no-cache"),
         ("/_astro/app.a1b2.js", "public, max-age=31536000, immutable"),
