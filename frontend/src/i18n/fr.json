@@ -1964,6 +1964,15 @@
     "notFound": "Cette page de plugin n'est pas disponible."
   },
   "filters": {
+    "triadicMarks": "Triadique (2 repères)",
+    "colorHarmony": "Harmonie des couleurs",
+    "single": "Simple",
+    "complementary": "Complémentaire",
+    "triadic": "Triadique",
+    "selectedRange": "Plage sélectionnée",
+    "triadicRange1": "Plage triadique 1",
+    "triadicRange2": "Plage triadique 2",
+    "closestHueFirst": "Teinte la plus proche en premier",
     "apply": "Appliquer",
     "clear": "Effacer",
     "clearFilter": "Effacer {label}",

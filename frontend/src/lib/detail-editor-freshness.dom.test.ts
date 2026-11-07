@@ -73,6 +73,7 @@ it('retains all freshly assigned colors and refreshed labels during a pattern-on
   await page.enter()
   expect(page.controller.collectPayload().colors).toEqual([{ color_id: 11, position: 1 }, { color_id: 99, position: 2 }])
   expect(document.querySelector('#filament-editor-color-name')!.textContent).toBe('Renamed red · New green')
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   const green = document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="New green "]')!
   expect(green.classList.contains('selected')).toBe(true)
   expect(green.getAttribute('aria-label')).toContain('#00FF00')
@@ -135,6 +136,7 @@ it('refreshes unselected manufacturer and color choices after cache expiry witho
   change('[name="manufacturer_id"]', '8', 'change')
   expect(document.querySelector<HTMLInputElement>('[name="default_spool_weight_g"]')!.value).toBe('333')
   expect(document.querySelector<HTMLSelectElement>('[name="manufacturer_id"]')!.selectedOptions[0].textContent).toBe('Second renamed')
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   expect(document.querySelector('#color-grid button[aria-label^="Green "]')).not.toBeNull()
   expect(document.querySelectorAll('[name="manufacturer_id"] option[value="8"]')).toHaveLength(1)
   expect(document.querySelectorAll('#type option[value="PLA"]')).toHaveLength(1)

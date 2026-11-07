@@ -1,7 +1,7 @@
 import { getAbortSignal, isAbortError } from './abort'
 import { changedNativeFields, setFormFieldValue } from './detail-edit'
 import { CACHE_KEYS, cachedFetchAllPages, invalidateCachePrefix } from './cache'
-import { toColorSwatchBackground } from './colors'
+import { normalizeHexCode, toColorSwatchBackground } from './colors'
 import {
   collectExtraFieldPayload,
   createEntityExtraFieldEditor,
@@ -29,7 +29,6 @@ import {
 import {
   bindColorFilterButton,
   isColumnFilterActive,
-  matchesColumnFilter,
   type ColorFilterValue,
 } from './table-column-filters'
 
@@ -159,6 +158,8 @@ export function createFilamentFormController(options: {
   let allColors: Color[] = []
   let selectedColorIds: number[] = []
   let colorFilter: ColorFilterValue | null = null
+  let matchingColorHexes: ReadonlySet<string> | null = null
+  let matchingColorSource: Color[] | null = null
   let allManufacturers: Manufacturer[] = []
   let systemFields: SystemExtraFieldDef[] = []
   let addManufacturerOption: HTMLOptionElement | null = null
@@ -210,10 +211,12 @@ export function createFilamentFormController(options: {
     dirtyMarkers.set(wrapper, marker)
   }
   const unsavedStatus = form.ownerDocument.getElementById('unsaved-changes-status')
-  const clearColorFilter = bindColorFilterButton(byId('color-filter-button'), (value) => {
+  const clearColorFilter = bindColorFilterButton(byId('color-filter-button'), (value, matchingHexes) => {
     colorFilter = value
+    matchingColorHexes = matchingHexes || null
+    matchingColorSource = allColors
     renderColorGrid()
-  })
+  }, () => allColors.map(color => color.hex_code))
 
   const inlineColorEditor = bindInlineColorEditor({
     getAbortSignal,
@@ -228,6 +231,7 @@ export function createFilamentFormController(options: {
       invalidateCachePrefix(CACHE_KEYS.COLORS)
       if (destroyed) return
       allColors.push(newColor)
+      matchingColorSource = null
       if (isCurrentSession) toggleColor(newColor.id)
       else renderColorGrid()
     },
@@ -273,6 +277,7 @@ export function createFilamentFormController(options: {
     colorDialogInvoker = document.activeElement instanceof HTMLElement ? document.activeElement : null
     colorDialog.showModal()
     colorDialog.classList.add('open')
+    renderColorGrid()
     byId<HTMLButtonElement>('filament-color-dialog-close').focus()
   }
 
@@ -423,15 +428,28 @@ export function createFilamentFormController(options: {
 
   function renderColorGrid(): void {
     colorTooltip.hidden = true
+    if (!colorDialog.open) return
+    const focused = colorGrid.contains(document.activeElement) ? document.activeElement as HTMLButtonElement : null
+    const restoreFocus = () => {
+      if (!focused || document.activeElement === focused) return
+      const target = focused.isConnected ? focused : [...colorGrid.querySelectorAll<HTMLButtonElement>('button[data-color-id]')]
+        .find(button => button.dataset.colorId === focused.dataset.colorId)
+      ;(target || colorSearch).focus({ preventScroll: true })
+    }
     colorFilterClear.disabled = !colorSearch.value.trim() && (!colorFilter || !isColumnFilterActive(colorFilter))
+    if (matchingColorSource !== allColors) {
+      matchingColorHexes = clearColorFilter.refresh()
+      matchingColorSource = allColors
+    }
     if (!allColors.length) {
       colorGrid.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('filaments.noColorsAvailable')}</p>`
+      restoreFocus()
       return
     }
     const query = colorSearch.value.trim().toLocaleLowerCase()
     const visible = allColors.filter((color) =>
       (!query || color.name.toLocaleLowerCase().includes(query))
-      && matchesColumnFilter(color.hex_code, colorFilter))
+      && (!colorFilter || !isColumnFilterActive(colorFilter) || matchingColorHexes?.has(normalizeHexCode(color.hex_code))))
     if (colorSortKey && colorSortDirection) {
       const direction = colorSortDirection === 'asc' ? 1 : -1
       visible.sort((left, right) => direction * (colorSortKey === 'hex'
@@ -440,45 +458,75 @@ export function createFilamentFormController(options: {
     }
     if (!visible.length) {
       colorGrid.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem;">${t('filters.noMatchingOptions')}</p>`
+      restoreFocus()
       return
     }
-    colorGrid.replaceChildren()
+    const buttons = colorGrid.classList.contains('fm-color-list') === colorListToggle.checked
+      ? new Map([...colorGrid.querySelectorAll<HTMLButtonElement>('button[data-color-id]')].map(button => [Number(button.dataset.colorId), button]))
+      : new Map<number, HTMLButtonElement>()
     colorGrid.classList.toggle('fm-color-list', colorListToggle.checked)
+    let next = colorGrid.firstElementChild
+    const multi = getColorMode() === 'multi'
     for (const color of visible) {
-      const swatch = document.createElement('button')
-      swatch.type = 'button'
+      const label = `${color.name} (${color.hex_code})`
+      let swatch = buttons.get(color.id)
+      if (swatch?.getAttribute('aria-label') !== label) swatch = undefined
+      const created = !swatch
+      swatch ||= document.createElement('button')
+      if (created) {
+        swatch.type = 'button'
+        swatch.dataset.colorId = String(color.id)
+        swatch.setAttribute('aria-label', label)
+      }
       const selected = selectedColorIds.includes(color.id) ? 'selected' : ''
-      const order = getColorMode() === 'multi' ? selectedColorIds.indexOf(color.id) + 1 : 0
-      swatch.className = colorListToggle.checked ? `fm-color-choice ${selected}` : `fm-color-swatch ${selected}`
-      if (colorListToggle.checked) {
+      const order = multi ? selectedColorIds.indexOf(color.id) + 1 : 0
+      const className = colorListToggle.checked ? `fm-color-choice ${selected}` : `fm-color-swatch ${selected}`
+      if (swatch.className !== className) swatch.className = className
+      if (created && colorListToggle.checked) {
         swatch.innerHTML = `
           <span class="fm-color-swatch ${selected}"${order ? ` data-order="${order}"` : ''} style="background:${toColorSwatchBackground(color.hex_code)}"></span>
           <span class="fm-color-choice-name">${escapeHtml(color.name)}</span>
           <span class="fm-color-choice-hex">${escapeHtml(color.hex_code)}</span>
         `
-      } else {
-        swatch.style.background = toColorSwatchBackground(color.hex_code)
-        if (order) swatch.dataset.order = String(order)
+      } else if (created) swatch.style.background = toColorSwatchBackground(color.hex_code)
+      const chip = colorListToggle.checked ? swatch.querySelector<HTMLElement>('.fm-color-swatch')! : swatch
+      if (chip !== swatch && chip.classList.contains('selected') !== !!selected) chip.classList.toggle('selected', !!selected)
+      const nextOrder = order ? String(order) : undefined
+      if (chip.dataset.order !== nextOrder) {
+        if (nextOrder) chip.dataset.order = nextOrder
+        else delete chip.dataset.order
       }
-      const label = `${color.name} (${color.hex_code})`
-      swatch.setAttribute('aria-label', label)
-      if (!colorListToggle.checked) {
-        const showTooltip = () => {
-          const rect = swatch.getBoundingClientRect()
-          colorTooltip.textContent = label
-          colorTooltip.style.left = `${rect.left + rect.width / 2}px`
-          colorTooltip.style.top = `${rect.top - 6}px`
-          colorTooltip.hidden = false
-        }
-        swatch.addEventListener('pointerenter', showTooltip)
-        swatch.addEventListener('pointerleave', () => { colorTooltip.hidden = true })
-        swatch.addEventListener('focus', showTooltip)
-        swatch.addEventListener('blur', () => { colorTooltip.hidden = true })
-      }
-      swatch.addEventListener('click', () => toggleColor(color.id))
-      colorGrid.appendChild(swatch)
+      if (swatch === next) next = next.nextElementSibling
+      else colorGrid.insertBefore(swatch, next)
     }
+    while (next) {
+      const remove = next
+      next = next.nextElementSibling
+      remove.remove()
+    }
+    restoreFocus()
   }
+
+  const paletteButton = (event: Event) => event.target instanceof Element
+    ? event.target.closest<HTMLButtonElement>('button[data-color-id]') : null
+  const showPaletteTooltip = (event: Event) => {
+    const button = paletteButton(event)
+    if (!button || colorListToggle.checked || event instanceof MouseEvent && event.relatedTarget instanceof Node && button.contains(event.relatedTarget)) return
+    const rect = button.getBoundingClientRect()
+    colorTooltip.textContent = button.getAttribute('aria-label')
+    colorTooltip.style.left = `${rect.left + rect.width / 2}px`
+    colorTooltip.style.top = `${rect.top - 6}px`
+    colorTooltip.hidden = false
+  }
+  const hidePaletteTooltip = () => { colorTooltip.hidden = true }
+  colorGrid.addEventListener('pointerover', showPaletteTooltip)
+  colorGrid.addEventListener('focusin', showPaletteTooltip)
+  colorGrid.addEventListener('pointerout', hidePaletteTooltip)
+  colorGrid.addEventListener('focusout', hidePaletteTooltip)
+  colorGrid.addEventListener('click', event => {
+    const button = paletteButton(event)
+    if (button) toggleColor(Number(button.dataset.colorId))
+  })
 
   function toggleColor(colorId: number): void {
     const index = selectedColorIds.indexOf(colorId)
@@ -940,6 +988,7 @@ export function createFilamentFormController(options: {
     }
     if (hasValue('multi_color_style')) setField('multi_color_style', data.multi_color_style || 'striped')
     if (hasValue('colors') && Array.isArray(data.colors)) {
+      matchingColorSource = null
       for (const { color } of data.colors) {
         if (!color) continue
         const index = allColors.findIndex(({ id }) => id === color.id)

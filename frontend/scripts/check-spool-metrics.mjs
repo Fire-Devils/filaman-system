@@ -61,6 +61,7 @@ try {
     else if (path.endsWith('/spools/16/events')) json = { items: [], total: 0 }
     else if (path.endsWith('/spools/filter-options')) json = { used_status_ids: [1], by_status: { 1: {
       manufacturers: [{ value: '7', label: 'Fixture Brand' }], materials: ['PLA'], locations: [{ value: '2', label: 'Shelf A' }], has_empty_location: false,
+      colors: [{ value: 'Copper', label: 'Copper', color_hexes: ['#B15821'] }, { value: 'Gold', label: 'Gold', color_hexes: ['#FFBB00'] }], has_empty_colors: false,
     } } }
     else if (path.endsWith('/spools/statuses')) json = [{ id: 1, key: 'opened', label: 'Opened' }]
     else if (path.endsWith('/locations')) json = { items: [{ id: 2, name: locationName }], total: 1 }

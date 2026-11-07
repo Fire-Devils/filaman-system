@@ -566,7 +566,11 @@ body:has(.fm-header-filter-panel.open)::after {
 
 .fm-header-filter-color-option {
   cursor: pointer;
+  display: grid;
+  gap: 5px;
+  justify-items: center;
   position: relative;
+  width: 74px;
 }
 
 .fm-header-filter-color-option input {
@@ -577,9 +581,47 @@ body:has(.fm-header-filter-panel.open)::after {
 
 .fm-header-filter-color-option .fm-color-swatch {
   align-items: center;
+  border-radius: 7px;
   display: flex;
+  height: 66px;
   justify-content: center;
+  width: 66px;
 }
+
+.fm-color-tile-name {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  min-height: 2.5em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: center;
+  width: 100%;
+}
+
+.fm-header-filter-list.fm-color-groups { display: block; }
+.fm-color-groups section + section { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.fm-color-groups h4, .fm-color-order-caption { color: var(--text-muted); font-size: 0.75rem; margin: 0; }
+.fm-color-group-heading { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; margin-bottom: 6px; }
+.fm-color-order-caption { margin-inline-start: auto; text-align: right; }
+.fm-color-groups .fm-color-grid { gap: 8px; }
+.fm-header-filter-panel-compact-colors .fm-header-filter-color-option { gap: 0; width: 36px; }
+.fm-header-filter-panel-compact-colors .fm-header-filter-color-option .fm-color-swatch { border-radius: 50%; height: 36px; width: 36px; }
+.fm-header-filter-panel-compact-colors .fm-color-tile-name { display: none; }
+.fm-header-filter-panel-compact-colors .fm-header-filter-list.fm-color-groups { padding-block: 4px; }
+.fm-header-filter-panel-compact-colors .fm-color-groups .fm-color-grid { gap: 6px; padding-block: 2px; }
+.fm-header-filter-panel-compact-colors .fm-color-groups section + section { margin-top: 2px; padding-top: 2px; }
+.fm-header-filter-panel-compact-colors .fm-color-groups h4,
+.fm-header-filter-panel-compact-colors .fm-color-order-caption { line-height: 1.2; }
+.fm-header-filter-panel-compact-colors .fm-color-group-heading { margin-bottom: 2px; }
+@media (min-width: 800px) {
+  .fm-header-filter-list.fm-color-groups { max-height: min(52vh, 440px); }
+}
+.fm-header-color-harmonies { border: 0; display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; }
+.fm-header-color-harmonies label { align-items: center; display: flex; font-size: 0.75rem; gap: 4px; }
+.fm-header-color-harmonies label:has(input:disabled) { opacity: 0.5; }
 
 .fm-header-filter-color-option input:focus-visible + .fm-color-swatch {
   outline: 2px solid var(--accent);
@@ -815,12 +857,13 @@ body:has(.fm-header-filter-panel.open)::after {
   opacity: 0.45;
 }
 
-.fm-header-color-controls.is-inactive .fm-header-color-wheel-wrap {
+.fm-header-color-controls.is-inactive .fm-header-color-wheel {
   filter: grayscale(0.35) saturate(0.8);
   opacity: 0.78;
 }
 
-.fm-header-color-disclosure.is-locked .fm-header-color-controls {
+.fm-header-color-disclosure.is-locked .fm-header-color-controls > :not(.fm-header-color-wheel-wrap),
+.fm-header-color-disclosure.is-locked .fm-header-color-wheel {
   opacity: 0.35;
 }
 
@@ -863,13 +906,17 @@ body:has(.fm-header-filter-panel.open)::after {
   text-transform: uppercase;
 }
 
-.fm-header-color-modes {
+.fm-header-color-modes,
+.fm-header-color-neutrals {
   display: grid;
   gap: 4px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.fm-header-color-neutrals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
 .fm-header-color-default,
+.fm-header-color-neutrals button,
 .fm-header-color-modes button {
   align-items: center;
   background: var(--bg-elevated);
@@ -886,10 +933,12 @@ body:has(.fm-header-filter-panel.open)::after {
 }
 
 .fm-header-color-default {
+  grid-column: span 3;
   width: 100%;
 }
 
 .fm-header-color-default.active,
+.fm-header-color-neutrals button.active,
 .fm-header-color-modes button.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
@@ -908,7 +957,47 @@ body:has(.fm-header-filter-panel.open)::after {
   display: grid;
   padding: 4px;
   place-items: center;
+  position: relative;
 }
+
+.fm-header-color-guide {
+  border: 2px solid var(--color-harmony-outline);
+  border-radius: 50%;
+  height: 188px;
+  mask: conic-gradient(from 82deg, #000 0deg 16deg, transparent 16deg 360deg);
+  pointer-events: none;
+  position: absolute;
+  transform: rotate(var(--color-guide-angle));
+  width: 188px;
+}
+
+[data-color-harmony-tone='complementary'] { --color-harmony-outline: #e59a78; }
+[data-color-harmony-tone='triadic'] { --color-harmony-outline: #81b9cf; }
+.fm-color-harmony-name {
+  border-bottom: 2px solid var(--color-harmony-outline);
+  display: inline-block;
+  padding-bottom: 2px;
+}
+.fm-header-color-wheel-selection[data-color-harmony-tone] { --color-selection-outline: var(--color-harmony-outline); }
+
+.fm-header-color-guide-key { color: var(--text-muted); display: flex; flex-wrap: wrap; font-size: 0.7rem; gap: 12px; justify-content: center; margin: 0; }
+.fm-header-color-guide-key[hidden] { display: none; }
+.fm-header-color-guide-key span { align-items: center; display: flex; gap: 4px; }
+.fm-header-color-guide-key i { background: var(--color-harmony-outline); display: inline-block; height: 2px; width: 9px; }
+
+.fm-header-color-markers {
+  height: 180px;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  width: 180px;
+  z-index: 3;
+}
+
+.fm-header-color-markers circle { stroke: rgb(110 110 110 / 55%); stroke-width: 0.6; }
+.fm-header-color-markers circle.is-matching { stroke: var(--color-harmony-outline, var(--text)); stroke-opacity: 0.8; stroke-width: 1; }
+.fm-header-color-markers circle.fm-header-color-marker-hatch,
+.fm-header-color-markers circle.fm-header-color-marker-backing { stroke: none; }
 
 .fm-header-color-wheel {
   --color-hue-from: 45deg;
@@ -952,11 +1041,7 @@ body:has(.fm-header-filter-panel.open)::after {
       transparent calc(var(--color-saturation-inner) + 1%) calc(var(--color-saturation-outer) - 1%),
       #000 var(--color-saturation-outer) 100%
     ),
-    conic-gradient(
-      from var(--color-hue-from),
-      transparent 0 var(--color-hue-span),
-      #000 var(--color-hue-span) 360deg
-    );
+    var(--color-hue-mask);
   mask-composite: add;
   -webkit-mask:
     radial-gradient(
@@ -965,11 +1050,7 @@ body:has(.fm-header-filter-panel.open)::after {
       transparent calc(var(--color-saturation-inner) + 1%) calc(var(--color-saturation-outer) - 1%),
       #000 var(--color-saturation-outer) 100%
     ),
-    conic-gradient(
-      from var(--color-hue-from),
-      transparent 0 var(--color-hue-span),
-      #000 var(--color-hue-span) 360deg
-    );
+    var(--color-hue-mask);
   pointer-events: none;
   position: absolute;
   z-index: 1;
@@ -2035,6 +2116,12 @@ dialog.fm-modal-overlay:not([open]) {
   transform: translate(-50%, -100%);
   white-space: nowrap;
   z-index: 1200;
+}
+
+.fm-header-filter-panel .fm-color-tooltip {
+  max-width: min(300px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 @media (max-width: 640px) {
