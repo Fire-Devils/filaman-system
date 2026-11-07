@@ -1964,6 +1964,15 @@
     "notFound": "This plugin page is not available."
   },
   "filters": {
+    "triadicMarks": "Triadic (2 marks)",
+    "colorHarmony": "Color harmony",
+    "single": "Single",
+    "complementary": "Complementary",
+    "triadic": "Triadic",
+    "selectedRange": "Selected range",
+    "triadicRange1": "Triadic range 1",
+    "triadicRange2": "Triadic range 2",
+    "closestHueFirst": "Closest hue first",
     "apply": "Apply",
     "clear": "Clear",
     "clearFilter": "Clear {label}",
@@ -1994,6 +2003,7 @@
     "filterInput": "{label} filter value",
     "upperFilterInput": "{label} upper filter value",
     "colorList": "Color list",
+    "colorListLock": "List filter active. Clear it to use the wheel.",
     "clearListFilter": "Clear list filter",
     "clearColorRange": "Clear color range",
     "colorFilter": "Color filter",

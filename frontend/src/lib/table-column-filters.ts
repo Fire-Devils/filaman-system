@@ -6,6 +6,7 @@ export type HeaderFilterOption = {
   value: string
   label: string
   colorHexes?: string[]
+  colorStops?: { id: number; hex: string }[]
 }
 
 export type TextFilterOperator = 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'notContains' | 'isEmpty' | 'isNotEmpty'
@@ -16,6 +17,7 @@ export type ColorFilterMode = 'none' | 'color' | ColorNeutral
 export type ColorFilterValue = {
   type: 'color'
   mode: ColorFilterMode
+  harmony?: 'single' | 'complementary' | 'triadic'
   hueFrom: number
   hueTo: number
   saturationFrom: number
@@ -30,7 +32,7 @@ export type ColorFilterValue = {
 }
 
 export type ColumnFilterValue =
-  | { type: 'multi'; values: string[] }
+  | { type: 'multi'; values: string[]; colorStopIds?: [name: string, ids: number[]][] }
   | { type: 'text'; operator: TextFilterOperator; value: string }
   | { type: 'number'; operator: NumberFilterOperator; value: string; valueTo: string }
   | { type: 'date'; operator: DateFilterOperator; value: string; valueTo: string }
@@ -71,6 +73,8 @@ export type TableFilterControlOptions = {
 }
 
 type FilterState = {
+  colorCache?: ColorCache
+  getColorHexes?: () => string[]
   def: HeaderFilterDefinition
   options: HeaderFilterOption[]
   applied: ColumnFilterValue
@@ -91,6 +95,92 @@ type FilterState = {
   suggestionList: HTMLDataListElement | null
   candidateColor: ColorFilterValue | null
   colorDisclosure: HTMLDetailsElement | null
+}
+
+type ColorSample = ReturnType<typeof parseColorSample>
+type WheelSample = NonNullable<ColorSample> & { x: number; y: number; sort: number[] }
+type ColorMatch = { group: number; hex: string; distance: number; hue: number; brightness: number; sort: number[] }
+type ColorCache = {
+  options: HeaderFilterOption[]
+  samples: Map<string, WheelSample>
+  key: string
+  matches: Map<string, ColorMatch | null>
+  optionsMatched: Map<HeaderFilterOption, ColorMatch | null>
+  matchingHexes: Set<string>
+  markers?: SVGCircleElement[]
+  markerNeutral?: boolean
+}
+
+function parseColorSample(raw: string) {
+  const hex = normalizeHexCode(raw)
+  if (!hex) return null
+  return { hex, ...hexToHsv(hex), transparent: hex.length === 9 && hex.slice(-2) !== 'FF' }
+}
+
+function sampleMatches(sample: NonNullable<ColorSample>, filter: ColorFilterValue, offset: number): boolean {
+  if (sample.transparent && !filter.includeTransparent) return false
+  if (filter.mode === 'none') return sample.transparent
+  if (filter.mode === 'color') return hueMatchesRange(sample.hue, filter, offset)
+    && sample.saturation >= Math.min(filter.saturationFrom, filter.saturationTo)
+    && sample.saturation <= Math.max(filter.saturationFrom, filter.saturationTo)
+    && sample.value >= Math.min(filter.valueFrom, filter.valueTo)
+    && sample.value <= Math.max(filter.valueFrom, filter.valueTo)
+  const [from, to] = colorNeutralRange(filter)
+  return sample.value >= from && sample.value <= to && sample.saturation <= colorNeutralSaturation(filter)
+}
+
+function hueDistance(a: number, b: number): number {
+  const delta = Math.abs(a - b) % 360
+  return Math.min(delta, 360 - delta)
+}
+
+function classifiedColors(state: FilterState): ColorCache {
+  const source = state.getColorHexes?.()
+  if (source && (source.length !== state.options.length || source.some((hex, index) => hex !== state.options[index].value))) {
+    state.options = source.map(hex => ({ value: hex, label: hex, colorHexes: [hex] }))
+  }
+  let cache = state.colorCache
+  if (!cache || cache.options !== state.options) {
+    const samples = new Map<string, WheelSample>()
+    for (const option of state.options) for (const raw of option.colorHexes || []) {
+      const sample = parseColorSample(raw)
+      if (sample && !samples.has(sample.hex)) {
+        const angle = sample.hue * Math.PI / 180
+        samples.set(sample.hex, { ...sample, sort: colorSortKey(sample.hex),
+          x: 50 + Math.cos(angle) * sample.saturation / 2,
+          y: 50 - Math.sin(angle) * sample.saturation / 2 })
+      }
+    }
+    cache = state.colorCache = { options: state.options, samples, key: '', matches: new Map(), optionsMatched: new Map(), matchingHexes: new Set() }
+  }
+  const filter = workingColorFilter(state)
+  const key = filter ? JSON.stringify({ ...filter, valuePreview: 0 }) : 'none'
+  if (cache.key === key) return cache
+  cache.key = key
+  const active = !!filter && isColumnFilterActive(filter)
+  const offsets = filter ? colorHarmonyOffsets(filter) : [0]
+  const closest = active && filter!.mode === 'color' && hueSpan(filter!) < 360
+  cache.matchingHexes.clear()
+  for (const sample of cache.samples.values()) {
+    let best: ColorMatch | null = null
+    offsets.forEach((offset, group) => {
+      if (active && !sampleMatches(sample, filter!, offset)) return
+      const center = filter ? (filter.hueFrom + hueSpan(filter) / 2 + offset) % 360 : 0
+      const distance = closest ? hueDistance(sample.hue, center) : 0
+      if (!best || distance < best.distance) best = { group, hex: sample.hex, distance, hue: sample.hue, brightness: sample.value, sort: sample.sort }
+    })
+    cache.matches.set(sample.hex, best)
+    if (best) cache.matchingHexes.add(sample.hex)
+  }
+  for (const option of state.options) {
+    let best: ColorMatch | null = null
+    for (const raw of option.colorHexes || []) {
+      const match = cache.matches.get(normalizeHexCode(raw))
+      if (match && (!best || match.distance < best.distance || (match.distance === best.distance && match.group < best.group))) best = match
+    }
+    cache.optionsMatched.set(option, best)
+  }
+  return cache
 }
 
 const FILTER_ICON = `
@@ -403,7 +493,10 @@ function positionFilterPanel(state: FilterState) {
   const rect = state.trigger.getBoundingClientRect()
   const disclosure = state.colorDisclosure || state.panel.querySelector<HTMLDetailsElement>('.fm-header-filter-disclosure')
   const disclosurePanel = disclosure?.querySelector<HTMLElement>('.fm-header-filter-disclosure-panel') || null
-  const sidecar = window.innerWidth >= 800 && disclosure?.open ? disclosurePanel : null
+  // Two 360px panels, an 8px gap and 8px margins on both sides.
+  const wide = window.innerWidth >= 744
+  const sidecar = wide && disclosure?.open ? disclosurePanel : null
+  state.panel.classList.toggle('fm-header-filter-panel-compact-colors', isColorGridState(state) && !sidecar)
   if (disclosurePanel && !sidecar) {
     disclosurePanel.style.removeProperty('top')
     disclosurePanel.style.removeProperty('max-height')
@@ -411,11 +504,17 @@ function positionFilterPanel(state: FilterState) {
   const sidecarGap = sidecar?.offsetWidth ? sidecar.offsetWidth + 8 : 0
   const maxLeft = window.innerWidth - state.panel.offsetWidth - sidecarGap - 8
   const left = Math.max(8, Math.min(rect.left <= maxLeft ? rect.left : rect.right - state.panel.offsetWidth, maxLeft))
-  const panelHeight = state.panel.offsetHeight
+  const panelHeight = isColorGridState(state) && disclosure?.open && !sidecar
+    ? Math.max(state.panel.offsetHeight, state.panel.scrollHeight)
+    : state.panel.offsetHeight
   const viewportBottom = window.innerHeight - 8
   const visibleHeight = Math.min(panelHeight, viewportBottom - 8)
   const top = Math.max(8, Math.min(rect.bottom + 6, viewportBottom - visibleHeight))
   const availableHeight = viewportBottom - top
+  if (!wide && isColorGridState(state)) {
+    const footer = state.panel.querySelector<HTMLElement>(':scope > .fm-header-filter-actions')
+    if (footer) state.panel.style.setProperty('--fm-filter-footer-height', `${footer.offsetHeight}px`)
+  }
   state.panel.style.setProperty('--fm-filter-max-height', `${availableHeight}px`)
   state.panel.style.left = `${left}px`
   state.panel.style.top = `${top}px`
@@ -437,13 +536,13 @@ function openFilterPanel(state: FilterState) {
   } else {
     state.colorPreset = state.appliedColorPreset
   }
+  state.panel.classList.add('open')
   syncControls(state)
   state.linkedStates.forEach((linked) => {
     linked.working = cloneFilter(linked.applied)
     linked.optionSearch = ''
     syncControls(linked)
   })
-  state.panel.classList.add('open')
   state.trigger.setAttribute('aria-expanded', 'true')
   positionFilterPanel(state)
   const focusTarget = state.optionSearchInput
@@ -478,15 +577,20 @@ function createFilterActions(
   const applyState = (target: FilterState) => {
     if (isColorGridState(target) && target.working.type === 'multi') {
       const selected = new Set(target.working.values)
-      const rangeOptions = target.options.filter((option) => optionMatchesCandidateColor(target, option))
-      const narrowed = target.optionSearch.trim() !== ''
-        || !!target.candidateColor && isColumnFilterActive(target.candidateColor)
-      target.working = {
-        type: 'multi',
-        values: selected.size > 0
-          ? rangeOptions.filter((option) => selected.has(option.value)).map((option) => option.value)
-          : narrowed ? visibleOptions(target).map((option) => option.value) : [],
+      const rangeActive = !!target.candidateColor && isColumnFilterActive(target.candidateColor)
+      const cache = rangeActive ? classifiedColors(target) : undefined
+      const options = selected.size > 0
+        ? rangeActive ? target.options.filter(option => selected.has(option.value) && optionMatchesCandidateColor(target, option, cache)) : []
+        : rangeActive || target.optionSearch.trim() ? visibleOptions(target) : []
+      const values = selected.size > 0 && !rangeActive ? [...selected] : options.map(option => option.value)
+      const colorStopIds: [string, number[]][] = rangeActive ? [] : target.working.colorStopIds || []
+      if (cache) {
+        for (const option of options) {
+          const ids = option.colorStops?.filter(stop => cache.matchingHexes.has(normalizeHexCode(stop.hex))).map(stop => stop.id)
+          if (ids?.length) colorStopIds.push([option.value, ids])
+        }
       }
+      target.working = { type: 'multi', values, ...(colorStopIds.length ? { colorStopIds } : {}) }
     }
     target.applied = cloneFilter(target.working)
     target.appliedColorPreset = target.colorPreset
@@ -494,16 +598,20 @@ function createFilterActions(
     updateTrigger(target)
   }
   const applyFilter = () => {
+    if (apply.disabled) return
     ;[state, ...state.linkedStates].forEach(applyState)
     close()
+    if (isColorGridState(state)) state.trigger.focus()
     updateTrigger(state)
   }
   const clearFilter = () => {
     if (isColorGridState(state) && state.working.type === 'multi') {
-      state.working.values = []
+      const restoreFocus = document.activeElement === clear
+      state.working = { type: 'multi', values: [] }
       state.optionSearch = ''
       syncControls(state)
       updateTrigger(state)
+      if (restoreFocus) (state.optionSearchInput || apply).focus()
       return
     }
     state.applied = emptyColumnFilter(state.def.type)
@@ -518,7 +626,7 @@ function createFilterActions(
   apply.addEventListener('click', applyFilter)
   clear.addEventListener('click', clearFilter)
   state.panel.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && showApply && isColorGridState(state) && !(event.target instanceof HTMLButtonElement)) {
+    if (event.key === 'Enter' && showApply && isColorGridState(state) && event.target === state.optionSearchInput) {
       event.preventDefault()
       applyFilter()
     } else if (event.key === 'Escape') {
@@ -533,11 +641,11 @@ function createFilterActions(
 
 export function bindColorFilterButton(
   trigger: HTMLButtonElement,
-  onApply: (value: ColorFilterValue) => void,
-): () => void {
+  onApply: (value: ColorFilterValue, matchingHexes?: ReadonlySet<string>) => void,
+  getColorHexes?: () => string[],
+): (() => void) & { refresh: () => ReadonlySet<string> } {
   const label = t('filaments.colors')
-  const initial = emptyColumnFilter('color')
-  if (initial.type !== 'color') return () => {}
+  const initial = colorDefaults()
 
   trigger.insertAdjacentHTML('afterbegin', FILTER_ICON)
   trigger.setAttribute('aria-expanded', 'false')
@@ -554,12 +662,17 @@ export function bindColorFilterButton(
   trigger.setAttribute('aria-controls', panel.id)
 
   const state: FilterState = {
+    getColorHexes,
     def: {
       key: 'color',
       label,
       columnSelector: '',
       type: 'color',
-      onApply: (value) => { if (value.type === 'color') onApply(value) },
+      onApply: (value) => {
+        if (value.type !== 'color') return
+        if (getColorHexes) onApply(value, classifiedColors(state).matchingHexes)
+        else onApply(value)
+      },
     },
     options: [],
     applied: cloneFilter(initial),
@@ -604,7 +717,12 @@ export function bindColorFilterButton(
 
   syncControls(state)
   updateTrigger(state)
-  return clearFilter
+  return Object.assign(clearFilter, {
+    refresh: () => {
+      syncColorControls(state)
+      return classifiedColors(state).matchingHexes
+    },
+  })
 }
 
 export function matchesColumnFilter(rawValue: unknown, filter: ColumnFilterValue | null | undefined): boolean {
@@ -662,31 +780,27 @@ export function matchesColumnFilter(rawValue: unknown, filter: ColumnFilterValue
   return actual === expected
 }
 
+export function colorHarmonyOffsets(filter: ColorFilterValue): number[] {
+  if (filter.mode !== 'color') return [0]
+  if (filter.harmony === 'complementary') return [0, 180]
+  if (filter.harmony === 'triadic') return [0, 120, 240]
+  return [0]
+}
+
+function hueSpan(filter: ColorFilterValue): number {
+  return Math.abs(filter.hueTo - filter.hueFrom) >= 360 ? 360 : (filter.hueTo - filter.hueFrom + 360) % 360
+}
+
+function hueMatchesRange(hue: number, filter: ColorFilterValue, offset: number): boolean {
+  const start = ((filter.hueFrom + offset) % 360 + 360) % 360
+  return (hue - start + 360) % 360 <= hueSpan(filter)
+}
+
 export function matchesColorFilter(rawValue: unknown, filter: ColorFilterValue): boolean {
   const values = Array.isArray(rawValue) ? rawValue : [rawValue]
   return values.some((value) => {
-    const normalized = typeof value === 'string' ? normalizeHexCode(value) : ''
-    if (!normalized) return false
-    const transparent = normalized.length === 9 && normalized.slice(-2) !== 'FF'
-    if (transparent && !filter.includeTransparent) return false
-    const hex = toOpaqueRgbHex(normalized)
-    const { hue, saturation, value: brightness } = hexToHsv(hex)
-    const hueMatches = filter.hueFrom <= filter.hueTo
-      ? hue >= filter.hueFrom && hue <= filter.hueTo
-      : hue >= filter.hueFrom || hue <= filter.hueTo
-    const chromatic = filter.mode === 'color'
-      && hueMatches
-      && saturation >= Math.min(filter.saturationFrom, filter.saturationTo)
-      && saturation <= Math.max(filter.saturationFrom, filter.saturationTo)
-      && brightness >= Math.min(filter.valueFrom, filter.valueTo)
-      && brightness <= Math.max(filter.valueFrom, filter.valueTo)
-    const neutralPreset = colorNeutralPreset(filter.mode)
-    const [neutralFrom, neutralTo] = colorNeutralRange(filter)
-    const neutral = !!neutralPreset
-      && brightness >= neutralFrom
-      && brightness <= neutralTo
-      && saturation <= colorNeutralSaturation(filter)
-    return filter.mode === 'none' ? transparent : chromatic || neutral
+    const sample = typeof value === 'string' ? parseColorSample(value) : null
+    return !!sample && colorHarmonyOffsets(filter).some(offset => sampleMatches(sample, filter, offset))
   })
 }
 
@@ -711,6 +825,7 @@ export function normalizeColorFilter(value: ColorFilterValue): ColorFilterValue 
     : undefined
   return {
     type: 'color', mode,
+    harmony: value.harmony === 'complementary' || value.harmony === 'triadic' ? value.harmony : 'single',
     hueFrom: value.hueFrom, hueTo: value.hueTo,
     saturationFrom: value.saturationFrom, saturationTo: value.saturationTo,
     valueFrom: value.valueFrom, valueTo: value.valueTo, valuePreview,
@@ -760,7 +875,14 @@ function normalizeDate(value: unknown): string {
 }
 
 function cloneFilter(value: ColumnFilterValue): ColumnFilterValue {
-  if (value.type === 'multi') return { type: 'multi', values: [...value.values] }
+  if (value.type === 'multi') {
+    const names = new Set(value.values)
+    const colorStopIds = Array.isArray(value.colorStopIds) ? value.colorStopIds
+      .filter(entry => Array.isArray(entry) && names.has(entry[0]) && Array.isArray(entry[1])
+        && entry[1].length && entry[1].every(id => Number.isSafeInteger(id) && id > 0))
+      .map(([name, ids]): [string, number[]] => [name, [...ids]]) : []
+    return { type: 'multi', values: [...value.values], ...(colorStopIds.length ? { colorStopIds } : {}) }
+  }
   if (value.type === 'color') return normalizeColorFilter(value)
   if (value.type === 'text') return { ...value }
   return { ...value }
@@ -797,10 +919,16 @@ export function initHeaderColumnFilters(
     openPanels.delete(panel)
   }
 
-  function repositionOpenPanels() {
+  function repositionOpenPanels(event: Event) {
+    const focused = document.activeElement
     openPanels.forEach((panel) => {
       const state = [...states.values()].find((candidate) => candidate.panel === panel)
-      if (state) positionFilterPanel(state)
+      if (!state) return
+      positionFilterPanel(state)
+      if (event.type === 'resize' && isColorGridState(state) && focused instanceof HTMLElement && panel.contains(focused)) {
+        const target = focused.closest('.fm-header-filter-color-option') || focused
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
     })
   }
 
@@ -953,6 +1081,7 @@ export function initHeaderColumnFilters(
         state.colorPreset = 'color'
         state.appliedColorPreset = 'color'
         state.optionSearch = ''
+        if (isColorGridState(state)) state.candidateColor = colorDefaults()
         syncControls(state)
         updateTrigger(state)
       })
@@ -1058,8 +1187,32 @@ function buildMultiControls(state: FilterState) {
 
   state.optionSearchInput = searchable ? search : null
   state.list = list
+  list.addEventListener('change', (event) => {
+    if (state.working.type !== 'multi' || !(event.target instanceof HTMLInputElement) || !event.target.hasAttribute('data-value')) return
+    const values = new Set(state.working.values)
+    const value = event.target.dataset.value || ''
+    const removedExactStops = !event.target.checked && state.working.colorStopIds?.some(([name]) => name === value)
+    if (event.target.checked) values.add(value)
+    else {
+      values.delete(value)
+      state.working.colorStopIds = state.working.colorStopIds?.filter(([name]) => name !== value)
+    }
+    state.working.values = [...values]
+    if (isColorGridState(state)) {
+      if (removedExactStops) renderMultiList(state)
+      else syncColorApplyButton(state)
+      syncColorControls(state)
+    }
+    updateTrigger(state)
+  })
+  if (isColorGridState(state)) attachColorTileTooltips(state)
   if (searchable) state.panel.appendChild(search)
-  if (!isColorGridState(state)) state.panel.appendChild(selectionActions)
+  if (isColorGridState(state)) {
+    const status = document.createElement('p')
+    status.className = 'fm-header-color-list-status'
+    status.setAttribute('role', 'status')
+    state.panel.appendChild(status)
+  } else state.panel.appendChild(selectionActions)
   state.panel.appendChild(list)
 }
 
@@ -1103,7 +1256,10 @@ function buildColorDisclosure(state: FilterState) {
   disclosure.appendChild(summary)
   disclosure.addEventListener('toggle', () => {
     localStorage.setItem('filaman-color-range-open', String(disclosure.open))
-    if (state.panel.classList.contains('open')) positionFilterPanel(state)
+    if (state.panel.classList.contains('open')) {
+      syncColorControls(state)
+      positionFilterPanel(state)
+    }
   })
   state.colorDisclosure = disclosure
   const sidecar = document.createElement('div')
@@ -1116,9 +1272,14 @@ function buildColorDisclosure(state: FilterState) {
   clear.dataset.clearColorRange = ''
   clear.textContent = t('filters.clearColorRange')
   clear.addEventListener('click', () => {
+    const restoreFocus = document.activeElement === clear
     state.candidateColor = colorDefaults()
     state.colorPreset = 'color'
     colorControlsChanged(state)
+    if (restoreFocus) {
+      const target = state.optionSearchInput || state.panel.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')
+      target?.focus()
+    }
   })
   sidecar.appendChild(clear)
   disclosure.appendChild(sidecar)
@@ -1126,6 +1287,7 @@ function buildColorDisclosure(state: FilterState) {
 }
 
 function buildColorControls(state: FilterState, parent: HTMLElement = state.panel) {
+  const showHarmony = isColorGridState(state)
   const controls = document.createElement('div')
   controls.className = 'fm-header-color-controls'
 
@@ -1146,10 +1308,8 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
     state.colorPreset = 'color'
     colorControlsChanged(state)
   })
-  controls.appendChild(colorMode)
-
-  const modes = document.createElement('div')
-  modes.className = 'fm-header-color-modes'
+  const neutrals = document.createElement('div')
+  neutrals.className = 'fm-header-color-neutrals'
 
   ;(['black', 'grey', 'white'] as const).forEach((neutral) => {
     const button = document.createElement('button')
@@ -1172,8 +1332,13 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
     swatch.setAttribute('aria-hidden', 'true')
     button.appendChild(swatch)
     button.append(t(`filters.soft${neutral.charAt(0).toUpperCase()}${neutral.slice(1)}`))
-    modes.appendChild(button)
+    neutrals.appendChild(button)
   })
+  controls.appendChild(neutrals)
+
+  const modes = document.createElement('div')
+  modes.className = 'fm-header-color-modes'
+  modes.appendChild(colorMode)
 
   COLOR_CHROMATIC_PRESETS.forEach((preset) => {
     const button = document.createElement('button')
@@ -1206,6 +1371,38 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
   })
   controls.appendChild(modes)
 
+  if (showHarmony) {
+    const harmonies = document.createElement('fieldset')
+    harmonies.className = 'fm-header-color-harmonies'
+    const legend = document.createElement('legend')
+    legend.className = 'fm-sr-only'
+    legend.textContent = t('filters.colorHarmony')
+    harmonies.appendChild(legend)
+    for (const harmony of ['single', 'complementary', 'triadic'] as const) {
+      const label = document.createElement('label')
+      const input = document.createElement('input')
+      input.type = 'radio'
+      input.name = `${state.panel.id}-harmony`
+      input.dataset.colorHarmony = harmony
+      input.addEventListener('change', () => {
+        const value = workingColorFilter(state)
+        if (!value || !input.checked) return
+        value.harmony = harmony
+        colorControlsChanged(state)
+      })
+      label.appendChild(input)
+      if (harmony !== 'single') {
+        const name = document.createElement('span')
+        name.className = 'fm-color-harmony-name'
+        name.dataset.colorHarmonyTone = harmony
+        name.textContent = t(`filters.${harmony}`)
+        label.appendChild(name)
+      } else label.append(t('filters.single'))
+      harmonies.appendChild(label)
+    }
+    controls.appendChild(harmonies)
+  }
+
   const wheel = document.createElement('div')
   wheel.className = 'fm-header-color-wheel'
   wheel.tabIndex = 0
@@ -1216,13 +1413,59 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
   const surface = document.createElement('span')
   surface.className = 'fm-header-color-wheel-surface'
   surface.setAttribute('aria-hidden', 'true')
-  const selection = document.createElement('span')
-  selection.className = 'fm-header-color-wheel-selection'
-  wheel.append(surface, selection)
+  wheel.appendChild(surface)
+  const windowCount = showHarmony ? 3 : 1
+  for (let group = 0; group < windowCount; group++) {
+    const selection = document.createElement('span')
+    selection.className = 'fm-header-color-wheel-selection'
+    selection.dataset.colorWindow = String(group)
+    selection.setAttribute('aria-hidden', 'true')
+    wheel.appendChild(selection)
+  }
   const wheelWrap = document.createElement('div')
   wheelWrap.className = 'fm-header-color-wheel-wrap'
   wheelWrap.appendChild(wheel)
+  const markers = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  markers.classList.add('fm-header-color-markers')
+  markers.setAttribute('viewBox', '0 0 100 100')
+  markers.setAttribute('aria-hidden', 'true')
+  // Match the wheel's 4px crosshatch pitch in this 100-unit / 180px viewBox.
+  const hatchPitch = 4 * Math.SQRT2 / 1.8
+  const alphaCell = 4 / 1.8
+  markers.innerHTML = `
+    <defs>
+      <pattern id="${state.panel.id}-marker-hatch" width="${hatchPitch}" height="${hatchPitch}" patternUnits="userSpaceOnUse">
+        <path d="M0 0L${hatchPitch} ${hatchPitch}" stroke="white" stroke-opacity="0.13" stroke-width="${1 / 1.8}"/>
+        <path d="M0 ${hatchPitch}L${hatchPitch} 0" stroke="black" stroke-opacity="0.09" stroke-width="${1 / 1.8}"/>
+      </pattern>
+      <pattern id="${state.panel.id}-marker-alpha" width="${2 * alphaCell}" height="${2 * alphaCell}" patternUnits="userSpaceOnUse">
+        <rect width="100%" height="100%" fill="#FFFFFF"/>
+        <rect x="${alphaCell}" width="${alphaCell}" height="${alphaCell}" fill="#D1D5DB"/>
+        <rect y="${alphaCell}" width="${alphaCell}" height="${alphaCell}" fill="#D1D5DB"/>
+      </pattern>
+    </defs>
+    <g data-color-marker-layer="excluded"></g><g data-color-marker-layer="matching"></g>`
+  wheelWrap.appendChild(markers)
   controls.appendChild(wheelWrap)
+  if (showHarmony) {
+    for (const offset of [0, 180, 120, 240]) {
+      const guide = document.createElement('span')
+      guide.className = 'fm-header-color-guide'
+      guide.dataset.colorGuide = String(offset)
+      if (offset !== 0) {
+        const harmony = offset === 180 ? 'complementary' : 'triadic'
+        guide.dataset.colorHarmonyTone = harmony
+        guide.title = t(`filters.${harmony}`)
+        guide.setAttribute('aria-label', guide.title)
+      }
+      wheelWrap.appendChild(guide)
+    }
+    const guideKey = document.createElement('p')
+    guideKey.className = 'fm-header-color-guide-key'
+    guideKey.id = `${state.panel.id}-guides`
+    guideKey.innerHTML = `<span><i data-color-harmony-tone="complementary" aria-hidden="true"></i>${escapeHtml(t('filters.complementary'))}</span><span><i data-color-harmony-tone="triadic" aria-hidden="true"></i><i data-color-harmony-tone="triadic" aria-hidden="true"></i>${escapeHtml(t('filters.triadicMarks'))}</span>`
+    controls.appendChild(guideKey)
+  }
 
   const shiftHueArc = (delta: number) => {
     const value = workingColorFilter(state)
@@ -1243,7 +1486,7 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
       value.hueFrom = 0
       value.hueTo = 360
     } else {
-      value.hueFrom = Math.round((center - span / 2 + 360) % 360)
+      value.hueFrom = Math.round((center - span / 2 + 360) % 360) % 360
       value.hueTo = Math.round((value.hueFrom + span) % 360)
     }
     state.colorPreset = 'color'
@@ -1259,17 +1502,23 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
     centerHueArc((360 - angle + 360) % 360)
   }
   let wheelDragging = false
+  const wheelFrame = framePointerUpdates(centerHueArcAtPointer)
   wheel.addEventListener('pointerdown', (event) => {
+    if (state.colorDisclosure?.classList.contains('is-locked')) return
     const mode = workingColorFilter(state)?.mode
     if (mode !== 'none' && mode !== 'color') return
     wheelDragging = true
     wheel.setPointerCapture?.(event.pointerId)
-    centerHueArcAtPointer(event)
+    wheelFrame.start(event)
   })
   wheel.addEventListener('pointermove', (event) => {
-    if (wheelDragging) centerHueArcAtPointer(event)
+    if (wheelDragging) wheelFrame.move(event)
   })
-  const stopWheelDrag = () => { wheelDragging = false }
+  const stopWheelDrag = (event: PointerEvent) => {
+    if (!wheelDragging) return
+    wheelDragging = false
+    wheelFrame.flush(event.type === 'pointerup' ? event : undefined)
+  }
   wheel.addEventListener('pointerup', stopWheelDrag)
   wheel.addEventListener('pointercancel', stopWheelDrag)
   wheel.addEventListener('keydown', (event) => {
@@ -1398,9 +1647,9 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
         dragging = true
         startX = event.clientX
         grab.setPointerCapture?.(event.pointerId)
+        grabFrame.start(event)
       })
-      grab.addEventListener('pointermove', (event) => {
-        if (!dragging) return
+      const grabFrame = framePointerUpdates((event) => {
         const width = slider.getBoundingClientRect().width
         const travel = width - 17
         if (travel <= 0) return
@@ -1409,7 +1658,14 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
         startX = event.clientX
         shiftHueArc(delta)
       })
-      const stopDrag = () => { dragging = false }
+      grab.addEventListener('pointermove', (event) => {
+        if (dragging) grabFrame.move(event)
+      })
+      const stopDrag = (event: PointerEvent) => {
+        if (!dragging) return
+        dragging = false
+        grabFrame.flush(event.type === 'pointerup' ? event : undefined)
+      }
       grab.addEventListener('pointerup', stopDrag)
       grab.addEventListener('pointercancel', stopDrag)
       grab.addEventListener('keydown', (event) => {
@@ -1439,7 +1695,19 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
         value.valuePreview = Math.max(value.valueFrom, Math.min(value.valueTo, Number(preview.value)))
         state.colorPreset = 'color'
         value.mode = 'color'
-        colorControlsChanged(state)
+        preview.value = String(value.valuePreview)
+        wheel.style.setProperty('--color-wheel-darkness', String(1 - value.valuePreview / 100))
+        previewGrab.style.left = colorPreviewPosition(value.valuePreview)
+        for (const button of modes.querySelectorAll<HTMLButtonElement>('button')) {
+          const selected = button.dataset.colorMode === 'color'
+          button.setAttribute('aria-pressed', String(selected))
+          button.classList.toggle('active', selected)
+        }
+        if (state.working.type === 'color') {
+          state.applied = cloneFilter(state.working)
+          state.appliedColorPreset = 'color'
+        }
+        updateTrigger(state)
       })
       slider.appendChild(preview)
       const previewGrab = document.createElement('span')
@@ -1468,6 +1736,36 @@ function buildColorControls(state: FilterState, parent: HTMLElement = state.pane
   transparentLabel.append(t('filters.includeTransparent'))
   controls.appendChild(transparentLabel)
   parent.appendChild(controls)
+}
+
+function colorPreviewPosition(value: number): string {
+  const ratio = value / 100
+  return `calc(${(ratio * 100).toFixed(4)}% + ${(13 * (1 - 2 * ratio)).toFixed(4)}px)`
+}
+
+function framePointerUpdates(update: (event: PointerEvent) => void) {
+  let pending: PointerEvent | null = null
+  let last: PointerEvent | null = null
+  let frame = 0
+  const flush = (final?: PointerEvent) => {
+    if (frame) cancelAnimationFrame(frame)
+    frame = 0
+    if (final) pending = final
+    if (!pending) return
+    const event = pending
+    pending = null
+    if (event.clientX === last?.clientX && event.clientY === last?.clientY) return
+    last = event
+    update(event)
+  }
+  return {
+    start: (event: PointerEvent) => { last = null; flush(event) },
+    move: (event: PointerEvent) => {
+      pending = event
+      if (!frame) frame = requestAnimationFrame(() => flush())
+    },
+    flush,
+  }
 }
 
 function buildTypedControls(state: FilterState) {
@@ -1573,10 +1871,21 @@ function syncColorControls(state: FilterState) {
   const controls = state.panel.querySelector<HTMLElement>('.fm-header-color-controls')
   controls?.classList.toggle('is-inactive', !rangeActive)
   state.colorDisclosure?.classList.toggle('is-locked', rangeLocked)
+  const listStatus = state.panel.querySelector<HTMLElement>('.fm-header-color-list-status')
+  const message = rangeLocked ? t('filters.colorListLock') : ''
+  if (listStatus && listStatus.textContent !== message) listStatus.textContent = message
+  const clearRange = state.panel.querySelector<HTMLButtonElement>('[data-clear-color-range]')
+  if (clearRange) clearRange.disabled = !rangeActive
+  const clearList = state.panel.querySelector<HTMLButtonElement>('[data-clear-list-filter]')
+  if (clearList) clearList.disabled = !listStarted
   state.panel.querySelectorAll<HTMLButtonElement>('[data-color-mode], [data-color-preset], [data-color-neutral]').forEach((button) => {
     button.disabled = rangeLocked
   })
   const neutralPreset = colorNeutralPreset(value.mode)
+  state.panel.querySelectorAll<HTMLInputElement>('[data-color-harmony]').forEach(input => {
+    input.checked = input.dataset.colorHarmony === (neutralPreset ? 'single' : value.harmony || 'single')
+    input.disabled = !!neutralPreset || rangeLocked || value.mode === 'none'
+  })
   const neutralSaturationTo = colorNeutralSaturation(value)
   const [neutralValueFrom, neutralValueTo] = colorNeutralRange(value)
   const displayValue = (field: keyof ColorFilterValue) => {
@@ -1659,12 +1968,11 @@ function syncColorControls(state: FilterState) {
     )
   }
   const wheel = state.panel.querySelector<HTMLElement>('.fm-header-color-wheel')
+  const span = hueSpan(value)
+  const hueCenter = (value.hueFrom + span / 2) % 360
   if (wheel) {
-    const hueSpan = Math.abs(value.hueTo - value.hueFrom) >= 360
-      ? 360
-      : (value.hueTo - value.hueFrom + 360) % 360
     wheel.style.setProperty('--color-hue-from', neutralPreset ? '0deg' : `${90 - value.hueTo}deg`)
-    wheel.style.setProperty('--color-hue-span', neutralPreset ? '360deg' : `${hueSpan}deg`)
+    wheel.style.setProperty('--color-hue-span', neutralPreset ? '360deg' : `${span}deg`)
     wheel.style.setProperty('--color-saturation-inner', `${neutralPreset ? neutralValueFrom : Math.min(value.saturationFrom, value.saturationTo)}%`)
     wheel.style.setProperty('--color-saturation-outer', `${neutralPreset ? neutralValueTo : Math.max(value.saturationFrom, value.saturationTo)}%`)
     wheel.style.setProperty('--color-wheel-darkness', neutralPreset ? '0' : String(1 - value.valuePreview / 100))
@@ -1676,15 +1984,35 @@ function syncColorControls(state: FilterState) {
     wheel.classList.toggle('is-muted', controlsMuted)
     wheel.tabIndex = controlsMuted ? -1 : 0
     wheel.setAttribute('aria-disabled', String(controlsMuted))
-    wheel.setAttribute('aria-valuenow', String(Math.round(neutralPreset ? neutralValueTo : (value.hueFrom + hueSpan / 2) % 360)))
+    wheel.setAttribute('aria-valuenow', String(Math.round(neutralPreset ? neutralValueTo : hueCenter)))
     wheel.setAttribute('aria-valuetext', neutralPreset
       ? `${neutralValueFrom}%–${neutralValueTo}%`
       : `${value.hueFrom}°–${value.hueTo}°`)
-    const selection = wheel.querySelector<HTMLElement>('.fm-header-color-wheel-selection')
-    if (selection) selection.hidden = value.mode === 'none'
+    const offsets = colorHarmonyOffsets(value)
+    wheel.querySelectorAll<HTMLElement>('[data-color-window]').forEach((selection, group) => {
+      selection.hidden = value.mode === 'none' || group >= offsets.length
+      if (group > 0 && group < offsets.length && span < 360) selection.dataset.colorHarmonyTone = value.harmony!
+      else delete selection.dataset.colorHarmonyTone
+      selection.style.setProperty('--color-hue-from', neutralPreset ? '0deg' : `${90 - value.hueTo - (offsets[group] || 0)}deg`)
+    })
+    wheel.style.setProperty('--color-hue-mask', hueMask(value))
+    const guideKey = state.panel.querySelector<HTMLElement>('.fm-header-color-guide-key')
+    if (guideKey) {
+      const hasHueRange = chromaticMode && span < 360
+      const singleRange = offsets.length === 1
+      state.panel.querySelectorAll<HTMLElement>('[data-color-guide]').forEach(guide => {
+        const offset = Number(guide.dataset.colorGuide)
+        guide.hidden = !hasHueRange || (singleRange ? offset === 0 : !offsets.includes(offset))
+        if (!guide.hidden) guide.style.setProperty('--color-guide-angle', `${-(value.hueFrom + span / 2 + offset)}deg`)
+      })
+      const hideKey = !hasHueRange || !singleRange
+      const guideHeightChanged = guideKey.hidden !== hideKey
+      guideKey.hidden = hideKey
+      if (guideKey.hidden) wheel.removeAttribute('aria-describedby')
+      else wheel.setAttribute('aria-describedby', guideKey.id)
+      if (guideHeightChanged && state.panel.classList.contains('open')) positionFilterPanel(state)
+    }
   }
-  const hueSpan = Math.abs(value.hueTo - value.hueFrom) >= 360 ? 360 : (value.hueTo - value.hueFrom + 360) % 360
-  const hueCenter = (value.hueFrom + hueSpan / 2) % 360
   if (hueGrab) {
     const ratio = hueCenter / 360
     hueGrab.style.left = `calc(${(ratio * 100).toFixed(4)}% + ${(8.5 * (1 - 2 * ratio)).toFixed(4)}px)`
@@ -1694,10 +2022,97 @@ function syncColorControls(state: FilterState) {
   }
   const previewGrab = state.panel.querySelector<HTMLElement>('.fm-header-color-preview-grab')
   if (previewGrab) {
-    const previewRatio = Number(displayValue('valuePreview')) / 100
-    previewGrab.style.left = `calc(${(previewRatio * 100).toFixed(4)}% + ${(13 * (1 - 2 * previewRatio)).toFixed(4)}px)`
+    previewGrab.style.left = colorPreviewPosition(Number(displayValue('valuePreview')))
     previewGrab.hidden = value.mode === 'none' || !!neutralPreset
   }
+  syncColorMarkers(state, value)
+}
+
+function syncColorMarkers(state: FilterState, filter: ColorFilterValue) {
+  if (!state.panel.classList.contains('open') || state.colorDisclosure && !state.colorDisclosure.open) return
+  const layer = state.panel.querySelector<SVGSVGElement>('.fm-header-color-markers')
+  if (!layer) return
+  const excluded = layer.querySelector<SVGGElement>('[data-color-marker-layer="excluded"]')!
+  const matching = layer.querySelector<SVGGElement>('[data-color-marker-layer="matching"]')!
+  const cache = classifiedColors(state)
+  if (!cache.markers) {
+    cache.markers = [...cache.samples.values()].map(sample => {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+      circle.dataset.colorMarker = sample.hex
+      circle.setAttribute('fill', sample.hex)
+      circle.setAttribute('r', '2.6')
+      const hatch = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+      hatch.classList.add('fm-header-color-marker-hatch')
+      hatch.setAttribute('r', '2.6')
+      hatch.setAttribute('fill', `url(#${state.panel.id}-marker-hatch)`)
+      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+      // Keep excluded hatches from bleeding through matching alpha samples.
+      if (sample.transparent) {
+        const backing = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+        backing.classList.add('fm-header-color-marker-backing')
+        backing.setAttribute('r', '2.6')
+        backing.setAttribute('fill', `url(#${state.panel.id}-marker-alpha)`)
+        group.appendChild(backing)
+      }
+      group.append(circle, hatch)
+      return circle
+    })
+    excluded.replaceChildren()
+    matching.replaceChildren(...cache.markers.map(circle => circle.parentElement!))
+  }
+  const neutral = !!colorNeutralPreset(filter.mode)
+  const active = isColumnFilterActive(filter)
+  for (const circle of cache.markers) {
+    const sample = cache.samples.get(circle.dataset.colorMarker!)!
+    if (cache.markerNeutral !== neutral) {
+      const x = String(neutral ? 50 + sample.value / 2 : sample.x)
+      const y = String(neutral ? 50 : sample.y)
+      for (const node of circle.parentElement!.children) {
+        node.setAttribute('cx', x)
+        node.setAttribute('cy', y)
+      }
+    }
+    const display = neutral && sample.saturation > colorNeutralSaturation(filter) ? 'none' : ''
+    if (circle.style.display !== display) circle.style.display = display
+    const match = cache.matches.get(sample.hex)
+    const matches = !active || !!match
+    circle.classList.toggle('is-matching', active && matches)
+    if (active && match && match.group > 0) circle.dataset.colorHarmonyTone = filter.harmony!
+    else delete circle.dataset.colorHarmonyTone
+    const hatch = circle.nextElementSibling as SVGCircleElement
+    const hatchDisplay = matches || display === 'none' ? 'none' : ''
+    if (hatch.style.display !== hatchDisplay) hatch.style.display = hatchDisplay
+    const backing = circle.previousElementSibling as SVGCircleElement | null
+    if (backing) {
+      const backingDisplay = matches && display !== 'none' ? '' : 'none'
+      if (backing.style.display !== backingDisplay) backing.style.display = backingDisplay
+    }
+    const destination = matches ? matching : excluded
+    const group = circle.parentElement!
+    if (group.parentNode !== destination) destination.appendChild(group)
+  }
+  cache.markerNeutral = neutral
+}
+
+function hueMask(filter: ColorFilterValue): string {
+  const span = filter.mode === 'color' ? hueSpan(filter) : 360
+  if (span === 360) return 'conic-gradient(transparent, transparent)'
+  const intervals: [number, number][] = []
+  for (const offset of colorHarmonyOffsets(filter)) {
+    const start = ((90 - filter.hueTo - offset) % 360 + 360) % 360
+    intervals.push([start, Math.min(360, start + span)])
+    if (start + span > 360) intervals.push([0, start + span - 360])
+  }
+  intervals.sort((a, b) => a[0] - b[0])
+  const stops: string[] = []
+  let end = 0
+  for (const [from, to] of intervals) {
+    if (from > end) stops.push(`#000 ${end}deg ${from}deg`)
+    if (to > end) stops.push(`transparent ${Math.max(end, from)}deg ${to}deg`)
+    end = Math.max(end, to)
+  }
+  if (end < 360) stops.push(`#000 ${end}deg 360deg`)
+  return `conic-gradient(${stops.join(', ')})`
 }
 
 function syncTypedInputVisibility(state: FilterState) {
@@ -1710,16 +2125,25 @@ function syncTypedInputVisibility(state: FilterState) {
 
 function visibleOptions(state: FilterState): HeaderFilterOption[] {
   const query = state.optionSearch.toLowerCase().trim()
-  return state.options.filter((option) =>
+  const cache = state.candidateColor && isColumnFilterActive(state.candidateColor) ? classifiedColors(state) : undefined
+  const options = state.options.filter((option) =>
     (!query || option.label.toLowerCase().includes(query))
-    && optionMatchesCandidateColor(state, option),
+    && optionMatchesCandidateColor(state, option, cache),
   )
+  if (!cache && isColorGridState(state) && state.working.type === 'multi' && state.working.values.length) {
+    const known = new Set(state.options.map(option => option.value))
+    for (const value of state.working.values) {
+      const label = value || t('common.empty')
+      if (!known.has(value) && (!query || label.toLowerCase().includes(query))) options.push({ value, label })
+    }
+  }
+  return options
 }
 
-function optionMatchesCandidateColor(state: FilterState, option: HeaderFilterOption): boolean {
+function optionMatchesCandidateColor(state: FilterState, option: HeaderFilterOption, cache?: ColorCache): boolean {
   return !state.candidateColor
     || !isColumnFilterActive(state.candidateColor)
-    || matchesColumnFilter(option.colorHexes || [], state.candidateColor)
+    || !!(cache || classifiedColors(state)).optionsMatched.get(option)
 }
 
 function updateVisibleMultiOptions(state: FilterState, selected: boolean) {
@@ -1733,45 +2157,180 @@ function updateVisibleMultiOptions(state: FilterState, selected: boolean) {
 
 function renderMultiList(state: FilterState) {
   if (!state.list || state.working.type !== 'multi') return
-  const options = state.def.multiDisplay === 'colors' && state.optionView === 'swatches'
-    ? [...visibleOptions(state)].sort(compareColorOptions)
-    : visibleOptions(state)
-  state.list.classList.toggle('fm-color-grid', state.def.multiDisplay === 'colors' && state.optionView === 'swatches')
-  if (options.length === 0) {
+  const colors = isColorGridState(state)
+  if (colors && !state.panel.classList.contains('open')) return
+  const focused = document.activeElement instanceof HTMLInputElement && state.list.contains(document.activeElement)
+    ? document.activeElement : null
+  const cache = colors ? classifiedColors(state) : null
+  const filter = workingColorFilter(state)
+  const closest = !!filter && filter.mode === 'color' && hueSpan(filter) < 360
+  const options = visibleOptions(state)
+  if (cache) options.sort((a, b) => {
+    const left = cache.optionsMatched.get(a)
+    const right = cache.optionsMatched.get(b)
+    if (filter && colorNeutralPreset(filter.mode)) return (left?.brightness || 0) - (right?.brightness || 0)
+      || a.label.localeCompare(b.label) || a.value.localeCompare(b.value)
+    if (closest) return (left?.distance || 0) - (right?.distance || 0)
+      || (left?.hue || 0) - (right?.hue || 0) || a.label.localeCompare(b.label) || a.value.localeCompare(b.value)
+    const leftSort = left?.sort || [2, 0, 0, 0]
+    const rightSort = right?.sort || [2, 0, 0, 0]
+    for (let index = 0; index < leftSort.length; index++) {
+      if (leftSort[index] !== rightSort[index]) return leftSort[index] - rightSort[index]
+    }
+    return a.label.localeCompare(b.label) || a.value.localeCompare(b.value)
+  })
+  state.list.classList.toggle('fm-color-groups', colors)
+  state.list.classList.toggle('fm-color-grid', colors && state.optionView === 'swatches')
+  if (options.length === 0 && !colors) {
     state.list.innerHTML = `<div class="fm-header-filter-empty-text">${escapeHtml(t('filters.noMatchingOptions'))}</div>`
     return
   }
   const selected = new Set(state.working.values)
-  state.list.innerHTML = options.map((option) => {
+  const exactStops = new Map(state.working.colorStopIds)
+  const optionHexes = (option: HeaderFilterOption) => {
+    const ids = exactStops.get(option.value)
+    if (ids) return (option.colorStops || []).filter(stop => ids.includes(stop.id)).map(stop => stop.hex)
+    const hexes = option.colorHexes || []
+    return state.candidateColor && isColumnFilterActive(state.candidateColor)
+      ? hexes.filter(hex => cache?.matchingHexes.has(normalizeHexCode(hex))) : hexes
+  }
+  const optionHex = (option: HeaderFilterOption) =>
+    (!exactStops.has(option.value) && cache?.optionsMatched.get(option)?.hex)
+    || optionHexes(option).map(normalizeHexCode).find(Boolean) || ''
+  const renderOption = (option: HeaderFilterOption) => {
     const checked = selected.has(option.value) ? 'checked' : ''
-    const swatches = renderOptionSwatches(option)
-    if (state.def.multiDisplay === 'colors' && state.optionView === 'swatches') {
-      return `<label class="fm-header-filter-color-option" title="${escapeHtml(option.label)}"><input type="checkbox" data-value="${escapeHtml(option.value)}" ${checked} />${renderColorGridSwatch(option)}<span class="fm-sr-only">${escapeHtml(option.label)}</span></label>`
+    if (colors && state.optionView === 'swatches') {
+      const hex = optionHex(option)
+      const description = hex && option.label.toUpperCase() !== hex ? ` aria-description="${hex}"` : ''
+      return `<label class="fm-header-filter-color-option"><input type="checkbox" aria-label="${escapeHtml(option.label)}"${description} data-value="${escapeHtml(option.value)}" ${checked} />${renderColorGridSwatch(hex)}<span class="fm-color-tile-name">${escapeHtml(option.label)}</span></label>`
     }
-    return `<label class="fm-header-filter-option"><input type="checkbox" data-value="${escapeHtml(option.value)}" ${checked} />${swatches}<span>${escapeHtml(option.label)}</span></label>`
-  }).join('')
-  state.list.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((input) => {
-    input.addEventListener('change', () => {
-      if (state.working.type !== 'multi') return
-      const values = new Set(state.working.values)
-      const optionValue = input.dataset.value || ''
-      if (input.checked) values.add(optionValue)
-      else values.delete(optionValue)
-      state.working.values = [...values]
-      if (isColorGridState(state)) syncColorControls(state)
-      updateTrigger(state)
+    return `<label class="fm-header-filter-option"><input type="checkbox" data-value="${escapeHtml(option.value)}" ${checked} />${renderOptionSwatches(optionHexes(option))}<span>${escapeHtml(option.label)}</span></label>`
+  }
+  if (colors) {
+    const offsets = filter ? colorHarmonyOffsets(filter) : [0]
+    const headings = offsets.length === 2 ? ['selectedRange', 'complementary'] : ['selectedRange', 'triadicRange1', 'triadicRange2']
+    const tiles = new Map([...state.list.querySelectorAll<HTMLElement>('.fm-header-filter-color-option')]
+      .map(tile => [tile.querySelector<HTMLInputElement>('input')!.dataset.value, tile]))
+    const template = document.createElement('template')
+    const sections = offsets.map((_, group) => {
+      const grouped = options.filter(option => (cache?.optionsMatched.get(option)?.group || 0) === group)
+      const caption = group === 0 && closest ? `<span class="fm-color-order-caption">${escapeHtml(t('filters.closestHueFirst'))}</span>` : ''
+      const name = escapeHtml(t(`filters.${headings[group]}`))
+      const heading = group > 0 ? `<span class="fm-color-harmony-name" data-color-harmony-tone="${offsets.length === 2 ? 'complementary' : 'triadic'}">${name}</span>` : name
+      let section = state.list!.querySelector<HTMLElement>(`[data-color-group="${group}"]`)
+      if (!section) {
+        section = document.createElement('section')
+        section.dataset.colorGroup = String(group)
+        section.innerHTML = '<div class="fm-color-group-heading"></div><div></div>'
+      }
+      const header = section.firstElementChild as HTMLElement
+      const headerHtml = `<h4>${heading}</h4>${caption}`
+      if (header.innerHTML !== headerHtml) header.innerHTML = headerHtml
+      const grid = section.lastElementChild as HTMLElement
+      grid.className = state.optionView === 'swatches' ? 'fm-color-grid' : ''
+      const nodes = grouped.map(option => {
+        const tile = state.optionView === 'swatches' ? tiles.get(option.value) : undefined
+        if (tile && tile.querySelector('.fm-color-tile-name')?.textContent === option.label
+          && tile.querySelector<HTMLElement>('[data-color-hex]')?.dataset.colorHex === optionHex(option)) {
+          tile.querySelector<HTMLInputElement>('input')!.checked = selected.has(option.value)
+          return tile
+        }
+        template.innerHTML = renderOption(option)
+        return template.content.firstElementChild as HTMLElement
+      })
+      if (!nodes.length) {
+        const empty = grid.querySelector<HTMLElement>('.fm-header-filter-empty-text') || document.createElement('div')
+        empty.className = 'fm-header-filter-empty-text'
+        empty.textContent = t('filters.noMatchingOptions')
+        nodes.push(empty)
+      }
+      reconcileChildren(grid, nodes)
+      return section
     })
-  })
+    reconcileChildren(state.list, sections)
+    syncColorApplyButton(state)
+    state.panel.querySelector<HTMLElement>('.fm-color-tooltip')!.hidden = true
+    if (focused && document.activeElement !== focused) {
+      const target = focused.isConnected ? focused : [...state.list.querySelectorAll<HTMLInputElement>('input[data-value]')]
+        .find(input => input.dataset.value === focused.dataset.value)
+      ;(target || state.optionSearchInput || state.trigger).focus({ preventScroll: true })
+    }
+  } else state.list.innerHTML = options.map(renderOption).join('')
 }
 
-function renderColorGridSwatch(option: HeaderFilterOption): string {
-  const color = (option.colorHexes || []).map(normalizeHexCode).find(Boolean)
+function syncColorApplyButton(state: FilterState) {
+  const apply = state.panel.querySelector<HTMLButtonElement>('.fm-header-filter-actions .fm-btn-primary')
+  if (!apply || state.working.type !== 'multi') return
+  const values = state.working.values
+  const hasVisibleOptions = !!state.list?.querySelector('input[data-value]')
+  const rangeActive = !!state.candidateColor && isColumnFilterActive(state.candidateColor)
+  apply.disabled = rangeActive && values.length > 0
+    ? !state.options.some(option => values.includes(option.value) && optionMatchesCandidateColor(state, option))
+    : !values.length && (rangeActive || !!state.optionSearch.trim()) && !hasVisibleOptions
+}
+
+function reconcileChildren(parent: HTMLElement, nodes: HTMLElement[]) {
+  let next = parent.firstChild
+  for (const node of nodes) {
+    if (node === next) next = next.nextSibling
+    else parent.insertBefore(node, next)
+  }
+  while (next) {
+    const remove = next
+    next = next.nextSibling
+    parent.removeChild(remove)
+  }
+}
+
+function attachColorTileTooltips(state: FilterState) {
+  let tooltip = state.panel.querySelector<HTMLElement>('.fm-color-tooltip')
+  if (!tooltip) {
+    tooltip = document.createElement('div')
+    tooltip.className = 'fm-color-tooltip'
+    tooltip.id = `${state.panel.id}-color-tooltip`
+    tooltip.setAttribute('role', 'tooltip')
+    tooltip.hidden = true
+    state.panel.appendChild(tooltip)
+  }
+  tooltip.hidden = true
+  const tileFor = (event: Event) => event.target instanceof Element
+    ? event.target.closest<HTMLElement>('.fm-header-filter-color-option') : null
+  const show = (event: Event) => {
+    const tile = tileFor(event)
+    if (!tile || event instanceof MouseEvent && event.relatedTarget instanceof Node && tile.contains(event.relatedTarget)) return
+    const rect = tile.getBoundingClientRect()
+    const name = tile.querySelector<HTMLElement>('.fm-color-tile-name')!
+    const hex = tile.querySelector<HTMLElement>('[data-color-hex]')?.dataset.colorHex || ''
+    const showName = state.panel.classList.contains('fm-header-filter-panel-compact-colors')
+      || name.scrollHeight > name.clientHeight || name.scrollWidth > name.clientWidth
+    tooltip!.textContent = showName && name.textContent?.toUpperCase() !== hex
+      ? [name.textContent, hex].filter(Boolean).join(' · ') : hex
+    tooltip!.hidden = !tooltip!.textContent
+    if (tooltip!.hidden) return
+    tooltip!.style.left = '8px'
+    const halfWidth = tooltip!.offsetWidth / 2
+    tooltip!.style.left = `${Math.max(8 + halfWidth, Math.min(window.innerWidth - 8 - halfWidth, rect.left + rect.width / 2))}px`
+    tooltip!.style.top = `${Math.max(8 + tooltip!.offsetHeight, rect.top - 8)}px`
+  }
+  const hide = (event: Event) => {
+    const tile = tileFor(event)
+    if (tile && event instanceof MouseEvent && event.relatedTarget instanceof Node && tile.contains(event.relatedTarget)) return
+    tooltip!.hidden = true
+  }
+  state.list!.addEventListener('pointerover', show)
+  state.list!.addEventListener('focusin', show)
+  state.list!.addEventListener('pointerdown', show)
+  state.list!.addEventListener('pointerout', hide)
+  state.list!.addEventListener('focusout', hide)
+}
+
+function renderColorGridSwatch(color: string): string {
   const style = color ? ` style="background:${escapeHtml(toColorSwatchBackground(color))}"` : ''
-  return `<span class="fm-color-swatch"${style}>${color ? '' : '<span class="fm-header-filter-empty-swatch">&mdash;</span>'}</span>`
+  return `<span class="fm-color-swatch" data-color-hex="${color || ''}"${style}>${color ? '' : '<span class="fm-header-filter-empty-swatch">&mdash;</span>'}</span>`
 }
 
-function renderOptionSwatches(option: HeaderFilterOption): string {
-  const colors = (option.colorHexes || []).map(normalizeHex).filter((hex): hex is string => Boolean(hex))
+function renderOptionSwatches(hexes: string[]): string {
+  const colors = hexes.map(normalizeHex).filter((hex): hex is string => Boolean(hex))
   if (colors.length === 0) return ''
   return `<span class="fm-header-filter-color-dots" aria-hidden="true">${colors.map((hex) =>
     `<span class="fm-header-filter-color-dot" style="background:${hex}"></span>`).join('')}</span>`
@@ -1779,15 +2338,6 @@ function renderOptionSwatches(option: HeaderFilterOption): string {
 
 function normalizeHex(value: string): string | null {
   return toOpaqueRgbHex(value, '') || null
-}
-
-function compareColorOptions(a: HeaderFilterOption, b: HeaderFilterOption): number {
-  const aSort = colorSortKey(a.colorHexes?.[0])
-  const bSort = colorSortKey(b.colorHexes?.[0])
-  for (let index = 0; index < aSort.length; index++) {
-    if (aSort[index] !== bSort[index]) return aSort[index] - bSort[index]
-  }
-  return a.label.localeCompare(b.label)
 }
 
 function colorSortKey(value?: string): [number, number, number, number] {
@@ -1816,7 +2366,7 @@ function colorSortKey(value?: string): [number, number, number, number] {
 
 function triggerActivity(state: FilterState): { active: boolean; pending: boolean } {
   // For multi filters that default to "all selected", only flag as active once something is deselected.
-  const active = state.def.type === 'multi' && state.applied.type === 'multi' && state.options.length > 0
+  const active = state.def.type === 'multi' && !isColorGridState(state) && state.applied.type === 'multi' && state.options.length > 0
     ? state.applied.values.length > 0 && state.applied.values.length < state.options.length
     : isColumnFilterActive(state.applied)
   const pending = state.def.type === 'color' || isColorGridState(state)
