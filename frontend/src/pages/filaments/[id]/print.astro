@@ -155,7 +155,7 @@ export function getStaticPaths() {
   await hydrateLabelPresetStorage()
   let syncOutputPreview: (zoomOnly?: boolean) => void = () => undefined
   let refreshWorkspace: () => void = () => syncOutputPreview()
-  const sheetControls = bindLabelSheetControls(() => refreshWorkspace(), translate, 'filament')
+  const sheetControls = bindLabelSheetControls(() => refreshWorkspace(), translate, 'filament', () => syncOutputPreview())
 
   // --- Tab switching ---
   const resetBtn = document.getElementById('btn-reset') as HTMLButtonElement | null

@@ -152,7 +152,7 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
       const editing = node.dataset.labelElementId === editingId
       node.toggleAttribute('data-label-text-editing', editing)
       if (!editing) node.removeAttribute('data-label-composing')
-      if (node.hasAttribute('data-label-svg-target')) {
+      if (node.hasAttribute('data-label-svg-target') && node.dataset.labelElementType === 'text') {
         const content = node.firstElementChild as HTMLElement | null
         if (content) content.style.visibility = editing ? 'visible' : 'hidden'
         node.style.background = editing ? 'white' : 'transparent'
@@ -185,7 +185,9 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
         }
         else { token.removeAttribute('contenteditable'); token.removeAttribute('draggable'); token.removeAttribute('title') }
       }
-      if (editing && canvasRange && activeTokenIndex === null && !pendingEdit && !compositionRange && !node.contains(document.getSelection()?.anchorNode ?? null)) {
+      const focused = document.activeElement
+      if (editing && (focused === document.body || node.contains(focused)) && canvasRange && activeTokenIndex === null
+        && !pendingEdit && !compositionRange && !node.contains(document.getSelection()?.anchorNode ?? null)) {
         restoreTemplateSelection(node, canvasRange)
       }
     }
@@ -335,12 +337,17 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     options.updateTemplate(result.template, result)
     const revision = ++editRevision
     pendingEdit = revision
+    const focusedBeforeRefresh = document.activeElement
     void options.refresh().then(() => {
       if (destroyed || revision !== pendingEdit || selected.id !== editingId) return
       pendingEdit = 0
       sync()
       const node = selectedNode()
-      if (node) { node.focus({ preventScroll: true }); restoreTemplateSelection(node, result) }
+      const focused = document.activeElement
+      if (node && (focused === focusedBeforeRefresh || focused === document.body || focused === node)) {
+        node.focus({ preventScroll: true })
+        restoreTemplateSelection(node, result)
+      }
     })
   }
 
@@ -493,9 +500,9 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     },
     format,
     formatFont,
-    insertField(token: string): boolean {
+    insertField(token: string, range?: TemplateSourceRange): boolean {
       if (!editingId || !options.isEditable()) return false
-      edit(token)
+      edit(token, range)
       return true
     },
     handleKeydown(event: KeyboardEvent): boolean {

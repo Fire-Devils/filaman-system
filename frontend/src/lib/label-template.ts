@@ -4,6 +4,7 @@
  * Template syntax:
  *   {token}                — simple dot-path substitution; resolves to "?" if missing
  *   {token|date}           — date-only rendering for date/datetime tokens
+ *   {token|unit}           — include the field's known unit, such as °C or mm³/s
  *   {token|date:%d.%m.%Y} — custom numeric date order/separators (default %Y/%m/%d)
  *   {prefix{token}suffix}  — optional block: rendered as prefix+value+suffix if token is not "?"
  *                            omitted entirely when token resolves to "?"
@@ -27,6 +28,7 @@
  */
 
 import { formatLabelDate } from './label-date'
+import { getLabelTokenUnit } from './label-token-units'
 import { getReadableTextColor, getReadableTextColorForColors, toOpaqueRgbHex } from './colors'
 export { getReadableTextColor, getReadableTextColorForColors } from './colors'
 import { templateMarkupMatches, parseTemplateMarkup, templateFieldRanges } from './freeform-label/template-markup'
@@ -223,6 +225,12 @@ function resolveToken(token: string, data: SpoolData): string {
   let { value, rawValue } = readTokenValue(literalKey, data)
   let dateOnly = false
   let dateFormat: string | undefined
+  let unit: string | undefined
+  if (value === undefined && literalKey.endsWith('|unit')) {
+    const key = literalKey.slice(0, -5).trim()
+    ;({ value, rawValue } = readTokenValue(key, data))
+    unit = getLabelTokenUnit(`{${key}}`)
+  }
   if (value === undefined) {
     const modified = splitDateModifier(literalKey)
     if (modified.dateOnly) {
@@ -232,7 +240,7 @@ function resolveToken(token: string, data: SpoolData): string {
     }
   }
   if (value === undefined || value === null || value === '') return '?'
-  return dateOnly ? formatLabelDate(rawValue, dateFormat) : String(value)
+  return dateOnly ? formatLabelDate(rawValue, dateFormat) : String(value) + (unit ? ` ${unit}` : '')
 }
 
 /** Expand {token} and {prefix{token}suffix} placeholders to plain text. */

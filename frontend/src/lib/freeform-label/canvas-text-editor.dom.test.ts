@@ -15,7 +15,7 @@ function editor(source: string, delayed = false) {
   document.body.innerHTML = '<div id="freeform-canvas-host"><div data-label-element-id="text" data-label-element-type="text"></div></div><div id="freeform-text-toolbar"><select data-element-prop="fontFamily"><option>Space Grotesk</option></select><button data-text-modifier="bold">B</button><button data-text-modifier="underline">U</button></div>'
   selected.id = 'text'
   const node = document.querySelector<HTMLElement>('[data-label-element-id]')!
-  const render = () => { node.replaceChildren(renderSelectableTemplate(selected.template, { 'filament.color': 'Ocean Blue', 'filament.name': 'PLA Galaxy Black' } as SpoolData)) }
+  const render = () => { node.replaceChildren(renderSelectableTemplate(selected.template, { 'filament.color': 'Ocean Blue', 'filament.name': 'PLA Galaxy Black', 'filament.extruder_temp_range_c': '220-260' } as SpoolData)) }
   render()
   let range = { start: 0, end: 0 }
   const refreshes: Array<() => void> = []
@@ -51,6 +51,21 @@ function editor(source: string, delayed = false) {
 }
 
 describe('canvas text editing', () => {
+  it('keeps QR repair warnings visible when syncing text editing overlays', () => {
+    const e = editor('Hi')
+    const qr = document.createElement('div')
+    qr.dataset.labelElementId = 'qr'
+    qr.dataset.labelElementType = 'qr'
+    qr.dataset.labelSvgTarget = ''
+    const warning = document.createElement('span')
+    warning.setAttribute('role', 'alert')
+    warning.textContent = 'Move QR codes farther apart'
+    qr.append(warning)
+    document.querySelector('#freeform-canvas-host')!.append(qr)
+    e.binding.sync()
+    expect(getComputedStyle(warning).visibility).not.toBe('hidden')
+  })
+
   it('clears the composition guard when leaving the temporary editing surface', () => {
     const e = editor('Hi')
     e.node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
@@ -408,6 +423,17 @@ describe('canvas text editing', () => {
     expect(e.binding.insertField('{filament.color}')).toBe(true)
     await Promise.resolve()
     expect(e.selected.template).toBe('Hi {filament.color}there')
+  })
+
+  it('keeps the caret after the entire unit block for the next field insertion', async () => {
+    const e = editor('')
+    const token = '{filament.extruder_temp_range_c}'
+    e.binding.insertField(token)
+    await Promise.resolve()
+    e.binding.insertField('{filament.extruder_temp_range_c|unit}', { start: 0, end: token.length })
+    await Promise.resolve()
+    e.binding.insertField('{filament.name}')
+    expect(e.selected.template).toBe('{filament.extruder_temp_range_c|unit}{filament.name}')
   })
 
   it('preserves copied bold text when pasted inside existing bold text', async () => {

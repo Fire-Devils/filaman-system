@@ -22,9 +22,9 @@ try {
     localStorage.setItem('sidebar-collapsed', 'true')
     localStorage.setItem('filaman-label-active-tab', location.search.includes('ids=') ? 'designer' : 'standard')
   })
-  await page.route('**/api/**', route => {
+  await page.route('**/{api,auth}/**', route => {
     const path = new URL(route.request().url()).pathname
-    const filament = { id: 10, manufacturer_id: 1, manufacturer: { id: 1, name: 'Logo maker' }, designation: 'Ocean Blue PLA', material: 'PLA', color_name: 'Ocean Blue', color_hex: '0088cc', custom_fields: {} }
+    const filament = { id: 10, manufacturer_id: 1, manufacturer: { id: 1, name: 'Logo maker' }, designation: 'Ocean Blue PLA', material: 'PLA', color_name: 'Ocean Blue', color_hex: '0088cc', extruder_temp_range_c: { min: 220, max: 260 }, bed_temp_range_c: { min: 60, max: 80 }, custom_fields: {} }
     let data = []
     if (path.endsWith('/me')) data = { id: 1, email: 'layout@example.test', display_name: 'Layout check', language: 'en', roles: ['user'], permissions: [] }
     if (/\/filaments\/\d+$/.test(path)) data = { ...filament, id: Number(path.split('/').at(-1)) }
@@ -47,6 +47,7 @@ try {
       throw error
     })
     assert.equal(await page.locator('#freeform-canvas-host [data-label-output-error]').count(), 0)
+    assert.match(await page.locator('#freeform-canvas-host [data-label-svg-raster]').first().getAttribute('src'), /^blob:/, 'Interactive label uses SVG artwork')
     if (path.includes('?ids=')) {
       const surface = page.locator('#freeform-canvas-host .label-preview').first()
       assert.equal(await page.evaluate(() => typeof window.QRCode), 'undefined')
@@ -59,6 +60,75 @@ try {
     await page.locator('#preview-zoom-input').fill('100')
     await page.locator('#preview-zoom-input').press('Tab')
     const surface = page.locator('#freeform-canvas-host .label-preview').first()
+    if (path === '/spools/101/print') {
+      await surface.locator('[data-label-element-id="text"]').click()
+      await page.locator('#freeform-json-expand').click()
+      const json = page.locator('#freeform-element-json')
+      const original = JSON.parse(await json.inputValue())
+      for (const [h, failed] of [[8, false], [2, true], [8, false]]) {
+        await json.fill(JSON.stringify({ ...original, w: 28, h, wrap: true, fontSizeMm: 3.2,
+          template: '{filament.extruder_temp_range_c}\n{filament.bed_temp_range_c}' }))
+        await page.locator('#freeform-json-apply').click()
+        await page.waitForFunction(failed => Boolean(document.querySelector('[data-label-element-id="text"][data-label-output-error]')) === failed, failed)
+        assert.equal(await surface.locator('[data-label-svg-raster]').count(), 1)
+        assert.equal(await surface.locator('[data-label-element-id="qr"][data-label-output-error]').count(), 0)
+        assert.equal(await surface.getAttribute('data-label-output-error'), null)
+        if (failed) assert.match(await page.locator('#freeform-text-fit-warning').textContent(), /enlarge|Scale font to fit/i)
+      }
+      await json.fill(JSON.stringify(original))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      console.log('Temperature insertion, box-local overflow guidance and recovery passed')
+      if (await page.locator('#freeform-field-dock').getAttribute('data-open') !== 'true') await page.locator('#freeform-field-dock-toggle').click()
+      await page.locator('#freeform-field-tab-filament').click()
+      await surface.locator('[data-label-element-id="text"]').dblclick()
+      const temperature = page.locator('[data-field-token="{filament.extruder_temp_range_c}"]')
+      await temperature.click({ position: { x: 6, y: 6 } })
+      const popup = page.locator('#freeform-field-unit-popup')
+      await popup.waitFor({ state: 'visible' })
+      const fieldBounds = await temperature.boundingBox(), popupBounds = await popup.boundingBox()
+      assert.ok(popupBounds.y + popupBounds.height < fieldBounds.y + 6, 'Unit popup opens just above the click')
+      await popup.locator('[data-field-unit-choice]').click()
+      await page.waitForFunction(() => document.querySelector('#freeform-element-json')?.value.includes('{filament.extruder_temp_range_c|unit}'))
+      await page.locator('[data-field-token="{filament.bed_temp_range_c}"]').click()
+      await popup.waitFor({ state: 'visible' })
+      await page.mouse.click(8, 8)
+      await popup.waitFor({ state: 'hidden' })
+      await surface.locator('[data-label-element-id="text"]').click()
+      assert.ok(!JSON.parse(await json.inputValue()).template.includes('{filament.bed_temp_range_c|unit}'), 'Dismissal keeps the field unitless')
+      assert.ok(JSON.parse(await json.inputValue()).template.includes('{filament.extruder_temp_range_c|unit}{filament.bed_temp_range_c}'), 'The next field stays outside the first field with a unit')
+      await surface.locator('[data-label-element-id="text"]').press('Escape')
+      for (const inline of [false, true]) {
+        if (inline) await surface.locator('[data-label-element-id="text"]').dblclick()
+        assert.equal(await surface.locator('[data-label-text-editing]').count(), Number(inline))
+        const artwork = surface.locator('[data-label-svg-raster]')
+        const previousSource = await artwork.getAttribute('src')
+        await temperature.press('Enter')
+        await popup.waitFor({ state: 'visible' })
+        await page.waitForFunction(previous => document.querySelector('#freeform-canvas-host [data-label-svg-raster]')?.getAttribute('src') !== previous, previousSource)
+        assert.ok(await popup.locator('[data-field-unit-choice]').evaluate(choice => choice === document.activeElement),
+          `Keyboard activation keeps focus on the unit choice after rendering with inline editing ${inline}`)
+        await page.keyboard.press('Enter')
+        await popup.waitFor({ state: 'hidden' })
+      }
+      assert.equal(JSON.parse(await json.inputValue()).template.split('{filament.extruder_temp_range_c|unit}').length - 1, 3)
+      await page.locator('#freeform-json-expand').click()
+      await json.fill(JSON.stringify(original))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      console.log('Cursor-anchored unit choice and click-away dismissal passed')
+      await page.locator('[data-designer-add="qr"]').click()
+      await page.locator('#freeform-json-expand').click()
+      const addedQr = JSON.parse(await json.inputValue())
+      await json.fill(JSON.stringify({ ...addedQr, x: 41, y: 22, w: 15, h: 15 }))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      await surface.locator('[data-label-fit-warning]').filter({ hasText: 'Move QR codes farther apart' }).first().waitFor({ state: 'visible' })
+      assert.equal(await surface.getAttribute('data-label-output-error'), null)
+      await page.locator('[data-designer-action="delete"]').click()
+      await page.waitForFunction(() => !document.querySelector('#freeform-canvas-host [data-label-output-error]'))
+      console.log('Overlapping QR warnings stay visible after editor sync and recover after deletion')
+    }
     await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } })
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const anchor = await surface.boundingBox()

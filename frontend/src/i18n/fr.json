@@ -1738,6 +1738,9 @@
     "textModifiers": "Modificateurs de texte",
     "fieldGroups": "Groupes de champs",
     "searchFields": "Rechercher des champs",
+    "includeUnit": "Inclure l’unité",
+    "syntaxUnit": "Inclure l’unité connue du champ. Les valeurs vides restent vides.",
+    "keepNumberOnly": "Conserver le nombre seul",
     "fieldSections": {
       "identity": "Identité",
       "material": "Matériau",

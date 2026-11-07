@@ -88,13 +88,12 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
   const syncGeometryLayout = () => {
     if (!canvasRow || !canvasHost) return
     const rowWidth = canvasRow.clientWidth
-    const renderedLabelWidth = canvasHost.querySelector<HTMLElement>('.label-preview')?.getBoundingClientRect().width ?? 0
-    const renderedLabelHeight = canvasHost.querySelector<HTMLElement>('.label-preview')?.getBoundingClientRect().height ?? 0
-    const labelWidth = renderedLabelWidth || canvasHost.getBoundingClientRect().width
+    const labelBounds = canvasHost.querySelector('.label-preview')?.getBoundingClientRect()
+    const labelWidth = labelBounds?.width || canvasHost.getBoundingClientRect().width
     if (rowWidth <= 0 || labelWidth <= 0) return
     canvasRow.style.setProperty('--freeform-label-width', `${labelWidth}px`)
     canvasHost.style.width = `${labelWidth}px`
-    if (renderedLabelHeight > 0) canvasHost.style.height = `${renderedLabelHeight}px`
+    if (labelBounds && labelBounds.height > 0) canvasHost.style.height = `${labelBounds.height}px`
     const available = (rowWidth - labelWidth) / 2 - 8
     canvasRow.style.setProperty('--freeform-inspector-width', `${Math.max(170, Math.min(360, available))}px`)
     const below = available < 104
@@ -103,7 +102,13 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
   }
   const geometryObserver = typeof MutationObserver === 'undefined' || !canvasHost
     ? null
-    : new MutationObserver(syncGeometryLayout)
+    : new MutationObserver(records => {
+      // Handles and SVG artwork move inside a fixed-size label.
+      const geometryChanged = records.some(({ target, type }) => target === canvasHost && type === 'childList'
+        || target instanceof Element && (target.classList.contains('label-wrapper')
+          || type === 'attributes' && target.classList.contains('label-preview')))
+      if (geometryChanged) syncGeometryLayout()
+    })
   if (geometryObserver && canvasHost) geometryObserver.observe(canvasHost, { attributes: true, attributeFilter: ['style'], childList: true, subtree: true })
   if (geometryObserver) cleanups.push(() => geometryObserver.disconnect())
   if (canvasRow && typeof ResizeObserver !== 'undefined') {
@@ -627,6 +632,25 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
     translate,
   })
 
+  const unitPopup = query<HTMLElement>('#freeform-field-unit-popup')
+  const unitChoice = query<HTMLButtonElement>('[data-field-unit-choice]')
+  let unitInsertion: { id: string; template: string; start: number; end: number; token: string } | undefined
+  const hideUnitPopup = () => { if (unitPopup?.isConnected) unitPopup.hidePopover?.(); unitInsertion = undefined }
+  listen(query('[data-field-unit-dismiss]'), 'click', hideUnitPopup)
+  listen(unitChoice, 'click', () => {
+    const selected = controller.getSelectedElement(), insertion = unitInsertion
+    hideUnitPopup()
+    if (!editable || !insertion || selected?.type !== 'text' || selected.id !== insertion.id || selected.template !== insertion.template) return
+    const replacement = insertion.token.slice(0, -1) + '|unit}'
+    const template = selected.template.slice(0, insertion.start) + replacement + selected.template.slice(insertion.end)
+    if (template.length > 8000) return
+    const end = insertion.start + replacement.length
+    if (!textEditor.insertField(replacement, { start: insertion.start, end: insertion.end })) {
+      mutate(() => controller.updateSelected({ template }, { start: end, end }))
+    }
+  })
+  cleanups.push(hideUnitPopup)
+
   listen<MouseEvent>(root as ParentNode & EventTarget, 'click', event => {
     const target = event.target instanceof Element
       ? event.target.closest<HTMLButtonElement>('[data-field-token]')
@@ -635,7 +659,22 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
     const token = target.dataset.fieldToken
     if (!token) return
     if (!editable) return
+    hideUnitPopup()
     if (!textEditor.insertField(token)) mutate(() => controller.insertField(token))
+    const unit = target.dataset.fieldUnit, selected = controller.getSelectedElement()
+    if (!unit || !unitPopup || !unitChoice || selected?.type !== 'text') return
+    const end = controller.getTemplateSelection().end, start = end - token.length
+    if (selected.template.slice(start, end) !== token) return
+    unitInsertion = { id: selected.id, template: selected.template, start, end, token }
+    unitChoice.textContent = unit
+    unitChoice.setAttribute('aria-label', `${translate('labelDesigner.includeUnit', 'Include unit')} ${unit}`)
+    unitPopup.showPopover?.()
+    const anchor = target.getBoundingClientRect(), bounds = unitPopup.getBoundingClientRect()
+    const x = event.detail ? event.clientX : anchor.left + anchor.width / 2
+    const y = event.detail ? event.clientY : anchor.top
+    unitPopup.style.left = `${Math.max(8, Math.min(x - bounds.width / 2, window.innerWidth - bounds.width - 8))}px`
+    unitPopup.style.top = `${Math.max(8, y - bounds.height - 8)}px`
+    if (!event.detail) unitChoice.focus({ preventScroll: true })
   })
 
   const fieldTabs = queryAll<HTMLButtonElement>('[data-field-group-tab]').filter(button => !button.hidden)

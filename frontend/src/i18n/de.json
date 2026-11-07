@@ -1739,6 +1739,9 @@
     "textModifiers": "Textmodifikatoren",
     "fieldGroups": "Feldgruppen",
     "searchFields": "Felder suchen",
+    "includeUnit": "Einheit hinzufügen",
+    "syntaxUnit": "Die bekannte Einheit des Feldes hinzufügen. Leere Werte bleiben leer.",
+    "keepNumberOnly": "Nur Zahl behalten",
     "fieldSections": {
       "identity": "Identität",
       "material": "Material",
