@@ -47,6 +47,7 @@ try {
       throw error
     })
     assert.equal(await page.locator('#freeform-canvas-host [data-label-output-error]').count(), 0)
+    assert.match(await page.locator('#freeform-canvas-host [data-label-svg-raster]').first().getAttribute('src'), /^blob:/, 'Interactive label uses SVG artwork')
     if (path.includes('?ids=')) {
       const surface = page.locator('#freeform-canvas-host .label-preview').first()
       assert.equal(await page.evaluate(() => typeof window.QRCode), 'undefined')
@@ -101,6 +102,17 @@ try {
       await page.locator('#freeform-json-apply').click()
       await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
       console.log('Cursor-anchored unit choice and click-away dismissal passed')
+      await page.locator('[data-designer-add="qr"]').click()
+      await page.locator('#freeform-json-expand').click()
+      const addedQr = JSON.parse(await json.inputValue())
+      await json.fill(JSON.stringify({ ...addedQr, x: 41, y: 22, w: 15, h: 15 }))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      await surface.locator('[data-label-fit-warning]').filter({ hasText: 'Move QR codes farther apart' }).first().waitFor({ state: 'visible' })
+      assert.equal(await surface.getAttribute('data-label-output-error'), null)
+      await page.locator('[data-designer-action="delete"]').click()
+      await page.waitForFunction(() => !document.querySelector('#freeform-canvas-host [data-label-output-error]'))
+      console.log('Overlapping QR warnings stay visible after editor sync and recover after deletion')
     }
     await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } })
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))

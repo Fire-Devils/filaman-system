@@ -146,6 +146,55 @@ it.each([[-5, 5], [30, 5], [5, -5], [5, 20]])('rejects a thermal QR clipped at %
   expect(() => render(value)).toThrow(/fit inside the label/i)
 })
 
+it.each([false, true])('rejects QR clearance covering another code in strict output (thermal=%s)', thermal => {
+  const value = input()
+  value.thermal = thermal
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 1, y: 1, w: 18, h: 18, z: 0, mode: 'simple' },
+    { id: 'qr-b', type: 'qr', x: 21, y: 1, w: 18, h: 18, z: 1, mode: 'simple' },
+  ] as SvgInput['preset']['design']['elements']
+  for (const [width, height, x] of [[641, 481, 21], [320, 240, 21], [472, 354, 20]]) {
+    value.pixelWidth = width
+    value.pixelHeight = height
+    value.preset.design.elements[1].x = x
+    for (const z of [-1, 1]) {
+      value.preset.design.elements[1].z = z
+      expect(() => render(value)).toThrow(/qr-a.*qr-b.*Move QR codes farther apart|qr-b.*qr-a.*Move QR codes farther apart/)
+    }
+  }
+  if (thermal) {
+    value.preset.design.elements[1].x = 21
+    expect(render(value).qrs.every((qr: { error?: string }) => !qr.error)).toBe(true)
+  }
+})
+
+it.each([false, true])('preserves QR overlap previews and marks both offending boxes (thermal=%s)', thermal => {
+  const value = input()
+  value.thermal = thermal
+  value.preview = true
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 1, y: 1, w: 18, h: 18, z: 0, mode: 'simple' },
+    { id: 'qr-b', type: 'qr', x: 21, y: 1, w: 18, h: 18, z: 1, mode: 'simple' },
+  ] as SvgInput['preset']['design']['elements']
+  const result = render(value)
+  expect(result.png.length).toBeGreaterThan(0)
+  expect(result.boxes.map((box: { id: string }) => box.id)).toEqual(['qr-a', 'qr-b'])
+  for (const qr of result.qrs) expect(qr.error).toContain('Move QR codes farther apart')
+})
+
+it('includes the saved white box when dense thermal QR rounding shrinks its clearance', () => {
+  const value = input()
+  value.thermal = true
+  value.pixelWidth = 1200
+  value.pixelHeight = 680
+  value.preset.design.label = { widthMm: 150, heightMm: 85, marginMm: 0, border: false }
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 1, y: 5, w: 70, h: 70, z: 1, mode: 'simple', linkMode: 'url', urlTemplate: 'https://fila.test/' + 'x'.repeat(1800) },
+    { id: 'qr-b', type: 'qr', x: 72, y: 5, w: 70, h: 70, z: 0, mode: 'simple', linkMode: 'url', urlTemplate: 'https://fila.test/' + 'x'.repeat(1500) },
+  ] as SvgInput['preset']['design']['elements']
+  expect(() => render(value)).toThrow(/Move QR codes farther apart/)
+})
+
 it('produces identical PNG bytes without reading back unused RGBA pixels', () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="9" height="7"><circle cx="4" cy="3" r="2" fill="#02e57f"/></svg>'
   const expected = rasterize(svg).png
@@ -166,10 +215,12 @@ it('uses the same fixed-point luminance rounding as Pillow at threshold boundari
 it('keeps multiple QR hit boxes and opaque clearance above non-QR artwork', () => {
   const value = input()
   value.thermal = true
+  value.preset.design.label.widthMm = 50
+  value.pixelWidth = 801
   value.preset.design.elements = [
     { id: 'qr-a', type: 'qr', x: 1, y: 1, w: 18, h: 18, z: 0, mode: 'simple' },
-    { id: 'qr-b', type: 'qr', x: 21, y: 1, w: 18, h: 18, z: 1, mode: 'logo' },
-    { id: 'background', type: 'shape', shape: 'rectangle', x: 0, y: 0, w: 40, h: 30, z: 99, fill: '#000' },
+    { id: 'qr-b', type: 'qr', x: 27, y: 1, w: 18, h: 18, z: 1, mode: 'logo' },
+    { id: 'background', type: 'shape', shape: 'rectangle', x: 0, y: 0, w: 50, h: 30, z: 99, fill: '#000' },
   ] as SvgInput['preset']['design']['elements']
   const result = render(value)
   expect(result.qrs.map((qr: { id: string }) => qr.id)).toEqual(['qr-a', 'qr-b'])
@@ -178,6 +229,7 @@ it('keeps multiple QR hit boxes and opaque clearance above non-QR artwork', () =
     const index = (Math.max(0, qr.y!) * result.width + Math.max(0, qr.x!)) * 4
     expect(Array.from(result.pixels.slice(index, index + 4))).toEqual([255, 255, 255, 255])
     expect(qr.dots).toBeGreaterThanOrEqual(3)
+    expect(qr.error).toBeUndefined()
   }
 })
 

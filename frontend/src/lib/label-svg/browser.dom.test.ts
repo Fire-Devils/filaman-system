@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { readFile } from 'node:fs/promises'
 import { Resvg } from '@resvg/resvg-wasm'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { renderDesignerLabel, buildSpoolDataFromFlatLabel } from '../label-designer'
-import { renderSvgElementOutput, redrawSvgGesture, bindSvgClone, prepareSvgPrintImages } from './browser'
+import { renderSvgElementOutput, redrawSvgGesture, bindSvgClone, prepareSvgPrintImages, clearSvgDesignerLabel } from './browser'
 import type { LabelDesignV2 } from '../freeform-label/types'
 import { renderStandardLabel, API_DEFAULT_LABEL_SETTINGS } from '../label-standard'
 import { getTemplateSelectionRange } from '../freeform-label/template-selection'
@@ -12,7 +12,15 @@ vi.mock('./runtime.mjs', async importOriginal => {
   const module = await importOriginal<typeof import('./runtime.mjs')>()
   return { createSvgRuntime: () => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`)) }
 })
-afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren() })
+let previewId = 0
+beforeEach(() => {
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:label-preview-${++previewId}`)
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+})
+afterEach(() => {
+  document.querySelectorAll<HTMLElement>('[data-label-svg]').forEach(clearSvgDesignerLabel)
+  vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.replaceChildren()
+})
 const data = buildSpoolDataFromFlatLabel({ id: 295, designation: 'Ä Ö Ü ß' })
 function design(): LabelDesignV2 {
   return { version: 2, label: { widthMm: 40, heightMm: 30, marginMm: 1, border: false }, elements: [
@@ -23,6 +31,56 @@ function design(): LabelDesignV2 {
   ] as LabelDesignV2['elements'] }
 }
 function root() { const node = document.createElement('div'); document.body.append(node); return node }
+
+it.each([[40, 30], [300, 200]])('uses vector artwork for a %s × %s mm interactive preview without encoding a PNG', async (widthMm, heightMm) => {
+  const element = root(), value = design()
+  Object.assign(value.label, { widthMm, heightMm })
+  const render = vi.spyOn(Resvg.prototype, 'render').mockImplementation(() => { throw new Error('Preview must not rasterize') })
+  await renderDesignerLabel({ element, design: value, data, interactive: true })
+  expect(element.dataset.labelOutputError).toBeUndefined()
+  expect(element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toMatch(/^blob:/)
+  const blob = vi.mocked(URL.createObjectURL).mock.calls.at(-1)![0] as Blob
+  expect(blob.type).toBe('image/svg+xml')
+  expect(await blob.text()).toContain('<svg')
+  expect(render).not.toHaveBeenCalled()
+})
+
+it('releases replaced SVG URLs and replaces sheet copies with print-grade PNGs', async () => {
+  const element = root(), value = design()
+  await renderDesignerLabel({ element, design: value, data, interactive: true })
+  const previous = element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src
+  value.elements.find(e => e.id === 'info')!.x = 2
+  redrawSvgGesture(element, value)
+  await new Promise(requestAnimationFrame)
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith(previous)
+  const current = element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src
+  const clone = element.cloneNode(true) as HTMLElement
+  bindSvgClone(element, clone)
+  await prepareSvgPrintImages([clone], 600)
+  expect(clone.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toMatch(/^data:image\/png;/)
+  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(current)
+  clearSvgDesignerLabel(element)
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith(current)
+})
+
+it('marks conflicting QR boxes locally and blocks output until separated', async () => {
+  const element = root(), value = design()
+  value.label.widthMm = 50
+  value.elements = [
+    { id: 'a', type: 'qr', x: 1, y: 2, w: 18, h: 18, z: 0, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+    { id: 'b', type: 'qr', x: 21, y: 2, w: 18, h: 18, z: 1, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+  ]
+  await renderDesignerLabel({ element, design: value, data, interactive: true })
+  expect(element.hasAttribute('data-label-output-error')).toBe(false)
+  expect(element.querySelectorAll('[data-label-element-id][data-label-output-error]')).toHaveLength(2)
+  expect(element.textContent).toContain('Move QR codes farther apart')
+  await expect(renderSvgElementOutput(element, 500, 300, true)).rejects.toThrow(/farther apart/)
+  value.elements[1].x = 28
+  redrawSvgGesture(element, value)
+  await new Promise(requestAnimationFrame)
+  expect(element.querySelector('[data-label-element-id][data-label-output-error]')).toBeNull()
+  await expect(renderSvgElementOutput(element, 500, 300, true)).resolves.toBeTruthy()
+})
 
 it('keeps the label visible and marks only overflowing text boxes with repair advice', async () => {
   const element = root(), value = design()
@@ -56,10 +114,12 @@ it('keeps field selection on the editing overlay and omits it from printable out
   range.setStart(token.firstChild!, 1)
   range.setEnd(token.firstChild!, 4)
   expect(getTemplateSelectionRange(element, range)).toEqual({ start: 2, end: 17 })
-  const pixels = element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src
+  const svg = await (vi.mocked(URL.createObjectURL).mock.calls.at(-1)![0] as Blob).text()
   await renderDesignerLabel({ element, design: value, data: { ...data, 'filament.name': 'Galaxy PLA' }, interactive: false })
   expect(element.querySelector('[data-label-editor-chrome], [data-template-start]')).toBeNull()
-  expect(element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toBe(pixels)
+  expect(element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toMatch(/^data:image\/png;/)
+  const output = await renderSvgElementOutput(element, 472, 354, false)
+  expect(output.svg.slice(output.svg.indexOf('>'))).toBe(svg.slice(svg.indexOf('>')))
 })
 
 it.each(['spools', 'filaments'] as const)('renders cached embedded batch logos for %s through preview and export', async entityPath => {
@@ -101,12 +161,14 @@ it('keeps preview, gesture and PNG export pixels without allocating unused raw o
   const element = root(), value = design()
   await renderDesignerLabel({ element, design: value, data, interactive: true })
   const previous = element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src
+  const previousSvg = await (vi.mocked(URL.createObjectURL).mock.calls.at(-1)![0] as Blob).text()
   const renderer = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'), image = renderer.render()
   const pixels = vi.spyOn(Object.getPrototypeOf(image), 'pixels', 'get').mockImplementation(() => { throw new Error('Unused pixel readback') })
   try {
     await renderDesignerLabel({ element, design: value, data, interactive: true })
     expect(element.dataset.labelOutputError).toBeUndefined()
-    expect(element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toBe(previous)
+    expect(await (vi.mocked(URL.createObjectURL).mock.calls.at(-1)![0] as Blob).text()).toBe(previousSvg)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previous)
     value.elements.find(e => e.id === 'info')!.x = 2
     redrawSvgGesture(element, value)
     await new Promise(requestAnimationFrame)

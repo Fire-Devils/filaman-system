@@ -116,6 +116,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     () => refreshWorkspace(),
     (key, fallback) => t(key) || fallback,
     'filament',
+    () => syncOutputPreview(),
   )
 
   type ExtraFieldDef = SystemExtraFieldDef & { legacyAlias?: boolean }

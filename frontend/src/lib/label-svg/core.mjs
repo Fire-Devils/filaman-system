@@ -335,7 +335,7 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
   const width = pixelWidth ?? Math.round(label.widthMm * dpi / 25.4), height = pixelHeight ?? Math.round(label.heightMm * dpi / 25.4);
   if (![width, height].every(v => Number.isInteger(v) && v > 0) || width * height > 8000000) throw new Error('Invalid pixel dimensions or pixel budget exceeded');
   const sx = width / label.widthMm, sy = height / label.heightMm;
-  const parts = [], text = [], qrs = [];
+  const parts = [], text = [], qrs = [], qrBounds = [];
   const flowed = flowElements(elements, data, assets, fonts, preview);
   const sorted = flowed.elements.sort((a, b) => Number(a.type === 'qr') - Number(b.type === 'qr') || (a.z ?? 0) - (b.z ?? 0));
   for (const element of sorted) {
@@ -359,7 +359,19 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
         || result.x + result.edge - 4 * result.dots > width || result.y + result.edge - 4 * result.dots > height)) {
         throw new Error('Thermal QR box must fit inside the label');
       }
-      parts.push(result.svg); qrs.push({ id: element.id, ...result, svg: undefined });
+      parts.push(result.svg); qrs.push({ id: element.id, ...result, svg: undefined, error: /** @type {string | undefined} */ (undefined) });
+      const code = thermal
+        ? { x: (result.x + 4 * result.dots) / sx, y: (result.y + 4 * result.dots) / sy,
+          w: result.modules * result.dots / sx, h: result.modules * result.dots / sy }
+        : { x: element.x, y: element.y, w: element.w, h: element.w };
+      const quietX = thermal ? 4 * result.dots / sx : 4 * element.w / result.modules;
+      const quietY = thermal ? 4 * result.dots / sy : quietX;
+      // Thermal output also clears the saved box, which can exceed rounded clearance.
+      const x = thermal ? Math.min(element.x, code.x - quietX) : code.x - quietX;
+      const y = thermal ? Math.min(element.y, code.y - quietY) : code.y - quietY;
+      const right = thermal ? Math.max(element.x + element.w, code.x + code.w + quietX) : code.x + code.w + quietX;
+      const bottom = thermal ? Math.max(element.y + element.h, code.y + code.h + quietY) : code.y + code.h + quietY;
+      qrBounds.push({ code, clearance: { x, y, w: right - x, h: bottom - y } });
     } else if (element.type === 'swatch') {
       parts.push(bandsSvg(element.x, element.y, element.w, element.h, getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex']), getFilamentSwatchMode(data['filament.multi_color_style']), element.radiusMm ?? 0, 0.12));
     } else if (element.type === 'shape' && ['rectangle', 'square', 'circle', 'line'].includes(element.shape)) {
@@ -376,6 +388,13 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
       else if (element.shape === 'circle') parts.push(`<ellipse cx="${element.x + element.w / 2}" cy="${element.y + element.h / 2}" rx="${w / 2}" ry="${h / 2}" ${style}/>`);
       else parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.max(0, radius - stroke / 2)}" ${style}/>`);
     } else throw new Error(`Unsupported label element: ${element.type}`);
+  }
+  const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  for (let i = 0; i < qrs.length; i++) for (let j = i + 1; j < qrs.length; j++) {
+    if (!overlaps(qrBounds[i].clearance, qrBounds[j].code) && !overlaps(qrBounds[j].clearance, qrBounds[i].code)) continue;
+    const error = `QR codes ${qrs[i].id} and ${qrs[j].id} overlap their clearances. Move QR codes farther apart.`;
+    if (!preview) throw new Error(error);
+    qrs[i].error = qrs[j].error = error;
   }
   if (label.border) {
     const margin = label.marginMm ?? 0;
@@ -418,13 +437,18 @@ export function rasterize(svg, threshold = 200) {
 }
 
 /** @param {import('./types').SvgInput} input */
+export function renderSvgLabelLayout(input, runtime) {
+  return renderLabel(input.preset, input.data, input.assets, runtime.fonts, undefined, input.origin, input);
+}
+
+/** @param {import('./types').SvgInput} input */
 export function renderSvgLabelPng(input, runtime) {
-  const result = renderLabel(input.preset, input.data, input.assets, runtime.fonts, undefined, input.origin, input);
+  const result = renderSvgLabelLayout(input, runtime);
   return { ...result, png: rasterizePng(result.svg) };
 }
 
 /** @param {import('./types').SvgInput} input */
 export function renderSvgLabel(input, runtime, threshold = 200) {
-  const result = renderLabel(input.preset, input.data, input.assets, runtime.fonts, undefined, input.origin, input);
+  const result = renderSvgLabelLayout(input, runtime);
   return { ...result, ...rasterize(result.svg, threshold) };
 }

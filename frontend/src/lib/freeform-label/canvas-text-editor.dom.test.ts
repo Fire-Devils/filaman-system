@@ -51,6 +51,21 @@ function editor(source: string, delayed = false) {
 }
 
 describe('canvas text editing', () => {
+  it('keeps QR repair warnings visible when syncing text editing overlays', () => {
+    const e = editor('Hi')
+    const qr = document.createElement('div')
+    qr.dataset.labelElementId = 'qr'
+    qr.dataset.labelElementType = 'qr'
+    qr.dataset.labelSvgTarget = ''
+    const warning = document.createElement('span')
+    warning.setAttribute('role', 'alert')
+    warning.textContent = 'Move QR codes farther apart'
+    qr.append(warning)
+    document.querySelector('#freeform-canvas-host')!.append(qr)
+    e.binding.sync()
+    expect(getComputedStyle(warning).visibility).not.toBe('hidden')
+  })
+
   it('clears the composition guard when leaving the temporary editing surface', () => {
     const e = editor('Hi')
     e.node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
