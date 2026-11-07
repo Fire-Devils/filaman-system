@@ -60,12 +60,17 @@ function lineMetrics(groups, size, defaultFont, role, measurements) {
     if (run.style?.background && groups[i + 1]?.style?.background !== run.style.background) width += 0.6;
   });
   const faces = [{ font: defaultFont }, ...groups];
-  const ascent = Math.max(...faces.map(run => run.font.ascent / run.font.unitsPerEm * (run.style?.factor ?? 1))) * size;
-  const descent = Math.max(...faces.map(run => -run.font.descent / run.font.unitsPerEm * (run.style?.factor ?? 1))) * size;
-  const factor = Math.max(1, ...groups.map(run => run.style?.factor ?? 1));
   // Match the editor's explicit CSS line-height, including fonts with tall em metrics.
-  const height = size * (role === 'info' ? 1.4 : role === 'title' && factor === 1 ? 1 : 1.15) * factor;
-  return { width, height, ascent: (height - ascent - descent) / 2 + ascent };
+  const lineHeight = role === 'info' ? 1.4 : role === 'title' ? 1 : 1.15;
+  const metrics = faces.map(run => {
+    const em = size * (run.style?.factor ?? 1);
+    const ascent = run.font.ascent / run.font.unitsPerEm * em;
+    const descent = -run.font.descent / run.font.unitsPerEm * em;
+    const leading = (em * lineHeight - ascent - descent) / 2;
+    return { ascent: ascent + leading, descent: descent + leading };
+  });
+  const ascent = Math.max(...metrics.map(run => run.ascent));
+  return { width, height: ascent + Math.max(...metrics.map(run => run.descent)), ascent };
 }
 
 function layoutRuns(runs, element, defaultFont, preview = false) {
@@ -113,7 +118,7 @@ function layoutRuns(runs, element, defaultFont, preview = false) {
     }
     return [...lines, line];
   });
-  const fits = (lines, size) => (element.legacyTextRole === 'title' && !element.wrap || lines.reduce((sum, line) => sum + metrics(line, size).height, 0) <= element.h)
+  const fits = (lines, size) => (element.legacyTextRole === 'title' && !element.wrap || lines.reduce((sum, line) => sum + metrics(line, size).height, 0) <= element.h + 1e-9)
     && lines.every(line => metrics(line, size).width <= element.w);
   let size = element.fontSizeMm;
   let lines = wrap(size);

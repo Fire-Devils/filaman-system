@@ -118,6 +118,12 @@ it.each(LABEL_FONT_FAMILIES)('fits temperature rows using the editor line spacin
   expect(result.height).toBeCloseTo(7.36)
 })
 
+it('accepts an exact-fit row when CSS half-leading adds floating-point roundoff', () => {
+  const result = layoutText('Temperature', { w: 100, h: 6.3, fontSizeMm: 4.5, legacyTextRole: 'info' }, runtime.fonts['Roboto Condensed:700'])
+  expect(result.size).toBe(4.5)
+  expect(result.height).toBeCloseTo(6.3)
+})
+
 it.each(LABEL_FONT_FAMILIES)('prints unit symbols with %s', fontFamily => {
   const value = input()
   value.preset.design.elements = [{ id: 'units', type: 'text', x: 1, y: 1, w: 38, h: 20,
