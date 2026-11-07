@@ -67,3 +67,22 @@ cross-language check requires the fixture JSON produced by pytest above.
 
 Pixel parity does not prove physical print quality or QR scan reliability.
 Container checks must use an isolated database, never a live Compose data mount.
+
+## Matched preview benchmark
+
+With frontend dependencies installed and `CHROME_EXECUTABLE_PATH` set, run from
+`frontend`:
+
+```sh
+node scripts/benchmark-label-preview.mjs \
+  --baseline d03bca09 --candidate 64555f10 \
+  --rounds 3 --samples 30 --output /tmp/label-preview-benchmark.json
+```
+
+This serves isolated Git snapshots on loopback with the same installed
+dependencies (both lockfiles must match). It alternates revision order, records
+processing and decoded-image latency, and samples JavaScript heap after GC.
+Assertions reject changed editor geometry, changed strict SVG/PNG/mono1 bytes,
+or unreleased preview Blob URLs. Timing is reported, not used as a flaky CI gate.
+The existing unit/browser suites guard the optimization and print paths in CI.
+See the [measured results and limitations](benchmarks/2026-11-06-preview.md).
