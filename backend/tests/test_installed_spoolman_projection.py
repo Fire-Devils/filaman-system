@@ -8,11 +8,13 @@ import sys
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from app.api.deps import get_db
 from app.models.filament import Filament, Manufacturer
+from app.models.plugin import InstalledPlugin
 from app.models.spool import Spool, SpoolStatus
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -80,8 +82,8 @@ FIELDS = [
 ]
 
 
-@pytest.fixture(params=["hot", "startup"])
-def installed_app(request, tmp_path, monkeypatch, db_session):
+@pytest_asyncio.fixture(params=["hot", "startup"])
+async def installed_app(request, tmp_path, monkeypatch, db_session):
     from app.api.v1 import router as loader
     from app.services import plugin_service
 
@@ -109,6 +111,11 @@ def installed_app(request, tmp_path, monkeypatch, db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = override_db
+    db_session.add(InstalledPlugin(
+        plugin_key="spoolmanapi", name="Spoolman-Compatible API",
+        version="1.0.0", plugin_type="integration",
+    ))
+    await db_session.commit()
     yield app
     for key in list(sys.modules):
         if key == "spoolmanapi" or key.startswith("spoolmanapi."):
