@@ -8,16 +8,17 @@ from contextlib import asynccontextmanager
 from math import isfinite
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from sqlalchemy import text
+from sqlalchemy import select, text
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.auth import router as auth_router
+from app.api.deps import DBSession
 from app.api.auth_oidc import router as auth_oidc_router
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
@@ -26,6 +27,7 @@ from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.seeds import run_all_seeds
 from app.core.shared_health import shared_display_store, shared_health_store
+from app.models.plugin import InstalledPlugin
 from app.plugins.manager import plugin_manager
 from app.services.plugin_service import PLUGINS_DIR
 
@@ -566,6 +568,9 @@ async def add_cache_control_header(request, call_next):
         )
     if is_label_render:
         response.headers["Cache-Control"] = "no-store"
+    elif path.startswith(("/plugins/", "/plugin-view/")):
+        # Revalidate even hashed assets so deactivation takes effect on new requests.
+        response.headers["Cache-Control"] = "no-store" if response.status_code >= 400 else "no-cache"
     elif path in ("/spool-reel.js", "/plugin-fonts.css", "/icons.svg"):
         # Sprite v=2 is a one-time cache reset; future deployments revalidate.
         response.headers["Cache-Control"] = "no-cache"
@@ -684,6 +689,19 @@ _uploads_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount("/uploads", _StaticFiles(directory=str(_uploads_dir)), name="uploads")
 logger.info("Serving uploads from '%s'", _uploads_dir)
+
+async def serve_plugin_view(plugin_slug: str, db: DBSession):
+    active = await db.scalar(
+        select(InstalledPlugin.id).where(
+            InstalledPlugin.plugin_type == "integration",
+            InstalledPlugin.page_url == f"/plugin-view/{plugin_slug}",
+            InstalledPlugin.is_active.is_(True),
+        ).limit(1)
+    )
+    if active is None:
+        raise HTTPException(status_code=404, detail="Plugin is unavailable")
+    return FileResponse(os.path.join(static_files_path, "plugin-view/detail/index.html"))
+
 
 if not settings.debug:
     static_files_path = "/app/static"
@@ -811,11 +829,7 @@ if not settings.debug:
                 os.path.join(static_files_path, "filaments/detail/edit/index.html")
             )
 
-        @app.get("/plugin-view/{plugin_slug}")
-        async def serve_plugin_view(plugin_slug: str):
-            return FileResponse(
-                os.path.join(static_files_path, "plugin-view/detail/index.html")
-            )
+        app.add_api_route("/plugin-view/{plugin_slug}", serve_plugin_view, methods=["GET"])
 
         @app.get("/admin/oidc")
         async def serve_admin_oidc():

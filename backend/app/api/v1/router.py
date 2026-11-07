@@ -1,4 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.api.deps import DBSession
+from app.services.plugin_service import PluginInstallService
 
 from app.services.spoolman_projection import adapt_installed_spoolman
 
@@ -74,6 +77,18 @@ api_router.include_router(filamentdb_router)
 # Plugins mit eigenem mount_prefix werden hier gesammelt und spaeter
 # von mount_deferred_plugin_routers() direkt auf die FastAPI-App gemountet.
 _deferred_plugin_routers: list[tuple] = []
+
+
+def _integration_dependencies(plugin_key: str, plugin_type: str):
+    if plugin_type != "integration":
+        return []
+
+    async def require_active(db: DBSession) -> None:
+        plugin = await PluginInstallService(db).get_plugin(plugin_key)
+        if plugin is None or not plugin.is_active:
+            raise HTTPException(status_code=404, detail="Plugin is unavailable")
+
+    return [Depends(require_active)]
 
 
 def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
@@ -152,7 +167,10 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
                 if not (hasattr(route, "path") and route.path.startswith(mount_prefix))
             ]
 
-        app.include_router(plugin_router, prefix=router_mount_prefix)
+        app.include_router(
+            plugin_router, prefix=router_mount_prefix,
+            dependencies=_integration_dependencies(plugin_key, manifest["plugin_type"]),
+        )
 
         # Optional: admin_router fuer Plugin-spezifische Admin-Endpoints.
         # Admin-Router wird immer unter /api/v1 gemountet (FilaMan Admin-Bereich).
@@ -210,8 +228,9 @@ def mount_deferred_plugin_routers(app) -> None:
         plugin_router,
         mount_prefix,
         plugin_admin_router,
+        dependencies,
     ) in _deferred_plugin_routers:
-        app.include_router(plugin_router, prefix=mount_prefix)
+        app.include_router(plugin_router, prefix=mount_prefix, dependencies=dependencies)
         _logger.info(
             "Plugin-Router '%s' unter '%s' gemountet", plugin_key, mount_prefix
         )
@@ -274,10 +293,11 @@ def _mount_plugin_routers() -> None:
 
             plugin_admin_router = getattr(module, "admin_router", None)
 
+            dependencies = _integration_dependencies(plugin_key, manifest["plugin_type"])
             if mount_prefix:
                 # Plugin definiert eigenen Mount-Punkt — deferred mount auf app
                 _deferred_plugin_routers.append(
-                    (plugin_key, plugin_router, mount_prefix, plugin_admin_router)
+                    (plugin_key, plugin_router, mount_prefix, plugin_admin_router, dependencies)
                 )
                 _logger.info(
                     "Plugin-Router '%s' fuer deferred mount unter '%s' vorgemerkt",
@@ -285,7 +305,7 @@ def _mount_plugin_routers() -> None:
                     mount_prefix,
                 )
             else:
-                api_router.include_router(plugin_router)
+                api_router.include_router(plugin_router, dependencies=dependencies)
                 _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
 
                 if plugin_admin_router is not None:

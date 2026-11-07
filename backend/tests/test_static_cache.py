@@ -37,3 +37,25 @@ async def test_static_asset_cache_policy(tmp_path, path, cache_control):
         revalidated = await client.get(path, headers={"If-None-Match": response.headers["etag"]})
         assert revalidated.status_code == 304
         assert revalidated.headers["cache-control"] == cache_control
+
+
+@pytest.mark.parametrize(
+    ("status", "media_type", "policy"),
+    [(200, "text/html", "no-cache"), (404, "application/json", "no-store"),
+     (200, "text/javascript", "no-cache"), (304, "text/javascript", "no-cache")],
+)
+async def test_plugin_asset_requests_revalidate(status, media_type, policy):
+    from starlette.responses import Response
+    from starlette.routing import Route
+
+    async def asset(request):
+        return Response(status_code=status, media_type=media_type)
+
+    app = Starlette(
+        routes=[Route("/plugins/swatch/assets/app-hash.js", asset)],
+        middleware=[Middleware(BaseHTTPMiddleware, dispatch=add_cache_control_header)],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/plugins/swatch/assets/app-hash.js")
+        assert response.status_code == status
+        assert response.headers["cache-control"] == policy
