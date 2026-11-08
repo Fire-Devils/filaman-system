@@ -233,7 +233,7 @@ def _mount_plugin_routers() -> None:
     import logging
     import sys
 
-    from app.services.plugin_service import PLUGINS_DIR
+    from app.services.plugin_service import PLUGINS_DIR, plugin_archive_lock
 
     _logger = logging.getLogger(__name__)
 
@@ -246,60 +246,61 @@ def _mount_plugin_routers() -> None:
     if str(PLUGINS_DIR) not in sys.path:
         sys.path.insert(0, str(PLUGINS_DIR))
 
-    for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
-        if not plugin_dir.is_dir():
-            continue
-        manifest_path = plugin_dir / "plugin.json"
-        router_path = plugin_dir / "router.py"
-        if not manifest_path.exists() or not router_path.exists():
-            continue
-
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("plugin_type") not in ("import", "integration"):
+    with plugin_archive_lock(reading=True, blocking=True):
+        for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
+            if not plugin_dir.is_dir():
+                continue
+            manifest_path = plugin_dir / "plugin.json"
+            router_path = plugin_dir / "router.py"
+            if not manifest_path.exists() or not router_path.exists():
                 continue
 
-            plugin_key = manifest.get("plugin_key", plugin_dir.name)
-            mount_prefix = manifest.get("mount_prefix")
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if manifest.get("plugin_type") not in ("import", "integration"):
+                    continue
 
-            module = importlib.import_module(f"{plugin_key}.router")
-            adapt_installed_spoolman(module, plugin_key, manifest)
-            plugin_router = getattr(module, "router", None)
-            if plugin_router is None:
-                _logger.warning(
-                    "Plugin '%s' hat router.py aber kein 'router' Attribut",
-                    plugin_key,
-                )
-                continue
+                plugin_key = manifest.get("plugin_key", plugin_dir.name)
+                mount_prefix = manifest.get("mount_prefix")
 
-            plugin_admin_router = getattr(module, "admin_router", None)
-
-            if mount_prefix:
-                # Plugin definiert eigenen Mount-Punkt — deferred mount auf app
-                _deferred_plugin_routers.append(
-                    (plugin_key, plugin_router, mount_prefix, plugin_admin_router)
-                )
-                _logger.info(
-                    "Plugin-Router '%s' fuer deferred mount unter '%s' vorgemerkt",
-                    plugin_key,
-                    mount_prefix,
-                )
-            else:
-                api_router.include_router(plugin_router)
-                _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
-
-                if plugin_admin_router is not None:
-                    api_router.include_router(plugin_admin_router)
-                    _logger.info(
-                        "Plugin-Admin-Router '%s' erfolgreich gemountet", plugin_key
+                module = importlib.import_module(f"{plugin_key}.router")
+                adapt_installed_spoolman(module, plugin_key, manifest)
+                plugin_router = getattr(module, "router", None)
+                if plugin_router is None:
+                    _logger.warning(
+                        "Plugin '%s' hat router.py aber kein 'router' Attribut",
+                        plugin_key,
                     )
+                    continue
 
-        except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.
-            _logger.warning(
-                "Plugin-Router '%s' konnte nicht geladen werden: %s",
-                plugin_dir.name,
-                exc,
-            )
+                plugin_admin_router = getattr(module, "admin_router", None)
+
+                if mount_prefix:
+                    # Plugin definiert eigenen Mount-Punkt — deferred mount auf app
+                    _deferred_plugin_routers.append(
+                        (plugin_key, plugin_router, mount_prefix, plugin_admin_router)
+                    )
+                    _logger.info(
+                        "Plugin-Router '%s' fuer deferred mount unter '%s' vorgemerkt",
+                        plugin_key,
+                        mount_prefix,
+                    )
+                else:
+                    api_router.include_router(plugin_router)
+                    _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
+
+                    if plugin_admin_router is not None:
+                        api_router.include_router(plugin_admin_router)
+                        _logger.info(
+                            "Plugin-Admin-Router '%s' erfolgreich gemountet", plugin_key
+                        )
+
+            except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.
+                _logger.warning(
+                    "Plugin-Router '%s' konnte nicht geladen werden: %s",
+                    plugin_dir.name,
+                    exc,
+                )
 
 
 _mount_plugin_routers()

@@ -6,11 +6,12 @@ import logging
 import math
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from weakref import WeakValueDictionary
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.cache import response_cache
 from app.core.database import async_session_maker
 from app.core.event_bus import event_bus
+from app.core.file_lock import FileLockBusy
 from app.models import Printer
 from app.models.filament import Filament, FilamentColor
 from app.models.plugin import InstalledPlugin
@@ -33,6 +35,7 @@ from app.models.spool import Spool
 from app.models.system_extra_field import SystemExtraField
 from app.plugins.base import BaseDriver
 from app.services.plugin_service import PLUGINS_DIR as USER_PLUGINS_DIR
+from app.services.plugin_service import plugin_archive_lock
 from app.services.spoolman_extra_field_mapping import (
     SpoolmanFieldError,
     convert_spoolman_value,
@@ -74,6 +77,13 @@ class PluginManager:
     def __init__(self):
         self.drivers: dict[int, BaseDriver] = {}
         self.health_status: dict[int, dict[str, Any]] = {}
+        self._driver_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+
+    def _driver_lock(self, driver_key: str) -> asyncio.Lock:
+        lock = self._driver_locks.get(driver_key)
+        if lock is None:
+            lock = self._driver_locks[driver_key] = asyncio.Lock()
+        return lock
 
     def _create_event_handler(self, printer_id: int) -> Callable[[dict], None]:
         def handler(event: dict) -> None:
@@ -455,15 +465,39 @@ class PluginManager:
         # app.plugins.__path__ includes both USER_PLUGINS_DIR and BUILTIN_PLUGINS_DIR,
         # so a single import covers user-installed and built-in plugins.
         try:
-            module = importlib.import_module(f"app.plugins.{driver_key}.driver")
-            driver_class = getattr(module, "Driver", None)
-            if driver_class and issubclass(driver_class, BaseDriver):
-                return driver_class
-        except ImportError as e:
-            logger.warning(f"Could not load plugin {driver_key}: {e}")
+            with plugin_archive_lock(driver_key, reading=True):
+                module = importlib.import_module(f"app.plugins.{driver_key}.driver")
+                driver_class = getattr(module, "Driver", None)
+                if driver_class and issubclass(driver_class, BaseDriver):
+                    return driver_class
+        except FileLockBusy:
+            logger.info("Plugin files are changing. Driver %s will be retried.", driver_key)
+        except ImportError as exc:
+            logger.warning("Could not load plugin %s: %s", driver_key, exc)
+        except Exception:
+            logger.exception("Could not load plugin %s", driver_key)
         return None
 
     async def start_printer(self, printer: Printer) -> bool:
+        async with self._driver_lock(printer.driver_key):
+            return await self._start_printer(printer)
+
+    async def reload_driver(self, driver_key: str, printers: Iterable[Printer] = ()) -> None:
+        async with self._driver_lock(driver_key):
+            for printer_id, driver in list(self.drivers.items()):
+                if driver.driver_key == driver_key:
+                    await self.stop_printer(printer_id)
+
+            prefix = f"app.plugins.{driver_key}"
+            for name in list(sys.modules):
+                if name == prefix or name.startswith(prefix + "."):
+                    del sys.modules[name]
+            importlib.invalidate_caches()
+
+            for printer in printers:
+                await self._start_printer(printer)
+
+    async def _start_printer(self, printer: Printer) -> bool:
         if printer.id in self.drivers:
             return True
 

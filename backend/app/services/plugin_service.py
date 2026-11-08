@@ -7,17 +7,21 @@ import logging
 import os
 import re
 import shutil
+import signal
 import sys
 import tempfile
 import zipfile
+from collections.abc import Awaitable, Iterator
+from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from pathlib import Path
 from typing import Any, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import DATA_DIR, settings
+from app.core.file_lock import FileLockBusy, exclusive_file_lock, file_lock
 from app.models.plugin import InstalledPlugin
-from app.core.config import settings
 from app.services.plugin_icon_service import read_plugin_icon
 
 logger = logging.getLogger(__name__)
@@ -50,6 +54,8 @@ PLUGINS_DIR = _resolve_plugins_dir()
 
 # Maximale ZIP-Groesse: 10 MB
 MAX_ZIP_SIZE = 10 * 1024 * 1024
+MAX_UNPACKED_ZIP_SIZE = 100 * 1024 * 1024
+MAX_PLUGIN_FILE_SIZE = 1024 * 1024
 
 # Erlaubte Dateiendungen
 ALLOWED_EXTENSIONS = {
@@ -82,12 +88,104 @@ PLUGIN_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,49}$")
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
 
 
+_VERSION_PARTS = re.compile(
+    r"(\d{1,30})\.(\d{1,30})\.(\d{1,30})(-[a-zA-Z0-9.]+)?(?:\+[a-zA-Z0-9.-]+)?"
+)
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    match = _VERSION_PARTS.fullmatch(version)
+    if not match:
+        return ()
+    major, minor, patch, prerelease = match.groups()
+    # Catalog and system updates offer stable versions.
+    return int(major), int(minor), int(patch), int(prerelease is None)
+
+
 class PluginInstallError(Exception):
     """Fehler bei der Plugin-Installation."""
 
     def __init__(self, message: str, code: str = "plugin_install_error"):
         super().__init__(message)
         self.code = code
+
+
+def plugin_restore_lock(*, shared: bool = False) -> AbstractContextManager[None]:
+    return file_lock(DATA_DIR / "locks" / "plugin-backup-restore.lock", shared=shared)
+
+
+def plugin_archive_lock(
+    plugin_key: str | None = None, *, reading: bool = False, blocking: bool = False,
+) -> AbstractContextManager[None]:
+    if plugin_key is not None and not PLUGIN_KEY_PATTERN.fullmatch(plugin_key):
+        return nullcontext()
+    filename = "plugin-archive-publication.lock" if plugin_key is None else f"plugin-driver-archive-{plugin_key}.lock"
+    return file_lock(DATA_DIR / "locks" / filename, shared=reading, blocking=blocking)
+
+
+@contextmanager
+def _plugin_write_lock(plugin_key: str, *, backup_restore_locked: bool = False) -> Iterator[None]:
+    if not PLUGIN_KEY_PATTERN.fullmatch(plugin_key):
+        raise PluginInstallError(f"Plugin '{plugin_key}' nicht gefunden", "not_found")
+    try:
+        restore_guard = nullcontext() if backup_restore_locked else plugin_restore_lock(shared=True)
+        with restore_guard, exclusive_file_lock(PLUGINS_DIR / ".locks" / f"{plugin_key}.lock"):
+            yield
+    except FileLockBusy as exc:
+        raise PluginInstallError(
+            "Another plugin change or backup restore is in progress. Try again.",
+            "plugin_mutation_in_progress",
+        ) from exc
+
+
+@contextmanager
+def _stage_archive(source: Path | None = None) -> Iterator[Path]:
+    staging = Path(tempfile.mkdtemp(dir=PLUGINS_DIR, prefix=".install-"))
+    try:
+        if source is not None:
+            shutil.copytree(source, staging / "new")
+        yield staging
+    finally:
+        if (staging / "previous").exists():
+            logger.warning("Previous plugin files retained at %s", staging / "previous")
+        else:
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+@contextmanager
+def _replace_archive(staging: Path, target: Path) -> Iterator[None]:
+    staged = staging / "new"
+    previous = staging / "previous"
+    if target.exists():
+        target.rename(previous)
+    published = False
+    try:
+        if staged.exists():
+            staged.rename(target)
+            published = True
+        yield
+    except BaseException:
+        if published:
+            target.rename(staged)
+        if previous.exists():
+            previous.rename(target)
+        raise
+    else:
+        if previous.exists():
+            shutil.rmtree(previous, ignore_errors=True)
+
+
+async def _settle_plugin_write(work: Awaitable[None]) -> bool:
+    """Finish a commit or its activation before releasing the archive lock."""
+    pending = asyncio.ensure_future(work)
+    cancelled = False
+    while not pending.done():
+        try:
+            await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            cancelled = True
+    pending.result()
+    return cancelled
 
 
 class PluginInstallService:
@@ -104,7 +202,10 @@ class PluginInstallService:
         self,
         zip_data: bytes,
         installed_by: int | None = None,
-        stop_callback: Callable | None = None,
+        expected_release: tuple[str, str] | None = None,
+        after_install: Callable[[InstalledPlugin, str | None], Awaitable[None]] | None = None,
+        *,
+        backup_restore_locked: bool = False,
     ) -> tuple[InstalledPlugin, bool]:
         """Plugin aus ZIP-Daten installieren oder aktualisieren.
 
@@ -115,141 +216,98 @@ class PluginInstallService:
         Returns:
             Tuple aus (InstalledPlugin, is_upgrade).
         """
-        # 1. Groessen-Pruefung
-        if len(zip_data) > MAX_ZIP_SIZE:
-            raise PluginInstallError(
-                f"ZIP-Datei zu gross ({len(zip_data)} Bytes, max. {MAX_ZIP_SIZE})",
-                "zip_too_large",
-            )
-
-        # 2. ZIP-Validierung
-        self._validate_zip(zip_data)
-
-        # 3. In temp-Verzeichnis entpacken
-        with tempfile.TemporaryDirectory(prefix="filaman_plugin_") as tmpdir:
-            plugin_dir = self._extract_zip(zip_data, tmpdir)
-
-            # 4. Manifest lesen (frueher, um plugin_type zu kennen)
-            manifest = self._validate_manifest(plugin_dir)
-            plugin_type = manifest.get("plugin_type", "driver")
-
-            # 5. Struktur-Pruefung (abhaengig vom Typ)
-            self._validate_structure(plugin_dir, plugin_type)
-
-            # 6. Sicherheits-Pruefung
-            self._validate_security(plugin_dir)
-
-            # 7. Treiber-Klasse pruefen (nur fuer driver-Typ)
-            if plugin_type == "driver":
-                self._validate_driver(plugin_dir, manifest)
-
-            # 8. Upgrade oder Neuinstallation pruefen
+        with (
+            self.validated_archive(zip_data, expected_release) as (plugin_dir, manifest),
+            _plugin_write_lock(manifest["plugin_key"], backup_restore_locked=backup_restore_locked),
+        ):
             plugin_key = manifest["plugin_key"]
-            existing = await self._find_existing(plugin_key)
-            is_upgrade = existing is not None
-
-            # 8a. Bei Upgrade: Laufende Treiber stoppen
-            if is_upgrade and stop_callback:
-                await stop_callback(existing.driver_key or plugin_key)
-
-            # 9. Plugin in plugins-Verzeichnis kopieren
-            target_dir = PLUGINS_DIR / plugin_key
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            shutil.copytree(plugin_dir, target_dir)
-
             try:
-                # 9a. Dependencies installieren (falls vorhanden)
-                dependencies = manifest.get("dependencies", [])
-                if dependencies:
-                    await self._install_dependencies(dependencies, plugin_key)
-            except Exception:
-                # Cleanup: Verzeichnis entfernen bei Fehler
-                if target_dir.exists():
-                    shutil.rmtree(target_dir)
+                existing = await self._find_existing(plugin_key)
+                previous_type = existing.plugin_type if existing else None
+                if (
+                    expected_release and existing
+                    and version_key(existing.version) > version_key(manifest["version"])
+                ):
+                    raise PluginInstallError(
+                        f"The recorded plugin version {existing.version} is newer than this catalog release.",
+                        "catalog_downgrade",
+                    )
+
+                with _stage_archive(plugin_dir) as staging:
+                    dependencies = manifest.get("dependencies") or []
+                    if dependencies:
+                        await self._install_dependencies(dependencies, plugin_key)
+
+                    with (
+                        plugin_archive_lock(), plugin_archive_lock(plugin_key),
+                        _replace_archive(staging, PLUGINS_DIR / plugin_key),
+                    ):
+                        plugin = existing or InstalledPlugin(
+                            plugin_key=plugin_key, is_active=True, installed_by=installed_by
+                        )
+                        for field in (
+                            "name", "version", "description", "author", "homepage", "license",
+                            "plugin_type", "driver_key", "page_url", "icon", "config_schema", "capabilities",
+                        ):
+                            setattr(plugin, field, manifest.get(field))
+                        plugin.show_in_nav = manifest.get("show_in_nav", False)
+                        if existing is None:
+                            self.db.add(plugin)
+                        cancelled = await _settle_plugin_write(self.db.commit())
+            except (Exception, asyncio.CancelledError):
+                await self.db.rollback()
                 raise
 
-            # 10. DB-Eintrag erstellen oder aktualisieren
-            if existing:
-                existing.name = manifest["name"]
-                existing.version = manifest["version"]
-                existing.description = manifest.get("description")
-                existing.author = manifest.get("author")
-                existing.homepage = manifest.get("homepage")
-                existing.license = manifest.get("license")
-                existing.plugin_type = plugin_type
-                existing.driver_key = manifest.get("driver_key")
-                existing.page_url = manifest.get("page_url")
-                existing.icon = manifest.get("icon")
-                existing.config_schema = manifest.get("config_schema")
-                existing.capabilities = manifest.get("capabilities")
-                existing.show_in_nav = manifest.get("show_in_nav", False)
-                await self.db.commit()
-                await self.db.refresh(existing)
-                logger.info(
-                    f"Plugin '{plugin_key}' auf v{manifest['version']} aktualisiert"
-                )
-                return existing, True
-            else:
-                plugin = InstalledPlugin(
-                    plugin_key=plugin_key,
-                    name=manifest["name"],
-                    version=manifest["version"],
-                    description=manifest.get("description"),
-                    author=manifest.get("author"),
-                    homepage=manifest.get("homepage"),
-                    license=manifest.get("license"),
-                    plugin_type=plugin_type,
-                    driver_key=manifest.get("driver_key"),
-                    page_url=manifest.get("page_url"),
-                    icon=manifest.get("icon"),
-                    config_schema=manifest.get("config_schema"),
-                    capabilities=manifest.get("capabilities"),
-                    show_in_nav=manifest.get("show_in_nav", False),
-                    is_active=True,
-                    installed_by=installed_by,
-                )
-                self.db.add(plugin)
-                await self.db.commit()
+            async def activate() -> None:
                 await self.db.refresh(plugin)
-                logger.info(f"Plugin '{plugin_key}' v{manifest['version']} installiert")
-                return plugin, False
+                if after_install:
+                    await after_install(plugin, previous_type)
+
+            if await _settle_plugin_write(activate()) or cancelled:
+                raise asyncio.CancelledError
+            logger.info("Installed plugin %s v%s", plugin_key, plugin.version)
+            return plugin, existing is not None
 
     # ------------------------------------------------------------------ #
     #  Deinstallation
     # ------------------------------------------------------------------ #
 
-    async def uninstall(self, plugin_key: str) -> None:
-        """Plugin deinstallieren."""
-        result = await self.db.execute(
-            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
-        )
-        plugin = result.scalar_one_or_none()
+    async def uninstall(
+        self,
+        plugin_key: str,
+        before_delete: Callable[[InstalledPlugin], Awaitable[None]] | None = None,
+        after_delete: Callable[[InstalledPlugin], Awaitable[None]] | None = None,
+    ) -> InstalledPlugin:
+        """Remove the plugin and its record under the same lock used for installs."""
+        with _plugin_write_lock(plugin_key):
+            try:
+                plugin = await self.get_plugin(plugin_key, for_update=True)
+                if not plugin:
+                    raise PluginInstallError(f"Plugin '{plugin_key}' nicht gefunden", "not_found")
+                if plugin.installed_by is None:
+                    raise PluginInstallError(
+                        f"Plugin '{plugin_key}' ist ein eingebautes Plugin und kann nicht deinstalliert werden",
+                        "builtin_protected",
+                    )
+                with _stage_archive() as staging:
+                    if before_delete:
+                        await before_delete(plugin)
+                    with (
+                        plugin_archive_lock(), plugin_archive_lock(plugin_key),
+                        _replace_archive(staging, PLUGINS_DIR / plugin_key),
+                    ):
+                        await self.db.delete(plugin)
+                        cancelled = await _settle_plugin_write(self.db.commit())
+            except (Exception, asyncio.CancelledError):
+                await self.db.rollback()
+                raise
 
-        if not plugin:
-            raise PluginInstallError(
-                f"Plugin '{plugin_key}' nicht gefunden",
-                "not_found",
-            )
-
-        # Builtin-Plugins (installed_by is None) duerfen nicht deinstalliert werden
-        if plugin.installed_by is None:
-            raise PluginInstallError(
-                f"Plugin '{plugin_key}' ist ein eingebautes Plugin und kann nicht deinstalliert werden",
-                "builtin_protected",
-            )
-
-        # Plugin-Verzeichnis entfernen
-        target_dir = PLUGINS_DIR / plugin_key
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
-            logger.info(f"Plugin-Verzeichnis '{target_dir}' entfernt")
-
-        # DB-Eintrag loeschen
-        await self.db.delete(plugin)
-        await self.db.commit()
-
-        logger.info(f"Plugin '{plugin_key}' deinstalliert")
+            if after_delete:
+                cancelled = await _settle_plugin_write(after_delete(plugin)) or cancelled
+            if cancelled:
+                raise asyncio.CancelledError
+            logger.info(f"Plugin '{plugin_key}' deinstalliert")
+            return plugin
 
     # ------------------------------------------------------------------ #
     #  Installierte Plugins auflisten
@@ -262,29 +320,37 @@ class PluginInstallService:
         )
         return list(result.scalars().all())
 
-    async def get_plugin(self, plugin_key: str) -> InstalledPlugin | None:
-        """Ein einzelnes Plugin anhand des Keys holen."""
-        result = await self.db.execute(
-            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
-        )
+    def has_plugin_files(self, plugin_key: str, version: str) -> bool:
+        try:
+            path = PLUGINS_DIR / plugin_key / "plugin.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, RecursionError):
+            return False
+        return isinstance(manifest, dict) and (manifest.get("plugin_key"), manifest.get("version")) == (plugin_key, version)
+
+    async def get_plugin(self, plugin_key: str, *, for_update: bool = False) -> InstalledPlugin | None:
+        statement = select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
+        if for_update:
+            # MySQL's ordinary reads can reuse the permission check's older snapshot.
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        result = await self.db.execute(statement)
         return result.scalar_one_or_none()
 
     async def set_active(self, plugin_key: str, is_active: bool) -> InstalledPlugin:
         """Plugin aktivieren oder deaktivieren."""
-        result = await self.db.execute(
-            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
-        )
-        plugin = result.scalar_one_or_none()
-
-        if not plugin:
-            raise PluginInstallError(
-                f"Plugin '{plugin_key}' nicht gefunden",
-                "not_found",
-            )
-
-        plugin.is_active = is_active
-        await self.db.commit()
-        await self.db.refresh(plugin)
+        with _plugin_write_lock(plugin_key):
+            try:
+                plugin = await self.get_plugin(plugin_key, for_update=True)
+                if not plugin:
+                    raise PluginInstallError(f"Plugin '{plugin_key}' nicht gefunden", "not_found")
+                plugin.is_active = is_active
+                cancelled = await _settle_plugin_write(self.db.commit())
+                await self.db.refresh(plugin)
+            except (Exception, asyncio.CancelledError):
+                await self.db.rollback()
+                raise
+            if cancelled:
+                raise asyncio.CancelledError
 
         logger.info(
             f"Plugin '{plugin_key}' {'aktiviert' if is_active else 'deaktiviert'}"
@@ -295,10 +361,49 @@ class PluginInstallService:
     #  Validierungs-Methoden
     # ------------------------------------------------------------------ #
 
-    def _validate_zip(self, zip_data: bytes) -> None:
+    @classmethod
+    @contextmanager
+    def validated_archive(
+        cls, zip_data: bytes, expected_release: tuple[str, str] | None = None
+    ) -> Iterator[tuple[Path, dict[str, Any]]]:
+        """Check an archive without installing dependencies or touching installed files."""
+        if len(zip_data) > MAX_ZIP_SIZE:
+            raise PluginInstallError(
+                f"ZIP-Datei zu gross ({len(zip_data)} Bytes, max. {MAX_ZIP_SIZE})",
+                "zip_too_large",
+            )
+
+        cls._validate_zip(zip_data)
+        with tempfile.TemporaryDirectory(prefix="filaman_plugin_") as tmpdir:
+            plugin_dir = cls._extract_zip(zip_data, tmpdir)
+            manifest = cls._validate_manifest(plugin_dir)
+            if expected_release is not None and (manifest["plugin_key"], manifest["version"]) != expected_release:
+                raise PluginInstallError(
+                    "Plugin ZIP manifest does not match the catalog release.", "manifest_mismatch"
+                )
+
+            plugin_type = manifest["plugin_type"]
+            cls._validate_structure(plugin_dir, plugin_type)
+            cls._validate_security(plugin_dir)
+            if plugin_type == "driver":
+                cls._validate_driver(plugin_dir, manifest)
+            yield plugin_dir, manifest
+
+    @staticmethod
+    def _validate_zip(zip_data: bytes) -> None:
         """Pruefen, ob die Daten ein gueltiges ZIP-Archiv sind."""
         try:
             with zipfile.ZipFile(__import__("io").BytesIO(zip_data), "r") as zf:
+                entries = zf.infolist()
+                for entry in entries:
+                    if entry.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                        raise PluginInstallError(
+                            "Plugin ZIP entries must use Store or Deflate compression.", "unsupported_compression"
+                        )
+                    if entry.file_size > MAX_PLUGIN_FILE_SIZE:
+                        raise PluginInstallError(f"Plugin file is too large: {entry.filename}", "file_too_large")
+                if sum(entry.file_size for entry in entries) > MAX_UNPACKED_ZIP_SIZE:
+                    raise PluginInstallError("The unpacked plugin ZIP exceeds 100 MB.", "zip_too_large")
                 # Test auf Korruption
                 bad = zf.testzip()
                 if bad is not None:
@@ -312,7 +417,8 @@ class PluginInstallService:
                 "invalid_zip",
             )
 
-    def _extract_zip(self, zip_data: bytes, tmpdir: str) -> Path:
+    @staticmethod
+    def _extract_zip(zip_data: bytes, tmpdir: str) -> Path:
         """ZIP entpacken und das Plugin-Verzeichnis zurueckgeben.
 
         Erkennt automatisch, ob Dateien direkt im Root oder in einem
@@ -345,8 +451,9 @@ class PluginInstallService:
         # Dateien liegen direkt im Root
         return Path(tmpdir)
 
+    @staticmethod
     def _validate_structure(
-        self, plugin_dir: Path, plugin_type: str = "driver"
+        plugin_dir: Path, plugin_type: str = "driver"
     ) -> None:
         """Pruefen, ob die Pflichtdateien vorhanden sind."""
         required_files = ["plugin.json", "__init__.py"]
@@ -363,18 +470,22 @@ class PluginInstallService:
                     "missing_file",
                 )
 
-    def _validate_manifest(self, plugin_dir: Path) -> dict[str, Any]:
+    @classmethod
+    def _validate_manifest(cls, plugin_dir: Path) -> dict[str, Any]:
         """plugin.json laden und validieren."""
         manifest_path = plugin_dir / "plugin.json"
 
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 manifest = json.load(f)
-        except json.JSONDecodeError as e:
+        except (ValueError, RecursionError) as e:
             raise PluginInstallError(
                 f"plugin.json ist kein gueltiges JSON: {e}",
                 "invalid_json",
             )
+
+        if not isinstance(manifest, dict):
+            raise PluginInstallError("Plugin manifest must be a JSON object.", "invalid_manifest")
 
         # Pflichtfelder pruefen (Basisfelder)
         for field in REQUIRED_MANIFEST_FIELDS:
@@ -384,9 +495,32 @@ class PluginInstallService:
                     "missing_field",
                 )
 
+        for field, max_length in (
+            ("plugin_key", 50), ("name", 200), ("author", 200), ("version", 30),
+            ("homepage", 500), ("license", 100), ("driver_key", 50), ("page_url", 500),
+        ):
+            value = manifest.get(field)
+            if value is not None and (not isinstance(value, str) or len(value) > max_length):
+                raise PluginInstallError(f"Invalid manifest field: {field}.", "invalid_manifest")
+        if not isinstance(manifest["description"], str):
+            raise PluginInstallError("Invalid manifest field: description.", "invalid_manifest")
+        if not isinstance(manifest.get("show_in_nav", False), bool):
+            raise PluginInstallError("Invalid manifest field: show_in_nav.", "invalid_manifest")
+        for field in ("config_schema", "capabilities"):
+            value = manifest.get(field)
+            if value is not None and not isinstance(value, dict):
+                raise PluginInstallError(f"Invalid manifest field: {field}.", "invalid_manifest")
+
+        dependencies = manifest.get("dependencies")
+        if dependencies is not None and (
+            not isinstance(dependencies, list)
+            or any(not isinstance(item, str) or not item.strip() for item in dependencies)
+        ):
+            raise PluginInstallError("Plugin dependencies must be a list of package requirements.", "invalid_manifest")
+
         # plugin_type validieren (Default: "driver")
         plugin_type = manifest.get("plugin_type", "driver")
-        if plugin_type not in VALID_PLUGIN_TYPES:
+        if not isinstance(plugin_type, str) or plugin_type not in VALID_PLUGIN_TYPES:
             raise PluginInstallError(
                 f"Ungueltiger plugin_type '{plugin_type}' "
                 f"(erlaubt: {', '.join(sorted(VALID_PLUGIN_TYPES))})",
@@ -396,7 +530,7 @@ class PluginInstallService:
 
         # plugin_key validieren
         plugin_key = manifest["plugin_key"]
-        if not PLUGIN_KEY_PATTERN.match(plugin_key):
+        if not PLUGIN_KEY_PATTERN.fullmatch(plugin_key):
             raise PluginInstallError(
                 f"Ungueltiger plugin_key '{plugin_key}' "
                 "(3-50 Zeichen, lowercase, Buchstaben/Ziffern/Underscores, "
@@ -406,7 +540,7 @@ class PluginInstallService:
 
         # Version validieren
         version = manifest["version"]
-        if not SEMVER_PATTERN.match(version):
+        if not SEMVER_PATTERN.fullmatch(version):
             raise PluginInstallError(
                 f"Ungueltige Version '{version}' (erwartet: Semver, z.B. 1.0.0)",
                 "invalid_version",
@@ -438,7 +572,7 @@ class PluginInstallService:
             )
 
         if manifest.get("icon") is not None:
-            self._validate_icon(plugin_dir, manifest["icon"])
+            cls._validate_icon(plugin_dir, manifest["icon"])
 
         return manifest
 
@@ -449,7 +583,8 @@ class PluginInstallService:
         except (OSError, ValueError) as error:
             raise PluginInstallError(f"Ungueltiges Plugin-Icon: {error}", "invalid_icon") from error
 
-    def _validate_security(self, plugin_dir: Path) -> None:
+    @classmethod
+    def _validate_security(cls, plugin_dir: Path) -> None:
         """Sicherheitspruefungen durchfuehren."""
         for root, dirs, files in os.walk(plugin_dir):
             # __pycache__ ignorieren
@@ -462,7 +597,7 @@ class PluginInstallService:
                 # Dateiendung pruefen
                 suffix = filepath.suffix.lower()
                 if suffix == ".svg":
-                    self._validate_icon(plugin_dir, str(rel_path))
+                    cls._validate_icon(plugin_dir, str(rel_path))
                 if suffix and suffix not in ALLOWED_EXTENSIONS:
                     raise PluginInstallError(
                         f"Unerlaubte Dateiendung: {rel_path}",
@@ -470,11 +605,19 @@ class PluginInstallService:
                     )
 
                 # Maximale Einzeldatei-Groesse: 1 MB
-                if filepath.stat().st_size > 1 * 1024 * 1024:
+                if filepath.stat().st_size > MAX_PLUGIN_FILE_SIZE:
                     raise PluginInstallError(
                         f"Datei zu gross: {rel_path} ({filepath.stat().st_size} Bytes)",
                         "file_too_large",
                     )
+
+                if suffix == ".py":
+                    try:
+                        compile(filepath.read_bytes(), str(rel_path), "exec")
+                    except (SyntaxError, ValueError) as exc:
+                        raise PluginInstallError(
+                            f"Invalid Python in {rel_path}: {exc}", "syntax_error"
+                        ) from exc
 
                 # Keine versteckten Dateien (ausser __init__.py)
                 if filename.startswith("."):
@@ -483,7 +626,8 @@ class PluginInstallService:
                         "hidden_file",
                     )
 
-    def _validate_driver(self, plugin_dir: Path, manifest: dict[str, Any]) -> None:
+    @staticmethod
+    def _validate_driver(plugin_dir: Path, manifest: dict[str, Any]) -> None:
         """Pruefen, ob driver.py eine gueltige Driver-Klasse enthaelt."""
         driver_path = plugin_dir / "driver.py"
 
@@ -554,10 +698,7 @@ class PluginInstallService:
         Gibt das vorhandene Plugin zurueck (fuer Upgrade) oder None.
         Wirft einen Fehler bei integrierten Plugins (nicht per ZIP ueberschreibbar).
         """
-        result = await self.db.execute(
-            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
-        )
-        existing = result.scalar_one_or_none()
+        existing = await self.get_plugin(plugin_key, for_update=True)
 
         if existing and existing.installed_by is None:
             raise PluginInstallError(
@@ -599,10 +740,15 @@ class PluginInstallService:
                     *cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
                 )
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=120
-                )
+                try:
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    with suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    await process.communicate()
+                    raise
 
                 if process.returncode == 0:
                     logger.info(

@@ -55,6 +55,30 @@ def _make_valid_plugin_zip() -> bytes:
 
 
 class TestZipValidation:
+    @pytest.mark.parametrize("compression", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+    def test_unsupported_compression_is_rejected_before_crc(self, monkeypatch, compression):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression) as archive:
+            archive.writestr("helper.py", "print('test')")
+        monkeypatch.setattr(zipfile.ZipFile, "testzip", lambda _: pytest.fail("Unsupported ZIP expanded"))
+        with pytest.raises(PluginInstallError) as error:
+            PluginInstallService._validate_zip(buffer.getvalue())
+        assert error.value.code == "unsupported_compression"
+
+    @pytest.mark.parametrize(
+        "sizes, code",
+        [([1024 * 1024 + 1], "file_too_large"), ([600, 600], "zip_too_large")],
+    )
+    def test_unpacked_limits_are_checked_before_crc(self, monkeypatch, sizes, code):
+        from app.services import plugin_service
+
+        archive = _make_zip({f"file_{index}.txt": "x" * size for index, size in enumerate(sizes)})
+        monkeypatch.setattr(plugin_service, "MAX_UNPACKED_ZIP_SIZE", 1000)
+        monkeypatch.setattr(zipfile.ZipFile, "testzip", lambda _: pytest.fail("ZIP expanded before checking sizes"))
+        with pytest.raises(PluginInstallError) as error:
+            PluginInstallService._validate_zip(archive)
+        assert error.value.code == code
+
     @pytest.mark.asyncio
     async def test_validate_zip_valid(self, db_session):
         service = PluginInstallService(db_session)
@@ -394,3 +418,212 @@ class TestInstallFromZip:
 
         assert is_upgrade is False
         assert plugin.plugin_key == "test_plugin"
+
+
+async def test_failed_dependency_upgrade_preserves_installed_plugin(db_session, monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock
+
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(_make_valid_plugin_zip(), installed_by=1)
+    failing_upgrade = _make_zip(
+        {
+            "plugin.json": json.dumps({**VALID_MANIFEST, "version": "2.0.0", "dependencies": ["example"]}),
+            "driver.py": VALID_DRIVER_PY,
+            "__init__.py": VALID_INIT_PY,
+        }
+    )
+    monkeypatch.setattr(
+        service, "_install_dependencies", AsyncMock(side_effect=PluginInstallError("dependency failed"))
+    )
+    activate = AsyncMock()
+
+    with pytest.raises(PluginInstallError, match="dependency failed"):
+        await service.install_from_zip(failing_upgrade, installed_by=1, after_install=activate)
+
+    assert (await service.get_plugin("test_plugin")).version == "1.0.0"
+    manifest = json.loads((tmp_path / "test_plugin" / "plugin.json").read_text())
+    assert manifest["version"] == "1.0.0"
+    activate.assert_not_awaited()
+
+
+async def test_plugin_mutations_reject_overlap_while_dependencies_install(db_session, monkeypatch, tmp_path):
+    import asyncio
+
+    from app.core.file_lock import FileLockBusy
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(_make_valid_plugin_zip(), installed_by=1)
+    upgrade = _make_zip({
+        "plugin.json": json.dumps({**VALID_MANIFEST, "version": "2.0.0", "dependencies": ["example"]}),
+        "driver.py": VALID_DRIVER_PY,
+        "__init__.py": VALID_INIT_PY,
+    })
+    started = asyncio.Event()
+    resume = asyncio.Event()
+
+    async def install_dependencies(*_):
+        started.set()
+        await resume.wait()
+
+    monkeypatch.setattr(service, "_install_dependencies", install_dependencies)
+    active_install = asyncio.create_task(service.install_from_zip(upgrade, installed_by=1))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        with pytest.raises(FileLockBusy), plugin_service.plugin_restore_lock():
+            pytest.fail("A complete restore acquired the lock during an upgrade")
+
+        with pytest.raises(PluginInstallError) as install_error:
+            await service.install_from_zip(_make_valid_plugin_zip(), installed_by=1)
+        assert install_error.value.code == "plugin_mutation_in_progress"
+
+        with pytest.raises(PluginInstallError) as uninstall_error:
+            await service.uninstall("test_plugin")
+        assert uninstall_error.value.code == "plugin_mutation_in_progress"
+    finally:
+        resume.set()
+        await active_install
+
+
+@pytest.mark.parametrize("change", [{"name": [1]}, {"dependencies": 1}, {"homepage": "x" * 501}, {"config_schema": []}])
+def test_validated_archive_rejects_malformed_install_metadata(change):
+    archive = _make_zip({
+        "plugin.json": json.dumps({**VALID_MANIFEST, **change}),
+        "driver.py": VALID_DRIVER_PY,
+        "__init__.py": "",
+    })
+    with pytest.raises(PluginInstallError):
+        with PluginInstallService.validated_archive(archive):
+            pass
+
+
+@pytest.mark.parametrize("failure", ["copy", "commit"])
+async def test_failed_archive_replacement_keeps_previous_install(db_session, monkeypatch, tmp_path, failure):
+    from unittest.mock import AsyncMock
+
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(_make_valid_plugin_zip(), installed_by=1)
+    upgrade = _make_zip({
+        "plugin.json": json.dumps({**VALID_MANIFEST, "version": "2.0.0"}),
+        "driver.py": VALID_DRIVER_PY,
+        "__init__.py": "",
+    })
+
+    def failed_copy(*args, **kwargs):
+        raise OSError("install failed")
+
+    with monkeypatch.context() as patch:
+        if failure == "copy":
+            patch.setattr(plugin_service.shutil, "copytree", failed_copy)
+        else:
+            patch.setattr(db_session, "commit", AsyncMock(side_effect=OSError("install failed")))
+        with pytest.raises(OSError, match="install failed"):
+            await service.install_from_zip(upgrade, installed_by=1)
+
+    assert (await service.get_plugin("test_plugin")).version == "1.0.0"
+    manifest = json.loads((tmp_path / "test_plugin" / "plugin.json").read_text())
+    assert manifest["version"] == "1.0.0"
+
+
+async def test_cancelled_dependency_install_reaps_its_process(monkeypatch):
+    import asyncio
+    import sys
+
+    from app.services import plugin_service
+
+    spawn = asyncio.create_subprocess_exec
+    started = asyncio.Event()
+    process = None
+
+    async def spawn_fixture(*args, **kwargs):
+        nonlocal process
+        process = await spawn(sys.executable, "-c", "import time; time.sleep(60)", **kwargs)
+        started.set()
+        return process
+
+    monkeypatch.setattr(plugin_service.asyncio, "create_subprocess_exec", spawn_fixture)
+    install = asyncio.create_task(PluginInstallService(None)._install_dependencies(["fixture"], "test_plugin"))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        install.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(install, 5)
+        assert process.returncode is not None
+    finally:
+        if process and process.returncode is None:
+            process.kill()
+            await process.communicate()
+
+
+async def test_failed_uninstall_commit_keeps_files_and_record(db_session, monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock
+
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(_make_valid_plugin_zip(), installed_by=1)
+    with monkeypatch.context() as patch:
+        patch.setattr(db_session, "commit", AsyncMock(side_effect=OSError("uninstall failed")))
+        with pytest.raises(OSError, match="uninstall failed"):
+            await service.uninstall("test_plugin")
+
+    assert (await service.get_plugin("test_plugin")).version == "1.0.0"
+    assert (tmp_path / "test_plugin" / "plugin.json").is_file()
+
+
+@pytest.mark.parametrize("phase", ["commit", "activation"])
+async def test_cancelled_install_keeps_files_and_activates_after_commit(
+    db_session, monkeypatch, tmp_path, phase
+):
+    import asyncio
+
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(_make_valid_plugin_zip(), installed_by=1)
+    upgrade = _make_zip({
+        "plugin.json": json.dumps({**VALID_MANIFEST, "version": "2.0.0"}),
+        "driver.py": VALID_DRIVER_PY,
+        "__init__.py": "",
+    })
+    committed, finish = asyncio.Event(), asyncio.Event()
+    activated = asyncio.Event()
+    commit = db_session.commit
+
+    async def delayed_commit():
+        await commit()
+        committed.set()
+        await finish.wait()
+
+    async def activate(*_):
+        if phase == "activation":
+            committed.set()
+            await finish.wait()
+        activated.set()
+
+    if phase == "commit":
+        monkeypatch.setattr(db_session, "commit", delayed_commit)
+    install = asyncio.create_task(service.install_from_zip(upgrade, installed_by=1, after_install=activate))
+    try:
+        await asyncio.wait_for(committed.wait(), 5)
+        install.cancel()
+        await asyncio.sleep(0)
+        finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(install, 5)
+    finally:
+        finish.set()
+
+    assert activated.is_set()
+    assert (await service.get_plugin("test_plugin")).version == "2.0.0"
+    manifest = json.loads((tmp_path / "test_plugin" / "plugin.json").read_text())
+    assert manifest["version"] == "2.0.0"

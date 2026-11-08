@@ -60,7 +60,7 @@ The Spoolman import glyph adapts the reel geometry from [Spoolman's published mo
 ## Fallback Behavior
 
 - If no icon is declared or loading fails, a puzzle icon is displayed in the sidebar, admin plugin list, and plugin details dialog.
-- No registry catalog icons are supported.
+- Catalog cards reuse an installed plugin's icon when available. Uninstalled plugins show the puzzle icon.
 
 ## Example SVG
 

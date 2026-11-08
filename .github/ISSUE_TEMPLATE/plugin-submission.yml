@@ -1,0 +1,31 @@
+name: Submit a plugin
+description: Propose a plugin or a new version for the FilaMan catalog.
+title: 'Plugin submission: '
+body:
+  - type: input
+    id: repository
+    attributes:
+      label: Public GitHub repository
+    validations:
+      required: true
+  - type: input
+    id: release
+    attributes:
+      label: GitHub release ZIP asset URL
+      description: Link directly to the installable ZIP attached under Assets on a specific tagged release.
+      placeholder: https://github.com/owner/repo/releases/download/v1.2.3/plugin.zip
+    validations:
+      required: true
+  - type: input
+    id: details
+    attributes:
+      label: Plugin name, version, publisher, and license
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description, minimum FilaMan version, and versions tested
+      description: Include a short description for the listing and any setup requirements.
+    validations:
+      required: true

@@ -1,0 +1,31 @@
+name: Plugin catalog
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: changes
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- plugin-catalog .github/workflows/plugin-catalog.yml \
+            backend/app/core/seeds backend/app/services/plugin_catalog.py \
+            backend/app/services/plugin_icon_service.py backend/app/services/plugin_service.py; then
+            echo "validate=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "validate=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.validate == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - if: steps.changes.outputs.validate == 'true'
+        run: python -m pip install ./backend
+      - if: steps.changes.outputs.validate == 'true'
+        run: python plugin-catalog/check.py

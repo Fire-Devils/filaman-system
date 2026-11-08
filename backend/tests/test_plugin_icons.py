@@ -96,6 +96,27 @@ async def test_builtin_icons_and_missing_icons(auth_client):
 
 
 @pytest.mark.asyncio
+async def test_pre_icon_backup_keeps_builtin_icons(auth_client, db_session, monkeypatch, tmp_path):
+    from app.api.v1 import system
+    from app.core.seeds import BUILTIN_PLUGINS
+
+    monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
+    old_records = [{key: value for key, value in plugin.items() if key != "icon"} for plugin in BUILTIN_PLUGINS]
+    client, token = auth_client
+    response = await client.post(
+        "/api/v1/admin/system/backup/import",
+        files={"file": ("old.json", json.dumps({"metadata": {}, "data": {"installed_plugins": old_records}}), "application/json")},
+        headers={"X-CSRF-Token": token},
+    )
+    assert response.status_code == 200, response.text
+    for record in old_records:
+        plugin = await PluginInstallService(db_session).get_plugin(record["plugin_key"])
+        assert plugin.icon_url
+        image = await system.plugin_icon(record["plugin_key"], db_session, None)
+        assert image.media_type == "image/svg+xml"
+
+
+@pytest.mark.asyncio
 async def test_icon_is_revalidated_when_served(auth_client, db_session, tmp_path):
     client, _ = auth_client
     with patch("app.services.plugin_service.PLUGINS_DIR", tmp_path):

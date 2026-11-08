@@ -1073,7 +1073,7 @@ async def test_native_temperature_clear_survives_backup_restore(
 
 @pytest.mark.parametrize("cleanup", ["killswitch", "uninstall"])
 async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
-    db_session, monkeypatch, cleanup
+    db_session, monkeypatch, cleanup, tmp_path
 ):
     from app.api.v1 import system
     from app.core.security import Principal
@@ -1097,11 +1097,20 @@ async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
     if cleanup == "killswitch":
         await system.killswitch(db_session, principal)
     else:
-        async def keep_plugin_files(_service, _plugin_key):
-            pass
+        from app.models import InstalledPlugin
+        from app.services import plugin_service
 
-        monkeypatch.setattr(system.PluginInstallService, "uninstall", keep_plugin_files)
-        await system.uninstall_plugin("bambulab", db_session, principal, delete_data=True)
+        monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+        plugin_dir = tmp_path / "bambulab"
+        plugin_dir.mkdir()
+        db_session.add(InstalledPlugin(
+            plugin_key="bambulab", name="Bambu Lab", version="1.0.0",
+            driver_key="bambulab", installed_by=1,
+        ))
+        await db_session.commit()
+        await system.uninstall_plugin("bambulab", db_session, principal, None, delete_data=True)
+        assert not plugin_dir.exists()
+        assert await db_session.scalar(select(InstalledPlugin).where(InstalledPlugin.plugin_key == "bambulab")) is None
     assert await db_session.scalar(select(FilamentPrinterInitialization)) is None
 
 
