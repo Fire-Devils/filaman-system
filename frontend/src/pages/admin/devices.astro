@@ -217,7 +217,7 @@ import FormDialog from '../../components/FormDialog.astro'
     document.getElementById('token-copy')!.addEventListener('click', async () => {
       const display = document.getElementById('token-display') as HTMLInputElement
       const error = document.getElementById('token-copy-error')!
-      if (await copyText(display.value)) {
+      if (await copyText(display.value, tokenModal)) {
         error.classList.add('hidden')
         document.getElementById('token-copy')!.textContent = t('admin.copied')
       } else { error.textContent = t('admin.copyFailed'); error.classList.remove('hidden'); display.select() }

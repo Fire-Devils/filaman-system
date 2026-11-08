@@ -6,6 +6,7 @@ import { bindFormState } from './form-state'
 import { tableAction } from './table-actions'
 import { escapeHtml } from './extra-fields'
 import { setLang, t, translatePage } from './i18n'
+import { copyText } from './clipboard'
 
 async function boot(language: 'en' | 'de' | 'fr' = 'en') {
   setLang(language)
@@ -17,7 +18,7 @@ async function boot(language: 'en' | 'de' | 'fr' = 'en') {
   }
   const fetchAllPages = vi.fn(async () => ({ items: [device, { ...device, id: 10, name: 'Other reader' }] }))
   Object.assign(window, { __fmConfirm: vi.fn(async () => true), __fmAlert: vi.fn(async () => true) })
-  const dependencies = { t, translatePage, initI18n: async () => {}, isAbortError: () => false, copyText: vi.fn(async () => true), escapeHtml, api, fetchAllPages, bindFormDialog, bindFormState, tableAction }
+  const dependencies = { t, translatePage, initI18n: async () => {}, isAbortError: () => false, copyText, escapeHtml, api, fetchAllPages, bindFormDialog, bindFormState, tableAction }
   await bootAstroPage('admin/devices', dependencies)
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   return { ...api, fetchAllPages }
@@ -180,6 +181,36 @@ it('keeps one-time device codes in the guarded native dialog and clears them on 
   expect(document.querySelector('#devices-table')!.textContent).not.toContain('test-one-time-code')
 })
 
+it('copies the device code from inside the modal when the Clipboard API is unavailable', async () => {
+  await boot()
+  document.querySelector<HTMLButtonElement>('#btn-new')!.click()
+  change('device-name', 'New reader')
+  document.querySelector('#modal-form')!.dispatchEvent(new Event('submit', { cancelable: true }))
+  const modal = document.querySelector<HTMLDialogElement>('#token-modal')!
+  await vi.waitFor(() => expect(modal.open).toBe(true))
+  const copyButton = modal.querySelector<HTMLButtonElement>('#token-copy')!
+  let copied = ''
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: () => {
+      // A native modal makes fields outside it inert, even if the copy command returns true.
+      const field = modal.querySelector('textarea')
+      if (field) copied = field.value.slice(field.selectionStart, field.selectionEnd)
+      return true
+    },
+  })
+  try {
+    copyButton.click()
+    await vi.waitFor(() => expect(copyButton.textContent).toBe(t('admin.copied')))
+    expect(copied).toBe('test-one-time-code')
+    expect(modal.querySelector('textarea')).toBeNull()
+    expect(document.activeElement).toBe(copyButton)
+  } finally {
+    Reflect.deleteProperty(navigator, 'clipboard')
+    Reflect.deleteProperty(document, 'execCommand')
+  }
+})
 
 it.each(['de', 'fr'] as const)('translates dynamically inserted device controls in %s', async language => {
   await boot(language)
