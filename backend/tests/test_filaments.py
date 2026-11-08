@@ -301,6 +301,37 @@ class TestManufacturerCRUD:
 
 class TestColorCRUD:
     @pytest.mark.asyncio
+    async def test_discovery_snapshot_revalidates_the_exact_catalog(self, auth_client, db_session):
+        client, _ = auth_client
+        color = await _create_color(db_session, name="Translucent", hex_code="#11223380")
+        path = "/api/v1/colors/discovery/snapshot"
+        initial = await client.get(path)
+        assert initial.status_code == 200
+        assert initial.headers["cache-control"] == "private, no-cache"
+        assert initial.json()["items"] == [
+            {"id": color.id, "name": "Translucent", "hex_code": "#11223380", "usage_count": 0}
+        ]
+
+        validator = {"If-None-Match": initial.headers["etag"]}
+        unchanged = await client.get(path, headers=validator)
+        assert unchanged.status_code == 304
+        assert unchanged.content == b""
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+        await db_session.commit()
+
+        changed = await client.get(path, headers=validator)
+        assert changed.status_code == 200
+        assert changed.headers["etag"] != initial.headers["etag"]
+        assert changed.json()["items"][0]["usage_count"] == 1
+
+        client.cookies.clear()
+        denied = await client.get(path, headers={"If-None-Match": changed.headers["etag"]})
+        assert denied.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_list_colors_paginated(self, auth_client, db_session):
         client, _ = auth_client
 

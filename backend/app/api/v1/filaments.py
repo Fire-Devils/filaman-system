@@ -1,8 +1,9 @@
+import hashlib
 import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
@@ -17,6 +18,7 @@ from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_filament import (
     BulkFilamentDeleteRequest,
     BulkFilamentUpdateRequest,
+    ColorCatalogSnapshot,
     ColorCreate,
     ColorFilterStop,
     ColorResponse,
@@ -481,6 +483,28 @@ async def list_colors(
     total = count_result.scalar() or 0
 
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+
+
+@router_colors.get(
+    "/discovery/snapshot",
+    response_model=ColorCatalogSnapshot,
+    responses={304: {"description": "Catalog unchanged"}},
+)
+async def color_catalog_snapshot(request: Request, db: DBSession, principal: PrincipalDep):
+    rows = await db.execute(
+        select(Color.id, Color.name, Color.hex_code, func.count(FilamentColor.id).label("usage_count"))
+        .outerjoin(FilamentColor, Color.id == FilamentColor.color_id)
+        .group_by(Color.id, Color.name, Color.hex_code)
+        .order_by(Color.name, Color.id)
+    )
+    response = JSONResponse({"items": [dict(row) for row in rows.mappings()]})
+    etag = '"' + hashlib.sha256(response.body).hexdigest() + '"'
+    headers = {"ETag": f"W/{etag}", "Cache-Control": "private, no-cache"}
+    validators = request.headers.get("if-none-match", "").split(",")
+    if any(value.strip().removeprefix("W/") in (etag, "*") for value in validators):
+        return Response(status_code=304, headers=headers)
+    response.headers.update(headers)
+    return response
 
 
 @router_colors.post(

@@ -135,6 +135,17 @@ class ColorResponse(BaseModel):
         from_attributes = True
 
 
+class CatalogColorResponse(BaseModel):
+    id: int
+    name: str
+    hex_code: str
+    usage_count: int
+
+
+class ColorCatalogSnapshot(BaseModel):
+    items: list[CatalogColorResponse]
+
+
 class FilamentColorEntry(BaseModel):
     """A single color assignment for a filament (used in create/replace)."""
 
