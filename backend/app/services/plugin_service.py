@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.plugin import InstalledPlugin
 from app.core.config import settings
+from app.services.plugin_icon_service import read_plugin_icon
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ ALLOWED_EXTENSIONS = {
     ".yml",
     ".toml",
     ".html",
+    ".svg",
 }
 
 # Pflichtfelder im Manifest (Basisfelder, gelten fuer alle Plugin-Typen)
@@ -178,6 +180,7 @@ class PluginInstallService:
                 existing.plugin_type = plugin_type
                 existing.driver_key = manifest.get("driver_key")
                 existing.page_url = manifest.get("page_url")
+                existing.icon = manifest.get("icon")
                 existing.config_schema = manifest.get("config_schema")
                 existing.capabilities = manifest.get("capabilities")
                 existing.show_in_nav = manifest.get("show_in_nav", False)
@@ -199,6 +202,7 @@ class PluginInstallService:
                     plugin_type=plugin_type,
                     driver_key=manifest.get("driver_key"),
                     page_url=manifest.get("page_url"),
+                    icon=manifest.get("icon"),
                     config_schema=manifest.get("config_schema"),
                     capabilities=manifest.get("capabilities"),
                     show_in_nav=manifest.get("show_in_nav", False),
@@ -433,7 +437,17 @@ class PluginInstallService:
                 "reserved_key",
             )
 
+        if manifest.get("icon") is not None:
+            self._validate_icon(plugin_dir, manifest["icon"])
+
         return manifest
+
+    @staticmethod
+    def _validate_icon(plugin_dir: Path, icon: str) -> None:
+        try:
+            read_plugin_icon(plugin_dir, icon)
+        except (OSError, ValueError) as error:
+            raise PluginInstallError(f"Ungueltiges Plugin-Icon: {error}", "invalid_icon") from error
 
     def _validate_security(self, plugin_dir: Path) -> None:
         """Sicherheitspruefungen durchfuehren."""
@@ -447,6 +461,8 @@ class PluginInstallService:
 
                 # Dateiendung pruefen
                 suffix = filepath.suffix.lower()
+                if suffix == ".svg":
+                    self._validate_icon(plugin_dir, str(rel_path))
                 if suffix and suffix not in ALLOWED_EXTENSIONS:
                     raise PluginInstallError(
                         f"Unerlaubte Dateiendung: {rel_path}",
@@ -628,6 +644,7 @@ class PluginInstallService:
         page_url: str | None = None,
         homepage: str | None = None,
         show_in_nav: bool = False,
+        icon: str | None = None,
     ) -> InstalledPlugin:
         """Ein eingebautes Plugin registrieren (kein ZIP noetig).
 
@@ -647,6 +664,7 @@ class PluginInstallService:
             existing.page_url = page_url
             existing.homepage = homepage
             existing.show_in_nav = show_in_nav
+            existing.icon = icon
             await self.db.commit()
             await self.db.refresh(existing)
             return existing
@@ -661,6 +679,7 @@ class PluginInstallService:
             page_url=page_url,
             homepage=homepage,
             show_in_nav=show_in_nav,
+            icon=icon,
             is_active=True,
         )
         self.db.add(plugin)
