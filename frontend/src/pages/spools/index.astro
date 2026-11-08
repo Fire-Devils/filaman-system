@@ -176,7 +176,7 @@ import Layout from '../../layouts/Layout.astro'
     import { t, getLang, initI18n, translatePage } from '../../lib/i18n'
     import { cachedFetch, CACHE_KEYS, fetchSequential, invalidateCache } from '../../lib/cache'
     import { assignableLocations, type LocationLike } from '../../lib/driver-managed-locations'
-    import { filamentColorValues, toColorSwatchBackground } from '../../lib/colors'
+    import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
@@ -198,7 +198,7 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency } from '../../lib/format'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { fetchAllPages } from '../../lib/api'
+    import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import type { AppDialogs } from '../../lib/form-dialog'
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
@@ -220,6 +220,8 @@ import Layout from '../../layouts/Layout.astro'
       materials: string[]
       locations: HeaderFilterOption[]
       has_empty_location: boolean
+      colors: Array<{ value: string; label: string; color_hexes: string[]; color_stops?: { id: number; hex: string }[] }>
+      has_empty_colors: boolean
     }
     type SpoolFilterFacets = {
       used_status_ids: number[]
@@ -233,7 +235,7 @@ import Layout from '../../layouts/Layout.astro'
       designation: string
       material_type: string
       manufacturer_color_name: string | null
-      colors: { display_name_override?: string | null; color?: { name: string; hex_code: string } | null }[]
+      colors: { display_name_override?: string | null; color_id?: number; color?: { name: string; hex_code: string } | null }[]
     }
     type Spool = {
       id: number
@@ -293,6 +295,7 @@ import Layout from '../../layouts/Layout.astro'
     } catch { /* ignore invalid data */ }
     let isInitialLoad = true
     let filterRequestId = 0
+    let colorFilterPaged = true
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
     let splHeaderFilters: HeaderFilterController | null = null
 
@@ -436,7 +439,8 @@ import Layout from '../../layouts/Layout.astro'
 
     function hasLocalColumnFilters(): boolean {
       const serverKeys = new Set(['status', 'location', 'manufacturer', 'material', 'remaining_percent', 'remaining_length_m'])
-      return Object.entries(columnFilters).some(([key, value]) => isColumnFilterActive(value) && !serverKeys.has(key))
+      return Object.entries(columnFilters).some(([key, value]) => isColumnFilterActive(value) && !serverKeys.has(key)
+        && !(key === 'colors' && colorFilterPaged && colorFilterParams(value) !== null))
     }
 
     function needsAllSpoolData(): boolean {
@@ -471,9 +475,13 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function filterSpools(spools: Spool[]): Spool[] {
+      const colorFilter = columnFilters.colors
+      const matchesColors = colorFilter?.type === 'multi' ? inventoryColorMatcher(colorFilter) : null
       const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
       return spools.filter((spool) => activeFilters.every(([key, filter]) =>
-        matchesColumnFilter(getSpoolFilterValue(spool, key), filter)))
+        key === 'colors' && matchesColors
+          ? matchesColors(getFilamentForSpool(spool))
+          : matchesColumnFilter(getSpoolFilterValue(spool, key), filter)))
     }
 
     function applyFiltersAndRender() {
@@ -527,14 +535,26 @@ import Layout from '../../layouts/Layout.astro'
       )
       const scopeIds = selectedStatusIds.length > 0
         ? selectedStatusIds
-        : spoolFilterFacets.used_status_ids.map(String).filter(id => !archivedStatusIds.has(id))
+        : statuses.length ? spoolFilterFacets.used_status_ids.map(String).filter(id => !archivedStatusIds.has(id)) : []
 
       const manufacturers = new Map<string, HeaderFilterOption>()
       const materials = new Set<string>()
       const locationOptions = new Map<string, HeaderFilterOption>()
       const allManufacturers = new Map<string, HeaderFilterOption>()
       const allLocations = new Map<string, HeaderFilterOption>()
+      const colors = new Map<string, HeaderFilterOption>()
+      const addColor = (color: SpoolFilterScope['colors'][number]) => {
+        const existing = colors.get(color.value)
+        const stops = [...(existing?.colorStops || []), ...(color.color_stops || [])]
+        colors.set(color.value, {
+          value: color.value,
+          label: color.label,
+          colorHexes: [...new Set([...(existing?.colorHexes || []), ...color.color_hexes])],
+          ...(stops.length ? { colorStops: [...new Map(stops.map(stop => [stop.id, stop])).values()] } : {}),
+        })
+      }
       let hasEmptyLocation = false
+      let hasEmptyColors = false
       Object.values(spoolFilterFacets.by_status).forEach((scope) => {
         scope.manufacturers.forEach(option => allManufacturers.set(option.value, option))
         scope.locations.forEach(option => allLocations.set(option.value, option))
@@ -546,6 +566,8 @@ import Layout from '../../layouts/Layout.astro'
         scope.materials.forEach(material => materials.add(material))
         scope.locations.forEach(option => locationOptions.set(option.value, option))
         hasEmptyLocation ||= scope.has_empty_location
+        scope.colors.forEach(addColor)
+        hasEmptyColors ||= scope.has_empty_colors
       })
 
       // Keep incompatible selections visible so users can remove them after changing status.
@@ -563,6 +585,10 @@ import Layout from '../../layouts/Layout.astro'
         const option = allLocations.get(value)
         if (option) locationOptions.set(value, option)
       })
+      selectedValues('colors').forEach((value) => {
+        if (value === '') hasEmptyColors = true
+        if (value !== '' && !colors.has(value)) colors.set(value, { value, label: value, colorHexes: [] })
+      })
 
       const byLabel = (a: HeaderFilterOption, b: HeaderFilterOption) => a.label.localeCompare(b.label)
       splHeaderFilters?.setOptions('manufacturer', [...manufacturers.values()].sort(byLabel))
@@ -572,12 +598,22 @@ import Layout from '../../layouts/Layout.astro'
       const scopedLocations = [...locationOptions.values()].sort(byLabel)
       if (hasEmptyLocation) scopedLocations.unshift({ value: '', label: t('common.empty') })
       splHeaderFilters?.setOptions('location', scopedLocations)
+      const scopedColors = [...colors.values()].sort(byLabel)
+      if (hasEmptyColors) scopedColors.unshift({ value: '', label: t('common.empty') })
+      splHeaderFilters?.setOptions('colors', scopedColors)
     }
 
     async function refreshSpoolFilterOptions() {
       const signal = getAbortSignal()
-      spoolFilterFacets = await fetchSpoolFilterFacets(signal)
-      updateSpoolFilterOptions()
+      try {
+        spoolFilterFacets = await fetchSpoolFilterFacets(signal)
+        updateSpoolFilterOptions()
+      } catch (error) {
+        if (isAbortError(error)) throw error
+        spoolFilterFacets = null
+        splHeaderFilters?.setOptions('colors', [])
+        console.error('Failed to refresh spool filter options:', error)
+      }
     }
 
     async function loadFilters() {
@@ -599,30 +635,6 @@ import Layout from '../../layouts/Layout.astro'
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load filters:', error)
-      }
-    }
-
-    async function loadSpoolColorOptions() {
-      try {
-        const signal = getAbortSignal()
-        const options = await cachedFetch<{
-          colors: Array<{ value: string; label: string; color_hexes: string[] }>
-          has_empty_colors: boolean
-        }>(CACHE_KEYS.FILAMENT_FILTER_OPTIONS, async () => {
-          const response = await fetch('/api/v1/filaments/filter-options', { credentials: 'include', signal })
-          if (!response.ok) throw new Error(`Failed to load color filter options (${response.status})`)
-          return response.json()
-        })
-        const colorOptions: HeaderFilterOption[] = options.colors.map(color => ({
-          value: color.value,
-          label: color.label,
-          colorHexes: color.color_hexes,
-        }))
-        if (options.has_empty_colors) colorOptions.unshift({ value: '', label: t('common.empty') })
-        splHeaderFilters?.setOptions('colors', colorOptions)
-      } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load spool color options:', error)
       }
     }
 
@@ -681,6 +693,10 @@ import Layout from '../../layouts/Layout.astro'
         params.set('sort_order', sortDirection)
       }
 
+      const colors = colorFilterParams(columnFilters.colors, params, '/api/v1/spools')
+      colorFilterPaged = colors !== null
+      colors?.forEach((value, key) => params.append(key, value))
+
       try {
         const signal = getAbortSignal()
 
@@ -693,8 +709,8 @@ import Layout from '../../layouts/Layout.astro'
           if (hasLocalColumnFilters()) {
             allSpools = filterSpools(allSpools)
             totalSpools = allSpools.length
-            currentPage = Math.min(currentPage, Math.ceil(totalSpools / pageSize) || 1)
           }
+          currentPage = Math.min(currentPage, Math.ceil(totalSpools / pageSize) || 1)
         } else {
           // Normal mode: load only the current page
           params.set('page', String(currentPage))
@@ -1200,7 +1216,7 @@ import Layout from '../../layouts/Layout.astro'
     function applyColumnFilter(key: string, value: ColumnFilterValue, urlParam?: string) {
       if (isColumnFilterActive(value)) columnFilters[key] = value
       else delete columnFilters[key]
-      if (key === 'status') updateSpoolFilterOptions()
+      if (key === 'status' || key === 'colors') updateSpoolFilterOptions()
       if (urlParam) removeFilterUrlParams(urlParam)
       if (key === 'location') removeFilterUrlParams('location_unassigned')
       applyFiltersAndRender()
@@ -1223,12 +1239,14 @@ import Layout from '../../layouts/Layout.astro'
       onClearColumns: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
+        updateSpoolFilterOptions()
         removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
         applyFiltersAndRender()
       },
       onClearAll: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
+        updateSpoolFilterOptions()
         removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
         applyFiltersAndRender()
       },
@@ -1333,7 +1351,7 @@ import Layout from '../../layouts/Layout.astro'
     Promise.all([initCurrency(), loadSpoolExtraFieldColumns(), loadActiveDevices()])
       .then(async () => {
         setupHeaderFilters()
-        await Promise.allSettled([loadSpoolStatuses(), loadSpoolColorOptions()])
+        await loadSpoolStatuses()
         return loadFilters()
       })
       .then(() => loadSpools())
@@ -1352,7 +1370,6 @@ import Layout from '../../layouts/Layout.astro'
         if (_spoolsReloadTimer) clearTimeout(_spoolsReloadTimer)
         _spoolsReloadTimer = setTimeout(async () => {
           await refreshSpoolFilterOptions()
-          if (event === 'colors_changed' || event === 'filaments_changed') await loadSpoolColorOptions()
           await loadSpools()
         }, 300)
       }

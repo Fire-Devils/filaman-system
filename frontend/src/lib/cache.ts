@@ -143,8 +143,8 @@ export const CACHE_KEYS = {
   MANUFACTURERS: 'manufacturers',
   STATUSES: 'statuses',
   FILAMENT_TYPES: 'filament-types',
-  FILAMENT_FILTER_OPTIONS: 'filament-filter-options',
-  SPOOL_FILTER_OPTIONS: 'spool-filter-options',
+  FILAMENT_FILTER_OPTIONS: 'filament-filter-options-v2',
+  SPOOL_FILTER_OPTIONS: 'spool-filter-options-v3',
 } as const
 
 // ============================================================================
