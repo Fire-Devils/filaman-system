@@ -26,7 +26,7 @@ function pageDialog(entity: 'filament' | 'spool', initial: Record<string, unknow
   const functions = parsed.statements.filter(node => isFunctionDeclaration(node) && names.includes(node.name?.text || '')).map(node => node.getText(parsed)).join('\n')
   return new Function('initial', 'createEntityExtraFieldsDialog', 'prepareExtraFieldUpdate', 'editSession', 'loadEntitySystemFields', `
     let editGeneration=0, spoolEditGeneration=0, changingSpoolEdit=false, currentFilament=initial, spool=initial, editing=true, editMode=true, changingEdit=false, filamentNeedsRefresh=false, spoolNeedsRefresh=false, pendingSpoolActions=0, remainingRequest=0;
-    let extraFieldsDialog=null;
+    let extraFieldsDialog=null, closeFilamentPluginHooks;
     let systemFieldMap={note:{key:'note',label:'Note',field_type:'text'}},spoolSystemFieldMap=systemFieldMap;
     const id='16',getCsrfTokenGlobal=()=>'',getCsrfToken=()=>'',getAbortSignal=()=>undefined,t=key=>key,isAbortError=()=>false;
     const CACHE_KEYS={FILAMENTS:'filaments'},invalidateCachePrefix=()=>{};

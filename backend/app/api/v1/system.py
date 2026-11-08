@@ -30,7 +30,7 @@ from sqlalchemy.orm import undefer
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.core.cache import response_cache
 from app.core.config import settings
 from app.core.security import Principal
@@ -220,6 +220,34 @@ async def plugin_icon(plugin_key: str, db: DBSession, _principal: PrincipalDep):
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-cache",
     })
+
+
+@public_router.get("/filament-plugin-hooks", response_model=list[PluginNavItem])
+async def filament_plugin_hooks(
+    db: DBSession,
+    principal: PrincipalDep,
+    surface: Literal["create", "edit", "selection"],
+):
+    await ensure_any_permission(
+        db, principal, "filaments:create" if surface == "create" else "filaments:update"
+    )
+    capability = "selection" if surface == "selection" else "editor"
+    plugins = await db.scalars(
+        select(InstalledPlugin)
+        .where(InstalledPlugin.is_active.is_(True))
+        .where(InstalledPlugin.page_url.startswith("/plugin-page/"))
+        .order_by(InstalledPlugin.name, InstalledPlugin.plugin_key)
+    )
+    result = []
+    for plugin in plugins:
+        hooks = plugin.capabilities.get("filament_ui") if isinstance(plugin.capabilities, dict) else None
+        if (
+            isinstance(hooks, dict)
+            and hooks.get(capability) is True
+            and re.fullmatch(r"/plugin-page/[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)*", plugin.page_url or "")
+        ):
+            result.append(PluginNavItem.model_validate(plugin))
+    return result
 
 
 # ------------------------------------------------------------------ #

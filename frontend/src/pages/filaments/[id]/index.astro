@@ -78,6 +78,7 @@ export function getStaticPaths() {
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
     import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
     import { createFilamentFormController } from '../../../lib/filament-form'
+    import { mountFilamentPluginHooks } from '../../../lib/filament-plugin-hooks'
     import { createDetailEditSession } from '../../../lib/detail-edit'
     import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
@@ -105,6 +106,7 @@ export function getStaticPaths() {
     let filamentNeedsRefresh = false
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
     let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
+    let closeFilamentPluginHooks: (() => void) | undefined
     let statuses: any[] = []
     let locations: any[] = []
     let systemFieldMap: Record<string, any> = {}
@@ -234,6 +236,10 @@ export function getStaticPaths() {
       const controller = filamentFormController
       controller.resetInitialData(filament)
       controller.captureBaseline()
+      const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
+      if (hooks && !closeFilamentPluginHooks) {
+        closeFilamentPluginHooks = mountFilamentPluginHooks(hooks, { mode: 'edit', filamentId: filament.id, form: controller })
+      }
       document.getElementById('filament-content')!.classList.add('hidden')
       document.getElementById('filament-editor')!.classList.remove('hidden')
       document.getElementById('filament-form-actions')!.classList.remove('hidden')
@@ -259,6 +265,7 @@ export function getStaticPaths() {
           filamentNeedsRefresh = false
         })
         else {
+          closeFilamentPluginHooks?.()
           editSession.invalidate()
           if (filamentNeedsRefresh) await refreshFilamentSnapshot()
           if (!isCurrent()) return

@@ -12,6 +12,7 @@ const handler = parsed.statements.find(node => isFunctionDeclaration(node) && no
 const bind = new Function('runtime', `
   const { printerSetup, filamentFormController, renderFilamentEditor, captureDetailEditPosition, editSession } = runtime;
   let currentFilament = { id:16 }; let changingEdit = false, editGeneration = 0, editMode = false, filamentNeedsRefresh = false;
+  let closeFilamentPluginHooks;
   const renderFilament = () => {}; const updateScrollIdentity = () => {}; const t = () => ''; const formatHeaderId = value => value; const isAbortError = () => false;
   ${transpileModule(handler.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText}
   return setFilamentEditing;
@@ -61,6 +62,7 @@ function editorFixture(failReferences = false) {
   const runtime = new Function('runtime', `
     const { createFilamentFormController, printerSetup, renderFilament, captureDetailEditPosition, editSession } = runtime;
     let filamentFormController=null, filamentReferencesLoaded=false, currentFilament=runtime.initial, filamentNeedsRefresh=false, changingEdit=false, editGeneration=0, editMode=false;
+    let closeFilamentPluginHooks;
     const id='16', CACHE_KEYS={FILAMENTS:'filaments'}; const getAbortSignal=()=>undefined, getCsrfTokenGlobal=()=>'', invalidateCachePrefix=()=>{};
     const t=value=>value, formatHeaderId=value=>value, updateScrollIdentity=()=>{}, isAbortError=()=>false;
     ${transpileModule(functions, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText}

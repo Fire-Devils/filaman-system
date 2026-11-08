@@ -13,6 +13,7 @@ import * as extraDialog from './entity-extra-fields-dialog'
 import * as cache from './cache'
 import * as filamentDetail from './filament-detail'
 import * as filamentForm from './filament-form'
+import { mountFilamentPluginHooks } from './filament-plugin-hooks'
 import * as detailEdit from './detail-edit'
 import * as editPosition from './detail-edit-position'
 import * as scrollIdentity from './detail-scroll-identity'
@@ -77,6 +78,7 @@ const dependencies = {
   ...cache,
   ...filamentDetail,
   ...filamentForm,
+  mountFilamentPluginHooks,
   ...editPosition,
   ...scrollIdentity,
   ...format,
@@ -127,6 +129,7 @@ export function mockHttp(
     if (pathname === '/api/v1/app-settings/public-info')
       return Response.json({ currency: 'USD', filament_lookup_source: 'filamandb' })
     if (pathname === '/api/v1/filamentdb/status') return Response.json({ active: false })
+    if (pathname === '/api/v1/filament-plugin-hooks') return Response.json([])
     if (pathname === '/api/v1/manufacturers')
       return Response.json({
         items: [
