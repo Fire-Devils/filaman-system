@@ -13,6 +13,7 @@ const frontend = fileURLToPath(new URL('../', import.meta.url))
 const bundle = await build({
   stdin: {
     contents: `export { renderSvgLabelPng, initWasm, loadFonts, fontFiles } from './src/lib/label-svg/core.mjs';
+      export { renderEditableText } from './src/lib/freeform-label/editable-text';
       export { migrateV1PresetData, normalizeDesignerPresetData } from './src/lib/freeform-label/migrate-v1';`,
     resolveDir: frontend,
     loader: 'ts',
@@ -33,6 +34,10 @@ try {
     const bytes = key => Uint8Array.from(atob(assets[key]), c => c.charCodeAt(0))
     await labelLayout.initWasm(bytes('wasm'))
     window.labelRuntime = { fonts: await labelLayout.loadFonts(bytes) }
+    for (const { key, file } of labelLayout.fontFiles) {
+      const [family, weight] = key.split(':')
+      document.fonts.add(await new FontFace(family, bytes(file), { weight }).load())
+    }
   }, assets)
   const results = await page.evaluate(async () => {
     const results = []
@@ -94,14 +99,14 @@ try {
         expect(output.png.length > 100, 'render must produce actual pixels')
       })
     }
-    // Base titles retain 4mm rows. Enlarged inline runs use real font ascent +
-    // descent: Space Grotesk 1.276 em, Fraunces 1.233 em. Dividers stay one CSS px.
+    // Compare legacy flow against real editor CSS, including enlarged inline runs.
     const legacyCases = [
-      ['Plain title', 4], ['[size=200]Big title[/size]', 10.208], ['First line\nSecond line', 8],
-      ['[size=150]{filament.name}[/size]', 7.656], ['==[size=150]Big title[/size]==', 7.656],
-      ['[font=Fraunces][size=200]Big[/size][/font] small', 9.864],
+      'Plain title', '[size=200]Big title[/size]', 'First line\nSecond line',
+      '[size=150]{filament.name}[/size]', '==[size=150]Big title[/size]==',
+      '[font=Fraunces][size=200]Big[/size][/font] small',
+      '[size=200]Big [font=Space Mono]Big[/font][/size]',
     ]
-    for (const [template, heightMm] of legacyCases) for (const fitToWidth of [false, true]) {
+    for (const template of legacyCases) for (const fitToWidth of [false, true]) {
       for (const field of ['title', 'title2']) for (const present of [false, true]) {
         const settings = {
           label: { width: 60, height: 40, marginMm: 1, border: false }, logo: { show: false },
@@ -128,7 +133,12 @@ try {
             const margin = index === 0 ? 0.5 : 0.25
             cursor += margin
             near(box.y, cursor, 'title top')
-            const height = selected ? heightMm : 4
+            const editor = document.createElement('div')
+            editor.style.width = `${title.w}mm`
+            document.body.append(editor)
+            labelLayout.renderEditableText(editor, title, data)
+            const height = editor.getBoundingClientRect().height * 25.4 / 96
+            editor.remove()
             near(box.h, height, 'title height')
             near(output.text.find(text => text.id === title.id).height, height, 'title natural height')
             cursor += height + margin + 25.4 / 96

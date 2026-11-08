@@ -131,8 +131,8 @@ rounds each module to the nearest whole printer dot. It adds a four-module
 white quiet zone outside the code, clipped at the label edge. Leave room for
 the full quiet zone on the printed label for reliable scanning.
 
-The API returns `422` if a module rounds to fewer than three dots
-or the code extends beyond the label.
+The API returns `422` if a module rounds to fewer than three dots, the code
+extends beyond the label, or one QR's white clearance would cover another code.
 Three dots per module means each square occupies a 3×3 printer-dot block
 (about 0.38 mm wide at 203 DPI). Longer URLs can require more modules and a
 larger box. PNG and normal browser printing keep the saved QR styling and

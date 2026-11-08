@@ -11,7 +11,7 @@ import { renderSvgElementOutput } from './label-svg/browser'
 
 vi.mock('./label-svg/runtime.mjs', async importOriginal => {
   const module = await importOriginal<typeof import('./label-svg/runtime.mjs')>()
-  return { createSvgRuntime: () => module.createSvgRuntime((path: string) => Promise.resolve(readFileSync(`node_modules/${path}`))) }
+  return { createSvgRuntime: (_readAsset: unknown, raster: boolean) => module.createSvgRuntime((path: string) => Promise.resolve(readFileSync(`node_modules/${path}`)), raster) }
 })
 
 beforeEach(() => {

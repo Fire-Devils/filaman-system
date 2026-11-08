@@ -614,6 +614,57 @@ describe('first-class print workspace navigation', () => {
     expect(changed.length).toBeGreaterThan(0)
   })
 
+  it('updates sheet layout without rerendering label sources, while source changes still render', async () => {
+    const container = await AstroContainer.create()
+    document.body.innerHTML = await container.renderToString(LabelSheetOutputSettings)
+    let sourceRenders = 0
+    let layoutUpdates = 0
+    const controls = bindLabelSheetControls(
+      () => { sourceRenders++ }, undefined, 'spool', () => { layoutUpdates++ },
+    )
+    for (const control of document.querySelectorAll('[data-label-sheet-control]')) {
+      control.dispatchEvent(new Event('change'))
+    }
+    const copies = document.querySelector<HTMLInputElement>('#sheet-copies')!
+    copies.value = '3'
+    copies.dispatchEvent(new Event('input'))
+    expect(controls.getSettings().copies).toBe(3)
+    expect(layoutUpdates).toBe(document.querySelectorAll('[data-label-sheet-control]').length + 1)
+    expect(sourceRenders).toBe(0)
+
+    const paperPreset = document.querySelector<HTMLSelectElement>('#sheet-preset')!
+    paperPreset.value = [...paperPreset.options].find(option => option.textContent?.startsWith('Letter'))!.value
+    paperPreset.dispatchEvent(new Event('change'))
+    const beforeLoad = layoutUpdates
+    document.querySelector<HTMLButtonElement>('#sheet-load-preset')!.click()
+    expect(controls.getSettings().paperSize).toBe('letter')
+    expect(layoutUpdates).toBe(beforeLoad + 1)
+    expect(sourceRenders).toBe(0)
+
+    const outputMode = document.querySelector<HTMLSelectElement>('#output-mode')!
+    outputMode.value = 'sheet'
+    outputMode.dispatchEvent(new Event('change'))
+    expect(controls.getOutputMode()).toBe('sheet')
+    controls.setOutputMode('individual')
+    const beforeSilentChange = layoutUpdates
+    controls.setOutputMode('sheet', { notify: false })
+    expect(layoutUpdates).toBe(beforeSilentChange)
+    expect(sourceRenders).toBe(0)
+
+    controls.setDesignerPresets([{ label: 'Designs', presets: [
+      { source: 'spool', name: 'Compact' }, { source: 'spool', name: 'Wide' },
+    ] }])
+    document.querySelector<HTMLInputElement>('[name="label-sheet-source"][value="designer"]')!.click()
+    expect(sourceRenders).toBe(1)
+    const designPreset = document.querySelector<HTMLSelectElement>('#sheet-designer-preset')!
+    designPreset.value = 'spool:Wide'
+    designPreset.dispatchEvent(new Event('change'))
+    expect(controls.getSource()).toEqual({ type: 'designer', presetName: 'Wide', presetSource: 'spool' })
+    expect(sourceRenders).toBe(2)
+    controls.setSource({ type: 'standard' })
+    expect(sourceRenders).toBe(3)
+  })
+
   it('shows preset controls only for Designed Label and edits the selected preset', async () => {
     const container = await AstroContainer.create()
     document.body.innerHTML = await container.renderToString(LabelSheetOutputSettings)

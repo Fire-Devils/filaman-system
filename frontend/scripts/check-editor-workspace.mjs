@@ -36,6 +36,9 @@ try {
   let cases = 0
   for (const path of ['/spools/101/print', '/filaments/10/print', '/spools/print?ids=101,102', '/filaments/print?ids=10,11']) {
     console.log(`Checking ${path}`)
+    let wasmRequests = 0
+    const countWasm = request => { if (request.resourceType() === 'fetch' && new URL(request.url()).pathname.endsWith('.wasm')) wasmRequests++ }
+    page.on('request', countWasm)
     await page.setViewportSize({ width: 1600, height: 900 })
     await page.goto(new URL(path, process.argv[2] || 'http://127.0.0.1:4321').href)
     if (!path.includes('?ids=')) {
@@ -47,6 +50,9 @@ try {
       throw error
     })
     assert.equal(await page.locator('#freeform-canvas-host [data-label-output-error]').count(), 0)
+    assert.match(await page.locator('#freeform-canvas-host [data-label-svg-raster]').first().getAttribute('src'), /^blob:/, 'Interactive label uses SVG artwork')
+    assert.equal(wasmRequests, 0, 'Opening the designer does not load the print rasterizer')
+    page.off('request', countWasm)
     if (path.includes('?ids=')) {
       const surface = page.locator('#freeform-canvas-host .label-preview').first()
       assert.equal(await page.evaluate(() => typeof window.QRCode), 'undefined')
@@ -60,6 +66,39 @@ try {
     await page.locator('#preview-zoom-input').press('Tab')
     const surface = page.locator('#freeform-canvas-host .label-preview').first()
     if (path === '/spools/101/print') {
+      const artwork = surface.locator('[data-label-svg-raster]')
+      const qr = surface.locator('[data-label-element-id="qr"]')
+      await page.waitForFunction(() => document.querySelector('#freeform-canvas-host [data-label-interaction-bound]'))
+      await qr.click()
+      const start = await qr.boundingBox()
+      const originalLeft = await qr.evaluate(node => node.style.left)
+      const originalArtwork = await artwork.getAttribute('src')
+      const host = page.locator('#freeform-canvas-host')
+      await host.evaluate(canvas => {
+        const observer = new MutationObserver(records => {
+          const image = canvas.querySelector('[data-label-svg-raster]')
+          if (records.some(record => [...record.addedNodes].some(node => node === image || node.contains(image)))
+            && (!image.complete || !image.naturalWidth)) canvas.dataset.dragMountedBlankArtwork = ''
+        })
+        observer.observe(canvas, { childList: true, subtree: true })
+      })
+      const x = start.x + start.width / 2, y = start.y + start.height / 2
+      await page.mouse.move(x, y)
+      await page.mouse.down()
+      await page.keyboard.down('Alt')
+      await page.mouse.move(x - 32, y - 14, { steps: 18 })
+      await page.waitForFunction(src => {
+        const image = document.querySelector('#freeform-canvas-host [data-label-svg-raster]')
+        return image && image.getAttribute('src') !== src
+      }, originalArtwork)
+      assert.ok((await qr.boundingBox()).x < start.x - 20, 'The QR follows the drag')
+      await page.mouse.up()
+      await page.keyboard.up('Alt')
+      await qr.waitFor()
+      assert.equal(await host.getAttribute('data-drag-mounted-blank-artwork'), null, 'Dragging must never mount undecoded artwork')
+      await page.locator('[data-designer-action="undo"]').click()
+      await page.waitForFunction(left => document.querySelector('#freeform-canvas-host [data-label-element-id="qr"]')?.style.left === left, originalLeft)
+
       await surface.locator('[data-label-element-id="text"]').click()
       await page.locator('#freeform-json-expand').click()
       const json = page.locator('#freeform-element-json')
@@ -78,6 +117,17 @@ try {
       await page.locator('#freeform-json-apply').click()
       await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
       console.log('Temperature text fits and overflow stays in its box')
+      await page.locator('[data-designer-add="qr"]').click()
+      await page.locator('#freeform-json-expand').click()
+      const addedQr = JSON.parse(await json.inputValue())
+      await json.fill(JSON.stringify({ ...addedQr, x: 41, y: 22, w: 15, h: 15 }))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      await surface.locator('[data-label-fit-warning]').filter({ hasText: 'Move QR codes farther apart' }).first().waitFor({ state: 'visible' })
+      assert.equal(await surface.getAttribute('data-label-output-error'), null)
+      await page.locator('[data-designer-action="delete"]').click()
+      await page.waitForFunction(() => !document.querySelector('#freeform-canvas-host [data-label-output-error]'))
+      console.log('Overlapping QR warnings stay visible after editor sync and recover after deletion')
     }
     await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } })
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
