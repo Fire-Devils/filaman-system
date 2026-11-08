@@ -64,11 +64,16 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
   const query = <T extends Element>(selector: string) => root.querySelector<T>(selector)
   const queryAll = <T extends Element>(selector: string) => Array.from(root.querySelectorAll<T>(selector))
   const canvasHost = query<HTMLElement>('#freeform-canvas-host')
+  const activeCanvas = () => canvasHost?.querySelector<HTMLElement>('.label-preview')
   const canvasRow = query<HTMLElement>('.freeform-canvas-row')
   const inspector = query<HTMLElement>('#freeform-element-inspector')
   const layerPosition = query<HTMLElement>('#freeform-layer-position')
   const workspace = query<HTMLElement>('#freeform-designer-workspace')
-  if (workspace) cleanups.push(bindDesignerTooltips(workspace))
+  const outputWarning = query<HTMLElement>('#freeform-output-warning')
+  const outputReason = query<HTMLElement>('#freeform-output-reason')
+  const selectOverflow = query<HTMLButtonElement>('#freeform-select-overflow')
+  const overflowSelector = '[data-label-element-type="text"][data-label-output-error]'
+  if (workspace) cleanups.push(bindDesignerTooltips(workspace, options.getPreviewData))
   const fieldDrawer = bindFieldDrawer(root)
   let interactionRoot: HTMLElement | null = null
   let interactionGeneration = 0
@@ -305,12 +310,20 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
     const minimumSize = query<HTMLInputElement>('[data-element-prop="minFontSizeMm"]')
     if (minimumSize && selected?.type === 'text') minimumSize.max = String(selected.fontSizeMm)
     const fitWarning = query<HTMLElement>('#freeform-text-fit-warning')
+    const canvas = activeCanvas()
     if (fitWarning) {
-      const failed = selected?.type === 'text'
-        ? queryAll<HTMLElement>('[data-label-output-error]').find(node => node.dataset.labelElementId === selected.id)
+      const selectedError = selected?.type === 'text'
+        ? canvas?.querySelector<HTMLElement>(`${overflowSelector}[data-label-element-id="${CSS.escape(selected.id)}"]`)
         : undefined
-      fitWarning.hidden = !failed
-      fitWarning.textContent = failed?.dataset.labelOutputError ?? ''
+      fitWarning.hidden = !selectedError
+      fitWarning.textContent = selectedError?.dataset.labelOutputError ?? ''
+    }
+    if (outputWarning && outputReason && selectOverflow) {
+      const failed = canvas?.querySelector<HTMLElement>(overflowSelector)
+      const reason = workspace?.classList.contains('is-active') ? failed?.dataset.labelOutputError ?? '' : ''
+      outputWarning.hidden = !reason
+      selectOverflow.hidden = !editable
+      if (outputReason.textContent !== reason) outputReason.textContent = reason
     }
     const json = query<HTMLTextAreaElement>('#freeform-element-json')
     const selectedJson = controller.getSelectedJson()
@@ -404,7 +417,7 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
   }
 
   const refreshInteraction = async () => {
-    const canvas = canvasHost?.querySelector<HTMLElement>('.label-preview') ?? null
+    const canvas = activeCanvas() ?? null
     if (!canvas || !editable) {
       interactionGeneration += 1
       interaction?.destroy()
@@ -470,10 +483,18 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
 
   const focusElement = (elementId: string | null) => {
     const target = elementId
-      ? canvasHost?.querySelector<HTMLElement>(`[data-label-element-id="${CSS.escape(elementId)}"]`)
+      ? activeCanvas()?.querySelector<HTMLElement>(`[data-label-element-id="${CSS.escape(elementId)}"]`)
       : null
     ;(target ?? canvasHost)?.focus()
   }
+
+  listen(selectOverflow, 'click', () => {
+    const id = activeCanvas()?.querySelector<HTMLElement>(overflowSelector)?.dataset.labelElementId
+    if (!editable || !id) return
+    controller.select(id)
+    syncDom()
+    focusElement(id)
+  })
 
   const mutate = (operation: () => unknown, focusAfter?: 'selected' | 'canvas') => {
     if (!editable) return
@@ -631,6 +652,25 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
     translate,
   })
 
+  const unitPopup = query<HTMLElement>('#freeform-field-unit-popup')
+  const unitChoice = query<HTMLButtonElement>('[data-field-unit-choice]')
+  let unitInsertion: { id: string; template: string; start: number; end: number; token: string } | undefined
+  const hideUnitPopup = () => { if (unitPopup?.isConnected) unitPopup.hidePopover?.(); unitInsertion = undefined }
+  listen(query('[data-field-unit-dismiss]'), 'click', hideUnitPopup)
+  listen(unitChoice, 'click', () => {
+    const selected = controller.getSelectedElement(), insertion = unitInsertion
+    hideUnitPopup()
+    if (!editable || !insertion || selected?.type !== 'text' || selected.id !== insertion.id || selected.template !== insertion.template) return
+    const replacement = insertion.token.slice(0, -1) + '|unit}'
+    const template = selected.template.slice(0, insertion.start) + replacement + selected.template.slice(insertion.end)
+    if (template.length > 8000) return
+    const end = insertion.start + replacement.length
+    if (!textEditor.insertField(replacement, { start: insertion.start, end: insertion.end })) {
+      mutate(() => controller.updateSelected({ template }, { start: end, end }))
+    }
+  })
+  cleanups.push(hideUnitPopup)
+
   listen<MouseEvent>(root as ParentNode & EventTarget, 'click', event => {
     const target = event.target instanceof Element
       ? event.target.closest<HTMLButtonElement>('[data-field-token]')
@@ -639,39 +679,22 @@ export function bindFreeformEditorDom(options: BindFreeformEditorDomOptions) {
     const token = target.dataset.fieldToken
     if (!token) return
     if (!editable) return
+    hideUnitPopup()
     if (!textEditor.insertField(token)) mutate(() => controller.insertField(token))
-  })
-
-  const fieldTabs = queryAll<HTMLButtonElement>('[data-field-group-tab]').filter(button => !button.hidden)
-  const activateFieldTab = (button: HTMLButtonElement) => {
-    const group = button.dataset.fieldGroupTab
-    fieldTabs.forEach(candidate => {
-      const active = candidate === button
-      candidate.setAttribute('aria-selected', String(active))
-      candidate.tabIndex = active ? 0 : -1
-    })
-    queryAll<HTMLElement>('[data-field-group]').forEach(panel => {
-      panel.hidden = panel.dataset.fieldGroup !== group
-    })
-  }
-  fieldTabs.forEach(button => {
-    listen<MouseEvent>(button, 'click', () => activateFieldTab(button))
-    listen<KeyboardEvent>(button, 'keydown', event => {
-      const current = fieldTabs.indexOf(button)
-      const next = event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-          ? fieldTabs.length - 1
-          : event.key === 'ArrowRight'
-            ? (current + 1) % fieldTabs.length
-            : event.key === 'ArrowLeft'
-              ? (current - 1 + fieldTabs.length) % fieldTabs.length
-              : -1
-      if (next < 0) return
-      event.preventDefault()
-      activateFieldTab(fieldTabs[next])
-      fieldTabs[next].focus()
-    })
+    const unit = target.dataset.fieldUnit, selected = controller.getSelectedElement()
+    if (!unit || !unitPopup || !unitChoice || selected?.type !== 'text') return
+    const end = controller.getTemplateSelection().end, start = end - token.length
+    if (selected.template.slice(start, end) !== token) return
+    unitInsertion = { id: selected.id, template: selected.template, start, end, token }
+    unitChoice.textContent = unit
+    unitChoice.setAttribute('aria-label', `${translate('labelDesigner.includeUnit', 'Include unit')} ${unit}`)
+    unitPopup.showPopover?.()
+    const anchor = target.getBoundingClientRect(), bounds = unitPopup.getBoundingClientRect()
+    const x = event.detail ? event.clientX : anchor.left + anchor.width / 2
+    const y = event.detail ? event.clientY : anchor.top
+    unitPopup.style.left = `${Math.max(8, Math.min(x - bounds.width / 2, window.innerWidth - bounds.width - 8))}px`
+    unitPopup.style.top = `${Math.max(8, y - bounds.height - 8)}px`
+    if (!event.detail) unitChoice.focus({ preventScroll: true })
   })
 
   const json = query<HTMLTextAreaElement>('#freeform-element-json')

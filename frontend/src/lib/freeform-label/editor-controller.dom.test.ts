@@ -2118,6 +2118,12 @@ describe('freeform editor responsive lifecycle', () => {
       w: 20,
       h: 11.871,
     })
+    const size = document.querySelector('#freeform-current-label-size')
+    expect(size?.textContent).toBe('63.456 × 40 mm')
+    const width = document.querySelector<HTMLInputElement>('#freeform-label-width')!
+    width.value = '70'
+    width.dispatchEvent(new Event('change'))
+    expect(size?.textContent).toBe('70 × 40 mm')
     editor.destroy()
   })
 
@@ -2515,12 +2521,18 @@ describe('freeform editor database-owned presets', () => {
   })
 
   it('updates a loaded own preset through the sidebar and reloads the saved design', async () => {
-    seedPreset()
+    const cross = seedPreset()
+    cross.presets[0].data.design.label.widthMm = 73.25
+    localStorage.setItem('cross-presets', JSON.stringify(cross))
     await renderRealDesignerEditor()
     const editor = await initFreeformLabelDesignerEditor({
-      onChange: async () => undefined, presetsKey: 'database-presets', settingsKey: 'database-working',
+      onChange: async () => undefined, presetsKey: 'database-presets', settingsKey: 'database-working', crossPresetsKey: 'cross-presets',
     })
     try {
+      const optionText = (value: string) => document.querySelector(`#freeform-preset-list option[value="${value}"]`)?.textContent
+      expect(optionText('own:Existing')).toBe('Existing (60 × 40 mm)')
+      expect(optionText('cross:Existing')).toBe('Existing (73.25 × 40 mm)')
+      expect(optionText('builtin:Classic (40 × 30 mm)')).toBe('Classic (40 × 30 mm)')
       const update = document.querySelector<HTMLButtonElement>('#freeform-preset-update')
       expect(update).not.toBeNull()
       expect(update!.disabled).toBe(true)
@@ -2529,8 +2541,9 @@ describe('freeform editor database-owned presets', () => {
       const width = document.querySelector<HTMLInputElement>('#freeform-label-width')!
       width.value = '70'
       width.dispatchEvent(new Event('change'))
+      expect(optionText('own:Existing')).toBe('Existing (60 × 40 mm)')
       update!.click()
-      await vi.waitFor(() => expect(readStoredPresets('database-presets')[0].data.design.label.widthMm).toBe(70))
+      await vi.waitFor(() => expect(optionText('own:Existing')).toBe('Existing (70 × 40 mm)'))
       expect(readStoredPresets('database-presets')[0].data.legacy_v1).toEqual({ width: 64, height: 32 })
       expect(saveLabelPreset).toHaveBeenCalledWith('database-presets', expect.objectContaining({
         name: 'Existing', data: expect.objectContaining({ design: editor.getDesign() }),

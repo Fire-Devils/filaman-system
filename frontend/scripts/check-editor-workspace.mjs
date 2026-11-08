@@ -29,6 +29,10 @@ try {
     if (path.endsWith('/me')) data = { id: 1, email: 'layout@example.test', display_name: 'Layout check', language: 'en', roles: ['user'], permissions: [] }
     if (/\/filaments\/\d+$/.test(path)) data = { ...filament, id: Number(path.split('/').at(-1)) }
     if (/\/spools\/\d+$/.test(path)) data = { id: Number(path.split('/').at(-1)), filament_id: 10, filament, custom_fields: {} }
+    if (/\/me\/label-presets(?:\/migrate)?$/.test(path)) data = [{
+      id: 42, preset_type: 'spool', name: 'My label',
+      data: { version: 2, design: { version: 2, label: { widthMm: 50, heightMm: 30, marginMm: 2, border: false }, elements: [] } },
+    }]
     if (path.endsWith('/events/stream')) return route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' })
     if (path.endsWith('/label-logo')) return route.fulfill({ contentType: 'image/png', body: logo })
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) })
@@ -43,6 +47,7 @@ try {
     await page.goto(new URL(path, process.argv[2] || 'http://127.0.0.1:4321').href)
     if (!path.includes('?ids=')) {
       await page.locator('#label-preview .label-designation').waitFor({ state: 'attached' })
+      assert.equal(await page.locator('#freeform-current-label-size').isVisible(), false)
       await page.locator('#tab-btn-designer').click()
     }
     await page.locator('#freeform-canvas-host [data-label-svg-raster]').first().waitFor().catch(async error => {
@@ -99,7 +104,26 @@ try {
       await page.locator('[data-designer-action="undo"]').click()
       await page.waitForFunction(left => document.querySelector('#freeform-canvas-host [data-label-element-id="qr"]')?.style.left === left, originalLeft)
 
+      const preset = page.locator('#freeform-preset-list')
+      assert.equal(await preset.locator('option').first().textContent(), 'My label (50 × 30 mm)')
+      assert.equal(await page.locator('#freeform-current-label-size').textContent(), '60 × 40 mm')
+      await preset.press('Space')
+      await page.waitForFunction(() => document.querySelector('#freeform-preset-list').matches(':open'))
+      assert.equal(await preset.locator('option .freeform-preset-option-size').first().isVisible(), true)
+      await page.keyboard.press('Escape')
       await surface.locator('[data-label-element-id="text"]').click()
+      const token = surface.locator('[data-template-token-chip]').first()
+      for (const key of ['Delete', 'Backspace']) {
+        await page.locator('#freeform-field-search').focus()
+        await token.click()
+        assert.equal(await token.getAttribute('data-template-token-active'), '')
+        assert.equal(await surface.locator('[data-label-element-id="text"]:focus').count(), 1)
+        await page.keyboard.press(key)
+        await token.waitFor({ state: 'detached', timeout: 3000 })
+        assert.equal(await surface.locator('[data-label-element-id="text"]').count(), 1)
+        await page.keyboard.press('ControlOrMeta+z')
+        await token.waitFor({ state: 'visible' })
+      }
       await page.locator('#freeform-json-expand').click()
       const json = page.locator('#freeform-element-json')
       const original = JSON.parse(await json.inputValue())
@@ -111,12 +135,115 @@ try {
         assert.equal(await surface.locator('[data-label-svg-raster]').count(), 1)
         assert.equal(await surface.locator('[data-label-element-id="qr"][data-label-output-error]').count(), 0)
         assert.equal(await surface.getAttribute('data-label-output-error'), null)
-        if (failed) assert.match(await page.locator('#freeform-text-fit-warning').textContent(), /enlarge|Scale font to fit/i)
+        if (failed) {
+          assert.match(await page.locator('#freeform-text-fit-warning').textContent(), /enlarge|Scale font to fit/i)
+          assert.match(await page.locator('#freeform-output-warning').textContent(), /Text does not fit/)
+          await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+          await page.locator('#freeform-select-overflow').click()
+          assert.equal(await surface.locator('[data-label-element-id="text"]:focus').count(), 1)
+          const dialog = page.waitForEvent('dialog').then(async error => { await error.dismiss(); return error.message() })
+          await page.locator('#btn-export-png').click()
+          const error = await dialog
+          assert.match(error, /Text does not fit/)
+          assert.doesNotMatch(error, /images and logos/)
+          await page.locator('#freeform-select-overflow').click()
+          await page.locator('#freeform-json-expand').click()
+        }
       }
       await json.fill(JSON.stringify(original))
       await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-output-warning').waitFor({ state: 'hidden' })
       await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
-      console.log('Temperature text fits and overflow stays in its box')
+      console.log('Temperature insertion, box-local overflow guidance and recovery passed')
+      if (await page.locator('#freeform-field-dock').getAttribute('data-open') !== 'true') await page.locator('#freeform-field-dock-toggle').click()
+      await page.locator('#freeform-field-tab-filament').click()
+      const search = page.locator('#freeform-field-search')
+      await search.fill('material')
+      assert.equal(await page.locator('[data-field-group-tab][aria-selected="true"]').count(), 0)
+      assert.deepEqual(await page.locator('[data-field-result-heading]:visible').allTextContents(), ['Filament', 'Spool'])
+      await search.clear()
+      assert.equal(await page.locator('#freeform-field-tab-filament').getAttribute('aria-selected'), 'true')
+      await surface.locator('[data-label-element-id="text"]').dblclick()
+      const temperature = page.locator('[data-field-token="{filament.extruder_temp_range_c}"]')
+      assert.equal(await temperature.textContent(), 'Extruder temperature')
+      const fieldTooltip = page.locator('.freeform-designer-tooltip')
+      await temperature.hover()
+      await fieldTooltip.waitFor({ state: 'visible' })
+      assert.match(await fieldTooltip.textContent(), /220[–-]260/)
+      await temperature.click({ position: { x: 6, y: 6 } })
+      const popup = page.locator('#freeform-field-unit-popup')
+      await popup.waitFor({ state: 'visible' })
+      const font = locator => locator.evaluate(node => {
+        const style = getComputedStyle(node)
+        return [style.fontFamily, style.fontSize]
+      })
+      assert.deepEqual(await font(popup.locator('[data-field-unit-choice]')), await font(temperature))
+      assert.equal(await fieldTooltip.isVisible(), false)
+      const fieldBounds = await temperature.boundingBox(), popupBounds = await popup.boundingBox()
+      assert.ok(popupBounds.y + popupBounds.height < fieldBounds.y + 6, 'Unit popup opens just above the click')
+      await popup.locator('[data-field-unit-choice]').click()
+      await page.waitForFunction(() => document.querySelector('#freeform-element-json')?.value.includes('{filament.extruder_temp_range_c|unit}'))
+      await page.locator('[data-field-token="{filament.bed_temp_range_c}"]').click()
+      await popup.waitFor({ state: 'visible' })
+      await page.mouse.click(8, 8)
+      await popup.waitFor({ state: 'hidden' })
+      await surface.locator('[data-label-element-id="text"]').click()
+      assert.ok(!JSON.parse(await json.inputValue()).template.includes('{filament.bed_temp_range_c|unit}'), 'Dismissal keeps the field unitless')
+      assert.ok(JSON.parse(await json.inputValue()).template.includes('{filament.extruder_temp_range_c|unit}{filament.bed_temp_range_c}'), 'The next field stays outside the first field with a unit')
+      await surface.locator('[data-label-element-id="text"]').press('Escape')
+      for (const inline of [false, true]) {
+        if (inline) await surface.locator('[data-label-element-id="text"]').dblclick()
+        assert.equal(await surface.locator('[data-label-text-editing]').count(), Number(inline))
+        const artwork = surface.locator('[data-label-svg-raster]')
+        const previousSource = await artwork.getAttribute('src')
+        await temperature.press('Enter')
+        await popup.waitFor({ state: 'visible' })
+        await page.waitForFunction(previous => document.querySelector('#freeform-canvas-host [data-label-svg-raster]')?.getAttribute('src') !== previous, previousSource)
+        assert.ok(await popup.locator('[data-field-unit-choice]').evaluate(choice => choice === document.activeElement),
+          `Keyboard activation keeps focus on the unit choice after rendering with inline editing ${inline}`)
+        await page.keyboard.press('Enter')
+        await popup.waitFor({ state: 'hidden' })
+      }
+      await page.waitForFunction(() => {
+        const template = JSON.parse(document.querySelector('#freeform-element-json').value).template
+        return template.split('{filament.extruder_temp_range_c|unit}').length - 1 === 3
+      })
+      await page.locator('#freeform-json-expand').click()
+      await json.fill(JSON.stringify(original))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      await surface.locator('[data-label-element-id="text"]').dblclick()
+      const name = surface.locator('[data-template-atomic]').first()
+      await name.click()
+      await page.keyboard.press('ArrowRight')
+      await page.locator('#freeform-field-tab-spool').click()
+      const emptyField = page.locator('[data-field-token="{lot_number}"]')
+      await emptyField.hover()
+      await fieldTooltip.locator('[data-field-missing-preview]').waitFor()
+      assert.match(await fieldTooltip.textContent(), /No data in token \{lot_number\}/)
+      await emptyField.click()
+      const missing = surface.locator('[data-template-missing="{lot_number}"]')
+      await missing.waitFor()
+      assert.equal(await missing.getAttribute('title'), 'No data in token {lot_number}')
+      const style = await missing.evaluate(marker => {
+        const css = getComputedStyle(marker)
+        return { background: css.backgroundColor, radius: parseFloat(css.borderRadius) }
+      })
+      assert.match(style.background, /rgba\(250, 204, 21, 0\.36\)/)
+      assert.ok(style.radius > 0)
+      const namePosition = await name.boundingBox()
+      await missing.click()
+      await page.keyboard.press('Escape')
+      await missing.waitFor()
+      const restingPosition = await missing.boundingBox()
+      assert.equal(await missing.evaluate(marker => getComputedStyle(marker).opacity), '0', 'The SVG paints the resting badge')
+      assert.equal(await name.getAttribute('data-template-missing'), null, 'Insertion preserves the name')
+      assert.ok(restingPosition.x > namePosition.x, 'Placeholder follows the name')
+      await missing.click()
+      await page.keyboard.press('Delete')
+      await missing.waitFor({ state: 'detached' })
+      await page.keyboard.press('Escape')
+      console.log('Cursor-anchored unit choice and click-away dismissal passed')
       await page.locator('[data-designer-add="qr"]').click()
       await page.locator('#freeform-json-expand').click()
       const addedQr = JSON.parse(await json.inputValue())
@@ -149,6 +276,7 @@ try {
       for (let pass = 0; pass < 2; pass++) {
         await page.locator('#tab-btn-sheets').click()
         await page.locator('.label-sheet-page').first().waitFor()
+        assert.equal(await page.locator('#freeform-current-label-size').isVisible(), false)
         await page.locator('#tab-btn-designer').click()
         await page.waitForFunction(id => document.querySelector('#freeform-canvas-host .label-wrapper')?.id === id, representative)
         await page.locator('#freeform-canvas-host [data-label-element-id="text"]').first().click()
@@ -244,7 +372,7 @@ try {
     await page.locator('#tab-btn-print').click()
     await page.setViewportSize({ width: 390, height: 900 })
     await page.locator('#btn-print').waitFor()
-    assert.ok(await page.locator('.action-buttons .fm-btn').evaluateAll(buttons => buttons.length > 0 && buttons.every(button => {
+    assert.ok(await page.locator('.action-buttons .fm-btn:visible').evaluateAll(buttons => buttons.length > 0 && buttons.every(button => {
       const bounds = button.getBoundingClientRect()
       return bounds.width >= 44 && bounds.height >= 44
     })), `${path}: mobile output actions remain touch-sized`)

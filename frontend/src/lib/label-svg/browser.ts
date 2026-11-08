@@ -94,6 +94,7 @@ function trackPreview(root: HTMLElement, image: HTMLImageElement) {
 }
 
 function showElementWarning(node: HTMLElement, error?: string) {
+  if (node.dataset.labelOutputError === error) return
   node.querySelector('[data-label-fit-warning]')?.remove()
   node.style.outline = error ? '1px solid #b91c1c' : ''
   if (!error) {
@@ -105,12 +106,28 @@ function showElementWarning(node: HTMLElement, error?: string) {
   node.dataset.labelOutputError = error
   node.setAttribute('aria-invalid', 'true')
   node.title = error
+  if (node.dataset.labelElementType === 'text') return
   const warning = document.createElement('span')
   warning.dataset.labelFitWarning = ''
   warning.setAttribute('role', 'alert')
   warning.textContent = error
   warning.style.cssText = 'position:absolute;bottom:0;left:0;max-width:100%;background:#fff;color:#b91c1c;font:10px/1.2 sans-serif;pointer-events:none'
   node.append(warning)
+}
+
+function syncMissingBadges(node: HTMLElement, text?: SvgLayoutOutput['text'][number]) {
+  const markers = node.querySelectorAll<HTMLElement>('[data-template-missing]')
+  if (!markers.length) return
+  const positions = new Map(text?.missingBadges?.map(badge => [badge.start, badge]))
+  if (text) node.style.fontSize = text.size + 'mm'
+  for (const marker of markers) {
+    const badge = positions.get(Number(marker.dataset.templateStart))
+    marker.toggleAttribute('data-preview-badge', !!badge)
+    if (!badge) continue
+    marker.style.setProperty('--badge-left', badge.x + 'mm')
+    marker.style.setProperty('--badge-top', badge.y + 'mm')
+    marker.style.setProperty('--badge-size', badge.size + 'mm')
+  }
 }
 
 function hitTargets(options: RenderDesignerLabelOptions, input: SvgInput, output?: SvgLayoutOutput) {
@@ -132,11 +149,11 @@ function hitTargets(options: RenderDesignerLabelOptions, input: SvgInput, output
       width: box.w + 'mm', height: box.h + 'mm', boxSizing: 'border-box',
       zIndex: String(element.z + 1), overflow: 'hidden' })
     if (element.type === 'text') {
-      // Temporary editing surface only; shared pixels remain the output.
       const text = output?.text.find((row: { id: string }) => row.id === element.id)
-      renderEditableText(node, { ...element, fontSizeMm: text?.size ?? element.fontSizeMm }, input.data)
+      renderEditableText(node, { ...element, fontSizeMm: text?.size ?? element.fontSizeMm }, input.data, true)
       const content = node.firstElementChild as HTMLElement | null
       if (content) content.style.visibility = 'hidden'
+      syncMissingBadges(node, text)
       showElementWarning(node, text?.error)
     }
     const qr = output?.qrs.find((row: { id: string }) => row.id === element.id)
@@ -305,8 +322,9 @@ export function redrawSvgGesture(root: HTMLElement, design: LabelDesignV2) {
       trackPreview(root, image)
       root.removeAttribute('data-label-output-error')
       for (const node of root.querySelectorAll<HTMLElement>('[data-label-svg-target]')) {
-        showElementWarning(node, output.text.find(row => row.id === node.dataset.labelElementId)?.error
-          ?? output.qrs.find(row => row.id === node.dataset.labelElementId)?.error)
+        const text = output.text.find(row => row.id === node.dataset.labelElementId)
+        if (node.dataset.labelElementType === 'text') syncMissingBadges(node, text)
+        showElementWarning(node, text?.error ?? output.qrs.find(row => row.id === node.dataset.labelElementId)?.error)
       }
       state.invalid = !!state.gestureDesign || output.text.some(row => row.error) || output.qrs.some(row => row.error)
     } catch (error) {

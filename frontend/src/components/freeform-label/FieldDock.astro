@@ -1,5 +1,5 @@
 ---
-import { FILAMENT_TOKENS, SPOOL_TOKENS } from '../../lib/label-token-catalog'
+import { FILAMENT_TOKENS, SPOOL_TOKENS, getLabelTokenUnit } from '../../lib/label-token-catalog'
 const sectionLabels: Record<string, string> = { identity: 'Identity', material: 'Material', packaging: 'Packaging', temperatures: 'Temperatures', drying: 'Drying', print_behavior: 'Print behavior', compatibility: 'Compatibility', inventory: 'Inventory', physical: 'Physical', purchase: 'Purchase', lifecycle: 'Lifecycle' }
 const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choice => choice.section))]
 ---
@@ -16,16 +16,26 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
  <div class="freeform-field-dock-clip">
  <div class="freeform-field-dock-content">
  <div class="freeform-token-editor">
+  <div class="freeform-field-controls">
   <div class="freeform-field-tabs" role="tablist" aria-label="Field groups" data-i18n-aria-label="labelDesigner.fieldGroups">
     <button id="freeform-field-tab-filament" type="button" role="tab" aria-selected="true" aria-controls="freeform-field-panel-filament" tabindex="0" data-field-group-tab="filament" data-no-designer-tooltip data-i18n="labelDesigner.filamentFields">Filament</button>
     <button id="freeform-field-tab-spool" type="button" role="tab" aria-selected="false" aria-controls="freeform-field-panel-spool" tabindex="-1" data-field-group-tab="spool" data-no-designer-tooltip data-i18n="labelDesigner.spoolFields">Spool</button>
   </div>
   <input id="freeform-field-search" class="fm-input freeform-field-search" type="search" aria-label="Search fields" placeholder="Search fields" data-i18n-aria-label="labelDesigner.searchFields" data-i18n-placeholder="labelDesigner.searchFields" />
+  </div>
   <div class="freeform-field-groups freeform-field-panel-frame">
     {(['filament', 'spool'] as const).map(source => {
       const tokens = source === 'filament' ? FILAMENT_TOKENS : SPOOL_TOKENS
-      return <div id={`freeform-field-panel-${source}`} role="tabpanel" aria-labelledby={`freeform-field-tab-${source}`} data-field-group={source} hidden={source === 'spool'}>{sections(tokens).map(section => <details open data-token-section={section}><summary data-i18n={`labelDesigner.fieldSections.${section}`}>{sectionLabels[section]}</summary><div class="freeform-built-in-fields">{tokens.filter(choice => choice.section === section).map(({ token, label }) => <button class="freeform-token-chip" type="button" data-field-token={token} title={token}>{label}</button>)}</div></details>)}<div class="freeform-extra-fields" data-extra-field-source={source}></div></div>
+      return <div id={`freeform-field-panel-${source}`} role="tabpanel" aria-labelledby={`freeform-field-tab-${source}`} data-field-group={source} hidden={source === 'spool'}>
+        <h3 id={`freeform-field-results-${source}`} class="freeform-field-result-heading" data-field-result-heading data-i18n={`labelDesigner.${source}Fields`} hidden>{source === 'filament' ? 'Filament' : 'Spool'}</h3>
+        {sections(tokens).map(section => <details open data-token-section={section}><summary data-i18n={`labelDesigner.fieldSections.${section}`}>{sectionLabels[section]}</summary><div class="freeform-built-in-fields">{tokens.filter(choice => choice.section === section).map(({ token, label, labelKey, searchLabelKey }) => {
+          const unit = getLabelTokenUnit(token)
+          return <button class="freeform-token-chip" type="button" data-field-token={token} data-field-unit={unit} data-field-search-key={searchLabelKey} data-i18n={labelKey}>{label}</button>
+        })}</div></details>)}
+        <div class="freeform-extra-fields" data-extra-field-source={source}></div>
+      </div>
     })}
+    <p id="freeform-field-no-results" class="freeform-field-no-results" role="status" data-i18n="labelDesigner.noMatchingFields" hidden>No matching fields</p>
   </div>
  </div>
  </div>
@@ -36,10 +46,18 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
   <label for="freeform-template" data-i18n="labelDesigner.template">Template</label>
   <textarea id="freeform-template" class="fm-input" rows="12" data-element-prop="template" spellcheck="false"></textarea>
  </section>
+ <div id="freeform-field-unit-popup" class="freeform-field-unit-popup" popover="auto" role="dialog" aria-label="Include unit" data-i18n-aria-label="labelDesigner.includeUnit">
+  <button type="button" data-field-unit-choice aria-label="Include unit" data-i18n-aria-label="labelDesigner.includeUnit"></button>
+  <button type="button" data-field-unit-dismiss aria-label="Keep number only" data-i18n-aria-label="labelDesigner.keepNumberOnly">×</button>
+ </div>
 </section>
 
 <style>
   .freeform-field-dock { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px #0002; flex-direction: column; margin-top: 12px; width: min(560px, 100%); }
+  .freeform-field-unit-popup { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px #0004; color: var(--text); inset: auto; margin: 0; padding: 4px; position: fixed; }
+  .freeform-field-unit-popup:popover-open { display: flex; gap: 4px; }
+  .freeform-field-unit-popup button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; min-height: 28px; padding: 3px 8px; }
+  .freeform-field-unit-popup [data-field-unit-choice] { border-color: var(--accent); color: var(--accent); }
   .freeform-field-dock[data-available='false'] { display: none !important; }
   .freeform-field-dock-header { align-items: center; display: flex; gap: 6px; padding: 6px 7px 0 0; }
   .freeform-field-dock-toggle { align-items: center; background: transparent; border: 0; color: var(--text-muted); cursor: pointer; display: flex; flex: 1; flex-shrink: 0; font-size: 0.7rem; gap: 12px; height: 32px; padding: 0 10px; text-align: left; }
@@ -50,7 +68,8 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
   .freeform-field-dock-body { display: grid; grid-template-rows: 0fr; min-height: 0; visibility: hidden; transition: grid-template-rows 200ms ease, visibility 200ms; }
   .freeform-field-dock[data-open='true'] .freeform-field-dock-body { grid-template-rows: 1fr; visibility: visible; }
   .freeform-field-dock-clip { min-height: 0; overflow: hidden; }
-  .freeform-field-search { font-size: 0.7rem; margin: 6px 0; min-height: 28px; padding: 4px 7px; width: 100%; }
+  .freeform-field-controls { align-items: end; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+  .freeform-field-search { flex: 1 1 8rem; font-size: 0.7rem; margin: 0 0 4px; min-height: 28px; min-width: 0; padding: 4px 7px; width: auto; }
   .freeform-field-dock :global(details > summary) { color: var(--text-muted); cursor: pointer; font-size: 0.65rem; font-weight: 600; padding: 4px 0; }
   .freeform-field-dock :global([hidden]) { display: none !important; }
   .freeform-field-dock-content { display: grid; gap: 10px; padding: 0 10px 9px; }
@@ -68,10 +87,13 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
   #freeform-template { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; color: var(--text); flex: 1; font-family: 'Space Mono', monospace; font-size: 0.75rem; line-height: 1.4; min-height: 0; resize: none; width: 100%; }
   .freeform-field-tabs, .freeform-built-in-fields { display: flex; flex-wrap: wrap; gap: 4px; }
   .freeform-field-tabs button { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.72rem; min-height: 28px; padding: 4px 7px; }
-  .freeform-field-tabs { align-items: flex-end; gap: 3px; margin: 7px 0 0; padding-left: 4px; position: relative; z-index: 1; }
+  .freeform-field-tabs { align-items: flex-end; gap: 3px; padding-left: 4px; position: relative; z-index: 1; }
   .freeform-field-tabs button { border-bottom-left-radius: 0; border-bottom-right-radius: 0; color: var(--text-muted); }
   .freeform-field-tabs button[aria-selected='true'] { background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated)); border-color: var(--accent); border-bottom-color: var(--bg-elevated); box-shadow: inset 0 2px 0 var(--accent); color: var(--text); font-weight: 700; margin-bottom: -1px; }
   .freeform-field-panel-frame { background: color-mix(in srgb, var(--bg-soft) 55%, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 7px; }
+  .freeform-field-result-heading { color: var(--text); font-size: 0.75rem; margin: 0 0 3px; }
+  [data-field-group]:not([hidden]) + [data-field-group]:not([hidden]) { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+  .freeform-field-no-results { color: var(--text-muted); font-size: 0.75rem; margin: 0; }
   .freeform-extra-fields { display: grid; gap: 3px; margin-top: 6px; min-width: 0; width: 100%; }
   .freeform-extra-fields :global(.ds-tokens-group) { min-width: 0; }
   .freeform-extra-fields :global(.ds-tokens-group-label) { color: var(--text-muted); font-size: 0.65rem; font-weight: 600; line-height: 26px; white-space: nowrap; }
@@ -79,7 +101,8 @@ const sections = (tokens: typeof FILAMENT_TOKENS) => [...new Set(tokens.map(choi
   .freeform-extra-fields :global(.ds-tokens-empty) { color: var(--text-muted); font-size: 0.64rem; line-height: 1.5; }
   .freeform-extra-fields :global(.ds-custom-fields-toggle) { background: transparent; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); cursor: pointer; font-size: 0.64rem; min-height: 26px; padding: 2px 6px; }
   .freeform-extra-fields :global(.ds-custom-fields-toggle:hover) { border-color: var(--accent); color: var(--accent); }
-  .freeform-token-chip, .freeform-extra-fields :global(.freeform-token-chip) { background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); cursor: pointer; font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.64rem; line-height: 1.4; min-height: 26px; padding: 2px 6px; white-space: nowrap; }
+  .freeform-token-chip, .freeform-extra-fields :global(.freeform-token-chip), .freeform-field-unit-popup button { font-family: 'Space Mono', 'Courier New', monospace; font-size: 0.64rem; line-height: 1.4; }
+  .freeform-token-chip, .freeform-extra-fields :global(.freeform-token-chip) { background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid var(--accent); border-radius: 4px; color: var(--accent); cursor: pointer; min-height: 26px; padding: 2px 6px; white-space: nowrap; }
   .freeform-token-chip[data-field-token-active], .freeform-extra-fields :global(.freeform-token-chip[data-field-token-active]) { background: color-mix(in srgb, var(--accent) 32%, var(--bg-elevated)); box-shadow: inset 0 0 0 1px var(--accent); color: var(--text); font-weight: 700; }
   .freeform-token-chip:hover, .freeform-extra-fields :global(.freeform-token-chip:hover) { background: var(--accent); color: var(--btn-primary-text); }
   .freeform-field-dock :global(button:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }

@@ -130,6 +130,11 @@ it('marks conflicting QR boxes locally and blocks output until separated', async
   expect(element.querySelectorAll('[data-label-element-id][data-label-output-error]')).toHaveLength(2)
   expect(element.textContent).toContain('Move QR codes farther apart')
   await expect(renderSvgElementOutput(element, 500, 300, true)).rejects.toThrow(/farther apart/)
+  const warning = element.querySelector('[data-label-fit-warning]')
+  value.elements[1].y = 3
+  redrawSvgGesture(element, value)
+  await new Promise(requestAnimationFrame)
+  expect(element.querySelector('[data-label-fit-warning]')).toBe(warning)
   value.elements[1].x = 28
   redrawSvgGesture(element, value)
   await new Promise(requestAnimationFrame)
@@ -147,7 +152,8 @@ it('keeps the label visible and marks only overflowing text boxes with repair ad
   expect(element.hasAttribute('data-label-output-error')).toBe(false)
   const failed = element.querySelector<HTMLElement>('[data-label-element-id="info"]')!
   expect(failed.dataset.labelOutputError).toMatch(/enlarge|Scale font to fit/i)
-  expect(failed.querySelector('[role="alert"]')?.textContent).toContain('Text does not fit')
+  expect(failed.title).toContain('Text does not fit')
+  expect(failed.querySelector('[role="alert"]')).toBeNull()
   expect(element.querySelector('[data-label-element-id="qr"]')?.hasAttribute('data-label-output-error')).toBe(false)
   await expect(renderSvgElementOutput(element, 480, 360, false)).rejects.toThrow(/fit/i)
   Object.assign(info, { h: 12 })
@@ -175,6 +181,37 @@ it('keeps field selection on the editing overlay and omits it from printable out
   expect(element.querySelector<HTMLImageElement>('[data-label-svg-raster]')!.src).toMatch(/^data:image\/png;/)
   const output = await renderSvgElementOutput(element, 472, 354, false)
   expect(output.svg.slice(output.svg.indexOf('>'))).toBe(svg.slice(svg.indexOf('>')))
+})
+
+it('shows selectable missing data markers without changing rendered output', async () => {
+  const element = root(), value = design()
+  const text = value.elements.find(e => e.type === 'text' && e.id === 'info')!
+  if (text.type !== 'text') throw new Error('Expected text fixture')
+  text.template = 'A**{filament.bed_temp_range_c|unit}**{extra.zero}{lot_number}[if={extra.empty}]{extra.hidden}[/if]Z'
+  value.elements = [text, { id: 'cover', type: 'shape', shape: 'rectangle', x: 1, y: 9, w: 18, h: 4, z: 3,
+    fill: '#123456', stroke: '#000000', strokeWidthMm: 0, radiusMm: 0 }]
+  const previewData = { ...data, extra: { zero: '0', empty: '' } }
+  await renderDesignerLabel({ element, design: value, data: previewData, interactive: true })
+  const marker = element.querySelector<HTMLElement>('[data-template-missing]')!
+  expect(marker?.textContent).toBe('?')
+  expect(marker.hasAttribute('data-template-atomic')).toBe(true)
+  expect(marker.title).toBe('No data in token {filament.bed_temp_range_c|unit}')
+  const overlay = element.querySelector<HTMLElement>('[data-label-element-id="info"]')!
+  expect((overlay.firstElementChild as HTMLElement).style.visibility).toBe('hidden')
+  expect(overlay.firstElementChild?.textContent).toBe('A?0?Z')
+  expect(overlay.querySelectorAll('[data-template-missing][data-preview-badge]')).toHaveLength(2)
+  const previewSvg = await (vi.mocked(URL.createObjectURL).mock.calls.at(-1)![0] as Blob).text()
+  expect(previewSvg.match(/fill="#facc15"/g)).toHaveLength(2)
+  expect(previewSvg.lastIndexOf('<path')).toBeLessThan(previewSvg.indexOf('fill="#123456"'))
+  expect(previewSvg.lastIndexOf('fill="#facc15"')).toBeLessThan(previewSvg.indexOf('fill="#123456"'))
+  expect(element.querySelector('[data-label-output-error]')).toBeNull()
+  const output = await renderSvgElementOutput(element, 480, 360, false)
+  text.template = 'A0Z'
+  await renderDesignerLabel({ element, design: value, data: previewData, interactive: true })
+  expect(element.querySelector('[data-template-missing]')).toBeNull()
+  const clean = await renderSvgElementOutput(element, 480, 360, false)
+  expect(output.svg).toBe(clean.svg)
+  expect(output.png).toEqual(clean.png)
 })
 
 it.each(['spools', 'filaments'] as const)('renders cached embedded batch logos for %s through preview and export', async entityPath => {

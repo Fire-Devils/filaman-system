@@ -4,7 +4,7 @@ import { Resvg } from '@resvg/resvg-wasm'
 import QRCode from 'qrcode'
 import { renderSvgLabel, renderSvgLabelLayout, rasterize, rasterizePng, layoutText } from './core.mjs'
 import { createSvgRuntime } from './runtime.mjs'
-import type { SvgInput, SvgRuntime } from './types'
+import type { SvgBox, SvgInput, SvgRuntime } from './types'
 import { fixtures, data } from '../../../tests/label-rendering/fixtures.mjs'
 import { LABEL_FONT_FAMILIES } from '../freeform-label/types'
 import { prepareSvgApiInput } from './prepare-api'
@@ -140,10 +140,133 @@ it.each(LABEL_FONT_FAMILIES)('fits temperature rows using the editor line spacin
   expect(result.height).toBeCloseTo(7.36)
 })
 
+it.each([['Space Mono', 'Å'], ['Fraunces', 'g']])('fits actual glyph ink within normal %s text boxes', (fontFamily, template) => {
+  const value = input()
+  value.pixelWidth = 800
+  value.pixelHeight = 600
+  const element = { id: 'text', type: 'text', x: 4, y: 4, w: 25, h: 23, z: 0,
+    template, fontFamily, fontWeight: 700, fontSizeMm: 20 } as SvgInput['preset']['design']['elements'][number]
+  value.preset.design.elements = [element]
+  expect(() => render(value)).toThrow(/Text does not fit/)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.text[0].error).toMatch(/Text does not fit/)
+  Object.assign(element, { fitToWidth: true, minFontSizeMm: 10 })
+  const fitted = render(value)
+  expect(fitted.text[0].size).toBeLessThan(20)
+  expect(fitted.mono.some((byte: number) => byte !== 0)).toBe(true)
+  const rowBytes = fitted.width / 8
+  expect(fitted.mono.slice(0, 80 * rowBytes).every((byte: number) => byte === 0)).toBe(true)
+  expect(fitted.mono.slice(540 * rowBytes).every((byte: number) => byte === 0)).toBe(true)
+})
+
 it('accepts an exact-fit row when CSS half-leading adds floating-point roundoff', () => {
   const result = layoutText('Temperature', { w: 100, h: 6.3, fontSizeMm: 4.5, legacyTextRole: 'info' }, runtime.fonts['Roboto Condensed:700'])
   expect(result.size).toBe(4.5)
   expect(result.height).toBeCloseTo(6.3)
+})
+
+it('keeps printable text visible when a missing badge would wrap it out of the box', () => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'text', type: 'text', x: 4, y: 4, w: 10, h: 3.7, z: 0,
+    template: '{lot_number}ABCDE', fontFamily: 'Space Mono', fontWeight: 400, fontSizeMm: 3.2,
+    wrap: true }] as SvgInput['preset']['design']['elements']
+  const printed = render(value)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.text[0]).toMatchObject({ lines: ['ABCDE'] })
+  expect(preview.text[0].error).toBeUndefined()
+  expect(preview.svg).toBe(printed.svg)
+})
+
+function zeroMarginTitle(template: string, sizeMm: number) {
+  return prepareSvgApiInput({ spool: { id: 295, filament: {} }, preset: { version: 1, settings: {
+    label: { width: 40, height: 40, marginMm: 0, border: false },
+    title: { show: true, template, sizeMm, marginMm: 0, dividerAbove: false, dividerBelow: false },
+    title2: { show: false }, logo: { show: false }, info: { show: false }, info2: { show: false }, qr: { show: false },
+  } }, fieldDefinitions: { spool: {}, filament: {} }, assets: {}, pixelWidth: 800, pixelHeight: 800, thermal: false }, 'https://fila.test', {})
+}
+
+it.each([['[size=200]Åg[/size]', 4, 2], ['Å[size=105].[/size]', 10, 1.05]])(
+  'keeps the full ink of the migrated title %s at the paper edge', (template, size, factor) => {
+  const value = zeroMarginTitle(template, size)
+  const title = value.preset.design.elements[0]
+  expect(title).toMatchObject({ y: 0, legacyTextRole: 'title' })
+  const atEdge = render(value)
+  title.y = 4
+  const inset = render(value)
+  const inkPixels = (result: ReturnType<typeof render>) => result.mono.reduce(
+    (sum: number, byte: number) => sum + byte.toString(2).replaceAll('0', '').length, 0)
+  // Allow subpixel antialiasing differences between the two baselines.
+  expect(inkPixels(atEdge)).toBeGreaterThanOrEqual(inkPixels(inset) * 0.99)
+  expect(atEdge.text[0].height).toBeGreaterThan(size * factor)
+})
+
+it('uses the actual row position for a later enlarged line of a migrated title', () => {
+  const value = zeroMarginTitle('[size=200]Plain\nÅg[/size]', 4)
+  expect(render(value).text[0].height).toBeCloseTo(16)
+})
+
+it('keeps literal formatting punctuation when marking a missing field would reinterpret it', () => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'text', type: 'text', x: 4, y: 4, w: 25, h: 8, z: 0,
+    template: '*{lot_number}*ABCDE', fontFamily: 'Space Mono', fontWeight: 400, fontSizeMm: 3.2,
+  }] as SvgInput['preset']['design']['elements']
+  const printed = render(value)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(printed.text[0].text).toBe('**ABCDE')
+  expect(preview.svg).toBe(printed.svg)
+})
+
+it('keeps printable preview artwork when a missing badge would exceed the text limit', () => {
+  const value = input()
+  value.data = { ...value.data, extra: { long: 'A' + ' '.repeat(11999) } }
+  value.preset.design.elements = [{ id: 'text', type: 'text', x: 1, y: 1, w: 30, h: 10, z: 0,
+    template: '{extra.long}{lot_number}', fontSizeMm: 2, wrap: true }] as SvgInput['preset']['design']['elements']
+  const printed = renderSvgLabelLayout(value, runtime)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.svg).toBe(printed.svg)
+})
+
+it('reserves the missing title row in preview and checks fit using the collapsed print layout', () => {
+  const value = input()
+  value.preset.design.elements = [
+    { id: 'title', type: 'text', x: 1, y: 1.5, w: 30, h: 4, z: 0, template: '{lot_number}', fontSizeMm: 4,
+      legacyTextRole: 'title', legacyTitleMarginMm: 0.5 },
+    { id: 'info', type: 'text', x: 1, y: 6, w: 30, h: 3, z: 1, template: 'A\nB', fontSizeMm: 2,
+      wrap: true, legacyTextRole: 'info' },
+  ] as SvgInput['preset']['design']['elements']
+  const output = renderSvgLabelLayout(value, runtime)
+  expect(output.boxes.find((box: SvgBox) => box.id === 'title')?.hidden).toBe(true)
+  expect(output.boxes.find((box: SvgBox) => box.id === 'info')?.y).toBe(1)
+
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  const title = preview.text.find(row => row.id === 'title')
+  expect(title?.missingBadges).toHaveLength(1)
+  expect(preview.boxes.find((box: SvgBox) => box.id === 'info')?.y).toBe(6)
+  expect(preview.text.find(row => row.id === 'info')?.error).toBeUndefined()
+})
+
+it('keeps the printable preview when reserving a missing title would leave an invalid box', () => {
+  const value = input()
+  Object.assign(value.preset.design.label, { widthMm: 60, heightMm: 20 })
+  value.preset.design.elements = [
+    { id: 'empty', type: 'text', x: 1, y: 1.5, w: 50, h: 10, z: 0, template: '{lot_number}', fontSizeMm: 10,
+      legacyTextRole: 'title', legacyTitleMarginMm: 0.5 },
+    { id: 'large', type: 'text', x: 1, y: 12.5, w: 50, h: 4, z: 1, template: '[size=200]Short[/size]', fontSizeMm: 4,
+      legacyTextRole: 'title', legacyTitleMarginMm: 0.5 },
+    { id: 'info', type: 'text', x: 1, y: 16, w: 50, h: 3, z: 2, template: 'Manufacturer', fontSizeMm: 2,
+      legacyTextRole: 'info' },
+  ] as SvgInput['preset']['design']['elements']
+  const printed = renderSvgLabelLayout(value, runtime)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.svg).toBe(printed.svg)
+})
+
+it.each(LABEL_FONT_FAMILIES)('prints unit symbols with %s', fontFamily => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'units', type: 'text', x: 1, y: 1, w: 38, h: 20,
+    fontFamily, fontSizeMm: 2, wrap: true, template: '{filament.extruder_temp_range_c|unit}\n{filament.density|unit}\n{filament.max_volumetric_speed_mm3_s|unit}', z: 0 }] as SvgInput['preset']['design']['elements']
+  value.data = { ...value.data, 'filament.extruder_temp_range_c': '220-260', 'filament.density': '1.24', 'filament.max_volumetric_speed_mm3_s': '12' }
+  expect(render(value).text[0].lines).toEqual(['220-260 °C', '1.24 g/cm³', '12 mm³/s'])
 })
 
 it('reuses QR encoding for geometry changes while distinguishing content and correction levels', () => {
