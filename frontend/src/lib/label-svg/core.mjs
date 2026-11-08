@@ -63,12 +63,12 @@ function lineMetrics(groups, size, defaultFont, role, measurements) {
   const ascent = Math.max(...faces.map(run => run.font.ascent / run.font.unitsPerEm * (run.style?.factor ?? 1))) * size;
   const descent = Math.max(...faces.map(run => -run.font.descent / run.font.unitsPerEm * (run.style?.factor ?? 1))) * size;
   const factor = Math.max(1, ...groups.map(run => run.style?.factor ?? 1));
-  const height = role && factor === 1 ? size * (role === 'info' ? 1.4 : 1)
-    : Math.max(size * (role === 'info' ? 1.4 : 1.15) * factor, ascent + descent);
+  // Match the editor's explicit CSS line-height, including fonts with tall em metrics.
+  const height = size * (role === 'info' ? 1.4 : role === 'title' && factor === 1 ? 1 : 1.15) * factor;
   return { width, height, ascent: (height - ascent - descent) / 2 + ascent };
 }
 
-function layoutRuns(runs, element, defaultFont) {
+function layoutRuns(runs, element, defaultFont, preview = false) {
   if (runs.reduce((n, run) => n + run.text.length, 0) > 12000) throw new Error('Label text limit exceeded');
   if (![element.fontSizeMm, element.minFontSizeMm ?? 1].every(v => Number.isFinite(v) && v > 0)) throw new Error('Invalid font size');
   if (runs.every(run => run.text === '' && !run.swatch)) return { lines: [], size: element.fontSizeMm, lineHeight: 0, height: 0, metrics: [], runs: [] };
@@ -119,7 +119,7 @@ function layoutRuns(runs, element, defaultFont) {
   let lines = wrap(size);
   if (!fits(lines, size) && element.fitToWidth) {
     let low = Math.min(size, element.minFontSizeMm ?? (element.wrap ? 2 : 0.265)), high = size;
-    if (!fits(wrap(low), low)) throw new Error('Text cannot fit at minimum size');
+    if (!fits(wrap(low), low) && !preview) throw new Error('Text cannot fit at minimum size; enlarge this box, lower Minimum size, or shorten the text');
     for (let i = 0; i < 12; i++) {
       const mid = (low + high) / 2;
       if (fits(wrap(mid), mid)) low = mid; else high = mid;
@@ -127,14 +127,17 @@ function layoutRuns(runs, element, defaultFont) {
     size = low;
     lines = wrap(size);
   }
-  if (!fits(lines, size)) throw new Error('Text does not fit; enable Scale font to fit or enlarge its box');
+  const error = fits(lines, size) ? undefined : element.fitToWidth
+    ? 'Text does not fit at Minimum size. Enlarge this box, lower Minimum size, or shorten the text.'
+    : 'Text does not fit. Enlarge this box, reduce Size, or enable Scale font to fit.';
+  if (error && !preview) throw new Error(error);
   const measured = lines.map(line => metrics(line, size));
   return { lines: lines.map(line => line.map(c => c.text).join('')), size,
     lineHeight: Math.max(0, ...measured.map(line => line.height)), height: measured.reduce((sum, line) => sum + line.height, 0),
-    metrics: measured, runs: lines.map(groupRuns) };
+    metrics: measured, runs: lines.map(groupRuns), ...(error ? { error } : {}) };
 }
 
-function textSvg(element, data, fonts) {
+function textSvg(element, data, fonts, preview = false) {
   const template = element.template;
   const face = (family, weight) => {
     if (!LABEL_FONT_FAMILIES.includes(family) || !LABEL_FONT_WEIGHTS.includes(weight)) throw new Error('Unsupported font family or weight');
@@ -181,7 +184,7 @@ function textSvg(element, data, fonts) {
     append(cursor, to);
   };
   parse(0, text.length, { family, weight, factor: 1, italic: !!element.italic, underline: !!element.underline, color: element.color ?? '#000000' });
-  const layout = layoutRuns(runs, element, defaultFont);
+  const layout = layoutRuns(runs, element, defaultFont, preview);
   const height = layout.height;
   const top = element.y + (element.verticalAlign === 'middle' ? (element.h - height) / 2 : element.verticalAlign === 'bottom' ? element.h - height : 0);
   const parts = [];
@@ -228,7 +231,9 @@ function textSvg(element, data, fonts) {
   });
   const metrics = { ...layout };
   delete metrics.runs;
-  return { svg: parts.join(''), layout: { id: element.id, x: element.x, y: element.y, ...metrics, text: runs.map(run => run.text).join('') } };
+  const svg = parts.join('');
+  return { svg: layout.error ? `<svg x="${element.x}" y="${element.y}" width="${element.w}" height="${element.h}" viewBox="${element.x} ${element.y} ${element.w} ${element.h}" overflow="hidden">${svg}</svg>` : svg,
+    layout: { id: element.id, x: element.x, y: element.y, ...metrics, text: runs.map(run => run.text).join('') } };
 }
 
 function bandsSvg(x, y, w, h, colors, mode = 'bands', radius = 0, stroke = 0) {
@@ -280,11 +285,12 @@ function qrSvg(element, url, sx, sy, thermal, assets, fonts) {
     }
     return { svg: parts.join(''), dots: step * sx, modules: matrix.size, url, level, decorated: element.mode !== 'simple' };
   }
-  const dots = Math.floor(Math.min(Math.round(element.w * sx), Math.round(element.h * sy)) / (matrix.size + 8));
+  // Saved dimensions describe the code itself; its quiet zone extends outside, as in the editor.
+  const dots = Math.round(Math.min(element.w * sx, element.h * sy) / matrix.size);
   if (dots < 3) throw new Error(`QR has ${dots} dots per module; requires at least 3`);
   const edge = (matrix.size + 8) * dots;
-  const x = Math.round(element.x * sx) + Math.floor((Math.round(element.w * sx) - edge) / 2);
-  const y = Math.round(element.y * sy) + Math.floor((Math.round(element.h * sy) - edge) / 2);
+  const x = Math.round((element.x + element.w / 2) * sx - matrix.size * dots / 2) - 4 * dots;
+  const y = Math.round((element.y + element.h / 2) * sy - matrix.size * dots / 2) - 4 * dots;
   const modules = [];
   for (let row = 0; row < matrix.size; row++) for (let col = 0; col < matrix.size; col++) {
     if (matrix.get(row, col)) modules.push(`<rect x="${x + (col + 4) * dots}" y="${y + (row + 4) * dots}" width="${dots}" height="${dots}"/>`);
@@ -293,7 +299,7 @@ function qrSvg(element, url, sx, sy, thermal, assets, fonts) {
 }
 
 // Migrated rows carry flow hints. Keep their saved coordinates untouched.
-function flowElements(source, data, assets, fonts) {
+function flowElements(source, data, assets, fonts, preview) {
   const elements = structuredClone(source), hidden = new Set();
   const shiftAfter = (index, shift) => elements.forEach((next, i) => {
     if (i === index || source[i].y <= source[index].y) return;
@@ -308,7 +314,7 @@ function flowElements(source, data, assets, fonts) {
   }
   elements.forEach((element, index) => {
     if (element.type !== 'text' || element.legacyTextRole !== 'title') return;
-    const { layout } = textSvg(element, data, fonts);
+    const { layout } = textSvg(element, data, fonts, preview);
     const empty = !layout.text.trim();
     const below = element.legacyDividerBelow && elements[index + 1]?.type === 'shape' ? index + 1 : -1;
     const shift = empty ? element.h + 2 * (element.legacyTitleMarginMm ?? 0) + (below >= 0 ? elements[below].h : 0)
@@ -322,7 +328,7 @@ function flowElements(source, data, assets, fonts) {
 }
 
 /** Same V2 preset, same fonts, same code; no DOM or browser text measurement. */
-export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal = true, entityPath = 'spools', pixelWidth = undefined, pixelHeight = undefined } = {}) {
+export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal = true, entityPath = 'spools', pixelWidth = undefined, pixelHeight = undefined, preview = false } = {}) {
   if (preset?.version !== 2 || preset.design?.version !== 2 || !Array.isArray(preset.design.elements) || preset.design.elements.length > 100) throw new Error('Expected a V2 preset');
   const { label, elements } = preset.design;
   if (![label.widthMm, label.heightMm].every(v => Number.isFinite(v) && v > 0)) throw new Error('Invalid label dimensions');
@@ -330,7 +336,7 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
   if (![width, height].every(v => Number.isInteger(v) && v > 0) || width * height > 8000000) throw new Error('Invalid pixel dimensions or pixel budget exceeded');
   const sx = width / label.widthMm, sy = height / label.heightMm;
   const parts = [], text = [], qrs = [];
-  const flowed = flowElements(elements, data, assets, fonts);
+  const flowed = flowElements(elements, data, assets, fonts, preview);
   const sorted = flowed.elements.sort((a, b) => Number(a.type === 'qr') - Number(b.type === 'qr') || (a.z ?? 0) - (b.z ?? 0));
   for (const element of sorted) {
     const zeroArea = element.w === 0 || element.h === 0;
@@ -338,7 +344,7 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
     if (![element.x, element.y, element.w, element.h].every(Number.isFinite) || element.w < 0 || element.h < 0 || zeroArea && !legacyInfo) throw new Error(`Invalid geometry for element ${element.id}`);
     // Parse formatting before deciding whether a migrated zero-area column is empty.
     if (element.type === 'text') {
-      const result = textSvg(element, data, fonts);
+      const result = textSvg(element, data, fonts, preview);
       if (zeroArea && result.layout.text.trim()) throw new Error(`Invalid geometry for element ${element.id}`);
       parts.push(result.svg); text.push(result.layout);
     } else if (element.type === 'image' || element.type === 'manufacturerLogo') {
@@ -349,7 +355,8 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
       try { const custom = new URL(element.urlTemplate); if (element.linkMode === 'url' && ['http:', 'https:'].includes(custom.protocol)) base = custom.href; } catch { /* Same origin fallback as the editor. */ }
       const url = buildQrUrl('url', base, entityPath === 'filaments' ? data['filament.id'] ?? data.id : data.id, entityPath);
       const result = qrSvg(element, url, sx, sy, thermal, assets, fonts);
-      if (thermal && (result.x < 0 || result.y < 0 || result.x + result.edge > width || result.y + result.edge > height)) {
+      if (thermal && (result.x + 4 * result.dots < 0 || result.y + 4 * result.dots < 0
+        || result.x + result.edge - 4 * result.dots > width || result.y + result.edge - 4 * result.dots > height)) {
         throw new Error('Thermal QR box must fit inside the label');
       }
       parts.push(result.svg); qrs.push({ id: element.id, ...result, svg: undefined });

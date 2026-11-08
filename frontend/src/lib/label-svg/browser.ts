@@ -83,6 +83,26 @@ function rasterNode(output: SvgOutput) {
   return image
 }
 
+function showTextFitWarning(node: HTMLElement, error?: string) {
+  node.querySelector('[data-label-fit-warning]')?.remove()
+  node.style.outline = error ? '1px solid #b91c1c' : ''
+  if (!error) {
+    node.removeAttribute('data-label-output-error')
+    node.removeAttribute('aria-invalid')
+    node.removeAttribute('title')
+    return
+  }
+  node.dataset.labelOutputError = error
+  node.setAttribute('aria-invalid', 'true')
+  node.title = error
+  const warning = document.createElement('span')
+  warning.dataset.labelFitWarning = ''
+  warning.setAttribute('role', 'alert')
+  warning.textContent = error
+  warning.style.cssText = 'position:absolute;bottom:0;left:0;max-width:100%;background:#fff;color:#b91c1c;font:10px/1.2 sans-serif;pointer-events:none'
+  node.append(warning)
+}
+
 function hitTargets(options: RenderDesignerLabelOptions, input: SvgInput, output?: SvgOutput) {
   const nodes: HTMLElement[] = []
   if (!options.interactive) return nodes
@@ -107,6 +127,7 @@ function hitTargets(options: RenderDesignerLabelOptions, input: SvgInput, output
       renderEditableText(node, { ...element, fontSizeMm: text?.size ?? element.fontSizeMm }, input.data)
       const content = node.firstElementChild as HTMLElement | null
       if (content) content.style.visibility = 'hidden'
+      showTextFitWarning(node, text?.error)
     }
     const qr = output?.qrs.find((row: { id: string }) => row.id === element.id)
     if (qr) node.dataset.qrModuleCount = String(qr.modules)
@@ -143,7 +164,7 @@ export async function renderSvgDesignerLabel(options: RenderDesignerLabelOptions
       if (!input.thermal && design.elements.some(e => e.type === 'qr' && e.mode === 'colorLogo')) input.assets.qrLogo = await loadImage('/logo-qr.png')
       state.runtime = await runtime()
       if (!current()) return
-      output = renderSvgLabelPng(input, state.runtime)
+      output = renderSvgLabelPng({ ...input, preview: !!options.interactive }, state.runtime)
     } catch (caught) { error = caught }
     if (!current() || root.querySelector('[data-label-composing]')) return
     Object.assign(root.style, { width: design.label.widthMm + 'mm', height: design.label.heightMm + 'mm',
@@ -164,7 +185,7 @@ export async function renderSvgDesignerLabel(options: RenderDesignerLabelOptions
     }
     root.removeAttribute('data-label-output-error')
     root.replaceChildren(rasterNode(output), ...hitTargets(options, input, output))
-    state.invalid = false
+    state.invalid = output.text.some(row => row.error)
   })()
   await state.pending
 }
@@ -173,7 +194,7 @@ export async function renderSvgElementOutput(element: HTMLElement, pixelWidth: n
   const state = contexts.get(element)
   if (!state) throw new LabelOutputAssetError('Shared label context is unavailable')
   await state.pending
-  if (contexts.get(element) !== state || contexts.get(state.owner) !== state || state.invalid || !state.runtime || state.owner.querySelector('[data-label-composing]')) throw new LabelOutputAssetError(element.dataset.labelOutputError || 'Label changed or could not be rendered')
+  if (contexts.get(element) !== state || contexts.get(state.owner) !== state || state.invalid || !state.runtime || state.owner.querySelector('[data-label-composing]')) throw new LabelOutputAssetError(element.dataset.labelOutputError || state.owner.querySelector<HTMLElement>('[data-label-output-error]')?.dataset.labelOutputError || 'Label changed or could not be rendered')
   return renderSvgLabelPng({ ...state.input, pixelWidth, pixelHeight, thermal }, state.runtime)
 }
 
@@ -226,10 +247,13 @@ export function redrawSvgGesture(root: HTMLElement, design: LabelDesignV2) {
     state.frame = undefined
     if (contexts.get(root) !== state) return
     try {
-      const output = renderSvgLabelPng(state.input, state.runtime)
+      const output = renderSvgLabelPng({ ...state.input, preview: true }, state.runtime)
       root.querySelector('[data-label-svg-raster]')?.replaceWith(rasterNode(output))
       root.removeAttribute('data-label-output-error')
-      state.invalid = false
+      for (const node of root.querySelectorAll<HTMLElement>('[data-label-svg-target][data-label-element-type="text"]')) {
+        showTextFitWarning(node, output.text.find(row => row.id === node.dataset.labelElementId)?.error)
+      }
+      state.invalid = output.text.some(row => row.error)
     } catch (error) {
       root.dataset.labelOutputError = error instanceof Error ? error.message : 'Label could not be rendered'
     }

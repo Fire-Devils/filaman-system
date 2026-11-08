@@ -22,9 +22,9 @@ try {
     localStorage.setItem('sidebar-collapsed', 'true')
     localStorage.setItem('filaman-label-active-tab', location.search.includes('ids=') ? 'designer' : 'standard')
   })
-  await page.route('**/api/**', route => {
+  await page.route('**/{api,auth}/**', route => {
     const path = new URL(route.request().url()).pathname
-    const filament = { id: 10, manufacturer_id: 1, manufacturer: { id: 1, name: 'Logo maker' }, designation: 'Ocean Blue PLA', material: 'PLA', color_name: 'Ocean Blue', color_hex: '0088cc', custom_fields: {} }
+    const filament = { id: 10, manufacturer_id: 1, manufacturer: { id: 1, name: 'Logo maker' }, designation: 'Ocean Blue PLA', material: 'PLA', color_name: 'Ocean Blue', color_hex: '0088cc', extruder_temp_range_c: { min: 220, max: 260 }, bed_temp_range_c: { min: 60, max: 80 }, custom_fields: {} }
     let data = []
     if (path.endsWith('/me')) data = { id: 1, email: 'layout@example.test', display_name: 'Layout check', language: 'en', roles: ['user'], permissions: [] }
     if (/\/filaments\/\d+$/.test(path)) data = { ...filament, id: Number(path.split('/').at(-1)) }
@@ -59,6 +59,26 @@ try {
     await page.locator('#preview-zoom-input').fill('100')
     await page.locator('#preview-zoom-input').press('Tab')
     const surface = page.locator('#freeform-canvas-host .label-preview').first()
+    if (path === '/spools/101/print') {
+      await surface.locator('[data-label-element-id="text"]').click()
+      await page.locator('#freeform-json-expand').click()
+      const json = page.locator('#freeform-element-json')
+      const original = JSON.parse(await json.inputValue())
+      for (const [h, failed] of [[8, false], [2, true], [8, false]]) {
+        await json.fill(JSON.stringify({ ...original, w: 28, h, wrap: true, fontSizeMm: 3.2,
+          template: '{filament.extruder_temp_range_c}\n{filament.bed_temp_range_c}' }))
+        await page.locator('#freeform-json-apply').click()
+        await page.waitForFunction(failed => Boolean(document.querySelector('[data-label-element-id="text"][data-label-output-error]')) === failed, failed)
+        assert.equal(await surface.locator('[data-label-svg-raster]').count(), 1)
+        assert.equal(await surface.locator('[data-label-element-id="qr"][data-label-output-error]').count(), 0)
+        assert.equal(await surface.getAttribute('data-label-output-error'), null)
+        if (failed) assert.match(await page.locator('#freeform-text-fit-warning').textContent(), /enlarge|Scale font to fit/i)
+      }
+      await json.fill(JSON.stringify(original))
+      await page.locator('#freeform-json-apply').click()
+      await page.locator('#freeform-json-section [popovertarget="freeform-json-section"]').click()
+      console.log('Temperature text fits and overflow stays in its box')
+    }
     await page.locator('.freeform-canvas-region').click({ position: { x: 8, y: 8 } })
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     const anchor = await surface.boundingBox()

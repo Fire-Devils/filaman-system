@@ -112,6 +112,25 @@ it('reuses font measurements while fitting a long word without losing characters
   } finally { shaping.mockRestore() }
 })
 
+it.each(LABEL_FONT_FAMILIES)('fits temperature rows using the editor line spacing in %s', family => {
+  const result = layoutText('220-260\n60-80', { w: 28, h: 8, fontSizeMm: 3.2, wrap: true }, runtime.fonts[`${family}:400`])
+  expect(result.lines).toEqual(['220-260', '60-80'])
+  expect(result.height).toBeCloseTo(7.36)
+})
+
+it.each([203, 300])('keeps thermal QR artwork at its designed size at %s DPI', dpi => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'qr', type: 'qr', x: 8, y: 6, w: 18, h: 18, z: 0, mode: 'simple' }] as SvgInput['preset']['design']['elements']
+  value.pixelWidth = Math.round(40 * dpi / 25.4)
+  value.pixelHeight = Math.round(30 * dpi / 25.4)
+  const preview = render(value).qrs[0]
+  const output = render({ ...value, thermal: true }), qr = output.qrs[0]
+  const scale = output.width / 40
+  expect(Math.abs(qr.modules * qr.dots / scale - 18)).toBeLessThanOrEqual(qr.modules / scale / 2)
+  expect((qr.x! + 4 * qr.dots + qr.modules * qr.dots / 2) / scale).toBeCloseTo(17, 0)
+  expect(preview.dots * preview.modules / scale).toBeCloseTo(18)
+})
+
 it.each([[-5, 5], [30, 5], [5, -5], [5, 20]])('rejects a thermal QR clipped at %s,%s', (x, y) => {
   const value = input()
   value.thermal = true
@@ -148,7 +167,7 @@ it('keeps multiple QR hit boxes and opaque clearance above non-QR artwork', () =
   expect(result.qrs.map((qr: { id: string }) => qr.id)).toEqual(['qr-a', 'qr-b'])
   expect(result.boxes).toHaveLength(3)
   for (const qr of result.qrs) {
-    const index = (qr.y! * result.width + qr.x!) * 4
+    const index = (Math.max(0, qr.y!) * result.width + Math.max(0, qr.x!)) * 4
     expect(Array.from(result.pixels.slice(index, index + 4))).toEqual([255, 255, 255, 255])
     expect(qr.dots).toBeGreaterThanOrEqual(3)
   }

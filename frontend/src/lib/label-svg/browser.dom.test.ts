@@ -24,6 +24,28 @@ function design(): LabelDesignV2 {
 }
 function root() { const node = document.createElement('div'); document.body.append(node); return node }
 
+it('keeps the label visible and marks only overflowing text boxes with repair advice', async () => {
+  const element = root(), value = design()
+  value.elements = value.elements.filter(e => e.id !== 'logo' && e.id !== 'title')
+  const info = value.elements.find(e => e.id === 'info')!
+  Object.assign(info, { template: '220-260\n60-80', h: 2, legacyTextRole: undefined })
+  await renderDesignerLabel({ element, design: value, data, interactive: true })
+  expect(element.querySelector('[data-label-svg-raster]')).not.toBeNull()
+  expect(element.hasAttribute('data-label-output-error')).toBe(false)
+  const failed = element.querySelector<HTMLElement>('[data-label-element-id="info"]')!
+  expect(failed.dataset.labelOutputError).toMatch(/enlarge|Scale font to fit/i)
+  expect(failed.querySelector('[role="alert"]')?.textContent).toContain('Text does not fit')
+  expect(element.querySelector('[data-label-element-id="qr"]')?.hasAttribute('data-label-output-error')).toBe(false)
+  await expect(renderSvgElementOutput(element, 480, 360, false)).rejects.toThrow(/fit/i)
+  Object.assign(info, { h: 12 })
+  redrawSvgGesture(element, value)
+  await new Promise(requestAnimationFrame)
+  expect(element.querySelector('[data-label-element-id="info"]')).toBe(failed)
+  expect(failed.hasAttribute('data-label-output-error')).toBe(false)
+  expect(failed.querySelector('[role="alert"]')).toBeNull()
+  await expect(renderSvgElementOutput(element, 480, 360, false)).resolves.toBeTruthy()
+})
+
 it('keeps field selection on the editing overlay and omits it from printable output', async () => {
   const element = root(), value = design()
   value.elements = [{ ...value.elements.find(e => e.id === 'info')!, template: '**{filament.name}**' } as LabelDesignV2['elements'][number]]
