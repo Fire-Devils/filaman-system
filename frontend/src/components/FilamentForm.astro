@@ -556,10 +556,10 @@ type InputAttributes = HTMLAttributes<'input'>
   }
   @container detail-page (max-width: 46rem) {
     .filament-form-sections { grid-template-columns: minmax(0, 1fr); }
+    .filament-editor-manufacturer { grid-template-columns: minmax(0, 1fr); width: 100%; }
+    #fil-fdb-section { position: static; width: 100%; }
   }
   @media (max-width: 820px) {
-    .filament-editor-manufacturer { grid-template-columns: 1fr; width: 100%; }
-    #fil-fdb-section { position: static; width: 100%; }
     .filament-form-sections { grid-template-columns: 1fr; }
     .filament-color-action-row { flex-wrap: wrap; }
   }
