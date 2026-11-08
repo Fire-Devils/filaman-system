@@ -109,17 +109,25 @@ export function clearState() {
   i18n.setLang('en')
 }
 export type Transport = (path: string, init?: RequestInit) => Response | Promise<Response> | undefined
-export function mockHttp(
-  options: { filament?: any; spool?: any; printers?: any[]; intercept?: Transport; system?: any[] } = {},
-) {
-  let filament = structuredClone(options.filament ?? baseFilament),
-    spool = structuredClone(options.spool ?? baseSpool)
-  const printerValues: Record<string, any> = {},
-    calls: { path: string; method: string; body: any }[] = []
+type FixtureRecord = Record<string, unknown>
+type PrinterParams = ReturnType<typeof printerSetup.parameterChanges>['updates']
+type FixtureBody = FixtureRecord & { params?: PrinterParams; custom_fields?: FixtureRecord | null }
+
+export function mockHttp(options: {
+  filament?: FixtureRecord
+  spool?: FixtureRecord
+  printers?: FixtureRecord[]
+  intercept?: Transport
+  system?: extraFields.SystemExtraFieldDef[]
+} = {}) {
+  let filament: FixtureRecord = structuredClone(options.filament ?? baseFilament),
+    spool: FixtureRecord = structuredClone(options.spool ?? baseSpool)
+  const printerValues: Partial<Record<string, PrinterParams>> = {},
+    calls: { path: string; method: string; body: FixtureBody | undefined }[] = []
   const fetch = vi.fn(async (input: unknown, init?: RequestInit) => {
     const path = String(input),
       method = init?.method || 'GET',
-      body = init?.body ? JSON.parse(String(init.body)) : undefined
+      body: FixtureBody | undefined = init?.body ? JSON.parse(String(init.body)) : undefined
     calls.push({ path, method, body })
     const override = options.intercept?.(path, init)
     if (override) return await override
@@ -171,8 +179,9 @@ export function mockHttp(
       const key = pathname + '/' + (url.searchParams.get('printer_id') ?? '')
       if (method === 'GET') return Response.json(printerValues[key] ?? [])
       if (method === 'PUT') {
-        printerValues[pathname.replace(/\/(\d+)$/, '') + '/' + pathname.split('/').at(-1)] = body.params
-        return Response.json(body.params)
+        const params = body!.params
+        printerValues[pathname.replace(/\/(\d+)$/, '') + '/' + pathname.split('/').at(-1)] = params
+        return Response.json(params)
       }
       return new Response(null, { status: 204 })
     }
@@ -208,10 +217,10 @@ export function mockHttp(
     get spool() {
       return spool
     },
-    setFilament(v: any) {
+    setFilament(v: typeof filament) {
       filament = v
     },
-    setSpool(v: any) {
+    setSpool(v: typeof spool) {
       spool = v
     },
     printerValues,

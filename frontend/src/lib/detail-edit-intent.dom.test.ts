@@ -183,8 +183,8 @@ it.each(['native', 'extra'] as const)('saves a reverted accepted spool %s value 
   submit('spool')
   await vi.waitFor(() => expect(http.calls.filter(call => call.method === 'PATCH')).toHaveLength(2))
   const body = http.calls.filter(call => call.method === 'PATCH')[1].body
-  if (field === 'native') expect(body.lot_number).toBe(original)
-  else expect(body.custom_fields.note).toBe('Dry')
+  if (field === 'native') expect(body?.lot_number).toBe(original)
+  else expect(body?.custom_fields?.note).toBe('Dry')
 })
 
 it.each(['colors', 'extra'] as const)('saves reverted accepted filament %s after printer failure', async field => {
@@ -208,7 +208,7 @@ it.each(['colors', 'extra'] as const)('saves reverted accepted filament %s after
   if (field === 'colors') {
     expect(http.calls.filter(call => call.path.endsWith('/colors') && call.method === 'PUT')).toHaveLength(2)
     expect(http.filament.colors).toEqual([{ color_id: 11, position: 1 }])
-  } else expect(http.calls.filter(call => call.method === 'PATCH')[1].body.custom_fields.note).toBe('Dry')
+  } else expect(http.calls.filter(call => call.method === 'PATCH')[1].body?.custom_fields?.note).toBe('Dry')
 })
 
 it.each([
@@ -230,7 +230,7 @@ it.each([
   submit('filament')
   await vi.waitFor(() => expect(http.calls.filter(call => call.method === 'PATCH')).toHaveLength(2))
   const patch = http.calls.filter(call => call.method === 'PATCH')[1].body
-  if (action === 'revert') expect(patch[key]).toBe(original)
+  if (action === 'revert') expect(patch?.[key]).toBe(original)
   else {
     expect(patch).toEqual({})
     expect(http.calls.filter(call => call.path.endsWith('/colors') && call.method === 'PUT')).toHaveLength(2)

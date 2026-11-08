@@ -18,7 +18,7 @@ import {
 import { buildFilamentHeroStyle, buildFilamentSwatchStyle } from './filament-detail'
 import { filamentSections, type FilamentField } from './filament-fields'
 import { t } from './i18n'
-import { createSpoolProfilePicker } from './filament-spool-profile'
+import { createSpoolProfilePicker, type SpoolProfile } from './filament-spool-profile'
 import { bindInlineColorEditor } from './inline-color-editor'
 import {
   ADD_MANUFACTURER_VALUE,
@@ -61,7 +61,31 @@ const DEFAULT_DENSITIES: Record<string, number> = {
 
 type FormMode = 'create' | 'edit'
 type Color = { id: number; name: string; hex_code: string }
-type InitialData = Record<string, any>
+export type FilamentFormData = Record<string, unknown> & {
+  manufacturer_id?: number | null
+  manufacturer?: Manufacturer | null
+  material_type?: string | null
+  filamentdb_spool_image_file?: string | null
+  filamentdb_spool_profile_id?: number | null
+  colors?: Array<{ color_id: number; position?: number; color?: Color | null }> | null
+  custom_fields?: EntityExtraFieldPayload['customFields']
+  custom_field_definitions?: EntityExtraFieldPayload['customFieldDefinitions']
+}
+
+type CatalogFilament = Record<string, unknown> & {
+  name?: string | null
+  designation?: string | null
+  colors?: Array<{ hex_code?: string | null; color_name?: string | null; name?: string | null; position?: number }> | null
+  manufacturer?: {
+    name?: string | null
+    website?: string | null
+    slug?: string | null
+    has_web_logo?: boolean
+    has_label_logo?: boolean
+  } | null
+  material?: { key?: string | null; name?: string | null } | null
+  spool_profile?: Partial<SpoolProfile> | null
+}
 type FormSnapshot = Record<string, string>
 
 interface FilamentFormPayload {
@@ -732,14 +756,14 @@ export function createFilamentFormController(options: {
     bindFilamentDbLookupToManufacturer(manufacturerSelect, lookupSearchAll, lookupSection, (scopedToManufacturer) => {
       catalogRequest++
       lookupToast.style.display = 'none'
-      return createFilamentDbLookup<any>({
+      return createFilamentDbLookup<CatalogFilament>({
         container: lookupContainer,
         endpoint: '/filamentdb/filaments',
         placeholder: t('filamentdbLookup.searchFilament'),
         extraParams: scopedToManufacturer ? { manufacturer_name: selectedManufacturerName() } : {},
         renderItem(item) {
           const colors = (item.colors || [])
-            .map((color: any) => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${toColorSwatchBackground(color.hex_code)};border:1px solid var(--border);vertical-align:middle"></span>`)
+            .map(color => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${toColorSwatchBackground(color.hex_code)};border:1px solid var(--border);vertical-align:middle"></span>`)
             .join(' ')
           const traits = Object.entries(item.traits || {})
             .filter(([, enabled]) => enabled)
@@ -802,7 +826,7 @@ export function createFilamentFormController(options: {
                 shop_url: item.shop_url || null,
                 color_mode: (item.colors || []).length > 1 ? 'multi' : 'single',
                 multi_color_style: item.multi_color_style || null,
-                colors: (item.colors || []).map((color: any, index: number) => ({
+                colors: (item.colors || []).map((color, index) => ({
                   hex_code: color.hex_code || '',
                   color_name: color.color_name || color.name || '',
                   position: color.position || index + 1,
@@ -990,7 +1014,7 @@ export function createFilamentFormController(options: {
     setField(`${prefix}_to`, range.min !== range.max ? range.max : null)
   }
 
-  function applyInitialData(data: InitialData, source: 'initial' | 'duplicate' | 'catalog' | 'plugin' = 'initial'): void {
+  function applyInitialData(data: FilamentFormData, source: 'initial' | 'duplicate' | 'catalog' | 'plugin' = 'initial'): void {
     if (Object.hasOwn(data, 'filamentdb_spool_image_file')) spoolImageFile = data.filamentdb_spool_image_file ?? null
     if (Object.hasOwn(data, 'filamentdb_spool_profile_id')) spoolProfileId = data.filamentdb_spool_profile_id ?? null
     const hasValue = (key: string): boolean => {
@@ -1176,7 +1200,7 @@ export function createFilamentFormController(options: {
     if (!Array.isArray(units) || units.length > 50) return { staged, skipped }
     const current = readPluginDraft()
     const sameDraft = serialize(draft) === serialize(current) && !submitting && !destroyed
-    const values: InitialData = {}
+    const values: FilamentFormData = {}
     for (const unit of units) {
       if (!isRecord(unit)) continue
       const changes = Object.entries(unit)
@@ -1209,7 +1233,7 @@ export function createFilamentFormController(options: {
         payloadBaseline.scalar[key] = raw
       }
     }
-    if (Object.hasOwn(values, 'color_id')) values.colors = [{ color_id: values.color_id, position: 1 }]
+    if (Object.hasOwn(values, 'color_id')) values.colors = [{ color_id: values.color_id as number, position: 1 }]
     preserveDraftSpoolFields = true
     try {
       applyInitialData(values, 'plugin')
@@ -1255,7 +1279,7 @@ export function createFilamentFormController(options: {
     stagePluginDraft,
     loadReferenceData,
     applyInitialData,
-    resetInitialData(data: InitialData) {
+    resetInitialData(data: FilamentFormData) {
       catalogRequest++
       manufacturerDialog?.close()
       closeColorDialog()
