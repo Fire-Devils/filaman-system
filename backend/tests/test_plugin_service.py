@@ -373,7 +373,8 @@ class TestPluginDBOperations:
         assert plugin.is_active is False
 
     @pytest.mark.asyncio
-    async def test_uninstall_not_found(self, db_session):
+    async def test_uninstall_not_found(self, db_session, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.services.plugin_service.PLUGINS_DIR", tmp_path)
         service = PluginInstallService(db_session)
 
         with pytest.raises(PluginInstallError) as excinfo:

@@ -1073,10 +1073,11 @@ async def test_native_temperature_clear_survives_backup_restore(
 
 @pytest.mark.parametrize("cleanup", ["killswitch", "uninstall"])
 async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
-    db_session, monkeypatch, cleanup
+    db_session, monkeypatch, cleanup, tmp_path
 ):
     from app.api.v1 import system
     from app.core.security import Principal
+    from app.models.plugin import InstalledPlugin
 
     manufacturer = Manufacturer(name="Native Cleanup Test")
     printer = Printer(name="Bambu", driver_key="bambulab")
@@ -1097,10 +1098,12 @@ async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
     if cleanup == "killswitch":
         await system.killswitch(db_session, principal)
     else:
-        async def keep_plugin_files(_service, _plugin_key):
-            pass
-
-        monkeypatch.setattr(system.PluginInstallService, "uninstall", keep_plugin_files)
+        monkeypatch.setattr("app.services.plugin_service.PLUGINS_DIR", tmp_path)
+        db_session.add(InstalledPlugin(
+            plugin_key="bambulab", name="Bambu Lab", version="1.0.0",
+            installed_by=principal.user_id,
+        ))
+        await db_session.commit()
         await system.uninstall_plugin("bambulab", db_session, principal, delete_data=True)
     assert await db_session.scalar(select(FilamentPrinterInitialization)) is None
 
