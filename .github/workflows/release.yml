@@ -16,6 +16,8 @@ permissions:
 
 jobs:
   release:
+    # Nur auf GitHub bauen – Gitea (origin) ist reiner Mirror und liest .github/workflows mit
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository (full history)

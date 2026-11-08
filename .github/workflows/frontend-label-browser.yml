@@ -13,6 +13,8 @@ on:
 
 jobs:
   label-browser:
+    # Nur auf GitHub bauen – Gitea (origin) ist reiner Mirror und liest .github/workflows mit
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     defaults:
       run:
