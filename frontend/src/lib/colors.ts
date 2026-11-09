@@ -177,11 +177,11 @@ export function bindAlphaColorControls(controls: AlphaColorControls) {
     alphaOptions.classList.toggle('hidden', !enabled)
   }
 
-  function syncFromHex(value = hexInput.value): boolean {
-    const normalized = normalizeHexCode(value)
+  function syncFromHex({ normalizeInput = true } = {}): boolean {
+    const normalized = normalizeHexCode(hexInput.value)
     if (!normalized) return false
 
-    hexInput.value = normalized
+    if (normalizeInput) hexInput.value = normalized
     picker.value = toOpaqueRgbHex(normalized)
     setAlphaEnabled(normalized.length === 9)
     if (normalized.length === 9) {
@@ -251,7 +251,7 @@ export function bindAlphaColorControls(controls: AlphaColorControls) {
 
   function reset(value = '#FF0000'): void {
     hexInput.value = value
-    syncFromHex(value)
+    syncFromHex()
   }
 
   picker.addEventListener('input', syncFromPicker)
@@ -261,7 +261,8 @@ export function bindAlphaColorControls(controls: AlphaColorControls) {
   alphaHexInput.addEventListener('input', syncFromAlphaHex)
   alphaHexInput.addEventListener('change', normalizeAlphaHex)
   alphaEnabled.addEventListener('change', syncFromAlphaEnabled)
-  hexInput.addEventListener('input', () => syncFromHex())
+  hexInput.addEventListener('input', () => syncFromHex({ normalizeInput: false }))
+  hexInput.addEventListener('change', () => syncFromHex())
 
   return {
     reset,

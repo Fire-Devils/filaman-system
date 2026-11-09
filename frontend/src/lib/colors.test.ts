@@ -175,6 +175,27 @@ describe('color helpers', () => {
     expect(hexInput.value).toBe('#336699')
   })
 
+  it.each([
+    ['#123456', '#123456'],
+    ['123456ab', '#123456AB'],
+    ['#aBc', '#AABBCC'],
+    ['#aBcD', '#AABBCCDD'],
+  ])('preserves %s while typing and normalizes it on change', (typed, normalized) => {
+    const { hexInput, picker, alphaEnabled } = createAlphaControls()
+
+    for (const char of typed) {
+      hexInput.value += char
+      hexInput.dispatchEvent(new Event('input'))
+    }
+
+    expect(hexInput.value).toBe(typed)
+    expect(picker.value.toUpperCase()).toBe(normalized.slice(0, 7))
+    expect(alphaEnabled.checked).toBe(normalized.length === 9)
+
+    hexInput.dispatchEvent(new Event('change'))
+    expect(hexInput.value).toBe(normalized)
+  })
+
   it('derives the opacity checkbox from a manually entered AA suffix', () => {
     const {
       controls,
