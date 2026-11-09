@@ -690,7 +690,9 @@ async def test_plugin_changes_on_a_secondary_forward_before_writing(auth_client,
         "config_schema": None, "is_active": True, "show_in_nav": False,
         "installed_at": "2026-11-08T00:00:00Z", "installed_by": 1,
     }}
-    forwarded = AsyncMock(side_effect=[installed, None, installed])
+    enabled = {"plugin": installed["plugin"], "affected_printers": 1}
+    disabled = {"plugin": {**installed["plugin"], "is_active": False}, "affected_printers": 1}
+    forwarded = AsyncMock(side_effect=[installed, None, installed, disabled, enabled])
     monkeypatch.setattr(system, "_proxy_to_primary", forwarded)
     headers = {"X-CSRF-Token": token}
     path = "/api/v1/admin/system/plugins"
@@ -712,7 +714,15 @@ async def test_plugin_changes_on_a_secondary_forward_before_writing(auth_client,
     assert forwarded.await_args.args[1:4] == (
         "POST", f"{path}/install-from-registry", selection(entry()).model_dump(),
     )
-    assert forwarded.await_count == 3
+    for expected in (disabled, enabled):
+        body = {"is_active": expected["plugin"]["is_active"]}
+        response = await client.patch(f"{path}/test_plugin/active", json=body, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json()["affected_printers"] == 1
+        assert response.json()["plugin"]["is_active"] is body["is_active"]
+        assert forwarded.await_args.args[1:4] == ("PATCH", f"{path}/test_plugin/active", body)
+        assert forwarded.await_args.kwargs["timeout"] == 120.0
+    assert forwarded.await_count == 5
 
     forged_hop = await client.delete(f"{path}/test_plugin", headers={"X-FilaMan-Primary-Hop": "1"})
     assert forged_hop.status_code == 403
