@@ -1,4 +1,4 @@
-export async function copyText(text: string): Promise<boolean> {
+export async function copyText(text: string, container: HTMLElement = document.body): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text)
@@ -8,12 +8,14 @@ export async function copyText(text: string): Promise<boolean> {
     // Fall back for HTTP deployments and denied clipboard permissions.
   }
 
+  const previousFocus = document.activeElement
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.readOnly = true
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
+  // A native modal makes the rest of the document inert.
+  container.appendChild(textarea)
   textarea.select()
 
   try {
@@ -22,5 +24,6 @@ export async function copyText(text: string): Promise<boolean> {
     return execCommand?.call(document, 'copy') ?? false
   } finally {
     textarea.remove()
+    if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true })
   }
 }

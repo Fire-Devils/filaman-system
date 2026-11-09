@@ -7,7 +7,7 @@ const floats = { drying_time_hours: 6.25, max_volumetric_speed_mm3_s: 18.55, flo
 const ranges = { extruder_temp: { min: 195.25, max: 220.75 }, bed_temp: { min: 55.25, max: 65.75 }, cooling_fan: { min: 30.25, max: 80.75 } }
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true })
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
+  const page = await browser.newPage({ viewport: { width: 1000, height: 1100 } })
   page.setDefaultTimeout(15000)
   page.on('pageerror', error => console.error(error.message))
   const writes = []
@@ -27,8 +27,8 @@ try {
     }
     let json = []
     if (path.endsWith('/me')) json = { id: 1, email: 'fixture@example.invalid', language: 'en', is_superadmin: true, permissions: [], roles: [] }
-    else if (path.endsWith('/public-info')) json = { filament_lookup_source: 'disabled' }
-    else if (path.endsWith('/status')) json = { active: false }
+    else if (path.endsWith('/public-info')) json = { filament_lookup_source: 'filamandb' }
+    else if (path === '/api/v1/filamentdb/status') json = { active: true }
     else if (path.endsWith('/manufacturers')) json = { items: [{ id: 7, name: 'Fixture Brand', empty_spool_weight_g: 210, spool_material: 'Cardboard', spool_outer_diameter_mm: 200, spool_width_mm: 65 }], total: 1 }
     else if (path.endsWith('/types')) json = ['PLA']
     else if (path.endsWith('/colors')) json = { items: [{ id: 11, name: 'Red', hex_code: '#FF0000' }, { id: 12, name: 'Blue', hex_code: '#0000FF' }], total: 2 }
@@ -36,6 +36,25 @@ try {
   })
   await page.goto(new URL('/filaments/new', baseUrl).href, { waitUntil: 'domcontentloaded', timeout: 15000 })
   await page.waitForFunction(() => document.querySelector('#designation')?.value === 'Precision PLA', null, { timeout: 15000 })
+  const catalogSearch = page.locator('#fil-lookup-container input')
+  await catalogSearch.waitFor()
+  const manufacturer = page.locator('#manufacturer_id')
+  const wideManufacturer = await manufacturer.boundingBox()
+  const wideSearch = await catalogSearch.boundingBox()
+  assert.ok(wideSearch.x >= wideManufacturer.x + wideManufacturer.width, 'wide form keeps catalog search beside the manufacturer')
+
+  await page.locator('#sidebar-toggle[aria-expanded="false"]').click()
+  await page.locator('#fm-page').evaluate(page => Promise.all(page.getAnimations().map(animation => animation.finished)))
+  const narrowManufacturer = await manufacturer.boundingBox()
+  const narrowSearch = await catalogSearch.boundingBox()
+  assert.ok(narrowSearch.y >= narrowManufacturer.y + narrowManufacturer.height,
+    'catalog search stacks below the manufacturer when the expanded sidebar narrows the form')
+  assert.ok(narrowSearch.x >= narrowManufacturer.x &&
+    narrowSearch.x + narrowSearch.width <= narrowManufacturer.x + narrowManufacturer.width,
+    'stacked catalog search stays within the manufacturer field')
+  assert.ok(narrowSearch.width >= narrowManufacturer.width - 24, 'stacked catalog search uses the available width')
+  await page.setViewportSize({ width: 1440, height: 1100 })
+
   // Native validation uses the rendered Astro inputs, not a reconstructed form.
   for (const [id, value] of Object.entries(floats)) await page.locator(`#${id}`).fill(String(value))
   for (const [prefix, value] of Object.entries(ranges)) {
@@ -138,7 +157,7 @@ try {
     await page.locator('#filament-color-dialog-close').click()
     assert.equal(await page.locator('#filament-color-dialog').evaluate(el => el.open), false)
   }
-  console.log('PASS production filament form: native modal tooltip hover/focus paint order, float precision, nullable pattern, manufacturer Cancel/focus, nested filter Escape, inline editor cleanup, native Enter submission, mobile color dialog pattern/Close reachability; all API writes intercepted')
+  console.log('PASS production filament form: responsive catalog search, native modal tooltip hover/focus paint order, float precision, nullable pattern, manufacturer Cancel/focus, nested filter Escape, inline editor cleanup, native Enter submission, mobile color dialog pattern/Close reachability; all API writes intercepted')
 } catch (error) {
   console.error(error)
   throw error

@@ -18,7 +18,8 @@ COPY frontend/ ./
 COPY version.txt ./
 
 # Build the frontend
-RUN BUILD_MODE=static npm run build
+RUN BUILD_MODE=static npm run build \
+    && mv dist/plugin-view/_shell/index.html plugin-shell.html
 
 # --- Backend Build Stage ---
 FROM python:3.11-slim-trixie AS backend-builder
@@ -83,6 +84,8 @@ RUN chmod 600 /app/.env
 # Copy built frontend to the static directory
 # The FastAPI app must be configured to serve static files from this directory.
 COPY --from=frontend-builder /app/frontend/dist /app/static
+# Serve the integration shell only through the backend's active-plugin check.
+COPY --from=frontend-builder /app/frontend/plugin-shell.html /app/plugin-shell.html
 
 # Copy version.txt so the backend can read the installed version
 COPY version.txt /app/version.txt
@@ -113,4 +116,4 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 # Gunicorn reads the worker count from WEB_CONCURRENCY; each worker holds a
 # full copy of the app (~90 MB), so small hosts can run fewer.
 ENV WEB_CONCURRENCY=4
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--pid", "/tmp/filaman-gunicorn.pid", "--access-logfile", "-", "app.main:app"]
+CMD ["gunicorn", "--config", "/app/gunicorn.conf.py", "-k", "uvicorn.workers.UvicornWorker", "--bind", "127.0.0.1:8001", "--timeout", "120", "--keep-alive", "5", "--pid", "/tmp/filaman-gunicorn.pid", "--access-logfile", "-", "app.main:app"]

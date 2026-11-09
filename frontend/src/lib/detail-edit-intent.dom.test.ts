@@ -85,6 +85,7 @@ it('preserves explicit native clears, zero and false and performs intentional co
   change('[name="manufacturer_sku"]', '')
   change('[name="drying_temp_c"]', '0')
   change('[name="is_discontinued"]', false)
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Blue "]')!.click()
   submit('filament')
   await vi.waitFor(() => expect(http.calls.some(call => call.method === 'PUT')).toBe(true))
@@ -119,6 +120,7 @@ it('keeps an edited color draft available after a failed color PUT and retries i
   change('[name="designation"]', 'Saved scalar')
   change('[name="color_mode"][value="multi"]', true, 'change')
   change('[name="multi_color_style"]', 'gradient', 'change')
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Blue "]')!.click()
   submit('filament')
   await vi.waitFor(() => expect(document.getElementById('error-message')!.textContent).toBe('Colors failed'))
@@ -143,6 +145,7 @@ it.each([false, true])('saves a native revert after a color failure, including a
   } })
   page = await pageFixture('filament', true)
   change('[name="designation"]', 'Accepted B')
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Blue "]')!.click()
   submit('filament')
   if (duringPatch) {
@@ -152,6 +155,7 @@ it.each([false, true])('saves a native revert after a color failure, including a
   }
   await vi.waitFor(() => expect(document.getElementById('error-message')!.textContent).toBe('Colors failed'))
   if (!duringPatch) change('[name="designation"]', baseFilament.designation)
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Red "]')!.click()
   expect(document.querySelector<HTMLButtonElement>('#submit-btn')!.disabled).toBe(false)
   failColors = false
@@ -179,19 +183,21 @@ it.each(['native', 'extra'] as const)('saves a reverted accepted spool %s value 
   submit('spool')
   await vi.waitFor(() => expect(http.calls.filter(call => call.method === 'PATCH')).toHaveLength(2))
   const body = http.calls.filter(call => call.method === 'PATCH')[1].body
-  if (field === 'native') expect(body.lot_number).toBe(original)
-  else expect(body.custom_fields.note).toBe('Dry')
+  if (field === 'native') expect(body?.lot_number).toBe(original)
+  else expect(body?.custom_fields?.note).toBe('Dry')
 })
 
 it.each(['colors', 'extra'] as const)('saves reverted accepted filament %s after printer failure', async field => {
   let failPrinter = true
   const http = mockHttp({ printers: [{ id: 1, name: 'Printer', driver_key: 'generic', is_active: true }], system: [{ key: 'note', label: 'Note', field_type: 'text' }], intercept: (path, init) => path.includes('/printer-params/') && init?.method === 'PUT' && failPrinter ? Response.json({ message: 'Printer failed' }, { status: 500 }) : undefined })
   page = await pageFixture('filament', true)
+  if (field === 'colors') document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   if (field === 'colors') document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Blue "]')!.click()
   else change('#system-fields-grid [data-key="note"]', 'Wet')
   change('[data-setup-value="bambu_k_value"]', '0.025')
   submit('filament')
   await vi.waitFor(() => expect(document.getElementById('error-message')!.textContent).toContain('Printer failed'))
+  if (field === 'colors') document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   if (field === 'colors') document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Red "]')!.click()
   else change('#system-fields-grid [data-key="note"]', 'Dry')
   change('[data-setup-value="bambu_k_value"]', '')
@@ -202,7 +208,7 @@ it.each(['colors', 'extra'] as const)('saves reverted accepted filament %s after
   if (field === 'colors') {
     expect(http.calls.filter(call => call.path.endsWith('/colors') && call.method === 'PUT')).toHaveLength(2)
     expect(http.filament.colors).toEqual([{ color_id: 11, position: 1 }])
-  } else expect(http.calls.filter(call => call.method === 'PATCH')[1].body.custom_fields.note).toBe('Dry')
+  } else expect(http.calls.filter(call => call.method === 'PATCH')[1].body?.custom_fields?.note).toBe('Dry')
 })
 
 it.each([
@@ -224,7 +230,7 @@ it.each([
   submit('filament')
   await vi.waitFor(() => expect(http.calls.filter(call => call.method === 'PATCH')).toHaveLength(2))
   const patch = http.calls.filter(call => call.method === 'PATCH')[1].body
-  if (action === 'revert') expect(patch[key]).toBe(original)
+  if (action === 'revert') expect(patch?.[key]).toBe(original)
   else {
     expect(patch).toEqual({})
     expect(http.calls.filter(call => call.path.endsWith('/colors') && call.method === 'PUT')).toHaveLength(2)
@@ -277,10 +283,12 @@ it('preserves a newer color draft while its prior color PUT is pending', async (
     }
   } })
   page = await pageFixture('filament', true)
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Blue "]')!.click()
   change('[data-setup-value="bambu_k_value"]', '0.025')
   submit('filament')
   await vi.waitFor(() => expect(finishColors).toBeDefined())
+  document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
   document.querySelector<HTMLButtonElement>('#color-grid button[aria-label^="Red "]')!.click()
   finishColors()
   await vi.waitFor(() => expect(document.getElementById('error-message')!.textContent).toContain('Printer failed'))

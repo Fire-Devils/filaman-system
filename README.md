@@ -15,6 +15,8 @@ FilaMan is a comprehensive filament management system for 3D printing. It helps 
 
 ### Documentation
 The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
+
+To browse, install, or submit plugins, see the [plugin catalog guide](plugin-catalog/README.md).
 See the [label rendering and print-request API](docs/label-api.md) for device and client integration.
 
 ### 💡 Hardware Extension: FilaMan ESP32 Scale
@@ -47,7 +49,7 @@ as an official Bambu RFID spool.
 - **Catalogs and Imports:** Search FilaManDB for filament specifications and import existing inventory from Spoolman.
 - **Dual RFID Tags:** Store two RFID tag UIDs per spool, so either side of a dual-tag spool can identify the same inventory item.
 - **Multi-User:** Role-based access control and tenant support.
-- **Printer Integration:** Plugin system to connect with 3D printers and AMS units.
+- **Printer Integration:** Plugin system to connect with 3D printers and AMS units. Plugin authors can supply [custom icon assets](docs/plugin-icons.md).
 - **Bambuddy Integration:** Synchronize spool inventory and AMS assignments, track filament use, and automatically apply custom Bambu Cloud slicer profiles.
 - **Printable Labels:** Print and export spool or filament labels with QR codes, custom layouts, grouped and searchable field tokens, and label-paper sheet output.
 - **Database Support:** Works with SQLite (default), MySQL, and PostgreSQL.

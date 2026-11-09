@@ -39,6 +39,10 @@ const resolvedPrintButtonId = printButtonId ?? 'btn-print'
   </button>
   <button id="btn-reset" class="fm-btn fm-btn-outline" type="button" data-i18n={resetI18n}>{resetLabel}</button>
   <p id="label-output-status" class="label-output-status" role="status" aria-live="polite"></p>
+  <div id="freeform-output-warning" class="label-layout-warning" hidden>
+    <span id="freeform-output-reason" role="status"></span>
+    <button id="freeform-select-overflow" class="fm-btn fm-btn-outline" type="button" data-i18n="labelDesigner.selectTextBox">Select text box</button>
+  </div>
 
   <div class="print-help-row">
     <div class="print-help">
@@ -127,6 +131,17 @@ const resolvedPrintButtonId = printButtonId ?? 'btn-print'
     color: var(--text-muted);
     font-size: 0.75rem;
   }
+
+  .label-layout-warning {
+    background: var(--bg-soft);
+    border: 1px solid var(--label-danger, #ff8a80);
+    border-radius: var(--radius-sm);
+    display: grid;
+    font-size: 0.75rem;
+    gap: 6px;
+    padding: 8px;
+  }
+  .label-layout-warning[hidden], .label-layout-warning [hidden] { display: none; }
 
   .export-buttons .fm-btn {
     min-width: 0;

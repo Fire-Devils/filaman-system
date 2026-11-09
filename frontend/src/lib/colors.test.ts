@@ -7,6 +7,7 @@ import {
   bindAlphaColorControls,
   composeHexWithAlpha,
   filamentColorValues,
+  inventoryColorMatcher,
   composeHexWithAlphaByte,
   getAlphaPercent,
   normalizeHexCode,
@@ -31,6 +32,18 @@ describe('filament table color values', () => {
   it('returns hex codes for the color-range filter', () => {
     expect(filamentColorValues(filament, 'hex_code')).toEqual(['#FF0000', '#FFFFFF00'])
   })
+})
+
+it('keeps exact color stops distinct in the inventory fallback', () => {
+  const item = (color_id: number, name = 'Silk') => ({ colors: [{ color_id, color: { name } }] })
+  const filter = { type: 'multi' as const, values: ['Silk', 'Gray', ''], colorStopIds: [['Silk', [21]]] as [string, number[]][] }
+  const matches = inventoryColorMatcher(filter)
+  expect(matches(item(21))).toBe(true)
+  expect(matches(item(21, 'Renamed'))).toBe(true)
+  expect(matches(item(22))).toBe(false)
+  expect(matches(item(22, 'Gray'))).toBe(true)
+  expect(matches(item(23, ''))).toBe(true)
+  expect(matches({ colors: [...item(22).colors, ...item(23, '').colors] })).toBe(false)
 })
 
 function createAlphaControls() {
@@ -160,6 +173,27 @@ describe('color helpers', () => {
     alphaEnabled.checked = false
     alphaEnabled.dispatchEvent(new Event('change'))
     expect(hexInput.value).toBe('#336699')
+  })
+
+  it.each([
+    ['#123456', '#123456'],
+    ['123456ab', '#123456AB'],
+    ['#aBc', '#AABBCC'],
+    ['#aBcD', '#AABBCCDD'],
+  ])('preserves %s while typing and normalizes it on change', (typed, normalized) => {
+    const { hexInput, picker, alphaEnabled } = createAlphaControls()
+
+    for (const char of typed) {
+      hexInput.value += char
+      hexInput.dispatchEvent(new Event('input'))
+    }
+
+    expect(hexInput.value).toBe(typed)
+    expect(picker.value.toUpperCase()).toBe(normalized.slice(0, 7))
+    expect(alphaEnabled.checked).toBe(normalized.length === 9)
+
+    hexInput.dispatchEvent(new Event('change'))
+    expect(hexInput.value).toBe(normalized)
   })
 
   it('derives the opacity checkbox from a manually entered AA suffix', () => {

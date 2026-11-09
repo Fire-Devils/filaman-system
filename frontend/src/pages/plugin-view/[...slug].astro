@@ -1,0 +1,24 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  // The build-only slug cannot collide with a valid integration slug.
+  return [{ params: { slug: '_shell' } }]
+}
+---
+
+<Layout title="FilaMan - Plugin" noPadding>
+  <iframe
+    id="plugin-iframe"
+    title="Plugin"
+    style="flex: 1; width: 100%; border: none; display: block;"
+  ></iframe>
+
+  <script>
+    import { mountIntegrationPlugin } from '../../lib/plugin-integration-shell'
+    const frame = document.getElementById('plugin-iframe') as HTMLIFrameElement
+    const slug = window.location.pathname.split('/').filter(Boolean)[1] || ''
+    try { mountIntegrationPlugin(frame, slug) }
+    catch { frame.hidden = true }
+  </script>
+</Layout>

@@ -7,6 +7,8 @@ import FilamentFormActions from '../components/FilamentFormActions.astro'
 import { setLang } from './i18n'
 
 import { createFilamentFormController } from './filament-form'
+import * as columnFilters from './table-column-filters'
+import { CACHE_KEYS, invalidateCachePrefix } from './cache'
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -104,6 +106,72 @@ afterEach(() => {
 })
 
 describe('shared filament form controller', () => {
+  it('does not rewrite unchanged palette attributes', async () => {
+    const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    const red = document.querySelector<HTMLButtonElement>('#color-grid [aria-label="Red (#FF0000)"]')!
+    const changes: MutationRecord[] = []
+    const observer = new MutationObserver(records => changes.push(...records))
+    observer.observe(red, { attributes: true, subtree: true })
+    document.querySelector<HTMLInputElement>('#color-search')!.dispatchEvent(new Event('input'))
+    changes.push(...observer.takeRecords())
+    expect(changes).toHaveLength(0)
+    observer.disconnect()
+    controller.destroy()
+  })
+
+  it('defers palette buttons and wheel dots until their UI opens while keeping selected previews current', async () => {
+    const { controller } = await createLoadedController('edit')
+    controller.applyInitialData({ colors: [{ color_id: 11, position: 1 }] })
+    expect(document.querySelectorAll('#color-grid button')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(0)
+    expect(document.querySelector('#filament-editor-color-name')?.textContent).toContain('Red')
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    expect(document.querySelectorAll('#color-grid button')).toHaveLength(3)
+    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(0)
+    document.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(3)
+    controller.destroy()
+  })
+
+  it('reuses palette buttons while selections and text filtering change', async () => {
+    const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    const red = document.querySelector<HTMLButtonElement>('#color-grid [aria-label="Red (#FF0000)"]')!
+    red.focus()
+    red.click()
+    expect(document.querySelector('#color-grid [aria-label="Red (#FF0000)"]')).toBe(red)
+    expect(document.activeElement).toBe(red)
+    expect(controller.collectPayload().colors).toEqual([{ color_id: 11, position: 1 }])
+    const search = document.querySelector<HTMLInputElement>('#color-search')!
+    search.value = 'Red'
+    search.dispatchEvent(new Event('input'))
+    expect(document.querySelector('#color-grid [aria-label="Red (#FF0000)"]')).toBe(red)
+    expect(document.querySelectorAll('#color-grid button')).toHaveLength(1)
+    controller.destroy()
+  })
+
+  it('restores focus when a surviving palette button moves and falls back when removed', async () => {
+    const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    const blue = document.querySelector<HTMLButtonElement>('#color-grid [aria-label="Blue (#0000FF)"]')!
+    const grid = document.querySelector<HTMLElement>('#color-grid')!
+    const insert = grid.insertBefore.bind(grid)
+    vi.spyOn(grid, 'insertBefore').mockImplementation((node, before) => {
+      if (node.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+      return insert(node, before)
+    })
+    blue.focus()
+    const search = document.querySelector<HTMLInputElement>('#color-search')!
+    search.value = 'Blue'
+    search.dispatchEvent(new Event('input'))
+    expect(document.activeElement).toBe(blue)
+    search.value = 'Absent'
+    search.dispatchEvent(new Event('input'))
+    expect(document.activeElement).toBe(search)
+    controller.destroy()
+  })
+
   it.each(['single', 'multi'])('retains an inline-created color when reopening a saved %s filament', async colorMode => {
     const { controller, form } = await createLoadedController('edit')
     const data = { manufacturer_id: 7, designation: 'Saved PLA', material_type: 'PLA', diameter_mm: 1.75,
@@ -491,6 +559,7 @@ describe('shared filament form controller', () => {
   })
   it('loads the shared manufacturer, material, and color references', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
 
     expect(document.querySelector<HTMLSelectElement>('#manufacturer_id')!.value).toBe('')
     expect(document.querySelector('#manufacturer_id option[value="7"]')?.textContent).toBe('Example Brand')
@@ -568,6 +637,7 @@ describe('shared filament form controller', () => {
 
   it('marks a selected color removal as changed', async () => {
     const { controller } = await createLoadedController('edit')
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     controller.applyInitialData({
       manufacturer_id: 7,
       designation: 'Duo',
@@ -588,6 +658,7 @@ describe('shared filament form controller', () => {
 
   it('shows multicolor selection order on each selected swatch', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const multi = document.querySelector<HTMLInputElement>('input[name="color_mode"][value="multi"]')!
     multi.checked = true
     multi.dispatchEvent(new Event('change', { bubbles: true }))
@@ -645,6 +716,7 @@ describe('shared filament form controller', () => {
 
   it('clears color search filters from the shared toolbar', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const search = document.querySelector<HTMLInputElement>('#color-search')!
 
     search.value = 'red'
@@ -660,6 +732,7 @@ describe('shared filament form controller', () => {
 
   it('searches selectable colors by name', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const search = document.querySelector<HTMLInputElement>('#color-search')!
 
     search.value = 'red'
@@ -673,6 +746,7 @@ describe('shared filament form controller', () => {
 
   it('renders list mode as compact name and hex choices', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const toggle = document.querySelector<HTMLInputElement>('#color-list-toggle')!
 
     document.querySelector<HTMLButtonElement>('#color-grid [aria-label="Red (#FF0000)"]')!.click()
@@ -693,6 +767,7 @@ describe('shared filament form controller', () => {
 
   it('cycles Name and Hex sorting independently and clears the other sort', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const nameSort = document.querySelector<HTMLButtonElement>('#color-sort-name')!
     const hexSort = document.querySelector<HTMLButtonElement>('#color-sort-hex')!
     const names = () => [...document.querySelectorAll<HTMLButtonElement>('#color-grid button')]
@@ -720,6 +795,7 @@ describe('shared filament form controller', () => {
     localStorage.setItem('filaman-filament-color-sort', 'hex:desc')
 
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
 
     expect(document.querySelector<HTMLInputElement>('#color-list-toggle')!.checked).toBe(true)
     expect(document.querySelector<HTMLButtonElement>('#color-sort-hex')!.dataset.direction).toBe('desc')
@@ -743,6 +819,7 @@ describe('shared filament form controller', () => {
 
   it('updates the dialog heading, order hint, and header preview for selected colors', async () => {
     const { controller } = await createLoadedController('edit')
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const preview = document.querySelector<HTMLElement>('#filament-color-dialog-preview')!
     const title = document.querySelector('#color-selection-title')!
     const hint = document.querySelector<HTMLElement>('#color-hint')!
@@ -788,16 +865,108 @@ describe('shared filament form controller', () => {
 
   it('shows and hides an immediate grid tooltip', async () => {
     const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const swatch = document.querySelector<HTMLButtonElement>('#color-grid .fm-color-swatch')!
 
-    swatch.dispatchEvent(new Event('pointerenter'))
+    swatch.dispatchEvent(new Event('pointerover', { bubbles: true }))
     const tooltip = document.querySelector<HTMLElement>('.fm-color-tooltip')!
     expect(tooltip.hidden).toBe(false)
     expect(tooltip.textContent).toBe('Red (#FF0000)')
     expect(tooltip.closest('dialog')?.id).toBe('filament-color-dialog')
 
-    swatch.dispatchEvent(new Event('pointerleave'))
+    swatch.dispatchEvent(new Event('pointerout', { bubbles: true }))
     expect(tooltip.hidden).toBe(true)
+    controller.destroy()
+  })
+
+  it('supplies unused registered catalog colors to the native filter wheel', async () => {
+    const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    document.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    expect([...document.querySelectorAll('[data-color-marker]')].map(node => node.getAttribute('fill')))
+      .toEqual(['#FF0000', '#0000FF', '#FFFFFF'])
+    controller.destroy()
+  })
+
+  it('filters the editor catalog with one wheel range and no harmony controls', async () => {
+    const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    const match = vi.spyOn(columnFilters, 'matchesColumnFilter')
+    document.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    expect(document.querySelector('.fm-header-color-harmonies, [data-color-guide], .fm-header-color-guide-key')).toBeNull()
+    expect(document.querySelectorAll('[data-color-window]:not([hidden])')).toHaveLength(1)
+    expect([...document.querySelectorAll<HTMLButtonElement>('#color-grid .fm-color-swatch')].map(node => node.getAttribute('aria-label'))).toEqual(['Red (#FF0000)'])
+    expect(match).not.toHaveBeenCalled()
+    controller.destroy()
+  })
+
+  it('refreshes cached editor membership when the color catalog is reloaded', async () => {
+    const { controller } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    document.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    const previousFetch = fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => String(input).includes('/api/v1/colors?')
+      ? Promise.resolve(jsonResponse({ items: [{ id: 11, name: 'Red', hex_code: '#FF0000' }, { id: 14, name: 'Crimson', hex_code: '#FF0011' }], total: 2 }))
+      : previousFetch(input)))
+    invalidateCachePrefix(CACHE_KEYS.COLORS)
+    await controller.loadReferenceData()
+    expect([...document.querySelectorAll<HTMLButtonElement>('#color-grid .fm-color-swatch')].map(node => node.getAttribute('aria-label'))).toEqual(['Red (#FF0000)', 'Crimson (#FF0011)'])
+    controller.destroy()
+  })
+
+  it.each([11, 99])('updates active-range membership for supplied color %s', async (id) => {
+    const { controller, form } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    form.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    controller.applyInitialData({ colors: [{ color_id: id, position: 0, color: { id, name: 'Crimson', hex_code: '#FF0011' } }] })
+    expect(form.querySelector('#color-grid [aria-label="Crimson (#FF0011)"]')).not.toBeNull()
+    expect(document.querySelector('[data-color-marker="#FF0011"]')).not.toBeNull()
+    controller.destroy()
+  })
+
+  it('shows a matching color created after its inline editor session closes', async () => {
+    const { controller, form } = await createLoadedController('edit')
+    const previousFetch = fetch
+    let finish!: (response: Response) => void
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/api/v1/colors') && init?.method === 'POST'
+        ? new Promise<Response>(resolve => { finish = resolve })
+        : previousFetch(input, init))
+    form.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    const disclosure = form.querySelector<HTMLDetailsElement>('#new-color-disclosure')!
+    disclosure.open = true
+    disclosure.dispatchEvent(new Event('toggle'))
+    form.querySelector<HTMLInputElement>('#new-color-name')!.value = 'Crimson'
+    form.querySelector<HTMLInputElement>('#new-color-hex')!.value = '#FF0011'
+    const save = form.querySelector<HTMLButtonElement>('#btn-save-new-color')!
+    save.click()
+    expect(finish).toBeDefined()
+    form.querySelector<HTMLButtonElement>('#filament-color-dialog-done')!.click()
+    form.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    form.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    document.querySelector<HTMLButtonElement>('[data-color-preset="red"]')!.click()
+    finish(jsonResponse({ id: 99, name: 'Crimson', hex_code: '#FF0011' }))
+    await vi.waitFor(() => expect(save.disabled).toBe(false))
+    expect(form.querySelector('#color-grid [aria-label="Crimson (#FF0011)"]')).not.toBeNull()
+    expect(document.querySelector('[data-color-marker="#FF0011"]')).not.toBeNull()
+    controller.destroy()
+  })
+
+  it('clears the open wheel when a catalog reload returns no colors', async () => {
+    const { controller, form } = await createLoadedController()
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
+    form.querySelector<HTMLButtonElement>('#color-filter-button')!.click()
+    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(3)
+    const previousFetch = fetch
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => String(input).includes('/api/v1/colors?')
+      ? Promise.resolve(jsonResponse({ items: [], total: 0 })) : previousFetch(input, init))
+    invalidateCachePrefix(CACHE_KEYS.COLORS)
+    await controller.loadReferenceData()
+    expect(document.querySelectorAll('[data-color-marker]')).toHaveLength(0)
+    expect(form.querySelector('#color-grid')?.textContent).toContain('No colors')
     controller.destroy()
   })
 
@@ -1103,6 +1272,7 @@ describe('shared filament form controller', () => {
 
   it('tracks color order, mode, and pattern and clears them when restored', async () => {
     const { controller } = await createLoadedController('edit')
+    document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
     const initial = {
       manufacturer_id: 7,
       designation: 'Duo',

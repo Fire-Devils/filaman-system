@@ -168,7 +168,7 @@ export function getStaticPaths() {
   await hydrateLabelPresetStorage()
   let syncOutputPreview: (zoomOnly?: boolean) => void = () => undefined
   let refreshWorkspace: () => void = () => syncOutputPreview()
-  const sheetControls = bindLabelSheetControls(() => refreshWorkspace(), translate, 'spool')
+  const sheetControls = bindLabelSheetControls(() => refreshWorkspace(), translate, 'spool', () => syncOutputPreview())
 
   const LABEL_SETTINGS_KEY = 'filaman-label-settings'
   const ACTIVE_MODE_KEY = 'filaman-label-active-tab'

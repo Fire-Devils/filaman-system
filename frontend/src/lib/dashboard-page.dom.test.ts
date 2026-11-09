@@ -12,28 +12,42 @@ interface DashboardActions {
   archiveAll: (ids: number[]) => Promise<void>
 }
 
-async function boot(canArchive = false) {
-  const fetch = vi.fn(async (_path: string, init?: RequestInit) => init?.method
+async function boot(canArchive = false, poll = async () => Response.json([
+  { location_id: 9, location_name: "Dry <box>", spool_count: 5, total_weight_g: 3000 },
+]), inventoryReady?: Promise<void>) {
+  const fetch = vi.fn(async (path: string, init?: RequestInit) => path === "/api/v1/dashboard/locations"
+    ? poll()
+    : init?.method
     ? Response.json({ detail: 'Not permitted' }, { status: 403 })
     : Response.json({ spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, filament_count_active: 1, filament_count_used: 0, total_value_available: 3, manufacturers_with_spools: [{ id: 7, name: 'Maker <clear>', spool_count: 2 }], low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }], filament_types: [{ material_type: 'Empty-only type', count: 4 }], location_stats: [{ location_id: 9, location_name: 'Dry <box>', spool_count: 4, total_weight_g: 2500 }], filament_stats: [{ filament_type: 'PLA', spool_count: 2, total_weight_g: 1500 }, { filament_type: 'PETG <clear>', spool_count: 1, total_weight_g: 250 }] }))
   const dependencies = {
     t: (key: string) => key, initI18n: async () => {}, getLang: () => 'en',
     formatPrice: (value: number) => `€${value}`, getCurrency: () => 'EUR', initCurrency: async () => {},
     VERSION: '', changelogData: { versions: [] },
-    cachedFetchAllPages: async (_key: string, path: string) => path.includes('filaments')
-      ? { items: [{ id: 2, designation: '<img src=x onerror=alert(1)>', material_type: 'PLA' }], total: 2 }
-      : { items: [{ id: 3, filament_id: 2, remaining_weight_g: 50, low_weight_threshold_g: 100 }], total: 1 },
+    cachedFetchAllPages: async (_key: string, path: string) => {
+      await inventoryReady
+      return path.includes('filaments')
+        ? { items: [{ id: 2, designation: '<img src=x onerror=alert(1)>', material_type: 'PLA' }], total: 2 }
+        : { items: [{ id: 3, filament_id: 2, remaining_weight_g: 50, low_weight_threshold_g: 100 }], total: 1 }
+    },
     fetchSequential: async (jobs: (() => Promise<unknown>)[]) => { const result = []; for (const job of jobs) result.push(await job()); return result },
     CACHE_KEYS: { FILAMENTS: 'filaments' }, getAbortSignal: () => undefined,
     isAbortError: () => false,
     getMe: async () => ({ is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }), hasPermission,
     bindFormDialog, escapeHtml, fetch,
+    api: { get: async () => ({ dashboard_hidden_widgets: [] }), patch: async () => {} },
   }
   await bootAstroPage('index', dependencies)
-  await vi.waitFor(() => expect(document.querySelector('#stat-total-spools')!.textContent).toBe('1'))
+  if (!inventoryReady) await vi.waitFor(() => expect(document.querySelector('#stat-total-spools')!.textContent).toBe('1'))
   return fetch
 }
-afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren(); localStorage.clear() })
+afterEach(() => {
+  window.dispatchEvent(new Event("pagehide"))
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+  document.body.replaceChildren()
+  localStorage.clear()
+})
 
 it('renders safe material statistics and scope controls, and opens a read-only drilldown without archive permission', async () => {
   await boot()
@@ -169,4 +183,59 @@ it.each(['single', 'bulk'] as const)('restores the %s archive controls after a n
   expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(2)
   expect(alert).toHaveBeenCalledTimes(2)
   expect([...modal.querySelectorAll('button')].every(button => !button.disabled)).toBe(true)
+})
+
+
+it("refreshes just the enabled Locations widget every 15 seconds on a visible tab", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
+  const fetch = await boot()
+  fetch.mockClear()
+  await vi.advanceTimersByTimeAsync(14000)
+  expect(fetch).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/dashboard/locations"])
+  expect(document.querySelector("#location-stats")!.textContent).toContain("5 dashboard.spools")
+
+  visibility.mockReturnValue("hidden")
+  await vi.advanceTimersByTimeAsync(15000)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  visibility.mockReturnValue("visible")
+  document.dispatchEvent(new Event("visibilitychange"))
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+  document.querySelector<HTMLInputElement>('[data-widget-id="locationStats"]')!.click()
+  await vi.advanceTimersByTimeAsync(15000)
+  expect(fetch).toHaveBeenCalledTimes(2)
+})
+
+
+it("keeps one location poll in flight and preserves focus when the counts change", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
+  let resolvePoll!: (response: Response) => void
+  const fetch = await boot(false, () => new Promise<Response>(resolve => { resolvePoll = resolve }))
+  fetch.mockClear()
+  document.querySelector<HTMLAnchorElement>("#location-stats a")!.focus()
+  await vi.advanceTimersByTimeAsync(30000)
+  expect(fetch).toHaveBeenCalledTimes(1)
+
+  resolvePoll(Response.json([
+    { location_id: 9, location_name: "Dry <box>", spool_count: 6, total_weight_g: 3500 },
+  ]))
+  await vi.waitFor(() => expect(document.querySelector("#location-stats")!.textContent).toContain("6 dashboard.spools"))
+  expect(document.activeElement).toBe(document.querySelector("#location-stats a"))
+  window.dispatchEvent(new Event("pagehide"))
+  await vi.advanceTimersByTimeAsync(15000)
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+it("refreshes Locations independently of the initial inventory load", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
+  const fetch = await boot(false, undefined, new Promise(() => {}))
+
+  await vi.advanceTimersByTimeAsync(15000)
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/dashboard/locations"])
+  expect(document.querySelector("#location-stats")!.textContent).toContain("5 dashboard.spools")
 })

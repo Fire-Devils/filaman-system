@@ -5,9 +5,11 @@ import { designerIcon } from '../../lib/freeform-label/icons'
 <div id="tab-panel-designer-v2" class="settings-section freeform-designer-sidebar" role="tabpanel" aria-labelledby="tab-btn-designer" hidden>
   <section class="freeform-sidebar-section" aria-labelledby="freeform-presets-heading">
     <h2 id="freeform-presets-heading" data-i18n="labelDesigner.presets">Label presets</h2>
-    <label class="fm-label" for="freeform-preset-list" data-i18n="labelDesigner.savedPresets">Saved presets</label>
+    <label class="fm-label" for="freeform-preset-list" data-i18n="labelDesigner.loadPreset">Load a preset</label>
     <div class="preset-control-row">
-      <select id="freeform-preset-list" class="fm-select preset-select"></select>
+      <select id="freeform-preset-list" class="fm-select preset-select">
+        <button type="button"><selectedcontent></selectedcontent></button>
+      </select>
       <div class="freeform-preset-actions">
         <button id="freeform-preset-load" class="preset-action-btn" type="button" data-i18n="common.load">Load</button>
         <button id="freeform-preset-delete" class="preset-action-btn preset-action-btn-danger" type="button" title="Delete" aria-label="Delete" data-i18n-title="common.delete" data-i18n-aria-label="common.delete" set:html={designerIcon('delete')} />
@@ -59,6 +61,15 @@ import { designerIcon } from '../../lib/freeform-label/icons'
   .freeform-dimension-grid .freeform-border-toggle { align-items: center; align-self: end; display: flex; gap: 6px; min-height: 36px; margin: 0; padding: 0; }
   .freeform-control-status { color: var(--text-muted); font-size: 0.75rem; margin: 8px 0 0; min-height: 1.2em; }
   .freeform-designer-sidebar :is(button, select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @supports (appearance: base-select) {
+    #freeform-preset-list, #freeform-preset-list::picker(select) { appearance: base-select; }
+    #freeform-preset-list::picker(select) { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); }
+    #freeform-preset-list::picker-icon { display: none; }
+    #freeform-preset-list > button { color: inherit; font: inherit; min-width: 0; }
+    #freeform-preset-list selectedcontent { display: flex; gap: 0.35em; }
+    #freeform-preset-list :global(.freeform-preset-option-name) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #freeform-preset-list :global(.freeform-preset-option-size) { color: var(--text-muted); flex: none; font-size: 0.8em; white-space: nowrap; }
+  }
   .preset-action-btn-danger:hover, .preset-action-btn-danger:focus-visible { border-color: var(--label-danger, #ff8a80); color: var(--label-danger, #ff8a80); }
   #freeform-preset-delete { align-items: center; display: inline-flex; justify-content: center; }
   #freeform-preset-delete :global(svg) { height: 16px; width: 16px; }

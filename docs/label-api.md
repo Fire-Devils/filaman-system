@@ -125,17 +125,18 @@ strictly below `threshold` become black. The default is `200`; an explicit
 `threshold` overrides it, including `0`. Tune it for your printer and stock;
 the default is not a universal print-quality guarantee. The byte layout is unchanged.
 
-For mono1, SVG uses undecorated QR codes with error correction M,
-a four-module white quiet zone, and at least three whole printer dots per module. Saved logo
-or center-text QR modes are overridden for this response only. Codes retain
-their URL and layout slot; insufficient space or clipping at the label edge
-returns `422`. A module is one square in the QR grid: three dots per module
-means each square occupies a 3×3 printer-dot block (about 0.38 mm wide at
-203 DPI). Minimum box width is `(module count + 8) × 3` pixels, including
-the quiet zone; longer URLs may need more modules and a larger box. A too-small
-box returns a QR size error. This conservative
-thermal limit is not a scan guarantee. PNG and normal browser printing keep
-the saved QR styling and are not subject to this three-dot minimum.
+For mono1, SVG uses undecorated QR codes with error correction M. The saved
+box describes the code itself. The renderer centers the code in that box and
+rounds each module to the nearest whole printer dot. It adds a four-module
+white quiet zone outside the code, clipped at the label edge. Leave room for
+the full quiet zone on the printed label for reliable scanning.
+
+The API returns `422` if a module rounds to fewer than three dots, the code
+extends beyond the label, or one QR's white clearance would cover another code.
+Three dots per module means each square occupies a 3×3 printer-dot block
+(about 0.38 mm wide at 203 DPI). Longer URLs can require more modules and a
+larger box. PNG and normal browser printing keep the saved QR styling and
+are not subject to the three-dot minimum.
 
 Read these response headers before passing the raster to device-specific code:
 
@@ -206,9 +207,8 @@ backgrounds, regardless of their saved layer positions.
 The designer and PNG/normal print output add an automatic
 four-module white outline outside the QR's size handles. It can occupy the
 label margin; the editor warns only when it extends off the physical label.
-The `mono1` QR slot includes its quiet zone internally, preserving
-the printer-raster sizing contract. The editor provides separate 200/300 DPI
-size guidance and a caution for center decoration; neither guarantees scanning.
+The editor provides separate 200/300 DPI size guidance and a caution for
+center decoration.
 
 All API renders share one slot across server workers to bound peak memory. A busy
 request returns `503` with `Retry-After: 1`. A missing SVG runtime returns `503`

@@ -1,6 +1,42 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Neuer Plugin-Katalog: Plugins lassen sich aus einer kuratierten Liste auswählen und installieren, mit eigenen Symbolen und übersichtlicherer Plugin-Liste. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Plugins können eigene Integrations-Apps direkt in FilaMan anzeigen, sich in den Filament-Editor einklinken und mit ausgewählten Filamenten Sammelaktionen ausführen. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Farbharmonie-Suche: Im Bestand lassen sich passende Komplementär- und Triadenfarben finden, übersichtlich gruppiert nach Farbton. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Der Etiketten-Designer und die Sammelvorschau sind deutlich schneller. Felder und Vorlagen lassen sich komfortabler bearbeiten, mit Feldvorschau, gruppierter Feldsuche und Hinweisen bei leeren Werten. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Die Suche nach benannten Farben ist bei großen Beständen schneller, und der Farbfilter bei Spulen zeigt nur Farben passend zum gewählten Status. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Druckerzuweisungen und Waagen funktionieren jetzt auch zuverlässig, wenn FilaMan mit mehreren Prozessen läuft. Nach dem Umlagern per Waage aktualisiert sich die Lagerort-Anzeige automatisch. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Plugins lassen sich auch bei mehreren Prozessen zuverlässig aktivieren und deaktivieren. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Hex-Farbwerte werden beim Eintippen nicht mehr verändert oder überschrieben. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "QR-Codes auf Thermo-Etiketten behalten ihre Größe, und Hinweise zu zu langem Text erscheinen übersetzt am betroffenen Feld. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Parameter der BambuLab-Zuweisung werden jetzt übersetzt angezeigt. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Geräte-Tokens lassen sich direkt aus dem Dialog kopieren. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Katalogsuche im Filament-Formular bleibt auch auf schmalen Bildschirmen gut bedienbar. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Die Bildlaufleisten der Dashboard-Kacheln verhalten sich besser und passen sich dem Farbschema an. (Beigetragen von githubber4ever)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "New plugin catalog: plugins can be picked and installed from a curated list, with their own icons and a clearer plugin list. (Contributed by akira69)" },
+          { "type": "feature", "text": "Plugins can show their own integration apps inside FilaMan, hook into the filament editor and run batch actions on selected filaments. (Contributed by akira69)" },
+          { "type": "feature", "text": "Color harmony search: find matching complementary and triadic colors in your inventory, neatly grouped by hue. (Contributed by akira69)" },
+          { "type": "improved", "text": "The label designer and batch previews are much faster. Fields and presets are easier to edit, with field previews, grouped field search and hints for empty values. (Contributed by akira69)" },
+          { "type": "improved", "text": "Searching for named colors is faster on large inventories, and the spool color filter only shows colors matching the selected status. (Contributed by akira69)" },
+          { "type": "fix", "text": "Printer assignments and scales now work reliably when FilaMan runs with multiple processes. After moving a spool via scale, the locations view refreshes automatically. (Contributed by akira69)" },
+          { "type": "fix", "text": "Plugins can be enabled and disabled reliably with multiple processes. (Contributed by akira69)" },
+          { "type": "fix", "text": "Hex color values are no longer altered or overwritten while typing. (Contributed by akira69)" },
+          { "type": "fix", "text": "QR codes on thermal labels keep their size, and text-overflow hints now appear translated on the affected field. (Contributed by akira69)" },
+          { "type": "fix", "text": "BambuLab assignment parameters are now shown translated. (Contributed by akira69)" },
+          { "type": "fix", "text": "Device tokens can be copied directly from the dialog. (Contributed by akira69)" },
+          { "type": "fix", "text": "The catalog search in the filament form stays usable on narrow screens. (Contributed by akira69)" },
+          { "type": "fix", "text": "Dashboard box scrollbars behave better and follow the color theme. (Contributed by githubber4ever)" }
+        ]
+      }
+    },
+    {
       "version": "2.0.2",
       "date": "",
       "changes": {

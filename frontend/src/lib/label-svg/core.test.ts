@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { beforeAll, expect, it, vi } from 'vitest'
 import { Resvg } from '@resvg/resvg-wasm'
-import { renderSvgLabel, rasterize, rasterizePng, layoutText } from './core.mjs'
+import QRCode from 'qrcode'
+import { renderSvgLabel, renderSvgLabelLayout, rasterize, rasterizePng, layoutText } from './core.mjs'
 import { createSvgRuntime } from './runtime.mjs'
-import type { SvgInput, SvgRuntime } from './types'
+import type { SvgBox, SvgInput, SvgRuntime } from './types'
 import { fixtures, data } from '../../../tests/label-rendering/fixtures.mjs'
 import { LABEL_FONT_FAMILIES } from '../freeform-label/types'
 import { prepareSvgApiInput } from './prepare-api'
@@ -50,6 +51,27 @@ it('only permits empty zero-area legacy text, not invalid geometry or hidden con
     value.preset.design.elements[0] = { ...empty, ...patch } as typeof empty
     expect(() => render(value)).toThrow(/Invalid geometry|Text .*fit/)
   }
+})
+
+it('embeds a repeated image once and keeps each placement’s crop and color', () => {
+  const value = input()
+  value.pixelWidth = 400
+  value.pixelHeight = 300
+  // A two-pixel PNG with red on the left and blue on the right.
+  value.assets.photo = { width: 2, height: 1,
+    dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGP4z8DAwPAfAAcAAf9+CLHQAAAAAElFTkSuQmCC' }
+  value.preset.design.elements = [0, 1].map(i => ({
+    id: `image-${i}`, type: 'image', assetId: 'photo', x: 2 + i * 12, y: 2, w: 10, h: 10, z: i,
+    objectFit: 'contain', crop: { x: i / 2, y: 0, w: 0.5, h: 1 },
+  }))
+  const result = render(value)
+  expect(result.svg.split(value.assets.photo.dataUrl)).toHaveLength(2)
+  value.assets.copy = { ...value.assets.photo }
+  Object.assign(value.preset.design.elements[1], { assetId: 'copy' })
+  const inline = render(value)
+  expect(inline.svg.split(value.assets.photo.dataUrl)).toHaveLength(3)
+  expect(Buffer.compare(result.png, inline.png)).toBe(0)
+  expect(Buffer.compare(result.mono, inline.mono)).toBe(0)
 })
 
 it.each(LABEL_FONT_FAMILIES)('renders typed checkbox fields with mixed markup, wrapping and fitting in %s', fontFamily => {
@@ -112,11 +134,276 @@ it('reuses font measurements while fitting a long word without losing characters
   } finally { shaping.mockRestore() }
 })
 
+it.each(LABEL_FONT_FAMILIES)('fits temperature rows using the editor line spacing in %s', family => {
+  const result = layoutText('220-260\n60-80', { w: 28, h: 8, fontSizeMm: 3.2, wrap: true }, runtime.fonts[`${family}:400`])
+  expect(result.lines).toEqual(['220-260', '60-80'])
+  expect(result.height).toBeCloseTo(7.36)
+})
+
+it.each([['Space Mono', 'Å'], ['Fraunces', 'g']])('fits actual glyph ink within normal %s text boxes', (fontFamily, template) => {
+  const value = input()
+  value.pixelWidth = 800
+  value.pixelHeight = 600
+  const element = { id: 'text', type: 'text', x: 4, y: 4, w: 25, h: 23, z: 0,
+    template, fontFamily, fontWeight: 700, fontSizeMm: 20 } as SvgInput['preset']['design']['elements'][number]
+  value.preset.design.elements = [element]
+  expect(() => render(value)).toThrow(/Text does not fit/)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.text[0].error).toMatch(/Text does not fit/)
+  Object.assign(element, { fitToWidth: true, minFontSizeMm: 10 })
+  const fitted = render(value)
+  expect(fitted.text[0].size).toBeLessThan(20)
+  expect(fitted.mono.some((byte: number) => byte !== 0)).toBe(true)
+  const rowBytes = fitted.width / 8
+  expect(fitted.mono.slice(0, 80 * rowBytes).every((byte: number) => byte === 0)).toBe(true)
+  expect(fitted.mono.slice(540 * rowBytes).every((byte: number) => byte === 0)).toBe(true)
+})
+
+it('accepts an exact-fit row when CSS half-leading adds floating-point roundoff', () => {
+  const result = layoutText('Temperature', { w: 100, h: 6.3, fontSizeMm: 4.5, legacyTextRole: 'info' }, runtime.fonts['Roboto Condensed:700'])
+  expect(result.size).toBe(4.5)
+  expect(result.height).toBeCloseTo(6.3)
+})
+
+it('keeps printable text visible when a missing badge would wrap it out of the box', () => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'text', type: 'text', x: 4, y: 4, w: 10, h: 3.7, z: 0,
+    template: '{lot_number}ABCDE', fontFamily: 'Space Mono', fontWeight: 400, fontSizeMm: 3.2,
+    wrap: true }] as SvgInput['preset']['design']['elements']
+  const printed = render(value)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.text[0]).toMatchObject({ lines: ['ABCDE'] })
+  expect(preview.text[0].error).toBeUndefined()
+  expect(preview.svg).toBe(printed.svg)
+})
+
+function zeroMarginTitle(template: string, sizeMm: number) {
+  return prepareSvgApiInput({ spool: { id: 295, filament: {} }, preset: { version: 1, settings: {
+    label: { width: 40, height: 40, marginMm: 0, border: false },
+    title: { show: true, template, sizeMm, marginMm: 0, dividerAbove: false, dividerBelow: false },
+    title2: { show: false }, logo: { show: false }, info: { show: false }, info2: { show: false }, qr: { show: false },
+  } }, fieldDefinitions: { spool: {}, filament: {} }, assets: {}, pixelWidth: 800, pixelHeight: 800, thermal: false }, 'https://fila.test', {})
+}
+
+it.each([['[size=200]Åg[/size]', 4, 2], ['Å[size=105].[/size]', 10, 1.05]])(
+  'keeps the full ink of the migrated title %s at the paper edge', (template, size, factor) => {
+  const value = zeroMarginTitle(template, size)
+  const title = value.preset.design.elements[0]
+  expect(title).toMatchObject({ y: 0, legacyTextRole: 'title' })
+  const atEdge = render(value)
+  title.y = 4
+  const inset = render(value)
+  const inkPixels = (result: ReturnType<typeof render>) => result.mono.reduce(
+    (sum: number, byte: number) => sum + byte.toString(2).replaceAll('0', '').length, 0)
+  // Allow subpixel antialiasing differences between the two baselines.
+  expect(inkPixels(atEdge)).toBeGreaterThanOrEqual(inkPixels(inset) * 0.99)
+  expect(atEdge.text[0].height).toBeGreaterThan(size * factor)
+})
+
+it('uses the actual row position for a later enlarged line of a migrated title', () => {
+  const value = zeroMarginTitle('[size=200]Plain\nÅg[/size]', 4)
+  expect(render(value).text[0].height).toBeCloseTo(16)
+})
+
+it('keeps literal formatting punctuation when marking a missing field would reinterpret it', () => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'text', type: 'text', x: 4, y: 4, w: 25, h: 8, z: 0,
+    template: '*{lot_number}*ABCDE', fontFamily: 'Space Mono', fontWeight: 400, fontSizeMm: 3.2,
+  }] as SvgInput['preset']['design']['elements']
+  const printed = render(value)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(printed.text[0].text).toBe('**ABCDE')
+  expect(preview.svg).toBe(printed.svg)
+})
+
+it('keeps printable preview artwork when a missing badge would exceed the text limit', () => {
+  const value = input()
+  value.data = { ...value.data, extra: { long: 'A' + ' '.repeat(11999) } }
+  value.preset.design.elements = [{ id: 'text', type: 'text', x: 1, y: 1, w: 30, h: 10, z: 0,
+    template: '{extra.long}{lot_number}', fontSizeMm: 2, wrap: true }] as SvgInput['preset']['design']['elements']
+  const printed = renderSvgLabelLayout(value, runtime)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.svg).toBe(printed.svg)
+})
+
+it('reserves the missing title row in preview and checks fit using the collapsed print layout', () => {
+  const value = input()
+  value.preset.design.elements = [
+    { id: 'title', type: 'text', x: 1, y: 1.5, w: 30, h: 4, z: 0, template: '{lot_number}', fontSizeMm: 4,
+      legacyTextRole: 'title', legacyTitleMarginMm: 0.5 },
+    { id: 'info', type: 'text', x: 1, y: 6, w: 30, h: 3, z: 1, template: 'A\nB', fontSizeMm: 2,
+      wrap: true, legacyTextRole: 'info' },
+  ] as SvgInput['preset']['design']['elements']
+  const output = renderSvgLabelLayout(value, runtime)
+  expect(output.boxes.find((box: SvgBox) => box.id === 'title')?.hidden).toBe(true)
+  expect(output.boxes.find((box: SvgBox) => box.id === 'info')?.y).toBe(1)
+
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  const title = preview.text.find(row => row.id === 'title')
+  expect(title?.missingBadges).toHaveLength(1)
+  expect(preview.boxes.find((box: SvgBox) => box.id === 'info')?.y).toBe(6)
+  expect(preview.text.find(row => row.id === 'info')?.error).toBeUndefined()
+})
+
+it('keeps the printable preview when reserving a missing title would leave an invalid box', () => {
+  const value = input()
+  Object.assign(value.preset.design.label, { widthMm: 60, heightMm: 20 })
+  value.preset.design.elements = [
+    { id: 'empty', type: 'text', x: 1, y: 1.5, w: 50, h: 10, z: 0, template: '{lot_number}', fontSizeMm: 10,
+      legacyTextRole: 'title', legacyTitleMarginMm: 0.5 },
+    { id: 'large', type: 'text', x: 1, y: 12.5, w: 50, h: 4, z: 1, template: '[size=200]Short[/size]', fontSizeMm: 4,
+      legacyTextRole: 'title', legacyTitleMarginMm: 0.5 },
+    { id: 'info', type: 'text', x: 1, y: 16, w: 50, h: 3, z: 2, template: 'Manufacturer', fontSizeMm: 2,
+      legacyTextRole: 'info' },
+  ] as SvgInput['preset']['design']['elements']
+  const printed = renderSvgLabelLayout(value, runtime)
+  const preview = renderSvgLabelLayout({ ...value, preview: true }, runtime)
+  expect(preview.svg).toBe(printed.svg)
+})
+
+it.each(LABEL_FONT_FAMILIES)('prints unit symbols with %s', fontFamily => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'units', type: 'text', x: 1, y: 1, w: 38, h: 20,
+    fontFamily, fontSizeMm: 2, wrap: true, template: '{filament.extruder_temp_range_c|unit}\n{filament.density|unit}\n{filament.max_volumetric_speed_mm3_s|unit}', z: 0 }] as SvgInput['preset']['design']['elements']
+  value.data = { ...value.data, 'filament.extruder_temp_range_c': '220-260', 'filament.density': '1.24', 'filament.max_volumetric_speed_mm3_s': '12' }
+  expect(render(value).text[0].lines).toEqual(['220-260 °C', '1.24 g/cm³', '12 mm³/s'])
+})
+
+it('reuses QR encoding for geometry changes while distinguishing content and correction levels', () => {
+  const value = input()
+  value.origin = 'https://qr-cache.test'
+  value.data = { ...value.data, id: 101 }
+  value.preset.design.elements = [{ id: 'qr', type: 'qr', x: 8, y: 6, w: 18, h: 18, z: 0,
+    mode: 'simple', linkMode: 'spool', urlTemplate: '' }]
+  const encode = vi.spyOn(QRCode, 'create')
+  try {
+    const first = renderSvgLabelLayout(value, runtime)
+    value.preset.design.elements[0].x += 1
+    const moved = renderSvgLabelLayout(value, runtime)
+    expect(moved.svg).not.toBe(first.svg)
+    expect(encode).toHaveBeenCalledTimes(1)
+
+    const thermal = renderSvgLabelLayout({ ...value, thermal: true }, runtime)
+    expect(thermal.qrs[0].level).toBe('M')
+    expect(encode).toHaveBeenCalledTimes(2)
+    const next = { ...value, data: { ...value.data, id: 102 } }
+    expect(renderSvgLabelLayout(next, runtime).qrs[0].url).toBe('https://qr-cache.test/spools/102')
+    expect(encode).toHaveBeenCalledTimes(3)
+    expect(renderSvgLabelLayout(value, runtime).svg).toBe(moved.svg)
+    expect(encode).toHaveBeenCalledTimes(3)
+
+    for (let id = 200; id < 208; id++) {
+      renderSvgLabelLayout({ ...value, data: { ...value.data, id } }, runtime)
+    }
+    expect(encode).toHaveBeenCalledTimes(11)
+    expect(renderSvgLabelLayout(value, runtime).svg).toBe(moved.svg)
+    expect(encode).toHaveBeenCalledTimes(12)
+  } finally {
+    encode.mockRestore()
+  }
+})
+
+it.each([203, 300])('keeps thermal QR artwork at its designed size at %s DPI', dpi => {
+  const value = input()
+  value.preset.design.elements = [{ id: 'qr', type: 'qr', x: 8, y: 6, w: 18, h: 18, z: 0, mode: 'simple' }] as SvgInput['preset']['design']['elements']
+  value.pixelWidth = Math.round(40 * dpi / 25.4)
+  value.pixelHeight = Math.round(30 * dpi / 25.4)
+  const preview = render(value).qrs[0]
+  const output = render({ ...value, thermal: true }), qr = output.qrs[0]
+  const scale = output.width / 40
+  expect(Math.abs(qr.modules * qr.dots / scale - 18)).toBeLessThanOrEqual(qr.modules / scale / 2)
+  expect((qr.x! + 4 * qr.dots + qr.modules * qr.dots / 2) / scale).toBeCloseTo(17, 0)
+  expect(preview.dots * preview.modules / scale).toBeCloseTo(18)
+})
+
 it.each([[-5, 5], [30, 5], [5, -5], [5, 20]])('rejects a thermal QR clipped at %s,%s', (x, y) => {
   const value = input()
   value.thermal = true
   value.preset.design.elements = [{ id: 'qr', type: 'qr', x, y, w: 18, h: 18, z: 0, mode: 'simple' }] as SvgInput['preset']['design']['elements']
   expect(() => render(value)).toThrow(/fit inside the label/i)
+})
+
+it.each([false, true])('rejects QR clearance covering another code in strict output (thermal=%s)', thermal => {
+  const value = input()
+  value.thermal = thermal
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 1, y: 1, w: 18, h: 18, z: 0, mode: 'simple' },
+    { id: 'qr-b', type: 'qr', x: 21, y: 1, w: 18, h: 18, z: 1, mode: 'simple' },
+  ] as SvgInput['preset']['design']['elements']
+  for (const [width, height, x] of [[641, 481, 21], [320, 240, 21], [472, 354, 20]]) {
+    value.pixelWidth = width
+    value.pixelHeight = height
+    value.preset.design.elements[1].x = x
+    for (const z of [-1, 1]) {
+      value.preset.design.elements[1].z = z
+      expect(() => render(value)).toThrow(/qr-a.*qr-b.*Move QR codes farther apart|qr-b.*qr-a.*Move QR codes farther apart/)
+    }
+  }
+  if (thermal) {
+    value.preset.design.elements[1].x = 21
+    expect(render(value).qrs.every((qr: { error?: string }) => !qr.error)).toBe(true)
+  }
+})
+
+it('allows thermal QR edges to touch on a printer dot and rejects a one-dot overlap', () => {
+  const value = input()
+  value.thermal = true
+  value.data = { ...value.data, id: 295 }
+  value.pixelWidth = Math.round(80 * 203 / 25.4)
+  value.pixelHeight = Math.round(40 * 203 / 25.4)
+  value.preset.design.label = { widthMm: 80, heightMm: 40, marginMm: 0, border: false }
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 3, y: 3, w: 10, h: 10, z: 0, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+    { id: 'qr-b', type: 'qr', x: 15.3, y: 3, w: 10, h: 10, z: 1, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+  ]
+  const [first, second] = renderSvgLabelLayout(value, runtime).qrs
+  expect(first.x! + first.edge!).toBe(second.x! + 4 * second.dots)
+
+  value.preset.design.elements[1].x -= 80 / value.pixelWidth
+  expect(() => renderSvgLabelLayout(value, runtime)).toThrow(/Move QR codes farther apart/)
+})
+
+it('checks the painted thermal clearance and saved white box separately', () => {
+  const value = input()
+  value.thermal = true
+  value.data = { ...value.data, id: 295 }
+  value.pixelWidth = 800
+  value.pixelHeight = 250
+  value.preset.design.label = { widthMm: 80, heightMm: 50, marginMm: 0, border: false }
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 3, y: 3, w: 18, h: 18, z: 0, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+    { id: 'qr-b', type: 'qr', x: 14.5, y: 21.5, w: 18, h: 18, z: 1, mode: 'simple', linkMode: 'spool', urlTemplate: '' },
+  ]
+  // Unequal pixel scales make the quiet zone narrower and taller than the saved box.
+  // The diagonal code lies in the gap between the two painted rectangles.
+  expect(renderSvgLabelLayout(value, runtime).qrs).toHaveLength(2)
+})
+
+it.each([false, true])('preserves QR overlap previews and marks both offending boxes (thermal=%s)', thermal => {
+  const value = input()
+  value.thermal = thermal
+  value.preview = true
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 1, y: 1, w: 18, h: 18, z: 0, mode: 'simple' },
+    { id: 'qr-b', type: 'qr', x: 21, y: 1, w: 18, h: 18, z: 1, mode: 'simple' },
+  ] as SvgInput['preset']['design']['elements']
+  const result = render(value)
+  expect(result.png.length).toBeGreaterThan(0)
+  expect(result.boxes.map((box: { id: string }) => box.id)).toEqual(['qr-a', 'qr-b'])
+  for (const qr of result.qrs) expect(qr.error).toContain('Move QR codes farther apart')
+})
+
+it('includes the saved white box when dense thermal QR rounding shrinks its clearance', () => {
+  const value = input()
+  value.thermal = true
+  value.pixelWidth = 1200
+  value.pixelHeight = 680
+  value.preset.design.label = { widthMm: 150, heightMm: 85, marginMm: 0, border: false }
+  value.preset.design.elements = [
+    { id: 'qr-a', type: 'qr', x: 1, y: 5, w: 70, h: 70, z: 1, mode: 'simple', linkMode: 'url', urlTemplate: 'https://fila.test/' + 'x'.repeat(1800) },
+    { id: 'qr-b', type: 'qr', x: 72, y: 5, w: 70, h: 70, z: 0, mode: 'simple', linkMode: 'url', urlTemplate: 'https://fila.test/' + 'x'.repeat(1500) },
+  ] as SvgInput['preset']['design']['elements']
+  expect(() => render(value)).toThrow(/Move QR codes farther apart/)
 })
 
 it('produces identical PNG bytes without reading back unused RGBA pixels', () => {
@@ -139,18 +426,21 @@ it('uses the same fixed-point luminance rounding as Pillow at threshold boundari
 it('keeps multiple QR hit boxes and opaque clearance above non-QR artwork', () => {
   const value = input()
   value.thermal = true
+  value.preset.design.label.widthMm = 50
+  value.pixelWidth = 801
   value.preset.design.elements = [
     { id: 'qr-a', type: 'qr', x: 1, y: 1, w: 18, h: 18, z: 0, mode: 'simple' },
-    { id: 'qr-b', type: 'qr', x: 21, y: 1, w: 18, h: 18, z: 1, mode: 'logo' },
-    { id: 'background', type: 'shape', shape: 'rectangle', x: 0, y: 0, w: 40, h: 30, z: 99, fill: '#000' },
+    { id: 'qr-b', type: 'qr', x: 27, y: 1, w: 18, h: 18, z: 1, mode: 'logo' },
+    { id: 'background', type: 'shape', shape: 'rectangle', x: 0, y: 0, w: 50, h: 30, z: 99, fill: '#000' },
   ] as SvgInput['preset']['design']['elements']
   const result = render(value)
   expect(result.qrs.map((qr: { id: string }) => qr.id)).toEqual(['qr-a', 'qr-b'])
   expect(result.boxes).toHaveLength(3)
   for (const qr of result.qrs) {
-    const index = (qr.y! * result.width + qr.x!) * 4
+    const index = (Math.max(0, qr.y!) * result.width + Math.max(0, qr.x!)) * 4
     expect(Array.from(result.pixels.slice(index, index + 4))).toEqual([255, 255, 255, 255])
     expect(qr.dots).toBeGreaterThanOrEqual(3)
+    expect(qr.error).toBeUndefined()
   }
 })
 

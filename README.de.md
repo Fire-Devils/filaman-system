@@ -16,6 +16,8 @@ FilaMan ist ein umfassendes System zur Verwaltung von 3D-Druck-Filamenten. Es hi
 ### Dokumentation
 Das vollständige Handbuch ist verfügbar unter **[docu.filaman.app](https://docu.filaman.app)**.
 
+Informationen zur Suche, Installation und Einreichung von Plugins stehen im [Plugin-Katalog](plugin-catalog/README.md).
+
 ### 💡 Hardware-Erweiterung: FilaMan ESP32-Waage
 Um das volle Potenzial dieses Systems auszuschöpfen, empfehlen wir unser zugehöriges Hardware-Projekt:
 **[FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)**

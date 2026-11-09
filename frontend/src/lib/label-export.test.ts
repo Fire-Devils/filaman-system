@@ -8,7 +8,7 @@ import { renderSvgElementOutput, pngDataUrl } from './label-svg/browser'
 
 vi.mock('./label-svg/runtime.mjs', async importOriginal => {
   const module = await importOriginal<typeof import('./label-svg/runtime.mjs')>()
-  return { createSvgRuntime: () => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`)) }
+  return { createSvgRuntime: (_readAsset: unknown, raster: boolean) => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`), raster) }
 })
 
 it('exports exact shared 600 DPI pixels without capturing DOM, zoom or editing handles', async () => {

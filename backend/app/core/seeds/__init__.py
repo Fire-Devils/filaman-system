@@ -404,6 +404,7 @@ async def remove_deprecated_plugins(db: AsyncSession) -> None:
 BUILTIN_PLUGINS = [
     {
         "plugin_key": "spoolman_import",
+        "icon": "icon.svg",
         "name": "Spoolman Import",
         "version": "1.0.0",
         "description": "Import filaments, spools, manufacturers and locations from a Spoolman instance",
@@ -413,6 +414,7 @@ BUILTIN_PLUGINS = [
     },
     {
         "plugin_key": "filamentdb_import",
+        "icon": "icon.svg",
         "name": "FilamentDB Import",
         "version": "1.0.0",
         "description": "Import manufacturers, filaments and spool details from FilamentDB",

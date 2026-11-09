@@ -4,9 +4,12 @@ import { VERSION } from '../version.js'
 
 interface Props {
   title: string
+  /** When true, removes main padding so the content can fill edge-to-edge.
+   *  Used by plugin-view pages that embed a full-height iframe. */
+  noPadding?: boolean
 }
 
-const { title } = Astro.props
+const { title, noPadding = false } = Astro.props
 ---
 
 <html lang="en" data-theme="brand">
@@ -170,7 +173,7 @@ const { title } = Astro.props
       </aside>
       <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
-      <main class="fm-main">
+      <main class:list={['fm-main', { 'fm-main--flush': noPadding }]}>
         <slot />
       </main>
     </div>
@@ -223,9 +226,12 @@ const { title } = Astro.props
     <script>
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
       import { getAbortSignal } from '../lib/abort'
+      import type { User } from '../lib/auth'
+      import type { AppDialogs } from '../lib/form-dialog'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
       import { navHrefFor } from '../lib/plugin-nav'
+      import { createPluginIcon } from '../lib/plugin-icon'
       import { loginUrlWithNext } from '../lib/login-redirect'
       import {
         isAutoOpenEnabled,
@@ -239,10 +245,16 @@ const { title } = Astro.props
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
 
+      const layoutWindow = window as typeof window & Partial<AppDialogs> & {
+        __t?: typeof t
+        __translatePage?: typeof translatePage
+        __syncLangFromUser?: typeof syncLangFromUser
+      }
+
       // Expose t and translatePage globally for page scripts
-      ;(window as any).__t = t
-      ;(window as any).__translatePage = translatePage
-      ;(window as any).__syncLangFromUser = syncLangFromUser
+      layoutWindow.__t = t
+      layoutWindow.__translatePage = translatePage
+      layoutWindow.__syncLangFromUser = syncLangFromUser
 
       /* ── Global confirm / alert modal ────────────────────────── */
       ;(function setupFmModal() {
@@ -256,11 +268,17 @@ const { title } = Astro.props
         const checkboxInput = document.getElementById('fm-confirm-checkbox') as HTMLInputElement
         const checkboxLabel = document.getElementById('fm-confirm-checkbox-label')!
 
-        let resolveFn: ((v: any) => void) | null = null
+        type ModalCheckbox = { label: string; checked?: boolean }
+        type CheckboxResult = { confirmed: boolean; checked: boolean }
+        type ModalResult = boolean | CheckboxResult
+
+        let resolveFn: ((v: ModalResult) => void) | null = null
         let checkboxMode = false
         let returnFocus: HTMLElement | null = null
 
-        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox?: { label: string; checked?: boolean }): Promise<any> {
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean): Promise<boolean>
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox: ModalCheckbox | undefined): Promise<ModalResult>
+        function openModal(title: string, message: string, okLabel: string, cancelLabel: string | null, isDanger: boolean, checkbox?: ModalCheckbox): Promise<ModalResult> {
           titleEl.textContent = title
           messageEl.textContent = message
           okBtn.textContent = okLabel
@@ -288,7 +306,7 @@ const { title } = Astro.props
           overlay.classList.add('open')
           okBtn.focus()
 
-          return new Promise<any>(resolve => {
+          return new Promise<ModalResult>(resolve => {
             resolveFn = resolve
           })
         }
@@ -319,20 +337,24 @@ const { title } = Astro.props
         })
 
         // fmConfirm(message, options?) – replacement for window.confirm()
-        ;(window as any).__fmConfirm = function(message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean; checkbox?: { label: string; checked?: boolean } }): Promise<any> {
+        type ConfirmOptions = { title?: string; okLabel?: string; isDanger?: boolean }
+        function fmConfirm(message: string, options: ConfirmOptions & { checkbox: ModalCheckbox }): Promise<CheckboxResult>
+        function fmConfirm(message: string, options?: ConfirmOptions): Promise<boolean>
+        function fmConfirm(message: string, options?: ConfirmOptions & { checkbox?: ModalCheckbox }): Promise<ModalResult> {
           const title = options?.title || t('common.confirmTitle') || t('common.delete')
           const okLabel = options?.okLabel || t('common.delete')
           const isDanger = options?.isDanger !== undefined ? options.isDanger : true
           return openModal(title, message, okLabel, t('common.cancel'), isDanger, options?.checkbox)
         }
+        layoutWindow.__fmConfirm = fmConfirm
 
         // fmAlert(message) – replacement for window.alert()
-        ;(window as any).__fmAlert = function(message: string): Promise<boolean> {
+        layoutWindow.__fmAlert = function(message: string): Promise<boolean> {
           return openModal(t('common.errorTitle') || 'Error', message, t('common.close'), null, false)
         }
 
         // fmSuccess(message) – success-style alert with green title
-        ;(window as any).__fmSuccess = function(message: string): Promise<boolean> {
+        layoutWindow.__fmSuccess = function(message: string): Promise<boolean> {
           return openModal(t('common.successTitle') || 'Success', message, t('common.close'), null, false)
         }
       })()
@@ -381,7 +403,7 @@ const { title } = Astro.props
             return
           }
 
-          const user = await response.json()
+          const user: User = await response.json()
           await ensureLabelPresetBrowserMigration(user.id).catch(error => {
             console.warn('Could not migrate label presets to the database', error)
           })
@@ -418,12 +440,14 @@ const { title } = Astro.props
       checkAuth()
 
       /* ── System version check ────────────────────────────────── */
-      async function checkSystemVersion(user: any) {
+      type VersionStatus = { update_available: boolean; latest_version: string | null }
+
+      async function checkSystemVersion(user: User) {
         try {
           const cachedRaw = sessionStorage.getItem('fm_version_check')
           if (cachedRaw) {
             try {
-              const cached = JSON.parse(cachedRaw)
+              const cached: { ts: number; data: VersionStatus } | null = JSON.parse(cachedRaw)
               if (cached?.ts && Date.now() - cached.ts < 30 * 60 * 1000 && cached.data) {
                 applyVersionStatus(cached.data, user)
                 return
@@ -436,13 +460,13 @@ const { title } = Astro.props
             signal: getAbortSignal(),
           })
           if (!resp.ok) return
-          const data = await resp.json()
+          const data: VersionStatus = await resp.json()
           sessionStorage.setItem('fm_version_check', JSON.stringify({ ts: Date.now(), data }))
           applyVersionStatus(data, user)
         } catch { /* Version check is non-critical */ }
       }
 
-      function applyVersionStatus(data: any, user: any) {
+      function applyVersionStatus(data: VersionStatus, user: User) {
         if (!data?.update_available) return
         const updateBadge = document.getElementById('sidebar-version-update') as HTMLAnchorElement | null
         const updateText = document.getElementById('sidebar-version-update-text')
@@ -470,7 +494,7 @@ const { title } = Astro.props
         try {
           const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal: getAbortSignal() })
           if (!resp.ok) return
-          const plugins: { plugin_key: string; name: string; page_url: string }[] = await resp.json()
+          const plugins: { plugin_key: string; name: string; page_url: string; icon_url?: string | null }[] = await resp.json()
           if (!plugins.length) return
 
           const hr = document.createElement('hr')
@@ -489,7 +513,11 @@ const { title } = Astro.props
             const a = document.createElement('a')
             a.href = navHrefFor(p.page_url)
             a.className = 'fm-nav-item'
-            a.innerHTML = `<span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-plugin"></use></svg></span><span>${p.name}</span>`
+            const icon = createPluginIcon(p.icon_url)
+            icon.classList.add('fm-nav-icon')
+            const name = document.createElement('span')
+            name.textContent = p.name
+            a.append(icon, name)
             pluginNav.appendChild(a)
           }
 

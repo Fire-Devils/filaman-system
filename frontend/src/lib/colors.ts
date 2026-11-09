@@ -1,3 +1,5 @@
+import type { ColumnFilterValue } from './table-column-filters'
+
 export function normalizeHexCode(value?: string | null): string {
   if (!value) return ''
 
@@ -109,6 +111,25 @@ export function filamentColorValues(
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
 }
 
+export function inventoryColorMatcher(filter: Extract<ColumnFilterValue, { type: 'multi' }>) {
+  const names = new Set(filter.values)
+  const exactIds = new Set<number>()
+  for (const [name, ids] of filter.colorStopIds || []) {
+    names.delete(name)
+    for (const id of ids) exactIds.add(id)
+  }
+  return (filament: { colors?: Array<{ color_id?: number; color?: { name?: string } | null }> } | null | undefined) => {
+    let hasNamedColor = false
+    for (const { color, color_id } of filament?.colors || []) {
+      if (color_id !== undefined && exactIds.has(color_id)) return true
+      if (!color?.name) continue
+      hasNamedColor = true
+      if (names.has(color.name)) return true
+    }
+    return !hasNamedColor && names.has('')
+  }
+}
+
 export interface AlphaColorControls {
   picker: HTMLInputElement
   hexInput: HTMLInputElement
@@ -156,11 +177,11 @@ export function bindAlphaColorControls(controls: AlphaColorControls) {
     alphaOptions.classList.toggle('hidden', !enabled)
   }
 
-  function syncFromHex(value = hexInput.value): boolean {
-    const normalized = normalizeHexCode(value)
+  function syncFromHex({ normalizeInput = true } = {}): boolean {
+    const normalized = normalizeHexCode(hexInput.value)
     if (!normalized) return false
 
-    hexInput.value = normalized
+    if (normalizeInput) hexInput.value = normalized
     picker.value = toOpaqueRgbHex(normalized)
     setAlphaEnabled(normalized.length === 9)
     if (normalized.length === 9) {
@@ -230,7 +251,7 @@ export function bindAlphaColorControls(controls: AlphaColorControls) {
 
   function reset(value = '#FF0000'): void {
     hexInput.value = value
-    syncFromHex(value)
+    syncFromHex()
   }
 
   picker.addEventListener('input', syncFromPicker)
@@ -240,7 +261,8 @@ export function bindAlphaColorControls(controls: AlphaColorControls) {
   alphaHexInput.addEventListener('input', syncFromAlphaHex)
   alphaHexInput.addEventListener('change', normalizeAlphaHex)
   alphaEnabled.addEventListener('change', syncFromAlphaEnabled)
-  hexInput.addEventListener('input', () => syncFromHex())
+  hexInput.addEventListener('input', () => syncFromHex({ normalizeInput: false }))
+  hexInput.addEventListener('change', () => syncFromHex())
 
   return {
     reset,
