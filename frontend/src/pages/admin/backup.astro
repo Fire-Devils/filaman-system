@@ -258,7 +258,7 @@ import FormSection from '../../components/FormSection.astro'
         importStatus.textContent = t('admin.backupImportComplete') || 'Import complete!'
 
         await dialogWindow.__fmSuccess(
-          (t('admin.backupImportSuccess') || 'Backup imported successfully!') + '\n\n' + result.message
+          [t('admin.backupImportSuccess'), result.message, ...(result.plugins_warnings ?? [])].join('\n\n')
         )
 
         backupFileInput.value = ''

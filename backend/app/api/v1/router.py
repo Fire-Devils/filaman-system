@@ -235,7 +235,7 @@ def _mount_plugin_routers() -> None:
     import logging
     import sys
 
-    from app.services.plugin_service import PLUGINS_DIR
+    from app.services.plugin_service import PLUGINS_DIR, plugin_archive_lock
 
     _logger = logging.getLogger(__name__)
 
@@ -248,33 +248,34 @@ def _mount_plugin_routers() -> None:
     if str(PLUGINS_DIR) not in sys.path:
         sys.path.insert(0, str(PLUGINS_DIR))
 
-    for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
-        if not plugin_dir.is_dir():
-            continue
-        manifest_path = plugin_dir / "plugin.json"
-        router_path = plugin_dir / "router.py"
-        if not manifest_path.is_file() or not router_path.is_file():
-            continue
-
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("plugin_type") not in ("import", "integration"):
+    with plugin_archive_lock(reading=True, blocking=True):
+        for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
+            if not plugin_dir.is_dir():
+                continue
+            manifest_path = plugin_dir / "plugin.json"
+            router_path = plugin_dir / "router.py"
+            if not manifest_path.is_file() or not router_path.is_file():
                 continue
 
-            validate_integration_shell(manifest, plugin_dir)
-            plugin_key = manifest.get("plugin_key", plugin_dir.name)
-            module = importlib.import_module(f"{plugin_key}.router")
-            adapt_installed_spoolman(module, plugin_key, manifest)
-            _deferred_plugin_routers.append(
-                (plugin_key, _build_plugin_router(plugin_key, manifest, module))
-            )
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if manifest.get("plugin_type") not in ("import", "integration"):
+                    continue
 
-        except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.
-            _logger.warning(
-                "Plugin-Router '%s' konnte nicht geladen werden: %s",
-                plugin_dir.name,
-                exc,
-            )
+                validate_integration_shell(manifest, plugin_dir)
+                plugin_key = manifest.get("plugin_key", plugin_dir.name)
+                module = importlib.import_module(f"{plugin_key}.router")
+                adapt_installed_spoolman(module, plugin_key, manifest)
+                _deferred_plugin_routers.append(
+                    (plugin_key, _build_plugin_router(plugin_key, manifest, module))
+                )
+
+            except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.
+                _logger.warning(
+                    "Plugin-Router '%s' konnte nicht geladen werden: %s",
+                    plugin_dir.name,
+                    exc,
+                )
 
 
 _mount_plugin_routers()

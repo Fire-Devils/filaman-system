@@ -1,15 +1,14 @@
 """Admin-Endpoints fuer System, Plugin-Management und Killswitch."""
 
+import asyncio
 import base64
 import binascii
-import importlib
 import io
 import json
 import logging
 import os
 import re
 import shutil
-import sys
 import tempfile
 import time
 from collections.abc import AsyncIterator, Mapping
@@ -17,6 +16,7 @@ from contextlib import AsyncExitStack, ExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, BinaryIO, Literal, cast
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
@@ -31,12 +31,19 @@ from starlette.concurrency import run_in_threadpool
 from starlette.types import Receive, Scope, Send
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
+from app.api.v1.printers import (
+    _PRIMARY_PROXY_HEADER,
+    _ensure_primary_worker,
+    _is_primary_worker,
+    _proxy_to_primary,
+)
 from app.core.cache import response_cache
 from app.core.config import settings
+from app.core.file_lock import FileLockBusy
 from app.core.security import Principal
 from app.core.seeds import BUILTIN_PLUGINS, DEPRECATED_PLUGINS
 from app.core.shared_health import shared_display_store, shared_health_store
-from app.core.worker_reload import request_worker_reload
+from app.core.worker_reload import request_worker_reload, worker_reload_available
 from app.models import (
     AppSettings,
     Color,
@@ -101,13 +108,26 @@ from app.services.label_asset_service import (
     validate_canonical_label_image,
 )
 from app.services.label_preset_v1 import convert_label_preset_data
-from app.services.plugin_service import PluginInstallError, PluginInstallService
+from app.services.plugin_catalog import (
+    CatalogRelease,
+    CatalogSelection,
+    fetch_catalog,
+    fetch_verified_zip,
+)
+from app.services.plugin_service import (
+    MAX_ZIP_SIZE,
+    PluginInstallError,
+    PluginInstallService,
+    plugin_restore_lock,
+    version_key,
+)
 
 logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/admin/system", tags=["admin-system"])
 BACKUP_BATCH_ROWS = 20
+PLUGIN_PROXY_ATTEMPTS = 32
 PluginManagementPrincipal = Annotated[
     Principal, RequirePermission("admin:plugins_manage")
 ]
@@ -167,13 +187,16 @@ class AvailablePluginResponse(BaseModel):
     version: str
     description: str | None = None
     download_url: str
+    publisher: str
+    repository_url: str
+    min_filaman_version: str
+    is_compatible: bool
+    release_id: str
     is_installed: bool = False
+    requires_newer_zip: bool = False
     installed_version: str | None = None
+    icon_url: str | None = None
     update_available: bool = False
-
-
-class RegistryInstallRequest(BaseModel):
-    download_url: str
 
 
 class PluginToggleRequest(BaseModel):
@@ -266,67 +289,57 @@ async def list_plugins(
     return plugins
 
 
-FILAMAN_PLUGINS_URL = "https://www.filaman.app/plugins/"
 GITHUB_SYSTEM_RELEASES_URL = (
     "https://api.github.com/repos/Fire-Devils/filaman-system/releases/latest"
 )
 
-_SEMVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
+def _is_compatible(release: CatalogRelease, installed: str) -> bool:
+    return version_key(installed) >= version_key(release.min_filaman_version)
 
 
-def _parse_semver(ver: str) -> tuple[int, ...] | None:
-    """Semver-String in vergleichbares Tuple parsen, None bei ungueltigem Format."""
-    m = _SEMVER_RE.match(ver)
-    return tuple(int(x) for x in m.groups()) if m else None
+async def _available_plugin_rows(
+    db: DBSession, releases: dict[str, CatalogRelease], core_version: str
+) -> list[AvailablePluginResponse]:
+    service = PluginInstallService(db)
+    installed = {p.plugin_key: p for p in await service.list_installed()}
+    rows = []
+    for release in releases.values():
+        existing = installed.get(release.plugin_key)
+        has_files = existing is not None and service.has_plugin_files(release.plugin_key, existing.version)
+        compatible = _is_compatible(release, core_version)
+        installed_order = version_key(existing.version) if existing else ()
+        release_order = version_key(release.version)
+        rows.append(
+            AvailablePluginResponse(
+                plugin_key=release.plugin_key,
+                name=release.name,
+                version=release.version,
+                description=release.description,
+                download_url=release.download_url,
+                publisher=release.publisher,
+                repository_url=release.repository_url,
+                min_filaman_version=release.min_filaman_version,
+                is_compatible=compatible,
+                release_id=release.release_id,
+                is_installed=has_files,
+                requires_newer_zip=not has_files and installed_order > release_order,
+                installed_version=existing.version if existing else None,
+                icon_url=existing.icon_url if existing and has_files else None,
+                update_available=compatible and existing is not None and release_order > installed_order,
+            )
+        )
+    return rows
 
 
-_ZIP_LINK_RE = re.compile(r'href="([^"]+\.zip)"', re.IGNORECASE)
-_ZIP_NAME_RE = re.compile(r"^(.+?)-([\d]+\.[\d]+\.[\d]+)\.zip$")
-
-
-async def _fetch_available_from_filaman() -> dict[str, dict]:
-    """Verfuegbare Plugins von filaman.app/plugins/ abrufen.
-
-    Parst das Directory-Listing nach ZIP-Dateien im Format
-    '{plugin_key}-{version}.zip' und gibt ein Dict zurueck:
-    {plugin_key: {"plugin_key": ..., "version": ..., "download_url": ...}}
-    mit jeweils nur der neuesten Version pro Plugin.
-    """
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(FILAMAN_PLUGINS_URL)
-        resp.raise_for_status()
-
-    html = resp.text
-    zip_links = _ZIP_LINK_RE.findall(html)
-
-    latest: dict[str, dict] = {}
-    for link in zip_links:
-        # Nur den Dateinamen extrahieren (falls relativer oder absoluter Pfad)
-        filename = link.rsplit("/", 1)[-1]
-        m = _ZIP_NAME_RE.match(filename)
-        if not m:
-            continue
-        key, ver = m.group(1), m.group(2)
-        semver = _parse_semver(ver)
-        if semver is None:
-            continue
-
-        # Download-URL bauen
-        if link.startswith("http"):
-            download_url = link
-        else:
-            download_url = FILAMAN_PLUGINS_URL + filename
-
-        if key not in latest or (_parse_semver(latest[key]["version"]) or ()) < semver:
-            latest[key] = {
-                "plugin_key": key,
-                "name": key,
-                "version": ver,
-                "description": None,
-                "download_url": download_url,
-            }
-
-    return latest
+async def _catalog_for_admin() -> dict[str, CatalogRelease]:
+    try:
+        return await fetch_catalog()
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Plugin catalog unavailable: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "registry_unavailable", "message": "Could not load the plugin catalog. Try again."},
+        ) from exc
 
 
 # ------------------------------------------------------------------ #
@@ -348,7 +361,7 @@ def _read_installed_version() -> str:
     # In Docker: /app/version.txt; lokal: ../version.txt relativ zum Backend
     candidates = [
         Path("/app/version.txt"),
-        Path(__file__).resolve().parents[3] / "version.txt",
+        Path(__file__).resolve().parents[4] / "version.txt",
     ]
     for p in candidates:
         if p.is_file():
@@ -381,12 +394,8 @@ async def version_check(
         # Always use current installed version (may change after update)
         cached["installed_version"] = installed
         cached["update_available"] = (
-            (
-                (_parse_semver(cached["latest_version"]) or ())
-                > (_parse_semver(installed) or ())
-            )
-            if cached["latest_version"]
-            else False
+            version_key(cached["latest_version"]) > version_key(installed)
+            if cached["latest_version"] else False
         )
         return VersionCheckResponse(**cached)
 
@@ -406,41 +415,15 @@ async def version_check(
         except httpx.HTTPError:
             logger.warning("Failed to fetch latest system version from GitHub")
 
-    # Fetch available plugins from filaman.app
-    plugin_updates: list[AvailablePluginResponse] = []
     try:
-        latest = await _fetch_available_from_filaman()
+        releases = await fetch_catalog()
+    except (httpx.HTTPError, ValueError):
+        logger.warning("Failed to fetch plugin updates from the catalog")
+        plugin_updates = []
+    else:
+        plugin_updates = await _available_plugin_rows(db, releases, installed)
 
-        service = PluginInstallService(db)
-        installed_plugins = await service.list_installed()
-        installed_map = {p.plugin_key: p for p in installed_plugins}
-
-        for info in latest.values():
-            existing = installed_map.get(info["plugin_key"])
-            plugin_updates.append(
-                AvailablePluginResponse(
-                    plugin_key=info["plugin_key"],
-                    name=info["name"],
-                    version=info["version"],
-                    description=info["description"],
-                    download_url=info["download_url"],
-                    is_installed=existing is not None,
-                    installed_version=existing.version if existing else None,
-                    update_available=(
-                        existing is not None
-                        and (_parse_semver(info["version"]) or ())
-                        > (_parse_semver(existing.version) or ())
-                    ),
-                )
-            )
-    except httpx.HTTPError:
-        logger.warning("Failed to fetch plugin updates from filaman.app")
-
-    update_available = (
-        ((_parse_semver(latest_version) or ()) > (_parse_semver(installed) or ()))
-        if latest_version
-        else False
-    )
+    update_available = version_key(latest_version) > version_key(installed) if latest_version else False
 
     result_data = {
         "installed_version": installed,
@@ -460,49 +443,71 @@ async def list_available_plugins(
     db: DBSession,
     principal: PluginManagementPrincipal,
 ):
-    """Verfuegbare Plugins aus dem FilaMan-Plugin-Verzeichnis abrufen.
+    """List approved plugin releases and their local install status."""
+    return await _available_plugin_rows(db, await _catalog_for_admin(), _read_installed_version())
 
-    Fragt das Directory-Listing auf filaman.app/plugins/ ab, parst
-    ZIP-Dateinamen im Format '{plugin_key}-{version}.zip' und gibt
-    die jeweils neueste Version je Plugin zurueck, inklusive Install-/Update-Status.
-    """
-    try:
-        latest = await _fetch_available_from_filaman()
-    except httpx.HTTPError as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={
-                "code": "registry_unavailable",
-                "message": f"Plugin-Verzeichnis nicht erreichbar: {e}",
-            },
+
+async def _active_plugin_printers(db: DBSession, driver_key: str | None) -> list[Printer]:
+    if not driver_key:
+        return []
+    return list((await db.scalars(
+        select(Printer).where(
+            Printer.driver_key == driver_key,
+            Printer.is_active == True,
+            Printer.deleted_at.is_(None),
         )
+    )).all())
 
-    # Install-Status ermitteln
-    service = PluginInstallService(db)
-    installed = await service.list_installed()
-    installed_map = {p.plugin_key: p for p in installed}
 
-    result: list[AvailablePluginResponse] = []
-    for info in latest.values():
-        existing = installed_map.get(info["plugin_key"])
-        result.append(
-            AvailablePluginResponse(
-                plugin_key=info["plugin_key"],
-                name=info["name"],
-                version=info["version"],
-                description=info["description"],
-                download_url=info["download_url"],
-                is_installed=existing is not None,
-                installed_version=existing.version if existing else None,
-                update_available=(
-                    existing is not None
-                    and (_parse_semver(info["version"]) or ())
-                    > (_parse_semver(existing.version) or ())
-                ),
-            )
-        )
+async def _activate_plugin_locally(
+    request: Request, plugin: InstalledPlugin, printers: list[Printer],
+) -> None:
+    from app.plugins.manager import plugin_manager
 
-    return result
+    await plugin_manager.reload_driver(plugin.driver_key or plugin.plugin_key, printers)
+    if plugin.plugin_type in ("import", "integration"):
+        from app.api.v1.router import mount_plugin_router_on_app
+
+        mount_plugin_router_on_app(request.app, plugin.plugin_key)
+
+
+def _plugin_change_needs_proxy(request: Request) -> bool:
+    if not worker_reload_available() or _is_primary_worker():
+        return False
+    # A forwarded request that reached another secondary lets its caller retry.
+    if _PRIMARY_PROXY_HEADER in request.headers:
+        _ensure_primary_worker()
+    return True
+
+
+async def _install_plugin_archive(
+    request: Request,
+    db: DBSession,
+    data: bytes,
+    user_id: int,
+    expected_release: tuple[str, str] | None = None,
+) -> PluginInstallResponse:
+    async def activate(plugin: InstalledPlugin, previous_type: str | None) -> None:
+        _invalidate_version_cache()
+        response_cache.delete("plugin_nav")
+        router_types = ("import", "integration")
+        if (plugin.plugin_type in router_types or previous_type in router_types) and request_worker_reload():
+            return
+
+        printers = await _active_plugin_printers(db, plugin.driver_key) if plugin.is_active else []
+        await _activate_plugin_locally(request, plugin, printers)
+
+    plugin, is_upgrade = await PluginInstallService(db).install_from_zip(
+        data,
+        installed_by=user_id,
+        expected_release=expected_release,
+        after_install=activate,
+    )
+    action = "aktualisiert" if is_upgrade else "installiert"
+    return PluginInstallResponse(
+        message=f"Plugin '{plugin.name}' v{plugin.version} erfolgreich {action}",
+        plugin=PluginResponse.model_validate(plugin),
+    )
 
 
 @router.post(
@@ -512,109 +517,45 @@ async def list_available_plugins(
 )
 async def install_from_registry(
     request: Request,
-    body: RegistryInstallRequest,
+    body: CatalogSelection,
     db: DBSession,
     principal: PluginManagementPrincipal,
 ):
-    """Plugin aus dem FilaMan-Plugin-Verzeichnis installieren.
+    """Install the exact approved catalog release."""
+    if _plugin_change_needs_proxy(request):
+        return await _proxy_to_primary(
+            request, "POST", request.url.path, body.model_dump(),
+            timeout=120.0, attempts=PLUGIN_PROXY_ATTEMPTS,
+        )
 
-    Laedt die ZIP-Datei von der angegebenen URL herunter und
-    leitet sie an die bestehende install_from_zip-Pipeline weiter.
-    """
-    from app.plugins.manager import plugin_manager
-
-    # URL validieren: nur Downloads von filaman.app erlauben
-    if not body.download_url.startswith(FILAMAN_PLUGINS_URL):
+    release = (await _catalog_for_admin()).get(body.plugin_key)
+    if not release or release.version != body.version or release.release_id != body.release_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "catalog_release_unavailable", "message": "This release changed or was withdrawn. Reopen the catalog."},
+        )
+    if not _is_compatible(release, _read_installed_version()):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
-                "code": "invalid_download_url",
-                "message": "Nur Downloads aus dem offiziellen Plugin-Verzeichnis sind erlaubt",
+                "code": "catalog_release_incompatible",
+                "message": f"This plugin requires FilaMan {release.min_filaman_version} or newer.",
             },
         )
 
-    # ZIP herunterladen
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        try:
-            resp = await client.get(body.download_url)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={
-                    "code": "download_failed",
-                    "message": f"ZIP-Download fehlgeschlagen: {e}",
-                },
-            )
-
-    zip_data = resp.content
-
-    if not zip_data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": "empty_download",
-                "message": "Heruntergeladene Datei ist leer",
-            },
-        )
-
-    async def stop_drivers_for_upgrade(driver_key: str) -> None:
-        """Laufende Treiber stoppen und Module-Cache bereinigen."""
-        for pid, drv in list(plugin_manager.drivers.items()):
-            if drv.driver_key == driver_key:
-                await plugin_manager.stop_printer(pid)
-        prefix = f"app.plugins.{driver_key}"
-        for mod_name in list(sys.modules.keys()):
-            if mod_name.startswith(prefix):
-                del sys.modules[mod_name]
-        importlib.invalidate_caches()
-
-    service = PluginInstallService(db)
     try:
-        plugin, is_upgrade = await service.install_from_zip(
-            zip_data=zip_data,
-            installed_by=principal.user_id,
-            stop_callback=stop_drivers_for_upgrade,
+        return await _install_plugin_archive(
+            request, db, await fetch_verified_zip(release), principal.user_id,
+            expected_release=(release.plugin_key, release.version),
         )
     except PluginInstallError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "code": e.code,
-                "message": str(e),
-            },
-        )
-
-    # Treiber fuer zugehoerige Drucker (neu) starten
-    if plugin.driver_key:
-        result = await db.execute(
-            select(Printer).where(
-                Printer.driver_key == plugin.driver_key,
-                Printer.is_active == True,
-                Printer.deleted_at.is_(None),
-            )
-        )
-        for p in result.scalars().all():
-            await plugin_manager.start_printer(p)
-
-    # Import-/Integration-Plugin Router dynamisch mounten
-    if plugin.plugin_type in ("import", "integration"):
-        from app.api.v1.router import mount_plugin_router_on_app
-
-        mount_plugin_router_on_app(request.app, plugin.plugin_key)
-        # mount_plugin_router_on_app() only patches the current worker's
-        # routes — reload all Gunicorn workers so the route is consistently
-        # available regardless of which worker handles the next request.
-        request_worker_reload()
-
-    # Caches invalidieren (Plugin-Status hat sich geaendert)
-    _invalidate_version_cache()
-
-    action = "aktualisiert" if is_upgrade else "installiert"
-    return PluginInstallResponse(
-        message=f"Plugin '{plugin.name}' v{plugin.version} erfolgreich {action}",
-        plugin=PluginResponse.model_validate(plugin),
-    )
+        if e.code in {"catalog_downgrade", "plugin_mutation_in_progress"}:
+            status_code = status.HTTP_409_CONFLICT
+        elif e.code in {"download_failed", "checksum_mismatch"}:
+            status_code = status.HTTP_502_BAD_GATEWAY
+        else:
+            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=status_code, detail={"code": e.code, "message": str(e)}) from e
 
 
 @router.post(
@@ -638,8 +579,6 @@ async def install_plugin(
     - Treiber-Klassen-Pruefung
     - Upgrade oder Neuinstallation
     """
-    from app.plugins.manager import plugin_manager
-
     # Content-Type pruefen
     if file.content_type not in (
         "application/zip",
@@ -655,7 +594,7 @@ async def install_plugin(
         )
 
     # Datei lesen
-    zip_data = await file.read()
+    zip_data = await file.read(MAX_ZIP_SIZE + 1)
 
     if not zip_data:
         raise HTTPException(
@@ -666,65 +605,33 @@ async def install_plugin(
             },
         )
 
-    async def stop_drivers_for_upgrade(driver_key: str) -> None:
-        """Laufende Treiber stoppen und Module-Cache bereinigen."""
-        for pid, drv in list(plugin_manager.drivers.items()):
-            if drv.driver_key == driver_key:
-                await plugin_manager.stop_printer(pid)
-        # Module-Cache invalidieren fuer Neuimport
-        prefix = f"app.plugins.{driver_key}"
-        for mod_name in list(sys.modules.keys()):
-            if mod_name.startswith(prefix):
-                del sys.modules[mod_name]
-        importlib.invalidate_caches()
-
-    # Installation durchfuehren
-    service = PluginInstallService(db)
-    try:
-        plugin, is_upgrade = await service.install_from_zip(
-            zip_data=zip_data,
-            installed_by=principal.user_id,
-            stop_callback=stop_drivers_for_upgrade,
-        )
-    except PluginInstallError as e:
+    if len(zip_data) > MAX_ZIP_SIZE:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "zip_too_large", "message": "Plugin ZIP exceeds the 10 MB limit."},
+        )
+
+    if _plugin_change_needs_proxy(request):
+        return await _proxy_to_primary(
+            request, "POST", request.url.path,
+            files={"file": (file.filename or "plugin.zip", zip_data, file.content_type)},
+            timeout=120.0, attempts=PLUGIN_PROXY_ATTEMPTS,
+        )
+
+    try:
+        return await _install_plugin_archive(request, db, zip_data, principal.user_id)
+    except PluginInstallError as e:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_409_CONFLICT
+                if e.code == "plugin_mutation_in_progress"
+                else status.HTTP_422_UNPROCESSABLE_ENTITY
+            ),
             detail={
                 "code": e.code,
                 "message": str(e),
             },
         )
-
-    # Treiber fuer zugehoerige Drucker (neu) starten
-    if plugin.driver_key:
-        result = await db.execute(
-            select(Printer).where(
-                Printer.driver_key == plugin.driver_key,
-                Printer.is_active == True,
-                Printer.deleted_at.is_(None),
-            )
-        )
-        for p in result.scalars().all():
-            await plugin_manager.start_printer(p)
-
-    # Import-/Integration-Plugin Router dynamisch mounten
-    if plugin.plugin_type in ("import", "integration"):
-        from app.api.v1.router import mount_plugin_router_on_app
-
-        mount_plugin_router_on_app(request.app, plugin.plugin_key)
-        # mount_plugin_router_on_app() only patches the current worker's
-        # routes — reload all Gunicorn workers so the route is consistently
-        # available regardless of which worker handles the next request.
-        request_worker_reload()
-
-    # Caches invalidieren (Plugin-Status hat sich geaendert)
-    _invalidate_version_cache()
-
-    action = "aktualisiert" if is_upgrade else "installiert"
-    return PluginInstallResponse(
-        message=f"Plugin '{plugin.name}' v{plugin.version} erfolgreich {action}",
-        plugin=PluginResponse.model_validate(plugin),
-    )
 
 
 @router.delete("/plugins/{plugin_key}", status_code=status.HTTP_204_NO_CONTENT)
@@ -732,26 +639,22 @@ async def uninstall_plugin(
     plugin_key: str,
     db: DBSession,
     principal: PluginManagementPrincipal,
+    request: Request,
     delete_data: bool = Query(
         False,
         description="Also delete SystemExtraFields and printer_params created by this plugin",
     ),
 ):
     """Plugin deinstallieren."""
-    from app.plugins.manager import plugin_manager
+    if _plugin_change_needs_proxy(request):
+        path = f"/api/v1/admin/system/plugins/{quote(plugin_key, safe='')}"
+        await _proxy_to_primary(request, "DELETE", path, timeout=120.0, attempts=PLUGIN_PROXY_ATTEMPTS)
+        return
 
-    async def prepare_uninstall(plugin: InstalledPlugin) -> None:
+    service = PluginInstallService(db)
+
+    async def before_delete(plugin: InstalledPlugin) -> None:
         driver_key = plugin.driver_key or plugin_key
-        # Laufende Treiber stoppen
-        for pid, drv in list(plugin_manager.drivers.items()):
-            if drv.driver_key == driver_key:
-                await plugin_manager.stop_printer(pid)
-        # Module-Cache bereinigen
-        prefix = f"app.plugins.{plugin_key}"
-        for mod_name in list(sys.modules.keys()):
-            if mod_name.startswith(prefix):
-                del sys.modules[mod_name]
-
         if not delete_data:
             return
 
@@ -787,29 +690,26 @@ async def uninstall_plugin(
                 )
             )
 
-    service = PluginInstallService(db)
+    async def deactivate(plugin: InstalledPlugin) -> None:
+        _invalidate_version_cache()
+        response_cache.delete("plugin_nav")
+        if plugin.plugin_type in ("import", "integration") and request_worker_reload():
+            return
+        from app.plugins.manager import plugin_manager
+
+        await plugin_manager.reload_driver(plugin.driver_key or plugin.plugin_key)
+
     try:
-        plugin_type = await service.uninstall(plugin_key, before_remove=prepare_uninstall)
+        await service.uninstall(plugin_key, before_delete, deactivate)
     except PluginInstallError as e:
         raise HTTPException(
             status_code=(
-                status.HTTP_409_CONFLICT if e.code == "install_busy" else status.HTTP_404_NOT_FOUND
+                status.HTTP_409_CONFLICT
+                if e.code == "plugin_mutation_in_progress"
+                else status.HTTP_404_NOT_FOUND
             ),
-            detail={
-                "code": e.code,
-                "message": str(e),
-            },
-        )
-
-    # Fuer Import-/Integration-Plugins bleibt der Router sonst in jedem Worker
-    # gemountet, der ihn zuvor dynamisch geladen hat — Worker-Reload erzwingt
-    # den konsistenten Kaltstart-Pfad (Plugin-Verzeichnis ist bereits geloescht,
-    # also wird die Route ueberall entfernt).
-    if plugin_type in ("import", "integration"):
-        request_worker_reload()
-
-    # Caches invalidieren (Plugin entfernt)
-    _invalidate_version_cache()
+            detail={"code": e.code, "message": str(e)},
+        ) from e
 
 
 class PluginToggleResponse(BaseModel):
@@ -867,7 +767,11 @@ async def toggle_plugin_active(
         plugin = await service.set_active(plugin_key, body.is_active)
     except PluginInstallError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(
+                status.HTTP_409_CONFLICT
+                if e.code == "plugin_mutation_in_progress"
+                else status.HTTP_404_NOT_FOUND
+            ),
             detail={
                 "code": e.code,
                 "message": str(e),
@@ -1524,6 +1428,18 @@ async def _get_schema_version(db: DBSession) -> str | None:
         return None
 
 
+async def _backup_plugin_list(db: DBSession) -> list[BackupPluginInfo]:
+    builtin_keys = {p["plugin_key"] for p in BUILTIN_PLUGINS}
+    result = await db.scalars(
+        select(InstalledPlugin).where(InstalledPlugin.installed_by.isnot(None))
+    )
+    return [
+        BackupPluginInfo(plugin_key=p.plugin_key, version=p.version)
+        for p in result
+        if p.plugin_key not in builtin_keys and p.plugin_key not in DEPRECATED_PLUGINS
+    ]
+
+
 @router.get("/backup/export")
 async def export_backup(
     db: DBSession,
@@ -1555,24 +1471,11 @@ async def export_backup(
     # Get app version
     app_version = _read_installed_version()
 
-    # Collect non-builtin, non-deprecated plugin info for metadata
-    builtin_keys = {p["plugin_key"] for p in BUILTIN_PLUGINS}
-    deprecated_keys = set(DEPRECATED_PLUGINS)
-    result = await db.execute(
-        select(InstalledPlugin).where(InstalledPlugin.installed_by.isnot(None))
-    )
-    user_plugins = result.scalars().all()
-    backup_plugins = [
-        BackupPluginInfo(plugin_key=p.plugin_key, version=p.version)
-        for p in user_plugins
-        if p.plugin_key not in builtin_keys and p.plugin_key not in deprecated_keys
-    ]
-
     metadata = BackupMetadata(
         export_date=datetime.now(UTC).isoformat(),
         app_version=app_version,
         schema_version=schema_version,
-        plugins=backup_plugins if backup_plugins else None,
+        plugins=await _backup_plugin_list(db) or None,
     )
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
@@ -1753,6 +1656,11 @@ async def _import_backup_row(
             db.add(model(**attr_data))
         return
 
+    if model is InstalledPlugin and not attr_data.get("icon"):
+        builtin = next((p for p in BUILTIN_PLUGINS if p["plugin_key"] == attr_data.get("plugin_key")), None)
+        if builtin:
+            attr_data["icon"] = builtin.get("icon")
+
     instance = model(**attr_data)
     db.add(instance)
 
@@ -1895,8 +1803,10 @@ async def _import_jsonl_data(
 
 
 async def _reinstall_plugins_from_backup(
+    request: Request,
     db: DBSession,
     plugins: list[BackupPluginInfo],
+    installed_by: int,
 ) -> tuple[list[str], list[str]]:
     """Reinstall user-installed plugins from backup via the plugin registry.
 
@@ -1924,8 +1834,8 @@ async def _reinstall_plugins_from_backup(
 
     # Fetch available plugins from registry
     try:
-        available = await _fetch_available_from_filaman()
-    except Exception as exc:  # noqa: BLE001 — optional plugin reinstalls must not fail a completed restore.
+        available = await fetch_catalog()
+    except Exception as exc:  # noqa: BLE001 — plugin downloads are optional after restore.
         logger.warning("Plugin-Registry nicht erreichbar: %s", exc)
         for p in to_install:
             warnings.append(
@@ -1935,7 +1845,13 @@ async def _reinstall_plugins_from_backup(
         return installed, warnings
 
     service = PluginInstallService(db)
+    reload_workers = worker_reload_available()
 
+    async def activate(plugin: InstalledPlugin, _previous_type: str | None) -> None:
+        printers = await _active_plugin_printers(db, plugin.driver_key) if plugin.is_active else []
+        await _activate_plugin_locally(request, plugin, printers)
+
+    core_version = _read_installed_version()
     for plugin_info in to_install:
         key = plugin_info.plugin_key
         registry_entry = available.get(key)
@@ -1944,27 +1860,20 @@ async def _reinstall_plugins_from_backup(
             warnings.append(f"Plugin '{key}' ist nicht in der Registry verfuegbar")
             continue
 
-        download_url = registry_entry["download_url"]
-
-        # Download ZIP from registry
-        try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                resp = await client.get(download_url)
-                resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            warnings.append(f"Plugin '{key}': Download fehlgeschlagen ({exc})")
+        if (
+            not _is_compatible(registry_entry, core_version)
+            or version_key(registry_entry.version) < version_key(plugin_info.version)
+        ):
+            warnings.append(f"Plugin '{key}': no compatible catalog release at or above {plugin_info.version}")
             continue
 
-        zip_data = resp.content
-        if not zip_data:
-            warnings.append(f"Plugin '{key}': Heruntergeladene Datei ist leer")
-            continue
-
-        # Install via existing pipeline (finds DB record from import → upgrade)
         try:
             plugin, _ = await service.install_from_zip(
-                zip_data=zip_data,
-                installed_by=None,
+                zip_data=await fetch_verified_zip(registry_entry),
+                installed_by=installed_by,
+                expected_release=(registry_entry.plugin_key, registry_entry.version),
+                after_install=None if reload_workers else activate,
+                backup_restore_locked=True,
             )
             installed.append(f"Plugin '{plugin.name}' v{plugin.version} installiert")
             logger.info(
@@ -1972,14 +1881,18 @@ async def _reinstall_plugins_from_backup(
                 plugin.name,
                 plugin.version,
             )
-        except PluginInstallError as exc:
-            warnings.append(f"Plugin '{key}': Installation fehlgeschlagen ({exc})")
+        except (PluginInstallError, OSError, SQLAlchemyError) as exc:
+            await db.rollback()
+            reason = str(exc) if isinstance(exc, PluginInstallError) else "Could not save plugin files or metadata"
+            warnings.append(f"Plugin '{key}': Installation fehlgeschlagen ({reason})")
             logger.warning(
                 "Backup-Import: Plugin '%s' konnte nicht installiert werden: %s",
                 key,
                 exc,
             )
 
+    if installed and reload_workers and not request_worker_reload():
+        warnings.append("Restart FilaMan to activate the restored plugins.")
     return installed, warnings
 
 
@@ -2023,8 +1936,19 @@ def _invalid_backup_error(exc: Exception) -> HTTPException:
     )
 
 
+def _backup_restore_busy() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "plugin_mutation_in_progress",
+            "message": "A plugin change or another backup restore is in progress. Try again.",
+        },
+    )
+
+
 @router.post("/backup/import", response_model=BackupImportResponse)
 async def import_backup(
+    request: Request,
     db: DBSession,
     file: Annotated[UploadFile, File()],
     principal: PluginManagementPrincipal,
@@ -2074,6 +1998,8 @@ async def import_backup(
         logger.info(f"Backup metadata: {backup_metadata}")
 
         try:
+            # Hold the restore lock through recovery so another restore cannot replace this snapshot mid-install.
+            stack.enter_context(plugin_restore_lock())
             # Step 1: Create automatic backup of current data
             auto_backup_path = await _create_auto_backup(db)
             logger.info(f"Auto-backup created at: {auto_backup_path}")
@@ -2115,14 +2041,23 @@ async def import_backup(
             logger.info(f"Backup import completed successfully by user {principal.user_id}")
 
             response_cache.clear()
+            _invalidate_version_cache()
 
             # Step 4: Reinstall user-installed plugins from backup
             plugins_installed = None
             plugins_warnings = None
-            if plugin_list:
-                plugins_installed, plugins_warnings = await _reinstall_plugins_from_backup(
-                    db, plugin_list
-                )
+            if plugin_list or imported.get("installed_plugins"):
+                try:
+                    # Automatic backups and older exports may have plugin rows without a header list.
+                    if not plugin_list:
+                        plugin_list = await _backup_plugin_list(db)
+                    plugins_installed, plugins_warnings = await _reinstall_plugins_from_backup(
+                        request, db, plugin_list, principal.user_id
+                    )
+                except Exception as exc:  # noqa: BLE001 — the backup is already committed.
+                    await db.rollback()
+                    logger.warning("Plugin reinstall after restore failed (%s)", type(exc).__name__)
+                    plugins_warnings = ["Backup restored. Some plugins could not be reinstalled."]
                 if plugins_installed:
                     logger.info(
                         "Backup-Import: %d Plugin(s) installiert",
@@ -2141,6 +2076,12 @@ async def import_backup(
                 plugins_warnings=plugins_warnings or None,
             )
 
+        except asyncio.CancelledError:
+            await db.rollback()
+            raise
+        except FileLockBusy as exc:
+            await db.rollback()
+            raise _backup_restore_busy() from exc
         except (BackupStreamError, ValueError) as exc:
             await db.rollback()
             logger.warning("Backup import rejected: %s", exc)
@@ -2389,20 +2330,23 @@ async def restore_sqlite_backup(
     )
 
     try:
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        auto_backup_name = f"auto_before_restore_{timestamp}.db"
-        auto_backup_path = backup_dir / auto_backup_name
-        shutil.copy2(str(db_path), str(auto_backup_path))
-        logger.info("Auto-backup created before restore: %s", auto_backup_path)
+        with plugin_restore_lock():
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            auto_backup_name = f"auto_before_restore_{timestamp}.db"
+            auto_backup_path = backup_dir / auto_backup_name
+            shutil.copy2(str(db_path), str(auto_backup_path))
+            logger.info("Auto-backup created before restore: %s", auto_backup_path)
 
-        from app.core.database import engine
+            from app.core.database import engine
 
-        await engine.dispose()
+            await engine.dispose()
 
-        shutil.copy2(str(backup_file), str(db_path))
-        logger.info("SQLite database restored from: %s", backup_file)
+            shutil.copy2(str(backup_file), str(db_path))
+            logger.info("SQLite database restored from: %s", backup_file)
 
+    except FileLockBusy as exc:
+        raise _backup_restore_busy() from exc
     except Exception as exc:
         logger.exception("SQLite restore failed")
         raise HTTPException(

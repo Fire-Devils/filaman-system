@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import inspect
 import contextlib
@@ -85,6 +86,10 @@ async def _proxy_to_primary(
     method: str,
     path: str,
     json_body: dict[str, Any] | None = None,
+    *,
+    files: dict[str, tuple[str, bytes, str]] | None = None,
+    timeout: float = 10.0,
+    attempts: int = _PRIMARY_PROXY_RETRIES,
 ) -> Any:
     hop_header = request.headers.get(_PRIMARY_PROXY_HEADER, "0")
     hop = int(hop_header) if hop_header.isdigit() else 0
@@ -103,50 +108,61 @@ async def _proxy_to_primary(
     url = target
     headers = _forward_headers(request, hop)
 
-    for _ in range(_PRIMARY_PROXY_RETRIES):
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.request(
-                method,
-                url,
-                params=request.query_params,
-                headers=headers,
-                json=json_body,
+    body = {"json": json_body} if files is None else {"files": files}
+    for _ in range(attempts):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.request(
+                    method,
+                    url,
+                    params=request.query_params,
+                    headers=headers,
+                    **body,
+                )
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={"code": "primary_proxy_failed", "message": "Could not reach the primary worker"},
+            ) from exc
+
+        if method == "DELETE" and response.status_code == status.HTTP_204_NO_CONTENT:
+            return None
+
+        payload: Any = None
+        with contextlib.suppress(Exception):
+            payload = response.json()
+
+        if response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            if _is_primary_required_error(detail):
+                await asyncio.sleep(0.025)
+                continue
+
+        if response.status_code >= 400:
+            if isinstance(payload, dict) and "detail" in payload:
+                raise HTTPException(status_code=response.status_code, detail=payload["detail"])
+            raise HTTPException(
+                status_code=response.status_code,
+                detail={
+                    "code": "proxy_failed",
+                    "message": response.text,
+                },
             )
 
-            payload: Any = None
-            with contextlib.suppress(Exception):
-                payload = response.json()
+        if payload is None:
+            # response.json() above swallows decode errors, so a successful
+            # status code can still leave payload unset (empty/non-JSON body).
+            # Surface that as a structured error instead of letting callers
+            # crash on model_validate(None).
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "primary_proxy_invalid_response",
+                    "message": "Primary worker returned an invalid response",
+                },
+            )
 
-            if response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-                detail = payload.get("detail") if isinstance(payload, dict) else None
-                if _is_primary_required_error(detail):
-                    continue
-
-            if response.status_code >= 400:
-                if isinstance(payload, dict) and "detail" in payload:
-                    raise HTTPException(status_code=response.status_code, detail=payload["detail"])
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail={
-                        "code": "proxy_failed",
-                        "message": response.text,
-                    },
-                )
-
-            if payload is None:
-                # response.json() above swallows decode errors, so a successful
-                # status code can still leave payload unset (empty/non-JSON body).
-                # Surface that as a structured error instead of letting callers
-                # crash on model_validate(None).
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail={
-                        "code": "primary_proxy_invalid_response",
-                        "message": "Primary worker returned an invalid response",
-                    },
-                )
-
-            return payload
+        return payload
 
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

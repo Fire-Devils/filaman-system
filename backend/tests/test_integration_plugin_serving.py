@@ -406,13 +406,13 @@ async def test_uninstall_conflicts_with_an_install(db_session, admin_user, tmp_p
     ))
     await db_session.commit()
 
-    with plugin_service._plugin_install_lock(), pytest.raises(HTTPException) as error:
-        await uninstall_plugin(key, db_session, None, delete_data=True)
+    with plugin_service._plugin_write_lock(key), pytest.raises(HTTPException) as error:
+        await uninstall_plugin(key, db_session, None, None, delete_data=True)
     assert error.value.status_code == 409
-    assert error.value.detail["code"] == "install_busy"
+    assert error.value.detail["code"] == "plugin_mutation_in_progress"
     assert plugin_dir.is_dir()
     assert await plugin_service.PluginInstallService(db_session).get_plugin(key) is not None
 
-    await uninstall_plugin(key, db_session, None, delete_data=True)
+    await uninstall_plugin(key, db_session, None, None, delete_data=True)
     assert not plugin_dir.exists()
     assert await plugin_service.PluginInstallService(db_session).get_plugin(key) is None

@@ -13,6 +13,7 @@ import * as actions from './table-actions'
 const plugin = { plugin_key: 'example', name: 'Example plugin', icon_url: '/api/v1/plugin-icons/example?v=1.0.0', page_url: '/plugin-page/example', description: '', version: '1.0', plugin_type: 'integration', author: '<b>Author</b>', is_active: true, installed_by: 1, installed_at: '2026-01-01' }
 let updates: unknown[] = []
 let installError: Response | Promise<Response> | undefined
+let nextAvailability: Promise<Response> | undefined
 const calls: { path: string; init?: RequestInit }[] = []
 const alert = vi.fn(async () => true)
 async function boot() {
@@ -24,14 +25,19 @@ beforeEach(() => {
   calls.length = 0
   updates = []
   installError = undefined
+  nextAvailability = undefined
   i18n.setLang('en')
   document.cookie = 'csrf_token=test-csrf'
   alert.mockClear()
-  Object.assign(window, { __fmAlert: alert })
+  Object.assign(window, { __fmAlert: alert, __fmConfirm: vi.fn(async () => true) })
   vi.stubGlobal('fetch', vi.fn(async (input, init?: RequestInit) => {
     const path = String(input)
     calls.push({ path, init })
-    if (path.endsWith('/available')) return Response.json(updates)
+    if (path.endsWith('/available')) {
+      const response = nextAvailability
+      nextAvailability = undefined
+      return response ?? Response.json(updates)
+    }
     if (path.endsWith('/install-from-registry')) return installError || Response.json({ plugin, message: 'Installed successfully' })
     return Response.json([plugin])
   }))
@@ -50,7 +56,7 @@ it.each([
   [Response.json({ detail: { message: 'Download unavailable' } }, { status: 502 }), 'Download unavailable'],
   [new Response('Proxy failed', { status: 502 }), 'HTTP 502'],
 ])('preserves an update failure reason and restores the retry button (%#)', async (response, message) => {
-  updates = [{ plugin_key: 'example', version: '2.0', download_url: 'https://filaman.app/example.zip', update_available: true }]
+  updates = [{ plugin_key: 'example', version: '2.0.0', description: 'Example', publisher: 'Example author', repository_url: 'https://github.com/example/plugin', min_filaman_version: '2.0.3', is_compatible: true, release_id: 'example-release', update_available: true }]
   installError = response
   await boot()
   document.querySelector<HTMLButtonElement>('#btn-check-updates')!.click()
@@ -63,7 +69,7 @@ it.each([
   expect(document.querySelector('#plugin-message')!.getAttribute('role')).toBe('alert')
   const write = calls.find(call => call.init?.method === 'POST')!
   expect(write.path).toBe('/api/v1/admin/system/plugins/install-from-registry')
-  expect(JSON.parse(String(write.init!.body))).toEqual({ download_url: 'https://filaman.app/example.zip' })
+  expect(JSON.parse(String(write.init!.body))).toEqual({ plugin_key: 'example', version: '2.0.0', release_id: 'example-release' })
   expect((write.init!.headers as Record<string, string>)['X-CSRF-Token']).toBe('test-csrf')
 })
 it('offers a named icon link to the plugin page beside the row actions', async () => {
@@ -92,19 +98,25 @@ it('opens native details with plugin metadata rendered as text', async () => {
 })
 
 it('keeps install selection available after failure and blocks closing while installing', async () => {
-  updates = [{ plugin_key: 'example', name: 'Example', version: '2.0', download_url: 'https://filaman.app/example.zip', update_available: true }]
+  const catalogIcon = '/api/v1/plugin-icons/example?v=1.0.1'
+  updates = [{ plugin_key: 'example', name: 'Example', version: '2.0.0', description: 'Example', publisher: 'Example author', repository_url: 'https://github.com/example/plugin', min_filaman_version: '2.0.3', is_compatible: true, release_id: 'example-release', update_available: true, icon_url: catalogIcon }]
   let finish!: (response: Response) => void
   installError = new Promise(resolve => { finish = resolve })
   await boot()
-  document.querySelector<HTMLButtonElement>('#btn-install')!.click()
+  document.querySelector<HTMLButtonElement>('#btn-browse-plugins')!.click()
   const modal = document.querySelector<HTMLDialogElement>('#install-modal')!
   expect(modal.open).toBe(true)
-  await vi.waitFor(() => expect(document.querySelectorAll('#registry-select option')).toHaveLength(2))
-  const registry = document.querySelector<HTMLSelectElement>('#registry-select')!
-  registry.value = 'https://filaman.app/example.zip'
-  registry.dispatchEvent(new Event('change'))
+  const release = await vi.waitFor(() => {
+    const button = document.querySelector<HTMLButtonElement>('#catalog-list button')
+    expect(button).not.toBeNull()
+    return button!
+  })
+  expect(modal.querySelector('.catalog-card img')?.getAttribute('src')).toBe(catalogIcon)
+  release.click()
   const submit = document.querySelector<HTMLButtonElement>('#install-submit')!
   expect(submit.disabled).toBe(false)
+  const header = submit.closest('header')!
+  expect(header.querySelector('#catalog-selection')?.textContent).toContain('Example author')
   document.querySelector('#install-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   expect(submit.disabled).toBe(true)
   expect(document.querySelector<HTMLButtonElement>('#install-cancel')!.disabled).toBe(true)
@@ -113,7 +125,145 @@ it('keeps install selection available after failure and blocks closing while ins
   finish(Response.json({ detail: 'Update unavailable' }, { status: 422 }))
   await vi.waitFor(() => expect(document.querySelector('#error-details')!.textContent).toBe('Update unavailable'))
   expect(submit.disabled).toBe(false)
-  expect(registry.value).toBe('https://filaman.app/example.zip')
+  expect(document.activeElement).toBe(submit)
+  expect(header.querySelector('[role="alert"]')?.textContent).toBe('Update unavailable')
+  expect(document.querySelector('#catalog-selection')!.textContent).toContain('Example author')
   document.querySelector<HTMLButtonElement>('#install-cancel')!.click()
   expect(modal.open).toBe(false)
+})
+
+it.each(['browse', 'table'])('refreshes a stale release from the %s without retrying it', async surface => {
+  const release = {
+    plugin_key: 'example', name: 'Example', version: '2.0.0', description: 'Example', publisher: 'Example author',
+    repository_url: 'https://github.com/example/plugin', min_filaman_version: '2.0.3',
+    is_compatible: true, is_installed: true, release_id: 'old-release', update_available: true,
+  }
+  updates = [release]
+  let rejectInstall!: (response: Response) => void
+  installError = new Promise(resolve => { rejectInstall = resolve })
+  await boot()
+  const browse = surface === 'browse'
+  document.querySelector<HTMLButtonElement>(browse ? '#btn-browse-plugins' : '#btn-check-updates')!.click()
+  const selector = browse ? '#catalog-list button' : '.btn-update'
+  const previous = await vi.waitFor(() => {
+    const action = document.querySelector<HTMLButtonElement>(selector)
+    expect(action?.textContent).toContain('2.0.0')
+    return action!
+  })
+  previous.click()
+  const confirm = document.querySelector<HTMLButtonElement>('#install-submit')!
+  if (browse) document.querySelector('#install-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await vi.waitFor(() => expect(calls.filter(call => call.init?.method === 'POST')).toHaveLength(1))
+
+  const check = document.querySelector<HTMLButtonElement>('#btn-check-updates')!
+  let finishOlderCheck: ((response: Response) => void) | undefined
+  if (!browse) {
+    nextAvailability = new Promise(resolve => { finishOlderCheck = resolve })
+    check.click()
+    await vi.waitFor(() => expect(calls.filter(call => call.path.endsWith('/available'))).toHaveLength(2))
+  }
+
+  updates = [{ ...release, version: '3.0.0', release_id: 'new-release' }]
+  rejectInstall(Response.json({ detail: { code: 'catalog_release_unavailable' } }, { status: 409 }))
+  await vi.waitFor(() => expect(document.querySelector(selector)?.textContent).toContain('3.0.0'))
+  expect(document.querySelector(browse ? '#error-details' : '#plugin-message')?.textContent).toBe(i18n.t('admin.pluginCatalogChanged'))
+  expect(previous.isConnected).toBe(false)
+  if (browse) {
+    expect(confirm.hidden).toBe(true)
+    expect(document.activeElement?.id).toBe('catalog-search')
+  } else {
+    finishOlderCheck!(Response.json([release]))
+    await vi.waitFor(() => expect(check.disabled).toBe(false))
+    expect(document.querySelector(selector)?.textContent).toContain('3.0.0')
+    expect(document.querySelector('#plugin-message')?.textContent).toBe(i18n.t('admin.pluginCatalogChanged'))
+  }
+  expect(calls.filter(call => call.init?.method === 'POST')).toHaveLength(1)
+})
+
+it('searches the catalog and confirms the chosen release by key and version', async () => {
+  updates = [
+    { plugin_key: 'moonraker_filaman', name: 'Moonraker', description: 'Connects Klipper printers', publisher: 'Fire-Devils', version: '0.2.5', repository_url: 'https://github.com/Fire-Devils/FilaMan-Moonraker-Plugin', min_filaman_version: '2.0.3', is_compatible: true, release_id: 'moonraker-release', is_installed: false },
+    { plugin_key: 'bambuddy', name: 'Bambuddy', description: 'Syncs spool data', publisher: 'Fire-Devils', version: '1.3.10', repository_url: 'https://github.com/Fire-Devils/filaman-bambuddy-plugin', min_filaman_version: '2.0.3', is_compatible: true, is_installed: true },
+  ]
+  await boot()
+  document.querySelector<HTMLButtonElement>('#btn-browse-plugins')!.click()
+  const list = document.querySelector('#catalog-list')!
+  await vi.waitFor(() => expect(list.textContent).toContain('Bambuddy'))
+  const cards = [...list.children]
+  expect(cards.map(card => card.querySelector('h3')?.textContent)).toEqual(['Bambuddy', 'Moonraker'])
+  expect(cards.every(card => card.querySelector('.fm-plugin-icon[aria-hidden="true"]'))).toBe(true)
+  expect(cards[0].querySelector('button')).toBeNull()
+  expect(cards[0].querySelector('.catalog-installed')?.textContent).toContain(i18n.t('admin.pluginAlreadyInstalled'))
+  expect(cards[1].querySelector('a')?.getAttribute('href')).toBe('https://github.com/Fire-Devils/FilaMan-Moonraker-Plugin')
+  const search = document.querySelector<HTMLInputElement>('#catalog-search')!
+  search.value = 'klipper'
+  search.dispatchEvent(new Event('input'))
+  expect(list.textContent).toContain('Moonraker')
+  expect(list.textContent).not.toContain('Bambuddy')
+  list.querySelector<HTMLButtonElement>('button')!.click()
+  expect(list.querySelector('button')?.getAttribute('aria-current')).toBe('true')
+  expect(document.querySelector('#catalog-selection')!.textContent).toContain('Fire-Devils')
+  expect(calls.every(call => call.init?.method !== 'POST')).toBe(true)
+  document.querySelector('#install-form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await vi.waitFor(() => expect(calls.some(call => call.init?.method === 'POST')).toBe(true))
+  expect(JSON.parse(String(calls.find(call => call.init?.method === 'POST')!.init?.body))).toEqual({ plugin_key: 'moonraker_filaman', version: '0.2.5', release_id: 'moonraker-release' })
+  await vi.waitFor(() => expect(document.querySelector('#plugin-message')?.textContent).toBe('Installed successfully'))
+  expect(document.querySelector('#catalog-selection')?.hasAttribute('hidden')).toBe(true)
+})
+
+it('combines search and status filters and clears a hidden install selection', async () => {
+  const release = {
+    publisher: 'FilaMan', repository_url: 'https://github.com/example/plugin', version: '2.0.0',
+    min_filaman_version: '2.0.3', is_compatible: true, release_id: 'example-release',
+  }
+  updates = [
+    { ...release, plugin_key: 'current', name: 'Current', description: 'A driver', is_installed: true },
+    { ...release, plugin_key: 'outdated', name: 'Outdated', description: 'A driver', is_installed: true, installed_version: '1.0.0', update_available: true },
+    { ...release, plugin_key: 'new_plugin', name: 'New', description: 'An integration', is_installed: false },
+  ]
+  await boot()
+  document.querySelector<HTMLButtonElement>('#btn-browse-plugins')!.click()
+  const list = document.querySelector('#catalog-list')!
+  await vi.waitFor(() => expect(list.children).toHaveLength(3))
+  const filter = document.querySelector<HTMLSelectElement>('#catalog-filter')!
+  const search = document.querySelector<HTMLInputElement>('#catalog-search')!
+  const names = () => [...list.querySelectorAll('h3')].map(heading => heading.textContent)
+  const setFilter = (value: string) => {
+    filter.value = value
+    filter.dispatchEvent(new Event('change'))
+  }
+
+  setFilter('installed')
+  expect(names()).toEqual(['Current', 'Outdated'])
+  setFilter('updates')
+  expect(names()).toEqual(['Outdated'])
+  expect(list.querySelector('.catalog-installed')?.textContent).toContain('v1.0.0')
+  expect(list.querySelector('button')?.textContent).toBe(i18n.t('admin.pluginUpdateTo').replace('{version}', '2.0.0'))
+  list.querySelector<HTMLButtonElement>('button')!.click()
+  expect(document.querySelector('#catalog-selection')!.hasAttribute('hidden')).toBe(false)
+  setFilter('uninstalled')
+  expect(names()).toEqual(['New'])
+  expect(document.querySelector('#catalog-selection')!.hasAttribute('hidden')).toBe(true)
+  expect(document.querySelector<HTMLButtonElement>('#install-submit')!.disabled).toBe(true)
+
+  search.value = 'driver'
+  search.dispatchEvent(new Event('input'))
+  expect(names()).toEqual([])
+  expect(document.querySelector('#catalog-status')?.textContent).toBe(i18n.t('admin.pluginNoMatches'))
+  setFilter('all')
+  expect(names()).toEqual(['Current', 'Outdated'])
+})
+
+it('explains how to restore a newer recorded plugin when the catalog only has an older ZIP', async () => {
+  updates = [{
+    plugin_key: 'example', name: 'Example', description: 'Test plugin', publisher: 'Example author',
+    version: '1.0.0', repository_url: 'https://github.com/example/plugin', min_filaman_version: '2.0.3',
+    is_compatible: true, is_installed: false, installed_version: '2.0.0', requires_newer_zip: true,
+  }]
+  await boot()
+  document.querySelector<HTMLButtonElement>('#btn-browse-plugins')!.click()
+  const list = document.querySelector('#catalog-list')!
+  await vi.waitFor(() => expect(list.textContent).toContain('Example'))
+  expect(list.querySelector('button')).toBeNull()
+  expect(list.textContent).toContain('Upload a ZIP for version 2.0.0 or newer')
 })

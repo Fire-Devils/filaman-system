@@ -15,6 +15,8 @@ FilaMan is a comprehensive filament management system for 3D printing. It helps 
 
 ### Documentation
 The full user manual is available at **[docu.filaman.app](https://docu.filaman.app)**.
+
+To browse, install, or submit plugins, see the [plugin catalog guide](plugin-catalog/README.md).
 See the [label rendering and print-request API](docs/label-api.md) for device and client integration.
 
 ### 💡 Hardware Extension: FilaMan ESP32 Scale

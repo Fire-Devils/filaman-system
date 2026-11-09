@@ -18,8 +18,60 @@ import FormDialog from '../../components/FormDialog.astro'
     .plugin-message { margin-bottom: 16px; }
     .plugin-drop-zone { display: block; border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 20px; text-align: center; cursor: pointer; }
     .plugin-drop-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .plugin-divider { display: flex; align-items: center; gap: 12px; font-size: .8rem; color: var(--text-muted); }
-    .plugin-divider hr { flex: 1; border: 0; border-top: 1px solid var(--border); }
+    :global(#install-modal [hidden]) { display: none; }
+    :global(#install-modal .fm-form-dialog-header) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+    :global(#install-modal .fm-header-actions) { display: contents; }
+    .plugin-install-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--inline-gap); }
+    .plugin-install-feedback { grid-column: 1 / -1; display: grid; gap: 8px; overflow-wrap: anywhere; }
+    .plugin-install-feedback:not(:has(> :not([hidden]))) { display: none; }
+    @media (min-width: 641px) {
+      :global(#install-modal.catalog-dialog) { width: min(58rem, calc(100vw - 32px)); }
+    }
+    :global(#install-modal.catalog-dialog h2) { font-size: 1.08rem; }
+    .catalog-intro, #catalog-status { margin: 0; }
+    #catalog-status:empty { position: absolute; }
+    #catalog-retry { justify-self: start; }
+    #catalog-selection { margin: 0; color: var(--text); }
+    #error-details { max-height: min(8rem, 30dvh); overflow: auto; white-space: pre-wrap; }
+    .catalog-tools { display: grid; gap: 12px; }
+    .catalog-tools :is(input, select) { width: 100%; margin-top: 6px; }
+    @media (min-width: 641px) {
+      .catalog-tools { grid-template-columns: minmax(0, 1fr) 12rem; }
+    }
+    .catalog-list {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+      gap: 12px; list-style: none; margin: 0; padding: 0;
+    }
+    .catalog-list:empty { display: none; }
+    .catalog-list :global(.catalog-card) {
+      display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px;
+      border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-soft);
+      overflow-wrap: anywhere;
+    }
+    .catalog-list :global(.catalog-card:has([aria-current="true"])) { border-color: var(--accent); }
+    .catalog-list :global(.catalog-heading) { display: flex; align-items: flex-start; gap: 10px; }
+    .catalog-list :global(.catalog-icon) {
+      display: grid; place-items: center; flex: 0 0 36px; height: 36px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated);
+    }
+    .catalog-list :global(.catalog-icon .fm-plugin-icon) { color: var(--accent); }
+    .catalog-list :global(h3) { font-size: 1rem; line-height: 1.3; margin: 0; }
+    .catalog-list :global(p) { margin: 0; }
+    .catalog-list :global(.catalog-description) { color: var(--text-muted); font-size: .875rem; line-height: 1.5; }
+    .catalog-list :global(.catalog-version) {
+      margin-left: auto; padding: 3px 7px; border-radius: 999px; background: var(--bg-elevated);
+      color: var(--text-muted); font-size: .75rem;
+    }
+    .catalog-list :global(.catalog-footer) { display: grid; gap: 8px; margin-top: auto; }
+    .catalog-list :global(.catalog-actions) { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+    .catalog-list :global(.catalog-actions .fm-btn) { padding: 6px 12px; font-size: .8rem; }
+    .catalog-list :global(.catalog-installed) {
+      display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+      border: 1px solid var(--success-border); border-radius: 999px;
+      background: var(--success-bg); color: var(--success-text); font-size: .85rem; font-weight: 700;
+    }
+    .catalog-list :global(.catalog-installed svg) { flex-shrink: 0; }
+    .catalog-list :global(.catalog-actions a), .catalog-submit { color: var(--accent); font-size: .85rem; }
     .toggle-spinner { display: none; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: toggle-spin .6s linear infinite; margin-left: 8px; }
     .toggle-spinner.visible { display: inline-block; }
     @keyframes toggle-spin { to { transform: rotate(360deg); } }
@@ -28,7 +80,8 @@ import FormDialog from '../../components/FormDialog.astro'
   <AdminHeader titleKey="admin.systemPlugins" title="Plugins">
     <div class="plugin-toolbar-actions">
       <button id="btn-check-updates" class="fm-btn fm-btn-outline" data-i18n="admin.pluginCheckUpdates">Check for Updates</button>
-      <button id="btn-install" class="fm-btn fm-btn-primary" data-i18n="admin.installPlugin">Install Plugin</button>
+      <button id="btn-install" class="fm-btn fm-btn-outline" data-i18n="admin.pluginUploadZip">Upload ZIP</button>
+      <button id="btn-browse-plugins" class="fm-btn fm-btn-primary" data-i18n="admin.pluginBrowse">Browse Plugins</button>
     </div>
   </AdminHeader>
   <div id="plugin-message" class="plugin-message hidden" role="status"></div>
@@ -54,51 +107,50 @@ import FormDialog from '../../components/FormDialog.astro'
   </div>
   
   <!-- Install Modal -->
-  <FormDialog id="install-modal" titleId="install-title" titleKey="admin.installPlugin" title="Install Plugin">
+  <FormDialog id="install-modal" titleId="install-title" titleKey="admin.installPlugin" title="Install Plugin" wide>
     <Fragment slot="actions">
-      <button type="submit" form="install-form" id="install-submit" class="fm-btn fm-btn-primary" disabled data-i18n="admin.installPlugin">Install Plugin</button>
-      <button type="button" id="install-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      <div class="plugin-install-actions">
+        <button type="submit" form="install-form" id="install-submit" aria-describedby="catalog-selection" class="fm-btn fm-btn-primary" disabled data-i18n="admin.installPlugin">Install Plugin</button>
+        <button type="button" id="install-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+      </div>
+      <div class="plugin-install-feedback">
+        <p id="catalog-selection" class="fm-field-hint" role="status" hidden></p>
+        <div id="validation-details" class="fm-alert-success" role="status" hidden></div>
+        <div id="error-details" class="fm-alert-error" role="alert" tabindex="0" hidden></div>
+        <p id="upload-progress" class="fm-field-hint" style="margin: 0" role="status" data-i18n="admin.pluginInstalling" hidden>Installing…</p>
+      </div>
     </Fragment>
       <form id="install-form" class="fm-compact-form">
-        <!-- Registry Plugin Auswahl -->
-        <div>
-          <label for="registry-select" class="fm-label" data-i18n="admin.pluginFromRegistry">Install from Registry</label>
-          <select id="registry-select" class="fm-select">
-            <option value="" data-i18n="admin.pluginSelectFromRegistry">-- Select a plugin --</option>
-          </select>
-          <p id="registry-status" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;"></p>
+        <div id="catalog-browser" class="fm-compact-form" hidden>
+          <p class="catalog-intro fm-field-hint" data-i18n="admin.pluginBrowseIntro">Discover printer drivers and integrations that extend FilaMan.</p>
+          <search class="catalog-tools">
+            <div>
+              <label for="catalog-search" class="fm-label" data-i18n="admin.pluginSearch">Search plugins</label>
+              <input id="catalog-search" class="fm-input" type="search" />
+            </div>
+            <div>
+              <label for="catalog-filter" class="fm-label" data-i18n="common.status">Status</label>
+              <select id="catalog-filter" class="fm-select">
+                <option value="all" data-i18n="admin.pluginFilterAll">All plugins</option>
+                <option value="installed" data-i18n="admin.pluginFilterInstalled">Installed</option>
+                <option value="uninstalled" data-i18n="admin.pluginFilterUninstalled">Not installed</option>
+                <option value="updates" data-i18n="admin.pluginFilterUpdates">Updates available</option>
+              </select>
+            </div>
+          </search>
+          <p id="catalog-status" class="fm-field-hint" role="status"></p>
+          <button id="catalog-retry" type="button" class="fm-btn fm-btn-outline" data-i18n="common.retry" hidden>Retry</button>
+          <ul id="catalog-list" class="catalog-list"></ul>
+          <div><a class="catalog-submit" href="https://github.com/Fire-Devils/filaman-system/blob/main/plugin-catalog/README.md#submit-a-plugin" target="_blank" rel="noopener noreferrer" data-i18n="admin.pluginSubmit">Submit a plugin</a></div>
         </div>
 
-        <div class="plugin-divider"><hr /><span data-i18n="admin.pluginOrUpload">or upload manually</span><hr /></div>
-
-        <!-- ZIP Upload -->
-        <div>
+        <div id="plugin-zip-upload">
           <label for="file-input" class="fm-label" data-i18n="admin.pluginZipFile">Plugin ZIP File</label>
           <div id="drop-zone" class="plugin-drop-zone" role="button" tabindex="0" aria-labelledby="plugin-file-hint">
             <p id="plugin-file-hint" class="fm-field-hint" data-i18n="admin.pluginDropHint">Drag & Drop ZIP file here or click to select</p>
             <p id="file-name" style="margin: 8px 0 0; font-weight: 600; color: var(--text); display: none;"></p>
             <input type="file" id="file-input" accept=".zip,application/zip" style="display: none;" />
           </div>
-        </div>
-        
-        <!-- Validierungsergebnis -->
-        <div id="validation-result" style="display: none;">
-          <div id="validation-success" class="fm-alert-success" style="display: none; padding: 12px; border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--bg-soft); border: 1px solid var(--accent-2);">
-            <strong data-i18n="admin.pluginValidationOk">Validation passed</strong>
-            <div id="validation-details" style="margin-top: 8px; font-size: 0.85rem;"></div>
-          </div>
-          <div id="validation-error" class="fm-alert-error" style="display: none; padding: 12px; border-radius: var(--radius-sm);">
-            <strong data-i18n="admin.pluginValidationFailed">Validation failed</strong>
-            <div id="error-details" style="margin-top: 8px; font-size: 0.85rem;"></div>
-          </div>
-        </div>
-        
-        <!-- Fortschrittsbalken -->
-        <div id="upload-progress" style="display: none;">
-          <div style="background: var(--bg-soft); border-radius: 999px; overflow: hidden; height: 8px;">
-            <div id="progress-bar" style="background: var(--accent); height: 100%; width: 0%; transition: width 0.3s;"></div>
-          </div>
-          <p id="progress-text" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; text-align: center;" data-i18n="admin.pluginUploading">Uploading...</p>
         </div>
         
       </form>
@@ -115,7 +167,7 @@ import FormDialog from '../../components/FormDialog.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { navHrefFor } from '../../lib/plugin-nav'
     import { createPluginIcon } from '../../lib/plugin-icon'
-    import { api, request } from '../../lib/api'
+    import { ApiError, api, request } from '../../lib/api'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { escapeHtml } from '../../lib/extra-fields'
     import { tableAction } from '../../lib/table-actions'
@@ -129,19 +181,24 @@ import FormDialog from '../../components/FormDialog.astro'
       config_schema?: Record<string, unknown> | null
     }
     interface RegistryPlugin {
-      plugin_key: string; name: string; version: string; download_url: string
-      update_available: boolean; is_installed: boolean; installed_version?: string | null
+      plugin_key: string; name: string; version: string; description: string; publisher: string
+      repository_url: string; min_filaman_version: string; is_compatible: boolean; release_id: string
+      update_available: boolean; is_installed: boolean; requires_newer_zip: boolean; installed_version?: string | null
+      icon_url?: string | null
     }
-    interface InstallResult { plugin: { name: string; version: string }; message: string }
+    interface InstallResult { plugin: { plugin_key: string; name: string; version: string }; message: string }
     const fm = window as unknown as { __fmConfirm: (message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }) => Promise<boolean> }
     let plugins: Plugin[] = []
     let selectedFile: File | null = null
     let availablePlugins: RegistryPlugin[] = []
-    let selectedRegistryUrl: string = ''
-    let updateMap: Record<string, { version: string; download_url: string }> = {}
+    let selectedRelease: RegistryPlugin | null = null
+    let updateMap = new Map<string, RegistryPlugin>()
+    let updateRequest = 0
+    const pendingUpdates = new Set<string>()
     
     let installing = false
-    const installDialog = bindFormDialog(document.getElementById('install-modal') as HTMLDialogElement, { canClose: () => !installing })
+    const installModal = document.getElementById('install-modal') as HTMLDialogElement
+    const installDialog = bindFormDialog(installModal, { canClose: () => !installing })
     const detailDialog = bindFormDialog(document.getElementById('detail-modal') as HTMLDialogElement)
     function showMessage(message: string, error = false) {
       const host = document.getElementById('plugin-message')!
@@ -181,6 +238,7 @@ import FormDialog from '../../components/FormDialog.astro'
       }
       
       tbody.innerHTML = plugins.map(p => {
+        const update = updateMap.get(p.plugin_key)
         const openLabel = escapeHtml(`${t('common.open')} ${p.name}`)
         const nameHtml = p.page_url
           ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" style="color: var(--accent); text-decoration: none; font-weight: 600;">${escapeHtml(p.name)}</a>`
@@ -208,7 +266,7 @@ import FormDialog from '../../components/FormDialog.astro'
           </td>
           <td>
             <div class="plugin-actions">
-            ${updateMap[p.plugin_key] ? `<button data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px">${escapeHtml(t('admin.pluginUpdateTo').replace('{version}', updateMap[p.plugin_key].version))}</button>` : ''}
+            ${update ? `<button data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px" ${pendingUpdates.has(p.plugin_key) ? 'disabled' : ''}>${escapeHtml(t('admin.pluginUpdateTo').replace('{version}', update.version))}</button>` : ''}
             <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail fm-row-action" aria-label="${escapeHtml(t('admin.pluginDetails'))}" title="${escapeHtml(t('admin.pluginDetails'))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button>
             ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-row-action" aria-label="${openLabel}" title="${openLabel}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></a>` : ''}
             ${p.installed_by != null ? tableAction('delete', { key: p.plugin_key, name: p.name }, { title: t('admin.uninstallPlugin') }) : ''}
@@ -235,23 +293,45 @@ import FormDialog from '../../components/FormDialog.astro'
         btn.addEventListener('click', async (e) => {
           const btnEl = e.currentTarget as HTMLButtonElement
           const key = btnEl.dataset.key!
-          const info = updateMap[key]
-          if (!info) return
+          const info = updateMap.get(key)
+          if (!info || pendingUpdates.has(key)) return
 
+          pendingUpdates.add(key)
           btnEl.disabled = true
-          btnEl.textContent = t('admin.pluginUpdating')
-
           try {
-            await api.post('/admin/system/plugins/install-from-registry', { download_url: info.download_url })
+            const confirmed = await fm.__fmConfirm(releasePrompt(info), {
+              title: t('admin.installPlugin'), okLabel: t('admin.pluginUpdateTo').replace('{version}', info.version),
+            })
+            if (!confirmed) return
+            btnEl.textContent = t('admin.pluginUpdating')
+            await installRelease(info)
             showMessage(`${t('common.successTitle')}: ${plugins.find(plugin => plugin.plugin_key === key)?.name || key} · ${info.version}`)
-            delete updateMap[key]
+            invalidateUpdate(key)
             loadPlugins()
           } catch (err) {
             if (isAbortError(err)) return
+            if (releaseIsStale(err)) {
+              invalidateUpdate(key)
+              renderPlugins()
+              showMessage(t('admin.pluginCatalogChanged'), true)
+              document.getElementById('btn-check-updates')?.focus()
+              try {
+                await refreshUpdateActions()
+              } catch (refreshError) {
+                if (!isAbortError(refreshError)) console.error('Plugin catalog refresh failed:', refreshError)
+              }
+              return
+            }
             console.error('Plugin update failed:', err)
             showMessage(err instanceof Error ? err.message : t('admin.pluginInstallFailed'), true)
-            btnEl.disabled = false
-            btnEl.textContent = t('admin.pluginUpdateTo').replace('{version}', info.version)
+          } finally {
+            pendingUpdates.delete(key)
+            const action = document.querySelector<HTMLButtonElement>(`.btn-update[data-key="${key}"]`)
+            const update = updateMap.get(key)
+            if (action && update) {
+              action.disabled = false
+              action.textContent = t('admin.pluginUpdateTo').replace('{version}', update.version)
+            }
           }
         })
       })
@@ -271,6 +351,7 @@ import FormDialog from '../../components/FormDialog.astro'
           
           try {
             await api.delete(`/admin/system/plugins/${key}${qs}`)
+            invalidateUpdate(key)
             loadPlugins()
           } catch (err) {
             if (isAbortError(err)) return
@@ -398,31 +479,50 @@ import FormDialog from '../../components/FormDialog.astro'
     const fileName = document.getElementById('file-name')!
     const installSubmit = document.getElementById('install-submit') as HTMLButtonElement
     
-    const registrySelect = document.getElementById('registry-select') as HTMLSelectElement
-    const registryStatus = document.getElementById('registry-status')!
+    const catalogBrowser = document.getElementById('catalog-browser')!
+    const catalogSearch = document.getElementById('catalog-search') as HTMLInputElement
+    const catalogFilter = document.getElementById('catalog-filter') as HTMLSelectElement
+    const catalogStatus = document.getElementById('catalog-status')!
+    const catalogList = document.getElementById('catalog-list')!
+    const catalogRetry = document.getElementById('catalog-retry')!
+    const catalogSelection = document.getElementById('catalog-selection')!
+    const installSuccess = document.getElementById('validation-details')!
+    const installError = document.getElementById('error-details')!
+    const installProgress = document.getElementById('upload-progress')!
+    let catalogRequest = 0
 
-    // Oeffnen
-    document.getElementById('btn-install')?.addEventListener('click', () => {
-      resetInstallModal()
-      installDialog.open()
-      loadAvailablePlugins()
-    })
-    
-    function resetInstallModal() {
+    document.getElementById('btn-browse-plugins')?.addEventListener('click', () => openInstaller(true))
+    document.getElementById('btn-install')?.addEventListener('click', () => openInstaller(false))
+
+    function openInstaller(browse: boolean) {
+      catalogRequest++
+      availablePlugins = []
+      catalogList.replaceChildren()
       selectedFile = null
-      selectedRegistryUrl = ''
-      registrySelect.value = ''
+      installModal.classList.toggle('catalog-dialog', browse)
+      catalogBrowser.hidden = !browse
+      selectRelease(null)
+      document.getElementById('plugin-zip-upload')!.hidden = browse
+      const title = document.getElementById('install-title')!
+      title.dataset.i18n = browse ? 'admin.pluginBrowse' : 'admin.installPlugin'
+      title.textContent = t(title.dataset.i18n)
+      const close = document.getElementById('install-cancel')!
+      close.dataset.i18n = browse ? 'common.close' : 'common.cancel'
+      close.textContent = t(close.dataset.i18n)
+      catalogSearch.value = ''
+      catalogFilter.value = 'all'
       fileInput.value = ''
       fileName.style.display = 'none'
       fileName.textContent = ''
       installSubmit.disabled = true
-      document.getElementById('validation-result')!.style.display = 'none'
-      document.getElementById('validation-success')!.style.display = 'none'
-      document.getElementById('validation-error')!.style.display = 'none'
-      document.getElementById('upload-progress')!.style.display = 'none'
-      ;(document.getElementById('progress-bar') as HTMLElement).style.width = '0%'
+      clearInstallResult()
       dropZone.style.borderColor = 'var(--border)'
       dropZone.style.background = 'transparent'
+      installDialog.open()
+      if (browse) {
+        catalogSearch.focus()
+        loadAvailablePlugins()
+      }
     }
     
     // Klick auf Drop-Zone oeffnet Dateiauswahl
@@ -473,27 +573,24 @@ import FormDialog from '../../components/FormDialog.astro'
         return
       }
       
-      // Registry-Auswahl zuruecksetzen wenn ZIP gewaehlt
-      selectedRegistryUrl = ''
-      registrySelect.value = ''
-      
       selectedFile = file
       fileName.textContent = file.name + ` (${(file.size / 1024).toFixed(1)} KB)`
       fileName.style.display = 'block'
       installSubmit.disabled = false
       
-      // Validierung zuruecksetzen
-      document.getElementById('validation-result')!.style.display = 'none'
-      document.getElementById('validation-success')!.style.display = 'none'
-      document.getElementById('validation-error')!.style.display = 'none'
+      clearInstallResult()
     }
-    
+
+    function clearInstallResult() {
+      installSuccess.hidden = true
+      installError.hidden = true
+      installError.textContent = ''
+    }
+
     function showValidationError(message: string) {
-      document.getElementById('validation-result')!.style.display = 'block'
-      document.getElementById('validation-success')!.style.display = 'none'
-      const errorEl = document.getElementById('validation-error')!
-      errorEl.style.display = 'block'
-      document.getElementById('error-details')!.textContent = message
+      installSuccess.hidden = true
+      installError.hidden = false
+      installError.textContent = message
       installSubmit.disabled = true
     }
     
@@ -501,8 +598,8 @@ import FormDialog from '../../components/FormDialog.astro'
     document.getElementById('install-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       
-      if (installing || (!selectedRegistryUrl && !selectedFile)) return
-      const useRegistry = selectedRegistryUrl && !selectedFile
+      if (installing || (!selectedRelease && !selectedFile)) return
+      const release = selectedRelease
       installing = true
       const form = document.getElementById('install-form') as HTMLFormElement
       const cancel = document.getElementById('install-cancel') as HTMLButtonElement
@@ -510,51 +607,51 @@ import FormDialog from '../../components/FormDialog.astro'
       form.setAttribute('aria-busy', 'true')
       cancel.disabled = true
       installSubmit.disabled = true
-      installSubmit.textContent = t('admin.pluginInstalling')
-      
-      const progressDiv = document.getElementById('upload-progress')!
-      const progressBar = document.getElementById('progress-bar') as HTMLElement
-      progressDiv.style.display = 'block'
-      progressBar.style.width = '30%'
+      clearInstallResult()
+      installProgress.hidden = false
+      let focusAfterInstall: HTMLElement | undefined
       
       try {
         let result: InstallResult
-        if (useRegistry) {
-          progressBar.style.width = '50%'
-          result = await api.post<InstallResult>('/admin/system/plugins/install-from-registry', { download_url: selectedRegistryUrl })
+        if (release) {
+          result = await installRelease(release)
         } else {
           const formData = new FormData()
           formData.append('file', selectedFile!)
-          progressBar.style.width = '60%'
           result = await request<InstallResult>('/admin/system/plugins/install', { method: 'POST', body: formData })
         }
-        progressBar.style.width = '100%'
-        
-        // Erfolg anzeigen
-        document.getElementById('validation-result')!.style.display = 'block'
-        document.getElementById('validation-error')!.style.display = 'none'
-        const successEl = document.getElementById('validation-success')!
-        successEl.style.display = 'block'
-        document.getElementById('validation-details')!.innerHTML = `
-          <strong>${escapeHtml(result.plugin.name)}</strong> v${escapeHtml(result.plugin.version)}<br>
-          ${escapeHtml(result.message)}
-        `
+        const message = result.message || `${result.plugin.name} v${result.plugin.version}`
+        installSuccess.hidden = false
+        installSuccess.textContent = message
         
         selectedFile = null
-        selectedRegistryUrl = ''
-        showMessage(result.message || t('common.successTitle'))
+        invalidateUpdate(result.plugin.plugin_key)
+        if (release) {
+          selectRelease(null)
+          loadAvailablePlugins()
+        }
+        showMessage(message)
         loadPlugins()
       } catch (err) {
         if (isAbortError(err)) return
-        showValidationError(err instanceof Error ? err.message : t('admin.pluginInstallFailed'))
-        progressDiv.style.display = 'none'
+        if (release && releaseIsStale(err)) {
+          invalidateUpdate(release.plugin_key)
+          renderPlugins()
+          selectRelease(null)
+          showValidationError(t('admin.pluginCatalogChanged'))
+          loadAvailablePlugins()
+          focusAfterInstall = catalogSearch
+        } else {
+          showValidationError(err instanceof Error ? err.message : t('admin.pluginInstallFailed'))
+        }
       } finally {
         installing = false
+        installProgress.hidden = true
         form.inert = false
         form.setAttribute('aria-busy', 'false')
         cancel.disabled = false
-        installSubmit.disabled = !selectedFile && !selectedRegistryUrl
-        installSubmit.textContent = t('admin.installPlugin')
+        installSubmit.disabled = !selectedFile && !selectedRelease
+        if (installModal.open) (focusAfterInstall ?? (installSubmit.disabled ? cancel : installSubmit)).focus({ preventScroll: true })
       }
     })
 
@@ -562,50 +659,137 @@ import FormDialog from '../../components/FormDialog.astro'
     //  Registry: Verfuegbare Plugins laden
     // ----------------------------------------------------------------
 
-    async function loadAvailablePlugins() {
-      registryStatus.textContent = t('common.loading')
+    function releasePrompt(p: RegistryPlugin) {
+      return t('admin.pluginConfirmRelease')
+        .replace('{name}', () => p.name)
+        .replace('{version}', () => p.version)
+        .replace('{publisher}', () => p.publisher)
+    }
+
+    function installRelease({ plugin_key, version, release_id }: RegistryPlugin) {
+      return api.post<InstallResult>('/admin/system/plugins/install-from-registry', { plugin_key, version, release_id })
+    }
+
+    function releaseIsStale(error: unknown) {
+      return error instanceof ApiError && ['catalog_release_unavailable', 'catalog_downgrade'].includes(error.code)
+    }
+
+    function invalidateUpdate(key: string) {
+      updateRequest++
+      updateMap.delete(key)
+    }
+
+    async function refreshUpdateActions(): Promise<number | null> {
+      const currentRequest = ++updateRequest
       try {
-        availablePlugins = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
-
-        // Dropdown befuellen
-        registrySelect.innerHTML = `<option value="" data-i18n="admin.pluginSelectFromRegistry">-- ${t('admin.pluginSelectFromRegistry')} --</option>`
-        for (const p of availablePlugins) {
-          const label = p.update_available
-            ? `${p.name} v${p.version} (Update von ${p.installed_version})`
-            : p.is_installed
-              ? `${p.name} v${p.version} (${t('admin.pluginAlreadyInstalled')})`
-              : `${p.name} v${p.version}`
-          const opt = document.createElement('option')
-          opt.value = p.download_url
-          opt.textContent = label
-          registrySelect.appendChild(opt)
-        }
-
-        registryStatus.textContent = availablePlugins.length === 0
-          ? t('admin.pluginNoAvailable')
-          : ''
+        const releases = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
+        if (currentRequest !== updateRequest) return null
+        const updates = releases.filter(release => release.update_available)
+        updateMap = new Map(updates.map(release => [release.plugin_key, release]))
+        renderPlugins()
+        return updates.length
       } catch (err) {
-        if (isAbortError(err)) return
-        console.error('Failed to load available plugins:', err)
-        registryStatus.textContent = t('admin.pluginRegistryFailed')
+        if (currentRequest !== updateRequest) return null
+        throw err
       }
     }
 
-    registrySelect.addEventListener('change', () => {
-      selectedRegistryUrl = registrySelect.value
-      if (selectedRegistryUrl) {
-        // ZIP-Auswahl zuruecksetzen
-        selectedFile = null
-        fileInput.value = ''
-        fileName.style.display = 'none'
-        installSubmit.disabled = false
-      } else {
-        if (!selectedFile) installSubmit.disabled = true
+    function selectRelease(release: RegistryPlugin | null) {
+      selectedRelease = release
+      catalogSelection.hidden = !release
+      catalogSelection.textContent = release ? releasePrompt(release) : ''
+      installSubmit.hidden = !catalogBrowser.hidden && !release
+      installSubmit.disabled = !release
+      for (const button of catalogList.querySelectorAll<HTMLButtonElement>('button[data-release]')) {
+        button.setAttribute('aria-current', String(button.dataset.release === release?.plugin_key))
       }
-      // Validierung zuruecksetzen
-      document.getElementById('validation-result')!.style.display = 'none'
-      document.getElementById('validation-success')!.style.display = 'none'
-      document.getElementById('validation-error')!.style.display = 'none'
+    }
+
+    async function loadAvailablePlugins() {
+      const currentRequest = ++catalogRequest
+      catalogList.replaceChildren()
+      availablePlugins = []
+      catalogRetry.hidden = true
+      catalogStatus.textContent = t('common.loading')
+      try {
+        const releases = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
+        if (currentRequest !== catalogRequest) return
+        availablePlugins = releases.sort((a, b) => a.name.localeCompare(b.name))
+        renderCatalog()
+      } catch (err) {
+        if (currentRequest !== catalogRequest || isAbortError(err)) return
+        catalogStatus.textContent = t('admin.pluginRegistryFailed')
+        catalogRetry.hidden = false
+      }
+    }
+
+    function renderCatalog() {
+      const query = catalogSearch.value.trim().toLocaleLowerCase()
+      const filter = catalogFilter.value
+      const matches = availablePlugins.filter(p => {
+        if (filter === 'installed' && !p.is_installed) return false
+        if (filter === 'uninstalled' && p.is_installed) return false
+        if (filter === 'updates' && !p.update_available) return false
+        return [p.name, p.description, p.publisher].some(value => value.toLocaleLowerCase().includes(query))
+      })
+      if (selectedRelease && !matches.includes(selectedRelease)) {
+        selectRelease(null)
+        clearInstallResult()
+      }
+      catalogList.innerHTML = matches.map(p => {
+        const requirement = t('admin.pluginRequiresFilaMan').replace('{version}', p.min_filaman_version)
+        let blocked = ''
+        if (p.requires_newer_zip) {
+          blocked = t('admin.pluginRequiresNewerZip').replace('{version}', p.installed_version ?? '')
+        } else if (!p.is_compatible) {
+          blocked = requirement
+        }
+        const offersInstall = !p.is_installed || p.update_available
+        const installedVersion = p.installed_version && p.installed_version !== p.version
+          ? ` · v${p.installed_version}`
+          : ''
+        const action = p.update_available
+          ? t('admin.pluginUpdateTo').replace('{version}', p.version)
+          : t('admin.installPlugin')
+        return `<li class="catalog-card">
+          <div class="catalog-heading">
+            <span class="catalog-icon"></span>
+            <div><h3>${escapeHtml(p.name)}</h3><p class="fm-field-hint">${escapeHtml(p.publisher)}</p></div>
+            <span class="catalog-version">v${escapeHtml(p.version)}</span>
+          </div>
+          <p class="catalog-description">${escapeHtml(p.description)}</p>
+          <div class="catalog-footer">
+            ${blocked || offersInstall ? `<p class="fm-field-hint">${escapeHtml(blocked || requirement)}</p>` : ''}
+            <div class="catalog-actions">
+              <a href="${escapeHtml(p.repository_url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtml(p.name)} · GitHub">GitHub</a>
+              ${p.is_installed ? `<span class="catalog-installed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>${escapeHtml(t('admin.pluginAlreadyInstalled') + installedVersion)}</span>` : ''}
+              ${!blocked && offersInstall ? `<button type="button" class="fm-btn fm-btn-primary" data-release="${escapeHtml(p.plugin_key)}" aria-current="${p.plugin_key === selectedRelease?.plugin_key}">${escapeHtml(action)}</button>` : ''}
+            </div>
+          </div>
+        </li>`
+      }).join('')
+      catalogList.querySelectorAll('.catalog-icon').forEach((host, index) => {
+        host.append(createPluginIcon(matches[index].icon_url))
+      })
+      catalogStatus.textContent = matches.length ? '' : t(availablePlugins.length ? 'admin.pluginNoMatches' : 'admin.pluginNoAvailable')
+    }
+
+    catalogSearch.addEventListener('keydown', event => {
+      if (event.key === 'Enter') event.preventDefault()
+    })
+    function applyCatalogFilters() {
+      if (availablePlugins.length) renderCatalog()
+    }
+    catalogSearch.addEventListener('input', applyCatalogFilters)
+    catalogFilter.addEventListener('change', applyCatalogFilters)
+    catalogRetry.addEventListener('click', loadAvailablePlugins)
+    catalogList.addEventListener('click', event => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-release]')
+      const release = availablePlugins.find(p => p.plugin_key === button?.dataset.release)
+      if (!release) return
+      clearInstallResult()
+      selectRelease(release)
+      installSubmit.focus({ preventScroll: true })
     })
 
     // ----------------------------------------------------------------
@@ -618,25 +802,16 @@ import FormDialog from '../../components/FormDialog.astro'
       btn.textContent = t('admin.pluginCheckingUpdates')
 
       try {
-        const available = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
+        const count = await refreshUpdateActions()
+        if (count === null) return
 
-        const updates = available.filter(p => p.update_available)
-
-        // Populate updateMap for per-plugin update buttons
-        updateMap = {}
-        for (const up of updates) {
-          updateMap[up.plugin_key] = { version: up.version, download_url: up.download_url }
-        }
-
-        if (updates.length === 0) {
+        if (count === 0) {
           showMessage(t('admin.pluginUpToDate'))
         } else {
-          const msg = t('admin.pluginUpdatesAvailable').replace('{count}', String(updates.length))
+          const msg = t('admin.pluginUpdatesAvailable').replace('{count}', String(count))
           showMessage(msg)
         }
 
-        // Re-render plugins to show update buttons
-        renderPlugins()
       } catch (err) {
         if (isAbortError(err)) return
         console.error('Update check failed:', err)
