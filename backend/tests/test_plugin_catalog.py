@@ -729,6 +729,34 @@ async def test_plugin_changes_on_a_secondary_forward_before_writing(auth_client,
     assert forged_hop.json()["code"] == "csrf_failed"
 
 
+@pytest.mark.parametrize("encoded_key", ["%2E", "%2E%2E"])
+async def test_plugin_toggle_preserves_not_found_for_forwarded_dot_segments(auth_client, monkeypatch, encoded_key):
+    from app import main
+    from app.api.v1 import printers
+
+    async def primary(scope, receive, send):
+        with monkeypatch.context() as worker:
+            worker.setattr(main, "_is_primary", True)
+            await main.app(scope, receive, send)
+
+    client, token = auth_client
+    monkeypatch.setenv("SERVER_SOFTWARE", "gunicorn/25")
+    monkeypatch.setattr(printers, "primary_socket_path", lambda: "/unused.sock")
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.ASGITransport(app=primary))
+    path = f"/api/v1/admin/system/plugins/{encoded_key}/active"
+    options = {"json": {"is_active": True}, "headers": {"X-CSRF-Token": token}}
+
+    monkeypatch.setattr(main, "_is_primary", True)
+    direct = await client.patch(path, **options)
+    assert direct.status_code == 404
+    assert direct.json()["detail"]["code"] == "not_found"
+
+    monkeypatch.setattr(main, "_is_primary", False)
+    forwarded = await client.patch(path, **options)
+    assert forwarded.status_code == direct.status_code
+    assert forwarded.json() == direct.json()
+
+
 @pytest.mark.parametrize("status_code", [204, 503])
 async def test_plugin_proxy_sends_delete_once(auth_client, monkeypatch, tmp_path, status_code):
     from app import main

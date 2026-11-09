@@ -754,7 +754,9 @@ async def toggle_plugin_active(
 ):
     """Plugin aktivieren oder deaktivieren — Treiber werden gestoppt/gestartet."""
     if _plugin_change_needs_proxy():
-        path = f"/api/v1/admin/system/plugins/{quote(plugin_key, safe='')}/active"
+        # Keep malformed dot segments intact for the primary's plugin-key validation.
+        plugin_segment = quote(plugin_key, safe="").replace(".", "%2E")
+        path = f"/api/v1/admin/system/plugins/{plugin_segment}/active"
         return await _proxy_to_primary(request, "PATCH", path, body.model_dump(), timeout=120.0)
 
     from app.plugins.manager import plugin_manager
