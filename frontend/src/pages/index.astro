@@ -165,10 +165,11 @@ import FormDialog from '../components/FormDialog.astro'
 
     interface DashboardSpool { id: number; filament_id: number; remaining_weight_g: number | null; low_weight_threshold_g: number }
     interface DashboardFilament { id: number; designation: string; material_type: string | null }
+    interface LocationStat { location_id: number; location_name: string; spool_count: number; total_weight_g: number }
     interface DashboardStats {
       filament_count_active: number; filament_count_used: number; total_value_available: number
       spool_distribution: Record<'full' | 'normal' | 'low' | 'critical' | 'empty', number>
-      location_stats: { location_id: number; location_name: string; spool_count: number; total_weight_g: number }[]
+      location_stats: LocationStat[]
       filament_stats: { filament_type: string; spool_count: number; total_weight_g: number }[]
       manufacturers_with_spools: { id: number; name: string; spool_count: number }[]
       low_stock_spools: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; remaining_weight_g: number }[]
@@ -466,13 +467,81 @@ import FormDialog from '../components/FormDialog.astro'
 
     ;dashboardWindow.closeSpoolModal = () => spoolDialog.close()
 
+    let locationRequestId = 0
+    let renderedLocationId = 0
+    let lastLocationMarkup = ''
+    let locationPollPending = false
+    let locationTimer: number | undefined
+
+    function renderLocations(rows: LocationStat[], requestId: number) {
+      if (requestId < renderedLocationId) return
+      renderedLocationId = requestId
+      const markup = rows.length === 0
+        ? `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+        : `<ul>${rows.map(location => `
+            <li>
+              <a href="/spools?location_id=${location.location_id}">${escapeHtml(location.location_name)}</a>
+              <div><span>${location.spool_count} ${t('dashboard.spools')}</span><span>${formatWeight(location.total_weight_g)}</span></div>
+            </li>`
+          ).join('')}</ul>`
+      if (markup === lastLocationMarkup) return
+      lastLocationMarkup = markup
+      const container = document.getElementById('location-stats')!
+      const active = document.activeElement
+      const focusedHref = active && container.contains(active) ? active.getAttribute('href') : null
+      container.innerHTML = markup
+      if (focusedHref) {
+        Array.from(container.querySelectorAll('a')).find(link => link.getAttribute('href') === focusedHref)
+          ?.focus({ preventScroll: true })
+      }
+    }
+
+    async function refreshLocations() {
+      if (locationTimer === undefined || locationPollPending || document.visibilityState !== 'visible'
+        || hiddenWidgets.has('locationStats')) return
+      locationPollPending = true
+      const requestId = ++locationRequestId
+      try {
+        const response = await fetch('/api/v1/dashboard/locations', {
+          credentials: 'include', cache: 'no-store', signal: getAbortSignal(),
+        })
+        if (response.ok) renderLocations(await response.json(), requestId)
+      } catch (error) {
+        if (!isAbortError(error)) console.debug('Location refresh failed:', error)
+      } finally {
+        locationPollPending = false
+      }
+    }
+
+    function startLocationPolling() {
+      // shortcut: another worker's SSE events can be missed, poll until events are shared.
+      locationTimer ??= window.setInterval(refreshLocations, 15000)
+      document.addEventListener('visibilitychange', refreshLocations)
+    }
+
+    window.addEventListener('pagehide', () => {
+      window.clearInterval(locationTimer)
+      locationTimer = undefined
+      document.removeEventListener('visibilitychange', refreshLocations)
+    })
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) {
+        startLocationPolling()
+        void refreshLocations()
+      }
+    })
+
     async function loadDashboardData() {
+      let locationsRequest = 0
       try {
         // Sequential fetching mit Caching für bessere SQLite-Performance
         const [spoolsData, filamentsData, dashboardRes] = await fetchSequential([
           () => cachedFetchAllPages<DashboardSpool>('spools-dashboard', '/api/v1/spools'),
           () => cachedFetchAllPages<DashboardFilament>(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
-          () => fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include', signal: getAbortSignal() }),
+          () => {
+            locationsRequest = ++locationRequestId
+            return fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include', signal: getAbortSignal() })
+          },
         ] as const)
 
         const dashboardData: DashboardStats | null = dashboardRes.ok ? await dashboardRes.json() : null
@@ -510,19 +579,7 @@ import FormDialog from '../components/FormDialog.astro'
             </div>
           `).join('')
 
-          const locationStatsContainer = document.getElementById('location-stats')!
-          if (!dashboardData.location_stats || dashboardData.location_stats.length === 0) {
-            locationStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
-          } else {
-            locationStatsContainer.innerHTML = `<ul>` +
-              dashboardData.location_stats.map(l =>
-                `<li>
-                  <a href="/spools?location_id=${l.location_id}">${escapeHtml(l.location_name)}</a>
-                  <div><span>${l.spool_count} ${t('dashboard.spools')}</span><span>${formatWeight(l.total_weight_g)}</span></div>
-                </li>`
-              ).join('') +
-              `</ul>`
-          }
+          renderLocations(dashboardData.location_stats ?? [], locationsRequest)
 
           const filamentStatsContainer = document.getElementById('filament-stats')!
           if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
@@ -591,6 +648,7 @@ import FormDialog from '../components/FormDialog.astro'
       await initCurrency()
       initFilamentScopePills()
       await initWidgetVisibility()
+      startLocationPolling()
       await loadDashboardData()
       showChangelogIfNeeded()
     }

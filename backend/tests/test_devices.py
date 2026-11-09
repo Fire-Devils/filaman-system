@@ -4,6 +4,7 @@ from sqlalchemy import select
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.api.v1.devices import _build_extended_data, _device_url
+from app.core.event_bus import event_bus
 from app.core.security import hash_password, hash_token, verify_password_async
 from app.models import Device, Filament, Location, Manufacturer, Spool, SpoolStatus
 from app.models.printer import Printer
@@ -697,34 +698,8 @@ class TestWeighSpool:
         mock_proxy.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_weigh_spool_auto_assign_rejects_proxied_hop_on_secondary(
-        self, auth_client, db_session
-    ):
-        client, csrf_token = auth_client
-        await _create_device(db_session, device_code="ABC123", auto_assign_enabled=True)
-        token, _ = await _register_device(client, "ABC123", csrf_token)
-
-        manufacturer = await _create_manufacturer(db_session)
-        filament = await _create_filament(db_session, manufacturer.id)
-        status = await _get_status(db_session, "new")
-        spool = await _create_spool(db_session, filament.id, status.id)
-
-        with patch("app.api.v1.devices._is_primary_worker", return_value=False):
-            response = await client.post(
-                "/api/v1/devices/scale/weight",
-                json={"spool_id": spool.id, "measured_weight_g": 500.0},
-                headers={
-                    **_device_headers(token),
-                    "X-CSRF-Token": csrf_token,
-                    "x-filaman-primary-hop": "1",
-                },
-            )
-
-        assert response.status_code == 503
-        assert response.json()["detail"]["code"] == "primary_worker_required"
-
-    @pytest.mark.asyncio
-    async def test_locate_spool_success(self, auth_client, db_session):
+    @pytest.mark.parametrize("valid_location", [True, False])
+    async def test_locate_spool_publishes_only_after_commit(self, auth_client, db_session, monkeypatch, valid_location):
         client, csrf_token = auth_client
         await _create_device(db_session, device_code="ABC123")
         token, _ = await _register_device(client, "ABC123", csrf_token)
@@ -735,22 +710,38 @@ class TestWeighSpool:
         spool = await _create_spool(db_session, filament.id, status.id)
         location = await _create_location(db_session, name="New Shelf")
 
+        events = []
+
+        async def observe_event(event):
+            assert not db_session.in_transaction()
+            events.append(event)
+
+        monkeypatch.setattr(event_bus, "publish", observe_event)
         response = await client.post(
             "/api/v1/devices/scale/locate",
-            json={"spool_id": spool.id, "location_id": location.id},
-            headers={
-                **_device_headers(token),
-                "X-CSRF-Token": csrf_token,
-            },
+            json={"spool_id": spool.id, "location_id": location.id if valid_location else location.id + 1},
+            headers=_device_headers(token),
         )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert data["location_id"] == location.id
-
         await db_session.refresh(spool)
-        assert spool.location_id == location.id
+        if not valid_location:
+            assert response.status_code == 404
+            assert spool.location_id is None
+            assert events == []
+            return
+
+        assert response.status_code == 200
+        assert response.json()["location_id"] == spool.location_id == location.id
+        assert events == [{"event": "spools_changed"}]
+
+        stats = await client.get("/api/v1/dashboard/locations")
+        assert stats.status_code == 200
+        assert stats.json() == [
+            {"location_id": location.id, "location_name": "New Shelf",
+             "spool_count": 1, "total_weight_g": 750.0},
+        ]
+        full_stats = await client.get("/api/v1/dashboard/stats")
+        assert full_stats.json()["location_stats"] == stats.json()
 
 
 class TestTagScan:

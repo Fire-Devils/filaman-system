@@ -32,8 +32,6 @@ from starlette.types import Receive, Scope, Send
 
 from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.api.v1.printers import (
-    _PRIMARY_PROXY_HEADER,
-    _ensure_primary_worker,
     _is_primary_worker,
     _proxy_to_primary,
 )
@@ -43,7 +41,7 @@ from app.core.file_lock import FileLockBusy
 from app.core.security import Principal
 from app.core.seeds import BUILTIN_PLUGINS, DEPRECATED_PLUGINS
 from app.core.shared_health import shared_display_store, shared_health_store
-from app.core.worker_reload import request_worker_reload, worker_reload_available
+from app.core.worker_reload import request_worker_reload, worker_is_gunicorn, worker_reload_available
 from app.models import (
     AppSettings,
     Color,
@@ -127,7 +125,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/system", tags=["admin-system"])
 BACKUP_BATCH_ROWS = 20
-PLUGIN_PROXY_ATTEMPTS = 32
 PluginManagementPrincipal = Annotated[
     Principal, RequirePermission("admin:plugins_manage")
 ]
@@ -471,13 +468,8 @@ async def _activate_plugin_locally(
         mount_plugin_router_on_app(request.app, plugin.plugin_key)
 
 
-def _plugin_change_needs_proxy(request: Request) -> bool:
-    if not worker_reload_available() or _is_primary_worker():
-        return False
-    # A forwarded request that reached another secondary lets its caller retry.
-    if _PRIMARY_PROXY_HEADER in request.headers:
-        _ensure_primary_worker()
-    return True
+def _plugin_change_needs_proxy() -> bool:
+    return worker_is_gunicorn() and not _is_primary_worker()
 
 
 async def _install_plugin_archive(
@@ -522,10 +514,10 @@ async def install_from_registry(
     principal: PluginManagementPrincipal,
 ):
     """Install the exact approved catalog release."""
-    if _plugin_change_needs_proxy(request):
+    if _plugin_change_needs_proxy():
         return await _proxy_to_primary(
             request, "POST", request.url.path, body.model_dump(),
-            timeout=120.0, attempts=PLUGIN_PROXY_ATTEMPTS,
+            timeout=120.0,
         )
 
     release = (await _catalog_for_admin()).get(body.plugin_key)
@@ -611,11 +603,11 @@ async def install_plugin(
             detail={"code": "zip_too_large", "message": "Plugin ZIP exceeds the 10 MB limit."},
         )
 
-    if _plugin_change_needs_proxy(request):
+    if _plugin_change_needs_proxy():
         return await _proxy_to_primary(
             request, "POST", request.url.path,
             files={"file": (file.filename or "plugin.zip", zip_data, file.content_type)},
-            timeout=120.0, attempts=PLUGIN_PROXY_ATTEMPTS,
+            timeout=120.0,
         )
 
     try:
@@ -646,9 +638,9 @@ async def uninstall_plugin(
     ),
 ):
     """Plugin deinstallieren."""
-    if _plugin_change_needs_proxy(request):
+    if _plugin_change_needs_proxy():
         path = f"/api/v1/admin/system/plugins/{quote(plugin_key, safe='')}"
-        await _proxy_to_primary(request, "DELETE", path, timeout=120.0, attempts=PLUGIN_PROXY_ATTEMPTS)
+        await _proxy_to_primary(request, "DELETE", path, timeout=120.0)
         return
 
     service = PluginInstallService(db)
@@ -758,8 +750,15 @@ async def toggle_plugin_active(
     body: PluginToggleRequest,
     db: DBSession,
     principal: PluginManagementPrincipal,
+    request: Request,
 ):
     """Plugin aktivieren oder deaktivieren — Treiber werden gestoppt/gestartet."""
+    if _plugin_change_needs_proxy():
+        # Keep malformed dot segments intact for the primary's plugin-key validation.
+        plugin_segment = quote(plugin_key, safe="").replace(".", "%2E")
+        path = f"/api/v1/admin/system/plugins/{plugin_segment}/active"
+        return await _proxy_to_primary(request, "PATCH", path, body.model_dump(), timeout=120.0)
+
     from app.plugins.manager import plugin_manager
 
     service = PluginInstallService(db)

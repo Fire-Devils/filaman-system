@@ -52,6 +52,7 @@ def _is_primary_worker() -> bool:
 
 
 from app.api.v1.schemas_device import HeartbeatRequest, LocateRequest, LocateResponse, WeighRequest, WeighResponse, WriteTagRequest, WriteTagResponse, RfidResultRequest, RfidResultResponse, WriteStatusResponse, TagDataRequest, TagScanStatusResponse
+from app.core.event_bus import event_bus
 from app.core.security import Principal, generate_token_secret, hash_token
 from app.models import AppSettings, Device, Location, Spool
 from app.models.filament import Color, FilamentColor, Manufacturer
@@ -554,17 +555,7 @@ async def weigh_spool(
     # Drivers only live on the primary Gunicorn worker. Proxy the whole request
     # there so auto-assign can reach them; the primary handles measurement too.
     if device.auto_assign_enabled and not _is_primary_worker():
-        from app.api.v1.printers import _PRIMARY_PROXY_HEADER, _proxy_to_primary
-
-        hop = int(request.headers.get(_PRIMARY_PROXY_HEADER, "0") or "0")
-        if hop > 0:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "code": "primary_worker_required",
-                    "message": "Auto-assign requires the primary worker; retrying.",
-                },
-            )
+        from app.api.v1.printers import _proxy_to_primary
 
         payload = await _proxy_to_primary(
             request,
@@ -743,7 +734,8 @@ async def locate_spool(
         source="device",
         note=f"Located by device {device.name}"
     )
-    
+    await event_bus.publish({"event": "spools_changed"})
+
     return LocateResponse(
         success=True,
         spool_id=spool.id,

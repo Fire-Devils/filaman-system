@@ -1,17 +1,196 @@
+import asyncio
+import runpy
+from pathlib import Path
+from socket import socket
+from tempfile import TemporaryDirectory
+
+import httpx
+from fastapi import FastAPI, HTTPException, Request
 import pytest
 from sqlalchemy import event
 from sqlalchemy.orm.attributes import set_committed_value
 from unittest.mock import AsyncMock, patch
 
-from app.api.v1.printers import _primary_proxy_url
+from app.api.v1 import printers
+from app.core import primary_socket, worker_reload
 from app.models import Location, Printer, PrinterSlot
 
 
-class TestPrimaryProxyUrl:
-    def test_primary_proxy_url_uses_loopback(self):
-        assert _primary_proxy_url("/api/v1/devices/scale/weight") == (
-            "http://127.0.0.1:8001/api/v1/devices/scale/weight"
-        )
+def test_primary_socket_separates_databases_with_the_same_temp_root():
+    live = primary_socket._socket_path("sqlite+aiosqlite:////srv/live.db")
+    staging = primary_socket._socket_path("sqlite+aiosqlite:////srv/staging.db")
+
+    assert live.parent == staging.parent
+    assert live != staging
+
+
+def test_primary_socket_separates_relative_database_urls_by_working_directory(tmp_path, monkeypatch):
+    database_url = "sqlite+aiosqlite:///fila.db"
+    first = primary_socket._socket_path(database_url)
+    monkeypatch.setattr(primary_socket, "_startup_directory", tmp_path)
+
+    assert first != primary_socket._socket_path(database_url)
+
+
+def test_primary_socket_survives_working_directory_changes(tmp_path, monkeypatch):
+    first = primary_socket._socket_path("sqlite+aiosqlite:///fila.db")
+    monkeypatch.chdir(tmp_path)
+
+    assert first == primary_socket._socket_path("sqlite+aiosqlite:///fila.db")
+
+
+def test_gunicorn_masters_give_reparented_workers_distinct_sockets(monkeypatch):
+    database = "sqlite+aiosqlite:////srv/shared.db"
+    monkeypatch.setenv("SERVER_SOFTWARE", "gunicorn/25")
+    monkeypatch.setenv("FILAMAN_GUNICORN_INSTANCE", "")
+    start_master = runpy.run_path(str(Path(__file__).parents[1] / "gunicorn.conf.py"))["on_starting"]
+    monkeypatch.setattr(primary_socket.os, "getppid", lambda: 1)
+
+    start_master(None)
+    monkeypatch.setattr(primary_socket.os, "getpid", lambda: 502)
+    first = primary_socket._socket_path(database)
+    monkeypatch.setattr(primary_socket.os, "getpid", lambda: 503)
+    assert first == primary_socket._socket_path(database)
+
+    start_master(None)
+    monkeypatch.setattr(primary_socket.os, "getpid", lambda: 504)
+    assert first != primary_socket._socket_path(database)
+
+
+def test_gunicorn_workers_without_master_identity_do_not_share_sockets(monkeypatch):
+    database = "sqlite+aiosqlite:////srv/shared.db"
+    monkeypatch.setenv("SERVER_SOFTWARE", "gunicorn/25")
+    monkeypatch.delenv("FILAMAN_GUNICORN_INSTANCE", raising=False)
+    monkeypatch.setattr(primary_socket.os, "getpid", lambda: 505)
+    first = primary_socket._socket_path(database)
+    assert first == primary_socket._socket_path(database)
+    monkeypatch.setattr(primary_socket.os, "getpid", lambda: 506)
+    assert first != primary_socket._socket_path(database)
+
+
+@pytest.fixture
+def private_socket_path(tmp_path, monkeypatch):
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700)
+    monkeypatch.setattr(primary_socket, "_runtime_dir", directory)
+    return primary_socket.primary_socket_path()
+
+
+async def test_primary_socket_rejects_new_work_while_draining_inflight_requests(monkeypatch):
+    app = FastAPI()
+    started, release = asyncio.Event(), asyncio.Event()
+
+    @app.post("/driver")
+    async def driver():
+        if started.is_set():
+            return {"admitted_during_drain": True}
+        started.set()
+        await release.wait()
+        return {"completed": True}
+
+    with TemporaryDirectory(dir="/tmp", prefix="filaman-socket-") as directory, socket() as public_listener:
+        monkeypatch.setattr(worker_reload, "_worker_listeners", (public_listener,))
+        monkeypatch.setattr(primary_socket, "_runtime_dir", Path(directory))
+        path = primary_socket.primary_socket_path()
+        transport = httpx.AsyncHTTPTransport(uds=str(path))
+        async with httpx.AsyncClient(transport=transport, timeout=3) as client:
+            async with asyncio.timeout(3):
+                async with primary_socket.serve_primary_socket(app) as publish:
+                    with pytest.raises(httpx.ConnectError):
+                        await client.get("http://localhost/driver")
+                    publish()
+                    response = asyncio.create_task(client.post("http://localhost/driver"))
+                    await started.wait()
+                    public_listener.close()
+                    rejected = await client.post("http://localhost/driver")
+                    asyncio.get_running_loop().call_later(0.2, release.set)
+                assert rejected.status_code == 503
+                assert rejected.json()["detail"]["code"] == "primary_worker_required"
+                assert (await response).json() == {"completed": True}
+                assert not path.exists()
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
+async def test_primary_proxy_delivers_once_over_private_socket(monkeypatch, private_socket_path, disconnect):
+    received = []
+
+    def handle(request):
+        received.append(request)
+        if disconnect:
+            raise httpx.ReadError("Primary exited after reading the request", request=request)
+        return httpx.Response(200, json={"accepted": True})
+
+    transport = httpx.MockTransport(handle)
+    real_client = httpx.AsyncClient
+
+    def private_transport(*, uds):
+        assert uds == str(private_socket_path)
+        return transport
+
+    def client(**kwargs):
+        assert kwargs.get("transport") is transport
+        return real_client(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", private_transport)
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    request = Request({
+        "type": "http",
+        "headers": [(b"cookie", b"session_id=test; csrf_token=token"), (b"x-csrf-token", b"token")],
+        "query_string": b"refresh=1",
+    })
+    if disconnect:
+        with pytest.raises(HTTPException) as error:
+            await printers._proxy_to_primary(request, "POST", "/driver/action", {"spool_id": 67})
+        assert error.value.status_code == 503
+        assert error.value.detail["code"] == "primary_proxy_failed"
+    else:
+        assert await printers._proxy_to_primary(
+            request, "POST", "/driver/action", {"spool_id": 67}
+        ) == {"accepted": True}
+
+    [forwarded] = received
+    assert forwarded.url.path == "/driver/action"
+    assert forwarded.url.query == b"refresh=1"
+    assert forwarded.headers["cookie"] == "session_id=test; csrf_token=token"
+    assert forwarded.headers["x-csrf-token"] == "token"
+    assert forwarded.content == b'{"spool_id":67}'
+
+
+async def test_primary_proxy_rejects_untrusted_socket_directory(tmp_path, monkeypatch):
+    directory = tmp_path / "public"
+    directory.mkdir(mode=0o755)
+    monkeypatch.setattr(primary_socket, "_runtime_dir", directory)
+
+    def reject_connection(**kwargs):
+        pytest.fail("Forwarding must validate the directory before opening a connection")
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", reject_connection)
+    request = Request({"type": "http", "headers": [(b"authorization", b"Device private")]})
+    with pytest.raises(HTTPException) as error:
+        await printers._proxy_to_primary(request, "POST", "/driver/action")
+    assert error.value.status_code == 503
+
+
+async def test_primary_proxy_preserves_catalog_upload_and_empty_delete(monkeypatch, private_socket_path):
+    received = []
+
+    def handle(request):
+        received.append(request)
+        return httpx.Response(204) if request.method == "DELETE" else httpx.Response(201, json={"installed": True})
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handle))
+    request = Request({"type": "http", "headers": [], "query_string": b"delete_data=true"})
+    assert await printers._proxy_to_primary(
+        request, "POST", "/plugins/install", files={"file": ("plugin.zip", b"zip bytes", "application/zip")},
+        timeout=120.0,
+    ) == {"installed": True}
+    assert await printers._proxy_to_primary(request, "DELETE", "/plugins/example", timeout=120.0) is None
+    upload, delete = received
+    assert upload.headers["content-type"].startswith("multipart/form-data;")
+    assert b'filename="plugin.zip"' in upload.content
+    assert b"zip bytes" in upload.content
+    assert upload.extensions["timeout"]["read"] == 120.0
+    assert delete.url.query == b"delete_data=true"
 
 
 @pytest.fixture(autouse=True)
@@ -261,6 +440,7 @@ class _FakeProxyClient:
         return _FakeProxyResponse()
 
 
+@pytest.mark.usefixtures("private_socket_path")
 class TestDriverActionProxy:
     """Regression coverage for GH issue #133: a non-primary worker proxying a
     driver/action call to the primary must surface a structured error instead

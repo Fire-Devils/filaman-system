@@ -1,8 +1,5 @@
-import asyncio
 import logging
 import inspect
-import contextlib
-import os
 from typing import Any, Literal
 
 import httpx
@@ -23,23 +20,12 @@ from app.models import (
     Filament,
     FilamentColor,
 )
+from app.core.primary_socket import primary_socket_path
 from app.core.shared_health import shared_display_store, shared_health_store
 from app.plugins.manager import plugin_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
-
-_PRIMARY_PROXY_HEADER = "x-filaman-primary-hop"
-_PRIMARY_PROXY_MAX_HOPS = 12
-_PRIMARY_PROXY_RETRIES = 8
-_DEFAULT_GUNICORN_URL = os.environ.get("FILAMAN_GUNICORN_URL", "http://127.0.0.1:8001")
-
-
-def _primary_proxy_url(path: str) -> str:
-    base = _DEFAULT_GUNICORN_URL.rstrip("/")
-    if not path.startswith("/"):
-        path = f"/{path}"
-    return f"{base}{path}"
 
 # Changing one of these restarts the printer's driver, and drivers live on the
 # primary worker only.  A request touching them has to be handled there.
@@ -67,110 +53,65 @@ def _ensure_primary_worker() -> None:
         )
 
 
-def _is_primary_required_error(detail: Any) -> bool:
-    return isinstance(detail, dict) and detail.get("code") == "primary_worker_required"
-
-
-def _forward_headers(request: Request, hop: int) -> dict[str, str]:
-    headers: dict[str, str] = {}
-    for key in ("authorization", "cookie", "x-csrf-token", "accept"):
-        value = request.headers.get(key)
-        if value:
-            headers[key] = value
-    headers[_PRIMARY_PROXY_HEADER] = str(hop + 1)
-    return headers
-
-
 async def _proxy_to_primary(
     request: Request,
     method: str,
     path: str,
     json_body: dict[str, Any] | None = None,
     *,
-    files: dict[str, tuple[str, bytes, str]] | None = None,
+    files: dict[str, tuple[str, bytes, str | None]] | None = None,
     timeout: float = 10.0,
-    attempts: int = _PRIMARY_PROXY_RETRIES,
 ) -> Any:
-    hop_header = request.headers.get(_PRIMARY_PROXY_HEADER, "0")
-    hop = int(hop_header) if hop_header.isdigit() else 0
-    if hop >= _PRIMARY_PROXY_MAX_HOPS:
+    headers = {
+        key: request.headers[key]
+        for key in ("authorization", "cookie", "x-csrf-token", "accept")
+        if key in request.headers
+    }
+    body = {"json": json_body} if files is None else {"files": files}
+    try:
+        transport = httpx.AsyncHTTPTransport(uds=str(primary_socket_path()))
+        async with httpx.AsyncClient(transport=transport, timeout=timeout) as client:
+            response = await client.request(
+                method,
+                f"http://localhost{path}",
+                params=request.query_params,
+                headers=headers,
+                **body,
+            )
+    except (OSError, httpx.TransportError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "code": "primary_proxy_failed",
                 "message": "Could not route request to primary worker",
             },
+        ) from exc
+
+    if method == "DELETE" and response.status_code == status.HTTP_204_NO_CONTENT:
+        return None
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    if response.status_code >= 400:
+        if isinstance(payload, dict) and "detail" in payload:
+            raise HTTPException(status_code=response.status_code, detail=payload["detail"])
+        raise HTTPException(
+            status_code=response.status_code,
+            detail={"code": "proxy_failed", "message": response.text},
         )
 
-    target = _primary_proxy_url(path)
-    # Hit Gunicorn on loopback (not request.url / public Host) and rely on the
-    # retry loop to eventually reach the primary worker.
-    url = target
-    headers = _forward_headers(request, hop)
-
-    body = {"json": json_body} if files is None else {"files": files}
-    for _ in range(attempts):
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.request(
-                    method,
-                    url,
-                    params=request.query_params,
-                    headers=headers,
-                    **body,
-                )
-        except httpx.RequestError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={"code": "primary_proxy_failed", "message": "Could not reach the primary worker"},
-            ) from exc
-
-        if method == "DELETE" and response.status_code == status.HTTP_204_NO_CONTENT:
-            return None
-
-        payload: Any = None
-        with contextlib.suppress(Exception):
-            payload = response.json()
-
-        if response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
-            detail = payload.get("detail") if isinstance(payload, dict) else None
-            if _is_primary_required_error(detail):
-                await asyncio.sleep(0.025)
-                continue
-
-        if response.status_code >= 400:
-            if isinstance(payload, dict) and "detail" in payload:
-                raise HTTPException(status_code=response.status_code, detail=payload["detail"])
-            raise HTTPException(
-                status_code=response.status_code,
-                detail={
-                    "code": "proxy_failed",
-                    "message": response.text,
-                },
-            )
-
-        if payload is None:
-            # response.json() above swallows decode errors, so a successful
-            # status code can still leave payload unset (empty/non-JSON body).
-            # Surface that as a structured error instead of letting callers
-            # crash on model_validate(None).
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={
-                    "code": "primary_proxy_invalid_response",
-                    "message": "Primary worker returned an invalid response",
-                },
-            )
-
-        return payload
-
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail={
-            "code": "primary_proxy_failed",
-            "message": "Could not route request to primary worker",
-        },
-    )
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "code": "primary_proxy_invalid_response",
+                "message": "Primary worker returned an invalid response",
+            },
+        )
+    return payload
 
 
 class PrinterCreate(BaseModel):
@@ -885,16 +826,10 @@ async def driver_profile_coverage(
 ):
     """Read-only per-model profile resolution for the slicer profile picker."""
     if not _is_primary_worker():
-        qs_parts = []
-        if spool_id is not None:
-            qs_parts.append(f"spool_id={spool_id}")
-        if filament_id is not None:
-            qs_parts.append(f"filament_id={filament_id}")
-        qs = ("?" + "&".join(qs_parts)) if qs_parts else ""
         return await _proxy_to_primary(
             request,
             method="GET",
-            path=f"/api/v1/printers/{printer_id}/driver/profile-coverage{qs}",
+            path=f"/api/v1/printers/{printer_id}/driver/profile-coverage",
         )
 
     driver = plugin_manager.drivers.get(printer_id)
@@ -994,18 +929,10 @@ async def driver_cloud_presets(
     Response shape: {"presets": [{code, name, displayName, isCustom}], "count": N}.
     """
     if not _is_primary_worker():
-        qs_parts = []
-        if refresh:
-            qs_parts.append("refresh=1")
-        if model:
-            qs_parts.append(f"model={model}")
-        if group:
-            qs_parts.append(f"group={group}")
-        qs = ("?" + "&".join(qs_parts)) if qs_parts else ""
         payload = await _proxy_to_primary(
             request,
             method="GET",
-            path=f"/api/v1/printers/{printer_id}/driver/cloud-presets{qs}",
+            path=f"/api/v1/printers/{printer_id}/driver/cloud-presets",
         )
         if isinstance(payload, dict):
             return payload
