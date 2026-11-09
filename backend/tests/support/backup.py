@@ -18,7 +18,7 @@ async def export_backup_data(db, *, kind: Literal["complete", "inventory"] = "co
     with TemporaryDirectory() as directory:
         path = Path(directory) / "backup.jsonl"
         await _write_backup_file(db, path, kind=kind, metadata={}, tables=tables)
-        with path.open() as stream:
+        with path.open(encoding="utf-8") as stream:
             for line in stream:
                 record = json.loads(line)
                 if "table" in record:
