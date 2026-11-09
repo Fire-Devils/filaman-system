@@ -16,8 +16,9 @@ import {
   createFilamentDbLookup,
 } from './filamentdb-lookup'
 import { buildFilamentHeroStyle, buildFilamentSwatchStyle } from './filament-detail'
+import { filamentSections, type FilamentField } from './filament-fields'
 import { t } from './i18n'
-import { createSpoolProfilePicker } from './filament-spool-profile'
+import { createSpoolProfilePicker, type SpoolProfile } from './filament-spool-profile'
 import { bindInlineColorEditor } from './inline-color-editor'
 import {
   ADD_MANUFACTURER_VALUE,
@@ -33,6 +34,17 @@ import {
 } from './table-column-filters'
 
 const CUSTOM_TYPE_VALUE = '__custom__'
+const pluginFields = new Map<string, Pick<FilamentField, 'kind' | 'required' | 'options' | 'min' | 'max'>>(
+  filamentSections.flatMap(section => section.fields)
+    .filter(field => !['price', 'price_currency', 'is_discontinued'].includes(field.key))
+    .map(field => [field.key, field]),
+)
+pluginFields.set('manufacturer_color_name', { kind: 'text' })
+const pluginTextLimits: Record<string, number> = {
+  designation: 255, material_type: 50, material_subgroup: 100, manufacturer_color_name: 255, manufacturer_sku: 255,
+}
+const rawPluginTextFields = ['material_subgroup', 'manufacturer_color_name'] as const
+const spoolProfileFields = ['default_spool_weight_g', 'spool_material', 'spool_outer_diameter_mm', 'spool_width_mm']
 const DEFAULT_DENSITIES: Record<string, number> = {
   PLA: 1.24,
   ABS: 1.07,
@@ -49,7 +61,31 @@ const DEFAULT_DENSITIES: Record<string, number> = {
 
 type FormMode = 'create' | 'edit'
 type Color = { id: number; name: string; hex_code: string }
-type InitialData = Record<string, any>
+export type FilamentFormData = Record<string, unknown> & {
+  manufacturer_id?: number | null
+  manufacturer?: Manufacturer | null
+  material_type?: string | null
+  filamentdb_spool_image_file?: string | null
+  filamentdb_spool_profile_id?: number | null
+  colors?: Array<{ color_id: number; position?: number; color?: Color | null }> | null
+  custom_fields?: EntityExtraFieldPayload['customFields']
+  custom_field_definitions?: EntityExtraFieldPayload['customFieldDefinitions']
+}
+
+type CatalogFilament = Record<string, unknown> & {
+  name?: string | null
+  designation?: string | null
+  colors?: Array<{ hex_code?: string | null; color_name?: string | null; name?: string | null; position?: number }> | null
+  manufacturer?: {
+    name?: string | null
+    website?: string | null
+    slug?: string | null
+    has_web_logo?: boolean
+    has_label_logo?: boolean
+  } | null
+  material?: { key?: string | null; name?: string | null } | null
+  spool_profile?: Partial<SpoolProfile> | null
+}
 type FormSnapshot = Record<string, string>
 
 interface FilamentFormPayload {
@@ -91,6 +127,63 @@ function stableValue(value: unknown): unknown {
 
 function serialize(value: unknown): string {
   return JSON.stringify(stableValue(value))
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function matchesDraftValue(current: unknown, old: unknown): boolean {
+  if (Array.isArray(current)) {
+    return Array.isArray(old) && current.length === old.length && current.every((value, index) => value === old[index])
+  }
+  if (isRecord(current)) {
+    return isRecord(old) && Object.keys(old).every(key => key === 'min' || key === 'max')
+      && (current.min ?? null) === (old.min ?? null) && (current.max ?? null) === (old.max ?? null)
+  }
+  return current === old
+}
+
+function hasMaterialOption(select: HTMLSelectElement, value: unknown): boolean {
+  return Array.from(select.options).some(option => option.value === value)
+}
+
+function isPluginFieldValue(key: string, value: unknown, form: HTMLFormElement): boolean {
+  const field = pluginFields.get(key)
+  if (!field) return false
+  if (value === null) return !field.required
+  const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+    && (field.min == null || v >= field.min) && (field.max == null || v <= field.max)
+  if (field.kind === 'number') {
+    if (!isNumber(value) || (key === 'diameter_mm' && value <= 0)) return false
+    const input = form.elements.namedItem(key) as HTMLInputElement
+    const candidate = input.cloneNode() as HTMLInputElement
+    candidate.value = String(value)
+    return candidate.validity.valid
+  }
+  if (field.kind === 'range') {
+    return isNumber(value) || (isRecord(value) && Object.keys(value).every(key => key === 'min' || key === 'max')
+      && (value.min == null || isNumber(value.min)) && (value.max == null || isNumber(value.max))
+      && (value.min != null || value.max != null)
+      && (!isNumber(value.min) || !isNumber(value.max) || value.min <= value.max))
+  }
+  if (field.kind === 'list') return Array.isArray(value) && value.length <= 100
+    && value.every(item => typeof item === 'string' && item.length <= 500)
+  const textLimit = pluginTextLimits[key] ?? 500
+  if (typeof value !== 'string' || !value.trim() || value.length > textLimit) return false
+  if (field.kind === 'material') {
+    const select = form.elements.namedItem('type') as HTMLSelectElement
+    return value.trim() !== CUSTOM_TYPE_VALUE
+      && (hasMaterialOption(select, value) || value.trim().toUpperCase().length <= textLimit)
+  }
+  if (field.kind === 'select') return field.options?.some(([option]) => option === value) ?? false
+  if (field.kind === 'url') {
+    try {
+      const url = new URL(value)
+      return (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password
+    } catch { return false }
+  }
+  return true
 }
 
 export function createFilamentFormController(options: {
@@ -172,11 +265,14 @@ export function createFilamentFormController(options: {
   let destroyed = false
   let baseline: FormSnapshot | null = null
   let payloadBaseline: FilamentFormPayload | null = null
+  let rawPluginTextBaseline: Record<string, string> = {}
   let colorBaseline: string | null = null
   let submittedSnapshot: FormSnapshot | null = null
   let extraFieldBaseline: EntityExtraFieldPayload = { customFields: null, customFieldDefinitions: null }
   let submitting = false
   let hasChanges = mode === 'create'
+  let explicitMaterial = false
+  let explicitDiameter = false
   submitButton.disabled = !hasChanges
   let spoolImageFile: string | null | undefined
   let spoolProfileId: number | null | undefined
@@ -619,7 +715,10 @@ export function createFilamentFormController(options: {
   })
   const handleDraftChange = (event?: Event | MutationRecord[]) => {
     if (event instanceof Event && (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) {
-      if (['default_spool_weight_g', 'spool_material', 'spool_outer_diameter_mm', 'spool_width_mm'].includes((event.target as HTMLInputElement).name)) spoolProfilePicker?.match()
+      const { name } = event.target
+      if (name === 'type' || name === 'custom_type') explicitMaterial = true
+      if (name === 'diameter_mm') explicitDiameter = true
+      if (spoolProfileFields.includes(name)) spoolProfilePicker?.match()
     }
     syncHeroPreview()
     updateDirtyState()
@@ -657,14 +756,14 @@ export function createFilamentFormController(options: {
     bindFilamentDbLookupToManufacturer(manufacturerSelect, lookupSearchAll, lookupSection, (scopedToManufacturer) => {
       catalogRequest++
       lookupToast.style.display = 'none'
-      return createFilamentDbLookup<any>({
+      return createFilamentDbLookup<CatalogFilament>({
         container: lookupContainer,
         endpoint: '/filamentdb/filaments',
         placeholder: t('filamentdbLookup.searchFilament'),
         extraParams: scopedToManufacturer ? { manufacturer_name: selectedManufacturerName() } : {},
         renderItem(item) {
           const colors = (item.colors || [])
-            .map((color: any) => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${toColorSwatchBackground(color.hex_code)};border:1px solid var(--border);vertical-align:middle"></span>`)
+            .map(color => `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${toColorSwatchBackground(color.hex_code)};border:1px solid var(--border);vertical-align:middle"></span>`)
             .join(' ')
           const traits = Object.entries(item.traits || {})
             .filter(([, enabled]) => enabled)
@@ -727,7 +826,7 @@ export function createFilamentFormController(options: {
                 shop_url: item.shop_url || null,
                 color_mode: (item.colors || []).length > 1 ? 'multi' : 'single',
                 multi_color_style: item.multi_color_style || null,
-                colors: (item.colors || []).map((color: any, index: number) => ({
+                colors: (item.colors || []).map((color, index) => ({
                   hex_code: color.hex_code || '',
                   color_name: color.color_name || color.name || '',
                   position: color.position || index + 1,
@@ -915,7 +1014,7 @@ export function createFilamentFormController(options: {
     setField(`${prefix}_to`, range.min !== range.max ? range.max : null)
   }
 
-  function applyInitialData(data: InitialData, source: 'initial' | 'duplicate' | 'catalog' = 'initial'): void {
+  function applyInitialData(data: FilamentFormData, source: 'initial' | 'duplicate' | 'catalog' | 'plugin' = 'initial'): void {
     if (Object.hasOwn(data, 'filamentdb_spool_image_file')) spoolImageFile = data.filamentdb_spool_image_file ?? null
     if (Object.hasOwn(data, 'filamentdb_spool_profile_id')) spoolProfileId = data.filamentdb_spool_profile_id ?? null
     const hasValue = (key: string): boolean => {
@@ -931,7 +1030,8 @@ export function createFilamentFormController(options: {
     }
     if (hasValue('designation')) setField('designation', data.designation)
     if (hasValue('material_type') && data.material_type) {
-      if (Array.from(typeSelect.options).some(({ value }) => value === data.material_type)) {
+      explicitMaterial = true
+      if (hasMaterialOption(typeSelect, data.material_type)) {
         typeSelect.value = data.material_type
       } else {
         typeSelect.value = CUSTOM_TYPE_VALUE
@@ -939,6 +1039,7 @@ export function createFilamentFormController(options: {
       }
       syncType(false)
     }
+    if (hasValue('diameter_mm')) explicitDiameter = true
     for (const [key, id] of [
       ['diameter_mm', 'diameter_mm'],
       ['material_subgroup', 'material_subgroup'],
@@ -1005,8 +1106,12 @@ export function createFilamentFormController(options: {
       renderSystemFields(flattenObject(fields), fields)
       entityExtraFields.setData(fields, data.custom_field_definitions)
     }
-    spoolProfilePicker?.setLink(spoolProfileId ?? null, spoolImageFile ?? null)
-    if (mode === 'create' || source === 'catalog') spoolProfilePicker?.match()
+    if (source !== 'plugin') {
+      spoolProfilePicker?.setLink(spoolProfileId ?? null, spoolImageFile ?? null)
+      if (mode === 'create' || source === 'catalog') spoolProfilePicker?.match()
+    } else if (spoolProfileFields.some(hasValue)) {
+      spoolProfilePicker?.match()
+    }
     syncHeroPreview()
     updateDirtyState()
   }
@@ -1073,6 +1178,71 @@ export function createFilamentFormController(options: {
     }
   }
 
+  function readPluginDraft(): Record<string, unknown> {
+    const { scalar } = collectPayload(false)
+    const colorId = getColorMode() === 'single' ? selectedColorIds[0] ?? null : null
+    return {
+      ...Object.fromEntries([...pluginFields.keys()].map(key => [key, scalar[key] ?? null])),
+      ...Object.fromEntries(rawPluginTextFields.map(key => [key, input(key).value || null])),
+      material_type: mode === 'create' && !explicitMaterial ? null : scalar.material_type || null,
+      diameter_mm: mode === 'create' && !explicitDiameter ? null : numberValue('diameter_mm'),
+      manufacturer_id: scalar.manufacturer_id || null,
+      manufacturer_name: selectedManufacturerName() || null,
+      color_mode: getColorMode(),
+      color_id: colorId,
+      palette_color_name: allColors.find(color => color.id === colorId)?.name ?? null,
+    }
+  }
+
+  function stagePluginDraft(units: unknown, draft: Record<string, unknown>) {
+    const staged: string[] = []
+    const skipped: string[] = []
+    if (!Array.isArray(units) || units.length > 50) return { staged, skipped }
+    const current = readPluginDraft()
+    const sameDraft = serialize(draft) === serialize(current) && !submitting && !destroyed
+    const values: FilamentFormData = {}
+    for (const unit of units) {
+      if (!isRecord(unit)) continue
+      const changes = Object.entries(unit)
+      if (!changes.length || changes.length > pluginFields.size + 2) continue
+      const valid = sameDraft && changes.every(([key, change]) => {
+        if (!Object.hasOwn(current, key) || Object.hasOwn(values, key) || !isRecord(change)
+          || !Object.hasOwn(change, 'old') || !Object.hasOwn(change, 'value')
+          || !matchesDraftValue(current[key], change.old)) return false
+        if (key === 'manufacturer_id') return mode === 'create' && allManufacturers.some(item => item.id === change.value)
+        if (key === 'color_id') return mode === 'create' && getColorMode() === 'single'
+          && allColors.some(item => item.id === change.value)
+        return isPluginFieldValue(key, change.value, form)
+      })
+      if (!valid) {
+        skipped.push(...changes.map(([key]) => key))
+        continue
+      }
+      for (const [key, change] of changes) {
+        values[key] = (change as { value: unknown }).value
+        staged.push(key)
+      }
+    }
+    if (!staged.length) return { staged, skipped }
+
+    // Use the raw baseline for an explicitly selected formatting-only change.
+    for (const key of rawPluginTextFields) {
+      const raw = rawPluginTextBaseline[key]
+      if (baseline && payloadBaseline && raw && raw !== raw.trim() && Object.hasOwn(values, key) && values[key] !== raw) {
+        baseline[key] = serialize(raw)
+        payloadBaseline.scalar[key] = raw
+      }
+    }
+    if (Object.hasOwn(values, 'color_id')) values.colors = [{ color_id: values.color_id as number, position: 1 }]
+    preserveDraftSpoolFields = true
+    try {
+      applyInitialData(values, 'plugin')
+    } finally {
+      preserveDraftSpoolFields = false
+    }
+    return { staged, skipped }
+  }
+
   function setSubmitting(active: boolean): void {
     submitting = active
     submitButton.disabled = active || !hasChanges
@@ -1105,9 +1275,11 @@ export function createFilamentFormController(options: {
   form.addEventListener('submit', handleSubmit)
 
   return {
+    readPluginDraft,
+    stagePluginDraft,
     loadReferenceData,
     applyInitialData,
-    resetInitialData(data: InitialData) {
+    resetInitialData(data: FilamentFormData) {
       catalogRequest++
       manufacturerDialog?.close()
       closeColorDialog()
@@ -1118,6 +1290,8 @@ export function createFilamentFormController(options: {
       extraFieldBaseline = { customFields: data.custom_fields ?? null, customFieldDefinitions: data.custom_field_definitions ?? null }
       const listView = colorListToggle.checked
       form.reset()
+      explicitMaterial = false
+      explicitDiameter = false
       colorListToggle.checked = listView
       spoolImageFile = undefined
       spoolProfileId = undefined
@@ -1129,6 +1303,7 @@ export function createFilamentFormController(options: {
       extraFieldBaseline = collectExtraFieldPayload(systemFieldsGrid, entityExtraFields) ?? extraFieldBaseline
       baseline = readSnapshot()
       payloadBaseline = collectPayload(false)
+      rawPluginTextBaseline = Object.fromEntries(rawPluginTextFields.map(key => [key, input(key).value]))
       colorBaseline = colorSnapshot(payloadBaseline)
       spoolProfilePicker?.match()
       updateDirtyState()
@@ -1148,6 +1323,7 @@ export function createFilamentFormController(options: {
     acceptNativeUpdate(scalar: Record<string, unknown>) {
       if (!payloadBaseline || !baseline || !submittedSnapshot) return
       payloadBaseline.scalar = structuredClone(scalar)
+      rawPluginTextBaseline = Object.fromEntries(rawPluginTextFields.map(key => [key, String(scalar[key] ?? '')]))
       extraFieldBaseline = {
         customFields: payloadBaseline.scalar.custom_fields as EntityExtraFieldPayload['customFields'],
         customFieldDefinitions: payloadBaseline.scalar.custom_field_definitions as EntityExtraFieldPayload['customFieldDefinitions'],

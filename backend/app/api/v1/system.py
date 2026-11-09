@@ -30,7 +30,7 @@ from sqlalchemy.orm import undefer
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.core.cache import response_cache
 from app.core.config import settings
 from app.core.security import Principal
@@ -190,10 +190,6 @@ async def plugin_nav(
     db: DBSession,
     _principal: PrincipalDep,
 ):
-    cached = response_cache.get("plugin_nav")
-    if cached is not None:
-        return cached
-
     result = await db.execute(
         select(InstalledPlugin)
         .where(InstalledPlugin.is_active.is_(True))
@@ -202,12 +198,7 @@ async def plugin_nav(
         .where(InstalledPlugin.page_url != "")
         .order_by(InstalledPlugin.name)
     )
-    items = result.scalars().all()
-
-    # Cache the serialized list (ORM objects can't be pickled after session closes)
-    serialized = [PluginNavItem.model_validate(p) for p in items]
-    response_cache.set("plugin_nav", serialized, ttl=600)
-    return serialized
+    return [PluginNavItem.model_validate(plugin) for plugin in result.scalars()]
 
 
 @public_router.get("/plugin-icons/{plugin_key}")
@@ -229,6 +220,34 @@ async def plugin_icon(plugin_key: str, db: DBSession, _principal: PrincipalDep):
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-cache",
     })
+
+
+@public_router.get("/filament-plugin-hooks", response_model=list[PluginNavItem])
+async def filament_plugin_hooks(
+    db: DBSession,
+    principal: PrincipalDep,
+    surface: Literal["create", "edit", "selection"],
+):
+    await ensure_any_permission(
+        db, principal, "filaments:create" if surface == "create" else "filaments:update"
+    )
+    capability = "selection" if surface == "selection" else "editor"
+    plugins = await db.scalars(
+        select(InstalledPlugin)
+        .where(InstalledPlugin.is_active.is_(True))
+        .where(InstalledPlugin.page_url.startswith("/plugin-page/"))
+        .order_by(InstalledPlugin.name, InstalledPlugin.plugin_key)
+    )
+    result = []
+    for plugin in plugins:
+        hooks = plugin.capabilities.get("filament_ui") if isinstance(plugin.capabilities, dict) else None
+        if (
+            isinstance(hooks, dict)
+            and hooks.get(capability) is True
+            and re.fullmatch(r"/plugin-page/[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)*", plugin.page_url or "")
+        ):
+            result.append(PluginNavItem.model_validate(plugin))
+    return result
 
 
 # ------------------------------------------------------------------ #
@@ -590,7 +609,6 @@ async def install_from_registry(
 
     # Caches invalidieren (Plugin-Status hat sich geaendert)
     _invalidate_version_cache()
-    response_cache.delete("plugin_nav")
 
     action = "aktualisiert" if is_upgrade else "installiert"
     return PluginInstallResponse(
@@ -701,7 +719,6 @@ async def install_plugin(
 
     # Caches invalidieren (Plugin-Status hat sich geaendert)
     _invalidate_version_cache()
-    response_cache.delete("plugin_nav")
 
     action = "aktualisiert" if is_upgrade else "installiert"
     return PluginInstallResponse(
@@ -723,13 +740,8 @@ async def uninstall_plugin(
     """Plugin deinstallieren."""
     from app.plugins.manager import plugin_manager
 
-    service = PluginInstallService(db)
-
-    # Plugin-Info holen fuer Treiber-Stopp
-    plugin_info = await service.get_plugin(plugin_key)
-    driver_key = plugin_info.driver_key or plugin_key if plugin_info else plugin_key
-
-    if plugin_info:
+    async def prepare_uninstall(plugin: InstalledPlugin) -> None:
+        driver_key = plugin.driver_key or plugin_key
         # Laufende Treiber stoppen
         for pid, drv in list(plugin_manager.drivers.items()):
             if drv.driver_key == driver_key:
@@ -740,8 +752,9 @@ async def uninstall_plugin(
             if mod_name.startswith(prefix):
                 del sys.modules[mod_name]
 
-    # Optionally delete plugin-created data
-    if delete_data:
+        if not delete_data:
+            return
+
         from app.models.printer import Printer
         from app.models.printer_params import FilamentPrinterParam, SpoolPrinterParam
         from app.models.system_extra_field import SystemExtraField
@@ -774,16 +787,14 @@ async def uninstall_plugin(
                 )
             )
 
-        await db.commit()
-        logger.info(
-            f"Deleted plugin data (SystemExtraFields + printer_params) for driver '{driver_key}'"
-        )
-
+    service = PluginInstallService(db)
     try:
-        await service.uninstall(plugin_key)
+        plugin_type = await service.uninstall(plugin_key, before_remove=prepare_uninstall)
     except PluginInstallError as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=(
+                status.HTTP_409_CONFLICT if e.code == "install_busy" else status.HTTP_404_NOT_FOUND
+            ),
             detail={
                 "code": e.code,
                 "message": str(e),
@@ -794,12 +805,11 @@ async def uninstall_plugin(
     # gemountet, der ihn zuvor dynamisch geladen hat — Worker-Reload erzwingt
     # den konsistenten Kaltstart-Pfad (Plugin-Verzeichnis ist bereits geloescht,
     # also wird die Route ueberall entfernt).
-    if plugin_info and plugin_info.plugin_type in ("import", "integration"):
+    if plugin_type in ("import", "integration"):
         request_worker_reload()
 
     # Caches invalidieren (Plugin entfernt)
     _invalidate_version_cache()
-    response_cache.delete("plugin_nav")
 
 
 class PluginToggleResponse(BaseModel):
@@ -902,7 +912,6 @@ async def toggle_plugin_active(
                     if started:
                         affected += 1
 
-    response_cache.delete("plugin_nav")
     return PluginToggleResponse(
         plugin=PluginResponse.model_validate(plugin),
         affected_printers=affected,

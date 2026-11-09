@@ -1,5 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
 ---
 
 <Layout title="FilaMan - Filaments">
@@ -116,6 +117,7 @@ import Layout from '../../layouts/Layout.astro'
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
     <span class="bulk-count" id="bulk-count"></span>
+    <FilamentPluginHooks mode="selection" />
     <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="filaments.bulkSetPrice">Set Price</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-diameter" data-i18n="filaments.bulkSetDiameter">Set Diameter</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
@@ -162,6 +164,7 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
     import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
+    import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
@@ -1166,6 +1169,9 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     // ── Bulk Selection & Actions ──────────────────────────────
+    const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
+    if (!selectForSpool && hooks) mountFilamentPluginHooks(hooks, { mode: 'selection', selectedIds: selectedFilamentIds })
+
     function updateBulkBar() {
       if (selectForSpool) return
       const bar = document.getElementById('bulk-action-bar')!

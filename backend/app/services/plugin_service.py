@@ -10,17 +10,24 @@ import shutil
 import sys
 import tempfile
 import zipfile
+from collections.abc import Awaitable, Callable
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.plugin import InstalledPlugin
 from app.core.config import settings
+from app.core.file_lock import FileLockBusy, exclusive_file_lock
+from app.models.plugin import InstalledPlugin
 from app.services.plugin_icon_service import read_plugin_icon
 
 logger = logging.getLogger(__name__)
+
+
+def is_integration_slug(slug: str) -> bool:
+    return len(slug) <= 487 and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", slug) is not None
 
 
 def _resolve_plugins_dir() -> Path:
@@ -63,7 +70,22 @@ ALLOWED_EXTENSIONS = {
     ".yml",
     ".toml",
     ".html",
+    # Web assets — required for integration plugins that ship a static SPA
+    ".js",
+    ".css",
     ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".xml",
+    ".map",
 }
 
 # Pflichtfelder im Manifest (Basisfelder, gelten fuer alle Plugin-Typen)
@@ -88,6 +110,103 @@ class PluginInstallError(Exception):
     def __init__(self, message: str, code: str = "plugin_install_error"):
         super().__init__(message)
         self.code = code
+
+
+def validate_integration_shell(manifest: dict, plugin_dir: Path) -> None:
+    page_url = manifest.get("page_url")
+    mount = manifest.get("mount_prefix")
+    has_shell = isinstance(page_url, str) and page_url.startswith("/plugin-view/")
+    claims_mount = isinstance(mount, str) and (
+        mount in ("/plugins", "/plugin-view") or mount.startswith(("/plugins/", "/plugin-view/"))
+    )
+    if not has_shell and not claims_mount:
+        return
+
+    slug = page_url.removeprefix("/plugin-view/") if has_shell else ""
+    if (
+        manifest.get("plugin_type") != "integration"
+        or not is_integration_slug(slug)
+        or mount != f"/plugins/{slug}"
+        or not (plugin_dir / "router.py").is_file()
+    ):
+        raise PluginInstallError(
+            "Integration shell requires /plugin-view/<slug>, /plugins/<slug>, and router.py",
+            "invalid_integration_shell",
+        )
+
+
+@contextmanager
+def _plugin_install_lock():
+    try:
+        with exclusive_file_lock(PLUGINS_DIR / ".install.lock"):
+            yield
+    except FileLockBusy as exc:
+        raise PluginInstallError("Another plugin install or uninstall is running", "install_busy") from exc
+
+
+@contextmanager
+def _replace_plugin_files(target: Path, previous: Path, candidate: Path | None = None):
+    # Keep the old directory available until the database write succeeds.
+    if target.exists():
+        target.rename(previous)
+    try:
+        if candidate is not None:
+            candidate.rename(target)
+        yield
+    except BaseException:
+        if candidate is not None and target.exists():
+            target.rename(candidate)
+        if previous.exists():
+            previous.rename(target)
+        raise
+
+
+async def _preflight_plugin_router(plugin_dir: Path) -> None:
+    # Import the candidate as a fresh worker would, without changing the live worker's modules.
+    plugin_dir = plugin_dir.resolve()
+    check = """
+import sys
+from pathlib import Path
+
+from fastapi import FastAPI
+from app import plugins
+
+plugin_key, installed_dir, candidate_router = sys.argv[1:]
+sys.path.insert(1, installed_dir)
+plugins.__path__.append(installed_dir)
+from app.api.v1.router import mount_deferred_plugin_routers
+
+app = FastAPI()
+mount_deferred_plugin_routers(app)
+if plugin_key not in getattr(app.state, 'plugin_routes', {}):
+    sys.exit(1)
+loaded_router = sys.modules.get(f'{plugin_key}.router')
+loaded_file = getattr(loaded_router, '__file__', None)
+if not loaded_file or Path(loaded_file).resolve() != Path(candidate_router):
+    sys.exit('Router was imported from outside the candidate plugin')
+print('Plugin router validated')
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", check, plugin_dir.name, str(PLUGINS_DIR.resolve()),
+        str((plugin_dir / "router.py").resolve()),
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "PLUGINS_DIR": str(plugin_dir.parent), "PYTHONDONTWRITEBYTECODE": "1"},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+    except TimeoutError as exc:
+        raise PluginInstallError("Plugin router validation timed out", "invalid_plugin_router") from exc
+    finally:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+    if process.returncode or b"Plugin router validated" not in stdout.splitlines():
+        lines = stderr.decode(errors="replace").strip().splitlines()
+        detail = lines[-1][-500:] if lines else "Router could not be loaded"
+        raise PluginInstallError(detail, "invalid_plugin_router")
 
 
 class PluginInstallService:
@@ -126,8 +245,11 @@ class PluginInstallService:
         self._validate_zip(zip_data)
 
         # 3. In temp-Verzeichnis entpacken
-        with tempfile.TemporaryDirectory(prefix="filaman_plugin_") as tmpdir:
-            plugin_dir = self._extract_zip(zip_data, tmpdir)
+        with _plugin_install_lock(), tempfile.TemporaryDirectory(prefix=".install-", dir=PLUGINS_DIR) as tmpdir:
+            work_dir = Path(tmpdir)
+            archive_dir = work_dir / "archive"
+            archive_dir.mkdir()
+            plugin_dir = self._extract_zip(zip_data, str(archive_dir))
 
             # 4. Manifest lesen (frueher, um plugin_type zu kennen)
             manifest = self._validate_manifest(plugin_dir)
@@ -145,111 +267,94 @@ class PluginInstallService:
 
             # 8. Upgrade oder Neuinstallation pruefen
             plugin_key = manifest["plugin_key"]
+            # Install callers have only permission reads pending. Start with a
+            # fresh snapshot after taking the file lock, without holding row locks.
+            await self.db.rollback()
+            page_url = manifest.get("page_url")
+            hosted = isinstance(page_url, str) and page_url.startswith("/plugin-view/")
+            if hosted:
+                owner = await self.db.scalar(
+                    select(InstalledPlugin.plugin_key).where(
+                        InstalledPlugin.page_url == page_url,
+                        InstalledPlugin.plugin_key != plugin_key,
+                    ).limit(1)
+                )
+                if owner is not None:
+                    raise PluginInstallError(
+                        f"Integration shell URL is already used by '{owner}'",
+                        "integration_shell_conflict",
+                    )
             existing = await self._find_existing(plugin_key)
             is_upgrade = existing is not None
 
-            # 8a. Bei Upgrade: Laufende Treiber stoppen
+            dependencies = manifest.get("dependencies", [])
+            if dependencies:
+                await self._install_dependencies(dependencies, plugin_key)
+
+            staged_dir = work_dir / "staged"
+            staged_dir.mkdir()
+            candidate = plugin_dir.rename(staged_dir / plugin_key)
+            if plugin_type in ("import", "integration") and (candidate / "router.py").is_file():
+                await _preflight_plugin_router(candidate)
+
             if is_upgrade and stop_callback:
                 await stop_callback(existing.driver_key or plugin_key)
 
-            # 9. Plugin in plugins-Verzeichnis kopieren
-            target_dir = PLUGINS_DIR / plugin_key
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            shutil.copytree(plugin_dir, target_dir)
+            plugin = existing or InstalledPlugin(plugin_key=plugin_key, installed_by=installed_by)
+            for field in (
+                "name", "version", "description", "author", "homepage", "license", "plugin_type",
+                "driver_key", "page_url", "icon", "config_schema", "capabilities",
+            ):
+                setattr(plugin, field, manifest.get(field))
+            plugin.show_in_nav = manifest.get("show_in_nav", False)
+            self.db.add(plugin)
 
+            target_dir = PLUGINS_DIR / plugin_key
             try:
-                # 9a. Dependencies installieren (falls vorhanden)
-                dependencies = manifest.get("dependencies", [])
-                if dependencies:
-                    await self._install_dependencies(dependencies, plugin_key)
-            except Exception:
-                # Cleanup: Verzeichnis entfernen bei Fehler
-                if target_dir.exists():
-                    shutil.rmtree(target_dir)
+                with _replace_plugin_files(target_dir, work_dir / "previous", candidate):
+                    await self.db.commit()
+            except BaseException:
+                await self.db.rollback()
                 raise
 
-            # 10. DB-Eintrag erstellen oder aktualisieren
-            if existing:
-                existing.name = manifest["name"]
-                existing.version = manifest["version"]
-                existing.description = manifest.get("description")
-                existing.author = manifest.get("author")
-                existing.homepage = manifest.get("homepage")
-                existing.license = manifest.get("license")
-                existing.plugin_type = plugin_type
-                existing.driver_key = manifest.get("driver_key")
-                existing.page_url = manifest.get("page_url")
-                existing.icon = manifest.get("icon")
-                existing.config_schema = manifest.get("config_schema")
-                existing.capabilities = manifest.get("capabilities")
-                existing.show_in_nav = manifest.get("show_in_nav", False)
-                await self.db.commit()
-                await self.db.refresh(existing)
-                logger.info(
-                    f"Plugin '{plugin_key}' auf v{manifest['version']} aktualisiert"
-                )
-                return existing, True
-            else:
-                plugin = InstalledPlugin(
-                    plugin_key=plugin_key,
-                    name=manifest["name"],
-                    version=manifest["version"],
-                    description=manifest.get("description"),
-                    author=manifest.get("author"),
-                    homepage=manifest.get("homepage"),
-                    license=manifest.get("license"),
-                    plugin_type=plugin_type,
-                    driver_key=manifest.get("driver_key"),
-                    page_url=manifest.get("page_url"),
-                    icon=manifest.get("icon"),
-                    config_schema=manifest.get("config_schema"),
-                    capabilities=manifest.get("capabilities"),
-                    show_in_nav=manifest.get("show_in_nav", False),
-                    is_active=True,
-                    installed_by=installed_by,
-                )
-                self.db.add(plugin)
-                await self.db.commit()
-                await self.db.refresh(plugin)
-                logger.info(f"Plugin '{plugin_key}' v{manifest['version']} installiert")
-                return plugin, False
+            await self.db.refresh(plugin)
+            logger.info("Plugin '%s' v%s %s", plugin_key, plugin.version, "aktualisiert" if is_upgrade else "installiert")
+            return plugin, is_upgrade
 
     # ------------------------------------------------------------------ #
     #  Deinstallation
     # ------------------------------------------------------------------ #
 
-    async def uninstall(self, plugin_key: str) -> None:
+    async def uninstall(
+        self,
+        plugin_key: str,
+        before_remove: Callable[[InstalledPlugin], Awaitable[None]] | None = None,
+    ) -> str:
         """Plugin deinstallieren."""
-        result = await self.db.execute(
-            select(InstalledPlugin).where(InstalledPlugin.plugin_key == plugin_key)
-        )
-        plugin = result.scalar_one_or_none()
+        with _plugin_install_lock(), tempfile.TemporaryDirectory(prefix=".uninstall-", dir=PLUGINS_DIR) as tmpdir:
+            # Discard any earlier permission-read snapshot before checking the install.
+            await self.db.rollback()
+            plugin = await self.get_plugin(plugin_key)
+            if not plugin:
+                raise PluginInstallError(f"Plugin '{plugin_key}' nicht gefunden", "not_found")
+            if plugin.installed_by is None:
+                raise PluginInstallError(
+                    f"Plugin '{plugin_key}' ist ein eingebautes Plugin und kann nicht deinstalliert werden",
+                    "builtin_protected",
+                )
 
-        if not plugin:
-            raise PluginInstallError(
-                f"Plugin '{plugin_key}' nicht gefunden",
-                "not_found",
-            )
-
-        # Builtin-Plugins (installed_by is None) duerfen nicht deinstalliert werden
-        if plugin.installed_by is None:
-            raise PluginInstallError(
-                f"Plugin '{plugin_key}' ist ein eingebautes Plugin und kann nicht deinstalliert werden",
-                "builtin_protected",
-            )
-
-        # Plugin-Verzeichnis entfernen
-        target_dir = PLUGINS_DIR / plugin_key
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
-            logger.info(f"Plugin-Verzeichnis '{target_dir}' entfernt")
-
-        # DB-Eintrag loeschen
-        await self.db.delete(plugin)
-        await self.db.commit()
-
-        logger.info(f"Plugin '{plugin_key}' deinstalliert")
+            plugin_type = plugin.plugin_type
+            try:
+                if before_remove is not None:
+                    await before_remove(plugin)
+                with _replace_plugin_files(PLUGINS_DIR / plugin_key, Path(tmpdir) / "previous"):
+                    await self.db.delete(plugin)
+                    await self.db.commit()
+            except BaseException:
+                await self.db.rollback()
+                raise
+            logger.info(f"Plugin '{plugin_key}' deinstalliert")
+            return plugin_type
 
     # ------------------------------------------------------------------ #
     #  Installierte Plugins auflisten
@@ -357,7 +462,7 @@ class PluginInstallService:
 
         for filename in required_files:
             filepath = plugin_dir / filename
-            if not filepath.exists():
+            if not filepath.is_file():
                 raise PluginInstallError(
                     f"Pflichtdatei '{filename}' fehlt",
                     "missing_file",
@@ -393,6 +498,8 @@ class PluginInstallService:
                 "invalid_plugin_type",
             )
         manifest["plugin_type"] = plugin_type
+
+        validate_integration_shell(manifest, plugin_dir)
 
         # plugin_key validieren
         plugin_key = manifest["plugin_key"]
@@ -469,8 +576,8 @@ class PluginInstallService:
                         "forbidden_extension",
                     )
 
-                # Maximale Einzeldatei-Groesse: 1 MB
-                if filepath.stat().st_size > 1 * 1024 * 1024:
+                # Maximale Einzeldatei-Groesse: 5 MB (SPA-Bundles koennen groesser sein)
+                if filepath.stat().st_size > 5 * 1024 * 1024:
                     raise PluginInstallError(
                         f"Datei zu gross: {rel_path} ({filepath.stat().st_size} Bytes)",
                         "file_too_large",

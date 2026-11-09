@@ -1,0 +1,37 @@
+---
+interface Props { mode: 'create' | 'edit' | 'selection' }
+const { mode } = Astro.props
+---
+
+<div class="filament-plugin-hooks" data-filament-plugin-hooks>
+  <div data-plugin-hook-actions></div>
+  <dialog class="fm-form-dialog filament-plugin-dialog" class:list={{ 'filament-plugin-selection': mode === 'selection' }} aria-labelledby="filament-plugin-heading">
+    <div class="fm-section-header">
+      <h2 id="filament-plugin-heading"></h2>
+      <button type="button" class="fm-btn fm-btn-outline" data-i18n="common.close" autofocus>Close</button>
+    </div>
+    <div data-plugin-hook-content></div>
+  </dialog>
+</div>
+
+<style>
+  .filament-plugin-hooks, [data-plugin-hook-actions] { display: contents; }
+  .filament-plugin-dialog {
+    width: min(40rem, calc(100vw - 16px));
+    height: 100dvh;
+    max-height: none;
+    margin: 0 0 0 auto;
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  }
+  .filament-plugin-selection {
+    width: min(68rem, calc(100vw - 32px));
+    height: min(52rem, calc(100dvh - 32px));
+    margin: auto;
+    border-radius: var(--radius-lg);
+  }
+  .filament-plugin-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  [data-plugin-hook-content] :global(iframe) { display: block; width: 100%; height: 100%; border: 0; }
+  @media (max-width: 640px) {
+    .filament-plugin-dialog { width: 100%; height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  }
+</style>

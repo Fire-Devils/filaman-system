@@ -2335,6 +2335,7 @@ html.sidebar-collapsed .fm-page {
 }
 
 .fm-main { --page-gutter: clamp(10px, 3vw, 32px); min-width: 0; container: detail-page / inline-size; padding: var(--page-block-gutter, var(--page-gutter)) var(--page-gutter) var(--page-gutter); overflow-y: auto; }
+.fm-main--flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; }
 
 .fm-sidebar {
   border-right: 1px solid var(--border);
@@ -2458,6 +2459,7 @@ html.sidebar-collapsed .fm-logo-text {
   }
 
   .fm-main { --page-block-gutter: 64px; }
+  .fm-main--flush { padding-block-start: var(--page-block-gutter); }
   .fm-sidebar {
     position: fixed;
     left: calc(-1 * var(--sidebar-width));
