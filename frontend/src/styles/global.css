@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./label-fonts.css";
+@import "./color-wheel.css";
 
 /* ── FilaMan Design System ─────────────────────────────────────────── */
 
@@ -510,6 +511,12 @@ body:has(.fm-header-filter-panel.open)::after {
   height: 34px;
 }
 
+.fm-header-color-list-status:not(:empty) {
+  color: var(--text);
+  font-size: 0.75rem;
+  margin: 8px 0 0;
+}
+
 .fm-header-filter-typed-controls {
   display: grid;
   gap: 8px;
@@ -566,7 +573,11 @@ body:has(.fm-header-filter-panel.open)::after {
 
 .fm-header-filter-color-option {
   cursor: pointer;
+  display: grid;
+  gap: 5px;
+  justify-items: center;
   position: relative;
+  width: 74px;
 }
 
 .fm-header-filter-color-option input {
@@ -577,9 +588,53 @@ body:has(.fm-header-filter-panel.open)::after {
 
 .fm-header-filter-color-option .fm-color-swatch {
   align-items: center;
+  border-radius: 7px;
   display: flex;
+  height: 66px;
   justify-content: center;
+  width: 66px;
 }
+
+.fm-color-tile-name {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  min-height: 2.5em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-align: center;
+  width: 100%;
+}
+
+.fm-header-filter-list.fm-color-groups { display: block; }
+.fm-color-groups section + section { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+.fm-color-groups h4, .fm-color-order-caption { color: var(--text-muted); font-size: 0.75rem; margin: 0; }
+.fm-color-group-heading { align-items: baseline; display: flex; gap: 8px; justify-content: space-between; margin-bottom: 6px; }
+.fm-color-order-caption { margin-inline-start: auto; text-align: right; }
+.fm-color-groups .fm-color-grid { gap: 8px; }
+.fm-header-filter-panel-compact-colors .fm-header-filter-color-option { gap: 0; width: 36px; }
+.fm-header-filter-panel-compact-colors .fm-header-filter-color-option .fm-color-swatch { border-radius: 50%; height: 36px; width: 36px; }
+.fm-header-filter-panel-compact-colors .fm-color-tile-name { display: none; }
+.fm-header-filter-panel-compact-colors .fm-header-filter-list.fm-color-groups { padding-block: 4px; }
+.fm-header-filter-panel-compact-colors .fm-color-groups .fm-color-grid { gap: 6px; padding-block: 2px; }
+.fm-header-filter-panel-compact-colors .fm-color-groups section + section { margin-top: 2px; padding-top: 2px; }
+.fm-header-filter-panel-compact-colors .fm-color-groups h4,
+.fm-header-filter-panel-compact-colors .fm-color-order-caption { line-height: 1.2; }
+.fm-header-filter-panel-compact-colors .fm-color-group-heading { margin-bottom: 2px; }
+@media (min-width: 744px) {
+  .fm-header-filter-panel-color.open {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .fm-header-filter-panel-color > :not(.fm-header-filter-list) { flex-shrink: 0; }
+  .fm-header-filter-list.fm-color-groups { max-height: min(52vh, 440px); }
+}
+.fm-header-color-harmonies { border: 0; display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; }
+.fm-header-color-harmonies label { align-items: center; display: flex; font-size: 0.75rem; gap: 4px; }
+.fm-header-color-harmonies label:has(input:disabled) { opacity: 0.5; }
 
 .fm-header-filter-color-option input:focus-visible + .fm-color-swatch {
   outline: 2px solid var(--accent);
@@ -687,6 +742,13 @@ body:has(.fm-header-filter-panel.open)::after {
   font-size: 0.72rem;
   min-height: 32px;
   padding: 6px 8px;
+}
+
+.fm-header-filter-action:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
 }
 
 .fm-header-filter-selection-actions .fm-header-filter-action {
@@ -815,12 +877,13 @@ body:has(.fm-header-filter-panel.open)::after {
   opacity: 0.45;
 }
 
-.fm-header-color-controls.is-inactive .fm-header-color-wheel-wrap {
+.fm-header-color-controls.is-inactive .fm-header-color-wheel {
   filter: grayscale(0.35) saturate(0.8);
   opacity: 0.78;
 }
 
-.fm-header-color-disclosure.is-locked .fm-header-color-controls {
+.fm-header-color-disclosure.is-locked .fm-header-color-controls > :not(.fm-header-color-wheel-wrap),
+.fm-header-color-disclosure.is-locked .fm-header-color-wheel {
   opacity: 0.35;
 }
 
@@ -829,14 +892,21 @@ body:has(.fm-header-filter-panel.open)::after {
   margin-top: 8px;
 }
 
-@media (max-width: 799px) {
+@media (width < 744px) {
   .fm-header-filter-panel-disclosure {
     max-width: calc(100vw - 16px);
     overflow-y: auto;
   }
 
   .fm-header-filter-panel-color {
-    width: 360px;
+    scroll-padding-bottom: calc(var(--fm-filter-footer-height, 32px) + 16px);
+  }
+
+  .fm-header-filter-panel-color > .fm-header-filter-actions {
+    background: var(--bg-elevated);
+    bottom: 0;
+    position: sticky;
+    z-index: 2;
   }
 
   .fm-header-filter-disclosure-panel {
@@ -851,6 +921,8 @@ body:has(.fm-header-filter-panel.open)::after {
     width: auto;
   }
 
+  .fm-header-color-disclosure-panel { isolation: isolate; }
+
   .fm-header-filter-panel-disclosure > .fm-header-filter-typed-controls {
     width: auto;
   }
@@ -863,13 +935,17 @@ body:has(.fm-header-filter-panel.open)::after {
   text-transform: uppercase;
 }
 
-.fm-header-color-modes {
+.fm-header-color-modes,
+.fm-header-color-neutrals {
   display: grid;
   gap: 4px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.fm-header-color-neutrals { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
 .fm-header-color-default,
+.fm-header-color-neutrals button,
 .fm-header-color-modes button {
   align-items: center;
   background: var(--bg-elevated);
@@ -886,10 +962,12 @@ body:has(.fm-header-filter-panel.open)::after {
 }
 
 .fm-header-color-default {
+  grid-column: span 3;
   width: 100%;
 }
 
 .fm-header-color-default.active,
+.fm-header-color-neutrals button.active,
 .fm-header-color-modes button.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
@@ -902,184 +980,6 @@ body:has(.fm-header-filter-panel.open)::after {
   flex: 0 0 auto;
   height: 14px;
   width: 14px;
-}
-
-.fm-header-color-wheel-wrap {
-  display: grid;
-  padding: 4px;
-  place-items: center;
-}
-
-.fm-header-color-wheel {
-  --color-hue-from: 45deg;
-  --color-hue-span: 35deg;
-  --color-saturation-inner: 20%;
-  --color-saturation-outer: 100%;
-  --color-wheel-darkness: 0;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  height: 180px;
-  cursor: crosshair;
-  margin: 0;
-  overflow: hidden;
-  position: relative;
-  touch-action: none;
-  width: 180px;
-}
-
-.fm-header-color-wheel::before {
-  background: rgb(0 0 0 / var(--color-wheel-darkness));
-  border-radius: inherit;
-  content: '';
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-
-.fm-header-color-wheel:has(.fm-header-color-wheel-selection:not([hidden]))::after {
-  background:
-    repeating-linear-gradient(45deg, transparent 0 3px, rgb(255 255 255 / 13%) 3px 4px),
-    repeating-linear-gradient(-45deg, transparent 0 3px, rgb(0 0 0 / 9%) 3px 4px);
-  border-radius: inherit;
-  content: '';
-  inset: 0;
-  mask:
-    radial-gradient(
-      circle closest-side,
-      #000 0 var(--color-saturation-inner),
-      transparent calc(var(--color-saturation-inner) + 1%) calc(var(--color-saturation-outer) - 1%),
-      #000 var(--color-saturation-outer) 100%
-    ),
-    conic-gradient(
-      from var(--color-hue-from),
-      transparent 0 var(--color-hue-span),
-      #000 var(--color-hue-span) 360deg
-    );
-  mask-composite: add;
-  -webkit-mask:
-    radial-gradient(
-      circle closest-side,
-      #000 0 var(--color-saturation-inner),
-      transparent calc(var(--color-saturation-inner) + 1%) calc(var(--color-saturation-outer) - 1%),
-      #000 var(--color-saturation-outer) 100%
-    ),
-    conic-gradient(
-      from var(--color-hue-from),
-      transparent 0 var(--color-hue-span),
-      #000 var(--color-hue-span) 360deg
-    );
-  pointer-events: none;
-  position: absolute;
-  z-index: 1;
-}
-
-.fm-header-color-wheel-surface {
-  background:
-    radial-gradient(circle closest-side, #fff 0%, rgb(255 255 255 / 0%) 78%),
-    conic-gradient(from 90deg, #f00, #f0f, #00f, #0ff, #0f0, #ff0, #f00);
-  border-radius: inherit;
-  height: 100%;
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  width: 100%;
-}
-
-.fm-header-color-wheel:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.fm-header-color-wheel.is-muted {
-  cursor: default;
-}
-
-.fm-header-color-wheel.is-neutral {
-  background: radial-gradient(circle closest-side, #000 0%, #fff 100%);
-}
-
-.fm-header-color-wheel.is-neutral::before {
-  display: none;
-}
-
-.fm-header-color-wheel.is-neutral .fm-header-color-wheel-surface {
-  mix-blend-mode: color;
-  opacity: var(--color-neutral-saturation);
-}
-
-.fm-header-color-wheel-selection {
-  --color-hue-outline-width: min(
-    1.5deg,
-    var(--color-hue-span),
-    calc(360deg - var(--color-hue-span))
-  );
-  background: conic-gradient(
-    from var(--color-hue-from),
-    var(--color-selection-outline, rgb(0 0 0 / 65%)) 0deg var(--color-hue-outline-width),
-    transparent var(--color-hue-outline-width)
-      calc(var(--color-hue-span) - var(--color-hue-outline-width)),
-    var(--color-selection-outline, rgb(0 0 0 / 65%)) calc(var(--color-hue-span) - var(--color-hue-outline-width))
-      var(--color-hue-span),
-    transparent var(--color-hue-span) 360deg
-  );
-  border-radius: inherit;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 80%)) drop-shadow(0 0 1px rgb(255 255 255 / 70%));
-  inset: 0;
-  mask: radial-gradient(
-    circle closest-side,
-    transparent 0 var(--color-saturation-inner),
-    #000 calc(var(--color-saturation-inner) + 1%) var(--color-saturation-outer),
-    transparent calc(var(--color-saturation-outer) + 1%) 100%
-  );
-  -webkit-mask: radial-gradient(
-    circle closest-side,
-    transparent 0 var(--color-saturation-inner),
-    #000 calc(var(--color-saturation-inner) + 1%) var(--color-saturation-outer),
-    transparent calc(var(--color-saturation-outer) + 1%) 100%
-  );
-  pointer-events: none;
-  position: absolute;
-  z-index: 2;
-}
-
-.fm-header-color-wheel-selection::before {
-  background: radial-gradient(
-    circle closest-side,
-    transparent 0 calc(var(--color-saturation-inner) - 1%),
-    var(--color-selection-outline, rgb(0 0 0 / 65%)) calc(var(--color-saturation-inner) - 1%)
-      calc(var(--color-saturation-inner) + 1%),
-    transparent calc(var(--color-saturation-inner) + 1%)
-      calc(var(--color-saturation-outer) - 1%),
-    var(--color-selection-outline, rgb(0 0 0 / 65%)) calc(var(--color-saturation-outer) - 1%)
-      calc(var(--color-saturation-outer) + 1%),
-    transparent calc(var(--color-saturation-outer) + 1%) 100%
-  );
-  border-radius: inherit;
-  content: '';
-  inset: 0;
-  mask: conic-gradient(
-    from var(--color-hue-from),
-    #000 0deg var(--color-hue-span),
-    transparent var(--color-hue-span) 360deg
-  );
-  -webkit-mask: conic-gradient(
-    from var(--color-hue-from),
-    #000 0deg var(--color-hue-span),
-    transparent var(--color-hue-span) 360deg
-  );
-  position: absolute;
-}
-
-.fm-header-color-wheel.is-neutral[data-neutral-mode='black'] .fm-header-color-wheel-selection::before {
-  background: radial-gradient(
-    circle closest-side,
-    transparent 0 calc(var(--color-saturation-outer) - 1%),
-    var(--color-selection-outline) calc(var(--color-saturation-outer) - 1%)
-      calc(var(--color-saturation-outer) + 1%),
-    transparent calc(var(--color-saturation-outer) + 1%) 100%
-  );
 }
 
 .fm-header-color-range {
@@ -2069,6 +1969,12 @@ dialog.fm-modal-overlay:not([open]) {
   z-index: 1200;
 }
 
+.fm-header-filter-panel .fm-color-tooltip {
+  max-width: min(300px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 @media (max-width: 640px) {
   .fm-color-picker-toolbar {
     grid-template-columns: 1fr auto;
@@ -2429,6 +2335,7 @@ html.sidebar-collapsed .fm-page {
 }
 
 .fm-main { --page-gutter: clamp(10px, 3vw, 32px); min-width: 0; container: detail-page / inline-size; padding: var(--page-block-gutter, var(--page-gutter)) var(--page-gutter) var(--page-gutter); overflow-y: auto; }
+.fm-main--flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; }
 
 .fm-sidebar {
   border-right: 1px solid var(--border);
@@ -2552,6 +2459,7 @@ html.sidebar-collapsed .fm-logo-text {
   }
 
   .fm-main { --page-block-gutter: 64px; }
+  .fm-main--flush { padding-block-start: var(--page-block-gutter); }
   .fm-sidebar {
     position: fixed;
     left: calc(-1 * var(--sidebar-width));

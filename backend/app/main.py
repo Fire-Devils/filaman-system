@@ -8,17 +8,18 @@ from contextlib import asynccontextmanager
 from math import isfinite
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from sqlalchemy import text
+from sqlalchemy import select, text
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
+from app.api.deps import DBSession
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
@@ -26,8 +27,9 @@ from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.seeds import run_all_seeds
 from app.core.shared_health import shared_display_store, shared_health_store
+from app.models.plugin import InstalledPlugin
 from app.plugins.manager import plugin_manager
-from app.services.plugin_service import PLUGINS_DIR
+from app.services.plugin_service import PLUGINS_DIR, is_integration_slug
 
 setup_logging()
 logger = __import__("logging").getLogger(__name__)
@@ -566,7 +568,21 @@ async def add_cache_control_header(request, call_next):
         )
     if is_label_render:
         response.headers["Cache-Control"] = "no-store"
-    elif path in ("/spool-reel.js", "/plugin-fonts.css", "/icons.svg"):
+    elif path.startswith(("/plugins/", "/plugin-view/")):
+        # Revalidate even hashed assets so deactivation takes effect on new requests.
+        if response.status_code >= 400:
+            response.headers["Cache-Control"] = "no-store"
+        else:
+            directives = {
+                directive.strip().lower()
+                for value in response.headers.getlist("Cache-Control")
+                for directive in value.split(",")
+            }
+            if "no-store" not in directives:
+                response.headers["Cache-Control"] = "private, no-cache" if "private" in directives else "no-cache"
+    elif path in (
+        "/spool-reel.js", "/plugin-fonts.css", "/color-harmonies.js", "/color-harmonies.css", "/icons.svg"
+    ):
         # Sprite v=2 is a one-time cache reset; future deployments revalidate.
         response.headers["Cache-Control"] = "no-cache"
     elif not is_api and (
@@ -684,6 +700,24 @@ _uploads_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount("/uploads", _StaticFiles(directory=str(_uploads_dir)), name="uploads")
 logger.info("Serving uploads from '%s'", _uploads_dir)
+
+async def serve_plugin_view(plugin_slug: str, db: DBSession):
+    if plugin_slug in ("", "index.html"):
+        return FileResponse(os.path.join(static_files_path, "plugin-view/index.html"))
+    plugin_slug = plugin_slug.removesuffix("/")
+    if not is_integration_slug(plugin_slug):
+        raise HTTPException(status_code=404, detail="Plugin is unavailable")
+    active = await db.scalar(
+        select(InstalledPlugin.id).where(
+            InstalledPlugin.plugin_type == "integration",
+            InstalledPlugin.page_url == f"/plugin-view/{plugin_slug}",
+            InstalledPlugin.is_active.is_(True),
+        ).limit(1)
+    )
+    if active is None:
+        raise HTTPException(status_code=404, detail="Plugin is unavailable")
+    return FileResponse(Path(static_files_path).parent / "plugin-shell.html")
+
 
 if not settings.debug:
     static_files_path = "/app/static"
@@ -810,6 +844,10 @@ if not settings.debug:
             return FileResponse(
                 os.path.join(static_files_path, "filaments/detail/edit/index.html")
             )
+
+        app.add_api_route(
+            "/plugin-view/{plugin_slug:path}", serve_plugin_view, methods=["GET", "HEAD"]
+        )
 
         @app.get("/admin/oidc")
         async def serve_admin_oidc():

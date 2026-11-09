@@ -1,6 +1,7 @@
-from fastapi import APIRouter
-
-from app.services.spoolman_projection import adapt_installed_spoolman
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.routing import APIRoute, APIWebSocketRoute
+from sqlalchemy import select
+from starlette.routing import Match
 
 from app.api.v1.admin import router as admin_router
 from app.api.v1.app_settings_admin import public_router as app_settings_public_router
@@ -30,6 +31,15 @@ from app.api.v1.system import public_router as plugin_public_router
 from app.api.v1.system import router as system_router
 from app.api.v1.system_extra_fields import router as system_extra_fields_router
 from app.api.v1.tag import router as tag_router
+from app.core import database
+from app.models.plugin import InstalledPlugin
+from app.services.plugin_service import validate_integration_shell
+from app.services.spoolman_projection import adapt_installed_spoolman
+
+try:
+    from fastapi.routing import iter_route_contexts
+except ImportError:  # Older FastAPI versions flatten included routers.
+    iter_route_contexts = None
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -71,9 +81,83 @@ api_router.include_router(oidc_public_router)
 api_router.include_router(app_settings_public_router)
 api_router.include_router(filamentdb_router)
 
-# Plugins mit eigenem mount_prefix werden hier gesammelt und spaeter
-# von mount_deferred_plugin_routers() direkt auf die FastAPI-App gemountet.
-_deferred_plugin_routers: list[tuple] = []
+# Keep installed plugin routes separate from the core API so they can be replaced.
+_deferred_plugin_routers: list[tuple[str, APIRouter]] = []
+
+
+def _integration_dependencies(plugin_key: str, manifest: dict, *routers: APIRouter | None):
+    if manifest["plugin_type"] != "integration":
+        return []
+
+    for router in routers:
+        if router is None:
+            continue
+        routes = (
+            (context.original_route for context in iter_route_contexts(router.routes))
+            if iter_route_contexts else router.routes
+        )
+        if any(not isinstance(route, (APIRoute, APIWebSocketRoute)) for route in routes):
+            raise ValueError("Integration routes must use FastAPI route decorators")
+
+    active_install = select(InstalledPlugin.id).where(
+        InstalledPlugin.plugin_key == plugin_key,
+        InstalledPlugin.plugin_type == "integration",
+        InstalledPlugin.is_active.is_(True),
+    )
+    page_url = manifest.get("page_url")
+    if isinstance(page_url, str) and page_url.startswith("/plugin-view/"):
+        # A worker can still have the old router after a plugin changes its launch URL.
+        active_install = active_install.where(InstalledPlugin.page_url == page_url)
+
+    async def require_active() -> None:
+        # Release the connection before a streaming response or WebSocket starts.
+        async with database.async_session_maker() as db:
+            if await db.scalar(active_install) is None:
+                raise HTTPException(status_code=404, detail="Plugin is unavailable")
+
+    return [Depends(require_active)]
+
+
+def _build_plugin_router(plugin_key: str, manifest: dict, module) -> APIRouter:
+    primary = getattr(module, "router", None)
+    if primary is None:
+        raise ValueError(f"Plugin '{plugin_key}' has no router")
+    admin = getattr(module, "admin_router", None)
+    dependencies = _integration_dependencies(plugin_key, manifest, primary, admin)
+    group = APIRouter()
+    prefix = manifest.get("mount_prefix") or "/api/v1"
+    group.include_router(primary, prefix=prefix, dependencies=dependencies)
+    launch_request = {"type": "http", "method": "GET", "path": prefix + "/"}
+    if prefix.startswith("/plugins/") and not any(
+        route.matches(launch_request)[0] == Match.FULL for route in group.routes
+    ):
+        raise ValueError("The integration router has no GET route for its launch URL")
+    if admin is not None:
+        group.include_router(admin, prefix="/api/v1", dependencies=dependencies)
+    return group
+
+
+def _replace_plugin_router(app, plugin_key: str, plugin_router: APIRouter | None) -> None:
+    if not hasattr(app.state, "plugin_routes"):
+        app.state.plugin_routes = {}
+    registered = app.state.plugin_routes
+    previous = registered.get(plugin_key, set())
+    routes = app.router.routes
+    start = len(routes)
+    # FastAPI either appends an included router or flattens it into route entries.
+    if plugin_router is not None:
+        app.include_router(plugin_router)
+    added = routes[start:]
+    position = next((
+        index for index, route in enumerate(routes[:start])
+        if id(route) in previous or getattr(route, "name", None) == "static"
+    ), start)
+    routes[position:] = added + [route for route in routes[position:start] if id(route) not in previous]
+    if plugin_router is not None:
+        registered[plugin_key] = {id(route) for route in added}
+    else:
+        registered.pop(plugin_key, None)
+    app.openapi_schema = None
 
 
 def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
@@ -96,21 +180,17 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
     manifest_path = plugin_dir / "plugin.json"
     router_path = plugin_dir / "router.py"
 
-    if not manifest_path.exists() or not router_path.exists():
-        _logger.warning(
-            "mount_plugin_router_on_app: manifest oder router.py nicht gefunden fuer '%s' in %s",
-            plugin_key,
-            plugin_dir,
-        )
+    if not manifest_path.is_file() or not router_path.is_file():
+        _replace_plugin_router(app, plugin_key, None)
         return False
 
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("plugin_type") not in ("import", "integration"):
+            _replace_plugin_router(app, plugin_key, None)
             return False
 
-        mount_prefix = manifest.get("mount_prefix")
-
+        validate_integration_shell(manifest, plugin_dir)
         if str(PLUGINS_DIR) not in sys.path:
             sys.path.insert(0, str(PLUGINS_DIR))
 
@@ -124,68 +204,8 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
 
         module = importlib.import_module(f"{plugin_key}.router")
         adapt_installed_spoolman(module, plugin_key, manifest)
-        plugin_router = getattr(module, "router", None)
-        if plugin_router is None:
-            _logger.warning(
-                "Plugin '%s' hat router.py aber kein 'router' Attribut",
-                plugin_key,
-            )
-            return False
-
-        # Mount-Prefix bestimmen: eigener mount_prefix oder Standard /api/v1
-        router_mount_prefix = mount_prefix if mount_prefix else "/api/v1"
-
-        # Alte Routes dieses Plugins entfernen (bei Update/Reinstall),
-        # damit die neuen nicht von verwaisten alten Routen ueberschattet werden.
-        if plugin_router.prefix:
-            full_prefix = f"{router_mount_prefix}{plugin_router.prefix}"
-            app.router.routes = [
-                route
-                for route in app.router.routes
-                if not (hasattr(route, "path") and route.path.startswith(full_prefix))
-            ]
-        elif mount_prefix:
-            # Plugin hat eigenen mount_prefix — alte Routen unter diesem Prefix entfernen
-            app.router.routes = [
-                route
-                for route in app.router.routes
-                if not (hasattr(route, "path") and route.path.startswith(mount_prefix))
-            ]
-
-        app.include_router(plugin_router, prefix=router_mount_prefix)
-
-        # Optional: admin_router fuer Plugin-spezifische Admin-Endpoints.
-        # Admin-Router wird immer unter /api/v1 gemountet (FilaMan Admin-Bereich).
-        plugin_admin_router = getattr(module, "admin_router", None)
-        if plugin_admin_router is not None:
-            if plugin_admin_router.prefix:
-                admin_full_prefix = f"/api/v1{plugin_admin_router.prefix}"
-                app.router.routes = [
-                    route
-                    for route in app.router.routes
-                    if not (
-                        hasattr(route, "path")
-                        and route.path.startswith(admin_full_prefix)
-                    )
-                ]
-            app.include_router(plugin_admin_router, prefix="/api/v1")
-            _logger.info(
-                "Plugin-Admin-Router '%s' dynamisch auf App gemountet", plugin_key
-            )
-
-        # Catch-all StaticFiles-Mount (name="static") muss am Ende der
-        # Route-Liste bleiben, sonst schattiert er die neuen API-Routen.
-        routes = app.router.routes
-        for i, route in enumerate(routes):
-            if getattr(route, "name", None) == "static":
-                routes.append(routes.pop(i))
-                break
-
-        _logger.info(
-            "Plugin-Router '%s' dynamisch auf App gemountet (prefix=%s)",
-            plugin_key,
-            router_mount_prefix,
-        )
+        _replace_plugin_router(app, plugin_key, _build_plugin_router(plugin_key, manifest, module))
+        _logger.info("Plugin-Router '%s' dynamisch auf App gemountet", plugin_key)
         return True
 
     except Exception:
@@ -196,32 +216,14 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
 
 
 def mount_deferred_plugin_routers(app) -> None:
-    """Plugin-Router mit eigenem mount_prefix auf die App mounten.
-
-    Muss aus main.py nach App-Erstellung aufgerufen werden, da diese Plugins
-    direkt auf der App gemountet werden (nicht auf api_router).
-    """
+    """Mount the discovered plugin routers after the core API."""
     import logging
 
     _logger = logging.getLogger(__name__)
 
-    for (
-        plugin_key,
-        plugin_router,
-        mount_prefix,
-        plugin_admin_router,
-    ) in _deferred_plugin_routers:
-        app.include_router(plugin_router, prefix=mount_prefix)
-        _logger.info(
-            "Plugin-Router '%s' unter '%s' gemountet", plugin_key, mount_prefix
-        )
-
-        if plugin_admin_router is not None:
-            # Admin-Router bleibt unter /api/v1 (FilaMan Admin-Bereich)
-            app.include_router(plugin_admin_router, prefix="/api/v1")
-            _logger.info(
-                "Plugin-Admin-Router '%s' unter '/api/v1' gemountet", plugin_key
-            )
+    for plugin_key, plugin_router in _deferred_plugin_routers:
+        _replace_plugin_router(app, plugin_key, plugin_router)
+        _logger.info("Plugin-Router '%s' auf App gemountet", plugin_key)
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +254,7 @@ def _mount_plugin_routers() -> None:
                 continue
             manifest_path = plugin_dir / "plugin.json"
             router_path = plugin_dir / "router.py"
-            if not manifest_path.exists() or not router_path.exists():
+            if not manifest_path.is_file() or not router_path.is_file():
                 continue
 
             try:
@@ -260,40 +262,13 @@ def _mount_plugin_routers() -> None:
                 if manifest.get("plugin_type") not in ("import", "integration"):
                     continue
 
+                validate_integration_shell(manifest, plugin_dir)
                 plugin_key = manifest.get("plugin_key", plugin_dir.name)
-                mount_prefix = manifest.get("mount_prefix")
-
                 module = importlib.import_module(f"{plugin_key}.router")
                 adapt_installed_spoolman(module, plugin_key, manifest)
-                plugin_router = getattr(module, "router", None)
-                if plugin_router is None:
-                    _logger.warning(
-                        "Plugin '%s' hat router.py aber kein 'router' Attribut",
-                        plugin_key,
-                    )
-                    continue
-
-                plugin_admin_router = getattr(module, "admin_router", None)
-
-                if mount_prefix:
-                    # Plugin definiert eigenen Mount-Punkt — deferred mount auf app
-                    _deferred_plugin_routers.append(
-                        (plugin_key, plugin_router, mount_prefix, plugin_admin_router)
-                    )
-                    _logger.info(
-                        "Plugin-Router '%s' fuer deferred mount unter '%s' vorgemerkt",
-                        plugin_key,
-                        mount_prefix,
-                    )
-                else:
-                    api_router.include_router(plugin_router)
-                    _logger.info("Plugin-Router '%s' erfolgreich gemountet", plugin_key)
-
-                    if plugin_admin_router is not None:
-                        api_router.include_router(plugin_admin_router)
-                        _logger.info(
-                            "Plugin-Admin-Router '%s' erfolgreich gemountet", plugin_key
-                        )
+                _deferred_plugin_routers.append(
+                    (plugin_key, _build_plugin_router(plugin_key, manifest, module))
+                )
 
             except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.
                 _logger.warning(

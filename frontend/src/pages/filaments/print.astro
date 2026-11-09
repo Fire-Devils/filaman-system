@@ -116,6 +116,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
     () => refreshWorkspace(),
     (key, fallback) => t(key) || fallback,
     'filament',
+    () => syncOutputPreview(),
   )
 
   type ExtraFieldDef = SystemExtraFieldDef & { legacyAlias?: boolean }
@@ -350,6 +351,7 @@ import LabelPrintPageShell from '../../components/LabelPrintPageShell.astro'
       logoUrl: getCachedEntityLogoUrl(labelAdapter, logoCache, filament),
       resolveAssetUrl: labelAssetContentUrl,
       interactive,
+      vectorPreview: true,
       isStale,
       entityPath: labelAdapter.entityPath,
     })

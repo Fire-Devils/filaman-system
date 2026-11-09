@@ -1,8 +1,9 @@
+import hashlib
 import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
@@ -17,7 +18,9 @@ from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_filament import (
     BulkFilamentDeleteRequest,
     BulkFilamentUpdateRequest,
+    ColorCatalogSnapshot,
     ColorCreate,
+    ColorFilterStop,
     ColorResponse,
     ColorUpdate,
     FilamentColorResponse,
@@ -45,6 +48,7 @@ from app.models import (
     SpoolStatus,
 )
 from app.utils.colors import normalize_hex_color
+from app.services.color_search import filament_color_filter, filament_has_named_color
 from app.utils.query_params import parse_multi_int, parse_multi_str
 
 logger = logging.getLogger(__name__)
@@ -481,6 +485,28 @@ async def list_colors(
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
 
 
+@router_colors.get(
+    "/discovery/snapshot",
+    response_model=ColorCatalogSnapshot,
+    responses={304: {"description": "Catalog unchanged"}},
+)
+async def color_catalog_snapshot(request: Request, db: DBSession, principal: PrincipalDep):
+    rows = await db.execute(
+        select(Color.id, Color.name, Color.hex_code, func.count(FilamentColor.id).label("usage_count"))
+        .outerjoin(FilamentColor, Color.id == FilamentColor.color_id)
+        .group_by(Color.id, Color.name, Color.hex_code)
+        .order_by(Color.name, Color.id)
+    )
+    response = JSONResponse({"items": [dict(row) for row in rows.mappings()]})
+    etag = '"' + hashlib.sha256(response.body).hexdigest() + '"'
+    headers = {"ETag": f"W/{etag}", "Cache-Control": "private, no-cache"}
+    validators = request.headers.get("if-none-match", "").split(",")
+    if any(value.strip().removeprefix("W/") in (etag, "*") for value in validators):
+        return Response(status_code=304, headers=headers)
+    response.headers.update(headers)
+    return response
+
+
 @router_colors.post(
     "", response_model=ColorResponse, status_code=status.HTTP_201_CREATED
 )
@@ -812,6 +838,7 @@ class FilterOption(BaseModel):
 
 class ColorFilterOption(FilterOption):
     color_hexes: list[str]
+    color_stops: list[ColorFilterStop]
 
 
 class FilamentFilterOptionsResponse(BaseModel):
@@ -862,7 +889,7 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
         .distinct()
     )
     color_result = await db.execute(
-        select(Color.name, Color.hex_code)
+        select(Color.name, Color.hex_code, Color.id, filament_has_named_color())
         .select_from(Filament)
         .outerjoin(FilamentColor, FilamentColor.filament_id == Filament.id)
         .outerjoin(Color, Color.id == FilamentColor.color_id)
@@ -891,7 +918,7 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
     diameters: set[float] = set()
     finishes: set[str] = set()
     subgroups: set[str] = set()
-    colors: dict[str, set[str]] = {}
+    colors: dict[str, set[tuple[str, int]]] = {}
     for (
         manufacturer_id,
         manufacturer_name,
@@ -913,12 +940,10 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
         if subgroup:
             subgroups.add(subgroup)
     has_empty_colors = False
-    for color_name, hex_code in color_result.all():
+    for color_name, hex_code, color_id, has_named_color in color_result.all():
         if color_name:
-            colors.setdefault(color_name, set())
-            if hex_code:
-                colors[color_name].add(hex_code)
-        else:
+            colors.setdefault(color_name, set()).add((hex_code, color_id))
+        if not has_named_color:
             has_empty_colors = True
 
     payload = FilamentFilterOptionsResponse(
@@ -938,9 +963,10 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
             ColorFilterOption(
                 value=name,
                 label=name,
-                color_hexes=sorted(hex_codes),
+                color_hexes=sorted({hex_code for hex_code, _ in stops if hex_code}),
+                color_stops=[ColorFilterStop(id=color_id, hex=hex_code) for hex_code, color_id in sorted(stops)],
             )
-            for name, hex_codes in sorted(
+            for name, stops in sorted(
                 colors.items(), key=lambda item: item[0].casefold()
             )
         ],
@@ -958,6 +984,9 @@ async def list_filaments(
     page_size: int = Query(50, ge=1, le=200),
     type: list[str] | None = Query(None),
     manufacturer_id: list[str] | None = Query(None),
+    color_name: list[str] | None = Query(None),
+    color_id: list[int] | None = Query(None),
+    color_unassigned: bool = Query(False),
     search: str | None = Query(None, max_length=200),
     sort_by: str = Query(
         "designation",
@@ -972,6 +1001,9 @@ async def list_filaments(
     spool_count_subquery = None
     types = parse_multi_str(type, "type")
     manufacturer_ids = parse_multi_int(manufacturer_id, "manufacturer_id")
+    color_condition = filament_color_filter(color_name, color_unassigned, db.get_bind().dialect.name, color_ids=color_id)
+    if color_condition is not None:
+        conditions.append(color_condition)
 
     if types:
         conditions.append(Filament.material_type.in_(types))

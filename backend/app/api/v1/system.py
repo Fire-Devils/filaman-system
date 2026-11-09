@@ -30,7 +30,7 @@ from sqlalchemy.orm import undefer
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.api.v1.printers import (
     _PRIMARY_PROXY_HEADER,
     _ensure_primary_worker,
@@ -213,10 +213,6 @@ async def plugin_nav(
     db: DBSession,
     _principal: PrincipalDep,
 ):
-    cached = response_cache.get("plugin_nav")
-    if cached is not None:
-        return cached
-
     result = await db.execute(
         select(InstalledPlugin)
         .where(InstalledPlugin.is_active.is_(True))
@@ -225,12 +221,7 @@ async def plugin_nav(
         .where(InstalledPlugin.page_url != "")
         .order_by(InstalledPlugin.name)
     )
-    items = result.scalars().all()
-
-    # Cache the serialized list (ORM objects can't be pickled after session closes)
-    serialized = [PluginNavItem.model_validate(p) for p in items]
-    response_cache.set("plugin_nav", serialized, ttl=600)
-    return serialized
+    return [PluginNavItem.model_validate(plugin) for plugin in result.scalars()]
 
 
 @public_router.get("/plugin-icons/{plugin_key}")
@@ -252,6 +243,34 @@ async def plugin_icon(plugin_key: str, db: DBSession, _principal: PrincipalDep):
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-cache",
     })
+
+
+@public_router.get("/filament-plugin-hooks", response_model=list[PluginNavItem])
+async def filament_plugin_hooks(
+    db: DBSession,
+    principal: PrincipalDep,
+    surface: Literal["create", "edit", "selection"],
+):
+    await ensure_any_permission(
+        db, principal, "filaments:create" if surface == "create" else "filaments:update"
+    )
+    capability = "selection" if surface == "selection" else "editor"
+    plugins = await db.scalars(
+        select(InstalledPlugin)
+        .where(InstalledPlugin.is_active.is_(True))
+        .where(InstalledPlugin.page_url.startswith("/plugin-page/"))
+        .order_by(InstalledPlugin.name, InstalledPlugin.plugin_key)
+    )
+    result = []
+    for plugin in plugins:
+        hooks = plugin.capabilities.get("filament_ui") if isinstance(plugin.capabilities, dict) else None
+        if (
+            isinstance(hooks, dict)
+            and hooks.get(capability) is True
+            and re.fullmatch(r"/plugin-page/[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)*", plugin.page_url or "")
+        ):
+            result.append(PluginNavItem.model_validate(plugin))
+    return result
 
 
 # ------------------------------------------------------------------ #
@@ -797,7 +816,6 @@ async def toggle_plugin_active(
                     if started:
                         affected += 1
 
-    response_cache.delete("plugin_nav")
     return PluginToggleResponse(
         plugin=PluginResponse.model_validate(plugin),
         affected_printers=affected,

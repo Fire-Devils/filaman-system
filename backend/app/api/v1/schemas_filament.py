@@ -95,6 +95,11 @@ class ManufacturerResponse(ManufacturerSummaryResponse):
     materials: list[str] = []
 
 
+class ColorFilterStop(BaseModel):
+    id: int
+    hex: str
+
+
 class ColorCreate(BaseModel):
     name: str
     hex_code: str
@@ -128,6 +133,17 @@ class ColorResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CatalogColorResponse(BaseModel):
+    id: int
+    name: str
+    hex_code: str
+    usage_count: int
+
+
+class ColorCatalogSnapshot(BaseModel):
+    items: list[CatalogColorResponse]
 
 
 class FilamentColorEntry(BaseModel):

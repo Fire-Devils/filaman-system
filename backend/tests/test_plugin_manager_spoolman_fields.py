@@ -1077,6 +1077,7 @@ async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
 ):
     from app.api.v1 import system
     from app.core.security import Principal
+    from app.models.plugin import InstalledPlugin
 
     manufacturer = Manufacturer(name="Native Cleanup Test")
     printer = Printer(name="Bambu", driver_key="bambulab")
@@ -1097,7 +1098,6 @@ async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
     if cleanup == "killswitch":
         await system.killswitch(db_session, principal)
     else:
-        from app.models import InstalledPlugin
         from app.services import plugin_service
 
         monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
@@ -1105,7 +1105,7 @@ async def test_native_initialization_is_removed_with_inventory_or_plugin_data(
         plugin_dir.mkdir()
         db_session.add(InstalledPlugin(
             plugin_key="bambulab", name="Bambu Lab", version="1.0.0",
-            driver_key="bambulab", installed_by=1,
+            driver_key="bambulab", installed_by=principal.user_id,
         ))
         await db_session.commit()
         await system.uninstall_plugin("bambulab", db_session, principal, None, delete_data=True)

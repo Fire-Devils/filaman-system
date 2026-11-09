@@ -16,6 +16,7 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { CACHE_KEYS, invalidateCachePrefix } from '../../lib/cache'
     import { createFilamentFormController } from '../../lib/filament-form'
+    import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import { initI18n, t } from '../../lib/i18n'
 
     await initI18n()
@@ -62,6 +63,8 @@ import Layout from '../../layouts/Layout.astro'
         sessionStorage.removeItem('filaman_duplicate_filament')
         controller.applyInitialData(JSON.parse(duplicate), 'duplicate')
       }
+      const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
+      if (hooks) mountFilamentPluginHooks(hooks, { mode: 'create', filamentId: null, form: controller })
     } catch (error) {
       if (!isAbortError(error)) {
         console.error('Failed to initialize filament form:', error)

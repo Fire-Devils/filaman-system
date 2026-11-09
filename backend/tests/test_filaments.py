@@ -5,6 +5,29 @@ from app.core.event_bus import event_bus
 from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, SpoolStatus
 
 
+@pytest.mark.asyncio
+async def test_named_color_browsing_keeps_exact_names_union_and_pagination(auth_client, db_session):
+    client, _ = auth_client
+    maker = await _create_manufacturer(db_session)
+    colors = [await _create_color(db_session, name=name) for name in ('Red, Silk', 'Blue', 'red, silk')]
+    filaments = [await _create_filament(db_session, maker.id, designation=f'Item {i}') for i in range(4)]
+    for filament, assigned in zip(filaments, ([colors[0], colors[1]], [colors[0]], [colors[2]], [])):
+        for position, color in enumerate(assigned):
+            db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=position))
+    await db_session.commit()
+    params = [('color_name', 'Red, Silk'), ('color_name', 'Blue'), ('page_size', '1'), ('sort_by', 'id')]
+    first = (await client.get('/api/v1/filaments', params=params)).json()
+    second = (await client.get('/api/v1/filaments', params=params + [('page', '2')])).json()
+    assert first['total'] == second['total'] == 2
+    assert [first['items'][0]['id'], second['items'][0]['id']] == [f.id for f in filaments[:2]]
+    combined = (await client.get('/api/v1/filaments', params=[('color_name', 'Red, Silk'), ('color_unassigned', 'true')])).json()
+    assert combined['total'] == 3
+    assert {item['id'] for item in combined['items']} == {filaments[i].id for i in (0, 1, 3)}
+    filtered = (await client.get('/api/v1/filaments', params=[('color_name', 'Red, Silk'), ('search', 'Item 1')])).json()
+    assert filtered['total'] == 1 and filtered['items'][0]['id'] == filaments[1].id
+    assert (await client.get('/api/v1/filaments', params={'color_name': 'Missing'})).json()['total'] == 0
+
+
 async def _create_manufacturer(
     db_session, name: str = "Test Manufacturer", **kwargs
 ) -> Manufacturer:
@@ -278,6 +301,37 @@ class TestManufacturerCRUD:
 
 class TestColorCRUD:
     @pytest.mark.asyncio
+    async def test_discovery_snapshot_revalidates_the_exact_catalog(self, auth_client, db_session):
+        client, _ = auth_client
+        color = await _create_color(db_session, name="Translucent", hex_code="#11223380")
+        path = "/api/v1/colors/discovery/snapshot"
+        initial = await client.get(path)
+        assert initial.status_code == 200
+        assert initial.headers["cache-control"] == "private, no-cache"
+        assert initial.json()["items"] == [
+            {"id": color.id, "name": "Translucent", "hex_code": "#11223380", "usage_count": 0}
+        ]
+
+        validator = {"If-None-Match": initial.headers["etag"]}
+        unchanged = await client.get(path, headers=validator)
+        assert unchanged.status_code == 304
+        assert unchanged.content == b""
+
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        db_session.add(FilamentColor(filament_id=filament.id, color_id=color.id, position=1))
+        await db_session.commit()
+
+        changed = await client.get(path, headers=validator)
+        assert changed.status_code == 200
+        assert changed.headers["etag"] != initial.headers["etag"]
+        assert changed.json()["items"][0]["usage_count"] == 1
+
+        client.cookies.clear()
+        denied = await client.get(path, headers={"If-None-Match": changed.headers["etag"]})
+        assert denied.status_code == 401
+
+    @pytest.mark.asyncio
     async def test_list_colors_paginated(self, auth_client, db_session):
         client, _ = auth_client
 
@@ -488,7 +542,10 @@ class TestFilamentCRUD:
         assert data["subgroups"] == ["PETG-CF"]
         assert data["spool_counts"] == [0, 2]
         assert data["colors"] == [
-            {"value": "Ocean Blue", "label": "Ocean Blue", "color_hexes": ["#0066CC"]}
+            {
+                "value": "Ocean Blue", "label": "Ocean Blue", "color_hexes": ["#0066CC"],
+                "color_stops": [{"id": used_color.id, "hex": "#0066CC"}],
+            }
         ]
         assert data["has_empty_colors"] is False
 

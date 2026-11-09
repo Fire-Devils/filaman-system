@@ -1,8 +1,11 @@
 import { SPOOL_BUILT_IN_LABEL_FIELD_DEFS } from './spool-label-data'
+export { getLabelTokenUnit } from './label-token-units'
 
 export interface LabelTokenChoice {
   token: string
   label: string
+  labelKey?: string
+  searchLabelKey?: string
   section: string
 }
 
@@ -14,7 +17,7 @@ export const FILAMENT_TOKENS: readonly LabelTokenChoice[] = [
   { token: '{filament.name}', label: 'name', section: 'identity' },
   { token: '{filament.manufacturer}', label: 'manufacturer', section: 'identity' },
   { token: '{filament.manufacturer_id}', label: 'manufacturer_id', section: 'identity' },
-  { token: '{filament.type}', label: 'type', section: 'material' },
+  { token: '{filament.type}', label: 'type', searchLabelKey: 'filaments.type', section: 'material' },
   { token: '{filament.subtype}', label: 'subtype', section: 'material' },
   { token: '{filament.manufacturer_color_name}', label: 'color_name', section: 'identity' },
   { token: '{filament.color}', label: 'color', section: 'identity' },
@@ -33,8 +36,8 @@ export const FILAMENT_TOKENS: readonly LabelTokenChoice[] = [
   { token: '{filament.spool_width_mm}', label: 'spool_width', section: 'packaging' },
   { token: '{filament.spool_material}', label: 'spool_material', section: 'packaging' },
   { token: '{filament.shop_url}', label: 'shop_url', section: 'identity' },
-  { token: '{filament.extruder_temp_range_c}', label: 'extruder_temp_range_c', section: 'temperatures' },
-  { token: '{filament.bed_temp_range_c}', label: 'bed_temp_range_c', section: 'temperatures' },
+  { token: '{filament.extruder_temp_range_c}', label: 'Extruder temperature', labelKey: 'labelDesigner.extruderTemperature', section: 'temperatures' },
+  { token: '{filament.bed_temp_range_c}', label: 'Bed temperature', labelKey: 'labelDesigner.bedTemperature', section: 'temperatures' },
   { token: '{filament.manufacturer_sku}', label: 'manufacturer_sku', section: 'identity' },
   { token: '{filament.datasheet_url}', label: 'datasheet_url', section: 'identity' },
   { token: '{filament.image_url}', label: 'image_url', section: 'identity' },

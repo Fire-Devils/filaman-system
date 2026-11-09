@@ -1,8 +1,9 @@
 import { getFilamentColorTheme, renderSelectableTemplate, type SpoolData } from '../label-template'
 import type { LabelDesignElement } from './types'
+import { t } from '../i18n'
 
 /** Temporary selection/editing surface; printed text comes from the SVG renderer. */
-export function renderEditableText(node: HTMLElement, element: Extract<LabelDesignElement, { type: 'text' }>, data: SpoolData) {
+export function renderEditableText(node: HTMLElement, element: Extract<LabelDesignElement, { type: 'text' }>, data: SpoolData, showMissing = false) {
   node.style.fontFamily = `"${element.fontFamily}", sans-serif`
   node.style.fontSize = `${element.fontSizeMm}mm`
   node.style.fontWeight = String(element.fontWeight)
@@ -26,7 +27,7 @@ export function renderEditableText(node: HTMLElement, element: Extract<LabelDesi
   const content = document.createElement('div')
   content.style.width = '100%'
   content.style.flexShrink = '0'
-  content.appendChild(renderSelectableTemplate(element.template, data))
+  content.appendChild(renderSelectableTemplate(element.template, data, showMissing))
   if (element.legacyTextRole === 'title') {
     content.style.overflow = 'hidden'
     content.style.textOverflow = element.fitToWidth ? 'clip' : 'ellipsis'
@@ -44,4 +45,13 @@ export function renderEditableText(node: HTMLElement, element: Extract<LabelDesi
     }
   }
   node.appendChild(content)
+  if (!showMissing) return
+  const messages = new Set<string>()
+  for (const marker of content.querySelectorAll<HTMLElement>('[data-template-missing]')) {
+    marker.title = t('labelDesigner.missingTokenData', { token: marker.dataset.templateMissing! })
+    marker.setAttribute('role', 'img')
+    marker.setAttribute('aria-label', marker.title)
+    messages.add(marker.title)
+  }
+  if (messages.size) node.setAttribute('aria-description', [...messages].join('\n'))
 }

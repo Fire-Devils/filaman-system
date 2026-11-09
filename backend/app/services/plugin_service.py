@@ -11,10 +11,10 @@ import signal
 import sys
 import tempfile
 import zipfile
-from collections.abc import Awaitable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +25,10 @@ from app.models.plugin import InstalledPlugin
 from app.services.plugin_icon_service import read_plugin_icon
 
 logger = logging.getLogger(__name__)
+
+
+def is_integration_slug(slug: str) -> bool:
+    return len(slug) <= 487 and re.fullmatch(r"[a-z0-9][a-z0-9_-]*", slug) is not None
 
 
 def _resolve_plugins_dir() -> Path:
@@ -56,6 +60,7 @@ PLUGINS_DIR = _resolve_plugins_dir()
 MAX_ZIP_SIZE = 10 * 1024 * 1024
 MAX_UNPACKED_ZIP_SIZE = 100 * 1024 * 1024
 MAX_PLUGIN_FILE_SIZE = 1024 * 1024
+MAX_PLUGIN_BUNDLE_FILE_SIZE = 5 * 1024 * 1024
 
 # Erlaubte Dateiendungen
 ALLOWED_EXTENSIONS = {
@@ -69,8 +74,29 @@ ALLOWED_EXTENSIONS = {
     ".yml",
     ".toml",
     ".html",
+    # Web assets — required for integration plugins that ship a static SPA
+    ".js",
+    ".css",
     ".svg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".xml",
+    ".map",
 }
+
+def _plugin_file_size_limit(filename: str) -> int:
+    if Path(filename).suffix.lower() in {".js", ".css", ".map"}:
+        return MAX_PLUGIN_BUNDLE_FILE_SIZE
+    return MAX_PLUGIN_FILE_SIZE
+
 
 # Pflichtfelder im Manifest (Basisfelder, gelten fuer alle Plugin-Typen)
 REQUIRED_MANIFEST_FIELDS = {"plugin_key", "name", "version", "description", "author"}
@@ -110,6 +136,77 @@ class PluginInstallError(Exception):
         self.code = code
 
 
+def validate_integration_shell(manifest: dict, plugin_dir: Path) -> None:
+    page_url = manifest.get("page_url")
+    mount = manifest.get("mount_prefix")
+    has_shell = isinstance(page_url, str) and page_url.startswith("/plugin-view/")
+    claims_mount = isinstance(mount, str) and (
+        mount in ("/plugins", "/plugin-view") or mount.startswith(("/plugins/", "/plugin-view/"))
+    )
+    if not has_shell and not claims_mount:
+        return
+
+    slug = page_url.removeprefix("/plugin-view/") if has_shell else ""
+    if (
+        manifest.get("plugin_type") != "integration"
+        or not is_integration_slug(slug)
+        or mount != f"/plugins/{slug}"
+        or not (plugin_dir / "router.py").is_file()
+    ):
+        raise PluginInstallError(
+            "Integration shell requires /plugin-view/<slug>, /plugins/<slug>, and router.py",
+            "invalid_integration_shell",
+        )
+
+
+async def _preflight_plugin_router(plugin_dir: Path) -> None:
+    # Import the candidate as a fresh worker would, without changing the live worker's modules.
+    plugin_dir = plugin_dir.resolve()
+    check = """
+import sys
+from pathlib import Path
+
+from fastapi import FastAPI
+from app import plugins
+
+plugin_key, installed_dir, candidate_router = sys.argv[1:]
+sys.path.insert(1, installed_dir)
+plugins.__path__.append(installed_dir)
+from app.api.v1.router import mount_deferred_plugin_routers
+
+app = FastAPI()
+mount_deferred_plugin_routers(app)
+if plugin_key not in getattr(app.state, 'plugin_routes', {}):
+    sys.exit(1)
+loaded_router = sys.modules.get(f'{plugin_key}.router')
+loaded_file = getattr(loaded_router, '__file__', None)
+if not loaded_file or Path(loaded_file).resolve() != Path(candidate_router):
+    sys.exit('Router was imported from outside the candidate plugin')
+print('Plugin router validated')
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", check, plugin_dir.name, str(PLUGINS_DIR.resolve()),
+        str((plugin_dir / "router.py").resolve()),
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "PLUGINS_DIR": str(plugin_dir.parent), "PYTHONDONTWRITEBYTECODE": "1"},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+    except TimeoutError as exc:
+        raise PluginInstallError("Plugin router validation timed out", "invalid_plugin_router") from exc
+    finally:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+    if process.returncode or b"Plugin router validated" not in stdout.splitlines():
+        lines = stderr.decode(errors="replace").strip().splitlines()
+        detail = lines[-1][-500:] if lines else "Router could not be loaded"
+        raise PluginInstallError(detail, "invalid_plugin_router")
+
+
 def plugin_restore_lock(*, shared: bool = False) -> AbstractContextManager[None]:
     return file_lock(DATA_DIR / "locks" / "plugin-backup-restore.lock", shared=shared)
 
@@ -124,12 +221,18 @@ def plugin_archive_lock(
 
 
 @contextmanager
-def _plugin_write_lock(plugin_key: str, *, backup_restore_locked: bool = False) -> Iterator[None]:
+def _plugin_write_lock(
+    plugin_key: str, *, backup_restore_locked: bool = False, page_url: str | None = None,
+) -> Iterator[None]:
     if not PLUGIN_KEY_PATTERN.fullmatch(plugin_key):
         raise PluginInstallError(f"Plugin '{plugin_key}' nicht gefunden", "not_found")
     try:
         restore_guard = nullcontext() if backup_restore_locked else plugin_restore_lock(shared=True)
-        with restore_guard, exclusive_file_lock(PLUGINS_DIR / ".locks" / f"{plugin_key}.lock"):
+        # A shell URL can be claimed by packages with different plugin keys.
+        locks = PLUGINS_DIR / ".locks"
+        hosted = isinstance(page_url, str) and page_url.startswith("/plugin-view/")
+        shell_guard = exclusive_file_lock(locks / "integration-shell.lock") if hosted else nullcontext()
+        with restore_guard, shell_guard, exclusive_file_lock(locks / f"{plugin_key}.lock"):
             yield
     except FileLockBusy as exc:
         raise PluginInstallError(
@@ -218,10 +321,26 @@ class PluginInstallService:
         """
         with (
             self.validated_archive(zip_data, expected_release) as (plugin_dir, manifest),
-            _plugin_write_lock(manifest["plugin_key"], backup_restore_locked=backup_restore_locked),
+            _plugin_write_lock(
+                manifest["plugin_key"], backup_restore_locked=backup_restore_locked,
+                page_url=manifest.get("page_url"),
+            ),
         ):
             plugin_key = manifest["plugin_key"]
             try:
+                page_url = manifest.get("page_url")
+                if isinstance(page_url, str) and page_url.startswith("/plugin-view/"):
+                    owner = await self.db.scalar(
+                        select(InstalledPlugin.plugin_key).where(
+                            InstalledPlugin.page_url == page_url,
+                            InstalledPlugin.plugin_key != plugin_key,
+                        ).limit(1)
+                    )
+                    if owner is not None:
+                        raise PluginInstallError(
+                            f"Integration shell URL is already used by '{owner}'",
+                            "integration_shell_conflict",
+                        )
                 existing = await self._find_existing(plugin_key)
                 previous_type = existing.plugin_type if existing else None
                 if (
@@ -237,6 +356,8 @@ class PluginInstallService:
                     dependencies = manifest.get("dependencies") or []
                     if dependencies:
                         await self._install_dependencies(dependencies, plugin_key)
+                    if manifest["plugin_type"] in ("import", "integration") and (plugin_dir / "router.py").is_file():
+                        await _preflight_plugin_router(plugin_dir)
 
                     with (
                         plugin_archive_lock(), plugin_archive_lock(plugin_key),
@@ -375,7 +496,9 @@ class PluginInstallService:
 
         cls._validate_zip(zip_data)
         with tempfile.TemporaryDirectory(prefix="filaman_plugin_") as tmpdir:
-            plugin_dir = cls._extract_zip(zip_data, tmpdir)
+            extract_dir = Path(tmpdir) / "archive"
+            extract_dir.mkdir()
+            plugin_dir = cls._extract_zip(zip_data, str(extract_dir))
             manifest = cls._validate_manifest(plugin_dir)
             if expected_release is not None and (manifest["plugin_key"], manifest["version"]) != expected_release:
                 raise PluginInstallError(
@@ -387,7 +510,9 @@ class PluginInstallService:
             cls._validate_security(plugin_dir)
             if plugin_type == "driver":
                 cls._validate_driver(plugin_dir, manifest)
-            yield plugin_dir, manifest
+            candidate_root = Path(tmpdir) / "candidate"
+            candidate_root.mkdir()
+            yield plugin_dir.rename(candidate_root / manifest["plugin_key"]), manifest
 
     @staticmethod
     def _validate_zip(zip_data: bytes) -> None:
@@ -400,7 +525,7 @@ class PluginInstallService:
                         raise PluginInstallError(
                             "Plugin ZIP entries must use Store or Deflate compression.", "unsupported_compression"
                         )
-                    if entry.file_size > MAX_PLUGIN_FILE_SIZE:
+                    if entry.file_size > _plugin_file_size_limit(entry.filename):
                         raise PluginInstallError(f"Plugin file is too large: {entry.filename}", "file_too_large")
                 if sum(entry.file_size for entry in entries) > MAX_UNPACKED_ZIP_SIZE:
                     raise PluginInstallError("The unpacked plugin ZIP exceeds 100 MB.", "zip_too_large")
@@ -464,7 +589,7 @@ class PluginInstallService:
 
         for filename in required_files:
             filepath = plugin_dir / filename
-            if not filepath.exists():
+            if not filepath.is_file():
                 raise PluginInstallError(
                     f"Pflichtdatei '{filename}' fehlt",
                     "missing_file",
@@ -527,6 +652,8 @@ class PluginInstallService:
                 "invalid_plugin_type",
             )
         manifest["plugin_type"] = plugin_type
+
+        validate_integration_shell(manifest, plugin_dir)
 
         # plugin_key validieren
         plugin_key = manifest["plugin_key"]
@@ -604,8 +731,7 @@ class PluginInstallService:
                         "forbidden_extension",
                     )
 
-                # Maximale Einzeldatei-Groesse: 1 MB
-                if filepath.stat().st_size > MAX_PLUGIN_FILE_SIZE:
+                if filepath.stat().st_size > _plugin_file_size_limit(filename):
                     raise PluginInstallError(
                         f"Datei zu gross: {rel_path} ({filepath.stat().st_size} Bytes)",
                         "file_too_large",

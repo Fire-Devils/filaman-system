@@ -1,5 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
 ---
 
 <Layout title="FilaMan - Filaments">
@@ -116,6 +117,7 @@ import Layout from '../../layouts/Layout.astro'
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
     <span class="bulk-count" id="bulk-count"></span>
+    <FilamentPluginHooks mode="selection" />
     <button class="fm-btn fm-btn-outline" id="bulk-btn-price" data-i18n="filaments.bulkSetPrice">Set Price</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-diameter" data-i18n="filaments.bulkSetDiameter">Set Diameter</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
@@ -139,7 +141,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { fetchAllPages } from '../../lib/api'
+    import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
@@ -161,7 +163,8 @@ import Layout from '../../layouts/Layout.astro'
       type HeaderFilterOption,
     } from '../../lib/table-column-filters'
     import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
-    import { filamentColorValues, toColorSwatchBackground } from '../../lib/colors'
+    import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
+    import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
@@ -174,7 +177,7 @@ import Layout from '../../layouts/Layout.astro'
         return allowedPageSizes.includes(saved) ? saved : 50
       } catch { return 50 }
     })()
-    type FilamentColor = { display_name_override?: string | null; color?: { name: string; hex_code: string } | null }
+    type FilamentColor = { display_name_override?: string | null; color_id?: number; color?: { name: string; hex_code: string } | null }
     type Filament = {
       id: number
       manufacturer_id: number
@@ -249,6 +252,7 @@ import Layout from '../../layouts/Layout.astro'
     } catch { /* ignore invalid data */ }
     let isInitialLoad = true
     let filterRequestId = 0
+    let colorFilterPaged = true
     let filterRenderQueued = false
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
     let filHeaderFilters: HeaderFilterController | null = null
@@ -376,7 +380,8 @@ import Layout from '../../layouts/Layout.astro'
 
     function hasLocalColumnFilters(): boolean {
       return Object.entries(columnFilters).some(([key, value]) =>
-        isEffectiveColumnFilterActive(key, value) && key !== 'manufacturer' && key !== 'type')
+        isEffectiveColumnFilterActive(key, value) && key !== 'manufacturer' && key !== 'type'
+        && !(key === 'colors' && colorFilterPaged && colorFilterParams(value) !== null))
     }
 
     // Selecting every status is equivalent to no status filter.
@@ -412,9 +417,13 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function filterFilaments(filaments: Filament[]): Filament[] {
+      const colorFilter = columnFilters.colors
+      const matchesColors = colorFilter?.type === 'multi' ? inventoryColorMatcher(colorFilter) : null
       const activeFilters = Object.entries(columnFilters).filter(([key, value]) => isEffectiveColumnFilterActive(key, value))
       return filaments.filter((filament) => activeFilters.every(([key, filter]) =>
-        matchesColumnFilter(getFilamentFilterValue(filament, key), filter)))
+        key === 'colors' && matchesColors
+          ? matchesColors(filament)
+          : matchesColumnFilter(getFilamentFilterValue(filament, key), filter)))
     }
 
     function applyFiltersAndRender() {
@@ -461,7 +470,7 @@ import Layout from '../../layouts/Layout.astro'
           finishes: string[]
           subgroups: string[]
           spool_counts: number[]
-          colors: Array<{ value: string; label: string; color_hexes: string[] }>
+          colors: Array<{ value: string; label: string; color_hexes: string[]; color_stops?: { id: number; hex: string }[] }>
           has_empty_colors: boolean
         }>(CACHE_KEYS.FILAMENT_FILTER_OPTIONS, async () => {
           const response = await fetch('/api/v1/filaments/filter-options', { credentials: 'include', signal })
@@ -480,12 +489,14 @@ import Layout from '../../layouts/Layout.astro'
           value: color.value,
           label: color.label,
           colorHexes: color.color_hexes,
+          colorStops: color.color_stops,
         }))
         if (options.has_empty_colors) colorOptions.unshift({ value: '', label: t('common.empty') })
         filHeaderFilters?.setOptions('colors', colorOptions)
 
       } catch (e) {
         if (isAbortError(e)) return
+        filHeaderFilters?.setOptions('colors', [])
         console.error('Failed to populate filter dropdowns:', e)
       }
     }
@@ -529,6 +540,10 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
 
+      const colors = colorFilterParams(columnFilters.colors, params, '/api/v1/filaments')
+      colorFilterPaged = colors !== null
+      colors?.forEach((value, key) => params.append(key, value))
+
       const needsAllData = hasLocalColumnFilters() || groupBy || isClientOnlySort(sortKey)
 
       try {
@@ -543,8 +558,8 @@ import Layout from '../../layouts/Layout.astro'
           if (hasLocalColumnFilters()) {
             allFilaments = filterFilaments(allFilaments)
             totalFilaments = allFilaments.length
-            currentPage = Math.min(currentPage, Math.ceil(totalFilaments / pageSize) || 1)
           }
+          currentPage = Math.min(currentPage, Math.ceil(totalFilaments / pageSize) || 1)
         } else {
           // Normal mode: load only the current page from backend
           params.set('page', String(currentPage))
@@ -1154,6 +1169,9 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     // ── Bulk Selection & Actions ──────────────────────────────
+    const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
+    if (!selectForSpool && hooks) mountFilamentPluginHooks(hooks, { mode: 'selection', selectedIds: selectedFilamentIds })
+
     function updateBulkBar() {
       if (selectForSpool) return
       const bar = document.getElementById('bulk-action-bar')!

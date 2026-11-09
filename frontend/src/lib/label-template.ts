@@ -4,6 +4,7 @@
  * Template syntax:
  *   {token}                — simple dot-path substitution; resolves to "?" if missing
  *   {token|date}           — date-only rendering for date/datetime tokens
+ *   {token|unit}           — include the field's known unit, such as °C or mm³/s
  *   {token|date:%d.%m.%Y} — custom numeric date order/separators (default %Y/%m/%d)
  *   {prefix{token}suffix}  — optional block: rendered as prefix+value+suffix if token is not "?"
  *                            omitted entirely when token resolves to "?"
@@ -27,6 +28,7 @@
  */
 
 import { formatLabelDate } from './label-date'
+import { getLabelTokenUnit } from './label-token-units'
 import { getReadableTextColor, getReadableTextColorForColors, toOpaqueRgbHex } from './colors'
 export { getReadableTextColor, getReadableTextColorForColors } from './colors'
 import { templateMarkupMatches, parseTemplateMarkup, templateFieldRanges } from './freeform-label/template-markup'
@@ -181,6 +183,7 @@ interface TemplateCharacterSource {
   end: number
   atomic?: boolean
   literal?: boolean
+  missing?: string
 }
 
 function splitDateModifier(token: string): { key: string; dateOnly: boolean; format?: string } {
@@ -223,6 +226,12 @@ function resolveToken(token: string, data: SpoolData): string {
   let { value, rawValue } = readTokenValue(literalKey, data)
   let dateOnly = false
   let dateFormat: string | undefined
+  let unit: string | undefined
+  if (value === undefined && literalKey.endsWith('|unit')) {
+    const key = literalKey.slice(0, -5).trim()
+    ;({ value, rawValue } = readTokenValue(key, data))
+    unit = getLabelTokenUnit(`{${key}}`)
+  }
   if (value === undefined) {
     const modified = splitDateModifier(literalKey)
     if (modified.dateOnly) {
@@ -232,7 +241,7 @@ function resolveToken(token: string, data: SpoolData): string {
     }
   }
   if (value === undefined || value === null || value === '') return '?'
-  return dateOnly ? formatLabelDate(rawValue, dateFormat) : String(value)
+  return dateOnly ? formatLabelDate(rawValue, dateFormat) : String(value) + (unit ? ` ${unit}` : '')
 }
 
 /** Expand {token} and {prefix{token}suffix} placeholders to plain text. */
@@ -240,10 +249,18 @@ export function renderTemplateText(template: string, data: SpoolData): string {
   return expandTemplate(template, data, false).text.slice(0, MAX_MARKUP_CHARS)
 }
 
+export function previewLabelToken(token: string, data: SpoolData): string {
+  const value = renderTemplateText(token, data).trim()
+  return parseColorSwatchToken(token.slice(1, -1)) === null
+    ? value
+    : value.match(SWATCH_MARKER_RE)?.[3].replaceAll(',', ', ') ?? value
+}
+
 /** Track UTF-16 offsets alongside expansion, before markup hides its delimiters. */
-export function expandTemplate(template: string, data: SpoolData, selectable: boolean): {
+export function expandTemplate(template: string, data: SpoolData, selectable: boolean, missingMode?: 'mark' | 'detect'): {
   text: string
   sources?: TemplateCharacterSource[]
+  hasMissing: boolean
 } {
   const boundedTemplate = template.length > MAX_TEMPLATE_CHARS
     ? template.slice(0, MAX_TEMPLATE_CHARS)
@@ -261,7 +278,14 @@ export function expandTemplate(template: string, data: SpoolData, selectable: bo
       if (!field.token) {
         if (resolved !== '?' && resolved !== '') yield* parts(field.innerStart, field.innerEnd)
       } else {
-        if (resolved !== '?') yield { text: resolved, start: field.start, end: field.end, atomic: true, literal: swatch === null }
+        const missing = missingMode && (resolved === '?' || !resolved.trim())
+        if (missing) output.hasMissing = true
+        if (missing && missingMode === 'mark') {
+          yield { text: '?', start: field.start, end: field.end, atomic: true, literal: true,
+            missing: boundedTemplate.slice(field.start, field.end) }
+        } else if (resolved !== '?') {
+          yield { text: resolved, start: field.start, end: field.end, atomic: true, literal: swatch === null }
+        }
       }
     }
     yield { text: boundedTemplate.slice(last, to), start: last, end: to }
@@ -270,7 +294,7 @@ export function expandTemplate(template: string, data: SpoolData, selectable: bo
   // A caps run stays buffered until its closing ^^, which may follow a huge token.
   const limit = MAX_MARKUP_CHARS + 1
   const buffer = () => ({ text: '', sources: selectable ? [] as TemplateCharacterSource[] : undefined })
-  const output = buffer()
+  const output = { ...buffer(), hasMissing: false }
   let caps: ReturnType<typeof buffer> | undefined
   let openingSources: Array<TemplateCharacterSource | undefined> = []
   let caret = false
@@ -283,9 +307,10 @@ export function expandTemplate(template: string, data: SpoolData, selectable: bo
   for (const part of parts()) {
     for (let offset = 0; offset < part.text.length; offset++) {
       const character = part.text[offset]
-      const source = selectable && (caps ?? output).text.length < limit
+      const source: TemplateCharacterSource | undefined = selectable && (caps ?? output).text.length < limit
         ? { start: part.atomic ? part.start : part.start + offset, end: part.atomic ? part.end : part.start + offset + 1, atomic: part.atomic, literal: part.literal }
         : undefined
+      if (source && part.missing) source.missing = part.missing
       if (character === '^' && !part.literal && !caret) {
         caret = true
         caretSource = source
@@ -346,6 +371,7 @@ function applyMarkup(text: string, frag: DocumentFragment | HTMLElement, data: S
         el.dataset.templateStart = String(source.start)
         el.dataset.templateEnd = String(sources[sourceOffset + offset + end - 1].end)
         if (source.atomic) el.dataset.templateAtomic = 'true'
+        if (source.missing) el.dataset.templateMissing = source.missing
         if (raw[cursor] !== '\n') {
           el.dataset.templateLeaf = 'true'
           el.textContent = raw.slice(cursor, end)
@@ -476,8 +502,8 @@ export function parseTemplate(template: string, data: SpoolData): DocumentFragme
 }
 
 /** Same renderer as parseTemplate, with source annotations for canvas text selection. */
-export function renderSelectableTemplate(template: string, data: SpoolData): DocumentFragment {
-  const { text, sources } = expandTemplate(template, data, true)
+export function renderSelectableTemplate(template: string, data: SpoolData, showMissing = false): DocumentFragment {
+  const { text, sources } = expandTemplate(template, data, true, showMissing ? 'mark' : undefined)
   const frag = document.createDocumentFragment()
   if (text.length > MAX_MARKUP_CHARS) {
     // Match the regular renderer's bounded plain-text fallback exactly.
@@ -494,6 +520,7 @@ export function renderSelectableTemplate(template: string, data: SpoolData): Doc
       span.dataset.templateEnd = String(sources![end - 1].end)
       span.dataset.templateLeaf = 'true'
       if (source.atomic) span.dataset.templateAtomic = 'true'
+      if (source.missing) span.dataset.templateMissing = source.missing
       span.textContent = text.slice(i, end)
       frag.append(span)
       i = end

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   emptyColumnFilter,
   matchesColumnFilter,
+  normalizeColorFilter,
   sanitizeColumnFilters,
   systemExtraFieldFilterType,
   systemExtraFieldFilterValue,
@@ -80,6 +81,46 @@ describe('System Extra Field table filters', () => {
 })
 
 describe('Color range table filters', () => {
+  const redRange = {
+    ...emptyColumnFilter('color'), type: 'color', mode: 'color',
+    hueFrom: 350, hueTo: 10, saturationFrom: 50, saturationTo: 100,
+    valueFrom: 50, valueTo: 100, valuePreview: 100, includeTransparent: false,
+  } as ColorFilterValue
+
+  it('includes linked complementary and triadic ranges, including through zero', () => {
+    expect(matchesColumnFilter('#00FFFF', redRange)).toBe(false)
+    expect(matchesColumnFilter('#00FFFF', { ...redRange, harmony: 'complementary' })).toBe(true)
+    const triadic = { ...redRange, harmony: 'triadic' } as ColorFilterValue
+    expect(matchesColumnFilter('#FF0000', triadic)).toBe(true)
+    expect(matchesColumnFilter('#00FF00', triadic)).toBe(true)
+    expect(matchesColumnFilter('#0000FF', triadic)).toBe(true)
+    expect(matchesColumnFilter('#00FFFF', triadic)).toBe(false)
+    expect(matchesColumnFilter(['#FFFF00', '#0000FF'], triadic)).toBe(true)
+  })
+
+  it('keeps saturation, brightness and transparency limits on copied ranges', () => {
+    const filter = { ...redRange, harmony: 'complementary' } as ColorFilterValue
+    expect(matchesColumnFilter('#008080', filter)).toBe(true)
+    expect(matchesColumnFilter('#004444', filter)).toBe(false)
+    expect(matchesColumnFilter('#DDFFFF', filter)).toBe(false)
+    expect(matchesColumnFilter('#00FFFF80', filter)).toBe(false)
+    expect(matchesColumnFilter('#00FFFF80', { ...filter, includeTransparent: true })).toBe(true)
+  })
+
+  it('preserves full-circle matching and ignores harmony for neutral modes', () => {
+    const filter = { ...redRange, harmony: 'triadic', hueFrom: 0, hueTo: 360 } as ColorFilterValue
+    expect(['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF']
+      .every(color => matchesColumnFilter(color, filter))).toBe(true)
+    expect(matchesColumnFilter('#FFFFFF', { ...filter, mode: 'white' })).toBe(true)
+    expect(matchesColumnFilter('#00FFFF', { ...filter, mode: 'white' })).toBe(false)
+  })
+
+  it('normalizes missing and invalid harmony without losing a valid saved mode', () => {
+    expect(normalizeColorFilter(redRange).harmony).toBe('single')
+    expect(normalizeColorFilter({ ...redRange, harmony: 'triadic' } as ColorFilterValue).harmony).toBe('triadic')
+    expect(normalizeColorFilter({ ...redRange, harmony: 'unsupported' } as unknown as ColorFilterValue).harmony).toBe('single')
+  })
+
   it('starts the chromatic range near but outside the neutral center', () => {
     const filter = emptyColumnFilter('color') as ColorFilterValue
     filter.mode = 'color'

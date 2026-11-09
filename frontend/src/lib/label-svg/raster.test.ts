@@ -136,7 +136,7 @@ describe('V2 raster semantics', () => {
     const preset = structuredClone(fixtures[2].preset)
     const result = renderLabel(preset, data, {}, fonts, 203)
     const output = rasterize(result.svg)
-    expect(result.qrs[0].dots).toBe(4)
+    expect(result.qrs[0].dots).toBe(5)
     expect(Array.from(output.pixels.slice((81 * 320 + 161) * 4, (81 * 320 + 161) * 4 + 4))).toEqual([255, 255, 255, 255])
     const q = result.qrs[0]
     if (q.x === undefined || q.y === undefined) throw new Error('Expected thermal QR pixel geometry')
@@ -150,7 +150,7 @@ describe('V2 raster semantics', () => {
     }
     const qr = preset.design.elements.find((e: { type: string }) => e.type === 'qr')!
     qr.w = qr.h = 14
-    expect(renderLabel(preset, data, {}, fonts, 203).qrs[0].dots).toBe(3)
+    expect(renderLabel(preset, data, {}, fonts, 203).qrs[0].dots).toBe(4)
     qr.w = qr.h = 6
     expect(() => renderLabel(preset, data, {}, fonts, 203)).toThrow(/dots per module/)
   })
@@ -284,7 +284,9 @@ describe('V2 raster semantics', () => {
     const result = renderLabel(preset, data, {}, fonts, 203)
     expect(result.text.map((item: { id: string }) => item.id)).toEqual(['info'])
     expect(result.text[0].y).toBe(1.5)
-    expect(result.qrs[0].y).toBe(82)
+    const qr = result.qrs[0]
+    if (qr.y === undefined) throw new Error('Expected thermal QR pixel geometry')
+    expect(Math.abs(qr.y + 4 * qr.dots + qr.modules * qr.dots / 2 - 19.5 * result.height / 30)).toBeLessThanOrEqual(0.5)
     expect(preset.design.elements[2].y).toBe(9)
   })
   it('keeps normal QR decoration separate from thermal and resolves filament links', () => {

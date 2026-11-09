@@ -72,12 +72,13 @@ export function getStaticPaths() {
   <script>
     import type { AppDialogs } from '../../../lib/form-dialog'
     import { t, initI18n } from '../../../lib/i18n'
-    import { escapeHtml as escapeExtraFieldHtml } from '../../../lib/extra-fields'
+    import { escapeHtml as escapeExtraFieldHtml, type SystemExtraFieldDef } from '../../../lib/extra-fields'
     import { prepareExtraFieldUpdate, renderDetailExtraFieldRows } from '../../../lib/entity-extra-fields'
     import { createEntityExtraFieldsDialog, loadEntitySystemFields } from '../../../lib/entity-extra-fields-dialog'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
     import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
-    import { createFilamentFormController } from '../../../lib/filament-form'
+    import { createFilamentFormController, type FilamentFormData } from '../../../lib/filament-form'
+    import { mountFilamentPluginHooks } from '../../../lib/filament-plugin-hooks'
     import { createDetailEditSession } from '../../../lib/detail-edit'
     import { captureDetailEditPosition } from '../../../lib/detail-edit-position'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
@@ -98,16 +99,36 @@ export function getStaticPaths() {
       window.location.href = '/filaments'
     }
 
-    let currentFilament: (Parameters<typeof buildFilamentHeaderName>[0] & { id: number }) | null = null
-    const editSession = createDetailEditSession<any>(`/api/v1/filaments/${id}`, () => t('filaments.failedLoadSingle'))
+    type FilamentDetail = FilamentFormData & Parameters<typeof buildFilamentHeaderName>[0] & {
+      id: number
+      price?: number | null
+      price_currency?: string | null
+    }
+    type SpoolStatus = { id: number; key: string; label: string }
+    type Location = { id: number; name: string }
+    type Spool = {
+      id: number
+      status_id: number
+      location_id: number | null
+      purchase_price: number | null
+      purchase_date: string | null
+      stocked_in_at: string | null
+      created_at: string
+      remaining_weight_g: number | null
+      low_weight_threshold_g: number
+    }
+
+    let currentFilament: FilamentDetail | null = null
+    const editSession = createDetailEditSession<FilamentDetail>(`/api/v1/filaments/${id}`, () => t('filaments.failedLoadSingle'))
     let changingEdit = false
     let editGeneration = 0
     let filamentNeedsRefresh = false
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
     let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
-    let statuses: any[] = []
-    let locations: any[] = []
-    let systemFieldMap: Record<string, any> = {}
+    let closeFilamentPluginHooks: (() => void) | undefined
+    let statuses: SpoolStatus[] = []
+    let locations: Location[] = []
+    let systemFieldMap: Record<string, SystemExtraFieldDef> = {}
     let extraFieldsDialog: ReturnType<typeof createEntityExtraFieldsDialog> | null = null
 
     async function loadFilament() {
@@ -120,7 +141,7 @@ export function getStaticPaths() {
 
         if (!sysFieldsRes.ok) throw new Error(t('common.systemFieldsUnavailable'))
         if (sysFieldsRes.ok) {
-          const defs: any[] = await sysFieldsRes.json()
+          const defs: SystemExtraFieldDef[] = await sysFieldsRes.json()
           systemFieldMap = {}
           for (const def of defs) {
             systemFieldMap[def.key] = def
@@ -140,7 +161,8 @@ export function getStaticPaths() {
           throw new Error('Failed to fetch filament')
         }
 
-        const filament = currentFilament = await response.json()
+        const filament: FilamentDetail = await response.json()
+        currentFilament = filament
         renderFilament(filament)
         if (editMode) {
           await renderFilamentEditor(filament)
@@ -148,7 +170,7 @@ export function getStaticPaths() {
         }
         if (extraFieldsDialogRequested) {
           window.history.replaceState(null, '', `/filaments/${id}`)
-          openFilamentExtraFields(filament)
+          openFilamentExtraFields()
         }
         loadSpools(filament.id)
         printerSetup = initPrinterSetup({
@@ -169,7 +191,7 @@ export function getStaticPaths() {
       }
     }
 
-    async function renderFilamentEditor(filament: any, isCurrent = () => true) {
+    async function renderFilamentEditor(filament: FilamentDetail, isCurrent = () => true) {
       const form = document.getElementById('filament-form') as HTMLFormElement
       const cancel = document.getElementById('filament-form-cancel') as HTMLAnchorElement
       cancel.href = `/filaments/${id}`
@@ -234,6 +256,10 @@ export function getStaticPaths() {
       const controller = filamentFormController
       controller.resetInitialData(filament)
       controller.captureBaseline()
+      const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
+      if (hooks && !closeFilamentPluginHooks) {
+        closeFilamentPluginHooks = mountFilamentPluginHooks(hooks, { mode: 'edit', filamentId: filament.id, form: controller })
+      }
       document.getElementById('filament-content')!.classList.add('hidden')
       document.getElementById('filament-editor')!.classList.remove('hidden')
       document.getElementById('filament-form-actions')!.classList.remove('hidden')
@@ -259,6 +285,7 @@ export function getStaticPaths() {
           filamentNeedsRefresh = false
         })
         else {
+          closeFilamentPluginHooks?.()
           editSession.invalidate()
           if (filamentNeedsRefresh) await refreshFilamentSnapshot()
           if (!isCurrent()) return
@@ -289,7 +316,7 @@ export function getStaticPaths() {
       } finally { if (isCurrent()) changingEdit = false }
     }
 
-    async function openFilamentExtraFields(_filament: any, trigger?: HTMLElement): Promise<void> {
+    async function openFilamentExtraFields(trigger?: HTMLElement): Promise<void> {
       if (editMode || changingEdit || extraFieldsDialog?.isOpen()) return
       const request = editGeneration
       try {
@@ -327,7 +354,8 @@ export function getStaticPaths() {
       }
     }
 
-    function renderFilament(f: any) {
+    function renderFilament(f: FilamentDetail) {
+      const logoUrl = safeExternalUrl(f.manufacturer?.logo_url)
       const sections = buildFilamentDetailSections(f, {
         translate: t,
         price: f.price == null ? undefined : formatPrice(f.price, f.price_currency || getCurrency()),
@@ -356,7 +384,7 @@ export function getStaticPaths() {
                 <div class="filament-hero-title-copy">
                   <h1><span class="detail-record-id">${escapeExtraFieldHtml(t('filaments.filamentId', { id: formatHeaderId(f.id) }))}</span><span class="detail-record-name">${escapeExtraFieldHtml(buildFilamentHeaderName(f))}</span></h1>
                 </div>
-                ${safeExternalUrl(f.manufacturer?.logo_url) ? `<span class="filament-hero-logo"><img src="${safeExternalUrl(f.manufacturer.logo_url)}" alt="" onerror="this.parentElement.style.display='none'" /></span>` : ''}
+                ${logoUrl ? `<span class="filament-hero-logo"><img src="${logoUrl}" alt="" onerror="this.parentElement.style.display='none'" /></span>` : ''}
               </div>
               <div class="filament-hero-body">
                 ${renderFilamentHeaderColors(f, t('filaments.soldAs'))}
@@ -398,7 +426,7 @@ export function getStaticPaths() {
         window.location.href = '/filaments/new'
       })
       document.getElementById('btn-edit-filament-extra-fields')?.addEventListener('click', event => {
-        openFilamentExtraFields(f, event.currentTarget as HTMLElement)
+        openFilamentExtraFields(event.currentTarget as HTMLElement)
       })
 
       // Print Settings is intentionally reduced; the Label Designer receives the full
@@ -472,14 +500,14 @@ export function getStaticPaths() {
         const [spoolsRes, statusesRes, locationsData] = await fetchSequential([
           () => fetch(`/api/v1/spools?filament_id=${filamentId}&include_archived=true&page=1&page_size=200`, { credentials: 'include', signal }),
           () => fetch('/api/v1/spools/statuses', { credentials: 'include', signal }),
-          () => cachedFetchAllPages(CACHE_KEYS.LOCATIONS, '/api/v1/locations').catch(() => ({ items: [], total: 0 })),
+          () => cachedFetchAllPages<Location>(CACHE_KEYS.LOCATIONS, '/api/v1/locations').catch(() => ({ items: [], total: 0 })),
         ] as const)
         
-        const spoolsData = spoolsRes.ok ? await spoolsRes.json() : { items: [], total: 0 }
+        const spoolsData: { items: Spool[] } = spoolsRes.ok ? await spoolsRes.json() : { items: [] }
         
         if (statusesRes.ok) {
-          const statusData = await statusesRes.json()
-          statuses = statusData.items || statusData || []
+          const statusData: SpoolStatus[] | { items: SpoolStatus[] } = await statusesRes.json()
+          statuses = Array.isArray(statusData) ? statusData : statusData.items || []
         }
         
         locations = locationsData.items
@@ -490,7 +518,7 @@ export function getStaticPaths() {
         const archivedStatusId = archivedStatus ? archivedStatus.id : -1
 
         // 1. Render Table (exclude archived)
-        const activeSpools = allSpools.filter((s: any) => s.status_id !== archivedStatusId)
+        const activeSpools = allSpools.filter(s => s.status_id !== archivedStatusId)
         document.getElementById('spools-section')!.classList.remove('hidden')
         renderSpools(activeSpools)
 
@@ -506,7 +534,7 @@ export function getStaticPaths() {
       }
     }
 
-    function renderPriceSummary(spools: any[], archivedStatusId: number) {
+    function renderPriceSummary(spools: Spool[], archivedStatusId: number) {
       let totalSpent = 0
       let totalAvailable = 0
       let hasPrices = false
@@ -529,7 +557,7 @@ export function getStaticPaths() {
     }
     
     function getStatusLabel(statusId: number): string {
-      const s = statuses.find((s: any) => s.id === statusId)
+      const s = statuses.find(s => s.id === statusId)
       if (!s) return `#${statusId}`
       const i18nKey = `spools.status${s.key.charAt(0).toUpperCase() + s.key.slice(1)}`
       return t(i18nKey) || s.label
@@ -541,7 +569,7 @@ export function getStaticPaths() {
       return l ? l.name : `#${locationId}`
     }
     
-    function renderSpools(spools: any[]) {
+    function renderSpools(spools: Spool[]) {
       const tbody = document.getElementById('spools-table')!
       
       if (spools.length === 0) {
@@ -567,7 +595,7 @@ export function getStaticPaths() {
       `).join('')
     }
 
-    function renderPriceChart(spools: any[]) {
+    function renderPriceChart(spools: Spool[]) {
       const priceData = spools
         .filter(s => s.purchase_price != null)
         .map(s => ({
@@ -610,7 +638,7 @@ export function getStaticPaths() {
             },
             tooltip: {
               callbacks: {
-                label: (context: any) => {
+                label: (context: { parsed: { y: number | null } }) => {
                   return `${formatPrice(context.parsed.y, getCurrency())}`
                 }
               }
@@ -623,7 +651,7 @@ export function getStaticPaths() {
                 color: 'rgba(156, 163, 175, 0.1)'
               },
               ticks: {
-                callback: (value: any) => formatPrice(value, getCurrency())
+                callback: (value: number) => formatPrice(value, getCurrency())
               }
             },
             x: {

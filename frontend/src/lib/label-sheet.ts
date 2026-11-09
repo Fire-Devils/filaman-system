@@ -415,6 +415,7 @@ export function bindLabelSheetControls(
   onChange: () => void,
   getTranslation: (key: string, fallback: string) => string = (_key, fallback) => fallback,
   kind: LabelKind = 'spool',
+  onLayoutChange: () => void = onChange,
 ): LabelSheetControls {
   const outputMode = getSelect('output-mode')
   const sourceInputs = Array.from(document.querySelectorAll<HTMLInputElement>(
@@ -702,7 +703,7 @@ export function bindLabelSheetControls(
     else renderPresetOptions()
     writeStoredSettings(next)
     syncVisibility()
-    onChange()
+    onLayoutChange()
   }
 
   presetSelect?.addEventListener('change', () => {
@@ -722,7 +723,7 @@ export function bindLabelSheetControls(
     writeStoredSettings(next)
     syncVisibility()
     syncPresetControls()
-    onChange()
+    onLayoutChange()
   })
 
   const persistPreset = async (asNew: boolean) => {
@@ -801,7 +802,7 @@ export function bindLabelSheetControls(
   outputMode?.addEventListener('change', () => {
     writeStoredOutputMode(outputMode.value === 'sheet' ? 'sheet' : 'individual')
     syncVisibility()
-    onChange()
+    onLayoutChange()
   })
   sourceInputs.forEach(input => input.addEventListener('change', () => {
     syncSourceControls()
@@ -844,7 +845,7 @@ export function bindLabelSheetControls(
       if (outputMode) outputMode.value = mode
       writeStoredOutputMode(mode)
       syncVisibility()
-      if (options?.notify !== false) onChange()
+      if (options?.notify !== false) onLayoutChange()
     },
     getSource,
     setSource,
