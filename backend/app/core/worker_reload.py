@@ -12,11 +12,28 @@ _mount_plugin_routers().
 import logging
 import os
 import signal
+from collections.abc import Iterable
 from pathlib import Path
+from socket import socket
 
 logger = logging.getLogger(__name__)
 
 _GUNICORN_PID_FILE = Path("/tmp/filaman-gunicorn.pid")
+_worker_listeners: tuple[socket, ...] = ()
+
+
+def worker_is_gunicorn() -> bool:
+    return os.environ.get("SERVER_SOFTWARE", "").startswith("gunicorn/")
+
+
+def track_worker_listeners(listeners: Iterable[socket]) -> None:
+    global _worker_listeners
+    _worker_listeners = tuple(listeners)
+
+
+def worker_is_draining() -> bool:
+    # Uvicorn closes public listeners before draining requests and ending the lifespan.
+    return bool(_worker_listeners) and all(listener.fileno() < 0 for listener in _worker_listeners)
 
 
 def _gunicorn_master_pid() -> int | None:

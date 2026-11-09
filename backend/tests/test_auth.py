@@ -309,14 +309,14 @@ class TestAuthLogout:
 
 class TestCSRF:
     @pytest.mark.asyncio
-    async def test_csrf_required_for_mutating_requests(self, auth_client):
+    @pytest.mark.parametrize("headers", [{}, {"x-filaman-primary-hop": "1"}])
+    async def test_csrf_required_for_mutating_requests(self, auth_client, headers):
         client, _ = auth_client
 
         response = await client.post(
             "/api/v1/locations",
-            json={
-                "name": "Test Location",
-            },
+            json={"name": "Test Location"},
+            headers=headers,
         )
 
         assert response.status_code == 403

@@ -61,6 +61,40 @@ class DashboardStatsResponse(BaseModel):
     filament_types: list[FilamentTypeCount]
 
 
+@router.get("/locations", response_model=list[LocationStat])
+async def get_dashboard_locations(db: DBSession, principal: PrincipalDep):
+    statement = (
+        select(
+            Location.id.label("location_id"),
+            Location.name.label("location_name"),
+            func.count(Spool.id).label("spool_count"),
+            func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
+        )
+        .outerjoin(
+            Spool,
+            (Spool.location_id == Location.id)
+            & (
+                Spool.status_id
+                != select(SpoolStatus.id)
+                .where(SpoolStatus.key == "archived")
+                .scalar_subquery()
+            ),
+        )
+        .where(Location.name.isnot(None))
+        .group_by(Location.id, Location.name)
+        .order_by(func.count(Spool.id).desc())
+    )
+    result = await db.execute(statement)
+    return [
+        LocationStat(
+            location_id=int(row[0]),
+            location_name=row[1] or "Unzugewiesen",
+            spool_count=int(row[2] or 0),
+            total_weight_g=float(row[3]),
+        )
+        for row in result.all()
+    ]
+
 @router.get("/stats", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(
     db: DBSession,
@@ -225,29 +259,6 @@ async def get_dashboard_stats(
         .order_by(func.count(Filament.id).desc())
     )
 
-    # Lagerorte-Statistik
-    location_stats_stmt = (
-        select(
-            Location.id.label("location_id"),
-            Location.name.label("location_name"),
-            func.count(Spool.id).label("spool_count"),
-            func.coalesce(func.sum(Spool.remaining_weight_g), 0).label("total_weight"),
-        )
-        .outerjoin(
-            Spool,
-            (Spool.location_id == Location.id)
-            & (
-                Spool.status_id
-                != select(SpoolStatus.id)
-                .where(SpoolStatus.key == "archived")
-                .scalar_subquery()
-            ),
-        )
-        .where(Location.name.isnot(None))
-        .group_by(Location.id, Location.name)
-        .order_by(func.count(Spool.id).desc())
-    )
-
     # Gesamtwert verfügbarer Spulen
     total_value_stmt = (
         select(func.coalesce(func.sum(Spool.purchase_price), 0))
@@ -281,7 +292,7 @@ async def get_dashboard_stats(
     low_stock_res = await db.execute(low_stock_stmt)
     empty_res = await db.execute(empty_stmt)
     types_res = await db.execute(types_stmt)
-    loc_res = await db.execute(location_stats_stmt)
+    location_stats = await get_dashboard_locations(db, principal)
     total_val_res = await db.execute(total_value_stmt)
     filament_count_active_res = await db.execute(filament_count_active_stmt)
     filament_count_used_res = await db.execute(filament_count_used_stmt)
@@ -335,16 +346,6 @@ async def get_dashboard_stats(
 
     filament_types = [
         FilamentTypeCount(material_type=row[0], count=row[1]) for row in types_res.all()
-    ]
-
-    location_stats = [
-        LocationStat(
-            location_id=int(row[0]),
-            location_name=row[1] or "Unzugewiesen",
-            spool_count=int(row[2] or 0),
-            total_weight_g=float(row[3]),
-        )
-        for row in loc_res.all()
     ]
 
     return DashboardStatsResponse(

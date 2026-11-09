@@ -4,7 +4,7 @@ import json as _json
 import os
 import tempfile
 import time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from math import isfinite
 from pathlib import Path
 
@@ -25,6 +25,8 @@ from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
+from app.core.primary_socket import serve_primary_socket
+from app.core.worker_reload import worker_is_draining
 from app.core.seeds import run_all_seeds
 from app.core.shared_health import shared_display_store, shared_health_store
 from app.models.plugin import InstalledPlugin
@@ -42,7 +44,9 @@ logger = __import__("logging").getLogger(__name__)
 _STARTUP_LOCK_PATH = Path(tempfile.gettempdir()) / "filaman-startup.lock"
 _is_primary = False
 _lock_fd = None
+_primary_socket = AsyncExitStack()
 _WATCHDOG_INTERVAL = 60  # seconds
+_TAKEOVER_INTERVAL = 1  # seconds
 _LABEL_ASSET_CLEANUP_INTERVAL = 24 * 60 * 60
 _LABEL_ASSET_REQUEST_BYTES = 6 * 1024 * 1024
 _next_label_asset_cleanup = 0.0
@@ -148,8 +152,9 @@ async def _driver_watchdog() -> None:
     """Background task: monitors driver health and handles primary failover."""
     global _is_primary, _lock_fd
 
-    # Give the primary worker time to finish initial startup.
-    await asyncio.sleep(30)
+    if _is_primary:
+        # Delay maintenance while the freshly started drivers connect.
+        await asyncio.sleep(30)
 
     while True:
         try:
@@ -168,7 +173,7 @@ async def _driver_watchdog() -> None:
         except Exception:
             logger.exception("Driver watchdog error (will retry next cycle)")
 
-        await asyncio.sleep(_WATCHDOG_INTERVAL)
+        await asyncio.sleep(_WATCHDOG_INTERVAL if _is_primary else _TAKEOVER_INTERVAL)
 
 
 async def _cleanup_stale_label_assets() -> None:
@@ -311,22 +316,64 @@ async def _watchdog_health_check() -> None:
 
 async def _watchdog_try_takeover() -> None:
     """Secondary worker: try to become primary if the lock is available."""
-    global _is_primary, _lock_fd
+    global _lock_fd
 
+    if worker_is_draining():
+        return
+
+    fd = open(_STARTUP_LOCK_PATH, "a")
     try:
-        fd = open(_STARTUP_LOCK_PATH, "w")
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Lock acquired – previous primary is gone.
-        _lock_fd = fd
-        _is_primary = True
-        logger.info("Watchdog: acquired lock – promoted to primary worker")
-        await plugin_manager.start_all()
-        logger.info("Watchdog: drivers started after takeover")
     except OSError:
-        # Primary still holds the lock – nothing to do.
-        pass
-    except Exception:
-        logger.exception("Watchdog: takeover attempt failed")
+        fd.close()
+        return
+
+    _lock_fd = fd
+    promotion = asyncio.create_task(_start_primary_drivers(app))
+    try:
+        await asyncio.shield(promotion)
+    except asyncio.CancelledError:
+        # Keep the election lock until promotion has committed or finished rolling back.
+        await asyncio.gather(promotion, return_exceptions=True)
+        raise
+    if _is_primary:
+        logger.info("Watchdog: acquired lock and started drivers as primary worker")
+
+
+def _release_primary_lock() -> None:
+    global _is_primary, _lock_fd
+    _is_primary = False
+    if _lock_fd is not None:
+        _lock_fd.close()
+        _lock_fd = None
+
+
+async def _start_primary_drivers(app: FastAPI, *, initial: bool = False) -> None:
+    global _is_primary
+    async with AsyncExitStack() as rollback:
+        rollback.callback(_release_primary_lock)
+        rollback.push_async_callback(plugin_manager.stop_all)
+        await plugin_manager.start_all()
+        if initial:
+            # Take the first snapshot before any forwarded request can change drivers.
+            initial_health = plugin_manager.get_health()
+            if initial_health:
+                shared_health_store.publish(initial_health)
+            initial_display = await plugin_manager.get_display_states()
+            if initial_display:
+                shared_display_store.publish(initial_display)
+
+        if worker_is_draining():
+            return
+
+        rollback.push_async_callback(_primary_socket.aclose)
+        publish = await _primary_socket.enter_async_context(serve_primary_socket(app))
+        if worker_is_draining():
+            return
+
+        publish()
+        _is_primary = True
+        rollback.pop_all()
 
 
 @asynccontextmanager
@@ -358,12 +405,13 @@ async def lifespan(app: FastAPI):
     # We use an exclusive file-lock: the first worker wins and runs the
     # one-time tasks; the others skip them.
     try:
-        _lock_fd = open(_STARTUP_LOCK_PATH, "w")
+        _lock_fd = open(_STARTUP_LOCK_PATH, "a")
         fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _is_primary = True
         logger.info("Primary worker – running seeds and starting plugins")
     except OSError:
         # Another worker already holds the lock
+        _release_primary_lock()
         logger.info("Secondary worker – skipping seeds and plugin start")
     except Exception as exc:
         logger.warning(f"Startup lock failed ({exc}), running seeds as fallback")
@@ -372,14 +420,7 @@ async def lifespan(app: FastAPI):
     if _is_primary:
         async with async_session_maker() as db:
             await run_all_seeds(db)
-        await plugin_manager.start_all()
-        # Publish initial health so secondary workers have data immediately
-        initial_health = plugin_manager.get_health()
-        if initial_health:
-            shared_health_store.publish(initial_health)
-        initial_display = await plugin_manager.get_display_states()
-        if initial_display:
-            shared_display_store.publish(initial_display)
+        await _start_primary_drivers(app, initial=True)
 
     # Start the driver watchdog in every worker (handles health checks
     # for the primary and automatic takeover for secondary workers).
@@ -397,6 +438,7 @@ async def lifespan(app: FastAPI):
         pass
 
     if _is_primary:
+        await _primary_socket.aclose()
         await plugin_manager.stop_all()
         # Clean up shared memory (primary is the owner of both blocks)
         shared_health_store.cleanup()
@@ -404,14 +446,7 @@ async def lifespan(app: FastAPI):
         # Release the file lock (OS also releases automatically on exit).
         # We intentionally do NOT delete the lock file so that secondary
         # workers can still attempt flock() on it during takeover.
-        if _lock_fd:
-            try:
-                fcntl.flock(_lock_fd, fcntl.LOCK_UN)
-                _lock_fd.close()
-            except OSError:
-                pass
-            _lock_fd = None
-        _is_primary = False
+        _release_primary_lock()
     else:
         # Secondary workers just close their handles (don't unlink)
         shared_health_store.close()

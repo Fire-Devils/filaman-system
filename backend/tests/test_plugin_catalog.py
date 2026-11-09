@@ -681,17 +681,16 @@ async def test_plugin_changes_on_a_secondary_forward_before_writing(auth_client,
 
     client, token = auth_client
     monkeypatch.setattr(main, "_is_primary", False)
-    monkeypatch.setattr(system, "worker_reload_available", lambda: True)
-    forwarded = AsyncMock(side_effect=[
-        {"message": "Installed", "plugin": {
-            "id": 1, "plugin_key": "test_plugin", "name": "Test plugin", "version": "1.0.0",
-            "description": None, "author": None, "homepage": None, "license": None,
-            "plugin_type": "driver", "driver_key": "test_plugin", "page_url": None,
-            "config_schema": None, "is_active": True, "show_in_nav": False,
-            "installed_at": "2026-11-08T00:00:00Z", "installed_by": 1,
-        }},
-        None,
-    ])
+    monkeypatch.setenv("SERVER_SOFTWARE", "gunicorn/25")
+    monkeypatch.setattr(system, "worker_reload_available", lambda: False)
+    installed = {"message": "Installed", "plugin": {
+        "id": 1, "plugin_key": "test_plugin", "name": "Test plugin", "version": "1.0.0",
+        "description": None, "author": None, "homepage": None, "license": None,
+        "plugin_type": "driver", "driver_key": "test_plugin", "page_url": None,
+        "config_schema": None, "is_active": True, "show_in_nav": False,
+        "installed_at": "2026-11-08T00:00:00Z", "installed_by": 1,
+    }}
+    forwarded = AsyncMock(side_effect=[installed, None, installed])
     monkeypatch.setattr(system, "_proxy_to_primary", forwarded)
     headers = {"X-CSRF-Token": token}
     path = "/api/v1/admin/system/plugins"
@@ -709,41 +708,45 @@ async def test_plugin_changes_on_a_secondary_forward_before_writing(auth_client,
         f"{path}/install-from-registry", json=selection(entry()).model_dump(),
         headers={**headers, "X-FilaMan-Primary-Hop": "1"},
     )
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "primary_worker_required"
-    assert forwarded.await_count == 2
+    assert response.status_code == 201, response.text
+    assert forwarded.await_args.args[1:4] == (
+        "POST", f"{path}/install-from-registry", selection(entry()).model_dump(),
+    )
+    assert forwarded.await_count == 3
 
     forged_hop = await client.delete(f"{path}/test_plugin", headers={"X-FilaMan-Primary-Hop": "1"})
     assert forged_hop.status_code == 403
     assert forged_hop.json()["code"] == "csrf_failed"
 
 
-async def test_plugin_proxy_retries_secondary_responses_and_accepts_delete_204(auth_client, monkeypatch):
+@pytest.mark.parametrize("status_code", [204, 503])
+async def test_plugin_proxy_sends_delete_once(auth_client, monkeypatch, tmp_path, status_code):
     from app import main
-    from app.api.v1 import printers
+    from app.core import primary_socket
 
     client, token = auth_client
     monkeypatch.setattr(main, "_is_primary", False)
-    monkeypatch.setattr(system, "worker_reload_available", lambda: True)
-    attempts = []
+    monkeypatch.setenv("SERVER_SOFTWARE", "gunicorn/25")
+    monkeypatch.setattr(system, "worker_reload_available", lambda: False)
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700)
+    monkeypatch.setattr(primary_socket, "_runtime_dir", directory)
+    requests = []
 
     def respond(request):
         assert request.headers["x-csrf-token"] == token
         assert request.url.params["delete_data"] == "true"
-        attempts.append(request)
-        if len(attempts) <= 8:
+        requests.append(request)
+        if status_code == 503:
             return httpx.Response(503, json={"detail": {"code": "primary_worker_required"}})
         return httpx.Response(204)
 
-    factory = httpx.AsyncClient
-    monkeypatch.setattr(printers.httpx, "AsyncClient", lambda **kwargs: factory(
-        transport=httpx.MockTransport(respond), **kwargs,
-    ))
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(respond))
     response = await client.delete(
         "/api/v1/admin/system/plugins/test_plugin?delete_data=true", headers={"X-CSRF-Token": token}
     )
-    assert response.status_code == 204, response.text
-    assert len(attempts) == 9
+    assert response.status_code == status_code, response.text
+    assert len(requests) == 1
 
 
 async def test_restore_continues_after_one_plugin_has_a_disk_error(monkeypatch, db_session):
