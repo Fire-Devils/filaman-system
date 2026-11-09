@@ -7,6 +7,7 @@ from xml.etree import ElementTree
 
 BUILTIN_ICONS_DIR = Path(__file__).parent.parent / "plugin_icons"
 MAX_ICON_BYTES = 4 * 1024
+MAX_LEGACY_SVG_BYTES = 64 * 1024
 SVG_NAMESPACE = "{http://www.w3.org/2000/svg}"
 SVG_ELEMENTS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "title", "desc"}
 SVG_ATTRIBUTES = {
@@ -18,8 +19,8 @@ SVG_ATTRIBUTES = {
 }
 
 
-def read_plugin_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_ICON_BYTES) -> bytes:
-    """Reject paths outside the package and SVG features that can load or run content."""
+def read_plugin_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_LEGACY_SVG_BYTES) -> bytes:
+    """Check SVG paths and contents while preserving the read limit for installed icons."""
     if (
         not isinstance(icon, str)
         or len(icon) > 250

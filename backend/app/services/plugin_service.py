@@ -22,7 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import DATA_DIR, settings
 from app.core.file_lock import FileLockBusy, exclusive_file_lock, file_lock
 from app.models.plugin import InstalledPlugin
-from app.services.plugin_icon_service import MAX_ICON_BYTES, read_plugin_icon
+from app.services.plugin_icon_service import (
+    MAX_ICON_BYTES,
+    MAX_LEGACY_SVG_BYTES,
+    read_plugin_icon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +65,6 @@ MAX_ZIP_SIZE = 10 * 1024 * 1024
 MAX_UNPACKED_ZIP_SIZE = 100 * 1024 * 1024
 MAX_PLUGIN_FILE_SIZE = 1024 * 1024
 MAX_PLUGIN_BUNDLE_FILE_SIZE = 5 * 1024 * 1024
-MAX_LEGACY_SVG_BYTES = 64 * 1024
 
 # Erlaubte Dateiendungen
 ALLOWED_EXTENSIONS = {
@@ -704,12 +707,12 @@ class PluginInstallService:
             )
 
         if manifest.get("icon") is not None:
-            cls._validate_icon(plugin_dir, manifest["icon"])
+            cls._validate_icon(plugin_dir, manifest["icon"], max_bytes=MAX_ICON_BYTES)
 
         return manifest
 
     @staticmethod
-    def _validate_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_ICON_BYTES) -> None:
+    def _validate_icon(plugin_dir: Path, icon: str, *, max_bytes: int) -> None:
         try:
             read_plugin_icon(plugin_dir, icon, max_bytes=max_bytes)
         except (OSError, ValueError) as error:

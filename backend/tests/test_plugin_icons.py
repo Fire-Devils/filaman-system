@@ -2,10 +2,10 @@ import json
 from unittest.mock import patch
 
 import pytest
-
+from app.models.plugin import InstalledPlugin
 from app.services.plugin_service import PluginInstallError, PluginInstallService
-from tests.test_plugin_service import VALID_MANIFEST, VALID_DRIVER_PY, _make_zip
 
+from tests.test_plugin_service import VALID_DRIVER_PY, VALID_MANIFEST, _make_zip
 
 SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#168a72"/></svg>'
 
@@ -47,6 +47,11 @@ def test_hosted_svg_artwork_is_allowed_but_is_not_a_sidebar_icon():
         pass
     assert error.value.code == "invalid_icon"
 
+    files["plugin.json"] = json.dumps({**manifest, "page_url": "/plugin-page/example", "mount_prefix": None})
+    with pytest.raises(PluginInstallError) as error, PluginInstallService.validated_archive(_make_zip(files)):
+        pass
+    assert error.value.code == "invalid_icon"
+
 
 def test_declared_icon_size_limit_preserves_legacy_svg_assets():
     with PluginInstallService.validated_archive(package(content=SVG.ljust(4096))):
@@ -61,6 +66,23 @@ def test_declared_icon_size_limit_preserves_legacy_svg_assets():
 
     with PluginInstallService.validated_archive(package(icon=None, content=artwork)):
         pass
+
+
+@pytest.mark.asyncio
+async def test_preexisting_larger_icon_stays_visible(auth_client, db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.plugin_service.PLUGINS_DIR", tmp_path)
+    plugin = InstalledPlugin(plugin_key="legacy_icon", name="Legacy icon", version="1.0.0", icon="icon.svg")
+    db_session.add(plugin)
+    await db_session.commit()
+    plugin_dir = tmp_path / plugin.plugin_key
+    plugin_dir.mkdir()
+    icon = SVG.ljust(4097)
+    (plugin_dir / "icon.svg").write_text(icon)
+
+    client, _ = auth_client
+    response = await client.get(f"/api/v1/plugin-icons/{plugin.plugin_key}")
+    assert response.status_code == 200
+    assert response.text == icon
 
 
 @pytest.mark.asyncio
