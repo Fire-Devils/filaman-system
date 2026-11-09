@@ -18,7 +18,7 @@ Add the optional field alongside your plugin’s existing manifest fields:
 
 ## Icon Requirements
 
-- Must be a UTF-8 SVG file with a maximum size of 64 KiB.
+- Must be a UTF-8 SVG file with a maximum size of 4 KiB.
 - Must not contain:
   - DOCTYPE declarations
   - Entity declarations, stylesheet processing instructions, or comments

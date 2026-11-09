@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import DATA_DIR, settings
 from app.core.file_lock import FileLockBusy, exclusive_file_lock, file_lock
 from app.models.plugin import InstalledPlugin
-from app.services.plugin_icon_service import read_plugin_icon
+from app.services.plugin_icon_service import MAX_ICON_BYTES, read_plugin_icon
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ MAX_ZIP_SIZE = 10 * 1024 * 1024
 MAX_UNPACKED_ZIP_SIZE = 100 * 1024 * 1024
 MAX_PLUGIN_FILE_SIZE = 1024 * 1024
 MAX_PLUGIN_BUNDLE_FILE_SIZE = 5 * 1024 * 1024
+MAX_LEGACY_SVG_BYTES = 64 * 1024
 
 # Erlaubte Dateiendungen
 ALLOWED_EXTENSIONS = {
@@ -507,7 +508,11 @@ class PluginInstallService:
 
             plugin_type = manifest["plugin_type"]
             cls._validate_structure(plugin_dir, plugin_type)
-            cls._validate_security(plugin_dir)
+            page_url = manifest.get("page_url")
+            cls._validate_security(
+                plugin_dir,
+                hosted_integration=isinstance(page_url, str) and page_url.startswith("/plugin-view/"),
+            )
             if plugin_type == "driver":
                 cls._validate_driver(plugin_dir, manifest)
             candidate_root = Path(tmpdir) / "candidate"
@@ -704,14 +709,14 @@ class PluginInstallService:
         return manifest
 
     @staticmethod
-    def _validate_icon(plugin_dir: Path, icon: str) -> None:
+    def _validate_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_ICON_BYTES) -> None:
         try:
-            read_plugin_icon(plugin_dir, icon)
+            read_plugin_icon(plugin_dir, icon, max_bytes=max_bytes)
         except (OSError, ValueError) as error:
             raise PluginInstallError(f"Ungueltiges Plugin-Icon: {error}", "invalid_icon") from error
 
     @classmethod
-    def _validate_security(cls, plugin_dir: Path) -> None:
+    def _validate_security(cls, plugin_dir: Path, *, hosted_integration: bool = False) -> None:
         """Sicherheitspruefungen durchfuehren."""
         for root, dirs, files in os.walk(plugin_dir):
             # __pycache__ ignorieren
@@ -723,8 +728,9 @@ class PluginInstallService:
 
                 # Dateiendung pruefen
                 suffix = filepath.suffix.lower()
-                if suffix == ".svg":
-                    cls._validate_icon(plugin_dir, str(rel_path))
+                # Hosted SVG artwork is part of the app bundle. The manifest icon is checked separately.
+                if suffix == ".svg" and not hosted_integration:
+                    cls._validate_icon(plugin_dir, str(rel_path), max_bytes=MAX_LEGACY_SVG_BYTES)
                 if suffix and suffix not in ALLOWED_EXTENSIONS:
                     raise PluginInstallError(
                         f"Unerlaubte Dateiendung: {rel_path}",
