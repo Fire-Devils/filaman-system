@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 
 vi.mock('./label-svg/runtime.mjs', async importOriginal => {
   const module = await importOriginal<typeof import('./label-svg/runtime.mjs')>()
-  return { createSvgRuntime: () => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`)) }
+  return { createSvgRuntime: (_readAsset: unknown, raster: boolean) => module.createSvgRuntime((path: string) => readFile(`node_modules/${path}`), raster) }
 })
 
 import {

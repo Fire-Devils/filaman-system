@@ -102,6 +102,7 @@ describe('restored extra-field token picker', () => {
     search.dispatchEvent(new Event('input'))
     expect(group.open).toBe(true)
     expect(extraTokens().filter(chip => !chip.hidden)).toHaveLength(1)
+    expect(document.getElementById('freeform-field-panel-spool')!.hidden).toBe(true)
     search.value = ''
     search.dispatchEvent(new Event('input'))
     expect(group.open).toBe(false)

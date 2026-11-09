@@ -6,6 +6,7 @@ import CanvasTextToolbar from '../../components/freeform-label/CanvasTextToolbar
 import DesignerWorkspace from '../../components/freeform-label/DesignerWorkspace.astro'
 import ElementInspector from '../../components/freeform-label/ElementInspector.astro'
 import FieldDock from '../../components/freeform-label/FieldDock.astro'
+import { buildSpoolDataFromFlatLabel } from '../label-designer-data'
 import { bindDesignerTooltips } from './designer-tooltips'
 import { designerIcon } from './icons'
 
@@ -48,6 +49,34 @@ describe('designer tooltips', () => {
     workspace.querySelector<HTMLElement>('[data-label-element-id]')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
     expect(document.querySelector<HTMLElement>('[role="tooltip"]')!.hidden).toBe(true)
     unbind()
+  })
+
+  it('previews the current label value and uses the yellow question mark for an empty field', () => {
+    document.body.innerHTML = '<div id="workspace"><span id="field-hint">Inserts a field</span><button data-field-token="{filament.name}" aria-describedby="field-hint">name</button><button data-field-token="{lot_number}">lot_number</button></div>'
+    const workspace = document.querySelector<HTMLElement>('#workspace')!
+    const [name, lot] = workspace.querySelectorAll('button')
+    let data = buildSpoolDataFromFlatLabel({ id: 42, designation: 'Ocean Blue PLA' })
+    const unbind = bindDesignerTooltips(workspace, () => data)
+    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]')!
+    try {
+      name.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      expect(tooltip.textContent).toBe('Ocean Blue PLA')
+      expect(tooltip.id).not.toBe('')
+      expect(name.getAttribute('aria-describedby')?.split(' ')).toEqual(['field-hint', tooltip.id])
+      lot.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      expect(tooltip.querySelector('[data-field-missing-preview]')?.textContent).toBe('?')
+      expect(tooltip.textContent).toContain('No data in token {lot_number}')
+      expect(name.getAttribute('aria-describedby')).toBe('field-hint')
+      expect(lot.getAttribute('aria-describedby')).toBe(tooltip.id)
+      lot.click()
+      expect(tooltip.hidden).toBe(true)
+      expect(lot.hasAttribute('aria-describedby')).toBe(false)
+      data = buildSpoolDataFromFlatLabel({ id: 43, designation: 'Cherry Red PLA' })
+      name.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      expect(tooltip.textContent).toBe('Cherry Red PLA')
+      expect(tooltip.querySelector('[data-field-missing-preview]')).toBeNull()
+    } finally { unbind() }
+    expect(name.getAttribute('aria-describedby')).toBe('field-hint')
   })
 
   it('cancels a pending hover tooltip when the pointer leaves', () => {

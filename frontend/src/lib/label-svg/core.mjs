@@ -18,6 +18,7 @@ export const fontFiles = LABEL_FONT_FAMILIES.flatMap(family =>
 export const loadFonts = async read => Object.fromEntries(await Promise.all(fontFiles.map(async ({ key, file }, index) =>
   [key, loadFont(await read(file, index))])));
 const measure = (text, font, size) => font.layout(text).advanceWidth * size / font.unitsPerEm;
+const MAX_LAYOUT_TEXT_CHARS = 12000;
 // Checkbox fields use symbols absent from the bundled Latin fonts.
 const checkboxPaths = { '✓': 'M0.1 0.35L0.3 0.1L0.7 0.7', '✗': 'M0.1 0.1L0.7 0.7M0.1 0.7L0.7 0.1' };
 
@@ -29,30 +30,38 @@ export function layoutText(text, element, font) {
 function groupRuns(characters) {
   const groups = [];
   for (const char of characters) {
-    if (!char.swatch && !char.symbol && groups.at(-1)?.font === char.font && groups.at(-1)?.style === char.style && !groups.at(-1)?.swatch && !groups.at(-1)?.symbol) groups.at(-1).text += char.text;
+    const last = groups.at(-1);
+    if (!char.swatch && !char.symbol && !char.missing && last?.font === char.font && last?.style === char.style
+      && !last?.swatch && !last?.symbol && !last?.missing) last.text += char.text;
     else groups.push({ ...char });
   }
   return groups;
 }
 
-function runWidth(run, size, measurements) {
-  const em = size * (run.style?.factor ?? 1);
-  if (run.swatch) return measure('0', run.font, em) * (run.swatch.widthCh + 0.4);
-  if (run.symbol) return em * (run.style?.italic ? 0.95 : 0.8);
+function measureRun(run, measurements) {
   let cache = measurements?.get(run.font);
   if (measurements && !cache) measurements.set(run.font, cache = new Map());
-  let width = cache?.get(run.text);
-  if (!width) {
+  let bounds = cache?.get(run.text);
+  if (!bounds) {
     const shaped = run.font.layout(run.text);
-    // Synthetic italic includes its ink overhang; both widths are size-independent.
-    width = { normal: shaped.advanceWidth, italic: Math.max(shaped.advanceWidth,
-      shaped.bbox.maxX + Math.tan(14 * Math.PI / 180) * shaped.bbox.maxY) };
-    if (cache && cache.size < 512) cache.set(run.text, width);
+    const { maxX, maxY, minY } = shaped.bbox;
+    // Synthetic italic includes its ink overhang. Keep all measurements in font units.
+    bounds = { normal: shaped.advanceWidth, italic: Math.max(shaped.advanceWidth, maxX + Math.tan(14 * Math.PI / 180) * maxY), maxY, minY };
+    if (cache && cache.size < 512) cache.set(run.text, bounds);
   }
-  return (run.style?.italic ? width.italic : width.normal) * em / run.font.unitsPerEm;
+  return bounds;
 }
 
-function lineMetrics(groups, size, defaultFont, role, measurements) {
+function runWidth(run, size, measurements) {
+  const em = size * (run.style?.factor ?? 1);
+  if (run.missing) return em;
+  if (run.swatch) return measure('0', run.font, em) * (run.swatch.widthCh + 0.4);
+  if (run.symbol) return em * (run.style?.italic ? 0.95 : 0.8);
+  const bounds = measureRun(run, measurements);
+  return (run.style?.italic ? bounds.italic : bounds.normal) * em / run.font.unitsPerEm;
+}
+
+function lineMetrics(groups, size, defaultFont, role, measurements, lineY) {
   let width = 0;
   groups.forEach((run, i) => {
     if (run.style?.background && groups[i - 1]?.style?.background !== run.style.background) width += 0.6;
@@ -60,16 +69,34 @@ function lineMetrics(groups, size, defaultFont, role, measurements) {
     if (run.style?.background && groups[i + 1]?.style?.background !== run.style.background) width += 0.6;
   });
   const faces = [{ font: defaultFont }, ...groups];
-  const ascent = Math.max(...faces.map(run => run.font.ascent / run.font.unitsPerEm * (run.style?.factor ?? 1))) * size;
-  const descent = Math.max(...faces.map(run => -run.font.descent / run.font.unitsPerEm * (run.style?.factor ?? 1))) * size;
-  const factor = Math.max(1, ...groups.map(run => run.style?.factor ?? 1));
-  const height = role && factor === 1 ? size * (role === 'info' ? 1.4 : 1)
-    : Math.max(size * (role === 'info' ? 1.4 : 1.15) * factor, ascent + descent);
-  return { width, height, ascent: (height - ascent - descent) / 2 + ascent };
+  // Match the editor's explicit CSS line-height, including fonts with tall em metrics.
+  const lineHeight = role === 'info' ? 1.4 : role === 'title' ? 1 : 1.15;
+  let ascent = -Infinity, descent = -Infinity;
+  let inkAscent = -Infinity, inkDescent = -Infinity;
+  const checkInk = lineY !== undefined && (!role || role === 'title' && groups.some(run => (run.style?.factor ?? 1) > 1));
+  for (const run of faces) {
+    const em = size * (run.style?.factor ?? 1);
+    const faceAscent = run.font.ascent / run.font.unitsPerEm * em;
+    const faceDescent = -run.font.descent / run.font.unitsPerEm * em;
+    const leading = (em * lineHeight - faceAscent - faceDescent) / 2;
+    ascent = Math.max(ascent, faceAscent + leading);
+    descent = Math.max(descent, faceDescent + leading);
+    if (checkInk && run.text && !run.swatch && !run.symbol && !run.missing) {
+      const ink = measureRun(run, measurements), scale = em / run.font.unitsPerEm;
+      inkAscent = Math.max(inkAscent, ink.maxY * scale);
+      inkDescent = Math.max(inkDescent, -ink.minY * scale);
+    }
+  }
+  // Normal boxes contain the ink. Preserve migrated title spacing unless the paper would clip enlarged ink.
+  if (checkInk && (!role || lineY + ascent < inkAscent)) {
+    ascent = Math.max(ascent, inkAscent);
+    descent = Math.max(descent, inkDescent);
+  }
+  return { width, height: ascent + descent, ascent };
 }
 
-function layoutRuns(runs, element, defaultFont) {
-  if (runs.reduce((n, run) => n + run.text.length, 0) > 12000) throw new Error('Label text limit exceeded');
+function layoutRuns(runs, element, defaultFont, preview = false) {
+  if (runs.reduce((n, run) => n + run.text.length, 0) > MAX_LAYOUT_TEXT_CHARS) throw new Error('Label text limit exceeded');
   if (![element.fontSizeMm, element.minFontSizeMm ?? 1].every(v => Number.isFinite(v) && v > 0)) throw new Error('Invalid font size');
   if (runs.every(run => run.text === '' && !run.swatch)) return { lines: [], size: element.fontSizeMm, lineHeight: 0, height: 0, metrics: [], runs: [] };
   const paragraphs = [[]];
@@ -85,7 +112,15 @@ function layoutRuns(runs, element, defaultFont) {
   }
   // Keep bounded numeric measurements only, and release them after this layout.
   const measurements = new Map();
-  const metrics = (chars, size) => lineMetrics(groupRuns(chars), size, defaultFont, element.legacyTextRole, measurements);
+  const metrics = (chars, size, lineY = undefined) => lineMetrics(groupRuns(chars), size, defaultFont, element.legacyTextRole, measurements, lineY);
+  const measureLines = (lines, size) => {
+    let lineY = element.y ?? 0;
+    return lines.map(line => {
+      const row = metrics(line, size, lineY);
+      lineY += row.height;
+      return row;
+    });
+  };
   // ponytail: greedy Latin word wrapping; adopt paragraph layout if full CSS/bidi parity is required.
   const wrap = size => paragraphs.flatMap(paragraph => {
     if (!element.wrap) return [paragraph];
@@ -113,13 +148,16 @@ function layoutRuns(runs, element, defaultFont) {
     }
     return [...lines, line];
   });
-  const fits = (lines, size) => (element.legacyTextRole === 'title' && !element.wrap || lines.reduce((sum, line) => sum + metrics(line, size).height, 0) <= element.h)
-    && lines.every(line => metrics(line, size).width <= element.w);
+  const fits = (lines, size) => {
+    const measured = measureLines(lines, size);
+    return (element.legacyTextRole === 'title' && !element.wrap || measured.reduce((sum, row) => sum + row.height, 0) <= element.h + 1e-9)
+      && measured.every(row => row.width <= element.w);
+  };
   let size = element.fontSizeMm;
   let lines = wrap(size);
   if (!fits(lines, size) && element.fitToWidth) {
     let low = Math.min(size, element.minFontSizeMm ?? (element.wrap ? 2 : 0.265)), high = size;
-    if (!fits(wrap(low), low)) throw new Error('Text cannot fit at minimum size');
+    if (!fits(wrap(low), low) && !preview) throw new Error('Text cannot fit at minimum size; enlarge this box, lower Minimum size, or shorten the text');
     for (let i = 0; i < 12; i++) {
       const mid = (low + high) / 2;
       if (fits(wrap(mid), mid)) low = mid; else high = mid;
@@ -127,14 +165,17 @@ function layoutRuns(runs, element, defaultFont) {
     size = low;
     lines = wrap(size);
   }
-  if (!fits(lines, size)) throw new Error('Text does not fit; enable Scale font to fit or enlarge its box');
-  const measured = lines.map(line => metrics(line, size));
+  const error = fits(lines, size) ? undefined : element.fitToWidth
+    ? 'Text does not fit at Minimum size. Enlarge this box, lower Minimum size, or shorten the text.'
+    : 'Text does not fit. Enlarge this box, reduce Size, or enable Scale font to fit.';
+  if (error && !preview) throw new Error(error);
+  const measured = measureLines(lines, size);
   return { lines: lines.map(line => line.map(c => c.text).join('')), size,
     lineHeight: Math.max(0, ...measured.map(line => line.height)), height: measured.reduce((sum, line) => sum + line.height, 0),
-    metrics: measured, runs: lines.map(groupRuns) };
+    metrics: measured, runs: lines.map(groupRuns), ...(error ? { error } : {}) };
 }
 
-function textSvg(element, data, fonts) {
+function textSvg(element, data, fonts, preview = false, showBadges = preview, outputBox = element) {
   const template = element.template;
   const face = (family, weight) => {
     if (!LABEL_FONT_FAMILIES.includes(family) || !LABEL_FONT_WEIGHTS.includes(weight)) throw new Error('Unsupported font family or weight');
@@ -146,48 +187,79 @@ function textSvg(element, data, fonts) {
   };
   const family = element.fontFamily ?? 'Space Grotesk', weight = element.fontWeight ?? 400;
   const defaultFont = face(family, weight);
-  const { text, sources } = expandTemplate(template, data, true);
-  if (text.length > 12000) throw new Error('Label text limit exceeded');
-  const mask = text.split('').map((c, i) => sources[i].literal ? '\uFFFC' : c).join('');
-  const runs = [];
-  const parse = (from, to, style, depth = 0) => {
-    if (depth > 32) throw new Error('Label markup nesting limit exceeded');
-    const append = (start, end) => { if (end > start) runs.push({ text: text.slice(start, end), font: face(style.family, style.weight), style }); };
-    let cursor = from;
-    for (const match of templateMarkupMatches(mask.slice(from, to), { swatches: true })) {
-      const start = from + match.index, end = start + match[0].length;
-      append(cursor, start);
-      const markup = parseTemplateMarkup(match[0]);
-      if (markup?.kind === 'swatch') {
-        const [, widthCh, mode, palette] = text.slice(start, end).match(/^\[\[FM_SWATCH\|(\d+)\|(bands|layers)\|([^\]]+)\]\]$/);
-        runs.push({ text: '\uFFFC', font: face(style.family, style.weight), style, swatch: { widthCh: Number(widthCh), mode, colors: palette.split(',') } });
-      } else if (markup) {
-        const next = { ...style }, opening = markup.opening.toLowerCase();
-        if (markup.kind === 'font') next.family = markup.font;
-        else if (markup.kind === 'size') next.factor *= markup.sizePercent / 100;
-        else if (['**', '[b]', '***'].includes(opening)) next.weight = 700;
-        if (['*', '[i]', '***'].includes(opening)) next.italic = true;
-        if (opening === '__') next.underline = true;
-        if (['==', '@@'].includes(opening)) {
-          const colors = opening === '==' ? ['#000000'] : getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex']);
-          next.background = { colors: colors.length ? colors : ['#000000'], mode: getFilamentSwatchMode(data['filament.multi_color_style']) };
-          next.color = opening === '==' ? '#ffffff' : getReadableTextColorForColors(colors);
+  const expanded = expandTemplate(template, data, true, preview ? 'detect' : undefined);
+  const parseRuns = ({ text, sources }, marked = false) => {
+    if (text.length > MAX_LAYOUT_TEXT_CHARS) throw new Error('Label text limit exceeded');
+    const mask = text.split('').map((c, i) => sources[i].literal ? '\uFFFC' : c).join('');
+    const runs = [];
+    const parse = (from, to, style, depth = 0) => {
+      if (depth > 32) throw new Error('Label markup nesting limit exceeded');
+      const append = (start, end) => {
+        if (end <= start) return;
+        const font = face(style.family, style.weight);
+        if (marked) {
+          for (let i = start; i < end; i++) {
+            if (!sources[i].missing) continue;
+            if (start < i) runs.push({ text: text.slice(start, i), font, style });
+            runs.push({ text: '?', font: face(style.family, 700), style, missing: { start: sources[i].start } });
+            start = i + 1;
+          }
         }
-        if (!Number.isFinite(next.factor) || next.factor > 27 || next.factor < 0.125) throw new Error('Label nested size limit exceeded');
-        parse(start + markup.opening.length, end - markup.closing.length, next, depth + 1);
-      } else append(start, end);
-      cursor = end;
-    }
-    append(cursor, to);
+        if (start < end) runs.push({ text: text.slice(start, end), font, style });
+      };
+      let cursor = from;
+      for (const match of templateMarkupMatches(mask.slice(from, to), { swatches: true })) {
+        const start = from + match.index, end = start + match[0].length;
+        append(cursor, start);
+        const markup = parseTemplateMarkup(match[0]);
+        if (markup?.kind === 'swatch') {
+          const [, widthCh, mode, palette] = text.slice(start, end).match(/^\[\[FM_SWATCH\|(\d+)\|(bands|layers)\|([^\]]+)\]\]$/);
+          runs.push({ text: '\uFFFC', font: face(style.family, style.weight), style, swatch: { widthCh: Number(widthCh), mode, colors: palette.split(',') } });
+        } else if (markup) {
+          const next = { ...style }, opening = markup.opening.toLowerCase();
+          if (markup.kind === 'font') next.family = markup.font;
+          else if (markup.kind === 'size') next.factor *= markup.sizePercent / 100;
+          else if (['**', '[b]', '***'].includes(opening)) next.weight = 700;
+          if (['*', '[i]', '***'].includes(opening)) next.italic = true;
+          if (opening === '__') next.underline = true;
+          if (['==', '@@'].includes(opening)) {
+            const colors = opening === '==' ? ['#000000'] : getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex']);
+            next.background = { colors: colors.length ? colors : ['#000000'], mode: getFilamentSwatchMode(data['filament.multi_color_style']) };
+            next.color = opening === '==' ? '#ffffff' : getReadableTextColorForColors(colors);
+          }
+          if (!Number.isFinite(next.factor) || next.factor > 27 || next.factor < 0.125) throw new Error('Label nested size limit exceeded');
+          parse(start + markup.opening.length, end - markup.closing.length, next, depth + 1);
+        } else append(start, end);
+        cursor = end;
+      }
+      append(cursor, to);
+    };
+    parse(0, text.length, { family, weight, factor: 1, italic: !!element.italic, underline: !!element.underline, color: element.color ?? '#000000' });
+    return runs;
   };
-  parse(0, text.length, { family, weight, factor: 1, italic: !!element.italic, underline: !!element.underline, color: element.color ?? '#000000' });
-  const layout = layoutRuns(runs, element, defaultFont);
-  const height = layout.height;
+  const runs = parseRuns(expanded);
+  const layout = layoutRuns(runs, outputBox, defaultFont, preview);
+  const marked = showBadges && expanded.hasMissing ? expandTemplate(template, data, true, 'mark') : undefined;
+  const printedText = runs.map(run => run.text).join('');
+  const markedRuns = marked && marked.text.length <= MAX_LAYOUT_TEXT_CHARS ? parseRuns(marked, true) : undefined;
+  // A badge can make surrounding literal punctuation look like formatting syntax.
+  const artworkRuns = markedRuns?.filter(run => !run.missing).map(run => run.text).join('') === printedText ? markedRuns : runs;
+  let artwork = layout;
+  if (artworkRuns !== runs || element.h !== outputBox.h) {
+    const drawingBox = { ...element, fontSizeMm: layout.size, fitToWidth: false };
+    artwork = layoutRuns(artworkRuns, drawingBox, defaultFont, true);
+    // Keep real content visible when there is no room for a preview-only badge.
+    if (artworkRuns !== runs && artwork.error && !layout.error) {
+      artwork = element.h === outputBox.h ? layout : layoutRuns(runs, drawingBox, defaultFont, true);
+    }
+  }
+  const height = artwork.height;
   const top = element.y + (element.verticalAlign === 'middle' ? (element.h - height) / 2 : element.verticalAlign === 'bottom' ? element.h - height : 0);
   const parts = [];
+  const missingBadges = [];
   let lineTop = top;
-  layout.runs.forEach((line, index) => {
-    const { width, height: rowHeight, ascent } = layout.metrics[index];
+  artwork.runs.forEach((line, index) => {
+    const { width, height: rowHeight, ascent } = artwork.metrics[index];
     const x = element.x + (element.align === 'center' ? (element.w - width) / 2 : element.align === 'right' ? element.w - width : 0);
     const y = lineTop + ascent;
     let offset = 0;
@@ -201,7 +273,15 @@ function textSvg(element, data, fonts) {
         offset += 0.6;
       }
       const em = layout.size * (style.factor ?? 1), advanceWidth = runWidth(segment, layout.size);
-      if (segment.swatch) {
+      if (segment.missing) {
+        const left = x + offset, top = lineTop + (rowHeight - em) / 2;
+        const glyph = segment.font.layout('?');
+        const scale = em / segment.font.unitsPerEm;
+        const glyphX = left + (em - glyph.advanceWidth * scale) / 2;
+        const glyphY = top + (em + (glyph.bbox.maxY + glyph.bbox.minY) * scale) / 2;
+        parts.push(`<rect x="${left}" y="${top}" width="${em}" height="${em}" rx="${em * 0.28}" fill="#facc15" fill-opacity="0.36"/><path d="${glyph.glyphs[0].path.toSVG()}" fill="#29210a" transform="translate(${glyphX} ${glyphY}) scale(${scale} ${-scale})"/>`);
+        missingBadges.push({ start: segment.missing.start, x: left - element.x, y: top - element.y, size: em });
+      } else if (segment.swatch) {
         const gap = measure('0', segment.font, em) * 0.2;
         parts.push(bandsSvg(x + offset + gap, y - 0.82 * em, advanceWidth - 2 * gap, 0.82 * em, segment.swatch.colors, segment.swatch.mode, em * 0.14, 0.265));
       } else if (segment.symbol) {
@@ -217,7 +297,7 @@ function textSvg(element, data, fonts) {
         }).join('');
         parts.push(`<g fill="${escapeHtml(style.color ?? '#000000')}" transform="translate(${x + offset} ${y}) scale(${scale} ${-scale})${style.italic ? ' skewX(14)' : ''}">${paths}</g>`);
       }
-      if (style.underline && !segment.swatch) {
+      if (style.underline && !segment.swatch && !segment.missing) {
         const scale = em / segment.font.unitsPerEm, underlineY = y - segment.font.underlinePosition * scale;
         parts.push(`<path d="M${x + offset} ${underlineY}h${advanceWidth}" stroke="${escapeHtml(style.color)}" stroke-width="${Math.max(0.05, segment.font.underlineThickness * scale)}"/>`);
       }
@@ -228,7 +308,9 @@ function textSvg(element, data, fonts) {
   });
   const metrics = { ...layout };
   delete metrics.runs;
-  return { svg: parts.join(''), layout: { id: element.id, x: element.x, y: element.y, ...metrics, text: runs.map(run => run.text).join('') } };
+  const svg = parts.join('');
+  return { hasMissing: expanded.hasMissing, svg: layout.error || artwork.error ? `<svg x="${element.x}" y="${element.y}" width="${element.w}" height="${element.h}" viewBox="${element.x} ${element.y} ${element.w} ${element.h}" overflow="hidden">${svg}</svg>` : svg,
+    layout: { id: element.id, x: element.x, y: element.y, ...metrics, text: printedText, ...(missingBadges.length ? { missingBadges } : {}) } };
 }
 
 function bandsSvg(x, y, w, h, colors, mode = 'bands', radius = 0, stroke = 0) {
@@ -238,9 +320,30 @@ function bandsSvg(x, y, w, h, colors, mode = 'bands', radius = 0, stroke = 0) {
   return `<defs><linearGradient id="${id}" x2="${mode === 'layers' ? '0%' : '100%'}" y2="${mode === 'layers' ? '100%' : '0%'}">${stops}</linearGradient></defs><rect x="${x + stroke / 2}" y="${y + stroke / 2}" width="${Math.max(0, w - stroke)}" height="${Math.max(0, h - stroke)}" rx="${radius}" fill="url(#${id})" stroke="#000" stroke-opacity="0.35" stroke-width="${stroke}"/>`;
 }
 
-function imageSvg(element, asset) {
+/**
+ * @param {import('./types').SvgInput['preset']['design']['elements']} elements
+ * @param {import('./types').SvgInput['assets']} assets
+ */
+export function countArtworkUses(elements, assets, thermal = false) {
+  const uses = new Map();
+  for (const element of elements) {
+    const asset = element.type === 'image' ? assets[element.assetId]
+      : element.type === 'manufacturerLogo' ? assets.logo
+        : !thermal && element.type === 'qr' && element.mode === 'colorLogo' ? assets.qrLogo : undefined;
+    if (asset) uses.set(asset, (uses.get(asset) ?? 0) + 1);
+  }
+  return uses;
+}
+
+function embeddedImageSvg(asset, id) {
   if (!asset || !/^data:image\/(png|jpeg);base64,[a-zA-Z0-9+/=]+$/.test(asset.dataUrl) || asset.dataUrl.length > Math.ceil(5 * 1024 * 1024 / 3) * 4 + 32
     || ![asset.width, asset.height].every(value => Number.isFinite(value) && value > 0)) throw new Error('Missing or unsupported embedded raster image');
+  return `<image${id ? ` id="${id}"` : ''} width="${asset.width}" height="${asset.height}" href="${asset.dataUrl}"/>`;
+}
+
+function imageSvg(element, asset, imageRefs) {
+  const id = imageRefs.get(asset);
+  const image = id ? `<use href="#${id}"/>` : embeddedImageSvg(asset);
   const crop = element.crop ?? { x: 0, y: 0, w: 1, h: 1 };
   if (![crop.x, crop.y, crop.w, crop.h].every(Number.isFinite) || crop.x < 0 || crop.y < 0 || crop.w <= 0 || crop.h <= 0 || crop.x + crop.w > 1 || crop.y + crop.h > 1) throw new Error('Invalid image crop');
   let { x, y, w, h } = element;
@@ -255,12 +358,20 @@ function imageSvg(element, asset) {
   const drawnW = crop.w * asset.width * scale, drawnH = crop.h * asset.height * scale;
   x += element.align === 'left' ? 0 : element.align === 'right' ? w - drawnW : (w - drawnW) / 2;
   y += (h - drawnH) / 2;
-  return `<svg x="${x}" y="${y}" width="${drawnW}" height="${drawnH}" viewBox="${crop.x * asset.width} ${crop.y * asset.height} ${crop.w * asset.width} ${crop.h * asset.height}" overflow="hidden"><image width="${asset.width}" height="${asset.height}" href="${asset.dataUrl}"/></svg>`;
+  return `<svg x="${x}" y="${y}" width="${drawnW}" height="${drawnH}" viewBox="${crop.x * asset.width} ${crop.y * asset.height} ${crop.w * asset.width} ${crop.h * asset.height}" overflow="hidden">${image}</svg>`;
 }
 
-function qrSvg(element, url, sx, sy, thermal, assets, fonts) {
+const qrMatrices = new Map();
+
+function qrSvg(element, url, sx, sy, thermal, assets, fonts, imageRefs) {
   const level = thermal ? 'M' : 'H';
-  const matrix = QRCode.create(url, { errorCorrectionLevel: level }).modules;
+  const key = `${level}:${url}`;
+  let matrix = qrMatrices.get(key);
+  if (!matrix) {
+    matrix = QRCode.create(url, { errorCorrectionLevel: level }).modules;
+    if (qrMatrices.size === 8) qrMatrices.delete(qrMatrices.keys().next().value);
+    qrMatrices.set(key, matrix);
+  }
   if (!thermal) {
     const step = element.w / matrix.size, quiet = 4 * step;
     const parts = [`<rect x="${element.x - quiet}" y="${element.y - quiet}" width="${element.w + 2 * quiet}" height="${element.w + 2 * quiet}" fill="#fff"/>`];
@@ -274,17 +385,18 @@ function qrSvg(element, url, sx, sy, thermal, assets, fonts) {
       if (logo) { h = Math.min(h, w * logo.height / logo.width); w = h * logo.width / logo.height; }
       const pad = element.w * (logo ? 0.014 : 0.045);
       parts.push(`<rect x="${cx - w / 2 - pad}" y="${cy - h / 2 - pad}" width="${w + 2 * pad}" height="${h + 2 * pad}" fill="#fff"/>`);
-      parts.push(logo ? imageSvg({ x: cx - w / 2, y: cy - h / 2, w, h }, logo)
+      parts.push(logo ? imageSvg({ x: cx - w / 2, y: cy - h / 2, w, h }, logo, imageRefs)
         : textSvg({ id: 'qr-brand', x: cx - w / 2, y: cy - h, w, h: h * 2, template: 'FilaMan', fontSizeMm: h,
           fontWeight: 700, align: 'center', verticalAlign: 'middle', fitToWidth: true, minFontSizeMm: h / 2 }, {}, fonts).svg);
     }
     return { svg: parts.join(''), dots: step * sx, modules: matrix.size, url, level, decorated: element.mode !== 'simple' };
   }
-  const dots = Math.floor(Math.min(Math.round(element.w * sx), Math.round(element.h * sy)) / (matrix.size + 8));
+  // Saved dimensions describe the code itself; its quiet zone extends outside, as in the editor.
+  const dots = Math.round(Math.min(element.w * sx, element.h * sy) / matrix.size);
   if (dots < 3) throw new Error(`QR has ${dots} dots per module; requires at least 3`);
   const edge = (matrix.size + 8) * dots;
-  const x = Math.round(element.x * sx) + Math.floor((Math.round(element.w * sx) - edge) / 2);
-  const y = Math.round(element.y * sy) + Math.floor((Math.round(element.h * sy) - edge) / 2);
+  const x = Math.round((element.x + element.w / 2) * sx - matrix.size * dots / 2) - 4 * dots;
+  const y = Math.round((element.y + element.h / 2) * sy - matrix.size * dots / 2) - 4 * dots;
   const modules = [];
   for (let row = 0; row < matrix.size; row++) for (let col = 0; col < matrix.size; col++) {
     if (matrix.get(row, col)) modules.push(`<rect x="${x + (col + 4) * dots}" y="${y + (row + 4) * dots}" width="${dots}" height="${dots}"/>`);
@@ -293,8 +405,9 @@ function qrSvg(element, url, sx, sy, thermal, assets, fonts) {
 }
 
 // Migrated rows carry flow hints. Keep their saved coordinates untouched.
-function flowElements(source, data, assets, fonts) {
+function flowElements(source, data, assets, fonts, preview, reserveMissingTitle = false) {
   const elements = structuredClone(source), hidden = new Set();
+  let hasMissingTitle = false;
   const shiftAfter = (index, shift) => elements.forEach((next, i) => {
     if (i === index || source[i].y <= source[index].y) return;
     next.y -= shift * (next.type === 'qr' && next.legacyVAlign === 'bottom' ? 0 : next.type === 'qr' && next.legacyVAlign === 'center' ? 0.5 : 1);
@@ -308,51 +421,85 @@ function flowElements(source, data, assets, fonts) {
   }
   elements.forEach((element, index) => {
     if (element.type !== 'text' || element.legacyTextRole !== 'title') return;
-    const { layout } = textSvg(element, data, fonts);
+    const { layout, hasMissing } = textSvg(element, data, fonts, preview, false);
     const empty = !layout.text.trim();
     const below = element.legacyDividerBelow && elements[index + 1]?.type === 'shape' ? index + 1 : -1;
     const shift = empty ? element.h + 2 * (element.legacyTitleMarginMm ?? 0) + (below >= 0 ? elements[below].h : 0)
       : !element.wrap ? element.h - layout.height : 0;
-    if (empty) { hidden.add(index); if (below >= 0) hidden.add(below); }
+    if (empty) {
+      if (hasMissing) {
+        hasMissingTitle = true;
+        if (reserveMissingTitle) return;
+      }
+      hidden.add(index);
+      if (below >= 0) hidden.add(below);
+    }
     else if (!element.wrap) element.h = layout.height;
     shiftAfter(index, shift);
   });
-  return { elements: elements.filter((_e, i) => !hidden.has(i)),
+  return { hasMissingTitle, elements: elements.filter((_e, i) => !hidden.has(i)),
     boxes: elements.map(({ id, x, y, w, h }, i) => ({ id, x, y, w, h, hidden: hidden.has(i) })) };
 }
 
 /** Same V2 preset, same fonts, same code; no DOM or browser text measurement. */
-export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal = true, entityPath = 'spools', pixelWidth = undefined, pixelHeight = undefined } = {}) {
+export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal = true, entityPath = 'spools', pixelWidth = undefined, pixelHeight = undefined, preview = false } = {}) {
   if (preset?.version !== 2 || preset.design?.version !== 2 || !Array.isArray(preset.design.elements) || preset.design.elements.length > 100) throw new Error('Expected a V2 preset');
   const { label, elements } = preset.design;
   if (![label.widthMm, label.heightMm].every(v => Number.isFinite(v) && v > 0)) throw new Error('Invalid label dimensions');
   const width = pixelWidth ?? Math.round(label.widthMm * dpi / 25.4), height = pixelHeight ?? Math.round(label.heightMm * dpi / 25.4);
   if (![width, height].every(v => Number.isInteger(v) && v > 0) || width * height > 8000000) throw new Error('Invalid pixel dimensions or pixel budget exceeded');
   const sx = width / label.widthMm, sy = height / label.heightMm;
-  const parts = [], text = [], qrs = [];
-  const flowed = flowElements(elements, data, assets, fonts);
+  const parts = [], text = [], qrs = [], qrBounds = [];
+  const outputFlow = flowElements(elements, data, assets, fonts, preview);
+  // Give an empty migrated title room for its badge, but validate the printable geometry.
+  const reserved = outputFlow.hasMissingTitle ? flowElements(elements, data, assets, fonts, preview, true) : undefined;
+  // shortcut: skip the collapsed title's badge if retaining its row leaves no room for another box.
+  const flowed = reserved?.elements.every(element => element.h > 0) ? reserved : outputFlow;
+  const outputBoxes = flowed === outputFlow ? undefined : new Map(outputFlow.elements.map(element => [element.id, element]));
   const sorted = flowed.elements.sort((a, b) => Number(a.type === 'qr') - Number(b.type === 'qr') || (a.z ?? 0) - (b.z ?? 0));
+  const imageRefs = new Map();
+  const imageDefinitions = [];
+  for (const [asset, count] of countArtworkUses(sorted, assets, thermal)) {
+    if (count < 2) continue;
+    const id = `label-image-${imageRefs.size}`;
+    imageDefinitions.push(embeddedImageSvg(asset, id));
+    imageRefs.set(asset, id);
+  }
   for (const element of sorted) {
+    const outputBox = outputBoxes?.get(element.id) ?? element;
     const zeroArea = element.w === 0 || element.h === 0;
     const legacyInfo = element.type === 'text' && element.legacyTextRole === 'info';
     if (![element.x, element.y, element.w, element.h].every(Number.isFinite) || element.w < 0 || element.h < 0 || zeroArea && !legacyInfo) throw new Error(`Invalid geometry for element ${element.id}`);
     // Parse formatting before deciding whether a migrated zero-area column is empty.
     if (element.type === 'text') {
-      const result = textSvg(element, data, fonts);
+      const result = textSvg(element, data, fonts, preview, preview, outputBox);
       if (zeroArea && result.layout.text.trim()) throw new Error(`Invalid geometry for element ${element.id}`);
-      parts.push(result.svg); text.push(result.layout);
+      parts.push(result.svg);
+      text.push(result.layout);
     } else if (element.type === 'image' || element.type === 'manufacturerLogo') {
       if (element.type === 'manufacturerLogo' && !assets.logo) continue;
-      parts.push(imageSvg(element, assets[element.type === 'image' ? element.assetId : 'logo']));
+      parts.push(imageSvg(element, assets[element.type === 'image' ? element.assetId : 'logo'], imageRefs));
     } else if (element.type === 'qr') {
       let base = new URL(baseUrl).origin;
       try { const custom = new URL(element.urlTemplate); if (element.linkMode === 'url' && ['http:', 'https:'].includes(custom.protocol)) base = custom.href; } catch { /* Same origin fallback as the editor. */ }
       const url = buildQrUrl('url', base, entityPath === 'filaments' ? data['filament.id'] ?? data.id : data.id, entityPath);
-      const result = qrSvg(element, url, sx, sy, thermal, assets, fonts);
-      if (thermal && (result.x < 0 || result.y < 0 || result.x + result.edge > width || result.y + result.edge > height)) {
+      const result = qrSvg(element, url, sx, sy, thermal, assets, fonts, imageRefs);
+      const printed = thermal && outputBox !== element ? qrSvg(outputBox, url, sx, sy, thermal, assets, fonts, imageRefs) : result;
+      if (thermal && (printed.x + 4 * printed.dots < 0 || printed.y + 4 * printed.dots < 0
+        || printed.x + printed.edge - 4 * printed.dots > width || printed.y + printed.edge - 4 * printed.dots > height)) {
         throw new Error('Thermal QR box must fit inside the label');
       }
-      parts.push(result.svg); qrs.push({ id: element.id, ...result, svg: undefined });
+      parts.push(result.svg); qrs.push({ id: element.id, ...result, svg: undefined, error: /** @type {string | undefined} */ (undefined) });
+      const code = thermal
+        ? { x: (printed.x + 4 * printed.dots) / sx, y: (printed.y + 4 * printed.dots) / sy,
+          w: printed.modules * printed.dots / sx, h: printed.modules * printed.dots / sy }
+        : { x: outputBox.x, y: outputBox.y, w: outputBox.w, h: outputBox.w };
+      const quietX = thermal ? 4 * printed.dots / sx : 4 * outputBox.w / printed.modules;
+      const quietY = thermal ? 4 * printed.dots / sy : quietX;
+      const clearance = { x: code.x - quietX, y: code.y - quietY,
+        w: code.w + 2 * quietX, h: code.h + 2 * quietY };
+      // Check the two white rectangles actually painted in thermal output.
+      qrBounds.push({ code, clearances: thermal ? [clearance, outputBox] : [clearance] });
     } else if (element.type === 'swatch') {
       parts.push(bandsSvg(element.x, element.y, element.w, element.h, getFilamentSwatchColors(data['filament.color_hexes'], data['filament.color_hex']), getFilamentSwatchMode(data['filament.multi_color_style']), element.radiusMm ?? 0, 0.12));
     } else if (element.type === 'shape' && ['rectangle', 'square', 'circle', 'line'].includes(element.shape)) {
@@ -370,11 +517,24 @@ export function renderLabel(preset, data, assets, fonts, dpi, baseUrl, { thermal
       else parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.max(0, radius - stroke / 2)}" ${style}/>`);
     } else throw new Error(`Unsupported label element: ${element.type}`);
   }
+  // Converting aligned printer dots to millimeters can introduce roundoff at touching edges.
+  const tolerance = 1e-9;
+  const overlaps = (a, b) => a.x + tolerance < b.x + b.w && a.x + a.w > b.x + tolerance
+    && a.y + tolerance < b.y + b.h && a.y + a.h > b.y + tolerance;
+  for (let i = 0; i < qrs.length; i++) for (let j = i + 1; j < qrs.length; j++) {
+    const first = qrBounds[i], second = qrBounds[j];
+    if (!first.clearances.some(box => overlaps(box, second.code))
+      && !second.clearances.some(box => overlaps(box, first.code))) continue;
+    const error = `QR codes ${qrs[i].id} and ${qrs[j].id} overlap their clearances. Move QR codes farther apart.`;
+    if (!preview) throw new Error(error);
+    qrs[i].error = qrs[j].error = error;
+  }
   if (label.border) {
     const margin = label.marginMm ?? 0;
     parts.unshift(`<rect x="${margin + 0.15}" y="${margin + 0.15}" width="${label.widthMm - 2 * margin - 0.3}" height="${label.heightMm - 2 * margin - 0.3}" fill="none" stroke="#000" stroke-width="0.3"/>`);
   }
-  return { width, height, text, qrs, boxes: flowed.boxes, svg: `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${label.widthMm} ${label.heightMm}" preserveAspectRatio="none"><rect width="100%" height="100%" fill="#fff"/>${parts.join('')}</svg>` };
+  const defs = imageDefinitions.length ? `<defs>${imageDefinitions.join('')}</defs>` : '';
+  return { width, height, text, qrs, boxes: flowed.boxes, svg: `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="0 0 ${label.widthMm} ${label.heightMm}" preserveAspectRatio="none">${defs}<rect width="100%" height="100%" fill="#fff"/>${parts.join('')}</svg>` };
 }
 
 /** @template T
@@ -411,13 +571,18 @@ export function rasterize(svg, threshold = 200) {
 }
 
 /** @param {import('./types').SvgInput} input */
+export function renderSvgLabelLayout(input, runtime) {
+  return renderLabel(input.preset, input.data, input.assets, runtime.fonts, undefined, input.origin, input);
+}
+
+/** @param {import('./types').SvgInput} input */
 export function renderSvgLabelPng(input, runtime) {
-  const result = renderLabel(input.preset, input.data, input.assets, runtime.fonts, undefined, input.origin, input);
+  const result = renderSvgLabelLayout(input, runtime);
   return { ...result, png: rasterizePng(result.svg) };
 }
 
 /** @param {import('./types').SvgInput} input */
 export function renderSvgLabel(input, runtime, threshold = 200) {
-  const result = renderLabel(input.preset, input.data, input.assets, runtime.fonts, undefined, input.origin, input);
+  const result = renderSvgLabelLayout(input, runtime);
   return { ...result, ...rasterize(result.svg, threshold) };
 }

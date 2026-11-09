@@ -115,6 +115,7 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
   const activateToken = (token: HTMLElement) => {
     const node = selectedNode()
     if (!node?.contains(token)) return false
+    node.focus({ preventScroll: true })
     canvasRange = { start: Number(token.dataset.templateStart), end: Number(token.dataset.templateEnd) }
     options.setTemplateRange?.(canvasRange)
     activeTokenIndex = [...node.querySelectorAll('[data-template-atomic]')].indexOf(token)
@@ -152,7 +153,7 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
       const editing = node.dataset.labelElementId === editingId
       node.toggleAttribute('data-label-text-editing', editing)
       if (!editing) node.removeAttribute('data-label-composing')
-      if (node.hasAttribute('data-label-svg-target')) {
+      if (node.hasAttribute('data-label-svg-target') && node.dataset.labelElementType === 'text') {
         const content = node.firstElementChild as HTMLElement | null
         if (content) content.style.visibility = editing ? 'visible' : 'hidden'
         node.style.background = editing ? 'white' : 'transparent'
@@ -166,14 +167,15 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
         const active = chip && index === activeTokenIndex
         token.toggleAttribute('data-template-token-active', active)
         if (chip) {
-          token.contentEditable = 'false'; token.draggable = false; token.title = source
+          token.contentEditable = 'false'; token.draggable = false
           if (active) {
-            const field = [...options.root.querySelectorAll<HTMLElement>('[data-field-token]')]
-              .find(candidate => candidate.dataset.fieldToken === source)
+            const fields = [...options.root.querySelectorAll<HTMLElement>('[data-field-token]')]
+            const field = fields.find(candidate => candidate.dataset.fieldToken === source)
+              ?? (source.endsWith('|unit}') ? fields.find(candidate => candidate.dataset.fieldToken === source.slice(0, -6) + '}') : undefined)
             field?.setAttribute('data-field-token-active', '')
             const group = field?.closest<HTMLElement>('[data-field-group]')?.dataset.fieldGroup
             const tab = group && options.root.querySelector<HTMLButtonElement>(`[data-field-group-tab="${group}"]`)
-            if (tab && tab.getAttribute('aria-selected') !== 'true') tab.click()
+            if (tab && tab.getAttribute('aria-selected') !== 'true' && !field?.closest('#freeform-field-dock[data-searching]')) tab.click()
             const caption = document.createElement('span')
             caption.dataset.templateTokenCaption = ''
             caption.dataset.labelEditorChrome = ''
@@ -183,9 +185,11 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
             captionTokens.push({ token, caption })
           }
         }
-        else { token.removeAttribute('contenteditable'); token.removeAttribute('draggable'); token.removeAttribute('title') }
+        else { token.removeAttribute('contenteditable'); token.removeAttribute('draggable') }
       }
-      if (editing && canvasRange && activeTokenIndex === null && !pendingEdit && !compositionRange && !node.contains(document.getSelection()?.anchorNode ?? null)) {
+      const focused = document.activeElement
+      if (editing && (focused === document.body || node.contains(focused)) && canvasRange && activeTokenIndex === null
+        && !pendingEdit && !compositionRange && !node.contains(document.getSelection()?.anchorNode ?? null)) {
         restoreTemplateSelection(node, canvasRange)
       }
     }
@@ -335,12 +339,17 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     options.updateTemplate(result.template, result)
     const revision = ++editRevision
     pendingEdit = revision
+    const focusedBeforeRefresh = document.activeElement
     void options.refresh().then(() => {
       if (destroyed || revision !== pendingEdit || selected.id !== editingId) return
       pendingEdit = 0
       sync()
       const node = selectedNode()
-      if (node) { node.focus({ preventScroll: true }); restoreTemplateSelection(node, result) }
+      const focused = document.activeElement
+      if (node && (focused === focusedBeforeRefresh || focused === document.body || focused === node)) {
+        node.focus({ preventScroll: true })
+        restoreTemplateSelection(node, result)
+      }
     })
   }
 
@@ -398,8 +407,16 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     if (range) edit(event.data, range)
   })
   listen<MouseEvent>(canvas, 'click', event => {
-    if (!editingId || event.shiftKey) return
-    const token = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-template-token-chip]') : null
+    if (event.shiftKey || !(event.target instanceof Element)) return
+    const badge = event.target.closest<HTMLElement>('[data-preview-badge]')
+    const badgeBox = badge?.closest<HTMLElement>('[data-label-element-id]')?.dataset.labelElementId
+    if (badge && badgeBox && editingId !== badgeBox) {
+      startSelecting(badgeBox)
+      if (editingId === badgeBox) activateToken(badge)
+      return
+    }
+    if (!editingId) return
+    const token = event.target.closest<HTMLElement>('[data-template-token-chip]')
     if (!token || !activateToken(token)) clearActiveToken()
   })
   const copy = (event: ClipboardEvent) => {
@@ -428,7 +445,8 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     const node = event.target.closest<HTMLElement>('[data-label-element-type="text"]')
     if (node && event.target.closest('[data-template-atomic]')) event.preventDefault()
     if (node?.dataset.labelElementId && editingId !== node.dataset.labelElementId) {
-      startSelecting(node.dataset.labelElementId)
+      // Keep the resting badge under the pointer until click commits selection.
+      if (!event.target.closest('[data-preview-badge]')) startSelecting(node.dataset.labelElementId)
       event.stopPropagation()
     }
   }
@@ -493,14 +511,21 @@ export function bindCanvasTextEditor(options: CanvasTextEditorOptions) {
     },
     format,
     formatFont,
-    insertField(token: string): boolean {
+    insertField(token: string, range?: TemplateSourceRange): boolean {
       if (!editingId || !options.isEditable()) return false
-      edit(token)
+      edit(token, range)
       return true
     },
     handleKeydown(event: KeyboardEvent): boolean {
       if (!editingId) return false
       if ((event.metaKey || event.ctrlKey) && ['z', 'y'].includes(event.key.toLowerCase())) return false
+      if (activeTokenIndex !== null && canvasRange && !event.isComposing && !compositionRange
+        && (event.key === 'Delete' || event.key === 'Backspace')) {
+        // Token highlighting clears the native selection, so a delete input event may never fire.
+        event.preventDefault()
+        edit('', canvasRange)
+        return true
+      }
       const horizontalArrow = ['ArrowLeft', 'ArrowRight'].includes(event.key)
         && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
       if (activeTokenIndex !== null && horizontalArrow) {

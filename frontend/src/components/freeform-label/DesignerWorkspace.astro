@@ -67,6 +67,7 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
           <slot />
         </div>
         <ElementInspector />
+        <output id="freeform-current-label-size" class="freeform-current-label-size" aria-label="Current label size" data-i18n-aria-label="labelDesigner.currentLabelSize"></output>
         <FieldDock />
       </div>
      </div>
@@ -130,12 +131,15 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
   .freeform-canvas-row :global(.freeform-text-toolbar) { align-self: center; grid-column: 1 / -1; grid-row: 1; justify-self: center; max-width: 100%; min-width: 0; width: max-content; }
   .freeform-canvas-row .freeform-canvas-host, .freeform-canvas-row :global(.freeform-element-inspector) { grid-row: 2; }
   .freeform-canvas-row .freeform-canvas-host { grid-column: 2; justify-self: safe center; }
+  .freeform-current-label-size { color: var(--text-muted); font-size: 0.75rem; grid-column: 1; grid-row: 2; justify-self: end; margin-inline-end: 8px; text-align: end; }
+  .freeform-designer-workspace:not(.is-active) .freeform-current-label-size { display: none; }
   .freeform-canvas-row :global(.freeform-element-inspector) { grid-column: 3; justify-self: start; margin-left: 8px; }
   .freeform-canvas-row :global(.freeform-field-dock) { grid-column: 1 / -1; grid-row: 3; justify-self: center; }
   .freeform-canvas-row.is-geometry-below { grid-template-columns: minmax(0, 1fr); justify-items: center; }
-  .freeform-canvas-row.is-geometry-below .freeform-canvas-host { grid-column: 1; }
-  .freeform-canvas-row.is-geometry-below :global(.freeform-element-inspector) { grid-column: 1; grid-row: 3; justify-self: center; margin-left: 0; }
-  .freeform-canvas-row.is-geometry-below :global(.freeform-field-dock) { grid-column: 1; grid-row: 4; }
+  .freeform-canvas-row.is-geometry-below .freeform-current-label-size { justify-self: center; margin: 0 0 6px; text-align: center; }
+  .freeform-canvas-row.is-geometry-below .freeform-canvas-host { grid-column: 1; grid-row: 3; }
+  .freeform-canvas-row.is-geometry-below :global(.freeform-element-inspector) { grid-column: 1; grid-row: 4; justify-self: center; margin-left: 0; }
+  .freeform-canvas-row.is-geometry-below :global(.freeform-field-dock) { grid-column: 1; grid-row: 5; }
   .freeform-designer-workspace.is-active :global(.is-designer-output-only) { left: -100000px; pointer-events: none; position: fixed; top: 0; }
   .freeform-canvas-host { display: block; flex: none; outline: none; position: relative; }
   .freeform-canvas-host:focus-visible, .freeform-canvas-host :global([data-label-element-id]:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
@@ -161,8 +165,12 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
   .freeform-canvas-host :global([data-label-line-end='left']::after) { left: calc(100% - var(--line-endpoint-inset)); }
   .freeform-canvas-host :global([data-label-line-end='right']::after) { left: var(--line-endpoint-inset); }
   .freeform-canvas-host :global([data-label-text-editing]), .freeform-canvas-host :global([data-label-text-editing] *) { cursor: text !important; user-select: text; -webkit-user-select: text; }
-  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-chip]) { border-radius: 0.15em; outline: 1px solid #94a3b866; background-color: #cbd5e133; cursor: default !important; user-select: all; -webkit-user-select: all; }
-  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-active]) { background-color: color-mix(in srgb, var(--accent) 24%, transparent); outline-color: color-mix(in srgb, var(--accent) 60%, #94a3b8); }
+  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-chip]) { border-radius: 0.15em; outline: 1px solid #94a3b866; cursor: default !important; user-select: all; -webkit-user-select: all; }
+  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-chip]:not([data-template-missing])) { background-color: #cbd5e133; }
+  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-active]:not([data-template-missing])) { background-color: color-mix(in srgb, var(--accent) 24%, transparent); }
+  .freeform-canvas-host :global([data-label-text-editing] [data-template-token-active]) { outline-color: color-mix(in srgb, var(--accent) 60%, #94a3b8); }
+  :global([data-template-missing]), :global([data-field-missing-preview]) { background: rgb(250 204 21 / 0.36); border-radius: 0.28em; color: #29210a; display: inline-grid; font-style: normal; font-weight: 700; inline-size: 1em; line-height: 1; min-block-size: 1em; place-items: center; }
+  .freeform-canvas-host :global([data-label-svg-target]:not([data-label-text-editing]) [data-preview-badge]) { position: absolute; left: var(--badge-left); top: var(--badge-top); width: var(--badge-size); min-height: 0; height: var(--badge-size); opacity: 0; visibility: visible; }
   .freeform-canvas-host :global([data-template-token-caption]) { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 2px; color: #475569; font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 400; line-height: 1; max-width: 100%; overflow: hidden; padding: 1px 2px; pointer-events: none; position: absolute; text-overflow: ellipsis; white-space: nowrap; width: max-content; z-index: 3; }
   .freeform-designer-workspace:not(.is-active) :global(.freeform-text-toolbar), .freeform-designer-workspace[data-editor-editable='false'] :global(.freeform-text-toolbar) { display: none; }
   .freeform-mobile-notice { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); display: none; font-size: 0.78rem; margin-bottom: 12px; padding: 8px 10px; }
@@ -176,7 +184,8 @@ const arrangeTools: Array<{ action: string; icon: DesignerIconName; label: strin
   .freeform-designer-workspace[data-editor-editable='false'] :global(.freeform-element-inspector),
   .freeform-designer-workspace[data-editor-editable='false'] :global(.freeform-field-dock) { display: none; }
   .freeform-designer-workspace[data-editor-editable='false'] .freeform-canvas-region { display: block; padding: 12px; position: static; }
-  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-canvas-row { display: flex; justify-content: safe center; }
+  .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-canvas-row { align-items: safe center; display: flex; flex-direction: column; }
+  .freeform-designer-workspace[data-editor-editable='false'] .freeform-current-label-size { margin: 0 0 6px; order: -1; }
   .freeform-designer-workspace.is-active[data-editor-editable='false'] .freeform-mobile-notice:not([hidden]) { display: block; }
   @media (prefers-reduced-motion: reduce) { .freeform-designer-workspace.is-active .freeform-canvas-stage { transition: none; } }
 </style>

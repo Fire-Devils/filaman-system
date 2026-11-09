@@ -481,20 +481,21 @@ export function createFreeformEditorController(
       if (!destroyed) gestureActive = true
     },
     updateGesture(elementId: string, changes: Partial<LabelDesignElement>) {
-      if (destroyed) return
+      if (destroyed) return false
       const index = design.elements.findIndex(element => element.id === elementId)
-      if (index < 0) return
+      if (index < 0) return false
       const current = design.elements[index]
       const logoSizeChanges = current.type === 'manufacturerLogo'
         && (changes.w !== undefined && changes.w !== current.w || changes.h !== undefined && changes.h !== current.h)
         ? { manualSizeMm: undefined } : {}
       const next = normalizeElement({ ...current, ...changes, ...logoSizeChanges, id: current.id, type: current.type }, design.label, current.z)
-      if (!next || referencesDeletingAsset([next]) || Object.entries(next).every(([key, value]) => current[key as keyof LabelDesignElement] === value)) return
+      if (!next || referencesDeletingAsset([next]) || Object.entries(next).every(([key, value]) => current[key as keyof LabelDesignElement] === value)) return false
       gestureActive = true
       const elements = [...design.elements]
       elements[index] = next
       design = { ...design, elements }
       gestureChanged = true
+      return true
     },
     endGesture,
     undo: () => changeHistory('undo'),

@@ -15,7 +15,7 @@ function editor(source: string, delayed = false) {
   document.body.innerHTML = '<div id="freeform-canvas-host"><div data-label-element-id="text" data-label-element-type="text"></div></div><div id="freeform-text-toolbar"><select data-element-prop="fontFamily"><option>Space Grotesk</option></select><button data-text-modifier="bold">B</button><button data-text-modifier="underline">U</button></div>'
   selected.id = 'text'
   const node = document.querySelector<HTMLElement>('[data-label-element-id]')!
-  const render = () => { node.replaceChildren(renderSelectableTemplate(selected.template, { 'filament.color': 'Ocean Blue', 'filament.name': 'PLA Galaxy Black' } as SpoolData)) }
+  const render = () => { node.replaceChildren(renderSelectableTemplate(selected.template, { 'filament.color': 'Ocean Blue', 'filament.name': 'PLA Galaxy Black', 'filament.extruder_temp_range_c': '220-260' } as SpoolData)) }
   render()
   let range = { start: 0, end: 0 }
   const refreshes: Array<() => void> = []
@@ -51,6 +51,21 @@ function editor(source: string, delayed = false) {
 }
 
 describe('canvas text editing', () => {
+  it('keeps QR repair warnings visible when syncing text editing overlays', () => {
+    const e = editor('Hi')
+    const qr = document.createElement('div')
+    qr.dataset.labelElementId = 'qr'
+    qr.dataset.labelElementType = 'qr'
+    qr.dataset.labelSvgTarget = ''
+    const warning = document.createElement('span')
+    warning.setAttribute('role', 'alert')
+    warning.textContent = 'Move QR codes farther apart'
+    qr.append(warning)
+    document.querySelector('#freeform-canvas-host')!.append(qr)
+    e.binding.sync()
+    expect(getComputedStyle(warning).visibility).not.toBe('hidden')
+  })
+
   it('clears the composition guard when leaving the temporary editing surface', () => {
     const e = editor('Hi')
     e.node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
@@ -83,7 +98,7 @@ describe('canvas text editing', () => {
     const e = editor('Hi {filament.color}')
     expect(e.node.contentEditable).toBe('true')
     const chip = e.node.querySelector<HTMLElement>('[data-template-token-chip]')!
-    expect(chip.title).toBe('{filament.color}')
+    expect(chip.hasAttribute('title')).toBe(false)
     expect(e.node.querySelector<HTMLElement>('[data-template-atomic]')!.contentEditable).toBe('false')
     e.select(e.node.firstChild!.firstChild!, 1)
     e.input('insertText', 'ey')
@@ -126,14 +141,14 @@ describe('canvas text editing', () => {
     expect(output.querySelector('[data-template-token-active]')).toBeNull()
   })
 
-  it('keeps the matching field selector visible and highlighted with the active token', () => {
-    const e = editor('Hi {filament.color}')
+  it.each(['', '|unit'])('highlights the matching field chip for a token with modifier %s', modifier => {
+    const e = editor('Hi {filament.extruder_temp_range_c' + modifier + '}')
     const selector = document.createElement('div')
     selector.innerHTML = `
       <button data-field-group-tab="spool" aria-selected="true">Spool</button>
       <button data-field-group-tab="filament" aria-selected="false">Filament</button>
       <div data-field-group="spool"><button data-field-token="{spool.id}">ID</button></div>
-      <div data-field-group="filament" hidden><button data-field-token="{filament.color}">Color</button></div>`
+      <div data-field-group="filament" hidden><button data-field-token="{filament.extruder_temp_range_c}">Extruder temperature</button></div>`
     document.body.append(selector)
     const tabs = [...selector.querySelectorAll<HTMLButtonElement>('[data-field-group-tab]')]
     tabs.forEach(tab => tab.addEventListener('click', () => {
@@ -144,7 +159,7 @@ describe('canvas text editing', () => {
     }))
 
     e.node.querySelector<HTMLElement>('[data-template-token-chip]')!.click()
-    const field = selector.querySelector<HTMLElement>('[data-field-token="{filament.color}"]')!
+    const field = selector.querySelector<HTMLElement>('[data-field-token="{filament.extruder_temp_range_c}"]')!
     expect(field.hasAttribute('data-field-token-active')).toBe(true)
     expect(selector.querySelector('[data-field-group="filament"]')?.hasAttribute('hidden')).toBe(false)
 
@@ -284,6 +299,16 @@ describe('canvas text editing', () => {
     expect(e.selected.template).toBe('Hi !')
   })
 
+  it.each(['Delete', 'Backspace'])('removes the entire clicked token on %s without a native deletion event', key => {
+    const e = editor('Hi {filament.extruder_temp_range_c|unit}!')
+    e.node.querySelector<HTMLElement>('[data-template-token-chip]')!.click()
+    expect(document.getSelection()?.rangeCount).toBe(0)
+    const event = new KeyboardEvent('keydown', { key, cancelable: true })
+    expect(e.binding.handleKeydown(event)).toBe(true)
+    expect(e.selected.template).toBe('Hi !')
+    expect(event.defaultPrevented).toBe(true)
+  })
+
   it.each([
     ['deleteWordBackward', 'Hello world', 11, 6, 11, 'Hello '],
     ['deleteWordForward', 'Hello world', 0, 0, 5, ' world'],
@@ -408,6 +433,17 @@ describe('canvas text editing', () => {
     expect(e.binding.insertField('{filament.color}')).toBe(true)
     await Promise.resolve()
     expect(e.selected.template).toBe('Hi {filament.color}there')
+  })
+
+  it('keeps the caret after the entire unit block for the next field insertion', async () => {
+    const e = editor('')
+    const token = '{filament.extruder_temp_range_c}'
+    e.binding.insertField(token)
+    await Promise.resolve()
+    e.binding.insertField('{filament.extruder_temp_range_c|unit}', { start: 0, end: token.length })
+    await Promise.resolve()
+    e.binding.insertField('{filament.name}')
+    expect(e.selected.template).toBe('{filament.extruder_temp_range_c|unit}{filament.name}')
   })
 
   it('preserves copied bold text when pasted inside existing bold text', async () => {

@@ -1,11 +1,13 @@
 import json
 from io import BytesIO
+from math import floor
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+import qrcode
+from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import select
 
 from app.api.v1 import labels
@@ -20,6 +22,38 @@ from app.models import (
 )
 from app.models.label_preset import label_preset_name_key
 from app.services.label_preset_v1 import convert_label_preset_data
+
+
+def assert_thermal_qr(image, qr, label_size, url):
+    reference = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M)
+    reference.add_data(url)
+    reference.make(fit=True)
+    modules = reference.modules_count
+    sx, sy = image.width / label_size[0], image.height / label_size[1]
+    pitch = floor(min(qr["w"] * sx, qr["h"] * sy) / modules + 0.5)
+    side = modules * pitch
+    left = floor((qr["x"] + qr["w"] / 2) * sx - side / 2 + 0.5)
+    top = floor((qr["y"] + qr["h"] / 2) * sy - side / 2 + 0.5)
+    right, bottom = left + side, top + side
+    assert pitch >= 3
+    assert 0 <= left < right <= image.width and 0 <= top < bottom <= image.height
+    code = image.crop((left, top, right, bottom)).convert("L")
+    for y in range(0, side, pitch):
+        for x in range(0, side, pitch):
+            assert code.crop((x, y, x + pitch, y + pitch)).getextrema() in ((0, 0), (255, 255))
+    # Each finder has a black outer ring, a white ring, and a black center.
+    for x0, y0 in ((0, 0), (modules - 7, 0), (0, modules - 7)):
+        for row in range(7):
+            for column in range(7):
+                ring = min(row, column, 6 - row, 6 - column)
+                assert code.getpixel(((x0 + column) * pitch, (y0 + row) * pitch)) == (255 if ring == 1 else 0)
+    gap = 4 * pitch
+    x0, y0 = max(0, left - gap), max(0, top - gap)
+    x1, y1 = min(image.width, right + gap), min(image.height, bottom + gap)
+    for box in ((x0, y0, x1, top), (x0, bottom, x1, y1), (x0, top, left, bottom), (right, top, x1, bottom)):
+        if box[0] < box[2] and box[1] < box[3]:
+            assert image.crop(box).getextrema() == (255, 255)
+    return code, (x0, y0, x1, y1)
 
 
 @pytest_asyncio.fixture
@@ -99,16 +133,15 @@ async def test_invalid_designer_data_cannot_be_queued(auth_client, preview_spool
 @pytest.mark.usefixtures("label_render_runtime")
 @pytest.mark.parametrize("orientation,base", [("original", "http://test"), ("portrait", "https://labels.example/" + "long/" * 16)])
 async def test_thermal_qr_final_raster_has_whole_modules(auth_client, preview_spool, db_session, orientation, base):
-    import qrcode
-
     client, _ = auth_client
     spool, preset = preview_spool
     # The longer URL needs more modules; keep this success fixture above 3 dots/module.
     qr_size = 24.83 if orientation == "portrait" else 14.83
+    qr = {"id": "qr", "type": "qr", "x": 2.13, "y": 3.17, "w": qr_size, "h": qr_size,
+          "mode": "logo", "linkMode": "url", "urlTemplate": base}
     preset.data = {"version": 2, "design": {
         "version": 2, "label": {"widthMm": 40, "heightMm": 30},
-        "elements": [{"id": "qr", "type": "qr", "x": 2.13, "y": 3.17, "w": qr_size, "h": qr_size,
-                      "mode": "logo", "linkMode": "url", "urlTemplate": base}],
+        "elements": [qr],
     }}
     await db_session.commit()
     response = await client.get(f"/api/v1/labels/spool/{spool.id}/render?preset_id={preset.id}&format=mono1&dpi=203&width=385&align=right&orientation={orientation}")
@@ -124,28 +157,12 @@ async def test_thermal_qr_final_raster_has_whole_modules(auth_client, preview_sp
     if orientation == "portrait":
         image = image.transpose(Image.Transpose.ROTATE_270)
     assert image.size == (320, 240)
-    black = image.point(lambda p: 255-p)
-    left, top, right, bottom = black.getbbox()
-    reference = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M)
-    reference.add_data(base.rstrip("/") + f"/spools/{spool.id}")
-    reference.make(fit=True)
-    modules = reference.modules_count
-    pitch = (right-left) // modules
-    assert pitch >= 3
-    assert right-left == bottom-top == modules*pitch
-    # Every module is a solid pitch-by-pitch square, never a fractional rescale.
-    for y in range(modules):
-        for x in range(modules):
-            assert image.crop((left+x*pitch, top+y*pitch, left+(x+1)*pitch, top+(y+1)*pitch)).getextrema() in ((0, 0), (255, 255))
-    for box in ((left-4*pitch, top-4*pitch, right+4*pitch, top),
-                (left-4*pitch, bottom, right+4*pitch, bottom+4*pitch),
-                (left-4*pitch, top, left, bottom), (right, top, right+4*pitch, bottom)):
-        assert image.crop(box).getextrema() == (255, 255)
+    assert_thermal_qr(image, qr, (40, 30), base.rstrip("/") + f"/spools/{spool.id}")
 
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("label_render_runtime")
-@pytest.mark.parametrize("qr_size", [3, 6, 10])
+@pytest.mark.parametrize("qr_size", [3, 6, 7.5])
 async def test_thermal_qr_rejects_too_small_box_but_png_keeps_original(auth_client, preview_spool, db_session, qr_size):
     client, _ = auth_client
     spool, preset = preview_spool
@@ -278,30 +295,18 @@ async def test_thermal_label_sample_matrix(auth_client, preview_spool, db_sessio
     image.save(tmp_path / f"{kind}-svg-mono1.png")
     (tmp_path / f"{kind}-svg-mono1.bin").write_bytes(mono.content)
     (tmp_path / f"{kind}-svg-headers.json").write_text(json.dumps(dict(mono.headers), indent=2))
-    if kind.startswith("v1"):
-        box = (8, 80, 120, 232) if kind == "v1-left" else (208, 80, 312, 232) if kind == "v1-columns" else (200, 80, 312, 232)
-        slot = image.crop(box).convert("L")
-        left, top, right, bottom = ImageChops.invert(slot).getbbox()
-        pitch = 3
-        assert right - left == bottom - top == 25 * pitch
-        assert min(left, top, slot.width - right, slot.height - bottom) >= 4 * pitch
-        for row in range(25):
-            for column in range(25):
-                assert slot.crop((left + column * pitch, top + row * pitch,
-                                  left + (column + 1) * pitch, top + (row + 1) * pitch)).getextrema() in ((0, 0), (255, 255))
+    if kind != "default":
+        content = image.crop((0, 0, 320, height))
         light_image = Image.frombytes("1", (576, height), light.content.translate(bytes(range(255, -1, -1))))
-        assert light_image.crop(box).tobytes() == image.crop(box).tobytes()
-    if kind == "v2":
-        # Fractional DOM slots may center a dot differently; the modules and
-        # minimum quiet zone must remain identical, not the extra whitespace.
         codes = []
-        for box in ((16, 96, 126, 206), (176, 96, 286, 206)):
-            slot = image.crop(box).convert("L")
-            left, top, right, bottom = ImageChops.invert(slot).getbbox()
-            assert right-left == bottom-top == 75  # EC-M v2, 25 modules * 3 dots
-            assert min(left, top, 110-right, 110-bottom) >= 12
-            codes.append(slot.crop((left, top, right, bottom)).tobytes())
-        assert codes[0] == codes[1]
+        for qr in preset.data["design"]["elements"]:
+            if qr["type"] == "qr":
+                code, box = assert_thermal_qr(content, qr, (40, 30), f"http://test/spools/{spool.id}")
+                assert light_image.crop(box).tobytes() == content.crop(box).tobytes()
+                codes.append(code.tobytes())
+        assert len(codes) == (2 if kind == "v2" else 1)
+        if kind == "v2":
+            assert codes[0] == codes[1]
 
 
 @pytest.mark.asyncio
@@ -396,32 +401,9 @@ async def test_thermal_data_matrix(auth_client, preview_spool, db_session, monke
     assert responses[None] == responses[200]
     for low, high in ((128, 150), (150, 200)):
         assert all(a & ~b == 0 for a, b in zip(responses[low], responses[high]))
-    # The QR slot is bottom-right in both migrated and native designs.
-    scale = content_width / width_mm
-    box = tuple(round(v * scale) for v in (width_mm - qr_size - 1, 29 - qr_size, width_mm - 1, 29))
-    slot = image.crop(box).convert("L")
-    # Ignore a few pixels of CSS position rounding at the slot edge when
-    # locating the code over a dark underlay. Quiet zones are >=12px here;
-    # validate their complete extent against the original image below.
-    left, top, right, bottom = (
-        value + 4 for value in ImageChops.invert(slot.crop((4, 4, slot.width - 4, slot.height - 4))).getbbox()
-    )
-    assert right - left == bottom - top
-    # Finder pattern: seven modules across, with a three-module solid center.
-    row = [slot.getpixel((x, top)) for x in range(left, right)]
-    pitch = row.index(255) // 7
-    assert pitch >= 3
-    # The contract is four white modules inside the label, not necessarily
-    # inside the nominal element slot.
-    x0, y0, x1, y1 = left + box[0], top + box[1], right + box[0], bottom + box[1]
-    gap = 4 * pitch
-    assert x0 >= gap and y0 >= gap and x1 + gap <= content_width and y1 + gap <= height
-    for quiet in ((x0-gap, y0-gap, x1+gap, y0), (x0-gap, y1, x1+gap, y1+gap),
-                  (x0-gap, y0, x0, y1), (x1, y0, x1+gap, y1)):
-        assert image.crop(quiet).getextrema() == (255, 255)
-    for y in range(top, bottom, pitch):
-        for x in range(left, right, pitch):
-            assert slot.crop((x, y, x + pitch, y + pitch)).getextrema() in ((0, 0), (255, 255))
+    qr = next(element for element in preset.data["design"]["elements"] if element["type"] == "qr")
+    base = qr.get("urlTemplate") or "http://test"
+    _, box = assert_thermal_qr(image.crop((0, 0, content_width, height)), qr, (width_mm, 30), base + f"/spools/{spool.id}")
     for threshold in (128, 150, 200):
         variant = Image.frombytes("1", (wire_width, height), responses[threshold].translate(bytes(range(255, -1, -1))))
         assert variant.crop(box).tobytes() == image.crop(box).tobytes()

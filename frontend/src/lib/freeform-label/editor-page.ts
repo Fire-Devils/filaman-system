@@ -28,6 +28,10 @@ function presetLabel(preset: { name: string; label?: string }) {
   return preset.label ?? preset.name
 }
 
+function formatLabelSize({ widthMm, heightMm }: LabelDesignV2['label']) {
+  return `${formatDesignerNumber(widthMm, 3)} × ${formatDesignerNumber(heightMm, 3)} mm`
+}
+
 export async function initFreeformLabelDesignerEditor(
   options: FreeformLabelDesignerEditorOptions,
 ): Promise<FreeformLabelDesignerEditorController> {
@@ -65,6 +69,7 @@ export async function initFreeformLabelDesignerEditor(
 
   const width = document.getElementById('freeform-label-width') as HTMLInputElement | null
   const height = document.getElementById('freeform-label-height') as HTMLInputElement | null
+  const currentSize = document.getElementById('freeform-current-label-size')
   const margin = document.getElementById('freeform-label-margin') as HTMLInputElement | null
   const border = document.getElementById('freeform-label-border') as HTMLInputElement | null
   const presetSelect = document.getElementById('freeform-preset-list') as HTMLSelectElement | null
@@ -152,6 +157,8 @@ export async function initFreeformLabelDesignerEditor(
   }
   const syncGeometry = () => {
     const label = controller.getLabel()
+    const size = formatLabelSize(label)
+    if (currentSize && currentSize.textContent !== size) currentSize.textContent = size
     if (width) width.value = formatDesignerNumber(label.widthMm, 3)
     if (height) height.value = formatDesignerNumber(label.heightMm, 3)
     if (margin) margin.value = formatDesignerNumber(label.marginMm)
@@ -175,7 +182,6 @@ export async function initFreeformLabelDesignerEditor(
           button.type = 'button'
           button.className = 'freeform-token-chip'
           button.dataset.fieldToken = token
-          button.title = token
           button.textContent = label
           button.disabled = !editorEditable
           return button
@@ -196,7 +202,15 @@ export async function initFreeformLabelDesignerEditor(
       for (const preset of presets) {
         const item = document.createElement('option')
         item.value = `${prefix}:${preset.name}`
-        item.textContent = presetLabel(preset)
+        const label = presetLabel(preset)
+        const size = ` (${formatLabelSize(preset.data.design.label)})`
+        const name = document.createElement('span')
+        name.className = 'freeform-preset-option-name'
+        name.textContent = label.endsWith(size) ? label.slice(0, -size.length) : label
+        const dimensions = document.createElement('span')
+        dimensions.className = 'freeform-preset-option-size'
+        dimensions.textContent = size
+        item.append(name, dimensions)
         group.append(item)
       }
       groups.push(group)
@@ -213,7 +227,8 @@ export async function initFreeformLabelDesignerEditor(
       cross,
     )
     appendGroup(options.translate?.('labelDesigner.standardPresets', 'Standard presets') ?? 'Standard presets', 'builtin', getStandardLabelPresets(entityType))
-    presetSelect.replaceChildren(...groups)
+    const display = presetSelect.querySelector(':scope > button')
+    presetSelect.replaceChildren(...(display ? [display, ...groups] : groups))
     const preferred = selectName ? `own:${selectName}`
       : Array.from(presetSelect.options).some(option => option.value === previous) ? previous : presetSelect.options[0]?.value
     if (preferred) presetSelect.value = preferred

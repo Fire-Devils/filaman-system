@@ -22,6 +22,7 @@ export interface RenderDesignerLabelOptions {
   entityPath?: string
   resolveAssetUrl?: (assetId: string) => string | null | Promise<string | null>
   interactive?: boolean
+  vectorPreview?: boolean
 }
 
 export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
@@ -36,6 +37,7 @@ export async function renderDesignerLabel(options: RenderDesignerLabelOptions) {
     resolveAssetUrl: options.resolveAssetUrl,
     previewBorder: options.previewBorder,
     interactive: options.interactive,
+    vectorPreview: options.vectorPreview,
     isStale: options.isStale,
     entityPath: options.entityPath === 'filaments' ? 'filaments' : 'spools',
   })

@@ -199,7 +199,11 @@ try {
     await page.reload();
     await openDesigner();
     await page.locator('#freeform-canvas-host [data-label-svg-raster]').waitFor();
-    await page.waitForFunction(expected => document.querySelector('#freeform-canvas-host [data-label-element-id="text"]')?.textContent === expected,
+    await page.waitForFunction(expected => {
+      const text = document.querySelector('#freeform-canvas-host [data-label-element-id="text"]')?.firstElementChild?.cloneNode(true);
+      text?.querySelectorAll('[data-template-missing]').forEach(marker => marker.remove());
+      return text?.textContent === expected;
+    },
       entity === 'spools' ? 'Dryer=55.0 °C; Bed=60.1–70; Tag=CUSTOM-TAG; Dia=198 mm; Range=55–65 °C; Printer=210.0 °C; Bed scalar=60.1 °C' : 'Dryer=55.0 °C; Bed=; Tag=; Dia=; Range=55–65 °C; Printer=210.0 °C; Bed scalar=60.1 °C').catch(async error => {
         console.error({ entity, handoff, actual: await page.locator('#freeform-canvas-host [data-label-element-id="text"]').textContent() });
         throw error;
