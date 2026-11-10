@@ -1,8 +1,7 @@
 /**
  * Shared Column Resize utility
  *
- * Adds a small drag handle on the right edge of every `<th>` that carries a
- * `col-{key}` CSS class. Dragging the handle resizes the column; the new width
+ * Adds a small drag handle on the right edge of every keyed `<th>`. The new width
  * is persisted per-page in localStorage and applied via an injected stylesheet
  * so pagination / filter / reorder re-renders keep the width without extra
  * per-cell work.
@@ -21,6 +20,8 @@
  *   // Reset all widths (e.g. from column-picker popover):
  *   resize.resetWidths()
  */
+
+import { columnCellSelector, getColKey } from './column-key'
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -92,13 +93,6 @@ body.col-resize-dragging * { cursor: col-resize !important; user-select: none !i
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-function getColKey(el: Element): string | null {
-  for (const cls of el.classList) {
-    if (cls.startsWith('col-') && cls !== 'col-resizable') return cls.substring(4)
-  }
-  return null
-}
-
 function loadWidths(storageKey: string): Record<string, number> {
   try {
     const raw = localStorage.getItem(storageKey)
@@ -149,9 +143,8 @@ export function initColumnResize(opts: ColumnResizeOptions): ColumnResize {
   function applyStylesheet(): void {
     const rules: string[] = []
     for (const [key, width] of Object.entries(widths)) {
-      const safe = CSS.escape(key)
       rules.push(
-        `${opts.tableSelector} th.col-${safe}, ${opts.tableSelector} td.col-${safe} { ` +
+        `${opts.tableSelector} :is(th, td)${columnCellSelector(key)} { ` +
         `width: ${width}px; min-width: ${width}px; max-width: ${width}px; }`,
       )
     }

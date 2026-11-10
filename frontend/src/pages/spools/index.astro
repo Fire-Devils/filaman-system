@@ -178,18 +178,20 @@ import Layout from '../../layouts/Layout.astro'
     import { assignableLocations, type LocationLike } from '../../lib/driver-managed-locations'
     import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
+    import { columnClassName, createSortableColumnHeader } from '../../lib/column-key'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
-    import { isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
+    import { escapeHtml, extraFieldColumnSortValue, getExtraFieldColumnValue, isIntegrationExtraFieldPath, renderExtraFieldColumn, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
+      isMissingExtraFieldSort,
       isColumnFilterActive,
       matchesColumnFilter,
+      matchesExtraFieldColumnFilter,
       multiColumnFilter,
       sanitizeColumnFilters,
       syncHeaderSortButtons,
-      systemExtraFieldFilterValue,
       systemExtraFieldHeaderFilter,
       type ColumnFilterValue,
       type HeaderFilterController,
@@ -259,14 +261,15 @@ import Layout from '../../layouts/Layout.astro'
     let activeDevices: { id: number; name: string; ip_address: string }[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
+    const sortStorageKey = 'filaman-sort-spools'
     const selectedSpoolIds = new Set<number>()
 
     // Restore sort state from localStorage
     try {
-      const savedSort = localStorage.getItem('filaman-sort-spools')
+      const savedSort = localStorage.getItem(sortStorageKey)
       if (savedSort) {
         const { key, direction } = JSON.parse(savedSort)
-        if (key && (direction === 'asc' || direction === 'desc')) {
+        if (typeof key === 'string' && key && (direction === 'asc' || direction === 'desc')) {
           sortKey = key === 'status_id' ? 'status' : key
           sortDirection = direction
         }
@@ -350,9 +353,9 @@ import Layout from '../../layouts/Layout.astro'
         loadSpools()
         // Save sort state to localStorage
         if (sortKey && sortDirection) {
-          localStorage.setItem('filaman-sort-spools', JSON.stringify({ key: sortKey, direction: sortDirection }))
+          localStorage.setItem(sortStorageKey, JSON.stringify({ key: sortKey, direction: sortDirection }))
         } else {
-          localStorage.removeItem('filaman-sort-spools')
+          localStorage.removeItem(sortStorageKey)
         }
       })
     }
@@ -394,10 +397,6 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'material') return getMaterialType(item)
       if (key === 'colors') return filamentColorValues(getFilamentForSpool(item), 'name')[0]?.toLowerCase() || ''
       if (key === 'mfr_color') return getFilamentForSpool(item)?.manufacturer_color_name ?? ''
-      if (key.startsWith('cf_')) {
-        const cfKey = key.slice(3)
-        return item.custom_fields?.[cfKey] ?? ''
-      }
       if (key === 'remaining_percent' || key === 'remaining_length_m') return item.metrics?.[key]
       return item[key]
     }
@@ -405,9 +404,13 @@ import Layout from '../../layouts/Layout.astro'
     function sortSpools(spools: Spool[]): Spool[] {
       if (!sortKey || !sortDirection) return spools
       const sortBy = sortKey
+      const field = spoolExtraFields.find((candidate) => `cf_${candidate.key}` === sortBy)
+      const sortValue = field
+        ? (item: Spool) => extraFieldColumnSortValue(field, getExtraFieldColumnValue(item.custom_fields, field.key))
+        : (item: Spool) => getSortValue(item, sortBy)
       return [...spools].sort((a, b) => {
-        const aVal = getSortValue(a, sortBy)
-        const bVal = getSortValue(b, sortBy)
+        const aVal = sortValue(a)
+        const bVal = sortValue(b)
         if (sortBy === 'remaining_percent' || sortBy === 'remaining_length_m' || sortBy === 'remaining_weight_g') {
           if (aVal == null || bVal == null) return aVal == null ? (bVal == null ? a.id - b.id : 1) : -1
           return (Number(aVal) - Number(bVal)) * (sortDirection === 'asc' ? 1 : -1) || a.id - b.id
@@ -443,8 +446,13 @@ import Layout from '../../layouts/Layout.astro'
         && !(key === 'colors' && colorFilterPaged && colorFilterParams(value) !== null))
     }
 
+    function isClientOnlySort(key: string | null): boolean {
+      if (key?.startsWith('cf_')) return !isMissingExtraFieldSort(key, spoolExtraFields)
+      return key === 'colors' || key === 'status'
+    }
+
     function needsAllSpoolData(): boolean {
-      return hasLocalColumnFilters() || sortKey === 'colors' || sortKey === 'status'
+      return hasLocalColumnFilters() || isClientOnlySort(sortKey)
     }
 
     function getSpoolFilterValue(spool: Spool, key: string): unknown {
@@ -465,12 +473,6 @@ import Layout from '../../layouts/Layout.astro'
       if (key === 'last_used') return spool.last_used_at
       if (key === 'total_weight') return spool.initial_total_weight_g
       if (key === 'empty_weight') return spool.empty_spool_weight_g
-      if (key.startsWith('cf_')) {
-        const field = spoolExtraFields.find((candidate) => candidate.key === key.slice(3))
-        return field
-          ? systemExtraFieldFilterValue(field, spool.custom_fields?.[field.key])
-          : spool.custom_fields?.[key.slice(3)]
-      }
       return null
     }
 
@@ -478,10 +480,11 @@ import Layout from '../../layouts/Layout.astro'
       const colorFilter = columnFilters.colors
       const matchesColors = colorFilter?.type === 'multi' ? inventoryColorMatcher(colorFilter) : null
       const activeFilters = Object.entries(columnFilters).filter(([, value]) => isColumnFilterActive(value))
-      return spools.filter((spool) => activeFilters.every(([key, filter]) =>
-        key === 'colors' && matchesColors
-          ? matchesColors(getFilamentForSpool(spool))
-          : matchesColumnFilter(getSpoolFilterValue(spool, key), filter)))
+      return spools.filter((spool) => activeFilters.every(([key, filter]) => {
+        if (key === 'colors' && matchesColors) return matchesColors(getFilamentForSpool(spool))
+        if (key.startsWith('cf_')) return matchesExtraFieldColumnFilter(spoolExtraFields, key, spool.custom_fields, filter)
+        return matchesColumnFilter(getSpoolFilterValue(spool, key), filter)
+      }))
     }
 
     function applyFiltersAndRender() {
@@ -688,7 +691,7 @@ import Layout from '../../layouts/Layout.astro'
       if (locationIds.includes('')) params.set('location_unassigned', 'true')
       materials.forEach((item) => params.append('type', item))
       if (search) params.set('search', search)
-      if (sortKey && sortDirection && sortKey !== 'colors' && sortKey !== 'status') {
+      if (sortKey && sortDirection && !sortKey.startsWith('cf_') && !isClientOnlySort(sortKey)) {
         params.set('sort_by', sortKey === 'remaining_weight_g' ? 'effective_remaining_weight_g' : sortKey)
         params.set('sort_order', sortDirection)
       }
@@ -853,10 +856,10 @@ import Layout from '../../layouts/Layout.astro'
           <td class="col-last_used" style="padding: 12px; color: var(--text-muted);">${s.last_used_at ? new Date(s.last_used_at).toLocaleDateString() : '-'}</td>
           <td class="col-total_weight" style="padding: 12px; font-family: monospace;">${s.initial_total_weight_g != null ? s.initial_total_weight_g + 'g' : '-'}</td>
           <td class="col-empty_weight" style="padding: 12px; font-family: monospace;">${s.empty_spool_weight_g != null ? s.empty_spool_weight_g + 'g' : '-'}</td>
-          ${((window as typeof window & { __spoolExtraFields?: SystemExtraFieldDef[] }).__spoolExtraFields || []).map((f) => {
-            const val = s.custom_fields?.[f.key]
-            const display = f.field_type === 'checkbox' ? (val ? '✓' : '✗') : (val ?? '-')
-            return `<td class="col-cf_${f.key}" style="padding: 12px; color: var(--text-muted);">${display}</td>`
+          ${spoolExtraFields.map((field) => {
+            const value = getExtraFieldColumnValue(s.custom_fields, field.key)
+            const key = `cf_${field.key}`
+            return `<td class="${escapeHtml(columnClassName(key))}" data-column-key="${escapeHtml(encodeURIComponent(key))}" style="padding: 12px; color: var(--text-muted);">${renderExtraFieldColumn(field, value)}</td>`
           }).join('')}
           ${rfidIcon}
         </tr>
@@ -1210,7 +1213,7 @@ import Layout from '../../layouts/Layout.astro'
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
       definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
       splHeaderFilters = initHeaderColumnFilters(table, definitions)
-      syncHeaderSortButtons(table, sortKey, sortDirection)
+      updateSortIndicators()
     }
 
     function applyColumnFilter(key: string, value: ColumnFilterValue, urlParam?: string) {
@@ -1311,6 +1314,11 @@ import Layout from '../../layouts/Layout.astro'
         if (!res.ok) return
         const definitions: SystemExtraFieldDef[] = await res.json()
         const fields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
+        if (isMissingExtraFieldSort(sortKey, fields)) {
+          sortKey = null
+          sortDirection = null
+          localStorage.removeItem(sortStorageKey)
+        }
         if (fields.length === 0) return
         spoolExtraFields = fields
         const extraGroup: ColumnGroup = {
@@ -1323,15 +1331,9 @@ import Layout from '../../layouts/Layout.astro'
         if (headerRow) {
           const lastTh = headerRow.querySelector('th:last-child')
           fields.forEach(f => {
-            const th = document.createElement('th')
-            th.className = `sortable col-cf_${f.key}`
-            th.dataset.sort = `cf_${f.key}`
-            th.textContent = f.label
-            headerRow.insertBefore(th, lastTh)
+            headerRow.insertBefore(createSortableColumnHeader(`cf_${f.key}`, f.label), lastTh)
           })
         }
-        // Store fields for renderSpoolRow access
-        ;(window as typeof window & { __spoolExtraFields?: SystemExtraFieldDef[] }).__spoolExtraFields = fields
         // Refresh column reorder to include new extra field columns
         splReorder.refreshColumns()
         splResize.refreshColumns()
@@ -1343,7 +1345,6 @@ import Layout from '../../layouts/Layout.astro'
     // ── End Column Visibility ──────────────────────────────────────────
 
     setupSortableHeaders()
-    if (sortKey && sortDirection) updateSortIndicators()
     // Restore group checkbox from saved state
     if (savedFilterState?.group) {
       (document.getElementById('filter-group') as HTMLInputElement).checked = true

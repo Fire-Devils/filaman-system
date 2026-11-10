@@ -144,18 +144,20 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
+    import { columnClassName, createSortableColumnHeader } from '../../lib/column-key'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
-    import { escapeHtml, formatNumericRange, isIntegrationExtraFieldPath, type SystemExtraFieldDef } from '../../lib/extra-fields'
+    import { escapeHtml, extraFieldColumnSortValue, formatNumericRange, getExtraFieldColumnValue, isIntegrationExtraFieldPath, renderExtraFieldColumn, type SystemExtraFieldDef } from '../../lib/extra-fields'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
+      isMissingExtraFieldSort,
       isColumnFilterActive,
       matchesColumnFilter,
+      matchesExtraFieldColumnFilter,
       multiColumnFilter,
       sanitizeColumnFilters,
       syncHeaderSortButtons,
-      systemExtraFieldFilterValue,
       systemExtraFieldHeaderFilter,
       type ColumnFilterValue,
       type HeaderFilterController,
@@ -205,6 +207,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     let totalFilaments = 0
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
+    const sortStorageKey = 'filaman-sort-filaments'
     const selectedFilamentIds = new Set<number>()
 
     // Map frontend sort keys to backend sort_by values; empty string = client-side only (not server-sortable)
@@ -212,19 +215,19 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       'type': 'material_type',
       'colors': '', // aggregated (count) — client-side only
     }
-    // Returns true if the given sort key cannot be sorted server-side and must be handled client-side over the full dataset
+    // Only fetch all rows for an extra-field sort when its definition is available.
     function isClientOnlySort(key: string | null): boolean {
       if (!key) return false
-      if (key.startsWith('cf_')) return true // custom fields are not server-sortable
+      if (key.startsWith('cf_')) return !isMissingExtraFieldSort(key, filamentExtraFields)
       return sortKeyMap[key] === ''
     }
 
     // Restore sort state from localStorage
     try {
-      const savedSort = localStorage.getItem('filaman-sort-filaments')
+      const savedSort = localStorage.getItem(sortStorageKey)
       if (savedSort) {
         const { key, direction } = JSON.parse(savedSort)
-        if (key && (direction === 'asc' || direction === 'desc')) {
+        if (typeof key === 'string' && key && (direction === 'asc' || direction === 'desc')) {
           sortKey = key
           sortDirection = direction
         }
@@ -315,9 +318,9 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         loadFilaments()
         // Save sort state to localStorage
         if (sortKey && sortDirection) {
-          localStorage.setItem('filaman-sort-filaments', JSON.stringify({ key: sortKey, direction: sortDirection }))
+          localStorage.setItem(sortStorageKey, JSON.stringify({ key: sortKey, direction: sortDirection }))
         } else {
-          localStorage.removeItem('filaman-sort-filaments')
+          localStorage.removeItem(sortStorageKey)
         }
       })
     }
@@ -341,10 +344,6 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         const first = item.colors?.[0]
         return (first?.display_name_override || first?.color?.name || '').toLowerCase()
       }
-      if (key.startsWith('cf_')) {
-        const cfKey = key.slice(3)
-        return item.custom_fields?.[cfKey] ?? ''
-      }
       return item[key]
     }
 
@@ -352,9 +351,13 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       if (!sortKey || !sortDirection) return filaments
       if (sortKey === 'spool_count') return filaments  // server-only sort: skip client re-sort
       const sortBy = sortKey
+      const field = filamentExtraFields.find((candidate) => `cf_${candidate.key}` === sortBy)
+      const sortValue = field
+        ? (item: Filament) => extraFieldColumnSortValue(field, getExtraFieldColumnValue(item.custom_fields, field.key))
+        : (item: Filament) => getSortValue(item, sortBy)
       return [...filaments].sort((a, b) => {
-        const aVal = getSortValue(a, sortBy)
-        const bVal = getSortValue(b, sortBy)
+        const aVal = sortValue(a)
+        const bVal = sortValue(b)
         let cmp = 0
         if (aVal == null && bVal == null) cmp = 0
         else if (aVal == null) cmp = 1
@@ -407,12 +410,6 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       if (key === 'subgroup') return filament.material_subgroup
       if (key === 'weight') return filament.raw_material_weight_g
       if (key === 'density') return filament.density_g_cm3
-      if (key.startsWith('cf_')) {
-        const field = filamentExtraFields.find((candidate) => candidate.key === key.slice(3))
-        return field
-          ? systemExtraFieldFilterValue(field, filament.custom_fields?.[field.key])
-          : filament.custom_fields?.[key.slice(3)]
-      }
       return null
     }
 
@@ -420,10 +417,11 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       const colorFilter = columnFilters.colors
       const matchesColors = colorFilter?.type === 'multi' ? inventoryColorMatcher(colorFilter) : null
       const activeFilters = Object.entries(columnFilters).filter(([key, value]) => isEffectiveColumnFilterActive(key, value))
-      return filaments.filter((filament) => activeFilters.every(([key, filter]) =>
-        key === 'colors' && matchesColors
-          ? matchesColors(filament)
-          : matchesColumnFilter(getFilamentFilterValue(filament, key), filter)))
+      return filaments.filter((filament) => activeFilters.every(([key, filter]) => {
+        if (key === 'colors' && matchesColors) return matchesColors(filament)
+        if (key.startsWith('cf_')) return matchesExtraFieldColumnFilter(filamentExtraFields, key, filament.custom_fields, filter)
+        return matchesColumnFilter(getFilamentFilterValue(filament, key), filter)
+      }))
     }
 
     function applyFiltersAndRender() {
@@ -532,7 +530,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       types.forEach((item) => params.append('type', item))
       if (search) params.set('search', search)
       // sortKeyMap lives at module scope; '' means client-side only
-      if (sortKey && sortDirection) {
+      if (sortKey && sortDirection && !sortKey.startsWith('cf_') && !isClientOnlySort(sortKey)) {
         const backendSortKey = sortKeyMap[sortKey] ?? sortKey
         if (backendSortKey) {
           params.set('sort_by', backendSortKey)
@@ -680,10 +678,10 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
           <td class="col-spool_outer" style="padding: 12px;">${f.spool_outer_diameter_mm != null ? `${f.spool_outer_diameter_mm} mm` : '-'}</td>
           <td class="col-spool_width" style="padding: 12px;">${f.spool_width_mm != null ? `${f.spool_width_mm} mm` : '-'}</td>
           <td class="col-spool_material" style="padding: 12px;">${escapeHtml(f.spool_material || '-')}</td>
-          ${((window as typeof window & { __filamentExtraFields?: SystemExtraFieldDef[] }).__filamentExtraFields || []).map((ef) => {
-            const val = f.custom_fields?.[ef.key]
-            const display = ef.field_type === 'checkbox' ? (val ? '\u2713' : '\u2717') : (val ?? '-')
-            return `<td class="col-cf_${escapeHtml(ef.key)}" style="padding: 12px; color: var(--text-muted);">${escapeHtml(String(display))}</td>`
+          ${filamentExtraFields.map((field) => {
+            const value = getExtraFieldColumnValue(f.custom_fields, field.key)
+            const key = `cf_${field.key}`
+            return `<td class="${escapeHtml(columnClassName(key))}" data-column-key="${escapeHtml(encodeURIComponent(key))}" style="padding: 12px; color: var(--text-muted);">${renderExtraFieldColumn(field, value)}</td>`
           }).join('')}
         </tr>
       `
@@ -989,7 +987,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
       definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
       filHeaderFilters = initHeaderColumnFilters(table, definitions)
-      syncHeaderSortButtons(table, sortKey, sortDirection)
+      updateSortIndicators()
     }
 
     function applyColumnFilter(key: string, value: ColumnFilterValue, urlParam?: string) {
@@ -1106,6 +1104,11 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         if (!res.ok) return
         const definitions: SystemExtraFieldDef[] = await res.json()
         const fields = definitions.filter(field => !isIntegrationExtraFieldPath(field.key))
+        if (isMissingExtraFieldSort(sortKey, fields)) {
+          sortKey = null
+          sortDirection = null
+          localStorage.removeItem(sortStorageKey)
+        }
         if (fields.length === 0) return
         filamentExtraFields = fields
         const extraGroup: ColumnGroup = {
@@ -1117,15 +1120,9 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         const headerRow = document.querySelector('.fm-table thead tr')
         if (headerRow) {
           fields.forEach(f => {
-            const th = document.createElement('th')
-            th.className = `sortable col-cf_${f.key}`
-            th.dataset.sort = `cf_${f.key}`
-            th.textContent = f.label
-            headerRow.appendChild(th)
+            headerRow.appendChild(createSortableColumnHeader(`cf_${f.key}`, f.label))
           })
         }
-        // Store fields for renderFilamentRow access
-        ;(window as typeof window & { __filamentExtraFields?: SystemExtraFieldDef[] }).__filamentExtraFields = fields
         // Refresh column reorder to include new extra field columns
         filReorder.refreshColumns()
         filResize.refreshColumns()
@@ -1137,7 +1134,6 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     // ── End Column Visibility ──────────────────────────────────────────
 
     setupSortableHeaders()
-    if (sortKey && sortDirection) updateSortIndicators()
     // Restore group checkbox from saved state
     if (savedFilterState?.group) {
       (document.getElementById('filter-group') as HTMLInputElement).checked = true

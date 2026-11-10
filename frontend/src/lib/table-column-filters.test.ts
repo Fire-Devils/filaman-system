@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   emptyColumnFilter,
   matchesColumnFilter,
+  matchesExtraFieldColumnFilter,
   normalizeColorFilter,
   sanitizeColumnFilters,
   systemExtraFieldFilterType,
@@ -74,9 +75,35 @@ describe('System Extra Field table filters', () => {
     expect(systemExtraFieldFilterValue(field, { min: 190, max: 220 })).toBe('190 – 220')
   })
 
+  it.each([
+    ['equals', '190.0–220.0 °C', true],
+    ['equals', '190 – 220', true],
+    ['notContains', '190 – 220', false],
+    ['notContains', '°C', false],
+    ['notContains', '°F', true],
+  ] as const)('matches range filter %s for %s against both formats', (operator, value, expected) => {
+    const fields = [{ key: 'temperature', label: 'Temperature', field_type: 'range', config: { decimal_places: 1, unit: '°C' } }]
+    const values = { temperature: { min: 190, max: 220 } }
+    expect(matchesExtraFieldColumnFilter(fields, 'cf_temperature', values, { type: 'text', operator, value })).toBe(expected)
+  })
+
+  it('keeps filtering legacy range bounds that have no formatted display', () => {
+    const fields = [{ key: 'temperature', label: 'Temperature', field_type: 'range' }]
+    const values = { temperature: { min: 'unknown' } }
+    expect(matchesExtraFieldColumnFilter(fields, 'cf_temperature', values, {
+      type: 'text', operator: 'notContains', value: 'missing',
+    })).toBe(true)
+  })
+
   it('keeps multi-select arrays intact for any-option matching', () => {
     const field = { key: 'tags', label: 'Tags', field_type: 'multiselect' }
     expect(systemExtraFieldFilterValue(field, ['dry', 'abrasive'])).toEqual(['dry', 'abrasive'])
+  })
+
+  it('matches valid choices even when an API array contains malformed objects', () => {
+    const fields = [{ key: 'tags', label: 'Tags', field_type: 'multiselect' }]
+    const values = { tags: [{ toString: 'legacy' }, 'dry'] }
+    expect(matchesExtraFieldColumnFilter(fields, 'cf_tags', values, { type: 'multi', values: ['dry'] })).toBe(true)
   })
 })
 

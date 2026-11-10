@@ -6,6 +6,8 @@ import { isIntegrationExtraFieldPath } from './extra-fields'
 import { normalizeSystemExtraFieldDefinitions } from './entity-extra-fields'
 import { buildLegacyLabelAliases, isBuiltInLabelField } from './label-extra-fields'
 import { appendLabelSettingsCheckbox } from './label-print-page'
+import { isMissingExtraFieldSort } from './table-column-filters'
+import { createSortableColumnHeader } from './column-key'
 
 const definitions = [
   { key: 'filament_image_provider', label: 'Image provider', field_type: 'text' },
@@ -24,8 +26,6 @@ function pageFunction(page: string, name: string): string {
 
 afterEach(() => {
   document.body.innerHTML = ''
-  Reflect.deleteProperty(window, '__filamentExtraFields')
-  Reflect.deleteProperty(window, '__spoolExtraFields')
   vi.unstubAllGlobals()
 })
 
@@ -36,14 +36,14 @@ it.each(['filament', 'spool'] as const)('excludes metadata from %s list columns 
   const picker = { updateGroups: (value: typeof groups) => { groups = value } }
   const columns = { refreshColumns() {} }
   const runtime = {
-    document, window, fetch, isIntegrationExtraFieldPath,
+    document, fetch, isIntegrationExtraFieldPath, isMissingExtraFieldSort, createSortableColumnHeader,
     getAbortSignal() {}, isAbortError: () => false, t: (key: string) => key,
     filPicker: picker, splPicker: picker, filColumnGroups: [], splColumnGroups: [],
     filReorder: columns, splReorder: columns, filResize: columns, splResize: columns,
   }
   const name = entity === 'filament' ? 'loadFilamentExtraFieldColumns' : 'loadSpoolExtraFieldColumns'
   const displayedFields: Array<{ key: string }> = await new Function(...Object.keys(runtime), `
-    let filamentExtraFields=[],spoolExtraFields=[];
+    let filamentExtraFields=[],spoolExtraFields=[],sortKey=null;
     ${pageFunction(`${entity}s/index`, name)}
     return ${name}().then(()=>${entity === 'filament' ? 'filamentExtraFields' : 'spoolExtraFields'});
   `)(...Object.values(runtime))

@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   escapeHtml,
+  extraFieldColumnSortValue,
   dpToStep,
   collectSystemFieldValues,
   unflattenFieldValues,
   renderFieldInput,
   renderFieldDisplay,
+  renderExtraFieldColumn,
   renderFieldPlainText,
   formatDateTimeDisplay,
   formatDateTimeInputValue,
@@ -951,6 +953,40 @@ describe('renderFieldPlainText', () => {
     const result = renderFieldPlainText(field({ field_type: 'datetime' }), raw)
 
     expect(result).toBe(raw)
+  })
+})
+
+describe('extra-field columns', () => {
+  it('renders an API value with a non-callable toString without throwing', () => {
+    expect(renderExtraFieldColumn(field({ field_type: 'number' }), { toString: 'legacy' }))
+      .toBe('{&quot;toString&quot;:&quot;legacy&quot;}')
+  })
+
+  it.each([
+    ['date', '2026-11-10', '2026-11-10'],
+    ['datetime', '2026-11-10T11:00:00-06:00', '2026-11-10T11:00:00-06:00'],
+    ['dropdown', 'Natural & Matte', 'Natural &amp; Matte'],
+    ['url', 'https://example.test/?a=1&b=2', 'https://example.test/?a=1&amp;b=2'],
+    ['textarea', 'Before\n<after>', 'Before\n&lt;after&gt;'],
+    ['formula', 0, '0'],
+    ['range', { min: null, max: null }, '-'],
+    ['float', 2, '2.00 g'],
+  ] as const)('renders %s as safe text', (fieldType, value, expected) => {
+    expect(renderExtraFieldColumn(field({
+      field_type: fieldType, config: { unit: 'g', decimal_places: 2 },
+    }), value)).toBe(expected)
+  })
+
+  it.each([
+    ['checkbox', 'false', 0],
+    ['checkbox', 'true', 1],
+    ['number', '12.50', 12.5],
+    ['range', { min: '-4', max: 8 }, -4],
+    ['range', { max: 8 }, 8],
+    ['datetime', '1970-01-01T01:00:00+01:00', 0],
+    ['multiselect', ['Matte', 'Silk'], 'Matte, Silk'],
+  ] as const)('normalizes the %s sort value', (fieldType, value, expected) => {
+    expect(extraFieldColumnSortValue(field({ field_type: fieldType }), value)).toBe(expected)
   })
 })
 

@@ -19,6 +19,7 @@ it.each(['', '?select_for_spool=1', '?select_for_spool=0'])('keeps list navigati
   const bulk = listSource.slice(listSource.indexOf('    function updateBulkBar'), listSource.indexOf('  </script>'))
   const runtime = new Function('window', 'document', 't', 'escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', `
     const selectedFilamentIds = new Set(), getCurrency = () => 'EUR';
+    const filamentExtraFields = [];
     const columnFilters = {}, getFilterValues = () => ({ search: '' }), isEffectiveColumnFilterActive = () => false;
     const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
     ${compile(setup)}

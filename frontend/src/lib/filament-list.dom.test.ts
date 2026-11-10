@@ -2,19 +2,21 @@
 import { readFileSync } from 'node:fs'
 import { transpileModule } from 'typescript'
 import { afterEach, expect, it } from 'vitest'
-import { escapeHtml, formatNumericRange } from './extra-fields'
+import { escapeHtml, formatNumericRange, getExtraFieldColumnValue, renderExtraFieldColumn } from './extra-fields'
 import { toColorSwatchBackground } from './colors'
 import { formatPrice } from './format'
+import { columnClassName } from './column-key'
 
 const source = readFileSync('src/pages/filaments/index.astro', 'utf8')
 const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function getPageNumbers'))
-const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', `
+const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', `
   const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', t = () => '';
   const selectForSpool = false, createFilamentHref = '/filaments/new';
+  const filamentExtraFields = [{ key: 'notes', label: 'Notes', field_type: 'text' }];
   const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
   ${transpileModule(script, {}).outputText}
   return { renderFilaments, renderGroupedFilaments };
-`)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice)
+`)(escapeHtml, formatNumericRange, toColorSwatchBackground, formatPrice, getExtraFieldColumnValue, renderExtraFieldColumn, columnClassName)
 
 afterEach(() => { document.body.innerHTML = '' })
 
@@ -26,10 +28,10 @@ it.each(['renderFilaments', 'renderGroupedFilaments'])('%s renders stored text w
     id: 1, manufacturer_id: 1, manufacturer: { name: text, logo_url: attribute },
     designation: text, material_type: 'PLA', diameter_mm: 1.75,
     manufacturer_sku: text, ams_compatibility: [text, 'AMS'],
-    build_plate_compatibility: [text], spool_material: text,
+    build_plate_compatibility: [text], spool_material: text, custom_fields: { notes: text },
     colors: [{ color: { name: attribute, hex_code: '#FF0000' } }],
   }])
-  for (const column of ['sku', 'build_plates', 'spool_material', 'manufacturer', 'designation']) {
+  for (const column of ['sku', 'build_plates', 'spool_material', 'manufacturer', 'designation', 'cf_notes']) {
     expect(document.querySelector(`.col-${column}`)?.textContent?.trim()).toBe(text)
   }
   expect(document.querySelector('.col-ams')?.textContent).toBe(`${text}, AMS`)
@@ -49,7 +51,7 @@ it('preserves missing-value fallbacks and normal text', () => {
   render.renderFilaments([{ id: 1, designation: 'PLA <silk>', material_type: 'PLA', diameter_mm: 1.75,
     ams_compatibility: [], build_plate_compatibility: null, colors: [] }])
   expect(document.querySelector('.col-designation')?.textContent?.trim()).toBe('PLA <silk>')
-  for (const column of ['sku', 'ams', 'build_plates', 'spool_material']) {
+  for (const column of ['sku', 'ams', 'build_plates', 'spool_material', 'cf_notes']) {
     expect(document.querySelector(`.col-${column}`)?.textContent).toBe('-')
   }
 })

@@ -1,8 +1,7 @@
 /**
  * Shared Column Reorder utility
  *
- * Adds drag & drop reordering to table columns identified by `col-{key}` CSS classes.
- * Columns without a `col-*` class are treated as fixed (not reorderable).
+ * Adds drag & drop reordering to keyed table columns. Unkeyed columns stay fixed.
  * Persists column order in localStorage.
  *
  * Usage:
@@ -19,6 +18,8 @@
  *   // After dynamic columns are added (e.g. extra fields):
  *   reorder.refreshColumns()
  */
+
+import { getColKey } from './column-key'
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -63,14 +64,6 @@ function ensureReorderStyles(): void {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
-
-/** Extract the column key from an element's `col-{key}` class. Returns null if none found. */
-function getColKey(el: Element): string | null {
-  for (const cls of el.classList) {
-    if (cls.startsWith('col-')) return cls.substring(4)
-  }
-  return null
-}
 
 function loadOrder(storageKey: string): string[] | null {
   try {

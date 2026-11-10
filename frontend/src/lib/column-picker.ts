@@ -23,6 +23,8 @@
  *   // picker.isVisible('id')  => boolean
  */
 
+import { columnCellSelector } from './column-key'
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface ColumnDef {
@@ -125,7 +127,7 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
     }
     style.textContent = allColKeys
       .filter(k => !visibleCols.has(k))
-      .map(k => `.fm-table .col-${CSS.escape(k)} { display: none; }`)
+      .map(k => `.fm-table ${columnCellSelector(k)} { display: none; }`)
       .join('\n')
   }
 

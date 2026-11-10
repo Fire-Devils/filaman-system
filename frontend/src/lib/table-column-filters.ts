@@ -1,7 +1,7 @@
 import { COLOR_HARMONY_OFFSETS, colorWheelHueMask, colorWheelPoint, createColorWheel, hueDistance, parseColorSample, syncColorWheelMarkers, type ColorWheelPoint, type ColorWheelSample } from './color-wheel'
 import { t } from './i18n'
 import { normalizeHexCode, toColorSwatchBackground, toOpaqueRgbHex } from './colors'
-import type { SystemExtraFieldDef } from './extra-fields'
+import { extraFieldColumnSortValue, getExtraFieldColumnValue, isCheckedExtraFieldValue, renderFieldPlainText, renderUnknownFieldPlainText, type SystemExtraFieldDef } from './extra-fields'
 
 export type HeaderFilterOption = {
   value: string
@@ -319,19 +319,46 @@ export function systemExtraFieldFilterValue(
   rawValue: unknown,
 ): unknown {
   if (field.field_type === 'checkbox') {
-    return rawValue === true || rawValue === 'true' ? 'true' : 'false'
+    return String(isCheckedExtraFieldValue(rawValue))
+  }
+  if (field.field_type === 'number' || field.field_type === 'float') {
+    return extraFieldColumnSortValue(field, rawValue)
   }
   if (field.field_type === 'range' && rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
     const range = rawValue as Record<string, unknown>
     return [range.min, range.max]
       .filter((value) => value !== null && value !== undefined && value !== '')
-      .map(String)
+      .map(renderUnknownFieldPlainText)
       .join(' – ')
   }
   if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
     return JSON.stringify(rawValue)
   }
   return rawValue
+}
+
+export function matchesExtraFieldColumnFilter(
+  fields: SystemExtraFieldDef[],
+  columnKey: string,
+  values: Record<string, unknown> | null,
+  filter: ColumnFilterValue,
+): boolean {
+  const key = columnKey.slice(3)
+  const field = fields.find(candidate => candidate.key === key)
+  const value = getExtraFieldColumnValue(values, key)
+  const matchesStored = matchesColumnFilter(field ? systemExtraFieldFilterValue(field, value) : value, filter)
+  if (field?.field_type !== 'range' || filter.type !== 'text'
+    || filter.operator === 'isEmpty' || filter.operator === 'isNotEmpty') return matchesStored
+
+  // Match the rendered range as well as the spelling used by existing filters.
+  const display = renderFieldPlainText(field, value)
+  if (!display) return matchesStored
+  const matchesDisplay = matchesColumnFilter(display, filter)
+  return filter.operator === 'notContains' ? matchesStored && matchesDisplay : matchesStored || matchesDisplay
+}
+
+export function isMissingExtraFieldSort(key: string | null, fields: SystemExtraFieldDef[]): boolean {
+  return key?.startsWith('cf_') === true && !fields.some(field => `cf_${field.key}` === key)
 }
 
 export function systemExtraFieldHeaderFilter(
@@ -356,7 +383,7 @@ export function systemExtraFieldHeaderFilter(
   return {
     key,
     label: field.label,
-    columnSelector: `th.col-${key}`,
+    columnSelector: `th[data-sort="${CSS.escape(key)}"]`,
     type,
     options,
     initialValue,
@@ -720,7 +747,7 @@ export function matchesColumnFilter(rawValue: unknown, filter: ColumnFilterValue
 
   if (filter.type === 'multi') {
     const values = isEmpty ? [''] : Array.isArray(rawValue) ? rawValue : [rawValue]
-    const normalized = values.map((value) => value == null ? '' : String(value))
+    const normalized = values.map(renderUnknownFieldPlainText)
     return filter.values.some((value) => normalized.includes(value))
   }
 
