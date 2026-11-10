@@ -28,6 +28,9 @@ from tests.test_filament_temperature_migration import (
 )
 
 # Independently chosen wire values expose normalization (CSV, casing, numeric text).
+PUBLISHED_VERSIONS = ["1.2.0", "1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5"]
+
+
 FIELDS = [
     (
         "settings_extruder_temp",
@@ -253,7 +256,7 @@ async def get(app, path):
     return response.json()
 
 
-@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+@pytest.mark.parametrize("spoolman_version", PUBLISHED_VERSIONS)
 async def test_filament_writes_use_native_temperatures_and_allow_missing_vendor(
     installed_app, db_session
 ):
@@ -292,7 +295,7 @@ async def test_filament_writes_use_native_temperatures_and_allow_missing_vendor(
         assert not row.custom_fields
 
 
-@pytest.mark.parametrize("spoolman_version", ["1.2.3", "1.2.4", "1.2.5"])
+@pytest.mark.parametrize("spoolman_version", PUBLISHED_VERSIONS)
 @pytest.mark.parametrize("storage", ["native", "promoted", "legacy"])
 async def test_published_versions_return_temperatures_in_filament_and_spool(
     installed_app, db_session, storage
@@ -340,7 +343,7 @@ async def test_published_versions_return_temperatures_in_filament_and_spool(
     assert spool["extra"]["dry"] == ("null" if storage == "legacy" else "50.0")
 
 
-@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+@pytest.mark.parametrize("spoolman_version", PUBLISHED_VERSIONS)
 async def test_downloads_include_projected_values(installed_app, db_session):
     await seed(db_session, {
         "id": 1, "extruder_temp_range_c": {"min": 210, "max": 230},
@@ -363,7 +366,7 @@ async def test_downloads_include_projected_values(installed_app, db_session):
             assert ast.literal_eval(row["custom_fields"]) == fields
 
 
-@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+@pytest.mark.parametrize("spoolman_version", PUBLISHED_VERSIONS)
 async def test_published_extras_round_trip_to_native_fields(installed_app, db_session):
     from app.services.spoolman_import_service import SpoolmanImportService
     from app.services.spoolman_projection import promotion_alias
@@ -399,6 +402,16 @@ async def test_published_extras_round_trip_to_native_fields(installed_app, db_se
     imported = await db_session.scalar(sa.select(Filament).where(Filament.id != 1))
     assert imported.drying_temp_c == 50
     assert imported.max_volumetric_speed_mm3_s == 19
+
+
+@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+async def test_health_does_not_read_extra_field_definitions(installed_app, db_session):
+    from app.models.system_extra_field import SystemExtraField
+
+    await db_session.run_sync(
+        lambda session: SystemExtraField.__table__.drop(session.connection())
+    )
+    assert await get(installed_app, "health")
 
 
 @pytest.mark.parametrize("nested", [False, True])

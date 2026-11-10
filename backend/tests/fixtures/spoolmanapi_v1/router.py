@@ -22,10 +22,22 @@ async def get_extra_fields(entity_type: str, db: DBSession):
     return await SpoolmanService(db).get_extra_fields(entity_type)
 
 
-@router.get("/export/{entity}")
-async def export_entities(entity: str, fmt: str, db: DBSession):
-    service = SpoolmanService(db)
-    rows = await (service.export_filaments() if entity == "filaments" else service.export_spools())
+@router.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+
+@router.get("/export/filaments")
+async def export_filaments(fmt: str, db: DBSession):
+    return _download(await SpoolmanService(db).export_filaments(), fmt)
+
+
+@router.get("/export/spools")
+async def export_spools(fmt: str, db: DBSession):
+    return _download(await SpoolmanService(db).export_spools(), fmt)
+
+
+def _download(rows, fmt):
     if fmt == "json":
         return rows
     output = io.StringIO()

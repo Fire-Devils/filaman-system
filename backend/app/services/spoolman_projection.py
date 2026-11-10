@@ -39,7 +39,7 @@ _NATIVE_FIELDS = {target.split(".")[0] for target in _EXTRA_FIELDS.values()} | s
     _TEMPERATURES.values()
 )
 _FILAMENT_TOP_LEVEL = {"article_number", "comment", "external_id", *_TEMPERATURES}
-_JSON_EXTRA_VERSIONS = ("1.2.3", "1.2.4", "1.2.5")
+_JSON_EXTRA_VERSIONS = ("1.2.0", "1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5")
 _NUMERIC_WIRE_FIELDS = {
     "dry_temp": "Drying Temperature",
     "dry_time_hours": "Drying Time",
@@ -483,7 +483,8 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
     )
     if not supported:
         logging.getLogger(__name__).warning(
-            "Unsupported Spoolman serializer interface/version; leaving plugin unchanged"
+            "Unsupported Spoolman compatibility interface for version %r; leaving plugin unchanged",
+            version,
         )
         return False
     if getattr(service, "_filaman_projection", False):
@@ -525,7 +526,13 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
         return wire
 
     for route in module.router.routes:
-        if isinstance(route, APIRoute):
+        if not isinstance(route, APIRoute) or not route.include_in_schema:
+            continue
+        path = route.path.removeprefix(module.router.prefix)
+        resource = path.lstrip("/").partition("/")[0]
+        if resource in {"filament", "spool"} or path in {
+            "/export/filaments", "/export/spools", "/tag/scan",
+        }:
             route.dependencies.append(Depends(_load_system_definition_context))
     service._filament_to_schema = filament_to_schema
     service._spool_to_schema = spool_to_schema
