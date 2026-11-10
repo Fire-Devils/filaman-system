@@ -250,6 +250,45 @@ async def get(app, path):
     return response.json()
 
 
+@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+async def test_filament_writes_use_native_temperatures_and_allow_missing_vendor(
+    installed_app, db_session
+):
+    filament = await seed(db_session, {
+        "id": 1, "extruder_temp_range_c": {"min": 210, "max": 230},
+        "bed_temp_range_c": {"min": 55, "max": 65},
+        "custom_fields": {"settings_extruder_temp": 190, "note": "keep"},
+    })
+    async with AsyncClient(
+        transport=ASGITransport(app=installed_app), base_url="http://test/spoolman/api/v1/"
+    ) as client:
+        patched = await client.patch("filament/1", json={
+            "settings_extruder_temp": 210, "settings_bed_temp": 0,
+        })
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["settings_bed_temp"] == 0
+        assert filament.extruder_temp_range_c == {"min": 210, "max": 230}
+        assert filament.bed_temp_range_c == {"min": 0, "max": 0}
+        assert filament.custom_fields == {"note": "keep"}
+
+        cleared = await client.patch("filament/1", json={
+            "settings_extruder_temp": None, "vendor_id": None,
+        })
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json().get("settings_extruder_temp") is None
+        assert cleared.json()["vendor"]["name"] == "Unknown"
+        assert filament.extruder_temp_range_c is None
+
+        created = await client.post("filament", json={
+            "name": "From Spoolman", "settings_extruder_temp": 240,
+        })
+        assert created.status_code == 200, created.text
+        row = await db_session.get(Filament, created.json()["id"])
+        assert row.extruder_temp_range_c == {"min": 240, "max": 240}
+        assert row.manufacturer_id == filament.manufacturer_id
+        assert not row.custom_fields
+
+
 @pytest.mark.parametrize("spoolman_version", ["1.2.3", "1.2.4", "1.2.5"])
 @pytest.mark.parametrize("storage", ["native", "promoted", "legacy"])
 async def test_published_versions_return_temperatures_in_filament_and_spool(

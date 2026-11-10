@@ -49,6 +49,13 @@ class Filament(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class FilamentParameters(BaseModel):
+    name: str | None = None
+    vendor_id: int | None = None
+    settings_extruder_temp: int | None = None
+    settings_bed_temp: int | None = None
+
+
 class Spool(BaseModel):
     id: int
     registered: datetime | None = None

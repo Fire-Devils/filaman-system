@@ -13,6 +13,16 @@ from .service import SpoolmanService
 router = APIRouter(prefix="/api/v1")
 
 
+@router.post("/filament", response_model=schemas.Filament, response_model_exclude_none=True)
+async def create_filament(data: schemas.FilamentParameters, db: DBSession):
+    return await SpoolmanService(db).create_filament(data)
+
+
+@router.patch("/filament/{filament_id}", response_model=schemas.Filament, response_model_exclude_none=True)
+async def update_filament(filament_id: int, data: schemas.FilamentParameters, db: DBSession):
+    return await SpoolmanService(db).update_filament(filament_id, data)
+
+
 @router.get(
     "/filament/{filament_id}",
     response_model=schemas.Filament,

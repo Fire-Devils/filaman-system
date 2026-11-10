@@ -1,4 +1,4 @@
-"""Read-only projection of promoted properties into the Spoolman v1 wire shape."""
+"""Compatibility between native filament properties and the Spoolman v1 API."""
 
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ from copy import deepcopy
 from functools import wraps
 from typing import Any
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from fastapi.routing import APIRoute
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import DBSession
+from app.models.filament import Filament, Manufacturer
 from app.models.system_extra_field import SystemExtraField
 from app.services.filamentdb_field_mapping import DIRECT_FIELDS
 
@@ -319,6 +321,73 @@ async def _load_system_definition_context(db: DBSession) -> None:
     db.info["spoolman_definitions"] = definitions
 
 
+async def get_or_create_unknown_manufacturer(db: DBSession) -> Manufacturer:
+    query = select(Manufacturer).where(Manufacturer.name == "Unknown")
+    manufacturer = await db.scalar(query)
+    if manufacturer is not None:
+        return manufacturer
+    try:
+        async with db.begin_nested():
+            manufacturer = Manufacturer(name="Unknown")
+            db.add(manufacturer)
+            await db.flush()
+            return manufacturer
+    except IntegrityError:
+        manufacturer = await db.scalar(query.with_for_update())
+        if manufacturer is None:
+            raise
+        return manufacturer
+
+
+async def _write_filament(service, write, data, filament_id=None):
+    payload = data.model_dump(exclude_unset=True)
+    vendor = None
+    if filament_id is None or "vendor_id" in payload:
+        if filament_id is not None and await service.db.get(Filament, filament_id) is None:
+            return None
+        if data.vendor_id is None:
+            vendor = await get_or_create_unknown_manufacturer(service.db)
+            data = data.model_copy(update={"vendor_id": vendor.id})
+        else:
+            vendor = await service.db.get(Manufacturer, data.vendor_id)
+            if vendor is None:
+                raise HTTPException(status_code=404, detail="Vendor not found")
+
+    temperatures = {key: payload[key] for key in _TEMPERATURES if key in payload}
+    args = (data,) if filament_id is None else (filament_id, data)
+    if not temperatures and vendor is None:
+        return await write(service, *args)
+
+    def apply_native_fields(session, _context, _instances):
+        candidates = session.new if filament_id is None else session.dirty
+        for filament in candidates:
+            if not isinstance(filament, Filament) or (
+                filament_id is not None and filament.id != filament_id
+            ):
+                continue
+            if vendor is not None:
+                filament.manufacturer = vendor
+            if not temperatures:
+                continue
+            custom = dict(filament.custom_fields or {})
+            for key, value in temperatures.items():
+                native = _TEMPERATURES[key]
+                current = _range_scalar(getattr(filament, native))
+                # Echoing the displayed scalar must preserve the native range.
+                if value is None or current is None or round(current) != value:
+                    setattr(filament, native, None if value is None else {"min": value, "max": value})
+                custom.pop(key, None)
+            filament.custom_fields = custom or None
+
+    # The ZIP owns its transaction and emits the response after committing.
+    session = service.db.sync_session
+    event.listen(session, "before_flush", apply_native_fields)
+    try:
+        return await write(service, *args)
+    finally:
+        event.remove(session, "before_flush", apply_native_fields)
+
+
 def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bool:
     """Adapt only the known v1 serializer interface; leave routes and queries owned by the plugin."""
     if plugin_key != "spoolmanapi":
@@ -326,18 +395,23 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
     service = getattr(module, "SpoolmanService", None)
     version = manifest.get("version")
     uses_json_extras = version in _JSON_EXTRA_VERSIONS
+    methods = {
+        "_filament_to_schema": ["self", "filament"],
+        "_spool_to_schema": ["self", "spool"],
+    }
+    if uses_json_extras:
+        methods.update(
+            create_filament=["self", "data"],
+            update_filament=["self", "filament_id", "data"],
+        )
     supported = (
         (version == "1.0.0" or uses_json_extras)
         and isinstance(service, type)
         and service.__module__ == "spoolmanapi.service"
         and all(
             callable(getattr(service, method, None))
-            and list(inspect.signature(getattr(service, method)).parameters)
-            == ["self", parameter]
-            for method, parameter in (
-                ("_filament_to_schema", "filament"),
-                ("_spool_to_schema", "spool"),
-            )
+            and list(inspect.signature(getattr(service, method)).parameters) == parameters
+            for method, parameters in methods.items()
         )
     )
     if not supported:
@@ -378,5 +452,19 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
             route.dependencies.append(Depends(_load_system_definition_context))
     service._filament_to_schema = filament_to_schema
     service._spool_to_schema = spool_to_schema
+    if uses_json_extras:
+        original_create = service.create_filament
+        original_update = service.update_filament
+
+        @wraps(original_create)
+        async def create_filament(self, data):
+            return await _write_filament(self, original_create, data)
+
+        @wraps(original_update)
+        async def update_filament(self, filament_id, data):
+            return await _write_filament(self, original_update, data, filament_id)
+
+        service.create_filament = create_filament
+        service.update_filament = update_filament
     service._filaman_projection = True
     return True

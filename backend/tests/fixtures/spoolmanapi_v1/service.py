@@ -8,7 +8,9 @@ from pathlib import Path
 
 from app.models.filament import Filament, Manufacturer
 from app.models.spool import Spool
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from . import schemas
 
@@ -35,6 +37,42 @@ def _weight_to_length_mm(
 class SpoolmanService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def create_filament(self, data):
+        filament = Filament(
+            designation=data.name, manufacturer_id=data.vendor_id,
+            material_type="PLA", diameter_mm=1.75,
+            custom_fields={"settings_extruder_temp": data.settings_extruder_temp},
+        )
+        self.db.add(filament)
+        await self.db.commit()
+        return self._filament_to_schema(await self._get_filament(filament.id))
+
+    async def update_filament(self, filament_id, data):
+        filament = await self._get_filament(filament_id)
+        if filament is None:
+            return None
+        changes = data.model_dump(exclude_unset=True)
+        if "vendor_id" in changes:
+            filament.manufacturer_id = changes["vendor_id"]
+        custom = dict(filament.custom_fields or {})
+        for key in ("settings_extruder_temp", "settings_bed_temp"):
+            if key in changes:
+                if changes[key] is None:
+                    custom.pop(key, None)
+                else:
+                    custom[key] = changes[key]
+        filament.custom_fields = custom or None
+        await self.db.commit()
+        return self._filament_to_schema(await self._get_filament(filament.id))
+
+    async def _get_filament(self, filament_id):
+        return await self.db.scalar(
+            select(Filament).where(Filament.id == filament_id).options(
+                selectinload(Filament.manufacturer),
+                selectinload(Filament.filament_colors),
+            ).execution_options(populate_existing=True)
+        )
 
     def _manufacturer_to_vendor(self, manufacturer: Manufacturer) -> schemas.Vendor:
         extra = dict(manufacturer.custom_fields or {})

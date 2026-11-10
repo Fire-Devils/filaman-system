@@ -36,7 +36,7 @@ from app.services.spoolman_extra_field_planner import (
     DefinitionAssessment,
     SpoolmanExtraFieldPlanner,
 )
-from app.services.spoolman_projection import promotion_alias
+from app.services.spoolman_projection import get_or_create_unknown_manufacturer, promotion_alias
 from app.services.spoolman_standard_fields import (
     compatible_unit,
     standard_fan_pair,
@@ -1182,7 +1182,7 @@ class SpoolmanImportService:
 
             if not filaman_mfr_id:
                 # Unbekannter Hersteller - "Unknown" anlegen oder finden
-                filaman_mfr_id = await self._get_or_create_unknown_manufacturer()
+                filaman_mfr_id = (await get_or_create_unknown_manufacturer(self.db)).id
                 result.warnings.append(
                     f"Filament '{fil_data.get('name', '?')}' (ID {spoolman_id}): "
                     "Kein Hersteller zugeordnet, verwende 'Unknown'"
@@ -1612,20 +1612,6 @@ class SpoolmanImportService:
                     f"Fehler beim Import von Spule Spoolman #{spoolman_id}: {e}"
                 )
                 logger.warning(f"Spool-Import fehlgeschlagen: {e}", exc_info=True)
-
-    async def _get_or_create_unknown_manufacturer(self) -> int:
-        """'Unknown'-Hersteller finden oder erstellen."""
-        existing = await self.db.execute(
-            select(Manufacturer).where(Manufacturer.name == "Unknown")
-        )
-        mfr = existing.scalar_one_or_none()
-        if mfr:
-            return mfr.id
-
-        new_mfr = Manufacturer(name="Unknown")
-        self.db.add(new_mfr)
-        await self.db.flush()
-        return new_mfr.id
 
     @classmethod
     def _shop_url(cls, value: Any) -> str | None:
