@@ -223,7 +223,7 @@ const { id } = Astro.params
     let updatePrinterSaveState = () => {}
     let filamentSystemFieldMap: Record<string, SystemExtraFieldDef> = {}
     // Pending slot assignment state (for animated ring feedback)
-    let pendingSlotAssign: { slotIndex: string; printerId: number; expectedColor: string } | null = null
+    let pendingSlotAssign: { slotIndex: string; printerId: number; spoolId: number } | null = null
     let pendingSlotTimeout: ReturnType<typeof setTimeout> | null = null
     let pendingSlotPollTimer: ReturnType<typeof setTimeout> | null = null
     
@@ -1458,7 +1458,7 @@ const { id } = Astro.params
           )
         )
 
-        const onlinePrinters = healthResults
+        let onlinePrinters = healthResults
           .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value != null && r.value.health?.connected && r.value.health.slots?.length > 0)
           .map(r => r.value)
         if (!isCurrent()) return
@@ -1468,15 +1468,23 @@ const { id } = Astro.params
         // DB slot assignments. This ensures active spool changes made outside
         // FilaMan are visible immediately on page load.
         await Promise.allSettled(
-          onlinePrinters.map(async ({ printer }) => {
+          onlinePrinters.map(async (entry) => {
             try {
-              await fetch(`/api/v1/printers/${printer.id}/driver/health?refresh=1`, {
+              const healthRes = await fetch(`/api/v1/printers/${entry.printer.id}/driver/health?refresh=1`, {
                 credentials: 'include',
                 signal: getAbortSignal()
               })
+              if (healthRes.ok) {
+                const health = await healthRes.json()
+                if (typeof health?.connected === 'boolean') entry.health = health
+              }
             } catch {}
           })
         )
+
+        if (!isCurrent()) return
+        onlinePrinters = onlinePrinters.filter(({ health }) => health.connected && health.slots?.length > 0)
+        if (onlinePrinters.length === 0) { clear(); return }
 
         // Fetch DB slot assignments for all online printers
         const dbSlotsByPrinter: Record<string, any> = {}
@@ -1504,29 +1512,23 @@ const { id } = Astro.params
 
           // Merge DB slot assignments into health slots
           const dbSlots = dbSlotsByPrinter[printer.id] || []
-          const dbSlotAssignments: Record<string, any> = {}
+          const dbSlotAssignments = new Map<string, any>()
           for (const s of dbSlots) {
-            const slotIndexFromDb = s?.custom_fields?.slot_index
-            const legacySlotIndex = `${Math.floor(s.slot_no / 4)}-${s.slot_no % 4}`
-            const resolvedSlotIndex = slotIndexFromDb || legacySlotIndex
-            if (s.assignment) {
-              dbSlotAssignments[resolvedSlotIndex] = s.assignment
-            }
+            if (s.is_active === false || !s.assignment) continue
+            const legacySlotIndex = s.slot_no >= 1000 ? `255-${s.slot_no - 1000}` : `${Math.floor(s.slot_no / 4)}-${s.slot_no % 4}`
+            const rawIndex = s.custom_fields?.slot_index || legacySlotIndex
+            const index = canonicalSlotIndex(rawIndex)
+            if (rawIndex === index || !dbSlotAssignments.has(index)) dbSlotAssignments.set(index, s.assignment)
           }
           for (const slot of slots) {
-            const assignment = dbSlotAssignments[slot.slot_index] || null
-            slot._assignment = assignment
-            if (assignment) {
-              if (!slot.tray_color) {
-                slot.tray_color = assignment.tray_color || assignment.color_hex || ''
-              }
-              if (!slot.tray_type && assignment.tray_type) {
-                slot.tray_type = assignment.tray_type
-              }
-              if (slot.present === false && assignment.present) {
-                slot.present = true
-              }
-            }
+            const assignment = dbSlotAssignments.get(canonicalSlotIndex(slot.slot_index)) ?? null
+            // Older Moonraker bridges report only the printer-wide spool for a single toolhead.
+            const legacyToolhead = isLegacyMoonrakerToolhead(printer.driver_key, slot, slots.length) &&
+              health.active_spool_id != null && assignment?.present === true &&
+              String(assignment.spool_id) === String(health.active_spool_id)
+            if (legacyToolhead) slot.present = true
+            const compatibleAssignment = slot.spool_id === undefined || String(slot.spool_id) === String(assignment?.spool_id)
+            slot._assignment = legacyToolhead || compatibleAssignment ? assignment : null
           }
 
           // Group slots by kind
@@ -1540,7 +1542,7 @@ const { id } = Astro.params
               continue
             }
 
-            const idx = slot.slot_index || ''
+            const idx = canonicalSlotIndex(slot.slot_index || '')
             const parts = idx.split('-')
             const amsId = parseInt(parts[0])
             if (amsId === 255) {
@@ -1554,7 +1556,7 @@ const { id } = Astro.params
           html += `<div class="fm-card" style="padding:10px 14px;"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;">`
           // Printer name + slot count
           html += `<div style="min-width:80px;">` +
-            `<div style="font-size:0.8rem;font-weight:600;white-space:nowrap;">${printer.name}</div>` +
+            `<div style="font-size:0.8rem;font-weight:600;white-space:nowrap;">${escapeExtraFieldHtml(printer.name)}</div>` +
             `<div style="font-size:0.65rem;color:var(--text-muted);">${slots.length} Slots</div>` +
             `</div>`
 
@@ -1609,31 +1611,48 @@ const { id } = Astro.params
 
     // -- Slot rendering helpers -----------------------------------------------
 
-    function renderSlotTooltip(slot: any) {
-      if (slot._assignment) {
-        const a = slot._assignment
-        const parts = []
-        if (a.manufacturer_name) parts.push(a.manufacturer_name)
-        if (a.filament_name) parts.push(a.filament_name)
-        if (a.spool_id) parts.push(`(#${a.spool_id})`)
-        if (parts.length > 0) return parts.join(' - ')
-      }
-      return slot.tray_type || 'Empty'
+    function isLegacyMoonrakerToolhead(driverKey: unknown, slot: { slot_kind?: string; spool_id?: number | string | null } | undefined, slotCount: number) {
+      return driverKey === 'moonraker_filaman' && slotCount === 1 && slot?.spool_id == null &&
+        (slot?.slot_kind === 'toolhead' || slot?.slot_kind === 'tool')
+    }
+
+    function canonicalSlotIndex(slotIndex: string) {
+      const parts = /^(\d+)-(\d+)$/.exec(slotIndex)
+      if (!parts) return slotIndex
+      const amsId = Number(parts[1])
+      const trayId = Number(parts[2])
+      if (amsId === 254) return trayId === 1 || trayId === 255 ? '255-1' : '255-0'
+      if (amsId === 255 && (trayId === 254 || trayId === 255)) return `255-${trayId - 254}`
+      return `${amsId}-${trayId}`
+    }
+
+    function slotColor(value: unknown) {
+      if (typeof value !== 'string' || !/^#?(?:[\da-f]{6}|[\da-f]{8})$/i.test(value)) return ''
+      const hex = value.replace(/^#/, '')
+      return hex === '00000000' ? '' : `#${hex.slice(0, 6)}`
+    }
+
+    function renderSlotTooltip(slot: any, isPresent: boolean | undefined) {
+      if (isPresent === false) return t('printers.slotEmpty')
+      const assignment = slot._assignment
+      const parts = [assignment?.manufacturer_name, assignment?.filament_name].filter(Boolean)
+      const spoolId = slot.spool_id ?? assignment?.spool_id
+      if (spoolId) parts.push(`(#${spoolId})`)
+      if (parts.length > 0) return parts.join(' - ')
+      return slot.tray_type || assignment?.tray_type || assignment?.material_type ||
+        t(isPresent ? 'printers.slotOccupied' : 'common.unknown')
     }
 
     function renderSlotDot(slot: any, printerId: any) {
-      const assignment = slot?._assignment || null
-      let colorHex = slot.tray_color || assignment?.tray_color || assignment?.color_hex || ''
-      if (colorHex && !colorHex.startsWith('#')) colorHex = '#' + colorHex
-      if (colorHex.length === 9) colorHex = colorHex.slice(0, 7)
-      const hasColor = colorHex.length >= 7
-      const hasAssignedSpool = Boolean(assignment?.spool_id)
-      const isPresent = slot.present !== false || assignment?.present === true || hasAssignedSpool
-      const slotJson = JSON.stringify(slot).replace(/"/g, '&quot;')
-      const dotAttrs = `class="slot-dot" data-slot="${slotJson}" data-printer-id="${printerId}"`
-      const tooltipTitle = renderSlotTooltip(slot)
-      if (hasColor && isPresent) {
-        return `<span ${dotAttrs} title="${tooltipTitle}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex};border:1px solid var(--border);flex-shrink:0;cursor:pointer;"></span>`
+      const assignment = slot._assignment
+      const colorHex = slotColor(slot.tray_color) || slotColor(assignment?.tray_color) || slotColor(assignment?.color_hex)
+      const hasFilament = Boolean(slot.spool_id || assignment?.spool_id || slot.tray_type || assignment?.tray_type || colorHex)
+      const isPresent = typeof slot.present === 'boolean' ? slot.present : (hasFilament ? true : assignment?.present)
+      const slotJson = escapeExtraFieldHtml(JSON.stringify(slot))
+      const dotAttrs = `class="slot-dot" data-slot="${slotJson}" data-slot-index="${escapeExtraFieldHtml(slot.slot_index)}" data-printer-id="${escapeExtraFieldHtml(String(printerId))}"`
+      const tooltipTitle = escapeExtraFieldHtml(renderSlotTooltip(slot, isPresent))
+      if (isPresent !== false) {
+        return `<span ${dotAttrs} title="${tooltipTitle}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex || '#d1d5db'};border:1px solid var(--border);flex-shrink:0;cursor:pointer;"></span>`
       }
       // Empty slot: grey circle with red X
       return `<span ${dotAttrs} title="${tooltipTitle}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#d1d5db;border:1px solid var(--border);flex-shrink:0;cursor:pointer;font-size:11px;line-height:1;color:#dc2626;font-weight:900;">✕</span>`
@@ -1666,10 +1685,10 @@ const { id } = Astro.params
       menu.style.left = rect.left + 'px'
 
       // Make slot_name user-friendly: AMS 0 → AMS 1
-      let slotLabel = slot.slot_name || slot.slot_index
+      let slotLabel = String(slot.slot_name || slot.slot_index || '')
       slotLabel = slotLabel.replace(/AMS (\d+)/, (_: string, n: string) => `AMS ${parseInt(n) + 1}`)
       menu.innerHTML = `
-        <div style="padding:6px 12px;font-weight:600;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">${slotLabel}</div>
+        <div style="padding:6px 12px;font-weight:600;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">${escapeExtraFieldHtml(slotLabel)}</div>
         <button class="ctx-item" data-action="assign" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#16a34a;cursor:pointer;font-size:0.82rem;"><img src="/to_printer.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(45%) sepia(96%) saturate(497%) hue-rotate(110deg) brightness(96%) contrast(91%);" />${t('spools.slotAssignSpool')}</button>
         <button class="ctx-item" data-action="import-spool" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#2563eb;cursor:pointer;font-size:0.82rem;"><img src="/to_spool.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(33%) sepia(100%) saturate(1946%) hue-rotate(215deg) brightness(97%) contrast(96%);" />${t('spools.slotImportToSpool')}</button>
         <button class="ctx-item" data-action="import-both" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;border:none;background:none;color:#2563eb;cursor:pointer;font-size:0.82rem;"><img src="/to_spool.svg" width="18" height="18" style="flex-shrink:0;filter:brightness(0) saturate(100%) invert(33%) sepia(100%) saturate(1946%) hue-rotate(215deg) brightness(97%) contrast(96%);" />${t('spools.slotImportToSpoolAndFilament')}</button>
@@ -1715,7 +1734,10 @@ const { id } = Astro.params
 
     function getSlotDot(slotIndex: string, printerId: number): HTMLElement | null {
       const container = document.getElementById('printer-slots-inline')
-      return container?.querySelector(`.slot-dot[data-printer-id="${printerId}"][data-slot*='"slot_index":"${slotIndex}"']`) || null
+      const dots = Array.from(container?.querySelectorAll<HTMLElement>(`.slot-dot[data-printer-id="${printerId}"]`) ?? [])
+      const canonicalIndex = canonicalSlotIndex(slotIndex)
+      return dots.find(dot => dot.dataset.slotIndex === slotIndex) ??
+        dots.find(dot => canonicalSlotIndex(dot.dataset.slotIndex ?? '') === canonicalIndex) ?? null
     }
 
     function clearSlotRingState(dotEl: HTMLElement) {
@@ -1728,7 +1750,7 @@ const { id } = Astro.params
       pendingSlotAssign = null
     }
 
-    function resolveSlotAssign(status: 'success' | 'error') {
+    function resolveSlotAssign(status?: 'success' | 'error') {
       if (!pendingSlotAssign) return
       const { slotIndex, printerId } = pendingSlotAssign
       clearPendingSlotAssign()
@@ -1737,54 +1759,47 @@ const { id } = Astro.params
       clearSlotRingState(dot)
       if (status === 'success') {
         dot.classList.add('slot-success')
-        setTimeout(async () => {
-          if (dot) clearSlotRingState(dot)
+        setTimeout(() => {
+          dot.classList.remove('slot-success')
           queueOverviewReload({ weight: false })
         }, 2000)
-      } else {
+      } else if (status === 'error') {
         dot.classList.add('slot-error')
       }
     }
 
     function startSlotPolling() {
-      if (!pendingSlotAssign) return
-      const { printerId, slotIndex, expectedColor } = pendingSlotAssign
-      let attempts = 0
-      const maxAttempts = 5
+      const pending = pendingSlotAssign
+      if (!pending) return
+      const { printerId, slotIndex, spoolId } = pending
+      const canonicalIndex = canonicalSlotIndex(slotIndex)
 
       async function poll() {
-        if (
-          !pendingSlotAssign ||
-          pendingSlotAssign.slotIndex !== slotIndex ||
-          pendingSlotAssign.printerId !== printerId
-        ) {
-          return
-        }
-        attempts++
+        if (pendingSlotAssign !== pending) return
         try {
           const res = await fetch(`/api/v1/printers/${printerId}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
           if (res.ok) {
             const health = await res.json()
-            const slots = health.slots || []
-            const slot = slots.find((s: any) => s.slot_index === slotIndex)
-            if (slot) {
-              // Normalize both colors for comparison (strip # and alpha, lowercase)
-              const slotColor = (slot.tray_color || '').replace('#', '').slice(0, 6).toLowerCase()
-              const expected = expectedColor.toLowerCase()
-              if (slotColor === expected) {
-                resolveSlotAssign('success')
-                return
-              }
+            if (pendingSlotAssign !== pending) return
+            const slots: { slot_index: string; slot_kind?: string; spool_id?: number | string | null }[] = health.connected ? health.slots || [] : []
+            const slot = slots.find(s => s.slot_index === slotIndex) ??
+              slots.find(s => canonicalSlotIndex(s.slot_index) === canonicalIndex)
+            const linkedSpoolId = isLegacyMoonrakerToolhead(health.driver_key, slot, slots.length)
+              ? health.active_spool_id
+              : slot?.spool_id
+            if (linkedSpoolId === spoolId || linkedSpoolId === String(spoolId)) {
+              resolveSlotAssign('success')
+              return
             }
           }
         } catch (e) {
-          if (isAbortError(e)) return
+          if (pendingSlotAssign !== pending) return
+          if (isAbortError(e)) { resolveSlotAssign(); return }
           console.error('Slot poll error:', e)
         }
-        if (attempts < maxAttempts && pendingSlotAssign) {
+        if (pendingSlotAssign === pending) {
           pendingSlotPollTimer = setTimeout(poll, 3000)
         }
-        // If max attempts reached, the global timeout (15s) will handle it
       }
 
       // Start first poll after 3s (give the printer time to process)
@@ -1816,32 +1831,33 @@ const { id } = Astro.params
       }
     }
 
-    async function handleAssignSpoolToTray(slot: any, printerId: any) {
-      if (!spool) return
-      const idx = slot.slot_index || ''
-      const parts = idx.split('-')
-      const amsId = parseInt(parts[0])
-      const trayId = parseInt(parts[1])
-      const slotIndex = `${amsId}-${trayId}`
+    async function handleAssignSpoolToTray(slot: any, printerId: number) {
+      if (pendingSlotAssign || overviewDisposed) return
+      const spoolId = spool?.id
+      if (typeof spoolId !== 'number' || spoolId <= 0) return
+      const slotIndex = slot.slot_index
+      if (typeof slotIndex !== 'string' || !/^\d+-\d+$/.test(slotIndex)) return
+      const [amsId, trayId] = slotIndex.split('-').map(Number)
+      const pending = { slotIndex, printerId, spoolId }
+      pendingSlotAssign = pending
 
       // Warn before assigning when no Bambu cloud profile resolves for this
       // printer's model — the slot would otherwise get generic settings silently.
       try {
         const mc = await getModelCoverageForPrinter(printerId)
+        if (pendingSlotAssign !== pending) return
         if (mc && (mc.status === 'missing' || mc.status === 'not_set')) {
           const proceed = window.confirm(
             `No Bambu slicer profile resolves for ${mc.model} on this printer ` +
             `(${mc.status}). The slot will be assigned with generic settings and ` +
             `may not match in Bambu Studio.\n\nAssign anyway?`
           )
-          if (!proceed) return
+          if (!proceed) { resolveSlotAssign(); return }
         }
       } catch (e) {
-        if (isAbortError(e)) return
+        if (pendingSlotAssign !== pending) return
+        if (isAbortError(e)) { resolveSlotAssign(); return }
       }
-
-      // Clear any previous pending state
-      clearPendingSlotAssign()
 
       // Immediately show white pulsing ring
       const dotEl = getSlotDot(slotIndex, printerId)
@@ -1874,7 +1890,8 @@ const { id } = Astro.params
           color: (spool.filament?.colors?.[0]?.color?.hex_code || 'FFFFFF').replace('#', '').slice(0, 6),
         }
       } catch (e) {
-        if (isAbortError(e)) return
+        if (pendingSlotAssign !== pending) return
+        if (isAbortError(e)) { resolveSlotAssign(); return }
         console.error('Failed to fetch params for assign:', e)
         filamentData = {
           tray_info_idx: 'GFL99',
@@ -1886,6 +1903,7 @@ const { id } = Astro.params
         }
       }
 
+      if (pendingSlotAssign !== pending) return
       try {
         const res = await fetch(`/api/v1/printers/${printerId}/driver/action`, {
           method: 'POST',
@@ -1897,10 +1915,8 @@ const { id } = Astro.params
             params: { ams_id: amsId, tray_id: trayId, filament_data: filamentData, spool_id: id }
           })
         })
+        if (pendingSlotAssign !== pending) return
         if (res.ok) {
-          // Track expected color for polling comparison
-          const expectedColor = ((filamentData.color as string) || 'FFFFFF').slice(0, 6)
-          pendingSlotAssign = { slotIndex, printerId, expectedColor }
           // Absolute timeout fallback (15s)
           pendingSlotTimeout = setTimeout(() => {
             resolveSlotAssign('error')
@@ -1909,15 +1925,15 @@ const { id } = Astro.params
           startSlotPolling()
         } else {
           const err = await res.json().catch(() => null)
-          if (dotEl) { clearSlotRingState(dotEl); dotEl.classList.add('slot-error') }
-          clearPendingSlotAssign()
+          if (pendingSlotAssign !== pending) return
+          resolveSlotAssign('error')
           window.__fmAlert?.(err?.detail?.message || t('spools.slotAssignError'))
         }
       } catch (e) {
-        if (isAbortError(e)) return
+        if (pendingSlotAssign !== pending) return
+        if (isAbortError(e)) { resolveSlotAssign(); return }
         console.error('Failed to assign spool to tray:', e)
-        if (dotEl) { clearSlotRingState(dotEl); dotEl.classList.add('slot-error') }
-        clearPendingSlotAssign()
+        resolveSlotAssign('error')
         window.__fmAlert?.(t('spools.slotAssignError'))
       }
     }
@@ -2017,17 +2033,10 @@ const { id } = Astro.params
       }, 200)
     }
 
-    window.addEventListener('filaman:data-changed', async (e: Event) => {
+    window.addEventListener('filaman:data-changed', (e: Event) => {
       const data = (e as CustomEvent).detail
       if (data.event === 'slots_update') {
-        if (pendingSlotAssign && data.printer_id === pendingSlotAssign.printerId) {
-          // Fast path: SSE confirms the assignment for the correct printer
-          resolveSlotAssign('success')
-        } else if (!pendingSlotAssign) {
-          // No pending assign — just reload slot overview as usual
-          queueOverviewReload({ weight: false })
-        }
-        // If pending but wrong printer_id → ignore, let polling handle it
+        if (!pendingSlotAssign) queueOverviewReload({ weight: false })
       } else if (data.event === 'spools_changed') {
         queueOverviewReload({ printers: false })
       } else if (data.event === 'printer_update' && !pendingSlotAssign) {
@@ -2037,13 +2046,24 @@ const { id } = Astro.params
 
     // Multi-worker fallback: keep slots and remaining values fresh even
     // if SSE events are handled by another worker process.
-    overviewIntervalId = window.setInterval(() => {
+    function startOverviewPolling() {
+      overviewIntervalId ??= window.setInterval(() => queueOverviewReload(), 15000)
+    }
+    startOverviewPolling()
+
+    window.addEventListener('pageshow', (event) => {
+      if (!event.persisted) return
+      overviewDisposed = false
+      startOverviewPolling()
       queueOverviewReload()
-    }, 15000)
+    })
 
     window.addEventListener('pagehide', () => {
       overviewDisposed = true
+      printerOverviewRequest++
+      clearPendingSlotAssign()
       if (pendingOverviewReload != null) window.clearTimeout(pendingOverviewReload)
+      pendingOverviewReload = null
       if (overviewIntervalId != null) {
         window.clearInterval(overviewIntervalId)
         overviewIntervalId = null
