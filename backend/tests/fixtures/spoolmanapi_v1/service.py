@@ -1,14 +1,24 @@
-"""Frozen v1.0.0 serialization contract; only its read routes are needed here."""
+"""v1.0.0 read serializers with the published v1.2 JSON extra encoding."""
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 
 from app.models.filament import Filament, Manufacturer
 from app.models.spool import Spool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import schemas
+
+_MANIFEST_VERSION = json.loads(Path(__file__).with_name("plugin.json").read_text())["version"]
+
+
+def _wire_extra(custom_fields: dict) -> dict:
+    if _MANIFEST_VERSION == "1.0.0":
+        return custom_fields
+    return {key: json.dumps(value) for key, value in custom_fields.items()}
 
 
 def _weight_to_length_mm(
@@ -93,7 +103,7 @@ class SpoolmanService:
             multi_color_hexes=multi_color_hexes,
             multi_color_direction=filament.multi_color_style,
             external_id=external_id,
-            extra=custom_fields,
+            extra=_wire_extra(custom_fields),
         )
 
     def _spool_to_schema(self, spool: Spool) -> schemas.Spool:
@@ -141,5 +151,5 @@ class SpoolmanService:
             lot_nr=spool.lot_number,
             comment=comment,
             archived=spool.status.key == "archived" if spool.status else False,
-            extra=custom_fields,
+            extra=_wire_extra(custom_fields),
         )

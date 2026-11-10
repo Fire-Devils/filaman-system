@@ -35,6 +35,7 @@ _NATIVE_FIELDS = {target.split(".")[0] for target in _EXTRA_FIELDS.values()} | s
     _TEMPERATURES.values()
 )
 _FILAMENT_TOP_LEVEL = {"article_number", "comment", "external_id", *_TEMPERATURES}
+_JSON_EXTRA_VERSIONS = ("1.2.3", "1.2.4", "1.2.5")
 
 
 def promotion_alias(target: str, raw: Any, native: Any) -> dict[str, Any]:
@@ -323,8 +324,10 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
     if plugin_key != "spoolmanapi":
         return False
     service = getattr(module, "SpoolmanService", None)
+    version = manifest.get("version")
+    uses_json_extras = version in _JSON_EXTRA_VERSIONS
     supported = (
-        manifest.get("version") == "1.0.0"
+        (version == "1.0.0" or uses_json_extras)
         and isinstance(service, type)
         and service.__module__ == "spoolmanapi.service"
         and all(
@@ -356,7 +359,18 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
     def spool_to_schema(self, spool):
         wire = original_spool(self, spool)
         definitions = self.db.info.get("spoolman_definitions", {}).get("spool", {})
-        wire.extra = project_extra(spool, wire.extra, filament=spool.filament, system_definitions=definitions)
+        # Ownership checks use stored values, while newer serializers require JSON strings.
+        extra = (
+            {key: json.loads(value) for key, value in wire.extra.items()}
+            if uses_json_extras else wire.extra
+        )
+        projected = project_extra(
+            spool, extra, filament=spool.filament, system_definitions=definitions
+        )
+        wire.extra = (
+            {key: json.dumps(value) for key, value in projected.items()}
+            if uses_json_extras else projected
+        )
         return wire
 
     for route in module.router.routes:

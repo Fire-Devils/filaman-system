@@ -82,8 +82,15 @@ FIELDS = [
 ]
 
 
+@pytest.fixture
+def spoolman_version():
+    return "1.0.0"
+
+
 @pytest_asyncio.fixture(params=["hot", "startup"])
-async def installed_app(request, tmp_path, monkeypatch, db_session, db_engine):
+async def installed_app(
+    request, tmp_path, monkeypatch, db_session, db_engine, spoolman_version
+):
     from app.api.v1 import router as loader
     from app.core import database
     from app.services import plugin_service
@@ -92,6 +99,9 @@ async def installed_app(request, tmp_path, monkeypatch, db_session, db_engine):
     shutil.copytree(
         Path(__file__).parent / "fixtures/spoolmanapi_v1", tmp_path / "spoolmanapi"
     )
+    manifest_path = tmp_path / "spoolmanapi" / "plugin.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest_path.write_text(json.dumps({**manifest, "version": spoolman_version}))
     monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
     monkeypatch.setattr(database, "async_session_maker", async_sessionmaker(db_engine))
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -116,7 +126,7 @@ async def installed_app(request, tmp_path, monkeypatch, db_session, db_engine):
     app.dependency_overrides[get_db] = override_db
     db_session.add(InstalledPlugin(
         plugin_key="spoolmanapi", name="Spoolman-Compatible API",
-        version="1.0.0", plugin_type="integration",
+        version=spoolman_version, plugin_type="integration",
     ))
     await db_session.commit()
     yield app
@@ -238,6 +248,56 @@ async def get(app, path):
         response = await client.get("/spoolman/api/v1/" + path)
     assert response.status_code == 200, response.text
     return response.json()
+
+
+@pytest.mark.parametrize("spoolman_version", ["1.2.3", "1.2.4", "1.2.5"])
+@pytest.mark.parametrize("storage", ["native", "promoted", "legacy"])
+async def test_published_versions_return_temperatures_in_filament_and_spool(
+    installed_app, db_session, storage
+):
+    custom_fields = {"article_number": "ARTICLE"}
+    row = {"id": 1, "custom_fields": custom_fields}
+    if storage == "legacy":
+        custom_fields.update(
+            settings_extruder_temp=210, settings_bed_temp=55, dry_temp=50.0, dry_time_hours=6.0
+        )
+    else:
+        row.update(
+            extruder_temp_range_c={"min": 210, "max": 230},
+            bed_temp_range_c={"min": 55, "max": 65},
+            drying_temp_c=50.0,
+            drying_time_hours=6.0,
+        )
+    if storage == "promoted":
+        row["label_field_aliases"] = {
+            "settings_extruder_temp": "extruder_temp_range_c",
+            "settings_bed_temp": "bed_temp_range_c",
+            "dry_temp": "drying_temp_c",
+            "dry_time_hours": "drying_time_hours",
+        }
+    await seed(
+        db_session,
+        row,
+        {
+            "id": 1,
+            "custom_fields": {"rack": "A", "spoolman_extra": {"keep": "yes"}},
+            "label_field_aliases": {"spoolman_extra.dry": "drying_temp_c"},
+        },
+    )
+
+    filament = await get(installed_app, "filament/1")
+    spool = await get(installed_app, "spool/1")
+    assert spool["filament"] == filament
+    assert filament["settings_extruder_temp"] == 210
+    assert filament["settings_bed_temp"] == 55
+    assert filament["article_number"] == "ARTICLE"
+    assert filament["extra"] == {"dry_temp": "50.0", "dry_time_hours": "6.0"}
+    assert spool["initial_weight"] == 1000
+    assert spool["extra"]["rack"] == '"A"'
+    assert json.loads(spool["extra"]["spoolman_extra"]) == {
+        "keep": "yes",
+        "dry": None if storage == "legacy" else "50.0",
+    }
 
 
 @pytest.mark.parametrize("nested", [False, True])
@@ -416,6 +476,7 @@ def test_loader_adapter_is_idempotent_and_rejects_unknown_versions(installed_app
     method = module.SpoolmanService._filament_to_schema
     assert adapt_installed_spoolman(module, "spoolmanapi", {"version": "1.0.0"})
     assert module.SpoolmanService._filament_to_schema is method
+    assert not adapt_installed_spoolman(module, "spoolmanapi", {"version": "1.2.6"})
     assert not adapt_installed_spoolman(module, "spoolmanapi", {"version": "2.0.0"})
     assert not adapt_installed_spoolman(module, "unrelated", {"version": "1.0.0"})
     assert not adapt_installed_spoolman(object(), "spoolmanapi", {"version": "1.0.0"})
