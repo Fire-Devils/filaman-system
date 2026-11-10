@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import Mock
 
@@ -103,6 +104,57 @@ async def _assignments_by_slot_index(db_session, printer_id: int) -> dict[str, i
 
 class TestPerSlotSpoolAssignment:
     @pytest.mark.asyncio
+    async def test_emitter_copies_slot_records_before_the_driver_can_reuse_them(self, monkeypatch):
+        manager = PluginManager()
+        received = []
+
+        async def capture(_printer_id, report):
+            received.append(report["slots"][0]["present"])
+
+        monkeypatch.setattr(manager, "_handle_event", capture)
+        emit = manager._create_event_handler(1)
+        slot = _tray("0-0", "AMS 1", present=True)
+        emit({"event_type": "slots_update", "slots": [slot]})
+        slot["present"] = False
+        emit({"event_type": "slots_update", "slots": [slot]})
+        await asyncio.sleep(0)
+
+        assert received == [True, False]
+
+    @pytest.mark.asyncio
+    async def test_rapid_slot_events_are_persisted_in_report_order(self, db_session, slots_env, monkeypatch):
+        printer, _ = slots_env
+        manager = PluginManager()
+        first_started = asyncio.Event()
+        finish_first = asyncio.Event()
+        opened_sessions = []
+
+        @asynccontextmanager
+        async def delayed_session():
+            opened_sessions.append(None)
+            if len(opened_sessions) == 1:
+                first_started.set()
+                await finish_first.wait()
+            yield db_session
+
+        monkeypatch.setattr("app.plugins.manager.async_session_maker", delayed_session)
+        inserted = asyncio.create_task(manager._handle_event(printer.id, {
+            "event_type": "slots_update", "slots": [_tray("0-0", "AMS 1", present=True)],
+        }))
+        await asyncio.wait_for(first_started.wait(), 1)
+        removed = asyncio.create_task(manager._handle_event(printer.id, {
+            "event_type": "slots_update", "slots": [_tray("0-0", "AMS 1", spool_id=None)],
+        }))
+        await asyncio.sleep(0)
+        if len(opened_sessions) > 1:
+            await removed
+        finish_first.set()
+        await asyncio.gather(inserted, removed)
+
+        assignment = (await db_session.scalars(select(PrinterSlotAssignment))).one()
+        assert assignment.present is False
+
+    @pytest.mark.asyncio
     async def test_spool_lands_on_reporting_toolhead(self, db_session, slots_env):
         """A spool reported for toolhead 2 must not be recorded on toolhead 1."""
         printer, spools = slots_env
@@ -119,6 +171,62 @@ class TestPerSlotSpoolAssignment:
         assignments = await _assignments_by_slot_index(db_session, printer.id)
         assert assignments["0-1"] == spools[1].id
         assert assignments["0-0"] is None
+
+    @pytest.mark.asyncio
+    async def test_clearing_a_spool_link_keeps_the_reported_occupancy(self, db_session, slots_env):
+        printer, spools = slots_env
+        manager = PluginManager()
+        tray = _tray("0-0", "AMS 1", present=True, tray_type="PETG", tray_color="123456")
+        await manager._handle_slots_update(printer.id, [{**tray, "spool_id": spools[0].id}])
+        await manager._handle_slots_update(printer.id, [{**tray, "spool_id": None}])
+
+        assignment = (await db_session.scalars(select(PrinterSlotAssignment))).one()
+        assert assignment.spool_id is None
+        assert assignment.present is True
+        assert assignment.meta["tray_type"] == "PETG"
+        assert assignment.meta["tray_color"] == "123456"
+
+        await manager._handle_slots_update(printer.id, [{**tray, "present": False, "spool_id": None}])
+        await db_session.refresh(assignment)
+        assert assignment.present is False
+        assert "tray_type" not in assignment.meta
+
+    @pytest.mark.asyncio
+    async def test_removed_tray_is_inactive_and_reappears_in_same_slot(self, db_session, slots_env):
+        printer, spools = slots_env
+        manager = PluginManager()
+        tray = _tray("1-0", "AMS 2", present=True, spool_id=spools[0].id)
+        await manager._handle_slots_update(printer.id, [tray])
+        slot = (await db_session.scalars(select(PrinterSlot))).one()
+        original_id = slot.id
+        await manager._handle_slots_update(printer.id, [
+            {"slot_index": "1-0", "slot_name": "AMS 2", "is_active": False},
+        ])
+
+        assignment = (await db_session.scalars(select(PrinterSlotAssignment))).one()
+        assert not slot.is_active
+        assert not assignment.present
+        assert assignment.spool_id is None
+
+        await manager._handle_slots_update(printer.id, [_tray("1-0", "AMS 2")])
+        assert (await db_session.scalars(select(PrinterSlot))).one().id == original_id
+        assert slot.is_active
+
+    @pytest.mark.asyncio
+    async def test_retiring_a_slot_does_not_mask_the_remaining_legacy_link(self, db_session, slots_env):
+        printer, spools = slots_env
+        manager = PluginManager()
+        active = _tray("0-0", "Toolhead")
+        await manager._handle_slots_update(printer.id, [active, _tray("1-0", "Removed tray")])
+        await manager._handle_slots_update(
+            printer.id,
+            [active, {"slot_index": "1-0", "is_active": False}],
+            active_spool_id_raw=spools[0].id,
+        )
+
+        assert await _assignments_by_slot_index(db_session, printer.id) == {
+            "0-0": spools[0].id, "1-0": None,
+        }
 
     @pytest.mark.asyncio
     async def test_per_slot_report_overrides_printer_wide_active_spool(

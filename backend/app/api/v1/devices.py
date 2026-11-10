@@ -1,10 +1,12 @@
-from ipaddress import ip_address
+import inspect
 import logging
+from datetime import datetime, timezone
+from functools import partial
+from ipaddress import ip_address
+from threading import Lock
 
 import httpx
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -624,7 +626,7 @@ async def weigh_spool(
         source="device",
         note=f"Recorded by device {device.name}",
     )
-    # Auto-assign: if device has auto_assign_enabled, notify all running drivers.
+    # Auto-assign: let one running driver claim the spool from this weigh.
     # Drivers only live on the primary Gunicorn worker; proxy if we're not it.
     logger.debug(f"Auto-assign check: device={device.name} (id={device.id}), auto_assign_enabled={device.auto_assign_enabled}")
     pending_armed = False
@@ -648,20 +650,58 @@ async def weigh_spool(
 
             timeout = device.auto_assign_timeout or 60
 
-            for printer_id, driver in plugin_manager.drivers.items():
-                if not hasattr(driver, "assign_pending_spool"):
+            candidates = []
+            for printer_id, driver in list(plugin_manager.drivers.items()):
+                assign = getattr(driver, "assign_pending_spool", None)
+                if not callable(assign):
                     continue
                 try:
-                    # Enrich filament data with printer-specific params
+                    parameter = inspect.signature(assign).parameters.get("claim")
+                except (TypeError, ValueError):
+                    parameter = None
+                supports_claim = parameter is not None and parameter.kind in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+                try:
+                    health = driver.health()
+                    connected = health.get("connected") is not False
+                    if (
+                        getattr(driver, "driver_key", None) == "moonraker_filaman"
+                        and health.get("auto_assign_confirm") == "off"
+                    ):
+                        continue
                     enriched_data = await plugin_manager.enrich_filament_data(
                         spool_id=spool.id,
                         printer_id=printer_id,
                         filament_data={**base_filament_data},
                     )
-                    await driver.assign_pending_spool(
+                    candidates.append((connected, supports_claim, printer_id, driver, assign, enriched_data))
+                except Exception as e:
+                    logger.error(f"Auto-assign failed for printer {printer_id}: {e}")
+
+            # Prepare the printer profiles before arming any driver so an
+            # insertion cannot claim a weigh while others are still preparing.
+            candidates.sort(key=lambda candidate: (not candidate[0], not candidate[1]))
+            claim_lock = Lock()
+            claim = partial(claim_lock.acquire, False)
+            for _, supports_claim, printer_id, driver, assign, enriched_data in candidates:
+                if claim_lock.locked():
+                    break
+                if pending_armed and not supports_claim:
+                    continue
+                if plugin_manager.drivers.get(printer_id) is not driver:
+                    continue
+                # Legacy drivers cannot share a claim. Reserve it before
+                # invoking one, since a driver can fail after storing a pending spool.
+                if not supports_claim and not claim():
+                    break
+                try:
+                    await assign(
                         spool_id=spool.id,
                         filament_data=enriched_data,
                         timeout_seconds=timeout,
+                        **({"claim": claim} if supports_claim else {}),
                     )
                     pending_armed = True
                     logger.info(f"Auto-assign: pending spool {spool.id} on printer {printer_id} (timeout: {timeout}s)")
