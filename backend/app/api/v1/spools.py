@@ -1244,13 +1244,19 @@ async def record_consumption(
         )
 
     event_at = data.event_at or datetime.now(timezone.utc)
-    event, _ = await service.record_consumption(
-        spool=spool,
-        delta_weight_g=data.delta_weight_g,
-        event_at=event_at,
-        principal=principal,
-        note=data.note,
-    )
+    try:
+        event, _ = await service.record_consumption(
+            spool=spool,
+            delta_weight_g=data.delta_weight_g,
+            event_at=event_at,
+            principal=principal,
+            note=data.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "invalid_consumption", "message": str(exc)},
+        ) from exc
     await event_bus.publish({"event": "spools_changed"})
     return event
 

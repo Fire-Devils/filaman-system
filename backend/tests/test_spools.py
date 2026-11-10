@@ -1465,6 +1465,34 @@ class TestSpoolEvents:
         assert spool.remaining_weight_g == 600.0
 
     @pytest.mark.asyncio
+    async def test_record_consumption_rejects_aggregate_overflow(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "opened")
+        spool = await _create_spool(
+            db_session, filament.id, status.id, remaining_weight_g=1.7e308
+        )
+        spool_id = spool.id
+        request = {
+            "json": {"delta_weight_g": 1e308},
+            "headers": {"X-CSRF-Token": csrf_token},
+        }
+
+        first = await client.post(f"/api/v1/spools/{spool_id}/consumptions", **request)
+        assert first.status_code == 200
+
+        second = await client.post(f"/api/v1/spools/{spool_id}/consumptions", **request)
+        assert second.status_code == 422
+
+        await db_session.rollback()
+        await db_session.refresh(spool)
+        event = await db_session.get(SpoolEvent, first.json()["id"])
+        assert spool.remaining_weight_g == 1.7e308 - 1e308
+        assert event.delta_weight_g == -1e308
+        assert event.event_at.isoformat() == first.json()["event_at"].replace("Z", "+00:00")
+
+    @pytest.mark.asyncio
     async def test_change_status(self, auth_client, db_session):
         client, csrf_token = auth_client
 

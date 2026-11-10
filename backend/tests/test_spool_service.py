@@ -1,11 +1,14 @@
+import asyncio
 import pytest
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
+from app.core.seeds import run_all_seeds
 from app.core.security import Principal
-from app.models import Filament, Location, Manufacturer, Spool, SpoolEvent, SpoolStatus
+from app.models import Base, Filament, Location, Manufacturer, Spool, SpoolEvent, SpoolStatus
 from app.services.spool_service import (
     SpoolService,
     CONSUMPTION_AGGREGATION_WINDOW_MINUTES,
@@ -325,6 +328,18 @@ class TestSpoolServiceRecordAdjustment:
 
 class TestSpoolServiceRecordConsumption:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("delta", [float("nan"), float("inf"), float("-inf")])
+    async def test_consumption_rejects_nonfinite_delta_before_locking(self, db_session, delta):
+        service = SpoolService(db_session)
+        spool = await _create_test_spool(db_session)
+        await db_session.commit()
+
+        with pytest.raises(ValueError, match="must be finite"):
+            await service.record_consumption(spool, delta, datetime.now(timezone.utc))
+
+        assert not db_session.in_transaction()
+
+    @pytest.mark.asyncio
     async def test_consumption_basic(self, db_session):
         service = SpoolService(db_session)
         spool = await _create_test_spool(
@@ -499,8 +514,10 @@ class TestSpoolServiceConsumptionAggregation:
             spool, -3.0, base_time + timedelta(minutes=4), source="moonraker"
         )
 
+        await db_session.refresh(event3)
         # first_event_at should still point to original time
         assert event3.meta["first_event_at"] == first_event_at_str
+        assert event3.meta["aggregation_count"] == 3
         # But event_at should be updated to latest
         assert event3.event_at == base_time + timedelta(minutes=4)
 
@@ -523,6 +540,76 @@ class TestSpoolServiceConsumptionAggregation:
 
         assert remaining == 0
         assert event2.meta.get("clamped_to_zero") is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("first_key", "second_key", "remaining", "event_deltas"),
+    [
+        (None, None, 970, [-30]),
+        ("job-a", "job-b", 970, [-10, -20]),
+        ("job-a", "job-a", 990, [-10]),
+    ],
+)
+async def test_consumption_uses_current_inventory_and_events_across_sessions(
+    tmp_path, monkeypatch, first_key, second_key, remaining, event_deltas
+):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'spools.db'}")
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+        async with sessions() as first_db, sessions() as second_db:
+            await run_all_seeds(first_db)
+            first = SpoolService(first_db)
+            second = SpoolService(second_db)
+            first_spool = await _create_test_spool(first_db, remaining_weight_g=1000)
+            second_spool = await second.get_spool(first_spool.id)
+            assert second_spool.remaining_weight_g == 1000
+
+            ready_to_commit = asyncio.Event()
+            second_started = asyncio.Event()
+            original_commit = first_db.commit
+
+            async def commit_after_second_starts():
+                ready_to_commit.set()
+                await second_started.wait()
+                await original_commit()
+
+            monkeypatch.setattr(first_db, "commit", commit_after_second_starts)
+            now = datetime.now(timezone.utc)
+
+            async def consume_second():
+                await ready_to_commit.wait()
+                second_started.set()
+                return await second.record_consumption(
+                    second_spool, 20, now + timedelta(seconds=1), source_event_key=second_key
+                )
+
+            _, (_, saved_remaining) = await asyncio.wait_for(
+                asyncio.gather(
+                    first.record_consumption(first_spool, 10, now, source_event_key=first_key),
+                    consume_second(),
+                ),
+                timeout=5,
+            )
+            assert saved_remaining == remaining
+
+        async with sessions() as db:
+            assert (await db.get(Spool, first_spool.id)).remaining_weight_g == remaining
+            events = await db.scalars(
+                select(SpoolEvent)
+                .where(SpoolEvent.spool_id == first_spool.id)
+                .order_by(SpoolEvent.id)
+            )
+            ledger = list(events)
+            assert [
+                event.delta_weight_g for event in ledger
+                if event.event_type == "print_consumption"
+            ] == event_deltas
+            assert sum(event.event_type == "opened" for event in ledger) == 1
+    finally:
+        await engine.dispose()
 
 
 class TestSpoolServiceConsumptionIdempotency:
