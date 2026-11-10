@@ -6,16 +6,27 @@ import * as state from './form-state'
 import * as i18n from './i18n'
 import * as abort from './abort'
 import { copyText } from './clipboard'
+import { toOpaqueRgbHex } from './colors'
+import { escapeHtml } from './extra-fields'
 
 const config = { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] }
 const writes: RequestInit[] = []
 let persistedConfig = config
 let resolveSave: ((response: Response) => void) | undefined
-const printer = { id: 4, name: 'Workshop printer', driver_key: 'moonraker', is_active: true, driver_config: config, slots: [{ slot_no: 1, name: 'AMS slot 1', assignment: { present: true, spool_id: 8, spool_name: 'Blue PLA', material_type: 'PLA' } }] }
+const health = { running: true, connected: true, printer_model: 'Model A', ams_units: [{ ams_id: 0, tray_count: 4, serial: 'AMS123', humidity: 35, temp: 25 }], sync_actions: [{ action: 'sync', label: 'Sync slots' }] }
+let healthResponse: Record<string, unknown>
+const printer = {
+  id: 4, name: 'Workshop printer', driver_key: 'moonraker', is_active: true, driver_config: config,
+  slots: [
+    { slot_no: 1, name: 'AMS slot 1', assignment: { present: true, spool_id: 8, spool_name: 'Blue PLA', material_type: 'PLA', tray_color: '123456"; data-injected="yes' } },
+    { slot_no: 4, name: 'Removed AMS bay', is_active: false, assignment: { present: false } },
+  ],
+}
 
 beforeEach(async () => {
   writes.length = 0
   persistedConfig = config
+  healthResponse = health
   vi.spyOn(window, 'addEventListener')
   vi.spyOn(document, 'addEventListener')
   resolveSave = undefined
@@ -29,10 +40,10 @@ beforeEach(async () => {
     }
     if (path.endsWith('/admin/system/plugins')) return Response.json([{ driver_key: 'moonraker', config_schema: { properties: { url: { type: 'string', title: 'Printer URL', description: 'Connection address' }, enabled: { type: 'boolean' }, targets: { type: 'array' } } } }])
     if (path.includes('/driver/debug')) return Response.json([])
-    if (path.endsWith('/driver/health')) return Response.json({ running: true, connected: true, printer_model: 'Model A', ams_units: [{ ams_id: 0, tray_count: 4, serial: 'AMS123', humidity: 35, temp: 25 }], sync_actions: [{ action: 'sync', label: 'Sync slots' }] })
+    if (path.endsWith('/driver/health')) return Response.json(healthResponse)
     return Response.json({ ...printer, driver_config: persistedConfig })
   }))
-  await bootAstroPage('printers/[id]', { ...driver, ...state, ...i18n, ...abort, copyText, initI18n: async () => {} })
+  await bootAstroPage('printers/[id]', { ...driver, ...state, ...i18n, ...abort, copyText, toOpaqueRgbHex, escapeHtml, initI18n: async () => {} })
   await vi.waitFor(() => expect(document.querySelector('#btn-edit-config')).not.toBeNull())
 })
 afterEach(() => {
@@ -51,12 +62,33 @@ it('retains printer metadata, navigation and import actions', () => {
   expect(document.querySelector('#printer-content')?.textContent).toContain('AMS123')
   expect(document.querySelector('#printer-content')?.textContent).toContain('35%')
   expect(document.querySelector('a[href="/spools/8"]')?.textContent).toBe('Blue PLA')
+  expect(document.querySelector('#printer-content')?.textContent).not.toContain('Removed AMS bay')
+  expect(document.querySelector('[data-injected]')).toBeNull()
   for (const selector of ['#btn-toggle-active', '#btn-delete', '#btn-export-params', '#import-params-file', '#btn-driver-toggle', '#btn-debug-console', '.btn-sync-action']) expect(document.querySelector(selector)).not.toBeNull()
   const input = document.querySelector<HTMLInputElement>('#import-params-file')!
   const chooseFile = vi.spyOn(input, 'click')
   document.querySelector<HTMLButtonElement>('#btn-import-params')!.click()
   expect(chooseFile).toHaveBeenCalledOnce()
   expect(writes).toHaveLength(0)
+})
+
+it('renders live driver telemetry and action keys as text', async () => {
+  const serial = '<img id="serial-injection" src=x>'
+  const humidity = '<img id="humidity-injection" src=x>'
+  const temperature = '<img id="temperature-injection" src=x>'
+  const action = 'sync" data-action-injection="yes'
+  healthResponse = {
+    ...health,
+    ams_type: '<img id="ams-type-injection" src=x>',
+    ams_units: [{ ams_id: 0, tray_count: 4, serial, humidity, temp: temperature }],
+    sync_actions: [{ action, label: 'Sync slots' }],
+  }
+  window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'printer_update', printer_id: 4 } }))
+  await vi.waitFor(() => expect(document.querySelector('#printer-content')?.textContent).toContain(serial))
+  expect(document.querySelector('#printer-content')?.textContent).toContain(humidity)
+  expect(document.querySelector('#printer-content')?.textContent).toContain(temperature)
+  expect(document.querySelector('#serial-injection, #humidity-injection, #temperature-injection, #ams-type-injection, [data-action-injection]')).toBeNull()
+  expect(document.querySelector<HTMLElement>('.btn-sync-action')?.dataset.action).toBe(action)
 })
 
 it('tracks config changes, freezes pending actions and retains failed drafts with structured values', async () => {

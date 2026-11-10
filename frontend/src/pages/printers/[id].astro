@@ -33,6 +33,8 @@ export function getStaticPaths() {
     import { t, initI18n, getLang } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { copyText } from '../../lib/clipboard'
+    import { toOpaqueRgbHex } from '../../lib/colors'
+    import { escapeHtml } from '../../lib/extra-fields'
     import { bindFormState } from '../../lib/form-state'
     import { buildDriverConfigPayload, isStructuredProp, renderDriverConfigFields, type DriverSchema, type FieldValue } from '../../lib/driver-config-form'
     await initI18n()
@@ -43,7 +45,7 @@ export function getStaticPaths() {
     }
 
     interface SlotAssignment { present?: boolean; spool_id?: number | null; spool_name?: string | null; material_type?: string | null; color_hex?: string | null; tray_color?: string | null; tray_type?: string | null; tray_info_idx?: string | null; setting_id?: string | null; cali_idx?: number | null; nozzle_temp_min?: number | null; nozzle_temp_max?: number | null }
-    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; slots?: { slot_no: number; name?: string | null; assignment?: SlotAssignment | null }[] }
+    interface PrinterRecord { id: number; name: string; driver_key: string; is_active: boolean; driver_config?: Record<string, unknown> | null; slots?: { slot_no: number; is_active?: boolean; name?: string | null; assignment?: SlotAssignment | null }[] }
     interface DriverHealth { running?: boolean; connected?: boolean; printer_model?: string; external_spool?: boolean; ams_type?: string; sync_actions?: { action: string; label: string; label_de?: string; variant?: string }[]; ams_units?: { ams_id: number; tray_count: number; serial?: string; humidity?: number | null; temp?: number | null }[] }
     interface DebugEntry { ts: string; dir: string; topic: string; payload: unknown }
     const dialogs = window as unknown as AppDialogs
@@ -63,11 +65,6 @@ export function getStaticPaths() {
       return match ? decodeURIComponent(match[1]) : ''
     }
 
-    function escapeHtml(str: string): string {
-      const d = document.createElement('div')
-      d.textContent = str
-      return d.innerHTML
-    }
     
     async function loadPrinter() {
       try {
@@ -194,8 +191,9 @@ export function getStaticPaths() {
       }
 
       let slotsSection = ''
-      if (printer.slots && printer.slots.length > 0) {
-        const slotItems = printer.slots
+      const activeSlots = printer.slots?.filter(slot => slot.is_active !== false) ?? []
+      if (activeSlots.length > 0) {
+        const slotItems = activeSlots
           .sort((a, b) => a.slot_no - b.slot_no)
           .map((s) => {
             const a = s.assignment
@@ -204,11 +202,8 @@ export function getStaticPaths() {
 
             // Color indicator from assignment
             let colorDot = ''
-            let colorHex = a?.color_hex || a?.tray_color || ''
-            // Normalize: add # prefix, strip alpha channel if 8-char hex
-            if (colorHex && !colorHex.startsWith('#')) colorHex = '#' + colorHex
-            if (colorHex.length === 9) colorHex = colorHex.slice(0, 7) // strip alpha
-            if (colorHex.length >= 7) {
+            const colorHex = toOpaqueRgbHex(a?.color_hex, '') || toOpaqueRgbHex(a?.tray_color, '')
+            if (colorHex) {
               colorDot = `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${colorHex};border:1px solid var(--border);flex-shrink:0;"></span>`
             }
 
@@ -270,7 +265,7 @@ export function getStaticPaths() {
 
         slotsSection = `
           <section class="fm-card fm-section">
-            <header class="fm-section-header"><h2>${t('printers.slots').replace('{count}', String(printer.slots.length))}</h2></header>
+            <header class="fm-section-header"><h2>${t('printers.slots').replace('{count}', String(activeSlots.length))}</h2></header>
             <div class="fm-section-body printer-items">
               ${slotItems}
             </div>
@@ -320,7 +315,7 @@ export function getStaticPaths() {
                   const amsLabel = (driverHealth?.ams_type === 'AMS Lite') ? 'AMS Lite' : ('AMS ' + (u.ams_id + 1))
                   const parts = [amsLabel, u.tray_count + ' Slots']
                   if (u.serial) parts.push('SN: ' + u.serial)
-                  return '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg-soft);border-radius:999px;font-size:0.8rem;color:var(--text-muted);">' + parts.join(' · ') + '</span>'
+                  return '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:var(--bg-soft);border-radius:999px;font-size:0.8rem;color:var(--text-muted);">' + escapeHtml(parts.join(' · ')) + '</span>'
                 }).join('')}
               </div>
             ` : ''}
@@ -338,18 +333,18 @@ export function getStaticPaths() {
           const amsLabel = amsType === 'AMS Lite' ? 'AMS Lite' : `${amsType} ${ams.ams_id + 1}`
           return `
             <div class="printer-item">
-              <div style="font-weight: 600; font-size: 0.95rem;">${amsLabel}</div>
+              <div style="font-weight: 600; font-size: 0.95rem;">${escapeHtml(amsLabel)}</div>
               ${ams.serial ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">SN: ${escapeHtml(ams.serial)}</div>` : ''}
               <div style="display: flex; gap: 14px; margin-top: 8px; font-size: 0.8rem; color: var(--text-muted);">
-                <span style="display:inline-flex;align-items:center;gap:4px;"><img src="/slots.svg" alt="" style="width:14px;height:14px;opacity:0.6;">${ams.tray_count} Slots</span>
-                <span style="display:inline-flex;align-items:center;gap:4px;"><img src="/moisture.svg" alt="" style="width:14px;height:14px;opacity:0.6;">${humidity}</span>
-                <span style="display:inline-flex;align-items:center;gap:4px;"><img src="/temperature.svg" alt="" style="width:14px;height:14px;opacity:0.6;">${temp}</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;"><img src="/slots.svg" alt="" style="width:14px;height:14px;opacity:0.6;">${escapeHtml(String(ams.tray_count))} Slots</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;"><img src="/moisture.svg" alt="" style="width:14px;height:14px;opacity:0.6;">${escapeHtml(humidity)}</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;"><img src="/temperature.svg" alt="" style="width:14px;height:14px;opacity:0.6;">${escapeHtml(temp)}</span>
               </div>
             </div>`
         }).join('')
         amsSection = `
           <section class="fm-card fm-section">
-            <header class="fm-section-header"><h2>${amsType} (${driverHealth.ams_units.length})</h2></header>
+            <header class="fm-section-header"><h2>${escapeHtml(amsType)} (${driverHealth.ams_units.length})</h2></header>
             <div class="fm-section-body printer-items">
               ${amsItems}
             </div>
