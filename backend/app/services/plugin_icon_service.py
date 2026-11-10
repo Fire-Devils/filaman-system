@@ -6,7 +6,8 @@ from xml.etree import ElementTree
 
 
 BUILTIN_ICONS_DIR = Path(__file__).parent.parent / "plugin_icons"
-MAX_ICON_BYTES = 64 * 1024
+MAX_ICON_BYTES = 4 * 1024
+MAX_LEGACY_SVG_BYTES = 64 * 1024
 SVG_NAMESPACE = "{http://www.w3.org/2000/svg}"
 SVG_ELEMENTS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "title", "desc"}
 SVG_ATTRIBUTES = {
@@ -18,8 +19,8 @@ SVG_ATTRIBUTES = {
 }
 
 
-def read_plugin_icon(plugin_dir: Path, icon: str) -> bytes:
-    """Reject paths outside the package and SVG features that can load or run content."""
+def read_plugin_icon(plugin_dir: Path, icon: str, *, max_bytes: int = MAX_LEGACY_SVG_BYTES) -> bytes:
+    """Check SVG paths and contents while preserving the read limit for installed icons."""
     if (
         not isinstance(icon, str)
         or len(icon) > 250
@@ -32,9 +33,9 @@ def read_plugin_icon(plugin_dir: Path, icon: str) -> bytes:
     if not path.is_relative_to(plugin_dir.resolve()):
         raise ValueError("icon must stay within the plugin package")
     with path.open("rb") as stream:
-        data = stream.read(MAX_ICON_BYTES + 1)
-    if len(data) > MAX_ICON_BYTES:
-        raise ValueError("icon must be at most 64 KiB")
+        data = stream.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"icon must be at most {max_bytes // 1024} KiB")
     source = data.decode("utf-8")
     if "<!" in source or re.search(r"<\?(?!xml\s)", source, re.IGNORECASE):
         raise ValueError("icon must not contain declarations, entities or comments")

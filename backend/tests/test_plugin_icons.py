@@ -2,10 +2,10 @@ import json
 from unittest.mock import patch
 
 import pytest
-
+from app.models.plugin import InstalledPlugin
 from app.services.plugin_service import PluginInstallError, PluginInstallService
-from tests.test_plugin_service import VALID_MANIFEST, VALID_DRIVER_PY, _make_zip
 
+from tests.test_plugin_service import VALID_DRIVER_PY, VALID_MANIFEST, _make_zip
 
 SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#168a72"/></svg>'
 
@@ -15,6 +15,74 @@ def package(icon="icon.svg", content=SVG):
         "plugin.json": json.dumps({**VALID_MANIFEST, "icon": icon, "show_in_nav": True, "page_url": "/plugin-page/test"}),
         "__init__.py": "", "driver.py": VALID_DRIVER_PY, "icon.svg": content,
     })
+
+
+def test_hosted_svg_artwork_is_allowed_but_is_not_a_sidebar_icon():
+    artwork_path = "static/artwork.svg"
+    artwork = (
+        '<svg xmlns="http://www.w3.org/2000/svg"><defs>'
+        '<linearGradient id="shade"><stop offset="0" stop-color="red"/></linearGradient>'
+        '</defs><rect width="24" height="24" fill="url(#shade)"/></svg>'
+    )
+    manifest = {
+        **VALID_MANIFEST,
+        "plugin_type": "integration",
+        "page_url": "/plugin-view/example",
+        "mount_prefix": "/plugins/example",
+        "icon": "icon.svg",
+    }
+    files = {
+        "plugin.json": json.dumps(manifest),
+        "__init__.py": "",
+        "router.py": "from fastapi import APIRouter\nrouter = APIRouter()\n",
+        "icon.svg": SVG,
+        artwork_path: artwork,
+    }
+    with PluginInstallService.validated_archive(_make_zip(files)) as (path, validated):
+        assert validated["icon"] == "icon.svg"
+        assert (path / artwork_path).read_text() == artwork
+
+    files["plugin.json"] = json.dumps({**manifest, "icon": artwork_path})
+    with pytest.raises(PluginInstallError) as error, PluginInstallService.validated_archive(_make_zip(files)):
+        pass
+    assert error.value.code == "invalid_icon"
+
+    files["plugin.json"] = json.dumps({**manifest, "page_url": "/plugin-page/example", "mount_prefix": None})
+    with pytest.raises(PluginInstallError) as error, PluginInstallService.validated_archive(_make_zip(files)):
+        pass
+    assert error.value.code == "invalid_icon"
+
+
+def test_declared_icon_size_limit_preserves_legacy_svg_assets():
+    with PluginInstallService.validated_archive(package(content=SVG.ljust(4096))):
+        pass
+
+    artwork = SVG.ljust(4097)
+    with (
+        pytest.raises(PluginInstallError, match="at most 4 KiB"),
+        PluginInstallService.validated_archive(package(content=artwork)),
+    ):
+        pass
+
+    with PluginInstallService.validated_archive(package(icon=None, content=artwork)):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_preexisting_larger_icon_stays_visible(auth_client, db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.plugin_service.PLUGINS_DIR", tmp_path)
+    plugin = InstalledPlugin(plugin_key="legacy_icon", name="Legacy icon", version="1.0.0", icon="icon.svg")
+    db_session.add(plugin)
+    await db_session.commit()
+    plugin_dir = tmp_path / plugin.plugin_key
+    plugin_dir.mkdir()
+    icon = SVG.ljust(4097)
+    (plugin_dir / "icon.svg").write_text(icon)
+
+    client, _ = auth_client
+    response = await client.get(f"/api/v1/plugin-icons/{plugin.plugin_key}")
+    assert response.status_code == 200
+    assert response.text == icon
 
 
 @pytest.mark.asyncio
