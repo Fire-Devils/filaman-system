@@ -664,6 +664,94 @@ class TestWeighSpool:
         assert spool.remaining_weight_g == 250.0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["shared", "legacy", "partial", "legacy_error", "stopped", "offline", "mixed"])
+    async def test_weigh_arms_only_one_claim(self, auth_client, db_session, mode):
+        client, csrf_token = auth_client
+        await _create_device(db_session, device_code="ABC123", auto_assign_enabled=True)
+        token, _ = await _register_device(client, "ABC123", csrf_token)
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        spool = await _create_spool(db_session, filament.id, status.id)
+        armed = []
+        calls = []
+
+        async def enrich(*, printer_id, **_):
+            calls.append(("enrich", printer_id))
+            if mode == "stopped" and printer_id == 3:
+                drivers.pop(2)
+            return {"material_type": "PETG", "printer_id": printer_id}
+
+        class DisabledDriver:
+            driver_key = "moonraker_filaman"
+
+            def health(self):
+                return {"auto_assign_confirm": "off"}
+
+            async def assign_pending_spool(self, **_):
+                calls.append(("disabled", None))
+
+        class LegacyDriver:
+            def __init__(self, connected=True):
+                self.connected = connected
+
+            def health(self):
+                return {"connected": self.connected}
+
+            async def assign_pending_spool(self, *, spool_id, filament_data, timeout_seconds):
+                calls.append(("arm", None))
+                armed.append((spool_id, filament_data, timeout_seconds, None))
+                if mode == "legacy_error":
+                    raise RuntimeError("Failed after arming the spool")
+
+        class ClaimAwareDriver(LegacyDriver):
+            async def assign_pending_spool(self, *, spool_id, filament_data, timeout_seconds, claim=None):
+                calls.append(("arm", None))
+                armed.append((spool_id, filament_data, timeout_seconds, claim))
+                if mode == "partial":
+                    raise RuntimeError("Failed after arming the spool")
+
+        driver_class = ClaimAwareDriver if mode in ("shared", "partial", "stopped") else LegacyDriver
+        drivers = {4: DisabledDriver(), 1: LegacyDriver(), 2: driver_class(), 3: driver_class()}
+        if mode == "offline":
+            drivers[1] = LegacyDriver(connected=False)
+            drivers[3] = ClaimAwareDriver(connected=False)
+        elif mode == "mixed":
+            drivers[1] = ClaimAwareDriver()
+            drivers[3] = ClaimAwareDriver(connected=False)
+        with patch("app.api.v1.devices._is_primary_worker", return_value=True), patch(
+            "app.plugins.manager.plugin_manager.drivers",
+            drivers,
+        ), patch(
+            "app.plugins.manager.plugin_manager.enrich_filament_data",
+            new=enrich,
+        ):
+            response = await client.post(
+                "/api/v1/devices/scale/weight",
+                json={"spool_id": spool.id, "measured_weight_g": 500.0},
+                headers={**_device_headers(token), "X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 200
+        assert calls[:3] == [("enrich", 1), ("enrich", 2), ("enrich", 3)]
+        assert all(action == "arm" for action, _ in calls[3:])
+        assert len(armed) == {
+            "shared": 2, "legacy": 1, "partial": 3, "legacy_error": 1, "stopped": 1, "offline": 1, "mixed": 2,
+        }[mode]
+        assert all(spool_id == spool.id and data["material_type"] == "PETG" and timeout == 60
+                   for spool_id, data, timeout, _ in armed)
+        if mode == "offline":
+            assert armed[0][1]["printer_id"] == 2
+        elif mode in ("shared", "mixed"):
+            if mode == "mixed":
+                assert [data["printer_id"] for _, data, _, _ in armed] == [1, 3]
+            assert armed[1][3]()
+            assert not armed[0][3]()
+        elif mode == "partial":
+            assert armed[-1][3] is None
+            assert not any(claim() for _, _, _, claim in armed[:-1])
+
+    @pytest.mark.asyncio
     async def test_weigh_spool_auto_assign_proxies_to_primary(self, auth_client, db_session):
         client, csrf_token = auth_client
         await _create_device(db_session, device_code="ABC123", auto_assign_enabled=True)
