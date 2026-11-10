@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from math import isfinite
 from typing import Any
 
 from sqlalchemy import select, update, func, or_
@@ -9,7 +10,6 @@ from sqlalchemy.orm import selectinload
 from app.core.rfid import rfid_hex_key, rfid_storage_value, rfid_uids_equal
 from app.core.security import Principal
 from app.models import AppSettings, Filament, Location, Spool, SpoolEvent, SpoolStatus
-from app.utils.db import json_extract_cast_string
 
 # Aggregation window for consumption events (in minutes)
 # Events within this window from the same source will be aggregated
@@ -300,11 +300,6 @@ class SpoolService:
         )
         return result.scalar_one_or_none()
 
-    @property
-    def _dialect(self) -> Any:
-        bind = self.db.bind
-        return bind.dialect if bind is not None else None
-
     async def _get_consumption_by_source_event_key(
         self,
         spool_id: int,
@@ -316,13 +311,12 @@ class SpoolService:
             .where(
                 SpoolEvent.spool_id == spool_id,
                 SpoolEvent.event_type == "print_consumption",
-                json_extract_cast_string(
-                    SpoolEvent.meta, "$.source_event_key", self._dialect
-                )
-                == source_event_key,
+                SpoolEvent.meta["source_event_key"].as_string() == source_event_key,
             )
             .order_by(SpoolEvent.event_at.desc())
             .limit(1)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -355,12 +349,12 @@ class SpoolService:
                 SpoolEvent.event_at >= window_start,
                 # Keyed events are idempotent one-shots; never fold other
                 # consumptions into them (or vice versa via a later lookup).
-                json_extract_cast_string(
-                    SpoolEvent.meta, "$.source_event_key", self._dialect
-                ).is_(None),
+                SpoolEvent.meta["source_event_key"].as_string().is_(None),
             )
             .order_by(SpoolEvent.event_at.desc())
             .limit(1)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -608,8 +602,24 @@ class SpoolService:
         note: str | None = None,
         source_event_key: str | None = None,
     ) -> tuple[SpoolEvent, float | None]:
+        if not isfinite(delta_weight_g):
+            raise ValueError("Consumption weight must be finite")
         if delta_weight_g > 0:
             delta_weight_g = -delta_weight_g
+
+        # Lock before reading the balance or ledger so deduplication and aggregation agree.
+        if self.db.get_bind().dialect.name == "sqlite":
+            # SQLite ignores FOR UPDATE. A no-op UPDATE starts its write transaction.
+            await self.db.execute(
+                update(Spool)
+                .where(Spool.id == spool.id)
+                .values(updated_at=Spool.updated_at)
+                .execution_options(synchronize_session=False)
+            )
+        await self.db.refresh(
+            spool, ["remaining_weight_g", "last_used_at", "status_id", "status"],
+            with_for_update=True,
+        )
 
         # Bambuddy (and similar drivers) tag each usage report with a stable
         # key so WebSocket redelivery does not subtract the same grams twice.
@@ -678,7 +688,7 @@ class SpoolService:
 
         if existing_event is not None:
             # Aggregate: update existing event instead of creating new one
-            existing_meta = existing_event.meta or {}
+            existing_meta = dict(existing_event.meta or {})
             aggregation_count = existing_meta.get("aggregation_count", 1) + 1
 
             # Keep track of first event time
@@ -689,6 +699,8 @@ class SpoolService:
 
             # Accumulate delta
             new_delta = (existing_event.delta_weight_g or 0) + delta_weight_g
+            if not isfinite(new_delta):
+                raise ValueError("Aggregated consumption weight must be finite")
             existing_event.delta_weight_g = new_delta
             existing_event.event_at = event_at
             existing_event.meta = existing_meta
