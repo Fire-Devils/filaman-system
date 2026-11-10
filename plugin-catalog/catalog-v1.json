@@ -22,6 +22,17 @@
     "sha256": "7c83ed9cc15bed95fb2089a3fa0b461c30c58dccc2f1e90ccb66df915487146f"
   },
   {
+    "plugin_key": "filament_swatch",
+    "name": "FilaMan Swatch",
+    "description": "Browse filament inventory and colors, compare color harmonies, and pin palettes.",
+    "publisher": "akira69",
+    "repository_url": "https://github.com/akira69/filaman-filament-swatch",
+    "version": "1.1.0",
+    "min_filaman_version": "2.0.6",
+    "github_release_url": "https://github.com/akira69/filaman-filament-swatch/releases/download/filaman-v1.1.0/filament-swatch-1.1.0.zip",
+    "sha256": "22f8a3e9ca8dd342039f1f9d6f799c1c30096b3d644819587f8551d2f431dc13"
+  },
+  {
     "plugin_key": "moonraker_filaman",
     "name": "Moonraker",
     "description": "Sends spool assignments to Klipper printers through Moonraker. Setup also requires the FilaMan component on the Moonraker host.",
