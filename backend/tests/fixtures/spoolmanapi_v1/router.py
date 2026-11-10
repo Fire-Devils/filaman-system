@@ -1,9 +1,13 @@
 """Minimal independently installed routes using the frozen v1 service."""
 
+import csv
+import io
+
 from app.api.deps import DBSession
 from app.models.filament import Filament, FilamentColor
 from app.models.spool import Spool
 from fastapi import APIRouter
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +15,24 @@ from . import schemas
 from .service import SpoolmanService
 
 router = APIRouter(prefix="/api/v1")
+
+
+@router.get("/field/{entity_type}")
+async def get_extra_fields(entity_type: str, db: DBSession):
+    return await SpoolmanService(db).get_extra_fields(entity_type)
+
+
+@router.get("/export/{entity}")
+async def export_entities(entity: str, fmt: str, db: DBSession):
+    service = SpoolmanService(db)
+    rows = await (service.export_filaments() if entity == "filaments" else service.export_spools())
+    if fmt == "json":
+        return rows
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=rows[0])
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(output.getvalue(), media_type="text/csv")
 
 
 @router.post("/filament", response_model=schemas.Filament, response_model_exclude_none=True)

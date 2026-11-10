@@ -1,7 +1,10 @@
 """Promotion -> a separately installed v1 package -> mounted HTTP response."""
 
+import ast
 import copy
+import csv
 import importlib
+import io
 import json
 import shutil
 import sys
@@ -333,10 +336,69 @@ async def test_published_versions_return_temperatures_in_filament_and_spool(
     assert filament["extra"] == {"dry_temp": "50.0", "dry_time_hours": "6.0"}
     assert spool["initial_weight"] == 1000
     assert spool["extra"]["rack"] == '"A"'
-    assert json.loads(spool["extra"]["spoolman_extra"]) == {
-        "keep": "yes",
-        "dry": None if storage == "legacy" else "50.0",
+    assert spool["extra"]["keep"] == '"yes"'
+    assert spool["extra"]["dry"] == ("null" if storage == "legacy" else "50.0")
+
+
+@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+async def test_downloads_include_projected_values(installed_app, db_session):
+    await seed(db_session, {
+        "id": 1, "extruder_temp_range_c": {"min": 210, "max": 230},
+        "drying_temp_c": 50.0, "custom_fields": {"note": "keep"},
+    }, {"id": 1, "label_field_aliases": {"spoolman_extra.dry": "drying_temp_c"}})
+    expected = {
+        "filaments": {"settings_extruder_temp": 210, "dry_temp": 50.0, "note": "keep"},
+        "spools": {"spoolman_extra": {"dry": "50.0"}},
     }
+    async with AsyncClient(
+        transport=ASGITransport(app=installed_app), base_url="http://test/spoolman/api/v1/"
+    ) as client:
+        for resource, fields in expected.items():
+            response = await client.get(f"export/{resource}?fmt=json")
+            assert response.status_code == 200, response.text
+            assert response.json()[0]["custom_fields"] == fields
+            response = await client.get(f"export/{resource}?fmt=csv")
+            assert response.status_code == 200, response.text
+            [row] = csv.DictReader(io.StringIO(response.text))
+            assert ast.literal_eval(row["custom_fields"]) == fields
+
+
+@pytest.mark.parametrize("spoolman_version", ["1.2.5"])
+async def test_published_extras_round_trip_to_native_fields(installed_app, db_session):
+    from app.services.spoolman_import_service import SpoolmanImportService
+    from app.services.spoolman_projection import promotion_alias
+    from tests.support.spoolman_fixture_server import SpoolmanFixtureServer
+
+    await seed(db_session, {
+        "id": 1,
+        "drying_temp_c": 50.0,
+        "max_volumetric_speed_mm3_s": 19.0,
+        "custom_fields": {"same": "top", "spoolman_extra": {"same": '"nested"'}},
+        "label_field_aliases": {
+            "spoolman_extra.dry": promotion_alias("drying_temp_c", "50.0", 50.0),
+            "spoolman_extra.volumetric": promotion_alias("max_volumetric_speed_mm3_s", "19.0", 19.0),
+        },
+    })
+    wire = await get(installed_app, "filament/1")
+    assert wire["extra"]["dry"] == "50.0"
+    assert wire["extra"]["volumetric"] == "19.0"
+    assert json.loads(wire["extra"]["same"]) == "top"
+    assert json.loads(wire["extra"]["spoolman_extra"]) == {"same": '"nested"'}
+    definitions = await get(installed_app, "field/filament")
+    server = SpoolmanFixtureServer({
+        "info": {"version": "1.0.0"}, "vendor": [wire["vendor"]],
+        "filament": [wire], "spool": [], "location": [],
+        "field_definitions": {"filament": definitions},
+    })
+    service = SpoolmanImportService(db_session, client_factory=server.client_factory)
+    preview = await service.preview("http://spoolman")
+    result = await service.execute(
+        "http://spoolman", preview.extra_field_fingerprint, extra_field_mode="system"
+    )
+    assert result.errors == []
+    imported = await db_session.scalar(sa.select(Filament).where(Filament.id != 1))
+    assert imported.drying_temp_c == 50
+    assert imported.max_volumetric_speed_mm3_s == 19
 
 
 @pytest.mark.parametrize("nested", [False, True])

@@ -14,9 +14,11 @@ from fastapi import Depends, HTTPException
 from fastapi.routing import APIRoute
 from sqlalchemy import event, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 
 from app.api.deps import DBSession
 from app.models.filament import Filament, Manufacturer
+from app.models.spool import Spool
 from app.models.system_extra_field import SystemExtraField
 from app.services.filamentdb_field_mapping import DIRECT_FIELDS
 
@@ -38,6 +40,15 @@ _NATIVE_FIELDS = {target.split(".")[0] for target in _EXTRA_FIELDS.values()} | s
 )
 _FILAMENT_TOP_LEVEL = {"article_number", "comment", "external_id", *_TEMPERATURES}
 _JSON_EXTRA_VERSIONS = ("1.2.3", "1.2.4", "1.2.5")
+_NUMERIC_WIRE_FIELDS = {
+    "dry_temp": "Drying Temperature",
+    "dry_time_hours": "Drying Time",
+    "softening_temp": "Softening Temperature",
+    "chamber_temp": "Chamber Temperature",
+    "max_volumetric_speed": "Max Volumetric Speed",
+    "flow_ratio": "Flow Ratio",
+    "k_value": "Pressure Advance",
+}
 
 
 def promotion_alias(target: str, raw: Any, native: Any) -> dict[str, Any]:
@@ -388,6 +399,59 @@ async def _write_filament(service, write, data, filament_id=None):
         event.remove(session, "before_flush", apply_native_fields)
 
 
+def _flatten_wire_extras(wire: dict[str, str], nested: Any) -> None:
+    if not isinstance(nested, dict):
+        return
+    wire.pop("spoolman_extra", None)
+    collisions = {}
+    for key, value in nested.items():
+        if key == "spoolman_extra" or key in wire:
+            collisions[key] = value
+            continue
+        # Imported Spoolman extras may already be encoded as JSON strings.
+        if isinstance(value, str):
+            try:
+                json.loads(value)
+            except ValueError:
+                pass
+            else:
+                wire[key] = value
+                continue
+        wire[key] = json.dumps(value)
+    if collisions:
+        wire["spoolman_extra"] = json.dumps(collisions)
+
+
+async def _project_download(db, rows, model):
+    if not rows:
+        return rows
+    definitions = db.info.get("spoolman_definitions", {})
+    by_id = {row["id"]: row for row in rows}
+    query = select(model)
+    if model is Spool:
+        query = query.options(joinedload(Spool.filament))
+    entities = await db.stream_scalars(query.execution_options(yield_per=500))
+    try:
+        async for entity in entities:
+            row = by_id.get(entity.id)
+            if row is None:
+                continue
+            if model is Filament:
+                extra = FilamentCompatibilityView(entity, definitions.get("filament")).custom_fields
+            elif entity.filament is not None:
+                extra = project_extra(
+                    entity, row["custom_fields"] or {}, filament=entity.filament,
+                    system_definitions=definitions.get("spool"),
+                )
+            else:
+                continue
+            if extra:
+                row["custom_fields"] = extra
+    finally:
+        await entities.close()
+    return rows
+
+
 def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bool:
     """Adapt only the known v1 serializer interface; leave routes and queries owned by the plugin."""
     if plugin_key != "spoolmanapi":
@@ -403,6 +467,9 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
         methods.update(
             create_filament=["self", "data"],
             update_filament=["self", "filament_id", "data"],
+            export_filaments=["self"],
+            export_spools=["self"],
+            get_extra_fields=["self", "entity_type"],
         )
     supported = (
         (version == "1.0.0" or uses_json_extras)
@@ -427,7 +494,15 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
     @wraps(original_filament)
     def filament_to_schema(self, filament):
         definitions = self.db.info.get("spoolman_definitions", {}).get("filament", {})
-        return original_filament(self, FilamentCompatibilityView(filament, definitions))
+        view = FilamentCompatibilityView(filament, definitions)
+        wire = original_filament(self, view)
+        if uses_json_extras:
+            _flatten_wire_extras(wire.extra, view.custom_fields.get("spoolman_extra"))
+            for key in _NUMERIC_WIRE_FIELDS:
+                value = _native_value(filament, _EXTRA_FIELDS[key])
+                if value is not None:
+                    wire.extra.setdefault(key, json.dumps(value))
+        return wire
 
     @wraps(original_spool)
     def spool_to_schema(self, spool):
@@ -445,6 +520,8 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
             {key: json.dumps(value) for key, value in projected.items()}
             if uses_json_extras else projected
         )
+        if uses_json_extras:
+            _flatten_wire_extras(wire.extra, projected.get("spoolman_extra"))
         return wire
 
     for route in module.router.routes:
@@ -455,6 +532,9 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
     if uses_json_extras:
         original_create = service.create_filament
         original_update = service.update_filament
+        original_export_filaments = service.export_filaments
+        original_export_spools = service.export_spools
+        original_get_extra_fields = service.get_extra_fields
 
         @wraps(original_create)
         async def create_filament(self, data):
@@ -464,7 +544,29 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
         async def update_filament(self, filament_id, data):
             return await _write_filament(self, original_update, data, filament_id)
 
+        @wraps(original_export_filaments)
+        async def export_filaments(self):
+            return await _project_download(self.db, await original_export_filaments(self), Filament)
+
+        @wraps(original_export_spools)
+        async def export_spools(self):
+            return await _project_download(self.db, await original_export_spools(self), Spool)
+
+        @wraps(original_get_extra_fields)
+        async def get_extra_fields(self, entity_type):
+            fields = await original_get_extra_fields(self, entity_type)
+            if entity_type == "filament":
+                # Stable names let the importer identify a native field across old aliases.
+                fields = [*fields, *(
+                    {"key": key, "name": name, "entity_type": "filament", "field_type": "float"}
+                    for key, name in _NUMERIC_WIRE_FIELDS.items()
+                )]
+            return fields
+
         service.create_filament = create_filament
         service.update_filament = update_filament
+        service.export_filaments = export_filaments
+        service.export_spools = export_spools
+        service.get_extra_fields = get_extra_fields
     service._filaman_projection = True
     return True

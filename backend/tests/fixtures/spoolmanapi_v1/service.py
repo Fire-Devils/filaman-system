@@ -74,6 +74,19 @@ class SpoolmanService:
             ).execution_options(populate_existing=True)
         )
 
+    async def export_filaments(self):
+        return await self._export(Filament)
+
+    async def export_spools(self):
+        return await self._export(Spool)
+
+    async def _export(self, model):
+        result = await self.db.execute(select(model.id, model.custom_fields))
+        return [dict(row) for row in result.mappings()]
+
+    async def get_extra_fields(self, entity_type):
+        return []
+
     def _manufacturer_to_vendor(self, manufacturer: Manufacturer) -> schemas.Vendor:
         extra = dict(manufacturer.custom_fields or {})
         comment = extra.pop("comment", None)
