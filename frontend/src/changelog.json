@@ -1,6 +1,24 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improved", "text": "Die AMS-Ansicht zeigt den Füllstand jetzt als Viertel-Spule mit den verfügbaren Gramm an, im normalen und im Kiosk-Modus. Kompakte AMS-Einheiten ordnen ihre Slots zweispaltig an. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Checkboxen, Zahlen, Bereiche und Mehrfachauswahlen in Zusatzfeld-Spalten werden bei Filamenten und Spulen korrekt angezeigt, gefiltert und sortiert. Die gewählte Sortierung bleibt nach dem Neuladen erhalten. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "AMS-Slots bleiben als belegt erkannt, auch wenn kein Filamentprofil hinterlegt ist. Entfernte Slots werden sauber deaktiviert, und Zuweisungen von der Spulenseite oder per Waage landen zuverlässig bei genau einer Spule. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Gehostete Plugins mit eigenen SVG-Grafiken, zum Beispiel mit Farbverläufen, lassen sich wieder installieren. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "improved", "text": "AMS View now shows remaining filament as a quarter-spool graphic with the available grams, in normal and kiosk mode. Compact AMS units arrange their bays in two columns. (Contributed by akira69)" },
+          { "type": "fix", "text": "Checkboxes, numbers, ranges and multi-select values in extra-field columns are now displayed, filtered and sorted correctly for filaments and spools. The chosen sort order is kept after reloading. (Contributed by akira69)" },
+          { "type": "fix", "text": "AMS bays stay marked as occupied even without a filament profile. Removed bays are deactivated cleanly, and assignments from the spool page or via scale reliably go to exactly one spool. (Contributed by akira69)" },
+          { "type": "fix", "text": "Hosted plugins that bundle their own SVG artwork, such as gradients, can be installed again. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.0.5",
       "date": "",
       "changes": {
