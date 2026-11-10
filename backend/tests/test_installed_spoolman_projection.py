@@ -333,7 +333,9 @@ async def test_published_versions_return_temperatures_in_filament_and_spool(
         row,
         {
             "id": 1,
-            "custom_fields": {"rack": "A", "spoolman_extra": {"keep": "yes"}},
+            "custom_fields": {
+                "rack": "A", "spoolman_extra": {"keep": "yes", "card_uids": '"1234"'},
+            },
             "label_field_aliases": {"spoolman_extra.dry": "drying_temp_c"},
         },
     )
@@ -347,8 +349,11 @@ async def test_published_versions_return_temperatures_in_filament_and_spool(
     assert filament["extra"] == {"dry_temp": "50.0", "dry_time_hours": "6.0"}
     assert spool["initial_weight"] == 1000
     assert spool["extra"]["rack"] == '"A"'
-    assert spool["extra"]["keep"] == '"yes"'
-    assert spool["extra"]["dry"] == ("null" if storage == "legacy" else "50.0")
+    assert "card_uids" not in spool["extra"]
+    assert json.loads(spool["extra"]["spoolman_extra"]) == {
+        "keep": "yes", "card_uids": '"1234"',
+        "dry": None if storage == "legacy" else "50.0",
+    }
 
 
 @pytest.mark.parametrize("spoolman_version", PUBLISHED_VERSIONS)

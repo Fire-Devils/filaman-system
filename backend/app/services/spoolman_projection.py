@@ -539,8 +539,6 @@ def adapt_installed_spoolman(module: Any, plugin_key: str, manifest: dict) -> bo
             {key: json.dumps(value) for key, value in projected.items()}
             if uses_json_extras else projected
         )
-        if uses_json_extras:
-            _flatten_wire_extras(wire.extra, projected.get("spoolman_extra"))
         return wire
 
     for route in module.router.routes:
