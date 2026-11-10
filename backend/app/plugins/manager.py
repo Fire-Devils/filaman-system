@@ -8,6 +8,7 @@ import shutil
 import sys
 from collections.abc import Callable, Iterable
 from contextlib import nullcontext
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,7 @@ class PluginManager:
         self.drivers: dict[int, BaseDriver] = {}
         self.health_status: dict[int, dict[str, Any]] = {}
         self._driver_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+        self._slot_write_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
 
     def _driver_lock(self, driver_key: str) -> asyncio.Lock:
         lock = self._driver_locks.get(driver_key)
@@ -87,12 +89,13 @@ class PluginManager:
 
     def _create_event_handler(self, printer_id: int) -> Callable[[dict], None]:
         def handler(event: dict) -> None:
-            import asyncio
-
             logger.debug(
                 f"Event handler called for printer {printer_id}: {event.get('event_type')}"
             )
             try:
+                # Some drivers reuse their mutable slot records between reports.
+                if event.get("event_type") == "slots_update":
+                    event = deepcopy(event)
                 asyncio.create_task(self._handle_event(printer_id, event))
             except Exception as e:
                 logger.error(f"Failed to create task for event: {e}", exc_info=True)
@@ -176,17 +179,20 @@ class PluginManager:
         assignment: PrinterSlotAssignment,
         spool_id: int | None,
         meta: dict,
+        *,
+        present: bool | None = None,
     ) -> dict:
         """Point an assignment at a spool and mirror its material/color into meta."""
         assignment.spool_id = spool_id
-        assignment.present = spool_id is not None
+        assignment.present = (spool_id is not None) if present is None else present
 
         meta = dict(meta or {})
         meta["active_spool_id"] = spool_id
 
         if spool_id is None:
-            meta.pop("tray_type", None)
-            meta.pop("tray_color", None)
+            if not assignment.present:
+                meta.pop("tray_type", None)
+                meta.pop("tray_color", None)
             return meta
 
         spool_res = await db.execute(
@@ -237,7 +243,9 @@ class PluginManager:
                 except Exception:
                     active_spool_id = None
 
-            async with async_session_maker() as db:
+            # A slower snapshot must not overwrite a later removal or insertion.
+            lock = self._slot_write_locks.setdefault(printer_id, asyncio.Lock())
+            async with lock, async_session_maker() as db:
                 # Set when the driver reports spool ownership per slot; suppresses
                 # the printer-wide fallback below.
                 per_slot_spools = False
@@ -250,7 +258,8 @@ class PluginManager:
                         )
                         slot_no = self._slot_index_to_no(slot_index)
                         slot_name = slot_data.get("slot_name", f"Slot {slot_no}")
-                        present = slot_data.get("present", False)
+                        active = slot_data.get("is_active") is not False
+                        present = active and slot_data.get("present", False)
 
                         # Upsert PrinterSlot — eager-load assignment to avoid MissingGreenlet
                         result = await db.execute(
@@ -265,6 +274,8 @@ class PluginManager:
 
                         is_new = False
                         if not printer_slot:
+                            if not active:
+                                continue
                             printer_slot = PrinterSlot(
                                 printer_id=printer_id,
                                 slot_no=slot_no,
@@ -277,6 +288,7 @@ class PluginManager:
                             is_new = True
                         else:
                             printer_slot.name = slot_name
+                            printer_slot.is_active = active
                             printer_slot.custom_fields = {
                                 **(printer_slot.custom_fields or {}),
                                 "slot_index": slot_index,
@@ -314,13 +326,14 @@ class PluginManager:
                         # Drivers that track a spool per slot (e.g. multi-toolhead
                         # Moonraker) report it here; that beats the printer-wide
                         # active spool, which cannot say *which* slot it belongs to.
-                        if "spool_id" in slot_data:
-                            per_slot_spools = True
+                        if "spool_id" in slot_data or not active:
+                            per_slot_spools |= active
                             assignment.meta = await self._apply_spool_to_assignment(
                                 db,
                                 assignment,
-                                self._parse_spool_id(slot_data["spool_id"]),
+                                self._parse_spool_id(slot_data.get("spool_id")) if active else None,
                                 meta,
+                                present=slot_data.get("present") if active else False,
                             )
                             assignment.updated_at = datetime.now(UTC)
 
@@ -372,7 +385,7 @@ class PluginManager:
                     slot_result = await db.execute(
                         select(PrinterSlot)
                         .options(selectinload(PrinterSlot.assignment))
-                        .where(PrinterSlot.printer_id == printer_id)
+                        .where(PrinterSlot.printer_id == printer_id, PrinterSlot.is_active.is_(True))
                         .order_by(PrinterSlot.slot_no)
                     )
                     printer_slots = slot_result.scalars().all()
