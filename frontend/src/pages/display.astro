@@ -85,6 +85,8 @@ import Layout from '../layouts/Layout.astro'
       gap: 16px;
       min-width: 0;
     }
+    .ams-printer-status,
+    .ams-printer-units { display: contents; }
     .ams-printer-head {
       display: flex;
       align-items: baseline;
@@ -229,6 +231,7 @@ import Layout from '../layouts/Layout.astro'
       gap: 12px;
       min-width: 0;
       padding: 16px;
+      container: ams-unit / inline-size;
     }
     .ams-unit-head {
       display: flex;
@@ -276,6 +279,9 @@ import Layout from '../layouts/Layout.astro'
       min-width: 0;
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
+    @container ams-unit (max-width: 280px) {
+      .ams-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
     .ams-unit[data-kind='ams_ht'] .ams-bays {
       grid-template-columns: 1fr;
     }
@@ -293,6 +299,7 @@ import Layout from '../layouts/Layout.astro'
       grid-template-rows: auto 1fr;
       min-width: 0;
       max-width: 100%;
+      container: ams-bay / inline-size;
       border-radius: var(--radius-sm);
       overflow: hidden;
       background: var(--bg-soft);
@@ -455,17 +462,55 @@ import Layout from '../layouts/Layout.astro'
       margin-left: auto;
       text-align: right;
     }
-    /* Pinned to the bottom so the bars line up across a row of bays,
-       which is what makes "who is running low" scannable at a glance. */
+    /* Share the lower part of the bay so the reel doesn't add a second row. */
     .ams-remaining {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      margin-top: auto;
-      padding-top: 4px;
-    }
-    .ams-bar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) min(38%, 83px);
+      grid-template-rows: auto 1fr;
       flex: 1;
+      column-gap: 7px;
+      margin: 0 -10px -10px 0;
+    }
+    .ams-bay-details,
+    .ams-meter {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      grid-column: 1;
+      min-width: 0;
+    }
+    .ams-remaining .spool-reel-corner {
+      position: static;
+      display: block;
+      grid-column: 2;
+      grid-row: 1 / 3;
+      align-self: end;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1;
+    }
+    .ams-meter {
+      grid-row: 2;
+      align-self: end;
+      padding: 4px 0 10px;
+    }
+    @container ams-bay (max-width: 9rem) {
+      .ams-bay-details {
+        grid-column: 1 / -1;
+        padding-right: 10px;
+      }
+      .ams-remaining .spool-reel-corner { grid-row: 2; }
+    }
+    .ams-amounts {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0 4px;
+      overflow-wrap: anywhere;
+    }
+    .ams-amounts .ams-desc { white-space: normal; }
+    .ams-bar {
       height: 4px;
       border-radius: 999px;
       background: var(--bg);
@@ -486,9 +531,10 @@ import Layout from '../layouts/Layout.astro'
     .ams-pct {
       font-size: 0.74rem;
       font-weight: 700;
-      color: var(--text-muted);
+      color: var(--text);
       font-variant-numeric: tabular-nums;
     }
+    .ams-meter:has(.ams-bar[data-level='crit']) .ams-pct { color: var(--error-text); }
 
     .ams-feeding {
       display: inline-flex;
@@ -589,6 +635,7 @@ import Layout from '../layouts/Layout.astro'
     import { t, initI18n, translatePage } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import { amsFinish, amsSwatchFill, amsSwatchHexes } from '../lib/ams-swatch'
+    import { renderSpoolReel } from '../lib/spool-reel'
 
     await initI18n()
     translatePage()
@@ -601,6 +648,7 @@ import Layout from '../layouts/Layout.astro'
     const AUX_KINDS = new Set(['ams_ht', 'external'])
     let etag: string | null = null
     let lastPrinters: any[] = []
+    let shownPrinters: any[] = []
 
     const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 
@@ -674,13 +722,16 @@ import Layout from '../layouts/Layout.astro'
 
       const hexes = amsSwatchHexes(s.colors, s.color)
       const fill = amsSwatchFill(hexes, s.color_style)
-      const ink = inkFor(hexes.length > 1 ? averageHex(hexes) : (hexes[0] || safeColor(s.color)))
+      const swatchColor = hexes[0] || safeColor(s.color)
+      const ink = inkFor(hexes.length > 1 ? averageHex(hexes) : swatchColor)
       const finish = amsFinish(s.finish)
-      const pct = s.remaining_percent
-      const level = pct == null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : 'ok'
+      const pct = Number.isFinite(s.remaining_percent) ? pctWidth(s.remaining_percent) : null
+      const level = pct === null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : 'ok'
+      const grams = s.remaining_grams != null ? `${s.remaining_grams} g` : ''
+      const estimate = pct !== null && s.remaining_source === 'printer' ? t('display.printerEstimate') : ''
+      const reel = renderSpoolReel(pct === null ? null : pct / 100, hexes.length ? hexes : [swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped')
       const colorName = s.color_name || (!s.manufacturer ? s.filament : '') || ''
       const manufacturer = s.manufacturer || ''
-      const amount = pct != null ? `${pct}%` : (s.remaining_grams != null ? `${s.remaining_grams} g` : '')
       const spoolId = Number.isFinite(Number(s.spool_id)) && Number(s.spool_id) > 0 ? Number(s.spool_id) : null
       const spoolLine = spoolId != null ? `<div class="ams-spool">#${spoolId}</div>` : ''
       const tag = spoolId != null ? 'a' : 'article'
@@ -688,7 +739,7 @@ import Layout from '../layouts/Layout.astro'
 
       return `
         <${tag} class="ams-bay" data-active="${s.active ? '1' : '0'}"${href}
-                 style="--ams-swatch: ${hexes[0] || safeColor(s.color)}; --ams-fill: ${fill}; --ams-ink: ${ink}"
+                 style="--ams-swatch: ${swatchColor}; --ams-fill: ${fill}; --ams-ink: ${ink}"
                  title="${esc(bayTitle(s))}">
           <div class="ams-swatch" data-finish="${finish}" data-multi="${hexes.length > 1 ? '1' : '0'}">
             <span class="ams-bay-label">${label}</span>
@@ -699,15 +750,22 @@ import Layout from '../layouts/Layout.astro'
               <div class="ams-material">${esc(s.material || '—')}</div>
               ${spoolLine}
             </div>
-            ${colorName ? `<div class="ams-desc">${esc(colorName)}</div>` : ''}
-            ${manufacturer ? `<div class="ams-desc">${esc(manufacturer)}</div>` : ''}
-            ${s.active ? `<div class="ams-feeding">${t('display.feeding')}</div>` : ''}
-            ${pct != null
-              ? `<div class="ams-remaining">
-                   <span class="ams-bar" data-level="${level}"><i style="width:${pctWidth(pct)}%"></i></span>
-                   <span class="ams-pct">${pctWidth(pct)}%</span>
-                 </div>`
-              : amount ? `<div class="ams-desc">${esc(amount)}</div>` : ''}
+            <div class="ams-remaining">
+              <div class="ams-bay-details">
+                ${colorName ? `<div class="ams-desc">${esc(colorName)}</div>` : ''}
+                ${manufacturer ? `<div class="ams-desc">${esc(manufacturer)}</div>` : ''}
+                ${s.active ? `<div class="ams-feeding">${t('display.feeding')}</div>` : ''}
+              </div>
+              <div class="ams-meter">
+                <div class="ams-amounts">
+                  ${pct !== null ? `<span class="ams-pct">${esc(t('display.percentLeft', { percent: pct }))}</span>` : ''}
+                  ${grams || pct === null ? `<span class="ams-desc">${esc(grams || t('display.amountUnknown'))}</span>` : ''}
+                  ${estimate ? `<span class="ams-desc">${esc(estimate)}</span>` : ''}
+                </div>
+                ${pct !== null ? `<span class="ams-bar" data-level="${level}" aria-hidden="true"><i style="width:${pct}%"></i></span>` : ''}
+              </div>
+              ${reel}
+            </div>
           </div>
         </${tag}>`
     }
@@ -720,29 +778,32 @@ import Layout from '../layouts/Layout.astro'
       return `<span class="ams-climate-item"><img src="/${icon}.svg" alt="">${esc(text)}</span>`
     }
 
-    function renderUnit(u: any) {
+    function renderUnitHead(u: any, slots: any[]) {
       const climate = [
         u.temperature != null ? withIcon('temperature', `${Math.round(u.temperature)}°C`) : '',
         u.humidity != null ? withIcon('moisture', `${Math.round(u.humidity)}%`) : '',
       ].filter(Boolean)
-      const slots = u.slots || []
       const filled = slots.filter((s: any) => !s.empty).length
 
       return `
+        <span class="ams-unit-name">${esc(u.label)}</span>
+        <span class="ams-climate">
+          ${u.drying ? `<span class="ams-drying">${t('display.drying')}</span>` : ''}
+          ${climate.join('')}
+          ${withIcon('slots', t('display.slotsFilled', { filled, total: slots.length }))}
+        </span>`
+    }
+
+    function renderUnit(u: any) {
+      const slots = u.slots || []
+      return `
         <section class="ams-unit fm-card" data-kind="${esc(u.kind)}">
-          <div class="ams-unit-head">
-            <span class="ams-unit-name">${esc(u.label)}</span>
-            <span class="ams-climate">
-              ${u.drying ? `<span class="ams-drying">${t('display.drying')}</span>` : ''}
-              ${climate.join('')}
-              ${withIcon('slots', t('display.slotsFilled', { filled, total: slots.length }))}
-            </span>
-          </div>
+          <div class="ams-unit-head">${renderUnitHead(u, slots)}</div>
           <div class="ams-bays">${slots.map(renderBay).join('')}</div>
         </section>`
     }
 
-    function renderPrinter(p: any) {
+    function renderPrinterStatus(p: any) {
       const job = p.job || {}
       const temps = p.temperatures || {}
       const offline = p.connected === false
@@ -761,27 +822,41 @@ import Layout from '../layouts/Layout.astro'
         .map((a: any) => `<span class="ams-alert" data-severity="${esc(a.severity)}">${esc(a.title)}${a.detail ? ': ' + esc(a.detail) : ''}</span>`)
         .join('')
 
-      const units = p.ams || []
-      const mainUnits = units.filter((u: any) => !AUX_KINDS.has(u.kind))
-      const auxUnits = units.filter((u: any) => AUX_KINDS.has(u.kind))
+      return `
+        <div class="ams-printer-head">
+          <span class="ams-dot" data-off="${offline ? '1' : '0'}"></span>
+          <h2 class="ams-printer-name">${esc(p.name)}</h2>
+          ${state ? `<span class="ams-state">${state}</span>` : ''}
+          ${meta.length ? `<span class="ams-meta">${meta.map(m => `<span>${m}</span>`).join('')}</span>` : ''}
+        </div>
+        ${job.progress != null
+          ? `<div class="ams-job">
+               <span class="ams-track"><i style="width:${pctWidth(job.progress)}%"></i></span>
+               <span class="ams-job-pct">${pctWidth(job.progress)}%</span>
+             </div>`
+          : ''}
+        ${alerts ? `<div class="ams-alerts">${alerts}</div>` : ''}`
+    }
 
+    function unitGroups(p: any): [any[], any[]] {
+      const units = p.ams || []
+      return [
+        units.filter((u: any) => !AUX_KINDS.has(u.kind)),
+        units.filter((u: any) => AUX_KINDS.has(u.kind)),
+      ]
+    }
+
+    function renderPrinterUnits([mainUnits, auxUnits]: [any[], any[]]) {
+      return `
+        ${mainUnits.length ? `<div class="ams-row-main" data-count="${mainUnits.length}">${mainUnits.map(renderUnit).join('')}</div>` : ''}
+        ${auxUnits.length ? `<div class="ams-row-aux">${auxUnits.map(renderUnit).join('')}</div>` : ''}`
+    }
+
+    function renderPrinter(p: any) {
       return `
         <section class="ams-printer">
-          <div class="ams-printer-head">
-            <span class="ams-dot" data-off="${offline ? '1' : '0'}"></span>
-            <h2 class="ams-printer-name">${esc(p.name)}</h2>
-            ${state ? `<span class="ams-state">${state}</span>` : ''}
-            ${meta.length ? `<span class="ams-meta">${meta.map(m => `<span>${m}</span>`).join('')}</span>` : ''}
-          </div>
-          ${job.progress != null
-            ? `<div class="ams-job">
-                 <span class="ams-track"><i style="width:${pctWidth(job.progress)}%"></i></span>
-                 <span class="ams-job-pct">${pctWidth(job.progress)}%</span>
-               </div>`
-            : ''}
-          ${alerts ? `<div class="ams-alerts">${alerts}</div>` : ''}
-          ${mainUnits.length ? `<div class="ams-row-main" data-count="${mainUnits.length}">${mainUnits.map(renderUnit).join('')}</div>` : ''}
-          ${auxUnits.length ? `<div class="ams-row-aux">${auxUnits.map(renderUnit).join('')}</div>` : ''}
+          <div class="ams-printer-status">${renderPrinterStatus(p)}</div>
+          <div class="ams-printer-units">${renderPrinterUnits(unitGroups(p))}</div>
         </section>`
     }
 
@@ -844,18 +919,40 @@ import Layout from '../layouts/Layout.astro'
       if (json) json.href = jsonHref(current)
     }
 
+    function updatePrinter(element: Element, printer: any, previous: any) {
+      element.querySelector('.ams-printer-status')!.innerHTML = renderPrinterStatus(printer)
+      const unitsRoot = element.querySelector('.ams-printer-units')!
+      const groups = unitGroups(printer)
+      const units = groups.flat()
+      const previousUnits = unitGroups(previous).flat()
+      if (units.length !== previousUnits.length || units.some((u, i) => u.ams_id !== previousUnits[i].ams_id || u.kind !== previousUnits[i].kind)) {
+        unitsRoot.innerHTML = renderPrinterUnits(groups)
+        return
+      }
+      // Printer and AMS telemetry can change while the bay data stays the same.
+      unitsRoot.querySelectorAll('.ams-unit').forEach((unit, index) => {
+        const current = units[index]
+        const slots = current.slots || []
+        unit.querySelector('.ams-unit-head')!.innerHTML = renderUnitHead(current, slots)
+        if (JSON.stringify(slots) !== JSON.stringify(previousUnits[index].slots || [])) {
+          unit.querySelector('.ams-bays')!.innerHTML = slots.map(renderBay).join('')
+        }
+      })
+    }
+
     function renderBoard(printers: any[]) {
       lastPrinters = printers
       syncFilter(printers)
       const root = document.getElementById('ams-printers')!
-      if (!printers.length) {
-        root.innerHTML = `<div class="fm-card ams-note">${t('display.noPrinters')}</div>`
-        return
-      }
       const shown = selectedPrinters(printers)
-      root.innerHTML = shown.length
-        ? shown.map(renderPrinter).join('')
-        : `<div class="fm-card ams-note">${t('display.printerMissing')}</div>`
+      if (!shown.length) {
+        root.innerHTML = `<div class="fm-card ams-note">${t(printers.length ? 'display.printerMissing' : 'display.noPrinters')}</div>`
+      } else if (shown.length !== shownPrinters.length || shown.some((p, i) => p.id !== shownPrinters[i].id)) {
+        root.innerHTML = shown.map(renderPrinter).join('')
+      } else {
+        shown.forEach((p, i) => updatePrinter(root.children[i], p, shownPrinters[i]))
+      }
+      shownPrinters = shown
     }
 
     async function poll() {
