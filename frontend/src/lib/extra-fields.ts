@@ -66,6 +66,28 @@ export function hasOwnFieldValue(record: Record<string, unknown>, key: string): 
   return Object.prototype.hasOwnProperty.call(record, key)
 }
 
+export function getExtraFieldValue(input: Record<string, unknown> | null, path: string): unknown {
+  if (isUnsafeExtraFieldPath(path)) return undefined
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (current === null || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined
+    }
+    const record = current as Record<string, unknown>
+    return hasOwnFieldValue(record, key) ? record[key] : undefined
+  }, input)
+}
+
+export function getExtraFieldColumnValue(input: Record<string, unknown> | null, key: string): unknown {
+  if (!input || isUnsafeExtraFieldPath(key)) return undefined
+  const value = getExtraFieldValue(input, key)
+  // Older list data can store a dotted key literally.
+  return value === undefined && hasOwnFieldValue(input, key) ? input[key] : value
+}
+
+export function isCheckedExtraFieldValue(value: unknown): boolean {
+  return value === true || value === 'true'
+}
+
 export function setOwnFieldValue(record: Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(record, key, {
     configurable: true,
@@ -558,7 +580,7 @@ export function renderFieldDisplay(field: SystemExtraFieldDef, value: unknown): 
     case 'textarea':
       return `<div style="white-space:pre-wrap;font-size:0.9em">${escapeHtml(String(value))}</div>`
     case 'checkbox':
-      return value === true || value === 'true' ? '✓' : '✗'
+      return isCheckedExtraFieldValue(value) ? '✓' : '✗'
     default:
       return escapeHtml(String(value))
   }
@@ -579,19 +601,44 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
     case 'float': // legacy alias — falls through
     case 'number': {
       const num = finiteNumber(value)
-      if (num == null) return String(value)
+      if (num == null) return renderUnknownFieldPlainText(value)
       return `${dp != null ? num.toFixed(dp) : String(num)}${unit}`
     }
     case 'range': {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return renderUnknownFieldPlainText(value)
       }
-      return `${formatNumericRange(value, dp)}${unit}`.trim()
+      const formatted = formatNumericRange(value, dp)
+      return formatted ? `${formatted}${unit}` : ''
     }
-    case 'multiselect':
-      return Array.isArray(value) ? value.map(String).join(', ') : String(value)
     case 'checkbox':
-      return value === true || value === 'true' ? '✓' : '✗'
+      return isCheckedExtraFieldValue(value) ? '✓' : '✗'
+    default:
+      return renderUnknownFieldPlainText(value)
+  }
+}
+
+export function renderExtraFieldColumn(field: SystemExtraFieldDef, value: unknown): string {
+  const display = renderFieldPlainText(field, field.field_type === 'checkbox' ? value ?? false : value)
+  return escapeHtml(display || '-')
+}
+
+export function extraFieldColumnSortValue(field: SystemExtraFieldDef, value: unknown): string | number | null {
+  switch (field.field_type) {
+    case 'checkbox':
+      return Number(isCheckedExtraFieldValue(value))
+    case 'number':
+    case 'float':
+      return finiteNumber(value)
+    case 'range': {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return finiteNumber(value)
+      const range = value as Record<string, unknown>
+      return finiteNumber(range.min) ?? finiteNumber(range.max)
+    }
+    case 'datetime': {
+      const time = typeof value === 'string' ? Date.parse(value) : NaN
+      return Number.isFinite(time) ? time : null
+    }
     default:
       return renderUnknownFieldPlainText(value)
   }
@@ -599,7 +646,7 @@ export function renderFieldPlainText(field: SystemExtraFieldDef, value: unknown)
 
 export function renderUnknownFieldPlainText(value: unknown): string {
   if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return value.map(String).join(', ')
+  if (Array.isArray(value)) return value.map(item => item !== null && typeof item === 'object' ? JSON.stringify(item) : String(item)).join(', ')
   if (typeof value === 'object') {
     const objectValue = value as Record<string, unknown>
     if ('min' in objectValue || 'max' in objectValue) {

@@ -2,6 +2,7 @@ import { api } from './api'
 import {
   collectSystemFieldValues,
   escapeHtml,
+  getExtraFieldValue,
   hasOwnFieldValue,
   isIntegrationExtraFieldPath,
   isUnsafeExtraFieldPath,
@@ -20,6 +21,8 @@ import {
 } from './extra-field-definition-dialog'
 import { t } from './i18n'
 import type { LabelExtraFieldOrigin, LabelExtraFieldValue } from './label-extra-fields'
+
+export { getExtraFieldValue } from './extra-fields'
 
 type ExtraFieldDialogWindow = Window & {
   __fmAlert: (message: string) => Promise<boolean>
@@ -408,17 +411,6 @@ function flattenUnregisteredValues(
     }
   }
   return output
-}
-
-export function getExtraFieldValue(input: Record<string, unknown>, path: string): unknown {
-  if (isUnsafeExtraFieldPath(path)) return undefined
-  return path.split('.').reduce<unknown>((current, key) => {
-    if (current === null || typeof current !== 'object' || Array.isArray(current)) {
-      return undefined
-    }
-    const record = current as Record<string, unknown>
-    return hasOwnFieldValue(record, key) ? record[key] : undefined
-  }, input)
 }
 
 export function renderEntityExtraFieldRows(
