@@ -6,7 +6,7 @@ import json
 import math
 from pathlib import Path
 
-from app.models.filament import Filament, Manufacturer
+from app.models.filament import Color, Filament, FilamentColor, Manufacturer
 from app.models.spool import Spool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,14 @@ class SpoolmanService:
             material_type="PLA", diameter_mm=1.75,
             custom_fields={"settings_extruder_temp": data.settings_extruder_temp},
         )
+        if _MANIFEST_VERSION not in {"1.2.0", "1.2.1"}:
+            filament.filament_colors = []
         self.db.add(filament)
+        await self.db.flush()
+        if data.color_hex:
+            filament.filament_colors.append(
+                FilamentColor(color=Color(name=data.color_hex, hex_code=data.color_hex), position=1)
+            )
         await self.db.commit()
         return self._filament_to_schema(await self._get_filament(filament.id))
 
@@ -62,6 +69,7 @@ class SpoolmanService:
                     custom.pop(key, None)
                 else:
                     custom[key] = changes[key]
+        custom.update({key: json.loads(value) for key, value in (data.extra or {}).items()})
         filament.custom_fields = custom or None
         await self.db.commit()
         return self._filament_to_schema(await self._get_filament(filament.id))
@@ -70,7 +78,7 @@ class SpoolmanService:
         return await self.db.scalar(
             select(Filament).where(Filament.id == filament_id).options(
                 selectinload(Filament.manufacturer),
-                selectinload(Filament.filament_colors),
+                selectinload(Filament.filament_colors).selectinload(FilamentColor.color),
             ).execution_options(populate_existing=True)
         )
 

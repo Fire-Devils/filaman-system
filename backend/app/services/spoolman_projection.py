@@ -21,6 +21,7 @@ from app.models.filament import Filament, Manufacturer
 from app.models.spool import Spool
 from app.models.system_extra_field import SystemExtraField
 from app.services.filamentdb_field_mapping import DIRECT_FIELDS
+from app.services.spoolman_standard_fields import standard_value
 
 _EXTRA_FIELDS = {
     **DIRECT_FIELDS,
@@ -352,6 +353,18 @@ async def get_or_create_unknown_manufacturer(db: DBSession) -> Manufacturer:
 
 async def _write_filament(service, write, data, filament_id=None):
     payload = data.model_dump(exclude_unset=True)
+    native_extras = {}
+    for key, raw in (payload.get("extra") or {}).items():
+        try:
+            value = json.loads(raw)
+            if key in _NUMERIC_WIRE_FIELDS and (value is None or type(value) in (int, float)):
+                native_extras[key] = (
+                    None if value is None
+                    else standard_value(value, _EXTRA_FIELDS[key], {"field_type": "float"})
+                )
+        except (ValueError, RecursionError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid extra field {key}: {exc}") from exc
+
     vendor = None
     if filament_id is None or "vendor_id" in payload:
         if filament_id is not None and await service.db.get(Filament, filament_id) is None:
@@ -366,7 +379,7 @@ async def _write_filament(service, write, data, filament_id=None):
 
     temperatures = {key: payload[key] for key in _TEMPERATURES if key in payload}
     args = (data,) if filament_id is None else (filament_id, data)
-    if not temperatures and vendor is None:
+    if not temperatures and not native_extras and vendor is None:
         return await write(service, *args)
 
     def apply_native_fields(session, _context, _instances):
@@ -378,7 +391,10 @@ async def _write_filament(service, write, data, filament_id=None):
                 continue
             if vendor is not None:
                 filament.manufacturer = vendor
-            if not temperatures:
+            # Older ZIPs append colors after the first flush, when lazy loading is unsafe.
+            if filament_id is None and "filament_colors" not in filament.__dict__:
+                filament.filament_colors = []
+            if not temperatures and not native_extras:
                 continue
             custom = dict(filament.custom_fields or {})
             for key, value in temperatures.items():
@@ -387,6 +403,9 @@ async def _write_filament(service, write, data, filament_id=None):
                 # Echoing the displayed scalar must preserve the native range.
                 if value is None or current is None or round(current) != value:
                     setattr(filament, native, None if value is None else {"min": value, "max": value})
+                custom.pop(key, None)
+            for key, value in native_extras.items():
+                setattr(filament, _EXTRA_FIELDS[key], value)
                 custom.pop(key, None)
             filament.custom_fields = custom or None
 
@@ -412,7 +431,7 @@ def _flatten_wire_extras(wire: dict[str, str], nested: Any) -> None:
         if isinstance(value, str):
             try:
                 json.loads(value)
-            except ValueError:
+            except (ValueError, RecursionError):
                 pass
             else:
                 wire[key] = value
@@ -440,13 +459,12 @@ async def _project_download(db, rows, model):
                 extra = FilamentCompatibilityView(entity, definitions.get("filament")).custom_fields
             elif entity.filament is not None:
                 extra = project_extra(
-                    entity, row["custom_fields"] or {}, filament=entity.filament,
+                    entity, entity.custom_fields or {}, filament=entity.filament,
                     system_definitions=definitions.get("spool"),
                 )
             else:
                 continue
-            if extra:
-                row["custom_fields"] = extra
+            row["custom_fields"] = extra or entity.custom_fields
     finally:
         await entities.close()
     return rows

@@ -52,8 +52,10 @@ class Filament(BaseModel):
 class FilamentParameters(BaseModel):
     name: str | None = None
     vendor_id: int | None = None
+    color_hex: str | None = None
     settings_extruder_temp: int | None = None
     settings_bed_temp: int | None = None
+    extra: dict[str, str] | None = None
 
 
 class Spool(BaseModel):
