@@ -12,11 +12,17 @@ import Layout from '../layouts/Layout.astro'
   <style is:global>
     /* ── AMS View ─────────────────────────────────────────────────────
        The layout mirrors the hardware: printer → AMS unit → bay.
+       Each printer opens with a machine strip (state, job, temperatures,
+       alerts, the bay that is loaded). A line in the loaded spool's colour
+       runs from that bay up to the strip, so "what is feeding" reads as a
+       physical path rather than a badge.
        A bay is split into two registers. The filament colour fills the
        upper field so it stays identifiable from across the room; every
        piece of text sits on the app's own surface below it, which is
-       what keeps labels readable over pale filament. The one label that
-       does sit on colour picks its ink by WCAG contrast (see inkFor).
+       what keeps labels readable over pale filament. The labels that do
+       sit on colour pick their ink by WCAG contrast (see inkFor).
+       Type inside a bay is sized from the bay's own width (cqi), so the
+       same markup reads on a phone, a tablet in kiosk mode and a monitor.
        Classes are prefixed `ams-` because this stylesheet is global:
        the markup is injected at runtime, so Astro cannot scope it. */
 
@@ -26,7 +32,7 @@ import Layout from '../layouts/Layout.astro'
       justify-content: space-between;
       gap: 16px;
       flex-wrap: wrap;
-      margin-bottom: 26px;
+      margin-bottom: 22px;
     }
     .ams-title {
       margin: 0;
@@ -37,7 +43,7 @@ import Layout from '../layouts/Layout.astro'
     }
     .ams-subtitle {
       margin: 5px 0 0;
-      font-size: 0.85rem;
+      font-size: 0.95rem;
       color: var(--text-muted);
     }
     .ams-actions {
@@ -52,7 +58,7 @@ import Layout from '../layouts/Layout.astro'
       gap: 8px;
     }
     .ams-filter-label {
-      font-size: 0.78rem;
+      font-size: 0.85rem;
       font-weight: 600;
       color: var(--text-muted);
     }
@@ -62,82 +68,162 @@ import Layout from '../layouts/Layout.astro'
       max-width: 18rem;
     }
     .ams-status {
-      font-size: 0.78rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.85rem;
       color: var(--text-muted);
       font-variant-numeric: tabular-nums;
     }
-    .ams-status[data-state='error'] {
-      color: var(--error-text);
+    .ams-status::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
     }
+    .ams-status:empty { display: none; }
+    .ams-status[data-state='stale']::before {
+      background: transparent;
+      box-shadow: inset 0 0 0 2px var(--warning-text);
+    }
+
+    /* Data that stopped arriving must not look live. */
+    .ams-stale {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: var(--text);
+      font-size: 1rem;
+    }
+    .ams-stale[hidden] { display: none; }
+    .ams-stale strong { color: var(--warning-text); }
+    .ams-stale .fm-btn { margin-left: auto; padding: 7px 16px; }
 
     /* ── Printers ──────────────────────────────────────────────────── */
 
     .ams-printers {
       display: grid;
-      gap: 30px;
+      gap: 40px;
       width: 100%;
       min-width: 0;
       container-type: inline-size;
       container-name: ams-board;
     }
+    .ams-printers[data-stale='1'] .ams-printer { opacity: 0.62; }
     .ams-printer {
+      position: relative;
       display: grid;
-      gap: 16px;
+      gap: 18px;
       min-width: 0;
+      transition: opacity var(--transition);
     }
-    .ams-printer-status,
-    .ams-printer-units { display: contents; }
+    /* The unit rows sit above the feed line: the line runs in the gaps
+       and enters an AMS from above, like the PTFE tube it stands for. */
+    .ams-printer-units {
+      position: relative;
+      z-index: 3;
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+      transition: opacity var(--transition);
+    }
+    .ams-printer[data-offline='1'] .ams-printer-units { opacity: 0.6; }
+
+    /* The machine strip. */
     .ams-printer-head {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px 32px;
+      padding: 18px 22px;
+    }
+    .ams-printer-id {
       display: flex;
-      align-items: baseline;
-      gap: 12px;
+      align-items: center;
+      gap: 14px;
       flex-wrap: wrap;
+      min-width: 0;
     }
     .ams-printer-name {
       margin: 0;
       font-family: var(--font-serif);
-      font-size: 1.3rem;
+      font-size: clamp(1.5rem, 1.1rem + 0.9cqi, 2.4rem);
       font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1.1;
     }
-    .ams-dot {
+    /* State is text plus a shape, never colour alone: a filled square
+       when the printer reports, a ring when it is offline, a dashed ring
+       when the driver says nothing at all. */
+    .ams-state {
+      --tone: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 13px 5px 11px;
+      border-radius: 999px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--tone);
+      background: color-mix(in srgb, var(--tone) 13%, transparent);
+      white-space: nowrap;
+    }
+    .ams-state::before {
+      content: '';
       width: 9px;
       height: 9px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+    .ams-state[data-tone='run'] { --tone: var(--accent); }
+    .ams-state[data-tone='ok'] { --tone: var(--success-text); }
+    .ams-state[data-tone='warn'] { --tone: var(--warning-text); }
+    .ams-state[data-tone='err'] { --tone: var(--error-text); }
+    .ams-state[data-tone='off']::before {
+      background: transparent;
       border-radius: 50%;
-      background: var(--accent);
-      flex-shrink: 0;
-      align-self: center;
+      box-shadow: inset 0 0 0 2px currentColor;
     }
-    .ams-dot[data-off='1'] {
-      background: var(--text-muted);
-      opacity: 0.5;
+    .ams-state[data-tone='unknown']::before {
+      background: transparent;
+      border-radius: 50%;
+      border: 2px dashed currentColor;
+      width: 11px;
+      height: 11px;
+      box-sizing: border-box;
     }
-    .ams-state {
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    .ams-lastknown {
+      font-size: 0.95rem;
       color: var(--text-muted);
-    }
-    .ams-meta {
-      display: flex;
-      gap: 6px 14px;
-      flex-wrap: wrap;
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      font-variant-numeric: tabular-nums;
     }
 
-    /* Job progress: the percentage reads as a value, so it is tabular
-       and sits beside the track rather than inside it. */
     .ams-job {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+    .ams-job-name {
+      font-size: 1rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ams-job-line {
       display: flex;
       align-items: center;
       gap: 12px;
-      max-width: 560px;
     }
     .ams-track {
       flex: 1;
-      height: 6px;
+      height: 8px;
       border-radius: 999px;
       background: var(--bg-soft);
       overflow: hidden;
@@ -148,70 +234,170 @@ import Layout from '../layouts/Layout.astro'
       border-radius: 999px;
       background: var(--accent);
     }
+    .ams-job[data-done='1'] .ams-track > i { background: var(--success-text); }
     .ams-job-pct {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
+      font-size: 1.05rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
       min-width: 3.2em;
       text-align: right;
     }
+    .ams-job-meta {
+      display: flex;
+      gap: 4px 16px;
+      flex-wrap: wrap;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ams-readouts {
+      display: flex;
+      gap: 28px;
+      margin: 0;
+    }
+    .ams-ro {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+    }
+    .ams-ro dt {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .ams-ro dd {
+      margin: 0;
+      font-size: clamp(1.35rem, 1rem + 0.7cqi, 2rem);
+      font-weight: 600;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .ams-ro dd small {
+      margin-left: 4px;
+      font-size: 0.55em;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
 
     .ams-alerts {
-      display: flex;
+      grid-column: 1 / -1;
+      display: grid;
       gap: 8px;
-      flex-wrap: wrap;
+      margin: 0;
+      padding: 0;
+      list-style: none;
     }
     .ams-alert {
-      font-size: 0.78rem;
-      padding: 5px 12px;
-      border-radius: 999px;
-      background: var(--info-bg);
-      border: 1px solid var(--info-border);
-      color: var(--info-text);
+      --tone: var(--info-text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 11px 16px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--tone) 11%, transparent);
+      border: 1px solid color-mix(in srgb, var(--tone) 38%, transparent);
+      font-size: 1.02rem;
+      color: var(--text);
     }
-    .ams-alert[data-severity='warn'] {
-      background: rgba(234, 179, 8, 0.14);
-      border-color: rgba(234, 179, 8, 0.4);
-      color: var(--accent-3);
-    }
+    .ams-alert svg { color: var(--tone); flex-shrink: 0; }
+    .ams-alert strong { font-weight: 700; }
+    .ams-alert span { color: var(--text-muted); }
+    .ams-alert[data-severity='warn'] { --tone: var(--warning-text); }
     .ams-alert[data-severity='error'],
-    .ams-alert[data-severity='danger'] {
-      background: var(--error-bg);
-      border-color: var(--error-border);
-      color: var(--error-text);
+    .ams-alert[data-severity='danger'] { --tone: var(--error-text); }
+
+    .ams-loaded {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 1.05rem;
+    }
+    .ams-loaded-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      background: var(--ams-fill, var(--bg-soft));
+      box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 3px var(--ams-swatch, var(--border));
+      flex-shrink: 0;
+    }
+    /* Text wraps in its own column so the feed line, which leaves the dot
+       downwards, never runs through it. */
+    .ams-loaded-text {
+      display: flex;
+      align-items: baseline;
+      gap: 2px 14px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .ams-loaded strong { font-weight: 700; }
+    .ams-loaded-desc {
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* The feed line: drawn into an overlay after layout, see drawFeeds. */
+    .ams-feed {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 2;
+    }
+    /* SVG attributes cannot read CSS variables, so the strokes are styled
+       here. The edge keeps a dark spool visible on a dark theme and a
+       white one on the light theme. */
+    .ams-feed path { fill: none; stroke-linecap: round; }
+    .ams-feed-edge {
+      stroke: color-mix(in srgb, var(--text) 40%, transparent);
+      stroke-width: 9px;
+    }
+    .ams-feed-core { stroke-width: 6px; }
+    .ams-feed-flow {
+      stroke-width: 1.6px;
+      stroke-opacity: 0.75;
+      stroke-dasharray: 2 8;
+    }
+    .ams-feed-flow[data-moving='1'] {
+      animation: ams-flow 1.1s linear infinite;
+    }
+    @keyframes ams-flow {
+      to { stroke-dashoffset: -20; }
     }
 
     /* ── AMS units ─────────────────────────────────────────────────── */
 
-    /* Regular AMS units share one line when there is room. Four equal
-       4-bay boxes go 4-across, then 2×2 — never 3+1. The split keys off
-       this printer's content width (sidebar vs kiosk), not the viewport. */
+    /* Units sit side by side only when every bay still gets about 240px:
+       4 × 240 + gaps + padding ≈ 1040px per unit. Four units go 4-across,
+       then 2×2, then one per row — never 3+1. The split keys off this
+       board's width (sidebar vs kiosk), not the viewport. */
     .ams-row-main {
       display: grid;
-      gap: 16px;
-    }
-    .ams-row-main[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
-    .ams-row-main[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .ams-row-main[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .ams-row-main[data-count="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .ams-row-main[data-count="5"],
-    .ams-row-main[data-count="6"] {
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+      grid-template-columns: minmax(0, 1fr);
     }
     .ams-row-main > .ams-unit { min-width: 0; }
-    /* 4×320px units + 3×16px gaps = 1328. Extra slack so bays stay readable. */
-    @container ams-board (max-width: 1360px) {
-      .ams-row-main[data-count="4"] {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+    @container ams-board (min-width: 2100px) {
+      .ams-row-main[data-count='2'],
+      .ams-row-main[data-count='4'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ams-row-main[data-count='5'],
+      .ams-row-main[data-count='6'] { grid-template-columns: repeat(auto-fit, minmax(1040px, 1fr)); }
     }
-    @container ams-board (max-width: 640px) {
-      .ams-row-main[data-count="2"],
-      .ams-row-main[data-count="3"],
-      .ams-row-main[data-count="4"] {
-        grid-template-columns: minmax(0, 1fr);
-      }
+    @container ams-board (min-width: 3160px) {
+      .ams-row-main[data-count='3'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @container ams-board (min-width: 4220px) {
+      .ams-row-main[data-count='4'] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
 
     /* AMS-HT units and the external spool holder share the line below. They
@@ -220,126 +406,157 @@ import Layout from '../layouts/Layout.astro'
     .ams-row-aux {
       display: flex;
       flex-wrap: wrap;
-      gap: 16px;
+      gap: 18px;
     }
     .ams-row-aux > .ams-unit {
-      flex: 1 1 280px;
-      max-width: 460px;
+      flex: 1 1 300px;
+      max-width: 360px;
+    }
+    .ams-row-aux > .ams-unit[data-kind='external'] {
+      flex-basis: 520px;
+      max-width: 620px;
     }
     .ams-unit {
       display: grid;
-      gap: 12px;
+      align-content: start;
+      gap: 14px;
       min-width: 0;
-      padding: 16px;
+      padding: 16px 18px 18px;
       container: ams-unit / inline-size;
     }
     .ams-unit-head {
       display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 10px;
+      align-items: center;
+      gap: 8px 12px;
       flex-wrap: wrap;
     }
     .ams-unit-name {
-      font-size: 0.95rem;
+      margin: 0;
+      font-size: 1.25rem;
       font-weight: 700;
+    }
+    .ams-unit-model {
+      font-size: 0.95rem;
+      color: var(--text-muted);
     }
     .ams-climate {
       display: flex;
-      gap: 10px;
-      font-size: 0.78rem;
-      color: var(--text-muted);
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-left: auto;
       font-variant-numeric: tabular-nums;
     }
-    .ams-climate-item {
+    .ams-chip {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: var(--bg-soft);
+      font-size: 0.95rem;
+      color: var(--text);
+      white-space: nowrap;
     }
     /* Sized off the text rather than in pixels, so the icons keep step with
-       the numbers when a wall panel scales the page up. */
-    .ams-climate-item img {
+       the numbers when kiosk mode scales the page up. */
+    .ams-chip img {
       width: 1.15em;
       height: 1.15em;
-      opacity: 0.6;
+      opacity: 0.7;
       flex-shrink: 0;
     }
+    .ams-chip[data-wet='1'] {
+      color: var(--warning-text);
+      background: var(--warning-bg);
+    }
     .ams-drying {
-      font-size: 0.7rem;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--accent-3);
+      font-weight: 600;
+      color: var(--warning-text);
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
     }
 
-    /* A 4-bay AMS must read as 4 across or 2x2 — never 3+1. */
+    /* A 4-bay AMS always reads as one row of four, in the order of the
+       slots on the physical unit, so A1–A4 match left to right. */
     .ams-bays {
       display: grid;
-      gap: 10px;
+      gap: 12px;
       min-width: 0;
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
-    @container ams-unit (max-width: 280px) {
-      .ams-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Only when four in a row cannot fit (phone width) does a unit fall
+       back to 2×2. Never 3+1. */
+    @container ams-unit (max-width: 480px) {
+      .ams-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     }
     .ams-unit[data-kind='ams_ht'] .ams-bays {
       grid-template-columns: 1fr;
     }
     .ams-unit[data-kind='external'] .ams-bays {
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     }
 
     /* ── A bay ─────────────────────────────────────────────────────── */
 
     .ams-bay {
       --ams-ink: #ffffff;
-      --ams-swatch: #202020;
+      --ams-swatch: var(--bg-soft);
+      --pad: clamp(10px, 5cqi, 16px);
       position: relative;
       display: grid;
       grid-template-rows: auto 1fr;
       min-width: 0;
       max-width: 100%;
       container: ams-bay / inline-size;
-      border-radius: var(--radius-sm);
+      margin: 0;
+      padding: 0;
+      border-radius: var(--radius-md);
       overflow: hidden;
       background: var(--bg-soft);
       border: 1px solid var(--border);
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      /* Set by equalizeBays: every card on the board is as tall as the tallest. */
+      min-height: var(--ams-bay-h, 0px);
       transition: transform var(--transition), box-shadow var(--transition);
+    }
+    button.ams-bay { cursor: pointer; }
+    button.ams-bay:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    button.ams-bay:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 3px;
+    }
+    .ams-bay[aria-expanded='true'] {
+      outline: 3px solid var(--text);
+      outline-offset: 3px;
     }
     .ams-bay[data-active='1'] {
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
     }
     .ams-bay[data-empty='1'] {
       border-style: dashed;
+      border-width: 2px;
       background: transparent;
-    }
-    a.ams-bay {
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
-    }
-    a.ams-bay:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-sm);
-    }
-    a.ams-bay:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
     }
 
     /* Upper register: the material itself. The inset hairline gives
        white and cream filament a defined edge against the card. */
     .ams-swatch {
       position: relative;
-      min-height: 76px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: auto auto 1fr;
+      align-items: start;
+      gap: 4px 8px;
+      min-height: clamp(84px, 40cqi, 136px);
       min-width: 0;
-      padding: 9px 10px;
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 6px;
+      padding: var(--pad);
       overflow: hidden;
       background: var(--ams-fill, var(--ams-swatch));
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
@@ -350,8 +567,15 @@ import Layout from '../layouts/Layout.astro'
       z-index: 1;
     }
     .ams-swatch[data-multi='1'] .ams-bay-label,
-    .ams-swatch[data-multi='1'] .ams-tag {
+    .ams-swatch[data-multi='1'] .ams-material,
+    .ams-swatch[data-multi='1'] .ams-spool {
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    }
+    /* A colour the feed cannot tell us is hatched, never painted as black. */
+    .ams-swatch[data-unknown='1'] {
+      background: repeating-linear-gradient(135deg, var(--bg-elevated) 0 9px, var(--bg-soft) 9px 18px);
+      color: var(--text-muted);
+      box-shadow: inset 0 0 0 1px var(--border);
     }
     /* Translucent: the filament color stays. A corner highlight and a
        fine frost line keep it from reading as an opaque solid. */
@@ -384,29 +608,41 @@ import Layout from '../layouts/Layout.astro'
       0%, 100% { opacity: 0.82; }
       50% { opacity: 1; }
     }
-    .ams-unit[data-kind='ams_ht'] .ams-swatch {
-      min-height: 92px;
-    }
     .ams-bay[data-empty='1'] .ams-swatch {
-      background: var(--bg-soft);
+      background: transparent;
       box-shadow: none;
       color: var(--text-muted);
-      min-height: 62px;
+      min-height: clamp(52px, 24cqi, 80px);
     }
+    /* Slot id: small, in the corner, like the number moulded on the AMS. */
     .ams-bay-label {
-      font-size: 0.9rem;
+      grid-column: 1;
+      grid-row: 1;
+      font-size: clamp(0.75rem, 4.6cqi, 0.95rem);
       font-weight: 800;
       line-height: 1;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.04em;
       font-variant-numeric: tabular-nums;
-      flex: 0 1 auto;
+      min-width: 0;
+    }
+    /* RFID chip with the spool number under it, top right. */
+    .ams-swatch-meta {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
       min-width: 0;
     }
     .ams-tag {
-      font-size: 0.62rem;
+      padding: 3px 7px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--ams-ink) 16%, transparent);
+      font-size: clamp(0.7rem, 4.5cqi, 0.85rem);
       font-weight: 700;
-      letter-spacing: 0.07em;
-      opacity: 0.85;
+      letter-spacing: 0.06em;
+      line-height: 1.2;
       flex: 0 1 auto;
       min-width: 0;
       max-width: 100%;
@@ -414,62 +650,100 @@ import Layout from '../layouts/Layout.astro'
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    /* Loaded / Printing sits on the colour, where the feed line starts. */
+    .ams-feeding {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      justify-self: start;
+      align-self: end;
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      gap: 7px;
+      padding: 4px 11px 4px 9px;
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      color: var(--text);
+      font-size: clamp(0.75rem, 5cqi, 0.95rem);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .ams-feeding::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .ams-feeding[data-mode='printing']::before {
+      animation: ams-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes ams-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.25; }
+    }
 
     /* Lower register: every string lives here, on the app surface. */
     .ams-facts {
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 4px;
       min-width: 0;
       overflow: hidden;
-      padding: 9px 10px 10px;
+      padding: var(--pad) var(--pad) var(--pad);
     }
-    .ams-identity {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 8px;
-      min-width: 0;
-      overflow: hidden;
-    }
+    /* Material sits on the colour, in the ink picked for it. */
     .ams-material {
-      font-size: 1rem;
+      grid-column: 1;
+      grid-row: 2;
+      font-size: clamp(1.1rem, 8.6cqi, 1.7rem);
       font-weight: 700;
-      line-height: 1.15;
-      color: var(--text);
+      line-height: 1.1;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .ams-bay[data-empty='1'] .ams-material {
-      color: var(--text-muted);
       font-weight: 600;
     }
     .ams-desc {
-      font-size: 0.74rem;
+      display: block;
+      font-size: clamp(0.85rem, 5.8cqi, 1.15rem);
+      line-height: 1.3;
       color: var(--text-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .ams-spool {
-      font-size: 0.74rem;
+      font-size: clamp(0.72rem, 4.6cqi, 0.9rem);
       font-weight: 700;
-      color: var(--accent);
       font-variant-numeric: tabular-nums;
-      flex-shrink: 0;
-      margin-left: auto;
-      text-align: right;
+      line-height: 1.1;
+      white-space: nowrap;
     }
-    /* Share the lower part of the bay so the reel doesn't add a second row. */
+    .ams-flag {
+      display: block;
+      margin-top: 2px;
+      font-size: clamp(0.72rem, 4.6cqi, 0.9rem);
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .ams-bay[data-level='low'] .ams-flag { color: var(--warning-text); }
+    .ams-bay[data-level='crit'] .ams-flag { color: var(--error-text); }
+
+    /* The quarter-spool reel shares the lower part of the bay with the
+       meter: right column, spans both rows, bleeds into the bay's corner. */
     .ams-remaining {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) min(38%, 83px);
+      grid-template-columns: minmax(0, 1fr) min(38%, 118px);
       grid-template-rows: auto 1fr;
       flex: 1;
-      column-gap: 7px;
-      margin: 0 -10px -10px 0;
+      column-gap: 10px;
+      margin: 0 calc(-1 * var(--pad)) calc(-1 * var(--pad)) 0;
     }
     .ams-bay-details,
     .ams-meter {
@@ -492,26 +766,52 @@ import Layout from '../layouts/Layout.astro'
     .ams-meter {
       grid-row: 2;
       align-self: end;
-      padding: 4px 0 10px;
+      gap: 7px;
+      padding: 8px 0 var(--pad);
     }
     @container ams-bay (max-width: 9rem) {
       .ams-bay-details {
         grid-column: 1 / -1;
-        padding-right: 10px;
+        padding-right: var(--pad);
       }
       .ams-remaining .spool-reel-corner { grid-row: 2; }
+      /* Narrow bays (four across on a phone): stack the colour-bar text. */
+      .ams-swatch { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto 1fr; }
+      .ams-swatch-meta { grid-column: 1; grid-row: 3; flex-direction: row; flex-wrap: wrap; align-items: center; }
+      .ams-feeding { grid-row: 4; }
+      .ams-material { overflow-wrap: anywhere; white-space: normal; }
     }
     .ams-amounts {
       display: flex;
       flex-wrap: wrap;
       align-items: baseline;
       justify-content: space-between;
-      gap: 0 4px;
+      gap: 2px 8px;
       overflow-wrap: anywhere;
     }
-    .ams-amounts .ams-desc { white-space: normal; }
+    /* Remaining is the number the board exists for: the largest text in a bay. */
+    .ams-pct {
+      font-size: clamp(0.85rem, 5cqi, 1.05rem);
+      font-weight: 600;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .ams-pct b {
+      font-size: clamp(1.35rem, 10.2cqi, 2.1rem);
+      font-weight: 700;
+      color: var(--text);
+    }
+    .ams-bay[data-level='low'] .ams-pct b { color: var(--warning-text); }
+    .ams-bay[data-level='crit'] .ams-pct b { color: var(--error-text); }
+    .ams-grams {
+      font-size: clamp(0.85rem, 6cqi, 1.2rem);
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
     .ams-bar {
-      height: 4px;
+      display: block;
+      height: 6px;
       border-radius: 999px;
       background: var(--bg);
       overflow: hidden;
@@ -522,46 +822,151 @@ import Layout from '../layouts/Layout.astro'
       border-radius: 999px;
       background: var(--accent);
     }
-    .ams-bar[data-level='low'] > i {
-      background: var(--accent-3);
+    .ams-bar[data-level='low'] > i { background: var(--accent-3); }
+    .ams-bar[data-level='crit'] > i { background: #ef4444; }
+    .ams-bar[data-level='estimate'] > i { background: var(--text-muted); }
+    .ams-bar[data-level='unknown'] > i {
+      width: 100%;
+      background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 45%, transparent) 0 5px, transparent 5px 10px);
     }
-    .ams-bar[data-level='crit'] > i {
-      background: #ef4444;
-    }
-    .ams-pct {
-      font-size: 0.74rem;
-      font-weight: 700;
-      color: var(--text);
-      font-variant-numeric: tabular-nums;
-    }
-    .ams-meter:has(.ams-bar[data-level='crit']) .ams-pct { color: var(--error-text); }
 
-    .ams-feeding {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 0.64rem;
-      font-weight: 700;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      color: var(--accent);
-    }
-    .ams-feeding::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      animation: ams-pulse 1.8s ease-in-out infinite;
-    }
-    @keyframes ams-pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.25; }
+    .ams-sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
 
     .ams-note {
       padding: 20px;
+      font-size: 1.05rem;
       color: var(--text-muted);
+    }
+
+    /* ── Bay detail panel ─────────────────────────────────────────── */
+
+    .ams-detail {
+      position: fixed;
+      z-index: 60;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(440px, 100vw);
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-elevated);
+      border-left: 1px solid var(--border);
+      box-shadow: -18px 0 50px rgba(0, 0, 0, 0.28);
+      color: var(--text);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      transform: translateX(0);
+      transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+    }
+    .ams-detail[hidden] {
+      display: flex;
+      visibility: hidden;
+      transform: translateX(104%);
+      transition: transform 200ms cubic-bezier(0.4, 0, 1, 1), visibility 0s 200ms;
+    }
+    .ams-detail-swatch {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 150px;
+      padding: 18px 20px;
+      background: var(--ams-fill, var(--ams-swatch));
+      color: var(--ams-ink);
+    }
+    .ams-detail-swatch[data-unknown='1'] {
+      background: repeating-linear-gradient(135deg, var(--bg-elevated) 0 12px, var(--bg-soft) 12px 24px);
+      color: var(--text-muted);
+    }
+    .ams-detail-label {
+      font-size: 2.4rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .ams-detail-close {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--bg-elevated);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .ams-detail-close:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .ams-detail-body {
+      display: grid;
+      gap: 18px;
+      padding: 20px;
+    }
+    .ams-detail-title {
+      margin: 0;
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1.15;
+    }
+    .ams-detail-title:focus { outline: none; }
+    .ams-detail-sub {
+      margin: 4px 0 0;
+      font-size: 1.05rem;
+      color: var(--text-muted);
+    }
+    .ams-detail-amount {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 132px;
+      align-items: center;
+      gap: 16px;
+    }
+    .ams-detail-amount .spool-reel-full svg { width: 132px; height: 132px; display: block; }
+    .ams-detail-amount .ams-pct { font-size: 1.1rem; }
+    .ams-detail-amount .ams-pct b { font-size: 2.6rem; }
+    .ams-detail-amount[data-level='low'] .ams-pct b { color: var(--warning-text); }
+    .ams-detail-amount[data-level='crit'] .ams-pct b { color: var(--error-text); }
+    .ams-detail-amount .ams-grams { display: block; margin: 6px 0 10px; font-size: 1.15rem; }
+    .ams-detail-facts {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px 18px;
+      margin: 0;
+      font-size: 1.02rem;
+    }
+    .ams-detail-facts dt { color: var(--text-muted); }
+    .ams-detail-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .ams-detail-hint {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-soft);
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+    .ams-detail-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .ams-detail-actions .fm-btn { min-height: 46px; }
+    @media (max-width: 640px) {
+      .ams-detail {
+        top: auto;
+        left: 0;
+        width: 100%;
+        max-height: 88dvh;
+        border-left: 0;
+        border-top: 1px solid var(--border);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      }
+      .ams-detail[hidden] { transform: translateY(104%); }
     }
 
     /* ── Kiosk ─────────────────────────────────────────────────────── */
@@ -576,38 +981,95 @@ import Layout from '../layouts/Layout.astro'
       grid-template-columns: minmax(0, 1fr) !important;
     }
     body.ams-kiosk main {
-      padding: 20px !important;
+      padding: clamp(10px, 1.6vw, 24px) !important;
       width: 100%;
       min-width: 0;
     }
-    body.ams-kiosk .ams-head { margin-bottom: 18px; }
-    body.ams-kiosk .ams-title,
-    body.ams-kiosk .ams-subtitle { display: none; }
-    body.ams-kiosk .ams-filter .fm-select {
-      min-width: 14rem;
-      height: 44px;
+    body.ams-kiosk .ams-head {
+      position: fixed;
+      z-index: 50;
+      right: 12px;
+      bottom: 12px;
+      margin: 0;
+      padding: 6px 6px 6px 14px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
     }
-    body.ams-kiosk .ams-printer-name { font-size: 1.6rem; }
-    body.ams-kiosk .ams-material { font-size: 1.25rem; }
-    body.ams-kiosk .ams-desc { font-size: 0.85rem; }
-    body.ams-kiosk .ams-bay-label { font-size: 1.05rem; }
-    body.ams-kiosk .ams-swatch { min-height: 104px; }
+    body.ams-kiosk .ams-head > div:first-child,
+    body.ams-kiosk .ams-filter,
+    body.ams-kiosk #ams-json { display: none; }
+    body.ams-kiosk .ams-actions .fm-btn { min-height: 44px; }
+    body.ams-kiosk .ams-printers { gap: 28px; }
+    /* The floating control fades out when nobody touches the screen, so
+       it does not sit on top of the last row of a swatch board. */
+    body.ams-kiosk .ams-head { transition: opacity 300ms ease; }
+    body.ams-kiosk.ams-idle .ams-head:not(:focus-within) {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Kiosk with one printer: the whole printer on one screen. layoutBoard
+       picks the unit columns and bay arrangement, then scales the board to fit. */
+    .ams-printers[data-fit='1'] { gap: 14px; }
+    .ams-printers[data-fit='1'] .ams-printer,
+    .ams-printers[data-fit='1'] .ams-printer-units,
+    .ams-printers[data-fit='1'] .ams-row-main,
+    .ams-printers[data-fit='1'] .ams-row-aux { gap: 12px; }
+    .ams-printers[data-fit='1'] .ams-printer-head { padding: 12px 18px; gap: 10px 28px; }
+    .ams-printers[data-fit='1'] .ams-loaded { padding-top: 10px; }
+    .ams-printers[data-fit='1'] .ams-unit { padding: 12px 14px 14px; gap: 10px; }
+    .ams-printers[data-fit='1'] .ams-bays { gap: 10px; }
+    .ams-printers[data-fit='1'] .ams-swatch { min-height: clamp(60px, 28cqi, 100px); }
+    .ams-printers[data-fit='1'] .ams-bay[data-empty='1'] .ams-swatch { min-height: 0; }
+    .ams-printers[data-fit='1'] .ams-row-main {
+      grid-template-columns: repeat(var(--fit-cols, 1), minmax(0, 1fr));
+    }
+    .ams-printers[data-fit='1'] .ams-unit[data-kind='ams'] .ams-bays {
+      grid-template-columns: repeat(var(--fit-bays, 4), minmax(0, 1fr));
+    }
+
+    .ams-toggle[aria-pressed='true'] {
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+    }
 
     /* ── Quality floor ────────────────────────────────────────────── */
 
     .ams-actions .fm-btn:focus-visible,
+    .ams-stale .fm-btn:focus-visible,
+    .ams-detail .fm-btn:focus-visible,
     .ams-filter .fm-select:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
     @media (prefers-reduced-motion: reduce) {
-      .ams-feeding::before { animation: none; }
+      .ams-feeding::before,
+      .ams-feed-flow[data-moving='1'],
       .ams-swatch[data-finish='glow']::after { animation: none; }
-      .ams-bay { transition: none; }
+      .ams-bay,
+      .ams-printer,
+      .ams-printer-units,
+      .ams-detail,
+      .ams-detail[hidden] { transition: none; }
+    }
+    @container ams-board (max-width: 900px) {
+      .ams-printer-head { grid-template-columns: minmax(0, 1fr) auto; }
+      .ams-job { grid-column: 1 / -1; grid-row: 2; }
+    }
+    @container ams-board (max-width: 560px) {
+      .ams-printer-head { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+      .ams-readouts { justify-content: space-between; gap: 16px; }
+      .ams-ro { align-items: flex-start; }
+      .ams-unit { padding: 14px; }
+      .ams-climate { margin-left: 0; }
+      /* One column: the strip sits directly above, the bay says "Printing". */
+      .ams-feed { display: none; }
     }
     @media (max-width: 640px) {
-      .ams-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .ams-row-aux > .ams-unit { max-width: none; }
+      .ams-row-aux > .ams-unit,
+      .ams-row-aux > .ams-unit[data-kind='external'] { max-width: none; flex-basis: 100%; }
     }
   </style>
 
@@ -623,46 +1085,118 @@ import Layout from '../layouts/Layout.astro'
           <option value="all" data-i18n="display.allPrinters">All printers</option>
         </select>
       </label>
-      <span class="ams-status" id="ams-status" role="status" aria-live="polite"></span>
-      <button id="ams-kiosk" class="fm-btn fm-btn-outline" data-i18n="display.kiosk">Kiosk mode</button>
+      <span class="ams-status" id="ams-status"></span>
+      <button id="ams-ext" type="button" class="fm-btn fm-btn-outline ams-toggle" aria-pressed="true" data-i18n="display.showExternal">External spools</button>
+      <button id="ams-kiosk" type="button" class="fm-btn fm-btn-outline" aria-pressed="false" data-i18n="display.kiosk">Kiosk mode</button>
       <a id="ams-json" href="/api/v1/display" target="_blank" rel="noopener" class="fm-btn fm-btn-outline" data-i18n="display.rawJson">JSON</a>
     </div>
   </header>
 
+  <div id="ams-stale" class="ams-stale" role="status" aria-live="polite" hidden>
+    <span id="ams-stale-text"></span>
+    <button id="ams-retry" type="button" class="fm-btn fm-btn-outline" data-i18n="display.retry">Retry now</button>
+  </div>
+
   <div id="ams-printers" class="ams-printers"></div>
 
+  <div id="ams-live" class="ams-sr" role="status" aria-live="polite"></div>
+
+  <aside id="ams-detail" class="ams-detail" role="dialog" aria-modal="false" aria-labelledby="ams-detail-title" hidden></aside>
+
   <script>
-    import { t, initI18n, translatePage } from '../lib/i18n'
+    import { t, getLang, initI18n, translatePage } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import { amsFinish, amsSwatchFill, amsSwatchHexes } from '../lib/ams-swatch'
     import { renderSpoolReel } from '../lib/spool-reel'
+
+    /** The Display API shapes this page reads (docs/display-api.md). */
+    interface DisplaySlot {
+      ams_id: number; slot: number; label: string
+      empty?: boolean; active?: boolean
+      color?: string; colors?: string[]; color_style?: string; finish?: string
+      color_name?: string | null; material?: string | null; manufacturer?: string | null; filament?: string | null
+      spool_id?: number | null
+      remaining_percent?: number | null; remaining_grams?: number | null; remaining_source?: 'filaman' | 'printer' | null
+      nozzle_min?: number | null; nozzle_max?: number | null
+      rfid?: boolean; last_used?: string | null; backup_of?: string | null
+    }
+    interface DisplayUnit {
+      ams_id: number; kind: string; model?: string | null; label: string
+      temperature?: number | null; humidity?: number | null
+      drying?: { status?: number | null, target_temp?: number | null, time?: number | null } | null
+      slots?: DisplaySlot[]
+    }
+    interface DisplayPrinter {
+      id: number; name: string; connected?: boolean | null; state?: string | null
+      job?: { name?: string | null, progress?: number | null, layer?: number | null, total_layers?: number | null, remaining_seconds?: number | null } | null
+      temperatures?: Record<string, number | null> | null
+      active?: { ams_id: number, slot: number } | null
+      alerts?: { id?: string, severity?: string, title?: string, detail?: string }[]
+      ams?: DisplayUnit[]
+    }
 
     await initI18n()
     translatePage()
 
     const POLL_MS = 5000
-    const LOW = 30, CRIT = 15
+    // Remaining-filament thresholds (percent). The feed sends raw numbers
+    // and leaves "low" to the client, so this page decides it here.
+    const LOW_PERCENT = 30, CRITICAL_PERCENT = 15
+    // The board is called stale after this many failed polls in a row, or
+    // when the last good answer is older than STALE_MS.
+    const STALE_FAILURES = 3, STALE_MS = 30_000
+    // A request that hangs (Wi-Fi gone, server stuck) counts as a failure.
+    const FETCH_TIMEOUT_MS = 10_000
     const HEX6 = /^#[0-9a-fA-F]{6}$/
+    // The feed's placeholder colour. On a bay without a name or spool it
+    // means "colour unknown", not black filament.
+    const PLACEHOLDER_HEX = '#202020'
     // Units that belong on the secondary line, below the regular AMS boxes.
     // An unrecognised kind falls through to the main line.
     const AUX_KINDS = new Set(['ams_ht', 'external'])
-    let etag: string | null = null
-    let lastPrinters: any[] = []
-    let shownPrinters: any[] = []
+    const MODEL_NAMES: Record<string, string> = { ams: 'AMS', ams_lite: 'AMS Lite', ams_2_pro: 'AMS 2 Pro', ams_ht: 'AMS HT' }
+    // Driver state strings → [translation key, tone]. Anything else is shown as sent.
+    const STATES: Record<string, [string, string]> = {
+      running: ['running', 'run'], printing: ['running', 'run'],
+      prepare: ['prepare', 'run'], slicing: ['prepare', 'run'], init: ['prepare', 'run'],
+      pause: ['pause', 'warn'], paused: ['pause', 'warn'],
+      finish: ['finish', 'ok'], finished: ['finish', 'ok'],
+      failed: ['failed', 'err'], idle: ['idle', 'idle'],
+    }
+    const ICON_ALERT = '<svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M8 1 15 14H1zm-.8 4.5v4h1.6v-4zm0 5.3v1.6h1.6v-1.6z"/></svg>'
+    const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>'
 
-    const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+    let etag: string | null = null
+    let lastPrinters: DisplayPrinter[] = []
+    let shownPrinters: DisplayPrinter[] = []
+    let lastOkAt = 0
+    let failures = 0
+    let inFlight = false
+    // Showing the external spool holders is a per-browser preference.
+    const EXT_KEY = 'filaman.amsView.showExternal'
+    let showExternal = readShowExternal()
+    // What each printer last announced to screen readers: state + loaded bay.
+    const spoken = new Map<number, string>()
+    // Last markup written into each strip, so an unchanged strip is not rebuilt.
+    const stripMarkup = new WeakMap<Element, string>()
+    let openKey: string | null = null
+    let wakeLock: WakeLockSentinel | null = null
+    // Bay key → what the detail panel needs to describe it.
+    const bayIndex = new Map<string, { slot: DisplaySlot, unit: DisplayUnit, printer: DisplayPrinter }>()
+
+    const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 
     /** The feed promises #RRGGBB, but this value lands in a style
      *  attribute — validate rather than trust. */
-    function safeColor(value: any): string {
+    function safeColor(value: unknown): string {
       const raw = String(value ?? '')
-      return HEX6.test(raw) ? raw : '#202020'
+      return HEX6.test(raw) ? raw : PLACEHOLDER_HEX
     }
 
     /** Bar widths land in a style attribute, so keep them numeric. */
-    function pctWidth(value: any): number {
+    function pctWidth(value: unknown): number {
       const n = Number(value)
-      return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0
+      return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0
     }
 
     function relativeLuminance(hex: string): number {
@@ -695,13 +1229,66 @@ import Layout from '../layouts/Layout.astro'
       return onBlack >= onWhite ? '#0b0f0d' : '#ffffff'
     }
 
-    function fmtRemaining(seconds: number | null) {
-      if (seconds == null) return ''
-      const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60)
+    function fmtDuration(seconds: number | null | undefined) {
+      if (seconds == null || !Number.isFinite(Number(seconds))) return ''
+      const s = Number(seconds)
+      const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60)
       return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`
     }
 
-    function bayTitle(s: any): string {
+    function fmtAgo(iso: unknown): string {
+      const at = Date.parse(String(iso ?? ''))
+      if (!Number.isFinite(at)) return ''
+      const minutes = Math.round((at - Date.now()) / 60000)
+      const rtf = new Intl.RelativeTimeFormat(getLang(), { numeric: 'auto' })
+      if (Math.abs(minutes) < 60) return rtf.format(minutes, 'minute')
+      if (Math.abs(minutes) < 60 * 48) return rtf.format(Math.round(minutes / 60), 'hour')
+      return rtf.format(Math.round(minutes / 1440), 'day')
+    }
+
+    /** "{percent}% left" with the number set large; works for any word order. */
+    function pctMarkup(pct: number | string): string {
+      const [before, after = ''] = t('display.percentLeft', { percent: '\u0000' }).split('\u0000')
+      return `<span class="ams-pct">${esc(before)}<b>${esc(pct)}</b>${esc(after)}</span>`
+    }
+
+    /** Unique across the board: every printer has an "A1". */
+    function slotKey(s: DisplaySlot, printer: DisplayPrinter): string {
+      return `${printer?.id}:${s.ams_id}:${s.slot}`
+    }
+
+    function spoolIdOf(s: DisplaySlot): number | null {
+      const n = Number(s.spool_id)
+      return s.spool_id != null && Number.isFinite(n) && n > 0 ? n : null
+    }
+
+    /** Everything a bay paints, derived once so the bay, the strip and the
+     *  detail panel tell the same story. */
+    function bayModel(s: DisplaySlot) {
+      const hexes = amsSwatchHexes(s.colors, s.color)
+      const swatchColor = hexes[0] || safeColor(s.color)
+      const spoolId = spoolIdOf(s)
+      const unknownColor = !hexes.length
+        || (hexes.length === 1 && hexes[0] === PLACEHOLDER_HEX && !s.color_name && spoolId == null)
+      const pct = Number.isFinite(s.remaining_percent) ? pctWidth(s.remaining_percent) : null
+      const tracked = spoolId != null
+      // An untracked bay's number is the printer's guess. "0%" from a printer
+      // that cannot read the spool is not a reading, so it is not shown as one.
+      const estimate = !tracked || s.remaining_source === 'printer'
+      const noReading = pct === null || (estimate && pct === 0)
+      const level = !tracked ? 'untracked'
+        : pct === null ? '' : pct <= CRITICAL_PERCENT ? 'crit' : pct <= LOW_PERCENT ? 'low' : 'ok'
+      const barLevel = noReading ? 'unknown' : estimate ? 'estimate' : level
+      const colorName = s.color_name || (!s.manufacturer ? s.filament : '') || (unknownColor ? t('display.colorUnknown') : '')
+      return {
+        hexes, swatchColor, spoolId, unknownColor, pct, tracked, estimate, noReading, level, barLevel, colorName,
+        fill: unknownColor ? '' : amsSwatchFill(hexes, s.color_style),
+        ink: inkFor(hexes.length > 1 ? averageHex(hexes) : swatchColor),
+        grams: s.remaining_grams != null ? `${s.remaining_grams} g` : '',
+      }
+    }
+
+    function bayTitle(s: DisplaySlot): string {
       const parts = [s.filament, s.color_name].filter(Boolean)
       if (s.nozzle_min != null && s.nozzle_max != null) parts.push(`${s.nozzle_min}–${s.nozzle_max}°C`)
       if (s.remaining_grams != null) parts.push(`${s.remaining_grams} g`)
@@ -709,161 +1296,508 @@ import Layout from '../layouts/Layout.astro'
       return parts.join(' · ')
     }
 
-    function renderBay(s: any) {
+    function isPrinting(p: DisplayPrinter | null | undefined): boolean {
+      return STATES[String(p?.state ?? '').toLowerCase()]?.[1] === 'run' && p?.connected !== false
+    }
+
+    function amountsMarkup(m: ReturnType<typeof bayModel>): string {
+      if (m.noReading) {
+        const note = m.pct === 0 ? t('display.printerReads', { percent: 0 }) : (m.grams || t('display.amountUnknown'))
+        return `<span class="ams-pct"><b>—</b></span><span class="ams-grams">${esc(note)}</span>`
+      }
+      const note = m.estimate ? [m.grams, t('display.printerEstimate')].filter(Boolean).join(' · ') : m.grams
+      return `${pctMarkup(m.pct!)}${note ? `<span class="ams-grams">${esc(note)}</span>` : ''}`
+    }
+
+    function renderBay(s: DisplaySlot, printer: DisplayPrinter) {
       const label = esc(s.label)
+      const key = slotKey(s, printer)
 
       if (s.empty) {
         return `
-          <article class="ams-bay" data-empty="1">
-            <div class="ams-swatch"><span class="ams-bay-label">${label}</span></div>
-            <div class="ams-facts"><div class="ams-material">${t('display.empty')}</div></div>
-          </article>`
+          <div class="ams-bay" data-empty="1" data-key="${esc(key)}">
+            <span class="ams-swatch"><span class="ams-bay-label">${label}</span><span class="ams-material">${t('display.empty')}</span></span>
+            <span class="ams-facts"></span>
+          </div>`
       }
 
-      const hexes = amsSwatchHexes(s.colors, s.color)
-      const fill = amsSwatchFill(hexes, s.color_style)
-      const swatchColor = hexes[0] || safeColor(s.color)
-      const ink = inkFor(hexes.length > 1 ? averageHex(hexes) : swatchColor)
+      const m = bayModel(s)
       const finish = amsFinish(s.finish)
-      const pct = Number.isFinite(s.remaining_percent) ? pctWidth(s.remaining_percent) : null
-      const level = pct === null ? '' : pct <= CRIT ? 'crit' : pct <= LOW ? 'low' : 'ok'
-      const grams = s.remaining_grams != null ? `${s.remaining_grams} g` : ''
-      const estimate = pct !== null && s.remaining_source === 'printer' ? t('display.printerEstimate') : ''
-      const reel = renderSpoolReel(pct === null ? null : pct / 100, hexes.length ? hexes : [swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped')
-      const colorName = s.color_name || (!s.manufacturer ? s.filament : '') || ''
-      const manufacturer = s.manufacturer || ''
-      const spoolId = Number.isFinite(Number(s.spool_id)) && Number(s.spool_id) > 0 ? Number(s.spool_id) : null
-      const spoolLine = spoolId != null ? `<div class="ams-spool">#${spoolId}</div>` : ''
-      const tag = spoolId != null ? 'a' : 'article'
-      const href = spoolId != null ? ` href="/spools/${spoolId}"` : ''
+      const reel = renderSpoolReel(m.pct === null ? null : m.pct / 100, m.hexes.length ? m.hexes : [m.swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped')
+      const manufacturer = s.manufacturer || (m.tracked ? '' : t('display.unlinkedSpool'))
+      const flag = m.level === 'crit' ? t('display.critical') : m.level === 'low' ? t('display.low') : m.level === 'untracked' ? t('display.notTracked') : ''
+      const feeding = s.active
+        ? `<span class="ams-feeding" data-mode="${isPrinting(printer) ? 'printing' : 'loaded'}">${t(isPrinting(printer) ? 'display.feeding' : 'display.loaded')}</span>`
+        : ''
+      const style = m.unknownColor
+        ? `--ams-swatch: var(--bg-soft); --ams-ink: var(--text)`
+        : `--ams-swatch: ${m.swatchColor}; --ams-fill: ${m.fill}; --ams-ink: ${m.ink}`
 
       return `
-        <${tag} class="ams-bay" data-active="${s.active ? '1' : '0'}"${href}
-                 style="--ams-swatch: ${swatchColor}; --ams-fill: ${fill}; --ams-ink: ${ink}"
-                 title="${esc(bayTitle(s))}">
-          <div class="ams-swatch" data-finish="${finish}" data-multi="${hexes.length > 1 ? '1' : '0'}">
+        <button type="button" class="ams-bay" data-key="${esc(key)}" data-active="${s.active ? '1' : '0'}" data-level="${m.level}"
+                aria-haspopup="dialog" aria-controls="ams-detail" aria-expanded="${openKey === key ? 'true' : 'false'}"
+                style="${style}" title="${esc(bayTitle(s))}">
+          <span class="ams-swatch" data-finish="${m.unknownColor ? '' : finish}" data-multi="${m.hexes.length > 1 ? '1' : '0'}" data-unknown="${m.unknownColor ? '1' : '0'}">
             <span class="ams-bay-label">${label}</span>
-            ${s.rfid ? `<span class="ams-tag">RFID</span>` : ''}
-          </div>
-          <div class="ams-facts">
-            <div class="ams-identity">
-              <div class="ams-material">${esc(s.material || '—')}</div>
-              ${spoolLine}
-            </div>
-            <div class="ams-remaining">
-              <div class="ams-bay-details">
-                ${colorName ? `<div class="ams-desc">${esc(colorName)}</div>` : ''}
-                ${manufacturer ? `<div class="ams-desc">${esc(manufacturer)}</div>` : ''}
-                ${s.active ? `<div class="ams-feeding">${t('display.feeding')}</div>` : ''}
-              </div>
-              <div class="ams-meter">
-                <div class="ams-amounts">
-                  ${pct !== null ? `<span class="ams-pct">${esc(t('display.percentLeft', { percent: pct }))}</span>` : ''}
-                  ${grams || pct === null ? `<span class="ams-desc">${esc(grams || t('display.amountUnknown'))}</span>` : ''}
-                  ${estimate ? `<span class="ams-desc">${esc(estimate)}</span>` : ''}
-                </div>
-                ${pct !== null ? `<span class="ams-bar" data-level="${level}" aria-hidden="true"><i style="width:${pct}%"></i></span>` : ''}
-              </div>
+            <span class="ams-material">${esc(s.material || '—')}</span>
+            ${s.rfid || m.spoolId != null
+              ? `<span class="ams-swatch-meta">${s.rfid ? `<span class="ams-tag">RFID</span>` : ''}${m.spoolId != null ? `<span class="ams-spool">#${m.spoolId}</span>` : ''}</span>`
+              : ''}
+            ${feeding}
+          </span>
+          <span class="ams-facts">
+            <span class="ams-remaining">
+              <span class="ams-bay-details">
+                ${m.colorName ? `<span class="ams-desc">${esc(m.colorName)}</span>` : ''}
+                ${manufacturer ? `<span class="ams-desc">${esc(manufacturer)}</span>` : ''}
+                ${flag ? `<span class="ams-flag">${esc(flag)}</span>` : ''}
+              </span>
+              <span class="ams-meter">
+                <span class="ams-amounts">${amountsMarkup(m)}</span>
+                <span class="ams-bar" data-level="${m.barLevel}" aria-hidden="true"><i${m.noReading ? '' : ` style="width:${m.pct}%"`}></i></span>
+              </span>
               ${reel}
-            </div>
-          </div>
-        </${tag}>`
+            </span>
+          </span>
+        </button>`
     }
 
-    // The same three icons the Printers page puts next to these very numbers,
-    // so somebody with both screens open reads one language. Decorative only:
+    // The same icons the Printers page puts next to these very numbers, so
+    // somebody with both screens open reads one language. Decorative only:
     // the value stays as text, and alt="" keeps them out of the accessibility
-    // tree rather than having a screen reader announce "image" three times.
-    function withIcon(icon: string, text: string) {
-      return `<span class="ams-climate-item"><img src="/${icon}.svg" alt="">${esc(text)}</span>`
+    // tree rather than having a screen reader announce "image" each time.
+    function chip(icon: string, text: string, extra = '') {
+      return `<span class="ams-chip"${extra}><img src="/${icon}.svg" alt="">${esc(text)}</span>`
     }
 
-    function renderUnitHead(u: any, slots: any[]) {
-      const climate = [
-        u.temperature != null ? withIcon('temperature', `${Math.round(u.temperature)}°C`) : '',
-        u.humidity != null ? withIcon('moisture', `${Math.round(u.humidity)}%`) : '',
-      ].filter(Boolean)
-      const filled = slots.filter((s: any) => !s.empty).length
+    function dryingChip(u: DisplayUnit): string {
+      if (!u.drying) return ''
+      const d = u.drying
+      // Bambu firmware reports the remaining drying time in minutes.
+      const parts = [t('display.drying')]
+      if (Number.isFinite(d.target_temp)) parts.push(`${Math.round(Number(d.target_temp))}°C`)
+      if (Number(d.time) > 0) parts.push(t('display.timeLeft', { time: fmtDuration(Number(d.time) * 60) }))
+      return `<span class="ams-chip ams-drying">${esc(parts.join(' · '))}</span>`
+    }
 
+    function renderUnitHead(u: DisplayUnit, slots: DisplaySlot[]) {
+      const filled = slots.filter((s: DisplaySlot) => !s.empty).length
+      const name = u.model ? MODEL_NAMES[u.model] : ''
+      const model = name && name !== u.label ? name : ''
       return `
-        <span class="ams-unit-name">${esc(u.label)}</span>
+        <h3 class="ams-unit-name">${esc(u.label)}</h3>
+        ${model ? `<span class="ams-unit-model">${esc(model)}</span>` : ''}
         <span class="ams-climate">
-          ${u.drying ? `<span class="ams-drying">${t('display.drying')}</span>` : ''}
-          ${climate.join('')}
-          ${withIcon('slots', t('display.slotsFilled', { filled, total: slots.length }))}
+          ${dryingChip(u)}
+          ${u.humidity != null ? chip('moisture', `${Math.round(u.humidity)}%`, Number(u.humidity) >= 40 ? ' data-wet="1"' : '') : ''}
+          ${u.temperature != null ? chip('temperature', `${Math.round(u.temperature)}°C`) : ''}
+          ${chip('slots', t('display.slotsFilled', { filled, total: slots.length }))}
         </span>`
     }
 
-    function renderUnit(u: any) {
+    function renderUnit(u: DisplayUnit, printer: DisplayPrinter) {
       const slots = u.slots || []
       return `
         <section class="ams-unit fm-card" data-kind="${esc(u.kind)}">
           <div class="ams-unit-head">${renderUnitHead(u, slots)}</div>
-          <div class="ams-bays">${slots.map(renderBay).join('')}</div>
+          <div class="ams-bays">${slots.map((s: DisplaySlot) => renderBay(s, printer)).join('')}</div>
         </section>`
     }
 
-    function renderPrinterStatus(p: any) {
-      const job = p.job || {}
-      const temps = p.temperatures || {}
-      const offline = p.connected === false
-
-      const meta: string[] = []
-      if (job.name) meta.push(esc(job.name))
-      if (job.remaining_seconds != null) meta.push(fmtRemaining(job.remaining_seconds))
-      if (temps.nozzle != null) meta.push(`${t('display.nozzle')} ${temps.nozzle}${temps.nozzle_target ? '/' + temps.nozzle_target : ''}°C`)
-      if (temps.bed != null) meta.push(`${t('display.bed')} ${temps.bed}${temps.bed_target ? '/' + temps.bed_target : ''}°C`)
-
-      const state = offline
-        ? t('display.offline')
-        : (p.state && p.state !== 'unknown' ? esc(p.state) : '')
-
-      const alerts = (p.alerts || [])
-        .map((a: any) => `<span class="ams-alert" data-severity="${esc(a.severity)}">${esc(a.title)}${a.detail ? ': ' + esc(a.detail) : ''}</span>`)
-        .join('')
-
-      return `
-        <div class="ams-printer-head">
-          <span class="ams-dot" data-off="${offline ? '1' : '0'}"></span>
-          <h2 class="ams-printer-name">${esc(p.name)}</h2>
-          ${state ? `<span class="ams-state">${state}</span>` : ''}
-          ${meta.length ? `<span class="ams-meta">${meta.map(m => `<span>${m}</span>`).join('')}</span>` : ''}
-        </div>
-        ${job.progress != null
-          ? `<div class="ams-job">
-               <span class="ams-track"><i style="width:${pctWidth(job.progress)}%"></i></span>
-               <span class="ams-job-pct">${pctWidth(job.progress)}%</span>
-             </div>`
-          : ''}
-        ${alerts ? `<div class="ams-alerts">${alerts}</div>` : ''}`
+    function stateOf(p: DisplayPrinter): { text: string, tone: string } {
+      if (p.connected === false) return { text: t('display.offline'), tone: 'off' }
+      const raw = String(p.state ?? '')
+      const known = STATES[raw.toLowerCase()]
+      if (known) return { text: t(`display.states.${known[0]}`), tone: known[1] }
+      if (raw && raw !== 'unknown') return { text: raw.charAt(0) + raw.slice(1).toLowerCase(), tone: 'idle' }
+      if (p.connected == null) return { text: t('display.noStatus'), tone: 'unknown' }
+      return { text: t('display.online'), tone: 'idle' }
     }
 
-    function unitGroups(p: any): [any[], any[]] {
-      const units = p.ams || []
+    function readout(label: string, value: number | null | undefined, target: number | null | undefined) {
+      if (value == null) return ''
+      const aim = target && Math.abs(Number(target) - Number(value)) > 2 ? `<small>→ ${esc(target)}°C</small>` : ''
+      return `<div class="ams-ro"><dt>${esc(label)}</dt> <dd>${esc(value)}°C${aim}</dd></div>`
+    }
+
+    function activeSlot(p: DisplayPrinter): DisplaySlot | null {
+      for (const u of p.ams || []) for (const s of u.slots || []) if (s.active && !s.empty) return s
+      return null
+    }
+
+    function renderPrinterStatus(p: DisplayPrinter) {
+      const job = p.job || {}
+      const temps = p.temperatures || {}
+      const state = stateOf(p)
+      const offline = p.connected === false
+
+      const jobMeta: string[] = []
+      if (job.layer != null && job.total_layers) jobMeta.push(t('display.layer', { layer: job.layer, total: job.total_layers }))
+      if (job.remaining_seconds) jobMeta.push(t('display.timeLeft', { time: fmtDuration(job.remaining_seconds) }))
+      const progress = job.progress != null ? pctWidth(job.progress) : null
+      const jobBlock = job.name || progress != null
+        ? `<div class="ams-job" data-done="${state.tone === 'ok' ? '1' : '0'}">
+             ${job.name ? `<div class="ams-job-name" title="${esc(job.name)}">${esc(job.name)}</div>` : ''}
+             ${progress != null ? `<div class="ams-job-line"><span class="ams-track"><i style="width:${progress}%"></i></span><span class="ams-job-pct">${progress}%</span></div>` : ''}
+             ${jobMeta.length ? `<div class="ams-job-meta">${jobMeta.map(m => `<span>${esc(m)}</span>`).join('')}</div>` : ''}
+           </div>`
+        : '<div></div>'
+
+      const readouts = [
+        readout(t('display.nozzle'), temps.nozzle, temps.nozzle_target),
+        readout(t('display.bed'), temps.bed, temps.bed_target),
+        readout(t('display.chamber'), temps.chamber, temps.chamber_target),
+      ].join('')
+
+      const alerts = (p.alerts || []).map((a) => `
+        <li class="ams-alert" data-severity="${esc(a.severity)}">${ICON_ALERT}<strong>${esc(a.title)}</strong>
+          <span>${esc(a.detail || (a.severity === 'error' || a.severity === 'danger' ? t('display.alertHint') : ''))}</span></li>`).join('')
+
+      const active = activeSlot(p)
+      let loaded = ''
+      if (active) {
+        const m = bayModel(active)
+        const amount = m.noReading ? '' : `${m.pct}%`
+        const desc = [[m.colorName, active.material].filter(Boolean).join(' '), amount, m.grams].filter(Boolean).join(' · ')
+        const dot = m.unknownColor ? '' : ` style="--ams-fill: ${m.fill}; --ams-swatch: ${m.swatchColor}"`
+        loaded = `<div class="ams-loaded"><span class="ams-loaded-dot"${dot}></span>
+          <span class="ams-loaded-text"><strong>${esc(active.label)} · ${t(isPrinting(p) ? 'display.feeding' : 'display.loaded')}</strong>
+          ${desc ? `<span class="ams-loaded-desc">${esc(desc)}</span>` : ''}</span></div>`
+      }
+
+      return `
+        <div class="ams-printer-head fm-card">
+          <div class="ams-printer-id">
+            <h2 class="ams-printer-name">${esc(p.name)}</h2>
+            <span class="ams-state" data-tone="${state.tone}">${esc(state.text)}</span>
+            ${offline ? `<span class="ams-lastknown">${t('display.lastKnown')}</span>` : ''}
+          </div>
+          ${jobBlock}
+          ${readouts ? `<dl class="ams-readouts">${readouts}</dl>` : '<div></div>'}
+          ${alerts ? `<ul class="ams-alerts">${alerts}</ul>` : ''}
+          ${loaded}
+        </div>`
+    }
+
+    function readShowExternal(): boolean {
+      try { return localStorage.getItem(EXT_KEY) !== '0' } catch { return true }
+    }
+
+    function unitGroups(p: DisplayPrinter): [DisplayUnit[], DisplayUnit[]] {
+      const units = (p.ams || []).filter((u: DisplayUnit) => showExternal || u.kind !== 'external')
       return [
-        units.filter((u: any) => !AUX_KINDS.has(u.kind)),
-        units.filter((u: any) => AUX_KINDS.has(u.kind)),
+        units.filter((u: DisplayUnit) => !AUX_KINDS.has(u.kind)),
+        units.filter((u: DisplayUnit) => AUX_KINDS.has(u.kind)),
       ]
     }
 
-    function renderPrinterUnits([mainUnits, auxUnits]: [any[], any[]]) {
+    function renderPrinterUnits([mainUnits, auxUnits]: [DisplayUnit[], DisplayUnit[]], printer: DisplayPrinter) {
       return `
-        ${mainUnits.length ? `<div class="ams-row-main" data-count="${mainUnits.length}">${mainUnits.map(renderUnit).join('')}</div>` : ''}
-        ${auxUnits.length ? `<div class="ams-row-aux">${auxUnits.map(renderUnit).join('')}</div>` : ''}`
+        ${mainUnits.length ? `<div class="ams-row-main" data-count="${mainUnits.length}">${mainUnits.map(u => renderUnit(u, printer)).join('')}</div>` : ''}
+        ${auxUnits.length ? `<div class="ams-row-aux">${auxUnits.map(u => renderUnit(u, printer)).join('')}</div>` : ''}`
     }
 
-    function renderPrinter(p: any) {
+    function renderPrinter(p: DisplayPrinter) {
       return `
-        <section class="ams-printer">
+        <section class="ams-printer" data-id="${esc(p.id)}" data-offline="${p.connected === false ? '1' : '0'}" aria-label="${esc(p.name)}">
           <div class="ams-printer-status">${renderPrinterStatus(p)}</div>
-          <div class="ams-printer-units">${renderPrinterUnits(unitGroups(p))}</div>
+          <div class="ams-printer-units">${renderPrinterUnits(unitGroups(p), p)}</div>
+          <svg class="ams-feed" aria-hidden="true"></svg>
         </section>`
     }
 
-    function setStatus(text: string, state: 'ok' | 'error') {
+    function indexBays(printers: DisplayPrinter[]) {
+      bayIndex.clear()
+      for (const p of printers) for (const u of p.ams || []) for (const s of u.slots || []) {
+        if (!s.empty) bayIndex.set(slotKey(s, p), { slot: s, unit: u, printer: p })
+      }
+    }
+
+    // ── Feed line ──────────────────────────────────────────────────────
+
+    let feedFrame = 0
+    function scheduleFeeds() {
+      if (feedFrame || typeof requestAnimationFrame !== 'function') return
+      feedFrame = requestAnimationFrame(() => { feedFrame = 0; layoutBoard(); drawFeeds() })
+    }
+
+    /** Every bay card as tall as the tallest one on the board. */
+    function equalizeBays(root: HTMLElement) {
+      root.style.setProperty('--ams-bay-h', '0px')
+      // Measured sizes come back zoomed; the variable is read inside the zoom.
+      const zoom = Number(root.style.getPropertyValue('zoom')) || 1
+      let tallest = 0
+      root.querySelectorAll<HTMLElement>('.ams-bay').forEach(b => { tallest = Math.max(tallest, b.getBoundingClientRect().height) })
+      root.style.setProperty('--ams-bay-h', `${Math.ceil(tallest / zoom)}px`)
+    }
+
+    const FIT_TEXT_CAP_PX = 330
+    const FIT_2X2_MARGIN = 1.05
+    // Unit columns allowed for N regular AMS units: never 3+1.
+    const FIT_COLUMNS: Record<number, number[]> = { 0: [1], 1: [1], 2: [1, 2], 3: [1, 3], 4: [1, 2, 4], 5: [2, 3], 6: [2, 3] }
+
+    /** Zoom the board until it is no taller than `available`. Zooming out
+     *  widens the layout (and the bays with it), so the height is measured
+     *  again after each step rather than predicted. */
+    function fitZoom(root: HTMLElement, available: number): number {
+      let zoom = 1
+      root.style.removeProperty('zoom')
+      for (let i = 0; i < 4; i++) {
+        equalizeBays(root)
+        const height = root.getBoundingClientRect().height
+        if (height <= available + 1) break
+        zoom = Math.max(0.2, Math.floor(zoom * (available / height) * 0.995 * 1000) / 1000)
+        root.style.setProperty('zoom', String(zoom))
+      }
+      return zoom
+    }
+
+    /** Equalize bay heights; in kiosk with a single printer, also choose the
+     *  unit columns (and 4-in-a-row or 2×2 bays) that show the largest bays with everything on
+     *  screen, scaling the board down only as far as it has to. */
+    function layoutBoard() {
+      const root = document.getElementById('ams-printers')
+      if (!root) return
+      const single = document.body.classList.contains('ams-kiosk') && root.querySelectorAll('.ams-printer').length === 1
+      root.style.removeProperty('zoom')
+      if (!single) {
+        delete root.dataset.fit
+        equalizeBays(root)
+        return
+      }
+      root.dataset.fit = '1'
+      const count = Number(root.querySelector<HTMLElement>('.ams-row-main')?.dataset.count || 0)
+      const bottom = parseFloat(getComputedStyle(root.closest('main') || document.body).paddingBottom) || 0
+      const available = window.innerHeight - root.getBoundingClientRect().top - bottom
+      let best: { cols: number, bays: number, zoom: number, score: number, weighted: number } | null = null
+      for (const cols of FIT_COLUMNS[count] || [1]) {
+        for (const bays of [4, 2]) {
+          root.style.setProperty('--fit-cols', String(cols))
+          root.style.setProperty('--fit-bays', String(bays))
+          const zoom = fitZoom(root, available)
+          // Score by how large bay text ends up on screen. Bay type stops
+          // growing at about 330px of layout width, so wider earns nothing.
+          const visual = root.querySelector<HTMLElement>('.ams-row-main .ams-bay, .ams-bay')?.getBoundingClientRect().width || 0
+          const score = Math.min(visual / zoom, FIT_TEXT_CAP_PX) * zoom
+          // Four in a row matches the hardware, so 2×2 has to be clearly
+          // better (bays at least 5% larger on screen) to win.
+          const weighted = bays === 2 ? score / FIT_2X2_MARGIN : score
+          if (!best || weighted > best.weighted + 0.5) best = { cols, bays, zoom, score, weighted }
+        }
+      }
+      if (!best) return
+      root.style.setProperty('--fit-cols', String(best.cols))
+      root.style.setProperty('--fit-bays', String(best.bays))
+      fitZoom(root, available)
+    }
+
+    /** Orthogonal polyline with rounded corners, like a bent PTFE tube. */
+    function tubePath(points: [number, number][], radius = 12): string {
+      let d = `M ${points[0][0]} ${points[0][1]}`
+      for (let i = 1; i < points.length - 1; i++) {
+        const [px, py] = points[i - 1], [x, y] = points[i], [nx, ny] = points[i + 1]
+        const r = Math.min(radius, Math.hypot(x - px, y - py) / 2, Math.hypot(nx - x, ny - y) / 2)
+        const ax = x - Math.sign(x - px) * r, ay = y - Math.sign(y - py) * r
+        const bx = x + Math.sign(nx - x) * r, by = y + Math.sign(ny - y) * r
+        d += ` L ${ax} ${ay} Q ${x} ${y} ${bx} ${by}`
+      }
+      const last = points[points.length - 1]
+      return `${d} L ${last[0]} ${last[1]}`
+    }
+
+    /** Draw each printer's feed line from the loaded-bay dot in the strip
+     *  to the unit that holds the bay. The route keeps to the gaps: down out
+     *  of the strip, along the gap under it, down the board's edge past any
+     *  units in between, and into the bay's unit from above, so it never
+     *  crosses another bay. The unit cards sit above the line, so the last
+     *  stretch disappears into the AMS right over the bay.
+     *  Rebuilt only when the geometry or colour changes, so the flow does
+     *  not restart on every poll. */
+    function drawFeeds() {
+      document.querySelectorAll<HTMLElement>('.ams-printer').forEach(section => {
+        const svg = section.querySelector<SVGSVGElement>('.ams-feed')
+        if (!svg) return
+        const bay = section.querySelector<HTMLElement>('.ams-bay[data-active="1"]')
+        const dot = section.querySelector<HTMLElement>('.ams-loaded-dot')
+        const strip = section.querySelector<HTMLElement>('.ams-printer-head')
+        const unit = bay?.closest<HTMLElement>('.ams-unit')
+        if (!bay || !dot || !strip || !unit) { if (svg.dataset.sig) { svg.innerHTML = ''; svg.dataset.sig = '' } return }
+        const box = section.getBoundingClientRect()
+        const b = bay.getBoundingClientRect(), d = dot.getBoundingClientRect()
+        const st = strip.getBoundingClientRect(), u = unit.getBoundingClientRect()
+        if (!b.width || !d.width) return
+        // Inside a zoomed board the SVG draws in unzoomed units.
+        const zoom = Number(document.getElementById('ams-printers')?.style.getPropertyValue('zoom')) || 1
+        const x = (v: number) => Math.round((v - box.left) / zoom), y = (v: number) => Math.round((v - box.top) / zoom)
+        const dotX = x(d.left + d.width / 2), bayX = x(b.left + b.width / 2)
+        const gapTop = Math.round((y(st.bottom) + y(u.top)) / 2)
+        const points: [number, number][] = [[dotX, y(d.bottom) + 3]]
+        const between = u.top - st.bottom > 40
+        if (!between) {
+          points.push([dotX, gapTop], [bayX, gapTop])
+        } else {
+          // Run down whichever outer edge is nearer the bay.
+          const edge = bayX > box.width / zoom / 2 ? Math.round(box.width / zoom) + 8 : -8
+          const above = y(u.top) - 9
+          points.push([dotX, y(st.bottom) + 9], [edge, y(st.bottom) + 9], [edge, above], [bayX, above])
+        }
+        points.push([bayX, y(b.top)])
+        const path = tubePath(points)
+        const entry = bayIndex.get(bay.dataset.key || '')
+        const m = entry ? bayModel(entry.slot) : null
+        const color = m && !m.unknownColor ? m.swatchColor : 'var(--text-muted)'
+        const ink = m && !m.unknownColor ? m.ink : 'var(--bg)'
+        const moving = entry && isPrinting(entry.printer) ? '1' : '0'
+        const sig = `${path}|${color}|${moving}`
+        if (svg.dataset.sig === sig) return
+        svg.dataset.sig = sig
+        svg.innerHTML = `
+          <path class="ams-feed-edge" d="${path}"/>
+          <path class="ams-feed-core" d="${path}" style="stroke: ${color}"/>
+          <path class="ams-feed-flow" data-moving="${moving}" d="${path}" style="stroke: ${ink}"/>`
+      })
+    }
+
+    // ── Detail panel ───────────────────────────────────────────────────
+
+    const panel = document.getElementById('ams-detail') as HTMLElement
+
+    function detailMarkup(key: string): string {
+      const entry = bayIndex.get(key)
+      if (!entry) return ''
+      const { slot: s, unit: u, printer: p } = entry
+      const m = bayModel(s)
+      const style = m.unknownColor ? '' : ` style="--ams-swatch: ${m.swatchColor}; --ams-fill: ${m.fill}; --ams-ink: ${m.ink}"`
+      const reel = renderSpoolReel(m.pct === null ? null : m.pct / 100, m.hexes.length ? m.hexes : [m.swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped', { view: 'full' })
+      const title = [m.colorName, s.material].filter(Boolean).join(' ') || s.label
+      const facts: [string, string][] = []
+      if (m.spoolId != null) facts.push([t('display.spool'), `#${m.spoolId}`])
+      if (s.manufacturer) facts.push([t('display.manufacturer'), s.manufacturer])
+      if (s.filament) facts.push([t('display.filament'), s.filament])
+      if (s.nozzle_min != null && s.nozzle_max != null) facts.push([t('display.nozzleRange'), `${s.nozzle_min}–${s.nozzle_max}°C`])
+      facts.push([t('display.source'), t(m.estimate ? 'display.printerEstimate' : 'display.sourceInventory')])
+      if (s.rfid) facts.push(['RFID', t('display.rfidRead')])
+      if (s.backup_of) facts.push([t('display.backup'), t('display.backupOf', { slot: s.backup_of })])
+      if (s.last_used) facts.push([t('display.lastUsed'), fmtAgo(s.last_used)])
+      facts.push([t('display.location'), `${p.name} · ${u.label}`])
+
+      return `
+        <div class="ams-detail-swatch"${style} data-unknown="${m.unknownColor ? '1' : '0'}">
+          <span class="ams-detail-label">${esc(s.label)}</span>
+          <button type="button" class="ams-detail-close" data-close aria-label="${esc(t('display.close'))}">${ICON_CLOSE}</button>
+        </div>
+        <div class="ams-detail-body">
+          <div>
+            <h2 class="ams-detail-title" id="ams-detail-title" tabindex="-1">${esc(title)}</h2>
+            ${s.active ? `<p class="ams-detail-sub">${t(isPrinting(p) ? 'display.feeding' : 'display.loaded')}</p>` : ''}
+          </div>
+          <div class="ams-detail-amount" data-level="${m.level}">
+            <div>
+              ${m.noReading ? `<span class="ams-pct"><b>—</b></span>` : pctMarkup(m.pct!)}
+              ${(() => {
+                const note = m.noReading ? (m.pct === 0 ? t('display.printerReads', { percent: 0 }) : (m.grams || t('display.amountUnknown'))) : m.grams
+                return note ? `<span class="ams-grams">${esc(note)}</span>` : ''
+              })()}
+              <span class="ams-bar" data-level="${m.barLevel}" aria-hidden="true"><i${m.noReading ? '' : ` style="width:${m.pct}%"`}></i></span>
+            </div>
+            ${reel}
+          </div>
+          ${m.tracked ? '' : `<p class="ams-detail-hint">${t('display.notTrackedHint')}</p>`}
+          <dl class="ams-detail-facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+          <div class="ams-detail-actions">
+            ${m.spoolId != null ? `<a class="fm-btn fm-btn-primary" href="/spools/${m.spoolId}">${t('display.openSpool')}</a>` : ''}
+            <button type="button" class="fm-btn fm-btn-outline" data-close>${t('display.close')}</button>
+          </div>
+        </div>`
+    }
+
+    function setExpanded() {
+      document.querySelectorAll<HTMLElement>('button.ams-bay').forEach(b => {
+        b.setAttribute('aria-expanded', b.dataset.key === openKey ? 'true' : 'false')
+      })
+    }
+
+    function openDetail(key: string) {
+      const html = detailMarkup(key)
+      if (!html) return
+      openKey = key
+      panel.innerHTML = html
+      panel.dataset.sig = detailSig(key)
+      panel.hidden = false
+      setExpanded()
+      panel.querySelector<HTMLElement>('#ams-detail-title')?.focus()
+    }
+
+    function closeDetail(restoreFocus = true) {
+      if (openKey == null) return
+      const key = openKey
+      openKey = null
+      panel.hidden = true
+      setExpanded()
+      if (restoreFocus) document.querySelector<HTMLElement>(`button.ams-bay[data-key="${CSS.escape(key)}"]`)?.focus()
+    }
+
+    /** Keep an open panel truthful while the feed changes underneath it. */
+    /** Everything the panel shows: the slot, plus the printer state that
+     *  decides Loaded/Printing and the location line. */
+    function detailSig(key: string): string {
+      const entry = bayIndex.get(key)
+      if (!entry) return ''
+      return JSON.stringify([entry.slot, isPrinting(entry.printer), entry.printer.name, entry.unit.label])
+    }
+
+    function refreshDetail() {
+      if (openKey == null) return
+      if (!bayIndex.has(openKey)) { closeDetail(false); return }
+      const sig = detailSig(openKey)
+      if (panel.dataset.sig === sig) return
+      panel.dataset.sig = sig
+      // Rebuilding the panel must not drop keyboard focus inside it.
+      const focused = document.activeElement
+      const focusSelector = !(focused instanceof HTMLElement) || !panel.contains(focused) ? null
+        : focused.id === 'ams-detail-title' ? '#ams-detail-title'
+        : focused.matches('a[href]') ? `a[href="${CSS.escape(focused.getAttribute('href') || '')}"]`
+        : focused.classList.contains('ams-detail-close') ? '.ams-detail-close'
+        : focused.hasAttribute('data-close') ? '.ams-detail-actions [data-close]' : null
+      panel.innerHTML = detailMarkup(openKey)
+      if (focusSelector) panel.querySelector<HTMLElement>(focusSelector)?.focus()
+    }
+
+    // ── Board ──────────────────────────────────────────────────────────
+
+    /** Speak a printer's state and loaded bay when they change, not the
+     *  clock on every poll. The first render is not announced. */
+    function announce(printers: DisplayPrinter[]) {
+      const lines: string[] = []
+      for (const p of printers) {
+        const active = activeSlot(p)
+        const line = [p.name, stateOf(p).text, active ? `${active.label} ${t(isPrinting(p) ? 'display.feeding' : 'display.loaded')}` : ''].filter(Boolean).join(', ')
+        const before = spoken.get(p.id)
+        spoken.set(p.id, line)
+        if (before !== undefined && before !== line) lines.push(line)
+      }
+      if (lines.length) document.getElementById('ams-live')!.textContent = lines.join('. ')
+    }
+
+    function setStatus(text: string, state: 'ok' | 'stale') {
       const el = document.getElementById('ams-status')!
       el.textContent = text
       el.dataset.state = state
+    }
+
+    function setStale(stale: boolean) {
+      const banner = document.getElementById('ams-stale')!
+      const board = document.getElementById('ams-printers')!
+      board.dataset.stale = stale ? '1' : '0'
+      // The banner moves the board; a kiosk fit has to be redone.
+      if (banner.hidden === stale) scheduleFeeds()
+      if (!stale) { banner.hidden = true; return }
+      const text = lastOkAt
+        ? t('display.stale', { time: new Date(lastOkAt).toLocaleTimeString() })
+        : t('display.error')
+      const target = document.getElementById('ams-stale-text')!
+      if (target.textContent !== text) target.textContent = text
+      banner.hidden = false
     }
 
     function printerParam(): number | null {
@@ -873,10 +1807,10 @@ import Layout from '../layouts/Layout.astro'
       return Number.isInteger(id) && id > 0 ? id : null
     }
 
-    function setPrinterParam(id: number | null) {
+    function setParam(name: string, value: string | null) {
       const url = new URL(location.href)
-      if (id == null) url.searchParams.delete('printer')
-      else url.searchParams.set('printer', String(id))
+      if (value == null) url.searchParams.delete(name)
+      else url.searchParams.set(name, value)
       history.replaceState(null, '', url)
     }
 
@@ -884,12 +1818,12 @@ import Layout from '../layouts/Layout.astro'
       return id == null ? '/api/v1/display' : `/api/v1/display/printers/${id}`
     }
 
-    function selectedPrinters(printers: any[]): any[] {
+    function selectedPrinters(printers: DisplayPrinter[]): DisplayPrinter[] {
       const id = printerParam()
-      return id == null ? printers : printers.filter((p: any) => Number(p.id) === id)
+      return id == null ? printers : printers.filter((p: DisplayPrinter) => Number(p.id) === id)
     }
 
-    function syncFilter(printers: any[]) {
+    function syncFilter(printers: DisplayPrinter[]) {
       const select = document.getElementById('ams-printer-filter') as HTMLSelectElement | null
       const wrap = select?.closest('.ams-filter') as HTMLElement | null
       const json = document.getElementById('ams-json') as HTMLAnchorElement | null
@@ -898,12 +1832,12 @@ import Layout from '../layouts/Layout.astro'
       const current = printerParam()
       const options = [
         { value: 'all', label: t('display.allPrinters') },
-        ...printers.map((p: any) => ({
+        ...printers.map((p: DisplayPrinter) => ({
           value: String(p.id),
           label: p.connected === false ? `${p.name} (${t('display.offline')})` : String(p.name ?? p.id),
         })),
       ]
-      if (current != null && !printers.some((p: any) => Number(p.id) === current)) {
+      if (current != null && !printers.some((p: DisplayPrinter) => Number(p.id) === current)) {
         options.push({ value: String(current), label: `#${current}` })
       }
 
@@ -919,77 +1853,240 @@ import Layout from '../layouts/Layout.astro'
       if (json) json.href = jsonHref(current)
     }
 
-    function updatePrinter(element: Element, printer: any, previous: any) {
-      element.querySelector('.ams-printer-status')!.innerHTML = renderPrinterStatus(printer)
+    /** Swap one element for fresh markup, keeping keyboard focus on it. */
+    function replaceWith(old: Element, html: string) {
+      const tpl = document.createElement('template')
+      tpl.innerHTML = html.trim()
+      const next = tpl.content.firstElementChild
+      if (!next) return
+      const hadFocus = old.contains(document.activeElement)
+      old.replaceWith(next)
+      if (hadFocus) (next as HTMLElement).focus?.()
+    }
+
+    function updatePrinter(element: Element, printer: DisplayPrinter, previous: DisplayPrinter) {
+      element.setAttribute('data-offline', printer.connected === false ? '1' : '0')
+      const status = element.querySelector('.ams-printer-status')!
+      const statusHtml = renderPrinterStatus(printer)
+      if (stripMarkup.get(status) !== statusHtml) {
+        stripMarkup.set(status, statusHtml)
+        status.innerHTML = statusHtml
+      }
       const unitsRoot = element.querySelector('.ams-printer-units')!
       const groups = unitGroups(printer)
       const units = groups.flat()
       const previousUnits = unitGroups(previous).flat()
       if (units.length !== previousUnits.length || units.some((u, i) => u.ams_id !== previousUnits[i].ams_id || u.kind !== previousUnits[i].kind)) {
-        unitsRoot.innerHTML = renderPrinterUnits(groups)
+        unitsRoot.innerHTML = renderPrinterUnits(groups, printer)
         return
       }
-      // Printer and AMS telemetry can change while the bay data stays the same.
+      // A change of printer state flips "Loaded" ↔ "Printing" on the active bay.
+      const stateChanged = isPrinting(printer) !== isPrinting(previous)
+      // Printer and AMS telemetry can change while the bay data stays the same,
+      // so each bay is compared and replaced on its own.
       unitsRoot.querySelectorAll('.ams-unit').forEach((unit, index) => {
         const current = units[index]
         const slots = current.slots || []
+        const before = previousUnits[index].slots || []
         unit.querySelector('.ams-unit-head')!.innerHTML = renderUnitHead(current, slots)
-        if (JSON.stringify(slots) !== JSON.stringify(previousUnits[index].slots || [])) {
-          unit.querySelector('.ams-bays')!.innerHTML = slots.map(renderBay).join('')
+        const bays = unit.querySelector('.ams-bays')!
+        if (slots.length !== before.length) {
+          bays.innerHTML = slots.map((s: DisplaySlot) => renderBay(s, printer)).join('')
+          return
         }
+        slots.forEach((s: DisplaySlot, i: number) => {
+          if (JSON.stringify(s) === JSON.stringify(before[i]) && !(stateChanged && s.active)) return
+          const old = bays.children[i]
+          if (old) replaceWith(old, renderBay(s, printer))
+        })
       })
     }
 
-    function renderBoard(printers: any[]) {
+    function renderBoard(printers: DisplayPrinter[]) {
       lastPrinters = printers
       syncFilter(printers)
       const root = document.getElementById('ams-printers')!
       const shown = selectedPrinters(printers)
+      indexBays(shown)
       if (!shown.length) {
         root.innerHTML = `<div class="fm-card ams-note">${t(printers.length ? 'display.printerMissing' : 'display.noPrinters')}</div>`
-      } else if (shown.length !== shownPrinters.length || shown.some((p, i) => p.id !== shownPrinters[i].id)) {
+      } else if (shown.length !== shownPrinters.length || shown.some((p, i) => p.id !== shownPrinters[i].id) || !root.querySelector('.ams-printer')) {
         root.innerHTML = shown.map(renderPrinter).join('')
       } else {
         shown.forEach((p, i) => updatePrinter(root.children[i], p, shownPrinters[i]))
       }
       shownPrinters = shown
+      announce(shown)
+      refreshDetail()
+      scheduleFeeds()
     }
 
-    async function poll() {
+    /** One poll: request and body both have to arrive within
+     *  FETCH_TIMEOUT_MS, or the request is aborted and counted as failed. */
+    async function fetchFeed(): Promise<{ status: number, data?: { printers?: DisplayPrinter[] } }> {
+      const controller = new AbortController()
+      let timedOut = false
+      const timer = setTimeout(() => { timedOut = true; controller.abort() }, FETCH_TIMEOUT_MS)
+      const page = getAbortSignal()
+      const onPageAbort = () => controller.abort()
+      page?.addEventListener('abort', onPageAbort)
       try {
         const res = await fetch('/api/v1/display', {
           credentials: 'include',
-          signal: getAbortSignal(),
+          signal: controller.signal,
           headers: etag ? { 'If-None-Match': etag } : {},
         })
-        const stamp = new Date().toLocaleTimeString()
-        if (res.status === 304) { setStatus(t('display.upToDate', { time: stamp }), 'ok'); return }
+        if (res.status === 304) return { status: 304 }
         if (!res.ok) throw new Error(String(res.status))
-        etag = res.headers.get('ETag')
         const data = await res.json()
-        renderBoard(data.printers || [])
-        setStatus(t('display.upToDate', { time: stamp }), 'ok')
+        etag = res.headers.get('ETag')
+        return { status: res.status, data }
       } catch (e) {
-        if (isAbortError(e)) return
-        setStatus(t('display.error'), 'error')
+        throw timedOut ? new Error('timeout') : e
+      } finally {
+        clearTimeout(timer)
+        page?.removeEventListener('abort', onPageAbort)
       }
     }
+
+    async function poll() {
+      // A request still running from an earlier tick: do not stack another,
+      // but let the clock decide whether the board has gone stale.
+      if (inFlight) {
+        if (lastOkAt && Date.now() - lastOkAt > STALE_MS) setStale(true)
+        return
+      }
+      inFlight = true
+      try {
+        const result = await fetchFeed()
+        if (result.status !== 304) renderBoard(result.data?.printers || [])
+        failures = 0
+        lastOkAt = Date.now()
+        setStatus(t('display.upToDate', { time: new Date(lastOkAt).toLocaleTimeString() }), 'ok')
+        setStale(false)
+      } catch (e) {
+        if (isAbortError(e)) return
+        failures += 1
+        const stale = !lastOkAt || failures >= STALE_FAILURES || Date.now() - lastOkAt > STALE_MS
+        if (stale) {
+          setStale(true)
+          if (lastOkAt) setStatus(t('display.upToDate', { time: new Date(lastOkAt).toLocaleTimeString() }), 'stale')
+        }
+      } finally {
+        inFlight = false
+      }
+    }
+
+    // ── Kiosk ──────────────────────────────────────────────────────────
+
+    /** Keep the screen awake while the board is a swatch display. */
+    let wakeRequest: Promise<void> | null = null
+    async function holdWakeLock(on: boolean) {
+      if (!on) {
+        await wakeRequest
+        const lock = wakeLock
+        wakeLock = null
+        await lock?.release().catch(() => {})
+        return
+      }
+      if (!('wakeLock' in navigator) || wakeLock || wakeRequest || document.visibilityState !== 'visible') return
+      wakeRequest = (async () => {
+        try {
+          const lock = await navigator.wakeLock.request('screen')
+          // Kiosk may have been left while the request was pending.
+          if (!document.body.classList.contains('ams-kiosk')) { await lock.release().catch(() => {}); return }
+          wakeLock = lock
+          lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null })
+        } catch { wakeLock = null }
+      })()
+      try { await wakeRequest } finally { wakeRequest = null }
+    }
+
+    function setKiosk(on: boolean) {
+      document.body.classList.toggle('ams-kiosk', on)
+      const button = document.getElementById('ams-kiosk')
+      if (button) {
+        // Keep data-i18n in step, or a later translatePage() resets the label.
+        button.setAttribute('data-i18n', on ? 'display.exitKiosk' : 'display.kiosk')
+        button.textContent = t(on ? 'display.exitKiosk' : 'display.kiosk')
+        button.setAttribute('aria-pressed', on ? 'true' : 'false')
+      }
+      setParam('kiosk', on ? '1' : null)
+      if (on) wake()
+      void holdWakeLock(on)
+      scheduleFeeds()
+    }
+
+    // ── Events ─────────────────────────────────────────────────────────
 
     document.getElementById('ams-printer-filter')?.addEventListener('change', (event) => {
       const value = (event.target as HTMLSelectElement).value
       const id = value === 'all' ? null : Number(value)
-      setPrinterParam(id != null && Number.isInteger(id) && id > 0 ? id : null)
+      setParam('printer', id != null && Number.isInteger(id) && id > 0 ? String(id) : null)
+      closeDetail(false)
       renderBoard(lastPrinters)
     })
     document.getElementById('ams-kiosk')?.addEventListener('click', () => {
-      document.body.classList.toggle('ams-kiosk')
-      if (document.body.classList.contains('ams-kiosk')) document.documentElement.requestFullscreen?.().catch(() => {})
-      else document.exitFullscreen?.().catch(() => {})
+      const on = !document.body.classList.contains('ams-kiosk')
+      setKiosk(on)
+      if (on) document.documentElement.requestFullscreen?.().catch(() => {})
+      else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
     })
     document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) document.body.classList.remove('ams-kiosk')
+      if (!document.fullscreenElement && document.body.classList.contains('ams-kiosk')) setKiosk(false)
     })
-    if (new URLSearchParams(location.search).get('kiosk') === '1') document.body.classList.add('ams-kiosk')
+    document.addEventListener('visibilitychange', () => {
+      if (document.body.classList.contains('ams-kiosk')) void holdWakeLock(true)
+    })
+    document.getElementById('ams-retry')?.addEventListener('click', () => { void poll() })
+
+    function syncExternalButton() {
+      document.getElementById('ams-ext')?.setAttribute('aria-pressed', showExternal ? 'true' : 'false')
+    }
+    syncExternalButton()
+    document.getElementById('ams-ext')?.addEventListener('click', () => {
+      showExternal = !showExternal
+      try { localStorage.setItem(EXT_KEY, showExternal ? '1' : '0') } catch { /* private mode: session only */ }
+      syncExternalButton()
+      shownPrinters = []
+      renderBoard(lastPrinters)
+    })
+
+    // Kiosk: hide the floating control after a few quiet seconds.
+    let idleTimer = 0
+    function wake() {
+      document.body.classList.remove('ams-idle')
+      clearTimeout(idleTimer)
+      idleTimer = window.setTimeout(() => document.body.classList.add('ams-idle'), 4000)
+    }
+    for (const type of ['pointerdown', 'pointermove', 'keydown']) document.addEventListener(type, wake, { passive: true })
+
+    document.getElementById('ams-printers')?.addEventListener('click', (event) => {
+      const bay = (event.target as Element).closest<HTMLElement>('button.ams-bay')
+      if (!bay?.dataset.key) return
+      if (openKey === bay.dataset.key) closeDetail()
+      else openDetail(bay.dataset.key)
+    })
+    panel.addEventListener('click', (event) => {
+      if ((event.target as Element).closest('[data-close]')) closeDetail()
+    })
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && openKey != null) closeDetail()
+    })
+    // Tapping the board outside any bay puts the panel away (tablet use).
+    document.addEventListener('pointerdown', (event) => {
+      if (openKey == null) return
+      const target = event.target as Element
+      if (panel.contains(target) || target.closest?.('button.ams-bay')) return
+      closeDetail(false)
+    })
+
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(scheduleFeeds).observe(document.getElementById('ams-printers')!)
+    }
+    addEventListener('resize', scheduleFeeds)
+
+    if (new URLSearchParams(location.search).get('kiosk') === '1') setKiosk(true)
 
     await poll()
     setInterval(poll, POLL_MS)
