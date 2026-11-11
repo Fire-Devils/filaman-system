@@ -209,9 +209,12 @@ import Layout from '../layouts/Layout.astro'
       gap: 7px;
       min-width: 0;
     }
+    /* The model being printed: a title, not a caption. */
     .ams-job-name {
-      font-size: 1rem;
-      color: var(--text-muted);
+      font-size: clamp(1.05rem, 0.9rem + 0.3cqi, 1.3rem);
+      font-weight: 600;
+      line-height: 1.2;
+      color: var(--text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -236,19 +239,36 @@ import Layout from '../layouts/Layout.astro'
     }
     .ams-job[data-done='1'] .ams-track > i { background: var(--success-text); }
     .ams-job-pct {
-      font-size: 1.05rem;
-      font-weight: 700;
+      font-size: clamp(1.2rem, 0.95rem + 0.5cqi, 1.6rem);
+      font-weight: 600;
       font-variant-numeric: tabular-nums;
       min-width: 3.2em;
       text-align: right;
     }
     .ams-job-meta {
       display: flex;
-      gap: 4px 16px;
-      flex-wrap: wrap;
-      font-size: 0.95rem;
-      color: var(--text-muted);
+      flex-shrink: 0;
+      gap: 22px;
+      margin-right: 6px;
+      white-space: nowrap;
       font-variant-numeric: tabular-nums;
+    }
+    .ams-job-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .ams-job-stat small {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .ams-job-stat b {
+      font-size: clamp(1.2rem, 0.95rem + 0.5cqi, 1.6rem);
+      font-weight: 600;
+      line-height: 1.1;
     }
 
     .ams-readouts {
@@ -312,13 +332,19 @@ import Layout from '../layouts/Layout.astro'
     .ams-alert[data-severity='error'],
     .ams-alert[data-severity='danger'] { --tone: var(--error-text); }
 
+    /* Name, state and the loaded bay share the strip's first column, so
+       the strip stays short and the bays below get the height. */
+    .ams-printer-lead {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      max-width: 30rem;
+    }
     .ams-loaded {
-      grid-column: 1 / -1;
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding-top: 14px;
-      border-top: 1px solid var(--border);
+      gap: 12px;
+      min-width: 0;
       font-size: 1.05rem;
     }
     .ams-loaded-dot {
@@ -334,10 +360,11 @@ import Layout from '../layouts/Layout.astro'
     .ams-loaded-text {
       display: flex;
       align-items: baseline;
-      gap: 2px 14px;
+      gap: 2px 12px;
       flex-wrap: wrap;
       min-width: 0;
     }
+    .ams-loaded strong { white-space: nowrap; }
     .ams-loaded strong { font-weight: 700; }
     .ams-loaded-desc {
       color: var(--text-muted);
@@ -1018,7 +1045,6 @@ import Layout from '../layouts/Layout.astro'
     .ams-printers[data-fit='1'] .ams-row-main,
     .ams-printers[data-fit='1'] .ams-row-aux { gap: 12px; }
     .ams-printers[data-fit='1'] .ams-printer-head { padding: 12px 18px; gap: 10px 28px; }
-    .ams-printers[data-fit='1'] .ams-loaded { padding-top: 10px; }
     .ams-printers[data-fit='1'] .ams-unit { padding: 12px 14px 14px; gap: 10px; }
     .ams-printers[data-fit='1'] .ams-bays { gap: 10px; }
     .ams-printers[data-fit='1'] .ams-swatch { min-height: clamp(60px, 28cqi, 100px); }
@@ -1431,15 +1457,18 @@ import Layout from '../layouts/Layout.astro'
       const state = stateOf(p)
       const offline = p.connected === false
 
-      const jobMeta: string[] = []
-      if (job.layer != null && job.total_layers) jobMeta.push(t('display.layer', { layer: job.layer, total: job.total_layers }))
-      if (job.remaining_seconds) jobMeta.push(t('display.timeLeft', { time: fmtDuration(job.remaining_seconds) }))
+      // Same label-over-value form as the Nozzle/Bed/Chamber readouts.
+      const jobMeta: [string, string][] = []
+      if (job.layer != null && job.total_layers) jobMeta.push([t('display.layerLabel'), `${job.layer}/${job.total_layers}`])
+      if (job.remaining_seconds) jobMeta.push([t('display.remainingLabel'), fmtDuration(job.remaining_seconds)])
       const progress = job.progress != null ? pctWidth(job.progress) : null
       const jobBlock = job.name || progress != null
         ? `<div class="ams-job" data-done="${state.tone === 'ok' ? '1' : '0'}">
              ${job.name ? `<div class="ams-job-name" title="${esc(job.name)}">${esc(job.name)}</div>` : ''}
-             ${progress != null ? `<div class="ams-job-line"><span class="ams-track"><i style="width:${progress}%"></i></span><span class="ams-job-pct">${progress}%</span></div>` : ''}
-             ${jobMeta.length ? `<div class="ams-job-meta">${jobMeta.map(m => `<span>${esc(m)}</span>`).join('')}</div>` : ''}
+             ${progress != null || jobMeta.length ? `<div class="ams-job-line">
+               ${jobMeta.length ? `<span class="ams-job-meta">${jobMeta.map(([k, v]) => `<span class="ams-job-stat"><small>${esc(k)}</small> <b>${esc(v)}</b></span>`).join('')}</span>` : ''}
+               ${progress != null ? `<span class="ams-track"><i style="width:${progress}%"></i></span><span class="ams-job-pct">${progress}%</span>` : ''}
+             </div>` : ''}
            </div>`
         : '<div></div>'
 
@@ -1467,15 +1496,17 @@ import Layout from '../layouts/Layout.astro'
 
       return `
         <div class="ams-printer-head fm-card">
-          <div class="ams-printer-id">
-            <h2 class="ams-printer-name">${esc(p.name)}</h2>
-            <span class="ams-state" data-tone="${state.tone}">${esc(state.text)}</span>
-            ${offline ? `<span class="ams-lastknown">${t('display.lastKnown')}</span>` : ''}
+          <div class="ams-printer-lead">
+            <div class="ams-printer-id">
+              <h2 class="ams-printer-name">${esc(p.name)}</h2>
+              <span class="ams-state" data-tone="${state.tone}">${esc(state.text)}</span>
+              ${offline ? `<span class="ams-lastknown">${t('display.lastKnown')}</span>` : ''}
+            </div>
+            ${loaded}
           </div>
           ${jobBlock}
           ${readouts ? `<dl class="ams-readouts">${readouts}</dl>` : '<div></div>'}
           ${alerts ? `<ul class="ams-alerts">${alerts}</ul>` : ''}
-          ${loaded}
         </div>`
     }
 
@@ -1532,7 +1563,7 @@ import Layout from '../layouts/Layout.astro'
     }
 
     const FIT_TEXT_CAP_PX = 330
-    const FIT_2X2_MARGIN = 1.05
+    const FIT_2X2_MARGIN = 1.10
     // Unit columns allowed for N regular AMS units: never 3+1.
     const FIT_COLUMNS: Record<number, number[]> = { 0: [1], 1: [1], 2: [1, 2], 3: [1, 3], 4: [1, 2, 4], 5: [2, 3], 6: [2, 3] }
 
@@ -1580,7 +1611,7 @@ import Layout from '../layouts/Layout.astro'
           const visual = root.querySelector<HTMLElement>('.ams-row-main .ams-bay, .ams-bay')?.getBoundingClientRect().width || 0
           const score = Math.min(visual / zoom, FIT_TEXT_CAP_PX) * zoom
           // Four in a row matches the hardware, so 2×2 has to be clearly
-          // better (bays at least 5% larger on screen) to win.
+          // better (bays at least 10% larger on screen) to win.
           const weighted = bays === 2 ? score / FIT_2X2_MARGIN : score
           if (!best || weighted > best.weighted + 0.5) best = { cols, bays, zoom, score, weighted }
         }
@@ -1629,19 +1660,14 @@ import Layout from '../layouts/Layout.astro'
         // Inside a zoomed board the SVG draws in unzoomed units.
         const zoom = Number(document.getElementById('ams-printers')?.style.getPropertyValue('zoom')) || 1
         const x = (v: number) => Math.round((v - box.left) / zoom), y = (v: number) => Math.round((v - box.top) / zoom)
-        const dotX = x(d.left + d.width / 2), bayX = x(b.left + b.width / 2)
+        const bayX = x(b.left + b.width / 2)
         const gapTop = Math.round((y(st.bottom) + y(u.top)) / 2)
-        const points: [number, number][] = [[dotX, y(d.bottom) + 3]]
-        const between = u.top - st.bottom > 40
-        if (!between) {
-          points.push([dotX, gapTop], [bayX, gapTop])
-        } else {
-          // Run down whichever outer edge is nearer the bay.
-          const edge = bayX > box.width / zoom / 2 ? Math.round(box.width / zoom) + 8 : -8
-          const above = y(u.top) - 9
-          points.push([dotX, y(st.bottom) + 9], [edge, y(st.bottom) + 9], [edge, above], [bayX, above])
-        }
-        points.push([bayX, y(b.top)])
+        // Out of the dot's left side, down the board's left edge (clear of the
+        // strip's text and the alerts), then along the gap right above the
+        // bay's unit and into it.
+        const dotY = y(d.top + d.height / 2)
+        const rowY = u.top - st.bottom > 40 ? y(u.top) - 9 : gapTop
+        const points: [number, number][] = [[x(d.left) - 3, dotY], [-8, dotY], [-8, rowY], [bayX, rowY], [bayX, y(b.top)]]
         const path = tubePath(points)
         const entry = bayIndex.get(bay.dataset.key || '')
         const m = entry ? bayModel(entry.slot) : null
