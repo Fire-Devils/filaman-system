@@ -1763,6 +1763,46 @@ describe('PDF output destination routing', () => {
   )
 })
 
+describe('label print keyboard shortcut', () => {
+  function pressPrint(target: HTMLElement, modifiers: KeyboardEventInit) {
+    const event = new KeyboardEvent('keydown', {
+      key: 'p', bubbles: true, cancelable: true, ...modifiers,
+    })
+    target.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('prints through the browser with Ctrl-P when the PDF option is off', async () => {
+    const { controls } = bindCollectionOutputs([1])
+    const print = vi.spyOn(window, 'print')
+
+    expect(pressPrint(controls.printPdfCheckbox, { ctrlKey: true })).toBe(true)
+    await vi.waitFor(() => expect(print).toHaveBeenCalledOnce())
+  })
+
+  it('opens the temporary PDF with Command-P when the PDF option is on', async () => {
+    const { controls } = bindCollectionOutputs([1], {
+      withPdfPreview: true,
+      createPdf: async () => makePdfDocument(),
+    })
+    controls.printPdfCheckbox.checked = true
+    const preview = document.querySelector<HTMLElement>('#temporary-pdf-preview')!
+
+    expect(pressPrint(controls.printPdfCheckbox, { metaKey: true })).toBe(true)
+    await vi.waitFor(() => expect(preview.hidden).toBe(false))
+    expect(document.activeElement).toBe(preview)
+    expect(pressPrint(preview, { metaKey: true })).toBe(false)
+  })
+
+  it('preserves the system print shortcut and suppresses key repeats', () => {
+    const { controls, prepare } = bindCollectionOutputs([1])
+
+    expect(pressPrint(controls.printButton, { ctrlKey: true, shiftKey: true })).toBe(false)
+    expect(pressPrint(controls.printButton, { ctrlKey: true, repeat: true })).toBe(true)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+})
+
 describe('single and batch PDF factory reuse', () => {
   it.each(['single-label', 'batch'] as const)(
     'uses normal browser printing by default for %s output',

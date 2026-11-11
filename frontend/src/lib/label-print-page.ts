@@ -234,8 +234,20 @@ interface SelectablePrintActionOptions {
 function bindSelectablePrintAction(
   options: SelectablePrintActionOptions,
 ) {
+  const { printButton } = options
+  const page = printButton.ownerDocument
+  page.addEventListener('keydown', event => {
+    if (event.defaultPrevented || event.isComposing || event.altKey || event.shiftKey
+      || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'p'
+      || !printButton.isConnected) return
+
+    if (!event.repeat && page.getElementById('temporary-pdf-preview')?.hidden === false) return
+    event.preventDefault()
+    if (!event.repeat) printButton.click()
+  })
+
   const getPdfMode = bindPrintPdfPreference(options.printPdfCheckbox)
-  options.printButton.addEventListener('click', () => {
+  printButton.addEventListener('click', () => {
     if (getPdfMode()) {
       void options.printPdf()
       return
