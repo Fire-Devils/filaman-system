@@ -234,8 +234,23 @@ interface SelectablePrintActionOptions {
 function bindSelectablePrintAction(
   options: SelectablePrintActionOptions,
 ) {
+  const { printButton } = options
+  const page = printButton.ownerDocument
+  const useCommand = /^(Mac|iPad|iPhone|iPod)/.test(page.defaultView?.navigator.platform ?? '')
+  page.addEventListener('keydown', event => {
+    const printModifier = useCommand ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+    if (event.defaultPrevented || event.isComposing || event.altKey || event.shiftKey
+      || !printModifier || event.key.toLowerCase() !== 'p'
+      || !printButton.isConnected) return
+
+    event.preventDefault()
+    if (event.repeat || page.getElementById('temporary-pdf-preview')?.hidden === false
+      || page.querySelector('dialog[open]') || printButton.closest('[inert]')) return
+    printButton.click()
+  })
+
   const getPdfMode = bindPrintPdfPreference(options.printPdfCheckbox)
-  options.printButton.addEventListener('click', () => {
+  printButton.addEventListener('click', () => {
     if (getPdfMode()) {
       void options.printPdf()
       return
