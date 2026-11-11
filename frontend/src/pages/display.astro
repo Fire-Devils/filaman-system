@@ -1352,7 +1352,8 @@ import Layout from '../layouts/Layout.astro'
       const reel = renderSpoolReel(m.pct === null ? null : m.pct / 100, m.hexes.length ? m.hexes : [m.swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped')
       const manufacturer = s.manufacturer || (m.tracked ? '' : t('display.unlinkedSpool'))
       const flag = m.level === 'crit' ? t('display.critical') : m.level === 'low' ? t('display.low') : m.level === 'untracked' ? t('display.notTracked') : ''
-      const feeding = s.active
+      const active = isActiveSlot(s, printer)
+      const feeding = active
         ? `<span class="ams-feeding" data-mode="${isPrinting(printer) ? 'printing' : 'loaded'}">${t(isPrinting(printer) ? 'display.feeding' : 'display.loaded')}</span>`
         : ''
       const style = m.unknownColor
@@ -1360,7 +1361,7 @@ import Layout from '../layouts/Layout.astro'
         : `--ams-swatch: ${m.swatchColor}; --ams-fill: ${m.fill}; --ams-ink: ${m.ink}`
 
       return `
-        <button type="button" class="ams-bay" data-key="${esc(key)}" data-active="${s.active ? '1' : '0'}" data-level="${m.level}"
+        <button type="button" class="ams-bay" data-key="${esc(key)}" data-active="${active ? '1' : '0'}" data-level="${m.level}"
                 aria-haspopup="dialog" aria-controls="ams-detail" aria-expanded="${openKey === key ? 'true' : 'false'}"
                 style="${style}" title="${esc(bayTitle(s))}">
           <span class="ams-swatch" data-finish="${m.unknownColor ? '' : finish}" data-multi="${m.hexes.length > 1 ? '1' : '0'}" data-unknown="${m.unknownColor ? '1' : '0'}">
@@ -1446,9 +1447,24 @@ import Layout from '../layouts/Layout.astro'
       return `<div class="ams-ro"><dt>${esc(label)}</dt> <dd>${esc(value)}°C${aim}</dd></div>`
     }
 
+    /** The one slot this printer is feeding from. The printer-level
+     *  `active` ({ams_id, slot}) decides; a slot's own flag is the fallback
+     *  for drivers that only set that. The strip, the bay highlight and the
+     *  feed line all use this, so they always point at the same bay. */
     function activeSlot(p: DisplayPrinter): DisplaySlot | null {
-      for (const u of p.ams || []) for (const s of u.slots || []) if (s.active && !s.empty) return s
+      const units = p.ams || []
+      if (p.active) {
+        for (const u of units) for (const s of u.slots || []) {
+          if (!s.empty && s.ams_id === p.active.ams_id && s.slot === p.active.slot) return s
+        }
+      }
+      for (const u of units) for (const s of u.slots || []) if (s.active && !s.empty) return s
       return null
+    }
+
+    function isActiveSlot(s: DisplaySlot, p: DisplayPrinter): boolean {
+      const a = activeSlot(p)
+      return !!a && a.ams_id === s.ams_id && a.slot === s.slot
     }
 
     function renderPrinterStatus(p: DisplayPrinter) {
@@ -1489,7 +1505,7 @@ import Layout from '../layouts/Layout.astro'
         const amount = m.noReading ? '' : `${m.pct}%`
         const desc = [[m.colorName, active.material].filter(Boolean).join(' '), amount, m.grams].filter(Boolean).join(' · ')
         const dot = m.unknownColor ? '' : ` style="--ams-fill: ${m.fill}; --ams-swatch: ${m.swatchColor}"`
-        loaded = `<div class="ams-loaded"><span class="ams-loaded-dot"${dot}></span>
+        loaded = `<div class="ams-loaded"><span class="ams-loaded-dot" data-bay="${esc(slotKey(active, p))}"${dot}></span>
           <span class="ams-loaded-text"><strong>${esc(active.label)} · ${t(isPrinting(p) ? 'display.feeding' : 'display.loaded')}</strong>
           ${desc ? `<span class="ams-loaded-desc">${esc(desc)}</span>` : ''}</span></div>`
       }
@@ -1648,8 +1664,9 @@ import Layout from '../layouts/Layout.astro'
       document.querySelectorAll<HTMLElement>('.ams-printer').forEach(section => {
         const svg = section.querySelector<SVGSVGElement>('.ams-feed')
         if (!svg) return
-        const bay = section.querySelector<HTMLElement>('.ams-bay[data-active="1"]')
         const dot = section.querySelector<HTMLElement>('.ams-loaded-dot')
+        // The line goes to exactly the bay the strip names.
+        const bay = dot?.dataset.bay ? section.querySelector<HTMLElement>(`.ams-bay[data-key="${CSS.escape(dot.dataset.bay)}"]`) : null
         const strip = section.querySelector<HTMLElement>('.ams-printer-head')
         const unit = bay?.closest<HTMLElement>('.ams-unit')
         if (!bay || !dot || !strip || !unit) { if (svg.dataset.sig) { svg.innerHTML = ''; svg.dataset.sig = '' } return }
@@ -1715,7 +1732,7 @@ import Layout from '../layouts/Layout.astro'
         <div class="ams-detail-body">
           <div>
             <h2 class="ams-detail-title" id="ams-detail-title" tabindex="-1">${esc(title)}</h2>
-            ${s.active ? `<p class="ams-detail-sub">${t(isPrinting(p) ? 'display.feeding' : 'display.loaded')}</p>` : ''}
+            ${isActiveSlot(s, p) ? `<p class="ams-detail-sub">${t(isPrinting(p) ? 'display.feeding' : 'display.loaded')}</p>` : ''}
           </div>
           <div class="ams-detail-amount" data-level="${m.level}">
             <div>
@@ -1908,6 +1925,8 @@ import Layout from '../layouts/Layout.astro'
       }
       // A change of printer state flips "Loaded" ↔ "Printing" on the active bay.
       const stateChanged = isPrinting(printer) !== isPrinting(previous)
+      const wasActive = activeSlot(previous), nowActive = activeSlot(printer)
+      const sameSlot = (a: DisplaySlot | null, s: DisplaySlot) => !!a && a.ams_id === s.ams_id && a.slot === s.slot
       // Printer and AMS telemetry can change while the bay data stays the same,
       // so each bay is compared and replaced on its own.
       unitsRoot.querySelectorAll('.ams-unit').forEach((unit, index) => {
@@ -1921,7 +1940,8 @@ import Layout from '../layouts/Layout.astro'
           return
         }
         slots.forEach((s: DisplaySlot, i: number) => {
-          if (JSON.stringify(s) === JSON.stringify(before[i]) && !(stateChanged && s.active)) return
+          const activeChanged = sameSlot(wasActive, s) !== sameSlot(nowActive, s)
+          if (JSON.stringify(s) === JSON.stringify(before[i]) && !activeChanged && !(stateChanged && sameSlot(nowActive, s))) return
           const old = bays.children[i]
           if (old) replaceWith(old, renderBay(s, printer))
         })

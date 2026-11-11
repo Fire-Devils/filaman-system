@@ -157,3 +157,31 @@ it('hides and shows the external spool holders and remembers the choice', async 
   expect(document.querySelector('.ams-unit[data-kind="external"]')).not.toBeNull()
   localStorage.removeItem('filaman.amsView.showExternal')
 })
+
+it('points the strip, highlight and feed line at the printer-reported active slot', async () => {
+  i18n.setLang('en')
+  const slot = (n: number, extra = {}) => ({ ams_id: 1, slot: n, label: `B${n + 1}`, color: '#FF0000', material: 'PLA', spool_id: 10 + n, remaining_percent: 50, ...extra })
+  const printer: any = {
+    id: 9, name: 'H2D', state: 'RUNNING', active: { ams_id: 1, slot: 2 },
+    ams: [
+      { ams_id: 0, kind: 'ams', label: 'AMS A', slots: [{ ams_id: 0, slot: 2, label: 'A3', color: '#00FF00', material: 'PLA', spool_id: 3, remaining_percent: 40 }] },
+      { ams_id: 1, kind: 'ams', label: 'AMS B', slots: [slot(0, { active: true }), slot(1), slot(2), slot(3)] },
+    ],
+  }
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ printers: [printer] })))
+  let poll!: () => Promise<void>
+  await bootAstroPage('display', {
+    ...i18n, ...swatch, renderSpoolReel, initI18n: async () => {},
+    getAbortSignal: () => undefined, isAbortError: () => false,
+    setInterval: (callback: () => Promise<void>) => { poll = callback },
+  })
+  const active = () => [...document.querySelectorAll<HTMLElement>('.ams-bay[data-active="1"]')].map(b => b.dataset.key)
+  expect(active()).toEqual(['9:1:2'])
+  expect(document.querySelector<HTMLElement>('.ams-loaded-dot')?.dataset.bay).toBe('9:1:2')
+  expect(document.querySelector('.ams-loaded')?.textContent).toContain('B3')
+
+  printer.active = { ams_id: 0, slot: 2 }
+  await poll()
+  expect(active()).toEqual(['9:0:2'])
+  expect(document.querySelector<HTMLElement>('.ams-loaded-dot')?.dataset.bay).toBe('9:0:2')
+})
