@@ -43,6 +43,10 @@ export default defineConfig({
           target: backendUrl,
           changeOrigin: true,
         },
+        '/mcp': {
+          target: backendUrl,
+          changeOrigin: true,
+        },
       },
     },
   },

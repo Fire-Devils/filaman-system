@@ -20,6 +20,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
 from app.api.deps import DBSession
+from app.api.mcp_server import router as mcp_router
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
@@ -638,6 +639,7 @@ async def add_cache_control_header(request, call_next):
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
 app.include_router(api_router)
+app.include_router(mcp_router)
 mount_deferred_plugin_routers(app)
 
 

@@ -14,7 +14,7 @@ def test_migration_graph_has_one_head():
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
 
     assert ScriptDirectory.from_config(config).get_heads() == [
-        "add_plugin_icon"
+        "c7e2a9f41b30"
     ]
 
 
@@ -40,7 +40,7 @@ def test_combined_head_upgrades_existing_ui_and_api_databases(tmp_path, monkeypa
             ).scalar_one() == "Preserved maker"
             assert connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
-            ).scalar_one() == "add_plugin_icon"
+            ).scalar_one() == "c7e2a9f41b30"
             inspector = sa.inspect(connection)
             assert "filament_printer_initializations" in inspector.get_table_names()
             for table, column in [
