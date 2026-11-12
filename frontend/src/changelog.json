@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
-          { "type": "feature", "text": "Neu: KI-Assistenten wie Claude, Cursor, VS Code, Codex oder Gemini können FilaMan über einen eingebauten MCP-Server abfragen und auf Wunsch auch Spulen, Filamente und Lagerorte pflegen. Ein- und ausschalten sowie Nur-Lesen oder Schreiben festlegen lässt sich unter Verwaltung → App-Einstellungen, dort gibt es auch fertige Vorlagen zum Einbinden." }
+          { "type": "feature", "text": "Neu: KI-Assistenten wie Claude, Cursor, VS Code, Codex oder Gemini können FilaMan über einen eingebauten MCP-Server abfragen und auf Wunsch auch Spulen, Filamente und Lagerorte pflegen. Ein- und ausschalten sowie Nur-Lesen oder Schreiben festlegen lässt sich unter Verwaltung → App-Einstellungen, dort gibt es auch fertige Vorlagen zum Einbinden." },
+          { "type": "fix", "text": "Wird Filamentverbrauch gleichzeitig von mehreren Stellen gebucht (z. B. Drucker und Spoolman-Plugin), stimmen Restgewicht und Verbrauchsverlauf der Spule jetzt immer überein. Ungültige Verbrauchswerte werden abgewiesen. (Beigetragen von akira69)" }
         ],
         "en": [
-          { "type": "feature", "text": "New: AI assistants such as Claude, Cursor, VS Code, Codex or Gemini can query FilaMan through a built-in MCP server and, if allowed, also maintain spools, filaments and locations. Turn it on or off and choose read-only or write access under Admin → App Settings, which also offers ready-made setup templates." }
+          { "type": "feature", "text": "New: AI assistants such as Claude, Cursor, VS Code, Codex or Gemini can query FilaMan through a built-in MCP server and, if allowed, also maintain spools, filaments and locations. Turn it on or off and choose read-only or write access under Admin → App Settings, which also offers ready-made setup templates." },
+          { "type": "fix", "text": "When filament consumption is booked from several sources at the same time (e.g. printer and Spoolman plugin), the spool's remaining weight and consumption history now always match. Invalid consumption values are rejected. (Contributed by akira69)" }
         ]
       }
     },
