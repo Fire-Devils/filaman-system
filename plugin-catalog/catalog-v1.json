@@ -27,10 +27,10 @@
     "description": "Browse filament inventory and colors, compare color harmonies, and pin palettes.",
     "publisher": "akira69",
     "repository_url": "https://github.com/akira69/filaman-filament-swatch",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "min_filaman_version": "2.0.6",
-    "github_release_url": "https://github.com/akira69/filaman-filament-swatch/releases/download/filaman-v1.1.0/filament-swatch-1.1.0.zip",
-    "sha256": "22f8a3e9ca8dd342039f1f9d6f799c1c30096b3d644819587f8551d2f431dc13"
+    "github_release_url": "https://github.com/akira69/filaman-filament-swatch/releases/download/filaman-v1.1.1/filament-swatch-1.1.1.zip",
+    "sha256": "ebbc5484db97e512399eae30fa1f0db84c6860b8b391162f0321efcf4e2e406d"
   },
   {
     "plugin_key": "moonraker_filaman",
