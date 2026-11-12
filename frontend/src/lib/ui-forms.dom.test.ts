@@ -103,6 +103,7 @@ it('saves visible app settings without resetting the hidden lookup preference', 
     login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool',
     rfid_extended_data_enabled: false, rfid_display_colons: true,
     default_spool_core_weight_g: 60, bambu_unmatched_profile_fallback: 'generic',
+    mcp_enabled: false, mcp_write_enabled: false,
   })
   await vi.waitFor(() => expect(save.disabled).toBe(true))
   expect(document.querySelector('#form-message')!.classList.contains('fm-settings-wide')).toBe(true)

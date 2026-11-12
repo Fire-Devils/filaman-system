@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Neu: KI-Assistenten wie Claude, Cursor, VS Code, Codex oder Gemini können FilaMan über einen eingebauten MCP-Server abfragen und auf Wunsch auch Spulen, Filamente und Lagerorte pflegen. Ein- und ausschalten sowie Nur-Lesen oder Schreiben festlegen lässt sich unter Verwaltung → App-Einstellungen, dort gibt es auch fertige Vorlagen zum Einbinden." }
+        ],
+        "en": [
+          { "type": "feature", "text": "New: AI assistants such as Claude, Cursor, VS Code, Codex or Gemini can query FilaMan through a built-in MCP server and, if allowed, also maintain spools, filaments and locations. Turn it on or off and choose read-only or write access under Admin → App Settings, which also offers ready-made setup templates." }
+        ]
+      }
+    },
+    {
       "version": "2.0.6",
       "date": "",
       "changes": {

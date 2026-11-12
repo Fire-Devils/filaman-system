@@ -73,6 +73,37 @@ import FormSection from '../../components/FormSection.astro'
       </select></div>
       <p class="fm-field-hint"><span data-i18n="admin.slicerFallbackHintPre">Choose</span> <strong data-i18n="admin.slicerFallbackHintStrong">Bambu profile</strong> <span data-i18n="admin.slicerFallbackHintPost">if you prefer Bambu's own material profiles for third-party filament instead of the bland Generic ones. Falls back to Generic for materials without a Bambu-brand equivalent.</span></p>
     </FormSection>
+    <FormSection titleKey="admin.mcpTitle" title="AI Assistants (MCP)" class="fm-settings-wide" id="mcp-title">
+      <p class="fm-field-hint" data-i18n="admin.mcpDesc">Provides an MCP server at /mcp so AI assistants (Claude, Cursor, VS Code, Codex, Gemini …) can query FilaMan. Sign-in works only with an API key, and the key's permissions apply.</p>
+      <div class="fm-settings-row">
+        <label for="mcp-enabled" data-i18n="admin.mcpEnabled">Enable MCP server</label>
+        <label class="fm-toggle"><input type="checkbox" id="mcp-enabled" /><span class="fm-toggle-slider"></span></label>
+      </div>
+      <div id="mcp-write-section" class="fm-settings-row">
+        <label for="mcp-write-enabled" data-i18n="admin.mcpWriteEnabled">Allow write access</label>
+        <label class="fm-toggle"><input type="checkbox" id="mcp-write-enabled" /><span class="fm-toggle-slider"></span></label>
+        <p class="fm-field-hint" data-i18n="admin.mcpWriteHint">Off: the AI can only read. On: it can also create and change spools, filaments, manufacturers and locations and record weights, consumption, status and moves. Deleting is never possible via MCP.</p>
+      </div>
+      <div id="mcp-write-warning" class="fm-alert-error hidden" data-i18n="admin.mcpWriteWarning">AI assistants can make mistakes. Check changes in the spool history and use a separate API key with limited permissions for the AI.</div>
+      <div id="mcp-setup" class="hidden" style="display: grid; gap: 12px; margin-top: 8px;">
+        <div class="fm-alert-info">
+          <strong data-i18n="admin.mcpSetupTitle">How to connect an AI assistant</strong>
+          <ol style="margin: 8px 0 0 18px; padding: 0; font-weight: 400;">
+            <li><span data-i18n="admin.mcpStep1">Create an API key under</span> <a href="/settings/api-keys" data-i18n="admin.mcpStep1Link">Settings → API Keys</a><span data-i18n="admin.mcpStep1Post">, ideally a separate one just for the AI.</span></li>
+            <li data-i18n="admin.mcpStep2">Copy the template for your AI client below and replace &lt;API-KEY&gt; with your key.</li>
+            <li data-i18n="admin.mcpStep3">Restart the AI client and ask, for example: "Which PLA spools have less than 20 % left?"</li>
+          </ol>
+        </div>
+        <div class="fm-settings-row">
+          <span class="fm-label" data-i18n="admin.mcpUrlLabel">Server address</span>
+          <code id="mcp-url" style="word-break: break-all;"></code>
+        </div>
+        <p id="mcp-unsaved" class="fm-field-hint" data-i18n="admin.mcpUnsavedHint">Save the settings to activate the MCP server.</p>
+        <div id="mcp-clients" style="display: grid; gap: 8px;"></div>
+        <p class="fm-field-hint" data-i18n="admin.mcpOtherClients">Other clients (e.g. n8n, LM Studio, Open WebUI): transport "Streamable HTTP", the server address above and the header "Authorization: ApiKey &lt;API-KEY&gt;".</p>
+        <p class="fm-field-hint" data-i18n="admin.mcpWebLimitation">Web connectors in claude.ai or ChatGPT need an OAuth sign-in and a public HTTPS address. This is not supported yet; use a desktop or command-line client instead.</p>
+      </div>
+    </FormSection>
   </form>
 </div>
   <script>
@@ -80,6 +111,73 @@ import FormSection from '../../components/FormSection.astro'
     import { bindFormState } from '../../lib/form-state'
     import { getAbortSignal } from '../../lib/abort'
     import { initCurrency } from '../../lib/format'
+    import { copyText } from '../../lib/clipboard'
+
+    interface McpClient { key: string; name: string; file?: string; snippet: string }
+
+    function mcpClients(url: string): McpClient[] {
+      const header = { Authorization: 'ApiKey <API-KEY>' }
+      const json = (value: unknown): string => JSON.stringify(value, null, 2)
+      const remoteArgs = ['-y', 'mcp-remote', url, '--header', 'Authorization:${FILAMAN_AUTH}']
+      if (url.startsWith('http://')) remoteArgs.push('--allow-http')
+      return [
+        {
+          key: 'claude-code',
+          name: 'Claude Code',
+          snippet: `claude mcp add --transport http filaman ${url} --header "Authorization: ApiKey <API-KEY>"`,
+        },
+        {
+          key: 'claude-desktop',
+          name: 'Claude Desktop',
+          file: 'claude_desktop_config.json',
+          snippet: json({ mcpServers: { filaman: { command: 'npx', args: remoteArgs, env: { FILAMAN_AUTH: 'ApiKey <API-KEY>' } } } }),
+        },
+        { key: 'cursor', name: 'Cursor', file: '~/.cursor/mcp.json', snippet: json({ mcpServers: { filaman: { url, headers: header } } }) },
+        { key: 'vscode', name: 'VS Code (Copilot)', file: '.vscode/mcp.json', snippet: json({ servers: { filaman: { type: 'http', url, headers: header } } }) },
+        {
+          key: 'codex',
+          name: 'OpenAI Codex CLI',
+          file: '~/.codex/config.toml',
+          snippet: `[mcp_servers.filaman]\nurl = "${url}"\nhttp_headers = { "Authorization" = "ApiKey <API-KEY>" }`,
+        },
+        { key: 'gemini', name: 'Gemini CLI', file: '~/.gemini/settings.json', snippet: json({ mcpServers: { filaman: { httpUrl: url, headers: header } } }) },
+      ]
+    }
+
+    function renderMcpClients(host: HTMLElement, url: string): void {
+      host.replaceChildren()
+      for (const client of mcpClients(url)) {
+        const details = document.createElement('details')
+        details.className = 'fm-card'
+        details.style.padding = '8px 12px'
+        const summary = document.createElement('summary')
+        summary.style.cursor = 'pointer'
+        summary.style.fontWeight = '600'
+        summary.textContent = client.name
+        details.appendChild(summary)
+        if (client.file) {
+          const file = document.createElement('p')
+          file.className = 'fm-field-hint'
+          file.textContent = `${t('admin.mcpFileLabel')} ${client.file}`
+          details.appendChild(file)
+        }
+        const pre = document.createElement('pre')
+        pre.style.cssText = 'margin: 8px 0; padding: 10px; background: var(--bg-muted, rgba(127,127,127,0.12)); border-radius: var(--radius-sm); font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;'
+        pre.textContent = client.snippet
+        details.appendChild(pre)
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'fm-btn'
+        button.textContent = t('admin.mcpCopy')
+        button.addEventListener('click', async () => {
+          const ok = await copyText(client.snippet)
+          button.textContent = ok ? t('admin.mcpCopied') : t('admin.mcpCopyFailed')
+          setTimeout(() => { button.textContent = t('admin.mcpCopy') }, 2000)
+        })
+        details.appendChild(button)
+        host.appendChild(details)
+      }
+    }
 
     async function init() {
       await initI18n()
@@ -103,6 +201,27 @@ import FormSection from '../../components/FormSection.astro'
       const rfidDisplayColonsInput = document.getElementById('rfid-display-colons') as HTMLInputElement
       const defaultSpoolCoreWeightInput = document.getElementById('default-spool-core-weight') as HTMLInputElement
       const bambuUnmatchedFallbackSelect = document.getElementById('bambu-unmatched-fallback') as HTMLSelectElement
+      const mcpEnabledInput = document.getElementById('mcp-enabled') as HTMLInputElement
+      const mcpWriteInput = document.getElementById('mcp-write-enabled') as HTMLInputElement
+      const mcpWriteSection = document.getElementById('mcp-write-section')!
+      const mcpWriteWarning = document.getElementById('mcp-write-warning')!
+      const mcpSetup = document.getElementById('mcp-setup')!
+      const mcpUnsaved = document.getElementById('mcp-unsaved')!
+      const mcpUrl = `${window.location.origin}/mcp`
+      let mcpSavedEnabled = false
+      document.getElementById('mcp-url')!.textContent = mcpUrl
+      renderMcpClients(document.getElementById('mcp-clients')!, mcpUrl)
+
+      function updateMcpVisibility() {
+        const enabled = mcpEnabledInput.checked
+        mcpWriteSection.style.opacity = enabled ? '1' : '0.4'
+        mcpWriteInput.disabled = !enabled
+        mcpWriteWarning.classList.toggle('hidden', !(enabled && mcpWriteInput.checked))
+        mcpSetup.classList.toggle('hidden', !enabled)
+        mcpUnsaved.classList.toggle('hidden', mcpSavedEnabled)
+      }
+      mcpEnabledInput.addEventListener('change', updateMcpVisibility)
+      mcpWriteInput.addEventListener('change', updateMcpVisibility)
 
       function showMessage(text: string, isError: boolean) {
         formMessage.textContent = text
@@ -137,6 +256,10 @@ import FormSection from '../../components/FormSection.astro'
           updateRfidProtocolVisibility()
           defaultSpoolCoreWeightInput.value = data.default_spool_core_weight_g != null ? String(data.default_spool_core_weight_g) : ''
           bambuUnmatchedFallbackSelect.value = data.bambu_unmatched_profile_fallback || 'generic'
+          mcpEnabledInput.checked = data.mcp_enabled === true
+          mcpWriteInput.checked = data.mcp_write_enabled === true
+          mcpSavedEnabled = mcpEnabledInput.checked
+          updateMcpVisibility()
           formState.reset()
         } else {
           showMessage(t('admin.appSettingsLoadFailed'), true)
@@ -162,6 +285,8 @@ import FormSection from '../../components/FormSection.astro'
           rfid_display_colons: rfidDisplayColonsInput.checked,
           default_spool_core_weight_g: rawCoreWeight !== '' ? parseFloat(rawCoreWeight) : null,
           bambu_unmatched_profile_fallback: bambuUnmatchedFallbackSelect.value,
+          mcp_enabled: mcpEnabledInput.checked,
+          mcp_write_enabled: mcpEnabledInput.checked && mcpWriteInput.checked,
         }
 
         try {
@@ -179,6 +304,8 @@ import FormSection from '../../components/FormSection.astro'
           if (resp.ok) {
             localStorage.setItem('currency', currencySelect.value)
             localStorage.setItem('rfid_display_colons', String(rfidDisplayColonsInput.checked))
+            mcpSavedEnabled = mcpEnabledInput.checked
+            updateMcpVisibility()
             formState.reset()
             showMessage(t('admin.appSettingsSaveSuccess'), false)
           } else {

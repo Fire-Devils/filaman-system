@@ -30,3 +30,7 @@ class AppSettings(Base, TimestampMixin):
     filament_lookup_source: Mapped[str] = mapped_column(
         String(20), default="filamandb", nullable=False
     )
+    # MCP server (/mcp) for AI assistants. Off by default; write tools need a
+    # second, separate opt-in.
+    mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mcp_write_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -20,6 +20,8 @@ class AppSettingsResponse(BaseModel):
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: str = "generic"
     filament_lookup_source: str = "filamandb"
+    mcp_enabled: bool = False
+    mcp_write_enabled: bool = False
 
 
 class AppSettingsUpdate(BaseModel):
@@ -48,10 +50,27 @@ class AppSettingsUpdate(BaseModel):
     default_spool_core_weight_g: float | None = None
     bambu_unmatched_profile_fallback: Literal["generic", "bambu"] | None = None
     filament_lookup_source: Literal["filamandb", "disabled"] | None = None
+    mcp_enabled: bool | None = None
+    mcp_write_enabled: bool | None = None
 
 
 def _available_lookup_source(value: str) -> str:
     return value if value in ("filamandb", "disabled") else "filamandb"
+
+
+def _to_response(settings_row: AppSettings) -> AppSettingsResponse:
+    return AppSettingsResponse(
+        login_disabled=settings_row.login_disabled,
+        currency=settings_row.currency,
+        rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
+        rfid_protocol=settings_row.rfid_protocol,
+        rfid_display_colons=settings_row.rfid_display_colons,
+        default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
+        bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
+        filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
+        mcp_enabled=settings_row.mcp_enabled,
+        mcp_write_enabled=settings_row.mcp_write_enabled,
+    )
 
 
 @router.get("/", response_model=AppSettingsResponse)
@@ -71,16 +90,7 @@ async def get_app_settings(
             filament_lookup_source="filamandb",
         )
 
-    return AppSettingsResponse(
-        login_disabled=settings_row.login_disabled,
-        currency=settings_row.currency,
-        rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
-        rfid_protocol=settings_row.rfid_protocol,
-        rfid_display_colons=settings_row.rfid_display_colons,
-        default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
-        bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
-        filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
-    )
+    return _to_response(settings_row)
 
 
 @router.put("/", response_model=AppSettingsResponse)
@@ -106,16 +116,7 @@ async def update_app_settings(
 
     response_cache.delete("app_settings_public")
 
-    return AppSettingsResponse(
-        login_disabled=settings_row.login_disabled,
-        currency=settings_row.currency,
-        rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
-        rfid_protocol=settings_row.rfid_protocol,
-        rfid_display_colons=settings_row.rfid_display_colons,
-        default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
-        bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
-        filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
-    )
+    return _to_response(settings_row)
 
 
 public_router = APIRouter(prefix="/app-settings", tags=["app-settings"])
@@ -139,16 +140,7 @@ async def get_public_app_settings(db: DBSession):
             filament_lookup_source="filamandb",
         )
     else:
-        resp = AppSettingsResponse(
-            login_disabled=settings_row.login_disabled,
-            currency=settings_row.currency,
-            rfid_extended_data_enabled=settings_row.rfid_extended_data_enabled,
-            rfid_protocol=settings_row.rfid_protocol,
-            rfid_display_colons=settings_row.rfid_display_colons,
-            default_spool_core_weight_g=settings_row.default_spool_core_weight_g,
-            bambu_unmatched_profile_fallback=settings_row.bambu_unmatched_profile_fallback,
-            filament_lookup_source=_available_lookup_source(settings_row.filament_lookup_source),
-        )
+        resp = _to_response(settings_row)
 
     response_cache.set("app_settings_public", resp, ttl=300)
     return resp
