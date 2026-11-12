@@ -6,11 +6,13 @@
       "changes": {
         "de": [
           { "type": "feature", "text": "KI-Zugang (MCP): Farben können jetzt angelegt und Filamenten zugewiesen werden, sodass neue Spulen in der richtigen Farbe angezeigt werden." },
-          { "type": "feature", "text": "KI-Zugang (MCP): Filamente aus dem FilamentDB-Katalog übernehmen, mehrere Spulen auf einmal anlegen, Gewicht korrigieren, Lagerorte und Hersteller ändern, Spulenhistorie abrufen und Etiketten drucken." }
+          { "type": "feature", "text": "KI-Zugang (MCP): Filamente aus dem FilamentDB-Katalog übernehmen, mehrere Spulen auf einmal anlegen, Gewicht korrigieren, Lagerorte und Hersteller ändern, Spulenhistorie abrufen und Etiketten drucken." },
+          { "type": "fix", "text": "Filamente aus dem FilamentDB-Katalog können nur noch Nutzer übernehmen, die Filamente anlegen dürfen." }
         ],
         "en": [
           { "type": "feature", "text": "AI access (MCP): colours can now be created and assigned to filaments, so new spools are shown in the right colour." },
-          { "type": "feature", "text": "AI access (MCP): import filaments from the FilamentDB catalogue, create several spools at once, correct weights, edit locations and manufacturers, read a spool's history and print labels." }
+          { "type": "feature", "text": "AI access (MCP): import filaments from the FilamentDB catalogue, create several spools at once, correct weights, edit locations and manufacturers, read a spool's history and print labels." },
+          { "type": "fix", "text": "Only users who are allowed to create filaments can now import filaments from the FilamentDB catalogue." }
         ]
       }
     },

@@ -342,6 +342,49 @@ async def test_prepare_filament_preserves_manufacturer_color_name(auth_client):
     assert response.json()["prefilled"]["manufacturer_color_name"] == "Bambu Green"
 
 
+@pytest.mark.asyncio
+async def test_prepare_filament_requires_filaments_create_permission(client, db_session):
+    from sqlalchemy import func, select
+
+    from app.core.security import generate_token_secret, hash_password, hash_token
+    from app.models import Manufacturer, Color, Role, User, UserRole, UserSession
+
+    viewer = User(
+        email="viewer-prepare@example.com",
+        password_hash=hash_password("testpassword"),
+        display_name="Viewer",
+        is_superadmin=False,
+        is_active=True,
+    )
+    db_session.add(viewer)
+    await db_session.commit()
+    await db_session.refresh(viewer)
+    role = (await db_session.execute(select(Role).where(Role.key == "viewer"))).scalar_one()
+    db_session.add(UserRole(user_id=viewer.id, role_id=role.id))
+    secret = generate_token_secret()
+    session = UserSession(user_id=viewer.id, session_token_hash=hash_token(secret))
+    db_session.add(session)
+    await db_session.commit()
+    await db_session.refresh(session)
+    csrf_token = generate_token_secret()
+    client.cookies.set("session_id", f"sess.{session.id}.{secret}")
+    client.cookies.set("csrf_token", csrf_token)
+
+    response = await client.post(
+        "/api/v1/filamentdb/prepare-filament",
+        json={
+            "manufacturer_name": "Forbidden Brand",
+            "designation": "Basic",
+            "colors": [{"hex_code": "#123456", "color_name": "Nope", "position": 1}],
+        },
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 403
+    assert (await db_session.execute(select(func.count()).select_from(Manufacturer))).scalar_one() == 0
+    assert (await db_session.execute(select(func.count()).select_from(Color))).scalar_one() == 0
+
+
 def test_catalog_spool_profile_id_is_retained_and_invalid_values_ignored():
     assert standard_filamentdb_fields({'spool_profile': {'id': 735, 'image_file': '735.png'}})['filamentdb_spool_profile_id'] == 735
     assert standard_filamentdb_fields({'spool_profile_id': 735, 'spool_profile_image_file': '735.png'})['filamentdb_spool_profile_id'] == 735

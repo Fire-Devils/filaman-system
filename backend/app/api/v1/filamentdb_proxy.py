@@ -15,7 +15,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
-from app.api.deps import DBSession, PrincipalDep
+from app.api.deps import DBSession, PrincipalDep, RequirePermission
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.models import Color, Manufacturer
 from app.models.plugin import InstalledPlugin
@@ -469,7 +469,7 @@ class PrepareFilamentResponse(BaseModel):
 async def prepare_filament(
     data: PrepareFilamentRequest,
     db: DBSession,
-    _principal: PrincipalDep,
+    principal=RequirePermission("filaments:create"),
 ):
     """Prepare a filament import from FilamentDB.
 
