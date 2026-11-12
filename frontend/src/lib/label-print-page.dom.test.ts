@@ -1763,6 +1763,91 @@ describe('PDF output destination routing', () => {
   )
 })
 
+describe('label print keyboard shortcut', () => {
+  function pressPrint(target: HTMLElement, modifiers: KeyboardEventInit) {
+    const event = new KeyboardEvent('keydown', {
+      key: 'p', bubbles: true, cancelable: true, ...modifiers,
+    })
+    target.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('prints through the browser with Ctrl-P when the PDF option is off', async () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32')
+    const { controls } = bindCollectionOutputs([1])
+    const print = vi.spyOn(window, 'print')
+
+    expect(pressPrint(controls.printPdfCheckbox, { metaKey: true })).toBe(false)
+    expect(pressPrint(controls.printPdfCheckbox, { ctrlKey: true })).toBe(true)
+    await vi.waitFor(() => expect(print).toHaveBeenCalledOnce())
+  })
+
+  it('preserves Ctrl-P text navigation on macOS', () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const { prepare } = bindCollectionOutputs([1])
+    const template = document.createElement('textarea')
+    document.body.append(template)
+    template.focus()
+
+    expect(pressPrint(template, { ctrlKey: true })).toBe(false)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('opens the temporary PDF with Command-P and suppresses printing the surrounding page', async () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const { controls, prepare } = bindCollectionOutputs([1], {
+      withPdfPreview: true,
+      createPdf: async () => makePdfDocument(),
+    })
+    controls.printPdfCheckbox.checked = true
+    const preview = document.querySelector<HTMLElement>('#temporary-pdf-preview')!
+
+    expect(pressPrint(controls.printPdfCheckbox, { metaKey: true })).toBe(true)
+    await vi.waitFor(() => expect(preview.hidden).toBe(false))
+    expect(document.activeElement).toBe(preview)
+    expect(pressPrint(preview, { metaKey: true })).toBe(true)
+    expect(prepare).toHaveBeenCalledOnce()
+  })
+
+  it('suppresses printing while a modal dialog is open', () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32')
+    const { prepare } = bindCollectionOutputs([1])
+    const dialog = document.createElement('dialog')
+    document.body.append(dialog)
+    dialog.showModal()
+
+    expect(pressPrint(dialog, { ctrlKey: true })).toBe(true)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('suppresses printing while the navigation drawer makes the workspace inert', async () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32')
+    const { controls, prepare } = bindCollectionOutputs([1])
+    const main = document.createElement('main')
+    const drawerToggle = document.createElement('button')
+    document.body.append(main, drawerToggle)
+    main.append(controls.printButton)
+    main.inert = true
+    drawerToggle.focus()
+
+    expect(pressPrint(drawerToggle, { ctrlKey: true })).toBe(true)
+    expect(prepare).not.toHaveBeenCalled()
+
+    main.inert = false
+    expect(pressPrint(drawerToggle, { ctrlKey: true })).toBe(true)
+    await vi.waitFor(() => expect(printLabelBrowserJob).toHaveBeenCalledOnce())
+  })
+
+  it('preserves the system print shortcut and suppresses key repeats', () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('Win32')
+    const { controls, prepare } = bindCollectionOutputs([1])
+
+    expect(pressPrint(controls.printButton, { ctrlKey: true, shiftKey: true })).toBe(false)
+    expect(pressPrint(controls.printButton, { ctrlKey: true, repeat: true })).toBe(true)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+})
+
 describe('single and batch PDF factory reuse', () => {
   it.each(['single-label', 'batch'] as const)(
     'uses normal browser printing by default for %s output',
