@@ -50,6 +50,8 @@ Consequences, on purpose:
 | `spools:read` | `api/v1/devices.py:210,344,870` | Device status for the UI: active devices, RFID write status, last tag-scan result of a device |
 | `spools:read` | `api/v1/tag.py`, in `_reader_principal` (`/tag/scan`, `/tag/last-scan`, `/tag/readers`) | Tag readers and the browser that follows them. A registered device passes on its token alone, like `scale/weight`; users and API keys need the key |
 
+`POST /api/v1/filamentdb/prepare-filament` is not a read despite living next to the FilamentDB lookups: it creates local manufacturers and colours, so it requires `filaments:create` (it is the first step of creating a filament). The FilamentDB `GET` proxy endpoints stay open to every authenticated principal.
+
 Every default role (`viewer`, `user`, `admin`) holds `spools:read`, so these
 checks only bite for custom roles without it or for API keys whose scopes leave
 it out.
