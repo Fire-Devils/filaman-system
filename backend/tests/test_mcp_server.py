@@ -168,3 +168,216 @@ async def test_argument_validation(client, db_session, admin_key):
 async def test_get_returns_405(client):
     resp = await client.get("/mcp")
     assert resp.status_code == 405
+
+
+async def _call(client, key, name, arguments):
+    resp = await _rpc(client, key, "tools/call", {"name": name, "arguments": arguments})
+    return resp.json()["result"]
+
+
+@pytest.mark.asyncio
+async def test_color_tools_listed_by_mode(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=False)
+    names = _tool_names(await _rpc(client, admin_key, "tools/list"))
+    assert "list_colors" in names
+    assert not {"create_color", "set_filament_colors"} & names
+    await _set_flags(db_session, enabled=True, write=True)
+    names = _tool_names(await _rpc(client, admin_key, "tools/list"))
+    assert {"list_colors", "create_color", "set_filament_colors"} <= names
+
+
+@pytest.mark.asyncio
+async def test_create_color_and_set_filament_colors(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    result = await _call(client, admin_key, "create_color", {"name": "Rot MCP", "hex_code": "#ff0000"})
+    assert result["isError"] is False, result
+    color = json.loads(result["content"][0]["text"])
+
+    listing = await _call(client, admin_key, "list_colors", {})
+    assert any(c["id"] == color["id"] for c in json.loads(listing["content"][0]["text"])["items"])
+
+    result = await _call(client, admin_key, "create_manufacturer", {"name": "Farb-Hersteller"})
+    manufacturer = json.loads(result["content"][0]["text"])
+    result = await _call(client, admin_key, "create_filament", {
+        "manufacturer_id": manufacturer["id"], "designation": "PLA Rot",
+        "material_type": "PLA", "diameter_mm": 1.75,
+    })
+    assert result["isError"] is False, result
+    filament = json.loads(result["content"][0]["text"])
+
+    result = await _call(client, admin_key, "set_filament_colors", {
+        "filament_id": filament["id"], "color_mode": "single",
+        "colors": [{"color_id": color["id"], "position": 1}],
+    })
+    assert result["isError"] is False, result
+
+    result = await _call(client, admin_key, "get_filament", {"filament_id": filament["id"]})
+    detail = json.loads(result["content"][0]["text"])
+    assert detail["color_mode"] == "single"
+    assert [c["color_id"] for c in detail["colors"]] == [color["id"]]
+
+
+@pytest.mark.asyncio
+async def test_update_filament_rejects_unknown_fields(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    result = await _call(client, admin_key, "update_filament", {"filament_id": 1, "fields": {"color": "red"}})
+    assert result["isError"] is True
+    text = result["content"][0]["text"]
+    assert "color" in text and "set_filament_colors" in text
+
+
+def _json(result):
+    return json.loads(result["content"][0]["text"])
+
+
+async def _make_filament(client, key, **extra):
+    manufacturer = _json(await _call(client, key, "create_manufacturer", {"name": f"Hersteller {extra.get('tag', 'x')}"}))
+    result = await _call(client, key, "create_filament", {
+        "manufacturer_id": manufacturer["id"], "designation": "PLA Test",
+        "material_type": "PLA", "diameter_mm": 1.75,
+    })
+    assert result["isError"] is False, result
+    return manufacturer, _json(result)
+
+
+@pytest.mark.asyncio
+async def test_new_tools_listed_by_mode(client, db_session, admin_key):
+    read_tools = {"get_spool_events", "search_filamentdb_filaments", "list_filamentdb_manufacturers"}
+    write_tools = {
+        "import_filamentdb_filament", "create_spools_bulk", "record_spool_adjustment", "update_location",
+        "update_manufacturer", "request_spool_label_print", "request_filament_label_print",
+    }
+    await _set_flags(db_session, enabled=True, write=False)
+    names = _tool_names(await _rpc(client, admin_key, "tools/list"))
+    assert read_tools <= names
+    assert not write_tools & names
+    await _set_flags(db_session, enabled=True, write=True)
+    names = _tool_names(await _rpc(client, admin_key, "tools/list"))
+    assert (read_tools | write_tools) <= names
+
+
+@pytest.mark.asyncio
+async def test_create_filament_with_colors(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    color = _json(await _call(client, admin_key, "create_color", {"name": "Blau MCP", "hex_code": "#0000ff"}))
+    manufacturer = _json(await _call(client, admin_key, "create_manufacturer", {"name": "Farb-Hersteller 2"}))
+    result = await _call(client, admin_key, "create_filament", {
+        "manufacturer_id": manufacturer["id"], "designation": "PLA Blau", "material_type": "PLA",
+        "diameter_mm": 1.75, "color_mode": "single", "colors": [{"color_id": color["id"], "position": 1}],
+    })
+    assert result["isError"] is False, result
+    filament = _json(result)
+    detail = _json(await _call(client, admin_key, "get_filament", {"filament_id": filament["id"]}))
+    assert detail["color_mode"] == "single"
+    assert [c["color_id"] for c in detail["colors"]] == [color["id"]]
+
+
+@pytest.mark.asyncio
+async def test_filamentdb_search_tools(client, db_session, admin_key, monkeypatch):
+    from app.api.v1 import filamentdb_proxy
+
+    calls = []
+
+    async def fake_proxy_get(path, params=None, *, client=None):
+        calls.append((path, params))
+        return {"items": [{"id": 1, "designation": "PLA Rot"}], "total": 1, "page": 1, "page_size": 20}
+
+    monkeypatch.setattr(filamentdb_proxy, "_proxy_get", fake_proxy_get)
+    await _set_flags(db_session, enabled=True, write=False)
+    result = await _call(client, admin_key, "search_filamentdb_filaments", {"search": "PLA", "material_key": "pla"})
+    assert result["isError"] is False, result
+    assert _json(result)["items"][0]["designation"] == "PLA Rot"
+    assert calls[0][0] == "/filaments" and calls[0][1]["material_key"] == "pla"
+
+    result = await _call(client, admin_key, "list_filamentdb_manufacturers", {"search": "Prusa"})
+    assert result["isError"] is False, result
+    assert calls[-1][0] == "/manufacturers"
+
+
+@pytest.mark.asyncio
+async def test_import_filamentdb_filament(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    result = await _call(client, admin_key, "import_filamentdb_filament", {
+        "manufacturer_name": "Katalog GmbH", "designation": "Silk Duo", "material_name": "pla",
+        "diameter_mm": 1.75, "nominal_weight_g": 1000, "price": 19.9,
+        "color_mode": "multi", "multi_color_style": "gradient",
+        "colors": [{"hex_code": "#FF0000", "color_name": "Rot", "position": 1},
+                   {"hex_code": "#00FF00", "color_name": "Gruen", "position": 2}],
+    })
+    assert result["isError"] is False, result
+    imported = _json(result)
+    assert imported["manufacturer_created"] is True and imported["colors_created"] == 2
+    filament = imported["filament"]
+    detail = _json(await _call(client, admin_key, "get_filament", {"filament_id": filament["id"]}))
+    assert detail["designation"] == "Silk Duo" and detail["material_type"] == "PLA"
+    assert detail["color_mode"] == "multi" and len(detail["colors"]) == 2
+    assert detail["manufacturer"]["name"] == "Katalog GmbH"
+
+
+@pytest.mark.asyncio
+async def test_bulk_spools_adjustment_and_events(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    _, filament = await _make_filament(client, admin_key, tag="bulk")
+    result = await _call(client, admin_key, "create_spools_bulk", {
+        "filament_id": filament["id"], "quantity": 3, "initial_total_weight_g": 1200,
+        "empty_spool_weight_g": 200, "remaining_weight_g": 1000,
+    })
+    assert result["isError"] is False, result
+    spools = _json(result)
+    assert len(spools) == 3
+
+    spool_id = spools[0]["id"]
+    result = await _call(client, admin_key, "record_spool_adjustment", {
+        "spool_id": spool_id, "adjustment_type": "relative", "delta_weight_g": -100, "note": "Korrektur",
+    })
+    assert result["isError"] is False, result
+    spool = _json(await _call(client, admin_key, "get_spool", {"spool_id": spool_id}))
+    assert spool["remaining_weight_g"] == 900
+
+    events = _json(await _call(client, admin_key, "get_spool_events", {"spool_id": spool_id, "page_size": 10}))
+    assert any(e["event_type"] == "manual_adjust" for e in events["items"])
+
+    bad = await _call(client, admin_key, "record_spool_adjustment", {
+        "spool_id": spool_id, "adjustment_type": "relative",
+    })
+    assert bad["isError"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_location_and_manufacturer(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    location = _json(await _call(client, admin_key, "create_location", {"name": "Alt"}))
+    result = await _call(client, admin_key, "update_location", {
+        "location_id": location["id"], "fields": {"name": "Neu", "identifier": "R1"},
+    })
+    assert result["isError"] is False, result
+    assert _json(result)["name"] == "Neu" and _json(result)["identifier"] == "R1"
+
+    manufacturer = _json(await _call(client, admin_key, "create_manufacturer", {"name": "Alt GmbH"}))
+    result = await _call(client, admin_key, "update_manufacturer", {
+        "manufacturer_id": manufacturer["id"], "fields": {"name": "Neu GmbH", "empty_spool_weight_g": 220},
+    })
+    assert result["isError"] is False, result
+    assert _json(result)["name"] == "Neu GmbH"
+
+    for name, args in (
+        ("update_location", {"location_id": location["id"], "fields": {"custom_fields": {}}}),
+        ("update_manufacturer", {"manufacturer_id": manufacturer["id"], "fields": {"logo_file": "x"}}),
+    ):
+        bad = await _call(client, admin_key, name, args)
+        assert bad["isError"] is True and "Unknown field" in bad["content"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_request_label_print(client, db_session, admin_key):
+    await _set_flags(db_session, enabled=True, write=True)
+    _, filament = await _make_filament(client, admin_key, tag="label")
+    spool = _json(await _call(client, admin_key, "create_spool", {"filament_id": filament["id"]}))
+
+    result = await _call(client, admin_key, "request_spool_label_print", {"spool_id": spool["id"]})
+    assert result["isError"] is False, result
+    assert _json(result)["spool_id"] == spool["id"]
+
+    result = await _call(client, admin_key, "request_filament_label_print", {"filament_id": filament["id"]})
+    assert result["isError"] is False, result
+    assert _json(result)["filament_id"] == filament["id"]

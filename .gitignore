@@ -87,3 +87,6 @@ package-lock.json
 filaman.db*
 uploads/
 frontend/version.txt
+
+# Runtime inter-process lock files (created automatically)
+data/locks/

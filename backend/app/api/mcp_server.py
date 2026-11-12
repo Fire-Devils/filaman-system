@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 
 from app.core import database
+from app.api.v1.schemas_filament import FilamentCreate, FilamentUpdate
 from app.models import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,19 @@ _PAGE = {"type": "integer", "minimum": 1, "description": "Page number (default 1
 _PAGE_SIZE = {"type": "integer", "minimum": 1, "maximum": 200, "description": "Items per page (default 50)"}
 _NOTE = {"type": "string", "maxLength": 1000, "description": "Optional note stored with the event"}
 _PAGING = {"page": _PAGE, "page_size": _PAGE_SIZE}
+_COLOR_ENTRIES = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "color_id": _INT,
+            "position": {"type": "integer", "minimum": 1, "description": "Order, starting at 1"},
+            "display_name_override": {"type": "string"},
+        },
+        "required": ["color_id"],
+        "additionalProperties": False,
+    },
+}
 
 
 def _pick(args: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -151,6 +165,64 @@ async def _update_spool(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]
 
 async def _update_filament(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
     return await api("PATCH", f"/filaments/{args['filament_id']}", json_body=args.get("fields", {}))
+
+
+async def _set_filament_colors(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+    body = _pick(args, "color_mode", "multi_color_style", "colors")
+    return await api("PUT", f"/filaments/{args['filament_id']}/colors", json_body=body)
+
+
+async def _update_location(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+    return await api("PATCH", f"/locations/{args['location_id']}", json_body=args.get("fields", {}))
+
+
+async def _update_manufacturer(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+    return await api("PATCH", f"/manufacturers/{args['manufacturer_id']}", json_body=args.get("fields", {}))
+
+
+def _print_request(target: str) -> Handler:
+    async def handler(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+        return await api("POST", f"/labels/{target}/{args[target + '_id']}/print-request",
+                         params=_pick(args, "preset_id"))
+
+    return handler
+
+
+_PREPARE_KEYS = (
+    "manufacturer_name", "manufacturer_website", "designation", "material_key", "material_name",
+    "material_subtype", "manufacturer_color_name", "diameter_mm", "density_g_cm3", "temp_nozzle_min",
+    "temp_nozzle_max", "temp_bed", "nominal_weight_g", "price", "currency", "shop_url", "color_mode",
+    "multi_color_style", "colors",
+)
+
+
+async def _prepare_filamentdb_filament(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+    return await api("POST", "/filamentdb/prepare-filament", json_body=_pick(args, *_PREPARE_KEYS))
+
+
+async def _import_filamentdb_filament(args: dict[str, Any], api: ApiCaller) -> tuple[int, Any]:
+    """Prepare (find/create manufacturer + colours) and then create the local filament."""
+    status_code, prepared = await _prepare_filamentdb_filament(args, api)
+    if status_code >= 400:
+        return status_code, prepared
+    allowed = set(FilamentCreate.model_fields)
+    body = {k: v for k, v in prepared["prefilled"].items() if k in allowed and v is not None}
+    if not body.get("material_type"):
+        return 400, {"detail": "The catalogue record has no material (material_key / material_name)"}
+    color_ids = prepared.get("color_ids") or []
+    if color_ids:
+        body["colors"] = [{"color_id": cid, "position": i} for i, cid in enumerate(color_ids, start=1)]
+        if len(color_ids) > 1:
+            body["color_mode"] = "multi"
+            body.setdefault("multi_color_style", "striped")
+    status_code, filament = await api("POST", "/filaments", json_body=body)
+    if status_code >= 400:
+        return status_code, filament
+    return status_code, {
+        "filament": filament,
+        "manufacturer_created": prepared["manufacturer_created"],
+        "colors_created": prepared["colors_created"],
+    }
 
 
 _SPOOL_LIST_KEYS = (
@@ -214,6 +286,9 @@ TOOLS: tuple[Tool, ...] = (
          _schema({"filament_id": _INT}, ["filament_id"]), _get("/filaments/{filament_id}")),
     Tool("list_material_types", "List all material types in use (PLA, PETG, …).", _schema(),
          _get("/filaments/types")),
+    Tool("list_colors", "List known colours (id, name, hex code) with their usage count. A spool's displayed "
+         "colour comes from the colours assigned to its filament (see set_filament_colors).",
+         _schema(_PAGING), _get("/colors", "page", "page_size")),
     Tool("list_manufacturers", "List manufacturers.", _schema(_PAGING),
          _get("/manufacturers", "page", "page_size")),
     Tool("list_locations", "List storage locations with their spool count.", _schema(_PAGING),
@@ -231,10 +306,153 @@ TOOLS: tuple[Tool, ...] = (
         _schema({"search": {"type": "string", "maxLength": 200}, **_PAGING}),
         _get("/spools/all-events", "search", "page", "page_size"),
     ),
+    Tool(
+        "get_spool_events",
+        "List the history events of one spool (measurements, consumption, adjustments, moves, status "
+        "changes), newest first.",
+        _schema({"spool_id": _INT, **_PAGING}, ["spool_id"]),
+        _get("/spools/{spool_id}/events", "page", "page_size"),
+    ),
+    Tool(
+        "search_filamentdb_filaments",
+        "Search the FilamentDB community catalogue (an external database of manufacturer filaments, not the "
+        "local inventory). Results are catalogue records; to add one to FilaMan pass its data to "
+        "import_filamentdb_filament. Filter by search text, manufacturer name or id, or material key.",
+        _schema({
+            "search": {"type": "string", "minLength": 1, "maxLength": 200},
+            "manufacturer_id": {"type": "integer", "minimum": 1, "description": "FilamentDB manufacturer id"},
+            "manufacturer_name": {"type": "string", "minLength": 2, "description": "Resolved to a FilamentDB id"},
+            "material_key": {"type": "string", "description": "e.g. pla, petg"},
+            "page": _PAGE,
+            "page_size": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Items per page (default 20)"},
+        }),
+        _get("/filamentdb/filaments", "search", "manufacturer_id", "manufacturer_name", "material_key",
+             "page", "page_size"),
+    ),
+    Tool(
+        "list_filamentdb_manufacturers",
+        "Search manufacturers in the FilamentDB community catalogue (external, not the local manufacturers).",
+        _schema({
+            "search": {"type": "string", "minLength": 1, "maxLength": 200},
+            "page": _PAGE,
+            "page_size": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Items per page (default 20)"},
+        }),
+        _get("/filamentdb/manufacturers", "search", "page", "page_size"),
+    ),
     # ---- write ---------------------------------------------------------------
     Tool(
+        "import_filamentdb_filament",
+        "Import a filament from the FilamentDB catalogue in one step: finds or creates the local manufacturer "
+        "and colours, then creates the local filament with colours set. Fill the arguments from a record "
+        "returned by search_filamentdb_filaments (manufacturer_name, designation, material_key or "
+        "material_name, colours as hex_code/color_name). Returns the new filament; add spools afterwards "
+        "with create_spool or create_spools_bulk. Check list_filaments first to avoid duplicates.",
+        _schema({
+            "manufacturer_name": {"type": "string", "minLength": 1},
+            "manufacturer_website": {"type": "string"},
+            "designation": {"type": "string", "minLength": 1},
+            "material_key": {"type": "string"},
+            "material_name": {"type": "string", "description": "Preferred over material_key for material_type"},
+            "material_subtype": {"type": "string"},
+            "manufacturer_color_name": {"type": "string"},
+            "diameter_mm": {"type": "number", "exclusiveMinimum": 0},
+            "density_g_cm3": {"type": "number", "exclusiveMinimum": 0},
+            "temp_nozzle_min": {"type": "number"},
+            "temp_nozzle_max": {"type": "number"},
+            "temp_bed": {"type": "number"},
+            "nominal_weight_g": {"type": "integer", "minimum": 0, "description": "Filament weight per spool"},
+            "price": {"type": "number", "minimum": 0},
+            "currency": {"type": "string", "description": "ISO code, e.g. EUR"},
+            "shop_url": {"type": "string"},
+            "color_mode": {"type": "string", "enum": ["single", "multi"]},
+            "multi_color_style": {"type": "string", "enum": ["striped", "gradient"]},
+            "colors": {
+                "type": "array",
+                "items": _schema({
+                    "hex_code": {"type": "string", "description": "e.g. #FF0000"},
+                    "color_name": {"type": "string"},
+                    "position": {"type": "integer", "minimum": 1},
+                }, ["hex_code"]),
+            },
+        }, ["manufacturer_name", "designation"]),
+        _import_filamentdb_filament,
+        write=True,
+    ),
+    Tool(
+        "create_spools_bulk",
+        "Create several identical spools of one filament at once (quantity 1-100). All spools get the same "
+        "optional fields (status, location, lot, price, weights).",
+        _schema({"filament_id": _INT, "quantity": {"type": "integer", "minimum": 1, "maximum": 100},
+                 **_SPOOL_FIELDS}, ["filament_id", "quantity"]),
+        _post("/spools/bulk", "filament_id", "quantity", *_SPOOL_FIELDS.keys()),
+        write=True,
+    ),
+    Tool(
+        "record_spool_adjustment",
+        "Correct the remaining weight of a spool (e.g. the stored value was wrong). This is a correction, not "
+        "consumption: use record_spool_consumption for filament that was used. adjustment_type relative needs "
+        "delta_weight_g (positive or negative change of the remaining weight); absolute needs "
+        "measured_weight_g (gross weight incl. empty spool).",
+        _schema({
+            "spool_id": _INT,
+            "adjustment_type": {"type": "string", "enum": ["relative", "absolute"]},
+            "delta_weight_g": {"type": "number", "description": "For relative; may be negative"},
+            "measured_weight_g": {"type": "number", "minimum": 0, "description": "For absolute"},
+            "note": _NOTE,
+        }, ["spool_id", "adjustment_type"]),
+        _post("/spools/{spool_id}/adjustments", "adjustment_type", "delta_weight_g", "measured_weight_g", "note"),
+        write=True,
+    ),
+    Tool(
+        "update_location",
+        "Rename a storage location or change its identifier.",
+        _schema({
+            "location_id": _INT,
+            "fields": _schema({"name": {"type": "string", "minLength": 1}, "identifier": {"type": "string"}}),
+        }, ["location_id", "fields"]),
+        _update_location,
+        write=True,
+    ),
+    Tool(
+        "update_manufacturer",
+        "Change manufacturer data (name, website, default empty-spool weight and spool dimensions).",
+        _schema({
+            "manufacturer_id": _INT,
+            "fields": _schema({
+                "name": {"type": "string", "minLength": 1},
+                "url": {"type": "string"},
+                "empty_spool_weight_g": {"type": "number", "minimum": 0},
+                "spool_outer_diameter_mm": {"type": "number", "minimum": 0},
+                "spool_width_mm": {"type": "number", "minimum": 0},
+                "spool_material": {"type": "string"},
+            }),
+        }, ["manufacturer_id", "fields"]),
+        _update_manufacturer,
+        write=True,
+    ),
+    Tool(
+        "request_spool_label_print",
+        "Queue a label print job for a spool. The job is shown to the user's logged-in FilaMan session / "
+        "connected label printer, which then prints it; nothing is printed directly by this call. "
+        "Optional preset_id picks a label preset (default: the user's selected preset).",
+        _schema({"spool_id": _INT, "preset_id": {"type": "integer", "minimum": 0}}, ["spool_id"]),
+        _print_request("spool"),
+        write=True,
+    ),
+    Tool(
+        "request_filament_label_print",
+        "Queue a label print job for a filament definition. The job is shown to the user's logged-in FilaMan "
+        "session / connected label printer, which then prints it; nothing is printed directly by this call. "
+        "Optional preset_id picks a label preset (default: the user's selected preset).",
+        _schema({"filament_id": _INT, "preset_id": {"type": "integer", "minimum": 0}}, ["filament_id"]),
+        _print_request("filament"),
+        write=True,
+    ),
+    Tool(
         "create_spool",
-        "Create a new spool for an existing filament.",
+        "Create a new spool for an existing filament. The colour is not a spool property: it lives on the "
+        "filament, so set it when creating the filament (create_filament with colors) or later with "
+        "set_filament_colors (colours via list_colors / create_color).",
         _schema({"filament_id": _INT, **_SPOOL_FIELDS}, ["filament_id"]),
         _post("/spools", "filament_id", *_SPOOL_FIELDS.keys()),
         write=True,
@@ -301,7 +519,10 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         "create_filament",
-        "Create a filament definition for an existing manufacturer.",
+        "Create a filament definition for an existing manufacturer. Colours can be set directly here via "
+        "colors (colour ids from list_colors / create_color; color_mode single with one colour, or multi "
+        "with several plus multi_color_style); without colors the filament has no colour. Use "
+        "set_filament_colors to change colours later. manufacturer_color_name is only a label.",
         _schema({
             "manufacturer_id": _INT,
             "designation": {"type": "string", "minLength": 1},
@@ -314,17 +535,45 @@ TOOLS: tuple[Tool, ...] = (
             "price": {"type": "number", "minimum": 0},
             "shop_url": {"type": "string"},
             "density_g_cm3": {"type": "number", "exclusiveMinimum": 0},
+            "color_mode": {"type": "string", "enum": ["single", "multi"], "description": "Default single"},
+            "multi_color_style": {"type": "string", "enum": ["striped", "gradient"]},
+            "colors": _COLOR_ENTRIES,
         }, ["manufacturer_id", "designation", "material_type", "diameter_mm"]),
         _post(
             "/filaments", "manufacturer_id", "designation", "material_type", "diameter_mm",
             "manufacturer_color_name", "finish_type", "raw_material_weight_g", "default_spool_weight_g",
-            "price", "shop_url", "density_g_cm3",
+            "price", "shop_url", "density_g_cm3", "color_mode", "multi_color_style", "colors",
         ),
         write=True,
     ),
     Tool(
+        "create_color",
+        "Create a colour (name and hex code) that can then be assigned to filaments with set_filament_colors. "
+        "Check list_colors first to avoid duplicates.",
+        _schema({
+            "name": {"type": "string", "minLength": 1},
+            "hex_code": {"type": "string", "description": "Hex colour, e.g. #FF0000"},
+        }, ["name", "hex_code"]),
+        _post("/colors", "name", "hex_code"),
+        write=True,
+    ),
+    Tool(
+        "set_filament_colors",
+        "Replace the colours of a filament (this is what determines the colour shown for its spools). "
+        "Use color_mode single with one colour, or multi with several colours plus multi_color_style.",
+        _schema({
+            "filament_id": _INT,
+            "color_mode": {"type": "string", "enum": ["single", "multi"]},
+            "multi_color_style": {"type": "string", "enum": ["striped", "gradient"]},
+            "colors": _COLOR_ENTRIES,
+        }, ["filament_id", "color_mode", "colors"]),
+        _set_filament_colors,
+        write=True,
+    ),
+    Tool(
         "update_filament",
-        "Change fields of a filament definition (e.g. price, designation, colour name, temperatures).",
+        "Change fields of a filament definition (e.g. price, designation, colour name, temperatures). "
+        "Unknown field names are rejected. To change colours use set_filament_colors.",
         _schema({"filament_id": _INT, "fields": {"type": "object"}}, ["filament_id", "fields"]),
         _update_filament,
         write=True,
@@ -369,8 +618,26 @@ def _validate_args(tool: Tool, args: dict[str, Any]) -> str | None:
     for key in ("spool_id", "filament_id", "printer_id"):
         if key in args and (not isinstance(args[key], int) or isinstance(args[key], bool) or args[key] < 1):
             return f"{key} must be a positive integer"
+    for key in ("location_id", "manufacturer_id"):
+        if tool.name.startswith("update_") and key in args and (
+            not isinstance(args[key], int) or isinstance(args[key], bool) or args[key] < 1
+        ):
+            return f"{key} must be a positive integer"
     if "fields" in args and not isinstance(args["fields"], dict):
         return "fields must be an object"
+    fields_props = props.get("fields", {}).get("properties")
+    if fields_props is not None and isinstance(args.get("fields"), dict):
+        bad = sorted(k for k in args["fields"] if k not in fields_props)
+        if bad:
+            return f"Unknown field(s) in fields: {', '.join(bad)}. Allowed: {', '.join(sorted(fields_props))}"
+    if tool.name == "update_filament":
+        allowed = set(FilamentUpdate.model_fields)
+        bad = sorted(k for k in args["fields"] if k not in allowed)
+        if bad:
+            return (
+                f"Unknown field(s) in fields: {', '.join(bad)}. Allowed: {', '.join(sorted(allowed))}. "
+                "Colours are set with set_filament_colors."
+            )
     return None
 
 
