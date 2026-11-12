@@ -3,6 +3,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 from sqlalchemy import select
 from starlette.routing import Match
 
+from app.api.mcp_plugin_tools import load_plugin_read_tools
 from app.api.v1.admin import router as admin_router
 from app.api.v1.app_settings_admin import public_router as app_settings_public_router
 from app.api.v1.app_settings_admin import router as app_settings_admin_router
@@ -82,19 +83,19 @@ api_router.include_router(app_settings_public_router)
 api_router.include_router(filamentdb_router)
 
 # Keep installed plugin routes separate from the core API so they can be replaced.
-_deferred_plugin_routers: list[tuple[str, APIRouter]] = []
+_deferred_plugin_routers: list[tuple[str, APIRouter, dict]] = []
 
 
 def _integration_dependencies(plugin_key: str, manifest: dict, *routers: APIRouter | None):
     if manifest["plugin_type"] != "integration":
         return []
 
-    for router in routers:
-        if router is None:
+    for plugin_router in routers:
+        if plugin_router is None:
             continue
         routes = (
-            (context.original_route for context in iter_route_contexts(router.routes))
-            if iter_route_contexts else router.routes
+            (context.original_route for context in iter_route_contexts(plugin_router.routes))
+            if iter_route_contexts else plugin_router.routes
         )
         if any(not isinstance(route, (APIRoute, APIWebSocketRoute)) for route in routes):
             raise ValueError("Integration routes must use FastAPI route decorators")
@@ -137,7 +138,7 @@ def _build_plugin_router(plugin_key: str, manifest: dict, module) -> APIRouter:
     return group
 
 
-def _replace_plugin_router(app, plugin_key: str, plugin_router: APIRouter | None) -> None:
+def _replace_plugin_router(app, plugin_key: str, plugin_router: APIRouter | None, mcp_tools: dict | None = None) -> None:
     if not hasattr(app.state, "plugin_routes"):
         app.state.plugin_routes = {}
     registered = app.state.plugin_routes
@@ -157,6 +158,12 @@ def _replace_plugin_router(app, plugin_key: str, plugin_router: APIRouter | None
         registered[plugin_key] = {id(route) for route in added}
     else:
         registered.pop(plugin_key, None)
+    if not hasattr(app.state, "plugin_mcp_tools"):
+        app.state.plugin_mcp_tools = {}
+    if mcp_tools:
+        app.state.plugin_mcp_tools[plugin_key] = mcp_tools
+    else:
+        app.state.plugin_mcp_tools.pop(plugin_key, None)
     app.openapi_schema = None
 
 
@@ -204,11 +211,15 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
 
         module = importlib.import_module(f"{plugin_key}.router")
         adapt_installed_spoolman(module, plugin_key, manifest)
-        _replace_plugin_router(app, plugin_key, _build_plugin_router(plugin_key, manifest, module))
+        _replace_plugin_router(
+            app, plugin_key, _build_plugin_router(plugin_key, manifest, module),
+            load_plugin_read_tools(plugin_key, manifest, module, manifest_path),
+        )
         _logger.info("Plugin-Router '%s' dynamisch auf App gemountet", plugin_key)
         return True
 
     except Exception:
+        getattr(app.state, "plugin_mcp_tools", {}).pop(plugin_key, None)
         _logger.exception(
             "Plugin-Router '%s' konnte nicht dynamisch geladen werden", plugin_key
         )
@@ -221,8 +232,8 @@ def mount_deferred_plugin_routers(app) -> None:
 
     _logger = logging.getLogger(__name__)
 
-    for plugin_key, plugin_router in _deferred_plugin_routers:
-        _replace_plugin_router(app, plugin_key, plugin_router)
+    for plugin_key, plugin_router, mcp_tools in _deferred_plugin_routers:
+        _replace_plugin_router(app, plugin_key, plugin_router, mcp_tools)
         _logger.info("Plugin-Router '%s' auf App gemountet", plugin_key)
 
 
@@ -267,7 +278,8 @@ def _mount_plugin_routers() -> None:
                 module = importlib.import_module(f"{plugin_key}.router")
                 adapt_installed_spoolman(module, plugin_key, manifest)
                 _deferred_plugin_routers.append(
-                    (plugin_key, _build_plugin_router(plugin_key, manifest, module))
+                    (plugin_key, _build_plugin_router(plugin_key, manifest, module),
+                     load_plugin_read_tools(plugin_key, manifest, module, manifest_path))
                 )
 
             except Exception as exc:  # noqa: BLE001 — third-party plugin failures must not prevent startup.

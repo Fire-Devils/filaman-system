@@ -8,9 +8,11 @@ Gunicorn workers.
 Security model:
 - Only ``Authorization: ApiKey <key>`` principals are accepted. The key's user
   roles and scopes apply unchanged.
-- Every tool forwards to the regular REST API (in-process, via ASGI) with the
+- Native tools forward to the regular REST API (in-process, via ASGI) with the
   caller's Authorization header, so ``RequirePermission``, validation and
   spool events behave exactly like a normal API client.
+- Allowlisted plugin tools call their registered handler after the host checks the
+  tool's declared read permission.
 - The admin switches ``mcp_enabled`` and ``mcp_write_enabled`` (app settings)
   turn the whole endpoint, respectively the write tools, on or off.
 """
@@ -19,17 +21,24 @@ from __future__ import annotations
 
 import json
 import logging
+from asyncio import timeout
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 
-from app.core import database
+from app.api.mcp_plugin_tools import (
+    InvalidPluginToolArguments,
+    available_plugin_read_tools,
+    call_plugin_read_tool,
+)
 from app.api.v1.schemas_filament import FilamentCreate, FilamentUpdate
+from app.core import database
+from app.core.config import settings
 from app.models import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -40,6 +49,7 @@ SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-1
 LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0]
 SERVER_NAME = "filaman"
 MAX_RESULT_CHARS = 60_000
+MCP_BATCH_TIMEOUT_SECONDS = 90  # Leave time to serialize the response before Nginx's 120-second deadline.
 
 INSTRUCTIONS = (
     "FilaMan manages 3D-printing filament: manufacturers, filaments (material "
@@ -55,6 +65,7 @@ PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
+BATCH_DEADLINE_EXCEEDED = -32000
 
 
 class ApiCaller:
@@ -603,6 +614,7 @@ def _tool_text(payload: Any, *, is_error: bool = False) -> dict[str, Any]:
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
     if len(text) > MAX_RESULT_CHARS:
         text = text[:MAX_RESULT_CHARS] + "\n…[truncated – use paging or filters for smaller results]"
+    text.encode("utf-8")  # Fail inside the tool call so a single result cannot break the response.
     return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
 
@@ -645,6 +657,15 @@ async def _call_tool(params: dict[str, Any], request: Request, write_enabled: bo
     name = params.get("name")
     args = params.get("arguments") or {}
     tool = TOOLS_BY_NAME.get(name) if isinstance(name, str) else None
+    if tool is None and isinstance(name, str) and "-" in name and isinstance(params.get("arguments", {}), dict):
+        try:
+            return _tool_text(await call_plugin_read_tool(request, name, args))
+        except InvalidPluginToolArguments:
+            return _tool_text("Invalid plugin tool arguments", is_error=True)
+        except HTTPException as exc:
+            return _tool_text({"http_status": exc.status_code, "error": exc.detail}, is_error=True)
+        except TimeoutError:
+            return _tool_text("Plugin tool timed out", is_error=True)
     if tool is None or not isinstance(args, dict):
         return _tool_text(f"Unknown tool: {name}", is_error=True)
     if tool.write and not write_enabled:
@@ -691,6 +712,13 @@ async def _dispatch(message: Any, request: Request, write_enabled: bool) -> dict
         return _rpc_result(req_id, {})
     if method == "tools/list":
         tools = [t.descriptor() for t in TOOLS if write_enabled or not t.write]
+        if settings.mcp_plugin_read_tools:
+            try:
+                async with database.async_session_maker() as db:
+                    plugins = await available_plugin_read_tools(request, db)
+                tools.extend(descriptor for _, descriptor in plugins.values())
+            except Exception:
+                logger.exception("MCP plugin tool discovery failed")
         return _rpc_result(req_id, {"tools": tools})
     if method == "tools/call":
         try:
@@ -723,7 +751,41 @@ async def mcp_endpoint(request: Request) -> Response:
     if isinstance(payload, list):  # JSON-RPC batch (protocol 2025-03-26)
         if not payload:
             return JSONResponse(status_code=400, content=_rpc_error(None, INVALID_REQUEST, "Empty batch"))
-        responses = [r for m in payload if (r := await _dispatch(m, request, write_enabled)) is not None]
+        responses = []
+        deadline = timeout(MCP_BATCH_TIMEOUT_SECONDS)
+        next_index = 0
+        try:
+            async with deadline:
+                for message in payload:
+                    response = await _dispatch(message, request, write_enabled)
+                    if response is not None:
+                        responses.append(response)
+                    next_index += 1
+                    if deadline.expired():
+                        break
+        except TimeoutError:
+            if not deadline.expired():
+                raise
+            interrupted_index = next_index
+        else:
+            interrupted_index = None
+        if deadline.expired():
+            for pending_index in range(next_index, len(payload)):
+                message = payload[pending_index]
+                if (
+                    isinstance(message, dict)
+                    and "id" not in message
+                    and message.get("jsonrpc") == "2.0"
+                    and "method" in message
+                ):
+                    continue
+                req_id = message.get("id") if isinstance(message, dict) else None
+                detail = (
+                    "MCP batch deadline exceeded while running this request. Its outcome is unknown."
+                    if pending_index == interrupted_index
+                    else "MCP batch deadline exceeded before this request started"
+                )
+                responses.append(_rpc_error(req_id, BATCH_DEADLINE_EXCEEDED, detail))
         return JSONResponse(responses) if responses else Response(status_code=202)
 
     response = await _dispatch(payload, request, write_enabled)
