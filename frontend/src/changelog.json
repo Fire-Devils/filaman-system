@@ -6,11 +6,15 @@
       "changes": {
         "de": [
           { "type": "feature", "text": "Neu: KI-Assistenten wie Claude, Cursor, VS Code, Codex oder Gemini können FilaMan über einen eingebauten MCP-Server abfragen und auf Wunsch auch Spulen, Filamente und Lagerorte pflegen. Ein- und ausschalten sowie Nur-Lesen oder Schreiben festlegen lässt sich unter Verwaltung → App-Einstellungen, dort gibt es auch fertige Vorlagen zum Einbinden." },
-          { "type": "fix", "text": "Wird Filamentverbrauch gleichzeitig von mehreren Stellen gebucht (z. B. Drucker und Spoolman-Plugin), stimmen Restgewicht und Verbrauchsverlauf der Spule jetzt immer überein. Ungültige Verbrauchswerte werden abgewiesen. (Beigetragen von akira69)" }
+          { "type": "fix", "text": "Wird Filamentverbrauch gleichzeitig von mehreren Stellen gebucht (z. B. Drucker und Spoolman-Plugin), stimmen Restgewicht und Verbrauchsverlauf der Spule jetzt immer überein. Ungültige Verbrauchswerte werden abgewiesen. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Strg+P (bzw. Cmd+P auf dem Mac) druckt Etiketten jetzt genauso wie der Drucken-Button: im richtigen Etikettenformat oder über die temporäre PDF-Vorschau, statt auf normales Papierformat zurückzufallen. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Neu im Plugin-Katalog: FilaMan Swatch zum Vergleichen von Farben und Paletten sowie FilaBrain als Entwicklungsvorschau. Beide lassen sich unter Verwaltung → Plugins → Plugins durchsuchen installieren. (Beigetragen von akira69)" }
         ],
         "en": [
           { "type": "feature", "text": "New: AI assistants such as Claude, Cursor, VS Code, Codex or Gemini can query FilaMan through a built-in MCP server and, if allowed, also maintain spools, filaments and locations. Turn it on or off and choose read-only or write access under Admin → App Settings, which also offers ready-made setup templates." },
-          { "type": "fix", "text": "When filament consumption is booked from several sources at the same time (e.g. printer and Spoolman plugin), the spool's remaining weight and consumption history now always match. Invalid consumption values are rejected. (Contributed by akira69)" }
+          { "type": "fix", "text": "When filament consumption is booked from several sources at the same time (e.g. printer and Spoolman plugin), the spool's remaining weight and consumption history now always match. Invalid consumption values are rejected. (Contributed by akira69)" },
+          { "type": "fix", "text": "Ctrl+P (Cmd+P on Mac) now prints labels just like the Print button: in the correct label size or via the temporary PDF preview, instead of falling back to regular paper size. (Contributed by akira69)" },
+          { "type": "feature", "text": "New in the plugin catalog: FilaMan Swatch for comparing colours and palettes, and FilaBrain as a development preview. Install both under Admin → Plugins → Browse Plugins. (Contributed by akira69)" }
         ]
       }
     },
