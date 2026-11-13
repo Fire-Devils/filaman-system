@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improved", "text": "Neugestaltete AMS-Ansicht: Jeder Drucker beginnt mit einer Statusleiste (Zustand, Auftrag, Temperaturen, Meldungen, geladenes Fach), und eine Linie in der Spulenfarbe führt vom geladenen Fach dorthin. Fächer sind breiter und die Schrift wächst mit der Fachgröße, auch im Kiosk-Modus. Ein Tipp auf ein Fach öffnet alle Details mit „Spule öffnen“." },
+          { "type": "improved", "text": "Die AMS-Ansicht zeigt ehrlich, was sie weiß: Fächer ohne FilaMan-Spule sind als „Nicht erfasst“ markiert statt mit roten 0 %, unbekannte Farben sind schraffiert statt schwarz, offline Drucker zeigen den zuletzt bekannten Inhalt, und bei Verbindungsverlust erscheint ein Hinweis mit der Uhrzeit der letzten Daten. Der Kiosk-Modus hält den Bildschirm wach und bleibt in der Adresse erhalten." },
+          { "type": "feature", "text": "AMS-Ansicht: Externe Spulenhalter lassen sich ein- und ausblenden (pro Browser gespeichert). Im Kiosk-Modus mit einem einzelnen Drucker passt die Ansicht den ganzen Drucker auf einen Bildschirm. Die vier Fächer einer AMS stehen wie am Gerät nebeneinander; nur wenn es nicht anders passt, werden sie 2×2 angeordnet." }
+        ],
+        "en": [
+          { "type": "improved", "text": "Redesigned AMS View: each printer opens with a status strip (state, job, temperatures, alerts, loaded bay), and a line in the spool's colour runs from the loaded bay up to it. Bays are wider and their text scales with the bay, including in kiosk mode. Tapping a bay opens its full details with an Open spool button." },
+          { "type": "improved", "text": "AMS View now says what it does not know: bays without a FilaMan spool are marked Not tracked instead of a red 0%, unknown colours are hatched instead of black, offline printers show their last known contents, and a lost connection shows a notice with the time of the last data. Kiosk mode keeps the screen awake and stays in the address." },
+          { "type": "feature", "text": "AMS View: external spool holders can be shown or hidden (remembered per browser). Kiosk mode with a single printer fits the whole printer on one screen. An AMS shows its four bays side by side, as on the unit, and falls back to 2×2 only where nothing else fits." }
+        ]
+      }
+    },
+    {
       "version": "2.1.1",
       "date": "",
       "changes": {
