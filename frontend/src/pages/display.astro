@@ -124,8 +124,9 @@ import Layout from '../layouts/Layout.astro'
       min-width: 0;
       transition: opacity var(--transition);
     }
-    /* The unit rows sit above the feed line: the line runs in the gaps
-       and enters an AMS from above, like the PTFE tube it stands for. */
+    /* The feed line is drawn over the unit rows but only ever runs in the
+       gaps: between the strip and the units, between units, and between
+       the bay rows of a unit that wraps to 2×2. */
     .ams-printer-units {
       position: relative;
       z-index: 3;
@@ -379,7 +380,7 @@ import Layout from '../layouts/Layout.astro'
       height: 100%;
       overflow: visible;
       pointer-events: none;
-      z-index: 2;
+      z-index: 4;
     }
     /* SVG attributes cannot read CSS variables, so the strokes are styled
        here. The edge keeps a dark spool visible on a dark theme and a
@@ -1653,11 +1654,13 @@ import Layout from '../layouts/Layout.astro'
     }
 
     /** Draw each printer's feed line from the loaded-bay dot in the strip
-     *  to the unit that holds the bay. The route keeps to the gaps: down out
-     *  of the strip, along the gap under it, down the board's edge past any
-     *  units in between, and into the bay's unit from above, so it never
-     *  crosses another bay. The unit cards sit above the line, so the last
-     *  stretch disappears into the AMS right over the bay.
+     *  to the bay itself. The route keeps to the gaps: down out of the
+     *  strip, along the gap under it, down the board's edge past any units
+     *  in between, and to the top of the bay's unit right over the bay.
+     *  When the unit wraps its bays to 2×2 and the bay is in the lower row,
+     *  the line instead comes down beside the unit and runs along the gap
+     *  between the bay rows, so it ends on the bay and not on the one
+     *  above it. It never crosses another bay.
      *  Rebuilt only when the geometry or colour changes, so the flow does
      *  not restart on every poll. */
     function drawFeeds() {
@@ -1666,7 +1669,7 @@ import Layout from '../layouts/Layout.astro'
         if (!svg) return
         const dot = section.querySelector<HTMLElement>('.ams-loaded-dot')
         // The line goes to exactly the bay the strip names.
-        const bay = dot?.dataset.bay ? section.querySelector<HTMLElement>(`.ams-bay[data-key="${CSS.escape(dot.dataset.bay)}"]`) : null
+        const bay = dot?.dataset.bay ? [...section.querySelectorAll<HTMLElement>('.ams-bay')].find(el => el.dataset.key === dot.dataset.bay) : null
         const strip = section.querySelector<HTMLElement>('.ams-printer-head')
         const unit = bay?.closest<HTMLElement>('.ams-unit')
         if (!bay || !dot || !strip || !unit) { if (svg.dataset.sig) { svg.innerHTML = ''; svg.dataset.sig = '' } return }
@@ -1684,7 +1687,25 @@ import Layout from '../layouts/Layout.astro'
         // bay's unit and into it.
         const dotY = y(d.top + d.height / 2)
         const rowY = u.top - st.bottom > 40 ? y(u.top) - 9 : gapTop
-        const points: [number, number][] = [[x(d.left) - 3, dotY], [-8, dotY], [-8, rowY], [bayX, rowY], [bayX, y(b.top)]]
+        const edgeX = -8
+        const points: [number, number][] = [[x(d.left) - 3, dotY], [edgeX, dotY]]
+        // Bays of the same unit that sit in a row above this one.
+        const above = [...unit.querySelectorAll<HTMLElement>('.ams-bay')]
+          .map(el => el.getBoundingClientRect())
+          .filter(r => r.height && r.bottom <= b.top + 1)
+        if (above.length) {
+          const bayGapY = Math.round((y(Math.max(...above.map(r => r.bottom))) + y(b.top)) / 2)
+          // Come down in the gap left of the unit: the board's edge for the
+          // first unit in a row, the gap to its neighbour otherwise.
+          const left = [...section.querySelectorAll<HTMLElement>('.ams-unit')]
+            .map(el => el.getBoundingClientRect())
+            .filter(r => r.right <= u.left + 1 && r.bottom > u.top && r.top < u.bottom)
+          const sideX = left.length ? Math.round((x(Math.max(...left.map(r => r.right))) + x(u.left)) / 2) : edgeX
+          if (sideX !== edgeX) points.push([edgeX, rowY], [sideX, rowY])
+          points.push([sideX, bayGapY], [bayX, bayGapY], [bayX, y(b.top)])
+        } else {
+          points.push([edgeX, rowY], [bayX, rowY], [bayX, y(u.top)])
+        }
         const path = tubePath(points)
         const entry = bayIndex.get(bay.dataset.key || '')
         const m = entry ? bayModel(entry.slot) : null

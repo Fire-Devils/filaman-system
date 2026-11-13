@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "AMS-Ansicht: Zeigt eine AMS ihre Fächer 2×2, endet die Linie vom Drucker jetzt am geladenen Fach selbst statt am Fach darüber." }
+        ],
+        "en": [
+          { "type": "fix", "text": "AMS View: when an AMS shows its bays 2×2, the line from the printer now ends on the loaded bay itself instead of the bay above it." }
+        ]
+      }
+    },
+    {
       "version": "2.2.0",
       "date": "",
       "changes": {
