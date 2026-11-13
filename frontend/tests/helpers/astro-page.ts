@@ -4,10 +4,11 @@ import { experimental_AstroContainer as AstroContainer } from 'astro/container'
 import FormDialog from '../../src/components/FormDialog.astro'
 import FormSection from '../../src/components/FormSection.astro'
 import ColorEditorFields from '../../src/components/ColorEditorFields.astro'
+import InventoryLoadMore from '../../src/components/InventoryLoadMore.astro'
 import AdminHeader from '../../src/components/AdminHeader.astro'
 
-const components = { FormDialog, FormSection, ColorEditorFields, AdminHeader }
-const shellPattern = /<(FormDialog|FormSection|ColorEditorFields|AdminHeader)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g
+const components = { FormDialog, FormSection, ColorEditorFields, AdminHeader, InventoryLoadMore }
+const shellPattern = /<(FormDialog|FormSection|ColorEditorFields|AdminHeader|InventoryLoadMore)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...source: string[]) => (...values: unknown[]) => Promise<unknown>
 
 /** Render actual shared shells, then run the page script after DOM setup, without Layout's startup side effects. */

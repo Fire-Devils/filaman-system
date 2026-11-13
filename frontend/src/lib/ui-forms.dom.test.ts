@@ -10,6 +10,7 @@ import * as scanner from './tag-scanner'
 import * as escape from './extra-fields'
 import * as actions from './table-actions'
 import * as colors from './colors'
+import * as inventoryScroll from './inventory-scroll'
 import * as filters from './table-column-filters'
 import { api } from './api'
 import { createExtraFieldDefinitionDialog } from './extra-field-definition-dialog'
@@ -22,7 +23,7 @@ let intercept: ((path: string, init?: RequestInit) => Response | Promise<Respons
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
-  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, api, createExtraFieldDefinitionDialog, copyText,
+  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, api, createExtraFieldDefinitionDialog, copyText,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },

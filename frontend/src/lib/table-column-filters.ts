@@ -51,6 +51,7 @@ export type HeaderFilterDefinition = {
   icon?: 'filter' | 'gear'
   disclosureOf?: string
   disclosureStorageKey?: string
+  groupControlId?: string
   options?: HeaderFilterOption[]
   initialValue?: ColumnFilterValue
   onApply: (value: ColumnFilterValue) => void
@@ -69,7 +70,8 @@ export type SortDirection = 'asc' | 'desc' | null
 export type TableFilterControlOptions = {
   onApply: () => void
   onClearColumns: () => void
-  onClearAll: () => void
+  onClearAll?: () => void
+  hasColumnFilters?: () => boolean
   debounceMs?: number
 }
 
@@ -445,35 +447,61 @@ export function sanitizeColumnFilters(
 export function bindTableFilterControls({
   onApply,
   onClearColumns,
-  onClearAll,
+  onClearAll = onClearColumns,
+  hasColumnFilters,
   debounceMs = 250,
-}: TableFilterControlOptions): void {
+}: TableFilterControlOptions): () => void {
+  const search = document.querySelector<HTMLInputElement>('#filter-search')
+  const group = document.querySelector<HTMLInputElement>('#filter-group')
+  const clearColumns = document.querySelector<HTMLButtonElement>('#filter-clear-columns')
+  const clearAll = document.querySelector<HTMLButtonElement>('#filter-clear')
   let searchTimeout: ReturnType<typeof setTimeout> | null = null
   const cancelSearchDebounce = () => {
     if (searchTimeout) clearTimeout(searchTimeout)
     searchTimeout = null
   }
 
-  document.getElementById('filter-search')?.addEventListener('input', () => {
+  function showReset(button: HTMLButtonElement | null, visible: boolean, focus: HTMLElement | null) {
+    if (!button?.hasAttribute('data-filter-reset')) return
+    if (!visible && button === document.activeElement) focus?.focus({ preventScroll: true })
+    button.hidden = !visible
+  }
+
+  function updateResets() {
+    const columnsActive = hasColumnFilters?.() ?? false
+    showReset(clearColumns, columnsActive, document.getElementById('btn-columns') ?? document.querySelector<HTMLElement>('.fm-header-filter-trigger'))
+    showReset(clearAll, columnsActive || !!search?.value.trim() || !!group?.checked, search)
+  }
+
+  updateResets()
+
+  search?.addEventListener('input', () => {
+    updateResets()
     cancelSearchDebounce()
     searchTimeout = setTimeout(onApply, debounceMs)
   })
   document.getElementById('filter-search-clear')?.addEventListener('click', () => {
     cancelSearchDebounce()
-    const search = document.getElementById('filter-search') as HTMLInputElement | null
     if (search) search.value = ''
+    updateResets()
     onApply()
   })
-  document.getElementById('filter-group')?.addEventListener('change', onApply)
-  document.getElementById('filter-clear-columns')?.addEventListener('click', onClearColumns)
-  document.getElementById('filter-clear')?.addEventListener('click', () => {
+  group?.addEventListener('change', () => {
+    updateResets()
+    onApply()
+  })
+  clearColumns?.addEventListener('click', () => {
+    onClearColumns()
+    updateResets()
+  })
+  clearAll?.addEventListener('click', () => {
     cancelSearchDebounce()
-    const search = document.getElementById('filter-search') as HTMLInputElement | null
     if (search) search.value = ''
-    const group = document.getElementById('filter-group') as HTMLInputElement | null
     if (group) group.checked = false
     onClearAll()
+    updateResets()
   })
+  return updateResets
 }
 
 function closeFilterPanel(state: FilterState) {
@@ -912,6 +940,11 @@ export function initHeaderColumnFilters(
     openPanels.forEach((panel) => {
       const state = [...states.values()].find((candidate) => candidate.panel === panel)
       if (!state) return
+      if (event.type === 'filaman:columns-changed' && !state.trigger.getClientRects().length) {
+        closePanel(panel)
+        if (panel.contains(focused)) document.getElementById('btn-columns')?.focus()
+        return
+      }
       positionFilterPanel(state)
       if (event.type === 'resize' && isColorGridState(state) && focused instanceof HTMLElement && panel.contains(focused)) {
         const target = focused.closest('.fm-header-filter-color-option') || focused
@@ -990,6 +1023,27 @@ export function initHeaderColumnFilters(
     if (def.multiDisplay === 'colors') appendColorGridToggle(actions, state)
     panel.appendChild(actions)
 
+    const groupControl = def.groupControlId ? document.getElementById(def.groupControlId) : null
+    const groupFallback = groupControl?.parentElement
+    if (groupControl && groupFallback) {
+      trigger.dataset.groupControl = ''
+      groupControl.hidden = false
+      const placeGroupControl = () => {
+        const focused = document.activeElement
+        const columnHidden = getComputedStyle(cell).display === 'none'
+        const destination = columnHidden ? groupFallback : panel
+        if (groupControl.parentElement === destination) return
+        destination.insertBefore(groupControl, columnHidden ? null : actions)
+        if (columnHidden && focused === trigger) {
+          groupControl.querySelector('input')?.focus({ preventScroll: true })
+        } else if (focused instanceof HTMLElement && groupControl.contains(focused)) {
+          (columnHidden ? focused : trigger).focus({ preventScroll: true })
+        }
+      }
+      table.addEventListener('filaman:columns-changed', placeGroupControl)
+      placeGroupControl()
+    }
+
     if (parentState) {
       parentState.linkedStates.push(state)
       parentState.panel.classList.add('fm-header-filter-panel-disclosure')
@@ -1038,6 +1092,7 @@ export function initHeaderColumnFilters(
   document.addEventListener('click', () => openPanels.forEach(closePanel))
   window.addEventListener('resize', repositionOpenPanels)
   window.addEventListener('scroll', repositionOpenPanels, true)
+  table.addEventListener('filaman:columns-changed', repositionOpenPanels)
 
   return {
     setOptions: (key, options) => {
@@ -1119,6 +1174,8 @@ export function syncHeaderSortButtons(
     button.setAttribute('aria-label', t('filters.sortColumnState', { label, state }))
     button.title = t('filters.sortColumnState', { label, state })
     button.setAttribute('aria-pressed', String(isActive))
+    if (isActive) cell.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending')
+    else cell.removeAttribute('aria-sort')
   })
 }
 
@@ -1134,6 +1191,16 @@ function preserveTranslatedHeading(cell: HTMLTableCellElement, label: string) {
     .forEach((node) => node.remove())
   cell.removeAttribute('data-i18n')
   cell.insertBefore(heading, cell.firstChild)
+
+  const compactKey = cell.dataset.i18nCompact
+  if (compactKey) {
+    heading.classList.add('fm-header-filter-heading-full')
+    const compactHeading = document.createElement('span')
+    compactHeading.className = 'fm-header-filter-heading fm-header-filter-heading-short'
+    compactHeading.dataset.i18n = compactKey
+    compactHeading.textContent = t(compactKey)
+    heading.after(compactHeading)
+  }
 }
 
 function buildMultiControls(state: FilterState) {

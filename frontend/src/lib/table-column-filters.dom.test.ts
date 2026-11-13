@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { bindColorFilterButton, initHeaderColumnFilters, type HeaderFilterOption } from './table-column-filters'
+import { bindColorFilterButton, bindTableFilterControls, initHeaderColumnFilters, isColumnFilterActive, syncHeaderSortButtons, type HeaderFilterOption } from './table-column-filters'
 import { setLang } from './i18n'
 
 afterEach(() => {
@@ -11,6 +11,78 @@ afterEach(() => {
   localStorage.removeItem('filaman-spool-status-open')
   setLang('en')
   vi.restoreAllMocks()
+})
+
+it('preserves translated full and compact headings and announces the current sort', () => {
+  document.body.innerHTML = '<table><thead><tr><th data-sort="designation" data-i18n="filaments.designation" data-i18n-compact="filaments.designationCompact">Manufacturer Product / Series Name</th></tr></thead></table>'
+  const table = document.querySelector('table')!
+  const header = table.querySelector('th')!
+  initHeaderColumnFilters(table, [{
+    key: 'designation', label: 'Manufacturer Product / Series Name', columnSelector: 'th', type: 'multi', onApply: vi.fn(),
+  }])
+  expect(header.querySelector('.fm-header-filter-heading-full')?.getAttribute('data-i18n')).toBe('filaments.designation')
+  expect(header.querySelector('.fm-header-filter-heading-short')?.textContent).toBe('Designation')
+
+  syncHeaderSortButtons(table, 'designation', 'asc')
+  expect(header.getAttribute('aria-sort')).toBe('ascending')
+  syncHeaderSortButtons(table, 'designation', 'desc')
+  expect(header.getAttribute('aria-sort')).toBe('descending')
+  syncHeaderSortButtons(table, null, null)
+  expect(header.hasAttribute('aria-sort')).toBe(false)
+})
+
+it('shows each reset from applied filters even when the header has no active marker', () => {
+  document.body.innerHTML = `
+    <input id="filter-search">
+    <label id="group-control" hidden><input id="filter-group" type="checkbox"> Group by name</label>
+    <button id="filter-clear-columns" data-filter-reset hidden>Clear column filters</button>
+    <button id="filter-clear" data-filter-reset hidden>Clear all filters</button>
+    <table class="fm-table"><thead><tr><th>Name</th></tr></thead></table>
+  `
+  const search = document.querySelector<HTMLInputElement>('#filter-search')!
+  const group = document.querySelector<HTMLInputElement>('#filter-group')!
+  const clearColumns = document.getElementById('filter-clear-columns')!
+  const clearAll = document.getElementById('filter-clear')!
+  const controller = initHeaderColumnFilters(document.querySelector('table')!, [{
+    key: 'name', label: 'Name', columnSelector: 'th', type: 'multi', groupControlId: 'group-control',
+    options: [{ value: '2', label: 'Current name' }], onApply: vi.fn(),
+  }])
+  const updateResets = bindTableFilterControls({
+    onApply: vi.fn(), onClearColumns: controller.resetAll,
+    hasColumnFilters: () => isColumnFilterActive(controller.getValue('name') ?? undefined),
+  })
+  expect(group.closest('.fm-header-filter-panel')).not.toBeNull()
+  expect(clearAll.hidden).toBe(true)
+  expect(clearColumns.hidden).toBe(true)
+
+  const table = document.querySelector('table')!
+  const header = table.querySelector('th')!
+  header.style.display = 'none'
+  table.dispatchEvent(new Event('filaman:columns-changed'))
+  expect(group.closest('.fm-header-filter-panel')).toBeNull()
+  expect(group.closest('label')?.hidden).toBe(false)
+  group.click()
+  expect(clearAll.hidden).toBe(false)
+  expect(clearColumns.hidden).toBe(true)
+
+  header.style.removeProperty('display')
+  table.dispatchEvent(new Event('filaman:columns-changed'))
+  expect(group.closest('.fm-header-filter-panel')).not.toBeNull()
+  expect(group.checked).toBe(true)
+  controller.setValue('name', { type: 'multi', values: ['1'] })
+  expect(document.querySelector('.fm-header-filter-trigger.active')).toBeNull()
+  updateResets()
+  expect(clearColumns.hidden).toBe(false)
+  clearColumns.click()
+  expect(group.checked).toBe(true)
+  expect(clearAll.hidden).toBe(false)
+  expect(clearColumns.hidden).toBe(true)
+
+  search.value = 'Green'
+  clearAll.click()
+  expect(search.value).toBe('')
+  expect(group.checked).toBe(false)
+  expect(clearAll.hidden).toBe(true)
 })
 
 describe('linked harmony results', () => {

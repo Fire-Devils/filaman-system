@@ -28,7 +28,6 @@ try {
   let locationName = 'Shelf A'
   await page.addInitScript(() => {
     localStorage.setItem('lang', 'en')
-    localStorage.setItem('filaman-pagesize-spools', '25')
   })
   await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
@@ -89,6 +88,18 @@ try {
   await page.goto(new URL('/spools', base).href)
   await page.locator('#spools-table tr[data-group-row], #spools-table tr[onclick]').first().waitFor()
   assert.equal(requests.at(-1).searchParams.get('include_metrics'), 'true', 'Native table explicitly requests metrics')
+  const locationFilter = page.locator('th.col-location .fm-header-filter-trigger')
+  await locationFilter.focus()
+  await page.setViewportSize({ width: 320, height: 844 })
+  await locationFilter.waitFor({ state: 'hidden' })
+  assert.ok(await page.locator('#btn-columns').evaluate(button => document.activeElement === button))
+  const firstSpool = page.locator('#spools-table tr:has([data-spool-id="1"])')
+  const secondSpool = page.locator('#spools-table tr:has([data-spool-id="2"])')
+  await firstSpool.locator('.col-filament').getByText('Spool #1', { exact: true }).waitFor()
+  await secondSpool.locator('.col-filament').getByText('Spool #2', { exact: true }).waitFor()
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await locationFilter.waitFor()
+  assert.equal(await firstSpool.locator('.col-filament').getByText('Spool #1', { exact: true }).isVisible(), false)
   await page.locator('#btn-columns').click()
   await page.locator('#columns-dropdown').getByLabel('Remaining %', { exact: true }).check()
   await page.locator('#columns-dropdown').getByLabel('Estimated remaining length (m)', { exact: true }).check()
@@ -112,7 +123,7 @@ try {
   await page.locator('#spools-table .col-remaining_length_m').first().filter({ hasText: '168' }).waitFor()
   assert.equal(requests.at(-1).searchParams.get('remaining_length_m_min'), '150')
   assert.equal(requests.at(-1).searchParams.get('remaining_length_m_max'), '200')
-  assert.ok(requests.every(url => Number(url.searchParams.get('page_size')) === 25), 'Metric filters never select the all-pages path')
+  assert.ok(requests.every(url => Number(url.searchParams.get('page_size')) === 50), 'Metric filters never select the all-pages path')
 
   await page.goto(new URL('/spools/16', base).href)
   await page.locator('.spool-remaining-grams').filter({ hasText: '500 g' }).waitFor()

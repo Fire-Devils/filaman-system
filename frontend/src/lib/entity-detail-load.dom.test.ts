@@ -16,6 +16,7 @@ function detailLoader(entity: 'spool' | 'filament') {
       initPrinterSetup, loadEvents, setupActions, loadSpools,
       getCsrfToken, getCsrfTokenGlobal, t, extraFieldsDialogRequested, editMode } = runtime;
     const id = '16';
+    const detailUrl = '/api/v1/filaments/' + id + '?include_record_token=true';
     const editing = editMode;
     let currentFilament = null, remainingRequest = 0;
     const updatePrinterSaveState = () => {};

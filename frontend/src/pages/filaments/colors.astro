@@ -1,6 +1,8 @@
 ---
 import ColorEditorFields from '../../components/ColorEditorFields.astro'
 import FormDialog from '../../components/FormDialog.astro'
+import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
+import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
@@ -8,12 +10,13 @@ import Layout from '../../layouts/Layout.astro'
   <div class="fm-list-toolbar">
     <h1 data-i18n="colors.title">Manage Colors</h1>
     <div class="fm-list-controls">
-      <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
+      <span data-inventory-count></span>
+      <InventoryFilterReset scope="columns" />
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="colors.addColor">Add Color</button>
     </div>
   </div>
   
-  <div class="fm-card" style="padding: 0;">
+  <div class="fm-card fm-inventory-table" data-compact>
     <table class="fm-table fm-admin-table" id="colors-list-table">
       <thead>
         <tr>
@@ -31,6 +34,8 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
+  <InventoryLoadMore />
+
   <FormDialog id="modal-container" titleId="modal-title" titleKey="colors.addColor" title="Add Color" wide>
     <Fragment slot="actions">
       <button type="submit" form="modal-form" id="modal-submit" disabled class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
@@ -46,6 +51,7 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { initInventoryScroll, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { fetchAllPages } from '../../lib/api'
     import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
     import { escapeHtml } from '../../lib/extra-fields'
@@ -105,6 +111,7 @@ import Layout from '../../layouts/Layout.astro'
         renderColors()
       } catch (error) {
         if (isAbortError(error)) return
+        colorList.pause()
         console.error('Failed to load colors:', error)
         document.getElementById('colors-table')!.innerHTML = `
           <tr>
@@ -114,16 +121,20 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
     
+    const colorList = initInventoryScroll<ColorRecord>(
+      document.getElementById('colors-table')!, 'colors.colorCount', renderColorRows,
+    )
+
     function renderColors() {
-      const tbody = document.getElementById('colors-table')!
-      let visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
+      updateFilterReset()
+      const visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
         const value = key === 'name' ? String(color.id) : isSortKey(key) ? color[key] : undefined
         return matchesColumnFilter(value, filter)
       }))
       if (sortKey && sortDirection) {
         const direction = sortDirection
         const key = sortKey
-        visibleColors = [...visibleColors].sort((a, b) => {
+        visibleColors.sort((a, b) => {
           const comparison = key === 'usage_count'
             ? a.usage_count - b.usage_count
             : a[key].localeCompare(b[key], undefined, { sensitivity: 'base' })
@@ -131,7 +142,12 @@ import Layout from '../../layouts/Layout.astro'
         })
       }
       
-      if (visibleColors.length === 0) {
+      void colorList.load(inventoryLocalPages(() => visibleColors), true)
+    }
+
+    function renderColorRows(items: ColorRecord[], append: boolean) {
+      const tbody = document.getElementById('colors-table')!
+      if (!items.length) {
         tbody.innerHTML = `
           <tr>
             <td colspan="4" style="text-align: center; color: var(--text-muted);">
@@ -142,7 +158,7 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = visibleColors.map(c => `
+      const rows = items.map(c => `
         <tr>
           <td style="padding: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
@@ -159,48 +175,45 @@ import Layout from '../../layouts/Layout.astro'
           </td>
         </tr>
       `).join('')
+      if (append) tbody.insertAdjacentHTML('beforeend', rows)
+      else tbody.innerHTML = rows
       
       translatePage()
-
-      document.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const target = e.currentTarget as HTMLButtonElement
-          const color = colors.find(color => color.id === Number(target.dataset.id))
-          if (color) openModal(color.id, color.name, color.hex_code)
-        })
-      })
-      
-      document.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const target = e.currentTarget as HTMLButtonElement
-          const id = parseInt(target.dataset.id!)
-          const usage = parseInt(target.dataset.usage!)
-          
-          if (usage > 0) return
-          
-          if (!(await dialogs.__fmConfirm(t('colors.confirmDelete')))) return
-          
-          try {
-            const response = await fetch(`/api/v1/colors/${id}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              signal: getAbortSignal(),
-            })
-            
-            if (!response.ok) {
-              const data = await response.json()
-              await dialogs.__fmAlert(data.message || t('colors.failedDelete'))
-              return
-            }
-            
-            loadColors()
-          } catch {
-            await dialogs.__fmAlert(t('colors.failedDelete'))
-          }
-        })
-      })
     }
+
+    document.getElementById('colors-table')!.addEventListener('click', async event => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const action = target.closest<HTMLButtonElement>('button.btn-edit, button.btn-delete')
+      if (!action || action.disabled) return
+      const id = Number(action.dataset.id)
+      if (action.classList.contains('btn-edit')) {
+        const color = colorList.get(id)
+        if (color) openModal(color.id, color.name, color.hex_code)
+        return
+      }
+
+      if (!(await dialogs.__fmConfirm(t('colors.confirmDelete')))) return
+
+      try {
+        const response = await fetch(`/api/v1/colors/${id}`, {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          signal: getAbortSignal(),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          await dialogs.__fmAlert(data.message || t('colors.failedDelete'))
+          return
+        }
+
+        loadColors()
+      } catch {
+        await dialogs.__fmAlert(t('colors.failedDelete'))
+      }
+    })
 
     function applyColumnFilter(key: string, value: ColumnFilterValue) {
       if (isColumnFilterActive(value)) columnFilters[key] = value
@@ -208,8 +221,18 @@ import Layout from '../../layouts/Layout.astro'
       renderColors()
     }
 
+    const table = document.getElementById('colors-list-table') as HTMLTableElement
+    const updateFilterReset = bindTableFilterControls({
+      hasColumnFilters: () => Object.values(columnFilters).some(isColumnFilterActive),
+      onApply: renderColors,
+      onClearColumns: () => {
+        columnFilters = {}
+        colorHeaderFilters?.resetAll()
+        renderColors()
+      },
+    })
+
     function setupTableControls() {
-      const table = document.getElementById('colors-list-table') as HTMLTableElement
       colorHeaderFilters = initHeaderColumnFilters(table, [
         {
           key: 'name',
@@ -263,15 +286,6 @@ import Layout from '../../layouts/Layout.astro'
         renderColors()
       })
 
-      bindTableFilterControls({
-        onApply: renderColors,
-        onClearColumns: () => {
-          columnFilters = {}
-          colorHeaderFilters?.resetAll()
-          renderColors()
-        },
-        onClearAll: () => {},
-      })
     }
     
     function openModal(id: number | null = null, name: string = '', hex: string = '#000000') {

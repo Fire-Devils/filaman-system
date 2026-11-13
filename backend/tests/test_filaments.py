@@ -6,6 +6,34 @@ from app.models import Color, Filament, FilamentColor, Manufacturer, Spool, Spoo
 
 
 @pytest.mark.asyncio
+async def test_filament_list_token_identifies_the_record_across_id_reuse(auth_client, db_session):
+    client, csrf = auth_client
+    maker = await _create_manufacturer(db_session)
+    headers = {"X-CSRF-Token": csrf}
+    data = {"manufacturer_id": maker.id, "designation": "Same PLA", "material_type": "PLA", "diameter_mm": 1.75}
+    original = (await client.post("/api/v1/filaments", headers=headers, json=data)).json()
+    path = f"/api/v1/filaments/{original['id']}"
+    assert "record_token" not in original
+    assert "record_token" not in (await client.get(path)).json()
+    assert "record_token" not in (await client.get("/api/v1/filaments")).json()["items"][0]
+    await _create_filament(db_session, maker.id, designation="Other PLA")
+    picker_list = f"/api/v1/filaments?include_record_token=true&filament_id={original['id']}"
+    listed = (await client.get(picker_list)).json()["items"]
+    assert [item["id"] for item in listed] == [original["id"]]
+    original_token = listed[0]["record_token"]
+    assert (await client.get(f"{path}?include_record_token=true")).json()["record_token"] == original_token
+    updated = (await client.patch(path, headers=headers, json={"diameter_mm": 2.85})).json()
+    assert "record_token" not in updated
+    assert (await client.get(picker_list)).json()["items"][0]["record_token"] == original_token
+    assert (await client.delete(path, headers=headers)).status_code == 204
+    replacement = (await client.post("/api/v1/filaments", headers=headers, json=data)).json()
+    assert replacement["id"] == original["id"]
+    new_token = (await client.get(picker_list)).json()["items"][0]["record_token"]
+    assert new_token != original_token
+    assert (await client.get(f"{path}?include_record_token=true")).json()["record_token"] == new_token
+
+
+@pytest.mark.asyncio
 async def test_named_color_browsing_keeps_exact_names_union_and_pagination(auth_client, db_session):
     client, _ = auth_client
     maker = await _create_manufacturer(db_session)

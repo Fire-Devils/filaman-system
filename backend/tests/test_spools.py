@@ -546,6 +546,26 @@ class TestSpoolCRUD:
         assert data["total"] >= 1
 
     @pytest.mark.asyncio
+    async def test_list_spools_has_stable_order_across_pages_with_equal_sort_values(self, auth_client, db_session):
+        client, _ = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        status = await _get_status(db_session, "new")
+        first = await _create_spool(db_session, filament.id, status.id)
+        second = await _create_spool(db_session, filament.id, status.id)
+
+        ids = []
+        for page in (1, 2):
+            response = await client.get("/api/v1/spools", params={
+                "filament_id": filament.id, "sort_by": "filament_id", "sort_order": "desc",
+                "page_size": 1, "page": page,
+            })
+            assert response.status_code == 200
+            ids.append(response.json()["items"][0]["id"])
+
+        assert ids == [second.id, first.id]
+
+    @pytest.mark.asyncio
     async def test_list_spools_filter_by_unassigned_location(self, auth_client, db_session):
         client, _ = auth_client
         manufacturer = await _create_manufacturer(db_session)

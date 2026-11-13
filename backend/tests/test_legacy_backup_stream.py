@@ -5,7 +5,7 @@ import json
 
 import pytest
 from app.api.v1 import system
-from app.models import Manufacturer
+from app.models import Filament, Manufacturer
 from fastapi import UploadFile
 from sqlalchemy import select
 
@@ -37,6 +37,36 @@ async def test_exported_legacy_backup_restores_above_aggregate_limit(
     assert response.status_code == 200, response.text
     restored = await db_session.scalar(select(Manufacturer))
     assert restored.custom_fields == {"text": "x" * 4096}
+
+
+@pytest.mark.asyncio
+async def test_inventory_backup_omits_picker_tokens_and_mints_new_tokens_on_restore(
+    auth_client, db_session, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
+    maker = Manufacturer(name="Backup brand")
+    db_session.add(maker)
+    await db_session.flush()
+    filament = Filament(
+        manufacturer_id=maker.id, designation="Backup PLA", material_type="PLA", diameter_mm=1.75
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    original_token = filament.record_token
+    client, csrf = auth_client
+    exported = await client.get("/api/v1/admin/system/backup/export-inventory?format=json")
+    assert exported.status_code == 200
+    assert "record_token" not in exported.json()["data"]["filaments"][0]
+
+    response = await client.post(
+        "/api/v1/admin/system/backup/import-inventory",
+        files={"file": ("backup.json", exported.content, "application/json")},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 200, response.text
+    restored = (await client.get("/api/v1/filaments?include_record_token=true")).json()["items"][0]
+    assert restored["designation"] == "Backup PLA"
+    assert restored["record_token"] != original_token
 
 
 @pytest.mark.asyncio

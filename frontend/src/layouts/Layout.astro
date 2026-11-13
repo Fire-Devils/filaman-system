@@ -7,9 +7,10 @@ interface Props {
   /** When true, removes main padding so the content can fill edge-to-edge.
    *  Used by plugin-view pages that embed a full-height iframe. */
   noPadding?: boolean
+  embedded?: boolean
 }
 
-const { title, noPadding = false } = Astro.props
+const { title, noPadding = false, embedded = false } = Astro.props
 ---
 
 <html lang="en" data-theme="brand">
@@ -40,7 +41,7 @@ const { title, noPadding = false } = Astro.props
       })();
     </script>
   </head>
-  <body>
+  <body data-embedded={embedded ? "" : undefined}>
     <div id="fm-page" class="fm-page" style="visibility: hidden;">
       <aside class="fm-sidebar fm-surface">
         <button id="sidebar-toggle" class="fm-sidebar-toggle" aria-label="Toggle Sidebar" data-i18n-aria-label="nav.toggleSidebar" aria-controls="sidebar-content" aria-expanded="true">
@@ -244,6 +245,19 @@ const { title, noPadding = false } = Astro.props
 
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
+
+      const inventoryBack = document.querySelector<HTMLAnchorElement>('[data-inventory-back]')
+      if (inventoryBack && document.referrer && history.length > 1) {
+        const previous = new URL(document.referrer)
+        if (previous.origin === location.origin &&
+            previous.pathname.replace(/\/$/, '') === inventoryBack.pathname) {
+          inventoryBack.addEventListener('click', event => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            event.preventDefault()
+            history.back()
+          })
+        }
+      }
 
       const layoutWindow = window as typeof window & Partial<AppDialogs> & {
         __t?: typeof t
@@ -574,7 +588,8 @@ const { title, noPadding = false } = Astro.props
       }
       highlightActiveNav()
 
-      setupPcPrintPrompt()
+      const embedded = document.body.hasAttribute('data-embedded')
+      if (!embedded) setupPcPrintPrompt()
 
       /* ── Sidebar toggle ──────────────────────────────────────── */
       const page = document.getElementById('fm-page')!
@@ -642,8 +657,10 @@ const { title, noPadding = false } = Astro.props
       ;(function setupSSE() {
         let es: EventSource | null = null
         let reconnectDelay = 1000
+        let reconnect: ReturnType<typeof setTimeout> | undefined
 
         function connect() {
+          if (es) return
           es = new EventSource('/api/v1/events/stream')
 
           es.onmessage = (e) => {
@@ -660,15 +677,19 @@ const { title, noPadding = false } = Astro.props
           es.onerror = () => {
             es?.close()
             es = null
-            setTimeout(connect, reconnectDelay)
+            reconnect = setTimeout(connect, reconnectDelay)
             reconnectDelay = Math.min(reconnectDelay * 2, 30000)
           }
         }
 
         // Bei Navigation SSE-Connection schließen um HTTP/2-Blockierung zu vermeiden
         window.addEventListener('pagehide', () => {
+          clearTimeout(reconnect)
           es?.close()
           es = null
+        })
+        window.addEventListener('pageshow', event => {
+          if (event.persisted) connect()
         })
 
         connect()
@@ -680,6 +701,7 @@ const { title, noPadding = false } = Astro.props
       // The scan sits on the reader's row in tag_readers instead, which every
       // worker can read.
       ;(function followTagScanner() {
+        if (embedded) return
         const POLL_MS = 1200
         let lastSeenSeq: number | null = null
         let inFlight = false

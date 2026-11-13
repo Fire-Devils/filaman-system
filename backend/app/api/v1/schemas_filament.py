@@ -343,6 +343,10 @@ class FilamentDetailResponse(FilamentResponse):
     colors: list[FilamentColorResponse] = []
 
 
+class FilamentListItem(FilamentDetailResponse):
+    record_token: str | None = Field(None, exclude_if=lambda value: value is None)
+
+
 class BulkFilamentUpdateRequest(BaseModel):
     filament_ids: list[int] = Field(..., min_length=1)
     price: FiniteFloat | None = None

@@ -1,5 +1,7 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
+import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 ---
 
 <Layout title="FilaMan - Manufacturers">
@@ -9,6 +11,7 @@ import Layout from '../../layouts/Layout.astro'
       <button id="btn-new" class="fm-btn fm-btn-primary" data-i18n="manufacturers.addManufacturer">
         Add Manufacturer
       </button>
+      <InventoryFilterReset scope="all" />
     </div>
   </div>
 
@@ -23,12 +26,11 @@ import Layout from '../../layouts/Layout.astro'
       />
       <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
     </div>
-    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
-    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
   </div>
 
-  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-    <div class="pagination-container" id="pagination-top" style="flex: 1;"></div>
+  <div class="fm-inventory-toolbar">
+    <div data-inventory-count></div>
+    <InventoryFilterReset scope="columns" />
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -38,7 +40,7 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
 
-  <div class="fm-card" style="padding: 0;">
+  <div class="fm-card fm-inventory-table fm-manufacturers-table">
     <table class="fm-table">
       <thead>
         <tr>
@@ -62,7 +64,7 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
 
-  <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
+  <InventoryLoadMore />
 
   <script>
     import { t, initI18n } from '../../lib/i18n'
@@ -71,15 +73,21 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { initColumnReorder } from '../../lib/column-reorder'
     import { initColumnResize } from '../../lib/column-resize'
+    import { initInventoryScroll, inventoryLocalPages } from '../../lib/inventory-scroll'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { safeExternalUrl } from '../../lib/filament-detail'
+    import { tableAction } from '../../lib/table-actions'
     import {
       bindTableFilterControls,
       initHeaderColumnFilters,
       isColumnFilterActive,
       matchesColumnFilter,
       multiColumnFilter,
+      sanitizeColumnFilters,
       syncHeaderSortButtons,
       type ColumnFilterValue,
       type HeaderFilterController,
+      type HeaderFilterDefinition,
       type HeaderFilterOption,
     } from '../../lib/table-column-filters'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
@@ -121,15 +129,6 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
     } catch { /* ignore invalid data */ }
-    const allowedPageSizes = [25, 50, 100, 150, 200]
-    let pageSize = (() => {
-      try {
-        const saved = parseInt(localStorage.getItem('filaman-pagesize-manufacturers') || '50', 10)
-        return allowedPageSizes.includes(saved) ? saved : 50
-      } catch { return 50 }
-    })()
-    let currentPage = 1
-    let isInitialLoad = true
     let mfrHeaderFilters: HeaderFilterController | null = null
 
     let savedFilterState: { names?: string[], materials?: string[], columns?: Record<string, ColumnFilterValue> } | null = null
@@ -138,17 +137,12 @@ import Layout from '../../layouts/Layout.astro'
       if (sf) savedFilterState = JSON.parse(sf)
     } catch { /* ignore invalid data */ }
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
-    if (!columnFilters.name) columnFilters.name = multiColumnFilter(savedFilterState?.names || [])
-    if (!columnFilters.materials) columnFilters.materials = multiColumnFilter(savedFilterState?.materials || [])
-    Object.keys(columnFilters).forEach((key) => {
-      if (!isColumnFilterActive(columnFilters[key])) delete columnFilters[key]
-    })
-
-    // Restore page from localStorage
-    try {
-      const savedPage = localStorage.getItem('filaman-page-manufacturers')
-      if (savedPage) currentPage = Math.max(1, parseInt(savedPage, 10) || 1)
-    } catch {}
+    if (!columnFilters.name && Array.isArray(savedFilterState?.names)) {
+      columnFilters.name = multiColumnFilter(savedFilterState.names)
+    }
+    if (!columnFilters.materials && Array.isArray(savedFilterState?.materials)) {
+      columnFilters.materials = multiColumnFilter(savedFilterState.materials)
+    }
 
     function setupSortableHeaders() {
       const thead = document.querySelector('.fm-table thead')
@@ -268,14 +262,10 @@ import Layout from '../../layouts/Layout.astro'
         const data = await cachedFetchAllPages<ManufacturerRow>(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
         manufacturers = data.items
         updateHeaderFilterOptions(manufacturers)
-        if (isInitialLoad) {
-          isInitialLoad = false
-        } else {
-          currentPage = 1
-        }
         renderManufacturers()
       } catch (error) {
         if (isAbortError(error)) return
+        manufacturerList.pause()
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
           <tr>
@@ -285,115 +275,19 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
 
-    function escapeHtml(str: string): string {
-      const div = document.createElement('div')
-      div.textContent = str
-      return div.innerHTML
-    }
+    const manufacturerList = initInventoryScroll<ManufacturerRow>(
+      document.getElementById('manufacturers-table')!, 'manufacturers.manufacturerCount', renderManufacturerRows,
+    )
 
-    function getPageNumbers(page: number, totalPages: number): (number | string)[] {
-      if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
-      const pages = new Set([1, totalPages])
-      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.add(i)
-      const sorted = [...pages].sort((a, b) => a - b)
-      const result: (number | string)[] = []
-      sorted.forEach((p, i) => {
-        if (i > 0 && p - sorted[i - 1] > 1) result.push('\u2026')
-        result.push(p)
-      })
-      return result
-    }
-
-    function buildPaginationHtml(total: number, page: number): string {
-      const totalPages = Math.ceil(total / pageSize)
-      if (totalPages <= 1) {
-        const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
-        return `
-          <div style="font-size: 0.8rem; color: var(--text-muted);">${t('manufacturers.manufacturerCount', { count: total })}</div>
-          <div></div>
-          <div class="pagination-pages">
-            <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
-            ${pageSizeItems}
-          </div>
-        `
-      }
-      const pageNumbers = getPageNumbers(page, totalPages)
-      const pageItems = pageNumbers.map(p => {
-        if (p === '\u2026') return `<span class="page-ellipsis">\u2026</span>`
-        if (p === page) return `<span class="page-current">${p}</span>`
-        return `<a class="page-link" data-page="${p}">${p}</a>`
-      }).join('')
-      const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
-      return `
-        <div style="font-size: 0.8rem; color: var(--text-muted);">
-          ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
-        </div>
-        <div class="pagination-pages">
-          <span style="color: var(--text-muted);">${t('common.page')}:</span>
-          ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
-          ${pageItems}
-          ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
-        </div>
-        <div class="pagination-pages">
-          <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
-          ${pageSizeItems}
-        </div>
-      `
-    }
-
-    function renderPagination(total: number, page: number) {
-      const totalPages = Math.ceil(total / pageSize)
-      const html = buildPaginationHtml(total, page)
-      document.getElementById('pagination-top')!.innerHTML = html
-      document.getElementById('pagination')!.innerHTML = html
-
-      document.querySelectorAll('.pagination-container').forEach(container => {
-        container.querySelectorAll('.page-link[data-page]').forEach(link => {
-          link.addEventListener('click', () => {
-            currentPage = parseInt((link as HTMLElement).dataset.page!, 10)
-            localStorage.setItem('filaman-page-manufacturers', String(currentPage))
-            renderManufacturers()
-          })
-        })
-        container.querySelector('.page-prev')?.addEventListener('click', () => {
-          if (page > 1) {
-            currentPage = page - 1
-            localStorage.setItem('filaman-page-manufacturers', String(currentPage))
-            renderManufacturers()
-          }
-        })
-        container.querySelector('.page-next')?.addEventListener('click', () => {
-          if (page < totalPages) {
-            currentPage = page + 1
-            localStorage.setItem('filaman-page-manufacturers', String(currentPage))
-            renderManufacturers()
-          }
-        })
-        container.querySelectorAll('.page-size-link').forEach(link => {
-          link.addEventListener('click', () => {
-            const newSize = parseInt((link as HTMLElement).dataset.size!, 10)
-            if (allowedPageSizes.includes(newSize)) {
-              pageSize = newSize
-              localStorage.setItem('filaman-pagesize-manufacturers', String(newSize))
-              currentPage = 1
-              localStorage.setItem('filaman-page-manufacturers', '1')
-              renderManufacturers()
-            }
-          })
-        })
-      })
-    }
     function renderManufacturers() {
-      const tbody = document.getElementById('manufacturers-table')!
-      const filtered = filterManufacturers(manufacturers)
-      const sorted = sortManufacturers(filtered)
+      updateFilterResets()
       localStorage.setItem('filaman-filters-manufacturers', JSON.stringify({ columns: columnFilters }))
+      void manufacturerList.load(inventoryLocalPages(() => sortManufacturers(filterManufacturers(manufacturers))), true)
+    }
 
-      // Validate current page
-      const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
-      if (currentPage > totalPages) currentPage = totalPages
-
-      if (sorted.length === 0) {
+    function renderManufacturerRows(items: ManufacturerRow[], append: boolean) {
+      const tbody = document.getElementById('manufacturers-table')!
+      if (!items.length) {
         const { search } = getFilterValues()
         const hasFilters = search || Object.values(columnFilters).some(isColumnFilterActive)
         tbody.innerHTML = `
@@ -403,108 +297,99 @@ import Layout from '../../layouts/Layout.astro'
             </td>
           </tr>
         `
-        document.getElementById('pagination-top')!.innerHTML = ''
-        document.getElementById('pagination')!.innerHTML = ''
         return
       }
 
-      // Paginate
-      const start = (currentPage - 1) * pageSize
-      const paged = sorted.slice(start, start + pageSize)
       // Note: escapeHtml() is used for all user-supplied data; URLs use escapeHtml for both href and text
-      tbody.innerHTML = paged.map(mf => `
-        <tr style="cursor: pointer;" class="manufacturer-row" data-mf='${escapeHtml(JSON.stringify(mf))}'>
+      const rows = items.map(mf => {
+        const website = safeExternalUrl(mf.url)
+        return `
+        <tr style="cursor: pointer;" class="manufacturer-row" data-manufacturer-id="${mf.id}">
           <td class="col-name" style="font-weight: 500;">${escapeHtml(mf.name)}</td>
           <td class="col-logo" style="padding: 12px; text-align: center;">${mf.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(mf.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
-          <td class="col-url">${mf.url ? `<a href="${escapeHtml(mf.url)}" target="_blank" rel="noopener" class="stop-prop" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : '<span style="color: var(--text-muted);">-</span>'}</td>
-          <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
-          <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" class="stop-prop" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
+          <td class="col-url">${website ? `<a href="${website}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none;">${escapeHtml(mf.url)}</a>` : `<span style="color: var(--text-muted);">${escapeHtml(mf.url) || '-'}</span>`}</td>
+          <td class="col-filaments"><a href="/filaments?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.filament_count || 0}</a></td>
+          <td class="col-spools"><a href="/spools?manufacturer_id=${mf.id}" style="color: var(--accent); text-decoration: none; font-weight: 500;">${mf.spool_count || 0}</a></td>
           <td class="col-materials">${mf.materials && mf.materials.length > 0 ? mf.materials.map((m: string) => escapeHtml(m)).join(', ') : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-total_price" style="font-family: monospace;">${mf.total_price_available != null ? formatPrice(mf.total_price_available, getCurrency()) : '-'}</td>
           <td class="col-archived" style="color: var(--text-muted);">${mf.archived_spool_count ?? '-'}</td>
           <td class="col-spool_weight" style="font-family: monospace;">${mf.empty_spool_weight_g != null ? mf.empty_spool_weight_g + 'g' : '-'}</td>
-          <td style="text-align: right; white-space: nowrap;">
-            <button data-mf='${escapeHtml(JSON.stringify(mf))}' class="btn-edit fm-btn fm-btn-outline stop-prop" style="padding: 5px 12px; font-size: 0.8rem;">${t('common.edit')}</button>
-            <button data-id="${mf.id}" class="btn-delete fm-btn fm-btn-danger stop-prop" style="padding: 5px 12px; font-size: 0.8rem; margin-left: 6px;">${t('common.delete')}</button>
+          <td style="text-align: right;">
+            <span class="fm-row-actions">${tableAction('edit', { id: mf.id })}${tableAction('delete', { id: mf.id })}</span>
           </td>
         </tr>
-      `).join('')
+      `
+      }).join('')
+      if (append) tbody.insertAdjacentHTML('beforeend', rows)
+      else tbody.innerHTML = rows
 
       mfrReorder.applyOrder()
-
-      document.querySelectorAll('.manufacturer-row').forEach(row => {
-        row.addEventListener('click', () => {
-          const mf = JSON.parse((row as HTMLElement).dataset.mf!)
-          manufacturerDialog.open(mf, { mode: 'view' })
-        })
-      })
-
-      document.querySelectorAll('.stop-prop').forEach(el => {
-        el.addEventListener('click', (e) => e.stopPropagation())
-      })
-
-      document.querySelectorAll('.btn-edit').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const target = e.currentTarget as HTMLButtonElement
-          const mf = JSON.parse(target.dataset.mf!)
-          manufacturerDialog.open(mf)
-        })
-      })
-
-      document.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const target = e.currentTarget as HTMLButtonElement
-          const id = parseInt(target.dataset.id!)
-
-          if (!(await dialogWindow.__fmConfirm(t('manufacturers.confirmDelete')))) return
-
-          try {
-            // First attempt to delete normally
-            let response = await fetch(`/api/v1/manufacturers/${id}`, {
-              method: 'DELETE',
-              headers: { 'X-CSRF-Token': getCsrfToken() },
-              credentials: 'include',
-              signal: getAbortSignal(),
-            })
-
-            // If conflict (409), prompt for cascade delete
-            if (response.status === 409) {
-              const confirmCascade = await dialogWindow.__fmConfirm(
-                t('manufacturers.confirmCascadeDelete'),
-                { 
-                  title: t('common.confirmTitle'), 
-                  okLabel: t('manufacturers.forceDelete'), 
-                  isDanger: true 
-                }
-              )
-
-              if (!confirmCascade) return
-
-              // Attempt to delete with force flag
-              response = await fetch(`/api/v1/manufacturers/${id}?force=true`, {
-                method: 'DELETE',
-                headers: { 'X-CSRF-Token': getCsrfToken() },
-                credentials: 'include',
-                signal: getAbortSignal(),
-              })
-            }
-
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({}))
-              await dialogWindow.__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
-              return
-            }
-
-            // Invalidate cache after successful delete
-            invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
-            loadManufacturers()
-          } catch {
-            await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
-          }
-        })
-      })
-      renderPagination(sorted.length, currentPage)
     }
+
+    document.getElementById('manufacturers-table')!.addEventListener('click', async event => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const action = target.closest<HTMLButtonElement>('button.btn-edit, button.btn-delete')
+      if (!action) {
+        if (target.closest('a')) return
+        const row = target.closest<HTMLElement>('[data-manufacturer-id]')
+        const manufacturer = manufacturerList.get(Number(row?.dataset.manufacturerId))
+        if (manufacturer) manufacturerDialog.open(manufacturer, { mode: 'view' })
+        return
+      }
+      const id = Number(action.dataset.id)
+      if (action.classList.contains('btn-edit')) {
+        const manufacturer = manufacturerList.get(id)
+        if (manufacturer) manufacturerDialog.open(manufacturer)
+        return
+      }
+
+      if (!(await dialogWindow.__fmConfirm(t('manufacturers.confirmDelete')))) return
+
+      try {
+        // First attempt to delete normally
+        let response = await fetch(`/api/v1/manufacturers/${id}`, {
+          method: 'DELETE',
+          headers: { 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          signal: getAbortSignal(),
+        })
+
+        // If conflict (409), prompt for cascade delete
+        if (response.status === 409) {
+          const confirmCascade = await dialogWindow.__fmConfirm(
+            t('manufacturers.confirmCascadeDelete'),
+            {
+              title: t('common.confirmTitle'),
+              okLabel: t('manufacturers.forceDelete'),
+              isDanger: true
+            }
+          )
+
+          if (!confirmCascade) return
+
+          // Attempt to delete with force flag
+          response = await fetch(`/api/v1/manufacturers/${id}?force=true`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': getCsrfToken() },
+            credentials: 'include',
+            signal: getAbortSignal(),
+          })
+        }
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          await dialogWindow.__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
+          return
+        }
+
+        // Invalidate cache after successful delete
+        invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
+        loadManufacturers()
+      } catch {
+        await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
+      }
+    })
 
     document.getElementById('btn-new')?.addEventListener('click', () => manufacturerDialog.open())
 
@@ -512,14 +397,13 @@ import Layout from '../../layouts/Layout.astro'
     function setupHeaderFilters() {
       const table = document.querySelector('.fm-table') as HTMLTableElement | null
       if (!table) return
-      mfrHeaderFilters = initHeaderColumnFilters(table, [
+      const definitions: HeaderFilterDefinition[] = [
         {
           key: 'name',
           label: t('manufacturers.name'),
           columnSelector: 'th.col-name',
           type: 'multi',
           options: [],
-          initialValue: columnFilters.name,
           onApply: (value) => applyColumnFilter('name', value),
         },
         {
@@ -527,7 +411,6 @@ import Layout from '../../layouts/Layout.astro'
           label: t('manufacturers.url'),
           columnSelector: 'th.col-url',
           type: 'text',
-          initialValue: columnFilters.url,
           onApply: (value) => applyColumnFilter('url', value),
         },
         {
@@ -535,7 +418,6 @@ import Layout from '../../layouts/Layout.astro'
           label: t('manufacturers.filaments'),
           columnSelector: 'th.col-filaments',
           type: 'number',
-          initialValue: columnFilters.filaments,
           onApply: (value) => applyColumnFilter('filaments', value),
         },
         {
@@ -543,7 +425,6 @@ import Layout from '../../layouts/Layout.astro'
           label: t('manufacturers.spools'),
           columnSelector: 'th.col-spools',
           type: 'number',
-          initialValue: columnFilters.spools,
           onApply: (value) => applyColumnFilter('spools', value),
         },
         {
@@ -552,7 +433,6 @@ import Layout from '../../layouts/Layout.astro'
           columnSelector: 'th.col-materials',
           type: 'multi',
           options: [],
-          initialValue: columnFilters.materials,
           onApply: (value) => applyColumnFilter('materials', value),
         },
         {
@@ -560,7 +440,6 @@ import Layout from '../../layouts/Layout.astro'
           label: t('manufacturers.colTotalPrice'),
           columnSelector: 'th.col-total_price',
           type: 'number',
-          initialValue: columnFilters.total_price,
           onApply: (value) => applyColumnFilter('total_price', value),
         },
         {
@@ -568,7 +447,6 @@ import Layout from '../../layouts/Layout.astro'
           label: t('manufacturers.colArchived'),
           columnSelector: 'th.col-archived',
           type: 'number',
-          initialValue: columnFilters.archived,
           onApply: (value) => applyColumnFilter('archived', value),
         },
         {
@@ -576,39 +454,27 @@ import Layout from '../../layouts/Layout.astro'
           label: t('manufacturers.colSpoolWeight'),
           columnSelector: 'th.col-spool_weight',
           type: 'number',
-          initialValue: columnFilters.spool_weight,
           onApply: (value) => applyColumnFilter('spool_weight', value),
         },
-      ])
+      ]
+      columnFilters = sanitizeColumnFilters(columnFilters, definitions)
+      definitions.forEach(definition => { definition.initialValue = columnFilters[definition.key] })
+      mfrHeaderFilters = initHeaderColumnFilters(table, definitions)
       syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
     function applyColumnFilter(key: string, value: ColumnFilterValue) {
       if (isColumnFilterActive(value)) columnFilters[key] = value
       else delete columnFilters[key]
-      currentPage = 1
-      localStorage.setItem('filaman-page-manufacturers', '1')
       renderManufacturers()
     }
 
-    bindTableFilterControls({
-      onApply: () => {
-        currentPage = 1
-        localStorage.setItem('filaman-page-manufacturers', '1')
-        renderManufacturers()
-      },
+    const updateFilterResets = bindTableFilterControls({
+      hasColumnFilters: () => mfrHeaderFilters !== null && Object.values(columnFilters).some(isColumnFilterActive),
+      onApply: renderManufacturers,
       onClearColumns: () => {
         columnFilters = {}
         mfrHeaderFilters?.resetAll()
-        currentPage = 1
-        localStorage.setItem('filaman-page-manufacturers', '1')
-        renderManufacturers()
-      },
-      onClearAll: () => {
-        columnFilters = {}
-        mfrHeaderFilters?.resetAll()
-        currentPage = 1
-        localStorage.setItem('filaman-page-manufacturers', '1')
         renderManufacturers()
       },
     })
@@ -637,6 +503,7 @@ import Layout from '../../layouts/Layout.astro'
     initColumnPicker({
       storageKey: 'filaman-columns-manufacturers',
       defaultVisible: ['logo', 'url', 'filaments', 'spools', 'materials'],
+      compactVisible: ['filaments', 'spools'],
       groups: mfrColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',

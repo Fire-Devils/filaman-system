@@ -131,6 +131,9 @@ export function initColumnResize(opts: ColumnResizeOptions): ColumnResize {
     }
   }
 
+  const widthSelector = table.parentElement?.matches('.fm-inventory-table')
+    ? '.fm-inventory-table:not([data-compact]) > .fm-table'
+    : opts.tableSelector
   const minWidth = Math.max(20, opts.minWidth ?? 60)
   let widths: Record<string, number> = loadWidths(opts.storageKey)
   let cleanupFns: (() => void)[] = []
@@ -143,9 +146,10 @@ export function initColumnResize(opts: ColumnResizeOptions): ColumnResize {
   function applyStylesheet(): void {
     const rules: string[] = []
     for (const [key, width] of Object.entries(widths)) {
+      const size = `min(${width}px, var(--fm-column-width-limit, ${width}px))`
       rules.push(
-        `${opts.tableSelector} :is(th, td)${columnCellSelector(key)} { ` +
-        `width: ${width}px; min-width: ${width}px; max-width: ${width}px; }`,
+        `${widthSelector} :is(th, td)${columnCellSelector(key)} { ` +
+        `width: ${size}; min-width: ${size}; max-width: ${size}; }`,
       )
     }
     styleEl.textContent = rules.join('\n')
