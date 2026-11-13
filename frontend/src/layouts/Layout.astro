@@ -212,7 +212,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
     </div>
 
     <!-- Global confirm / alert modal -->
-    <dialog id="fm-confirm-overlay" class="fm-modal-overlay" aria-labelledby="fm-confirm-title">
+    <dialog id="fm-confirm-overlay" class="fm-modal-overlay" aria-labelledby="fm-confirm-title" aria-describedby="fm-confirm-message">
       <div class="fm-modal">
         <h3 id="fm-confirm-title" class="fm-modal-title"></h3>
         <p id="fm-confirm-message" class="fm-modal-message"></p>
