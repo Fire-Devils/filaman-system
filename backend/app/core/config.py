@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # User-installed plugins directory (auto-detected if empty)
     plugins_dir: str = ""
+    mcp_plugin_read_tools: str = ""
 
     # FilamentDB community database URL for lookup/autocomplete
     filamentdb_url: str = "https://db.filaman.app"

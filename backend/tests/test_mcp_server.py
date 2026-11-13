@@ -1,11 +1,15 @@
 import json
+import sys
+from asyncio import CancelledError, sleep
+from types import ModuleType
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
-
+from app.api.mcp_plugin_tools import load_plugin_read_tools
 from app.core.security import generate_token_secret, hash_token
-from app.models import AppSettings, Location, UserApiKey
+from app.main import app
+from app.models import AppSettings, InstalledPlugin, Location, UserApiKey, UserRole
+from sqlalchemy import delete, select
 
 
 async def _set_flags(db_session, *, enabled: bool, write: bool) -> None:
@@ -93,6 +97,67 @@ async def test_notification_returns_202(client, db_session, admin_key):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handler_returns_after_cancellation", [False, True])
+async def test_batch_deadline_returns_completed_results(
+    client, db_session, admin_key, monkeypatch, handler_returns_after_cancellation,
+):
+    from app.api import mcp_server
+
+    await _set_flags(db_session, enabled=True, write=False)
+    calls = []
+
+    async def read_tool(request, name, arguments):
+        calls.append(name)
+        if name == "plugin-slow":
+            try:
+                await sleep(0.25)
+            except CancelledError:
+                if not handler_returns_after_cancellation:
+                    raise
+        if name == "plugin-invalid":
+            return {"name": chr(0xD800)}
+        return {"name": name}
+
+    monkeypatch.setattr(mcp_server, "call_plugin_read_tool", read_tool)
+    monkeypatch.setattr(mcp_server, "MCP_BATCH_TIMEOUT_SECONDS", 0.1)
+    batch = [
+        {
+            "jsonrpc": "2.0", "id": req_id, "method": "tools/call",
+            "params": {"name": name, "arguments": {}},
+        }
+        for req_id, name in enumerate(("plugin-invalid", "plugin-fast", "plugin-slow", "plugin-later"), start=1)
+    ]
+    batch.append({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    resp = await client.post("/mcp", json=batch, headers={"Authorization": f"ApiKey {admin_key}"})
+    assert resp.status_code == 200
+    invalid, first, slow, later = resp.json()
+    assert invalid["id"] == 1 and invalid["result"]["isError"]
+    assert first["id"] == 2
+    assert json.loads(first["result"]["content"][0]["text"]) == {"name": "plugin-fast"}
+    assert [slow["id"], later["id"]] == [3, 4]
+    if handler_returns_after_cancellation:
+        assert not slow["result"]["isError"]
+    else:
+        assert slow["error"]["message"] == "MCP batch deadline exceeded while running this request. Its outcome is unknown."
+    assert later["error"]["message"] == "MCP batch deadline exceeded before this request started"
+    assert calls == ["plugin-invalid", "plugin-fast", "plugin-slow"]
+
+
+@pytest.mark.asyncio
+async def test_failed_plugin_discovery_keeps_native_mcp_tools(client, db_session, admin_key, monkeypatch):
+    from app.api import mcp_server
+
+    async def unavailable(*args):
+        raise RuntimeError("Discovery failed")
+
+    await _set_flags(db_session, enabled=True, write=False)
+    monkeypatch.setattr(mcp_server.settings, "mcp_plugin_read_tools", "plugin-tool")
+    monkeypatch.setattr(mcp_server, "available_plugin_read_tools", unavailable)
+    resp = await _rpc(client, admin_key, "tools/list")
+    assert "list_spools" in _tool_names(resp)
+
+
+@pytest.mark.asyncio
 async def test_unknown_method_and_parse_error(client, db_session, admin_key):
     await _set_flags(db_session, enabled=True, write=False)
     resp = await _rpc(client, admin_key, "resources/list")
@@ -162,6 +227,180 @@ async def test_argument_validation(client, db_session, admin_key):
 
     resp = await _rpc(client, admin_key, "tools/call", {"name": "nope", "arguments": {}})
     assert resp.json()["result"]["isError"] is True
+
+
+@pytest.mark.parametrize("plugin_type", ["import", "integration"])
+def test_missing_mcp_declaration_does_not_query_lazy_plugin_exports(tmp_path, plugin_type):
+    module = ModuleType("legacy_plugin")
+
+    def load_optional_export(name):
+        raise KeyError(name)
+
+    module.__getattr__ = load_optional_export
+    manifest = {"plugin_type": plugin_type, "version": "1.0.0"}
+    assert load_plugin_read_tools("legacy_plugin", manifest, module, tmp_path / "plugin.json") == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("startup", [False, True])
+async def test_plugin_read_tool_requires_allowlist_active_version_and_permission(
+    client, db_session, admin_user, normal_user, tmp_path, monkeypatch, startup
+):
+    from app.api.v1 import router as loader
+    from app.core.config import settings
+    from app.services import plugin_service
+
+    plugin_dir = tmp_path / "sample_mcp"
+    plugin_dir.mkdir()
+    (plugin_dir / "__init__.py").touch()
+    manifest = json.dumps({
+        "plugin_key": "sample_mcp", "plugin_type": "integration", "version": "1.0.0",
+    })
+    (plugin_dir / "plugin.json").write_text(manifest)
+    source = """\
+from fastapi import APIRouter
+from decimal import Decimal
+from pydantic import BaseModel, ConfigDict
+router = APIRouter()
+class Nested(BaseModel):
+    model_config = ConfigDict(extra="allow")
+class Args(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    count: int
+    nested: Nested | None = None
+class MisleadingArgs(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"additionalProperties": False})
+class NonJsonArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [Decimal("1.5")]})
+def broken_schema(_schema):
+    raise RuntimeError("Schema fixture failed")
+class BrokenArgs(BaseModel):
+    model_config = ConfigDict(json_schema_extra=broken_schema)
+async def read(args, db, principal):
+    if args.count == 0:
+        Args.model_validate({"count": "invalid handler data"})
+    return {"count": args.count, "key_id": principal.api_key_id, "nested": args.nested.model_dump() if args.nested else None}
+mcp_read_tools = {
+    "lookup": {
+        "description": "Look up a fixture",
+        "permission": "filaments:read",
+        "arguments": Args,
+        "handler": read,
+    },
+    "unknown_permission": {
+        "description": "Look up a fixture",
+        "permission": "missing:read",
+        "arguments": Args,
+        "handler": read,
+    },
+    "broken_schema": {
+        "description": "An invalid optional declaration",
+        "permission": "filaments:read",
+        "arguments": BrokenArgs,
+        "handler": read,
+    },
+    "misleading_schema": {
+        "description": "An arguments model that accepts extra keys",
+        "permission": "filaments:read",
+        "arguments": MisleadingArgs,
+        "handler": read,
+    },
+    "non_json_schema": {
+        "description": "A schema that cannot be sent to clients",
+        "permission": "filaments:read",
+        "arguments": NonJsonArgs,
+        "handler": read,
+    },
+}
+"""
+    router_path = plugin_dir / "router.py"
+    router_path.write_text(source)
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "sample_mcp", raising=False)
+    monkeypatch.delitem(sys.modules, "sample_mcp.router", raising=False)
+    monkeypatch.setattr(loader, "_deferred_plugin_routers", [])
+    monkeypatch.setattr(app.router, "routes", list(app.router.routes))
+    monkeypatch.setattr(app.state, "plugin_routes", {}, raising=False)
+    monkeypatch.setattr(app.state, "plugin_mcp_tools", {}, raising=False)
+    if startup:
+        loader._mount_plugin_routers()
+        loader.mount_deferred_plugin_routers(app)
+    else:
+        assert loader.mount_plugin_router_on_app(app, "sample_mcp")
+
+    install = InstalledPlugin(plugin_key="sample_mcp", plugin_type="integration", name="Sample", version="1.0.0")
+    db_session.add(install)
+    await db_session.commit()
+    token = await _make_key(db_session, admin_user, ["filaments:read"])
+    limited = await _make_key(db_session, admin_user, ["spools:read"])
+    name = "sample_mcp-lookup"
+    await _set_flags(db_session, enabled=True, write=False)
+
+    async def listing(key=token):
+        return (await _rpc(client, key, "tools/list")).json()["result"]["tools"]
+
+    async def call(key=token, arguments=None):
+        return (await _rpc(
+            client, key, "tools/call", {"name": name, "arguments": {"count": 3} if arguments is None else arguments},
+        )).json()["result"]
+
+    assert name not in {tool["name"] for tool in await listing()}
+    assert (await call())["isError"]
+    missing_permission = "sample_mcp-unknown_permission"
+    broken_tool = "sample_mcp-broken_schema"
+    misleading_tool = "sample_mcp-misleading_schema"
+    non_json_tool = "sample_mcp-non_json_schema"
+    monkeypatch.setattr(settings, "mcp_plugin_read_tools", f"{name},{missing_permission},{broken_tool},{misleading_tool},{non_json_tool}")
+    tools = {tool["name"]: tool for tool in await listing()}
+    assert "list_spools" in tools and "create_spool" not in tools
+    assert tools[name]["annotations"]["readOnlyHint"]
+    assert tools[name]["annotations"]["openWorldHint"]
+    assert broken_tool not in tools
+    assert misleading_tool not in tools
+    assert non_json_tool not in tools
+    unscoped = await _make_key(db_session, admin_user)
+    assert missing_permission not in {tool["name"] for tool in await listing(unscoped)}
+    assert name not in {tool["name"] for tool in await listing(limited)}
+    assert (await call(limited))["isError"]
+    await db_session.execute(delete(UserRole).where(UserRole.user_id == normal_user.id))
+    await db_session.commit()
+    no_role = await _make_key(db_session, normal_user, ["filaments:read"])
+    assert (await call(no_role))["isError"]
+    assert (await call(arguments=[]))["isError"]
+    bad_input = await call(arguments={"count": "bad"})
+    assert bad_input["isError"]
+    assert "Invalid plugin tool arguments" in bad_input["content"][0]["text"]
+    handler_failure = await call(arguments={"count": 0})
+    assert handler_failure["isError"]
+    assert handler_failure["content"][0]["text"] == "Internal error while running the tool"
+    assert (await call(arguments={"count": 3, "url": "https://example.test"}))["isError"]
+    result = await call(arguments={"count": 3, "nested": {"label": "PLA"}})
+    assert not result["isError"]
+    assert json.loads(result["content"][0]["text"]) == {
+        "count": 3, "key_id": int(token.split(".")[1]), "nested": {"label": "PLA"},
+    }
+
+    install.is_active = False
+    await db_session.commit()
+    assert name not in {tool["name"] for tool in await listing()}
+    assert (await call())["isError"]
+    install.is_active = True
+    install.version = "1.1.0"
+    await db_session.commit()
+    assert (await call())["isError"]
+    install.version = "1.0.0"
+    await db_session.commit()
+    # A same-version package replaces the whole directory before workers reload.
+    plugin_dir.rename(tmp_path / "previous-package")
+    plugin_dir.mkdir()
+    (plugin_dir / "__init__.py").touch()
+    (plugin_dir / "plugin.json").write_text(manifest)
+    router_path.write_text(source.split("mcp_read_tools", 1)[0])
+    assert name not in {tool["name"] for tool in await listing()}
+    assert (await call())["isError"]
+    assert loader.mount_plugin_router_on_app(app, "sample_mcp")
+    assert (await call())["isError"]
 
 
 @pytest.mark.asyncio
