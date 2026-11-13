@@ -23,7 +23,8 @@
  *   // picker.isVisible('id')  => boolean
  */
 
-import { columnCellSelector } from './column-key'
+import { columnCellSelector, getColKey } from './column-key'
+import { initColumnLocks } from './column-locks'
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -264,6 +265,12 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
     updateDensity()
   }
   applyVisibility()
+
+  const table = wrapper?.querySelector('table')
+  if (table) initColumnLocks(table, opts.storageKey, cell => {
+    const key = getColKey(cell)
+    return !key || !allColKeys.includes(key) || visibleCols.has(key)
+  })
 
   // ── Public API ───────────────────────────────────────────────────
   return {

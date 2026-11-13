@@ -68,7 +68,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select loaded spools" data-i18n-aria-label="spools.selectLoaded" disabled /></th>
+          <th data-column-selection style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select loaded spools" data-i18n-aria-label="spools.selectLoaded" disabled /></th>
           <th data-i18n="spools.filament" data-sort="filament_id" class="sortable col-filament">Filament</th>
           <th data-i18n="spools.id" data-sort="id" class="sortable col-id">ID</th>
           <th data-i18n="spools.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
@@ -87,7 +87,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           <th data-i18n="spools.colLastUsed" data-sort="last_used_at" class="sortable col-last_used">Last Used</th>
           <th data-i18n="spools.colTotalWeight" data-sort="initial_total_weight_g" class="sortable col-total_weight">Total Weight</th>
           <th data-i18n="spools.colEmptyWeight" data-sort="empty_spool_weight_g" class="sortable col-empty_weight">Empty Weight</th>
-          <th style="width: 40px;" aria-label="RFID"></th>
+          <th data-column-actions style="width: 40px;" aria-label="RFID"></th>
         </tr>
       </thead>
       <tbody id="spools-table">

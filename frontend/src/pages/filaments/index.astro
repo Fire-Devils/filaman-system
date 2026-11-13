@@ -82,7 +82,7 @@ const { compactPicker = false } = Astro.props
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select loaded filaments" data-i18n-aria-label="filaments.selectLoaded" disabled /></th>
+          <th data-column-selection style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select loaded filaments" data-i18n-aria-label="filaments.selectLoaded" disabled /></th>
           <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
           <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="filaments.type" data-sort="type" class="sortable col-type">Type</th>

@@ -23,7 +23,7 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="colors.name" data-sort="name" class="sortable col-name">Name</th>
           <th data-i18n="colors.hexCode" data-sort="hex_code" class="sortable col-hex">Hex Code</th>
           <th data-i18n="colors.usage" data-sort="usage_count" class="sortable col-usage">Usage</th>
-          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+          <th data-column-actions style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
       <tbody id="colors-table">
@@ -65,6 +65,7 @@ import Layout from '../../layouts/Layout.astro'
       type HeaderFilterController,
     } from '../../lib/table-column-filters'
     import { tableAction } from '../../lib/table-actions'
+    import { initColumnLocks } from '../../lib/column-locks'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
     await initI18n()
@@ -177,6 +178,7 @@ import Layout from '../../layouts/Layout.astro'
       `).join('')
       if (append) tbody.insertAdjacentHTML('beforeend', rows)
       else tbody.innerHTML = rows
+      tbody.closest('table')?.dispatchEvent(new Event('filaman:columns-changed'))
       
       translatePage()
     }
@@ -233,6 +235,7 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     function setupTableControls() {
+      initColumnLocks(table, 'filaman-columns-colors')
       colorHeaderFilters = initHeaderColumnFilters(table, [
         {
           key: 'name',

@@ -1133,7 +1133,7 @@ export function initHeaderColumnFilters(
   }
 }
 
-function ensureHeaderControls(cell: HTMLTableCellElement): HTMLDivElement {
+export function ensureHeaderControls(cell: HTMLTableCellElement): HTMLDivElement {
   const existing = cell.querySelector(':scope > .fm-header-filter-wrap') as HTMLDivElement | null
   if (existing) return existing
   const wrap = document.createElement('div')
@@ -1179,7 +1179,7 @@ export function syncHeaderSortButtons(
   })
 }
 
-function preserveTranslatedHeading(cell: HTMLTableCellElement, label: string) {
+export function preserveTranslatedHeading(cell: HTMLTableCellElement, label: string) {
   const i18nKey = cell.getAttribute('data-i18n')
   if (!i18nKey) return
   const heading = document.createElement('span')

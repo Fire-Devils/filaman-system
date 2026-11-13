@@ -15,6 +15,7 @@ import * as filters from './table-column-filters'
 import { api } from './api'
 import { createExtraFieldDefinitionDialog } from './extra-field-definition-dialog'
 import { copyText } from './clipboard'
+import { initColumnLocks } from './column-locks'
 
 const calls: { path: string; init?: RequestInit }[] = []
 let failSave = false
@@ -23,7 +24,7 @@ let intercept: ((path: string, init?: RequestInit) => Response | Promise<Respons
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
-  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, api, createExtraFieldDefinitionDialog, copyText,
+  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
@@ -156,6 +157,8 @@ it('preserves alpha colors and keeps in-use Delete unavailable', async () => {
   await boot('filaments/colors')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
   expect(document.querySelector<HTMLButtonElement>('.btn-delete')!.disabled).toBe(true)
+  expect(document.querySelector('td[data-column-pin="end"] .btn-edit')).not.toBeNull()
+  expect(document.querySelector('td[data-column-pin="end"] .btn-delete use')?.getAttribute('href')).toContain('#icon-trash')
   document.querySelector<HTMLButtonElement>('.btn-edit')!.click()
   expect(document.querySelector<HTMLInputElement>('#color-hex')!.value).toBe('#12345680')
   expect(document.querySelector<HTMLButtonElement>('#modal-submit')!.disabled).toBe(true)
