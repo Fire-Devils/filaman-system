@@ -27,6 +27,7 @@ from app.api.v1.schemas_filament import (
     FilamentColorsReplace,
     FilamentCreate,
     FilamentDetailResponse,
+    FilamentListItem,
     FilamentResponse,
     FilamentUpdate,
     ManufacturerCreate,
@@ -976,7 +977,7 @@ async def list_filament_filter_options(db: DBSession, principal: PrincipalDep):
     return payload
 
 
-@router_filaments.get("", response_model=PaginatedResponse[FilamentDetailResponse])
+@router_filaments.get("", response_model=PaginatedResponse[FilamentListItem])
 async def list_filaments(
     db: DBSession,
     principal: PrincipalDep,
@@ -993,6 +994,8 @@ async def list_filaments(
         pattern="^(id|designation|material_type|diameter_mm|price|manufacturer_color_name|density_g_cm3|raw_material_weight_g|finish_type|material_subgroup|manufacturer|spool_count)$",
     ),
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
+    include_record_token: bool = Query(False),
+    filament_id: list[int] | None = Query(None, max_length=50),
 ):
     # -- Build filter conditions (shared between data query and count query) --
     conditions = []
@@ -1009,6 +1012,8 @@ async def list_filaments(
         conditions.append(Filament.material_type.in_(types))
     if manufacturer_ids:
         conditions.append(Filament.manufacturer_id.in_(manufacturer_ids))
+    if filament_id:
+        conditions.append(Filament.id.in_(filament_id))
 
     if search:
         search_term = f"%{search}%"
@@ -1108,9 +1113,10 @@ async def list_filaments(
             spool_status_ids.setdefault(filament_id, []).append(status_id)
 
     items_with_count = [
-        FilamentDetailResponse.model_validate(
+        FilamentListItem.model_validate(
             {
                 **f.__dict__,
+                "record_token": f.record_token if include_record_token else None,
                 "manufacturer": f.manufacturer,
                 "spool_count": spool_counts.get(f.id, 0),
                 "spool_status_ids": spool_status_ids.get(f.id, []),
@@ -1120,7 +1126,7 @@ async def list_filaments(
         for f in items
     ]
 
-    return PaginatedResponse(
+    return PaginatedResponse[FilamentListItem](
         items=items_with_count, page=page, page_size=page_size, total=total
     )
 
@@ -1191,8 +1197,10 @@ async def create_filament(
     )
 
 
-@router_filaments.get("/{filament_id}", response_model=FilamentDetailResponse)
-async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep):
+@router_filaments.get("/{filament_id}", response_model=FilamentListItem)
+async def get_filament(
+    filament_id: int, db: DBSession, principal: PrincipalDep, include_record_token: bool = False,
+):
     result = await db.execute(
         select(Filament)
         .where(Filament.id == filament_id)
@@ -1217,10 +1225,11 @@ async def get_filament(filament_id: int, db: DBSession, principal: PrincipalDep)
     )
     spool_count = spool_count_result.scalar() or 0
 
-    return FilamentDetailResponse.model_validate(
+    return FilamentListItem.model_validate(
         {
             **filament.__dict__,
             "manufacturer": filament.manufacturer,
+            "record_token": filament.record_token if include_record_token else None,
             "spool_count": spool_count,
             "colors": sorted(filament.filament_colors, key=lambda fc: fc.position),
         }

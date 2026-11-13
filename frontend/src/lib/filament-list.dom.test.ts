@@ -8,10 +8,10 @@ import { formatPrice } from './format'
 import { columnClassName } from './column-key'
 
 const source = readFileSync('src/pages/filaments/index.astro', 'utf8')
-const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function getPageNumbers'))
+const script = source.slice(source.indexOf('    function renderColorDots'), source.indexOf('    function setupHeaderFilters'))
 const render = new Function('escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', 'getExtraFieldColumnValue', 'renderExtraFieldColumn', 'columnClassName', `
   const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', t = () => '';
-  const selectForSpool = false, createFilamentHref = '/filaments/new';
+  const compactPicker = false, selectForSpool = false, createFilamentHref = '/filaments/new', updateBulkBar = () => {};
   const filamentExtraFields = [{ key: 'notes', label: 'Notes', field_type: 'text' }];
   const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
   ${transpileModule(script, {}).outputText}

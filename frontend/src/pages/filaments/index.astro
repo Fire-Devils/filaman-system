@@ -1,10 +1,21 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
+import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
+
+interface Props { compactPicker?: boolean }
+const { compactPicker = false } = Astro.props
 ---
 
-<Layout title="FilaMan - Filaments">
+<Layout title="FilaMan - Filaments" embedded={compactPicker}>
   <style>
+    :global(#fm-page:has([data-filament-picker])) { grid-template-columns: minmax(0, 1fr); }
+    :global(#fm-page:has([data-filament-picker]) > .fm-main) { padding: 0; }
+    :global(#fm-page:has([data-filament-picker]) :is(.fm-sidebar, .fm-sidebar-backdrop, .fm-list-toolbar, #bulk-action-bar)) { display: none !important; }
+    :global([data-filament-picker]:not([data-manufacturer-hidden]) .fm-picker-manufacturer) { display: none; }
+    :global(.fm-picker-manufacturer) { color: var(--text-muted); font-size: 0.85rem; }
+    #picker-selection-count { color: var(--text-muted); font-size: 0.85rem; margin-block: 0 8px; }
     .spool-selection-only[hidden] { display: none; }
     :global(.filament-spool-select) {
       display: inline-flex;
@@ -24,13 +35,15 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
   <div class="fm-list-toolbar">
     <h1 data-i18n="filaments.title">Filaments</h1>
     <div class="fm-list-controls">
-      <a href="/filaments/colors" class="fm-btn fm-btn-outline" data-i18n="filaments.manageColors">
-        Manage Colors
+      <a href="/filaments/colors" class="fm-btn fm-btn-outline fm-color-library-link">
+        <span class="fm-color-library-icon" aria-hidden="true"></span>
+        <span data-i18n="colors.title">Color Library</span>
       </a>
       <a id="spool-selection-import" href="/spools/new?from_tag=1" class="fm-btn fm-btn-outline spool-selection-only" hidden data-i18n="spools.importFromTag">Import from Tag</a>
       <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">
         Add Filament
       </a>
+      {!compactPicker && <InventoryFilterReset scope="all" />}
     </div>
   </div>
   
@@ -40,21 +53,23 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         type="text"
         id="filter-search"
         class="fm-input fm-input-search"
-        data-i18n-placeholder="filaments.searchPlaceholder"
+        data-i18n-placeholder={compactPicker ? 'filaments.searchPicker' : 'filaments.searchPlaceholder'}
+        data-i18n-aria-label={compactPicker ? 'filaments.searchPicker' : undefined}
         placeholder="Search designation, color, manufacturer..."
       />
       <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
     </div>
-    <label style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+    {compactPicker && <InventoryFilterReset scope="all" />}
+    <label id="filter-group-control" class="fm-column-group-control" hidden>
       <input type="checkbox" id="filter-group" class="fm-checkbox" />
       <span data-i18n="filaments.groupByManufacturer">Group by Manufacturer</span>
     </label>
-    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
-    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
   </div>
 
-  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-    <div class="pagination-container" id="pagination-top" style="flex: 1;"></div>
+  {compactPicker && <p id="picker-selection-count" role="status"></p>}
+  <div class="fm-inventory-toolbar">
+    <div data-inventory-count></div>
+    <InventoryFilterReset scope="columns" />
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -64,18 +79,18 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     </div>
   </div>
 
-  <div class="fm-card" style="padding: 0;">
+  <div class="fm-card fm-inventory-table fm-filaments-table" data-compact={compactPicker ? "" : undefined} data-filament-picker={compactPicker ? "1" : undefined}>
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" /></th>
+          <th data-column-selection style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select loaded filaments" data-i18n-aria-label="filaments.selectLoaded" disabled /></th>
           <th data-i18n="filaments.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
           <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="filaments.type" data-sort="type" class="sortable col-type">Type</th>
-          <th data-i18n="filaments.designation" data-sort="designation" class="sortable col-designation">Designation</th>
+          <th data-i18n="filaments.designation" data-i18n-compact="filaments.designationCompact" data-sort="designation" class="sortable col-designation">Designation</th>
           <th data-i18n="filaments.colors" data-sort="colors" class="sortable col-colors">Colors</th>
           <th data-i18n="filaments.diameter" data-sort="diameter_mm" class="sortable col-diameter">Diameter</th>
-          <th style="text-align: right;" data-i18n="filaments.spools" data-sort="spool_count" class="sortable col-spools">Spools</th>
+          <th style="text-align: right;" data-i18n="filaments.spools" data-sort="spool_count" class="sortable col-spools fm-header-filter-align-end">Spools</th>
           <th data-i18n="filaments.colPrice" data-sort="price" class="sortable col-price">Price</th>
           <th data-i18n="filaments.colMfrColor" data-sort="manufacturer_color_name" class="sortable col-mfr_color">Mfr. Color</th>
           <th data-i18n="filaments.colFinish" data-sort="finish_type" class="sortable col-finish">Finish</th>
@@ -112,7 +127,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     </table>
   </div>
   
-  <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
+  <InventoryLoadMore />
 
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
@@ -141,6 +156,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
   <script>
     import { t, initI18n, translatePage } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
@@ -171,20 +187,21 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
 
-    let currentPage = 1
-    const allowedPageSizes = [25, 50, 100, 150, 200]
-    let pageSize = (() => {
-      try {
-        const saved = parseInt(localStorage.getItem('filaman-pagesize-filaments') || '50', 10)
-        return allowedPageSizes.includes(saved) ? saved : 50
-      } catch { return 50 }
-    })()
+    const pickerCard = document.querySelector('[data-filament-picker]')
+    const compactPicker = pickerCard !== null
+    if (compactPicker) {
+      window.addEventListener('storage', event => {
+        if (event.key === 'theme') document.documentElement.dataset.theme = event.newValue || 'brand'
+      })
+    }
+    const storageScope = compactPicker ? 'filament-picker' : 'filaments'
     type FilamentColor = { display_name_override?: string | null; color_id?: number; color?: { name: string; hex_code: string } | null }
     type Filament = {
       id: number
       manufacturer_id: number
       manufacturer?: { name: string; logo_url?: string | null } | null
       designation: string
+      record_token?: string
       material_type: string
       material_subgroup: string | null
       manufacturer_color_name: string | null
@@ -202,13 +219,15 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       custom_fields: Record<string, unknown> | null
       [key: string]: unknown
     }
-    let allFilaments: Filament[] = []
+    const filamentList = initInventoryScroll<Filament>(
+      document.getElementById('filaments-table')!, 'filaments.filamentCount', renderFilaments, updateBulkBar,
+    )
     let filamentExtraFields: SystemExtraFieldDef[] = []
-    let totalFilaments = 0
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
-    const sortStorageKey = 'filaman-sort-filaments'
+    const sortStorageKey = `filaman-sort-${storageScope}`
     const selectedFilamentIds = new Set<number>()
+    const selectedPickerFilaments = new Map<number, Pick<Filament, 'id' | 'manufacturer_id' | 'designation' | 'material_type' | 'record_token'>>()
 
     // Map frontend sort keys to backend sort_by values; empty string = client-side only (not server-sortable)
     const sortKeyMap: Record<string, string> = {
@@ -233,14 +252,6 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         }
       }
     } catch { /* ignore invalid data */ }
-    // Restore page from localStorage
-    try {
-      const savedPage = localStorage.getItem('filaman-page-filaments')
-      if (savedPage) {
-        const p = parseInt(savedPage, 10)
-        if (p > 0) currentPage = p
-      }
-    } catch { /* ignore invalid data */ }
     // Restore filter state from localStorage
     let savedFilterState: {
       manufacturer?: string | string[]
@@ -250,11 +261,9 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       group?: boolean
     } | null = null
     try {
-      const sf = localStorage.getItem('filaman-filters-filaments')
+      const sf = localStorage.getItem(`filaman-filters-${storageScope}`)
       if (sf) savedFilterState = JSON.parse(sf)
     } catch { /* ignore invalid data */ }
-    let isInitialLoad = true
-    let filterRequestId = 0
     let colorFilterPaged = true
     let filterRenderQueued = false
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
@@ -265,11 +274,10 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     if (urlParams.get('clear_filters') === '1') {
       savedFilterState = null
       columnFilters = {}
-      currentPage = 1
       removeFilterUrlParams('clear_filters')
     }
     const filterManufacturerId = urlParams.get('manufacturer_id')
-    const selectForSpool = urlParams.get('select_for_spool') === '1'
+    const selectForSpool = !compactPicker && urlParams.get('select_for_spool') === '1'
     const createFilamentHref = selectForSpool ? '/filaments/new?create_spool=1' : '/filaments/new'
     if (selectForSpool) {
       const title = document.querySelector('h1')!
@@ -315,7 +323,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
           sortDirection = 'asc'
         }
         updateSortIndicators()
-        loadFilaments()
+        void loadFilaments(true)
         // Save sort state to localStorage
         if (sortKey && sortDirection) {
           localStorage.setItem(sortStorageKey, JSON.stringify({ key: sortKey, direction: sortDirection }))
@@ -425,36 +433,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     }
 
     function applyFiltersAndRender() {
-      if (isInitialLoad) {
-        isInitialLoad = false
-      } else {
-        currentPage = 1
-      }
-      localStorage.setItem('filaman-page-filaments', String(currentPage))
-      loadFilaments()
-    }
-
-    function renderPage() {
-      const { groupBy } = getFilterValues()
-      const needsAllData = hasLocalColumnFilters() || groupBy || isClientOnlySort(sortKey)
-
-      if (groupBy) {
-        const sorted = sortFilaments(allFilaments)
-        renderGroupedFilaments(sorted)
-        document.getElementById('pagination-top')!.innerHTML = ''
-        document.getElementById('pagination')!.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: totalFilaments })}</div>`
-      } else if (needsAllData) {
-        // Local column filtering or client-only sorting: paginate the fully loaded result locally.
-        const sorted = sortFilaments(allFilaments)
-        const startIdx = (currentPage - 1) * pageSize
-        const pageItems = sorted.slice(startIdx, startIdx + pageSize)
-        renderFilaments(pageItems)
-        renderPagination(totalFilaments, currentPage)
-      } else {
-        // Normal server-paginated mode
-        renderFilaments(allFilaments)
-        renderPagination(totalFilaments, currentPage)
-      }
+      void loadFilaments(true)
     }
 
     async function populateFilterDropdowns() {
@@ -520,12 +499,14 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       }
     }
     
-    async function loadFilaments() {
-      const requestId = ++filterRequestId
+    async function loadFilaments(reset = false) {
+      if (!filHeaderFilters) return
+      updateFilterResets()
       const { search, manufacturerIds, types, groupBy } = getFilterValues()
 
       // Build query params for backend
       const params = new URLSearchParams()
+      if (!selectForSpool) params.set('include_record_token', 'true')
       manufacturerIds.forEach((id) => params.append('manufacturer_id', id))
       types.forEach((item) => params.append('type', item))
       if (search) params.set('search', search)
@@ -542,64 +523,27 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       colorFilterPaged = colors !== null
       colors?.forEach((value, key) => params.append(key, value))
 
-      const needsAllData = hasLocalColumnFilters() || groupBy || isClientOnlySort(sortKey)
-
       try {
-        const signal = getAbortSignal()
-
-        if (needsAllData) {
-          // Load all matching filaments for client-side color filter / group-by
-          const data = await fetchAllPages<Filament>(`/api/v1/filaments?${params}`)
-          if (requestId !== filterRequestId) return
-          allFilaments = data.items
-          totalFilaments = data.total
-          if (hasLocalColumnFilters()) {
-            allFilaments = filterFilaments(allFilaments)
-            totalFilaments = allFilaments.length
-          }
-          currentPage = Math.min(currentPage, Math.ceil(totalFilaments / pageSize) || 1)
-        } else {
-          // Normal mode: load only the current page from backend
-          params.set('page', String(currentPage))
-          params.set('page_size', String(pageSize))
-          const response = await fetch(`/api/v1/filaments?${params}`, { credentials: 'include', signal })
-          if (!response.ok) throw new Error('Failed to fetch filaments')
-          const data = await response.json()
-          if (requestId !== filterRequestId) return
-          allFilaments = data.items
-          totalFilaments = data.total
-          // Clamp currentPage if it exceeds available pages
-          const maxPage = Math.ceil(totalFilaments / pageSize) || 1
-          if (currentPage > maxPage) {
-            currentPage = maxPage
-            localStorage.setItem('filaman-page-filaments', String(currentPage))
-            params.set('page', String(currentPage))
-            const retry = await fetch(`/api/v1/filaments?${params}`, { credentials: 'include', signal })
-            if (retry.ok) {
-              const retryData = await retry.json()
-              if (requestId !== filterRequestId) return
-              allFilaments = retryData.items
-              totalFilaments = retryData.total
-            }
-          }
-        }
-
-        // Save filter state
-        localStorage.setItem('filaman-page-filaments', String(currentPage))
-        localStorage.setItem('filaman-filters-filaments', JSON.stringify({
-          columns: columnFilters, group: groupBy
-        }))
-
-        if (requestId !== filterRequestId) return
-        renderPage()
+        const source = hasLocalColumnFilters() || groupBy || isClientOnlySort(sortKey)
+          ? inventoryLocalPages(async () => {
+              const { items } = await fetchAllPages<Filament>(`/api/v1/filaments?${params}`)
+              return sortFilaments(hasLocalColumnFilters() ? filterFilaments(items) : items)
+            }, groupBy)
+          : inventoryApiPages<Filament>('/api/v1/filaments', params)
+        if (!await filamentList.load(source, reset, (items, append) => {
+          if (compactPicker) reconcilePickerSelection(items)
+          if (groupBy) renderGroupedFilaments(items)
+          else renderFilaments(items, append)
+        })) return
+        localStorage.setItem(`filaman-filters-${storageScope}`, JSON.stringify({ columns: columnFilters, group: groupBy }))
       } catch (error) {
-        if (requestId !== filterRequestId || isAbortError(error)) return
         console.error('Failed to load filaments:', error)
         document.getElementById('filaments-table')!.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--error-text);">${t('filaments.failedLoad')}</td>
           </tr>
         `
+        updateBulkBar()
       }
     }
     
@@ -612,7 +556,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       }).join('')
     }
 
-    function renderFilaments(filaments: Filament[]) {
+    function renderFilaments(filaments: Filament[], append = false) {
       const tbody = document.getElementById('filaments-table')!
       
       if (filaments.length === 0) {
@@ -621,16 +565,17 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         tbody.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--text-muted);">
-              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+              ${hasFilters ? t('filaments.noResults') : t('filaments.noFilaments')} ${hasFilters || compactPicker ? '' : `<a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
         return
       }
       
-      tbody.innerHTML = filaments.map(f => renderFilamentRow(f)).join('')
+      const rows = filaments.map(renderFilamentRow).join('')
+      if (append) tbody.insertAdjacentHTML('beforeend', rows)
+      else tbody.innerHTML = rows
       filReorder.applyOrder()
-      filResize.refreshColumns()
     }
 
     function renderFilamentRow(f: Filament): string {
@@ -638,15 +583,16 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       const href = selectForSpool ? `/spools/new?filament_id=${f.id}` : `/filaments/${f.id}`
       const selectionLabel = escapeHtml(`${t('common.select')}: ${f.manufacturer?.name || ''} ${f.material_type || ''} ${f.designation || ''}`)
       return `
-        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='${href}'">
+        <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" ${compactPicker ? '' : `style="cursor: pointer;" onclick="window.location='${href}'"`}>
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">${selectForSpool
             ? `<a href="${href}" class="filament-spool-select" aria-label="${selectionLabel}" title="${selectionLabel}"><svg width="28" height="28" aria-hidden="true"><use href="/icons.svg?v=2#icon-status" /></svg></a>`
-            : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" />`}</td>
+            : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" aria-label="${selectionLabel}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" />`}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.manufacturer?.name || '-')}</td>
           <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(f.manufacturer.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.material_type)}</td>
           <td class="col-designation" style="padding: 12px;">
             <div style="font-weight: 500;">${escapeHtml(f.designation)}</div>
+            ${compactPicker && f.manufacturer?.name ? `<div class="fm-picker-manufacturer">${escapeHtml(f.manufacturer.name)}</div>` : ''}
             ${f.manufacturer_color_name ? `<div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(f.manufacturer_color_name)}</div>` : ''}
           </td>
           <td class="col-colors" style="padding: 12px;">${renderColorDots(f.colors)}</td>
@@ -696,7 +642,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         tbody.innerHTML = `
           <tr>
             <td colspan="34" style="text-align: center; color: var(--text-muted);">
-              ${hasFilters ? t('filaments.noResults') : `${t('filaments.noFilaments')} <a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
+              ${hasFilters ? t('filaments.noResults') : t('filaments.noFilaments')} ${hasFilters || compactPicker ? '' : `<a href="${createFilamentHref}" style="color: var(--accent);">${t('filaments.addOne')}</a>.`}
             </td>
           </tr>
         `
@@ -737,7 +683,6 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
 
       tbody.innerHTML = html
       filReorder.applyOrder()
-      filResize.refreshColumns()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -750,115 +695,24 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
           if (isCollapsed) {
             toggle.dataset.collapsed = 'false'
             toggle.innerHTML = toggle.innerHTML.replace('&#9654;', '&#9660;').replace('\u25B6', '\u25BC')
-            rows.forEach(r => (r as HTMLElement).style.display = '')
+            rows.forEach(r => (r as HTMLElement).hidden = false)
           } else {
             toggle.dataset.collapsed = 'true'
             toggle.innerHTML = toggle.innerHTML.replace('&#9660;', '&#9654;').replace('\u25BC', '\u25B6')
-            rows.forEach(r => (r as HTMLElement).style.display = 'none')
+            rows.forEach(r => (r as HTMLElement).hidden = true)
           }
+          updateBulkBar()
         })
       })
     }
     
-    function getPageNumbers(page: number, totalPages: number): (number | string)[] {
-      if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
-      const pages = new Set([1, totalPages])
-      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.add(i)
-      const sorted = [...pages].sort((a, b) => a - b)
-      const result: (number | string)[] = []
-      sorted.forEach((p, i) => {
-        if (i > 0 && p - sorted[i - 1] > 1) result.push('\u2026')
-        result.push(p)
-      })
-      return result
-    }
-
-    function buildPaginationHtml(total: number, page: number): string {
-      const totalPages = Math.ceil(total / pageSize)
-      if (totalPages <= 1) {
-        const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
-        return `
-          <div style="font-size: 0.8rem; color: var(--text-muted);">${t('filaments.filamentCount', { count: total })}</div>
-          <div></div>
-          <div class="pagination-pages">
-            <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
-            ${pageSizeItems}
-          </div>
-        `
-      }
-      const pageNumbers = getPageNumbers(page, totalPages)
-      const pageItems = pageNumbers.map(p => {
-        if (p === '\u2026') return `<span class="page-ellipsis">\u2026</span>`
-        if (p === page) return `<span class="page-current">${p}</span>`
-        return `<a class="page-link" data-page="${p}">${p}</a>`
-      }).join('')
-      const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
-      return `
-        <div style="font-size: 0.8rem; color: var(--text-muted);">
-          ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
-        </div>
-        <div class="pagination-pages">
-          <span style="color: var(--text-muted);">${t('common.page')}:</span>
-          ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
-          ${pageItems}
-          ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
-        </div>
-        <div class="pagination-pages">
-          <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
-          ${pageSizeItems}
-        </div>
-      `
-    }
-
-    function renderPagination(total: number, page: number) {
-      const totalPages = Math.ceil(total / pageSize)
-      const html = buildPaginationHtml(total, page)
-      document.getElementById('pagination-top')!.innerHTML = html
-      document.getElementById('pagination')!.innerHTML = html
-
-      document.querySelectorAll('.pagination-container').forEach(container => {
-        container.querySelectorAll('.page-link[data-page]').forEach(link => {
-          link.addEventListener('click', () => {
-            currentPage = parseInt((link as HTMLElement).dataset.page!, 10)
-            localStorage.setItem('filaman-page-filaments', String(currentPage))
-            loadFilaments()
-          })
-        })
-        container.querySelector('.page-prev')?.addEventListener('click', () => {
-          if (page > 1) {
-            currentPage = page - 1
-            localStorage.setItem('filaman-page-filaments', String(currentPage))
-            loadFilaments()
-          }
-        })
-        container.querySelector('.page-next')?.addEventListener('click', () => {
-          if (page < totalPages) {
-            currentPage = page + 1
-            localStorage.setItem('filaman-page-filaments', String(currentPage))
-            loadFilaments()
-          }
-        })
-        container.querySelectorAll('.page-size-link').forEach(link => {
-          link.addEventListener('click', () => {
-            const newSize = parseInt((link as HTMLElement).dataset.size!, 10)
-            if (allowedPageSizes.includes(newSize)) {
-              pageSize = newSize
-              localStorage.setItem('filaman-pagesize-filaments', String(newSize))
-              currentPage = 1
-              localStorage.setItem('filaman-page-filaments', '1')
-              loadFilaments()
-            }
-          })
-        })
-      })
-    }
-
     function setupHeaderFilters() {
       const table = document.querySelector('.fm-table') as HTMLTableElement | null
       if (!table) return
       const definitions: HeaderFilterDefinition[] = [
         {
           key: 'manufacturer',
+          groupControlId: compactPicker ? undefined : 'filter-group-control',
           label: t('filaments.manufacturer'),
           columnSelector: 'th.col-manufacturer',
           type: 'multi',
@@ -987,6 +841,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
       definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
       filHeaderFilters = initHeaderColumnFilters(table, definitions)
+      updateFilterResets()
       updateSortIndicators()
     }
 
@@ -1014,15 +869,10 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
     }
 
-    bindTableFilterControls({
+    const updateFilterResets = bindTableFilterControls({
+      hasColumnFilters: () => filHeaderFilters !== null && Object.entries(columnFilters).some(([key, value]) => isEffectiveColumnFilterActive(key, value)),
       onApply: applyFiltersAndRender,
       onClearColumns: () => {
-        columnFilters = {}
-        filHeaderFilters?.resetAll()
-        removeFilterUrlParams('manufacturer_id')
-        applyFiltersAndRender()
-      },
-      onClearAll: () => {
         columnFilters = {}
         filHeaderFilters?.resetAll()
         removeFilterUrlParams('manufacturer_id')
@@ -1076,25 +926,32 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       },
     ]
     const filPicker = initColumnPicker({
-      storageKey: 'filaman-columns-filaments',
-      defaultVisible: ['manufacturer', 'logo', 'type', 'colors', 'diameter', 'spools'],
+      storageKey: `filaman-columns-${storageScope}`,
+      defaultVisible: compactPicker ? ['manufacturer', 'type', 'colors', 'spools']
+        : ['manufacturer', 'logo', 'type', 'colors', 'diameter', 'spools'],
+      compactVisible: compactPicker ? ['type', 'colors'] : ['manufacturer', 'type', 'colors'],
       groups: filColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
-      orderStorageKey: 'filaman-column-order-filaments',
-      widthsStorageKey: 'filaman-column-widths-filaments',
+      orderStorageKey: `filaman-column-order-${storageScope}`,
+      widthsStorageKey: `filaman-column-widths-${storageScope}`,
       resetLabel: t('common.columnsReset'),
       onReset: () => filReorder.resetOrder(),
       onResetWidths: () => filResize.resetWidths(),
     })
+    if (pickerCard) {
+      const syncManufacturer = () => pickerCard.toggleAttribute('data-manufacturer-hidden', !filPicker.isVisible('manufacturer'))
+      pickerCard.querySelector('table')?.addEventListener('filaman:columns-changed', syncManufacturer)
+      syncManufacturer()
+    }
 
     const filReorder = initColumnReorder({
       tableSelector: '.fm-table',
-      storageKey: 'filaman-column-order-filaments',
+      storageKey: `filaman-column-order-${storageScope}`,
     })
     const filResize = initColumnResize({
       tableSelector: '.fm-table',
-      storageKey: 'filaman-column-widths-filaments',
+      storageKey: `filaman-column-widths-${storageScope}`,
     })
 
     // Load SystemExtraFields for filaments and add as dynamic column group
@@ -1137,6 +994,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
     // Restore group checkbox from saved state
     if (savedFilterState?.group) {
       (document.getElementById('filter-group') as HTMLInputElement).checked = true
+      updateFilterResets()
     }
     Promise.all([initCurrency(), loadFilamentExtraFieldColumns()])
       .then(() => {
@@ -1144,18 +1002,20 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         return Promise.all([populateFilterDropdowns(), populateSpoolStatusDropdown()])
       })
       .then(() => loadFilaments())
-      .then(() => {
-        // Refresh column utilities after first render to ensure handles are attached
-        filReorder.refreshColumns()
-        filResize.refreshColumns()
-      })
 
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) void loadFilaments()
+    })
     // Live-Update via SSE: Filamente automatisch neu laden
     let _filamentsReloadTimer: ReturnType<typeof setTimeout> | null = null
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
       if (event === 'filaments_changed' || event === 'spools_changed' || event === 'manufacturers_changed' || event === 'colors_changed') {
         invalidateCache(CACHE_KEYS.FILAMENT_FILTER_OPTIONS)
+        if (compactPicker && (event === 'filaments_changed' || event === 'manufacturers_changed')) {
+          invalidatePickerRows()
+          void refreshPickerSelection()
+        }
         if (_filamentsReloadTimer) clearTimeout(_filamentsReloadTimer)
         _filamentsReloadTimer = setTimeout(async () => {
           await populateFilterDropdowns()
@@ -1166,7 +1026,26 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
 
     // ── Bulk Selection & Actions ──────────────────────────────
     const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
-    if (!selectForSpool && hooks) mountFilamentPluginHooks(hooks, { mode: 'selection', selectedIds: selectedFilamentIds })
+    if (!compactPicker && !selectForSpool && hooks) mountFilamentPluginHooks(hooks, {
+      mode: 'selection', selectedIds: selectedFilamentIds, expectedFilaments: selectedPickerFilaments,
+    })
+
+    const selectionLimit = compactPicker ? 50 : Infinity
+    function setFilamentSelected(id: number, checked: boolean): boolean {
+      if (checked && selectedFilamentIds.size < selectionLimit && !selectedFilamentIds.has(id)) {
+        if (!selectForSpool) {
+          const filament = filamentList.get(id)
+          if (!filament) return false
+          const { manufacturer_id, designation, material_type, record_token } = filament
+          selectedPickerFilaments.set(id, { id, manufacturer_id, designation, material_type, record_token })
+        }
+        selectedFilamentIds.add(id)
+      } else if (!checked) {
+        selectedFilamentIds.delete(id)
+        selectedPickerFilaments.delete(id)
+      }
+      return selectedFilamentIds.has(id)
+    }
 
     function updateBulkBar() {
       if (selectForSpool) return
@@ -1174,51 +1053,120 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
       const countEl = document.getElementById('bulk-count')!
       const selectAllCb = document.getElementById('bulk-select-all') as HTMLInputElement
       countEl.textContent = t('filaments.bulkSelected', { count: selectedFilamentIds.size })
-      if (selectedFilamentIds.size > 0) {
-        bar.classList.add('visible')
-      } else {
-        bar.classList.remove('visible')
-      }
+      bar.classList.toggle('visible', !compactPicker && selectedFilamentIds.size > 0)
       // Update select-all checkbox state
-      const visibleCheckboxes = document.querySelectorAll('#filaments-table input.bulk-checkbox[data-filament-id]')
-      const visibleIds = Array.from(visibleCheckboxes).map(cb => Number((cb as HTMLInputElement).dataset.filamentId))
+      const visibleCheckboxes = document.querySelectorAll<HTMLInputElement>('#filaments-table tr:not([hidden]) input.bulk-checkbox[data-filament-id]')
+      const visibleIds = Array.from(visibleCheckboxes, cb => Number(cb.dataset.filamentId))
       const allChecked = visibleIds.length > 0 && visibleIds.every(id => selectedFilamentIds.has(id))
       const someChecked = visibleIds.some(id => selectedFilamentIds.has(id))
+      const atLimit = selectedFilamentIds.size >= selectionLimit
+      selectAllCb.disabled = visibleIds.length === 0 || (atLimit && !someChecked)
       selectAllCb.checked = allChecked
       selectAllCb.indeterminate = someChecked && !allChecked
+      const label = allChecked || (atLimit && someChecked) ? 'filaments.deselectLoaded' : 'filaments.selectLoaded'
+      selectAllCb.dataset.i18nAriaLabel = label
+      selectAllCb.setAttribute('aria-label', t(label))
+      if (compactPicker) {
+        document.getElementById('picker-selection-count')!.textContent =
+          t('filaments.pickerSelected', { count: selectedFilamentIds.size, limit: selectionLimit })
+        visibleCheckboxes.forEach(cb => { cb.disabled = atLimit && !cb.checked })
+      }
     }
 
     function toggleFilamentSelection(id: number, checked: boolean) {
       if (selectForSpool) return
-      if (checked) {
-        selectedFilamentIds.add(id)
-      } else {
-        selectedFilamentIds.delete(id)
-      }
-      const row = document.querySelector(`#filaments-table input.bulk-checkbox[data-filament-id="${id}"]`)?.closest('tr')
-      if (row) row.classList.toggle('bulk-selected', checked)
-      updateBulkBar()
+      const checkbox = document.querySelector<HTMLInputElement>(`#filaments-table input.bulk-checkbox[data-filament-id="${id}"]`)
+      const selected = setFilamentSelected(id, checked)
+      if (checkbox) checkbox.checked = selected
+      checkbox?.closest('tr')?.classList.toggle('bulk-selected', selected)
+      publishSelection()
     }
 
     ;(window as typeof window & { __toggleFilamentSelection: typeof toggleFilamentSelection }).__toggleFilamentSelection = toggleFilamentSelection
 
+    function publishSelection(inventoryChanged = false) {
+      updateBulkBar()
+      if (compactPicker && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'filaman:filament-picker-selection',
+          filament_ids: [...selectedFilamentIds],
+          expected_filaments: [...selectedPickerFilaments.values()],
+          inventory_changed: inventoryChanged,
+        }, location.origin)
+      }
+    }
+
+    function reconcilePickerSelection(items: Filament[], checkedSelection?: typeof selectedPickerFilaments) {
+      const current = new Map(items.map(filament => [filament.id, filament]))
+      let changed = false
+      for (const expected of (checkedSelection ?? selectedPickerFilaments).values()) {
+        if (selectedPickerFilaments.get(expected.id) !== expected) continue
+        const filament = current.get(expected.id)
+        if (!filament && !checkedSelection) continue
+        if (filament && filament.record_token === expected.record_token &&
+            filament.manufacturer_id === expected.manufacturer_id &&
+            filament.designation === expected.designation && filament.material_type === expected.material_type) continue
+        setFilamentSelected(expected.id, false)
+        const checkbox = document.querySelector<HTMLInputElement>(`#filaments-table input[data-filament-id="${expected.id}"]`)
+        if (checkbox) checkbox.checked = false
+        checkbox?.closest('tr')?.classList.remove('bulk-selected')
+        changed = true
+      }
+      if (changed) publishSelection(true)
+    }
+
+    async function refreshPickerSelection() {
+      if (!selectedPickerFilaments.size) return
+      const selected = new Map(selectedPickerFilaments)
+      const params = new URLSearchParams({ include_record_token: 'true', page_size: String(selectionLimit) })
+      for (const id of selected.keys()) params.append('filament_id', String(id))
+      try {
+        const response = await fetch(`/api/v1/filaments?${params}`, { credentials: 'include', signal: getAbortSignal() })
+        if (!response.ok) return
+        const { items }: { items: Filament[] } = await response.json()
+        reconcilePickerSelection(items, selected)
+      } catch (error) {
+        if (!isAbortError(error)) console.error('Failed to refresh picker selection:', error)
+      }
+    }
+
+    function clearPickerSelection() {
+      selectedFilamentIds.clear()
+      selectedPickerFilaments.clear()
+      for (const checkbox of document.querySelectorAll<HTMLInputElement>('#filaments-table input.bulk-checkbox:checked')) {
+        checkbox.checked = false
+        checkbox.closest('tr')?.classList.remove('bulk-selected')
+      }
+      publishSelection()
+    }
+
+    function invalidatePickerRows() {
+      filamentList.pause()
+      document.getElementById('filaments-table')!.innerHTML =
+        `<tr><td colspan="34" style="text-align: center;">${t('common.loading')}</td></tr>`
+      updateBulkBar()
+    }
+
+    if (compactPicker && window.parent !== window) {
+      window.addEventListener('message', event => {
+        if (event.source !== window.parent || event.origin !== location.origin ||
+            event.data?.type !== 'filaman:filament-picker-clear-selection') return
+        if (event.data.refresh === true) invalidatePickerRows()
+        clearPickerSelection()
+        if (event.data.refresh === true) void loadFilaments()
+      })
+    }
+
     // Select all checkbox
     document.getElementById('bulk-select-all')?.addEventListener('change', (e) => {
-      const checked = (e.target as HTMLInputElement).checked
-      const visibleCheckboxes = document.querySelectorAll('#filaments-table input.bulk-checkbox[data-filament-id]') as NodeListOf<HTMLInputElement>
+      const checked = (e.target as HTMLInputElement).checked && selectedFilamentIds.size < selectionLimit
+      const visibleCheckboxes = document.querySelectorAll<HTMLInputElement>('#filaments-table tr:not([hidden]) input.bulk-checkbox[data-filament-id]')
       visibleCheckboxes.forEach(cb => {
         const id = Number(cb.dataset.filamentId)
-        cb.checked = checked
-        const row = cb.closest('tr')
-        if (checked) {
-          selectedFilamentIds.add(id)
-          if (row) row.classList.add('bulk-selected')
-        } else {
-          selectedFilamentIds.delete(id)
-          if (row) row.classList.remove('bulk-selected')
-        }
+        cb.checked = setFilamentSelected(id, checked)
+        cb.closest('tr')?.classList.toggle('bulk-selected', cb.checked)
       })
-      updateBulkBar()
+      publishSelection()
     })
 
     // Generic bulk prompt modal
@@ -1270,6 +1218,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         if (!res.ok) throw new Error('API error')
         await dialogWindow.__fmSuccess(t('filaments.bulkSuccess', { count }))
         selectedFilamentIds.clear()
+        selectedPickerFilaments.clear()
         updateBulkBar()
         loadFilaments()
       } catch {
@@ -1309,6 +1258,7 @@ import FilamentPluginHooks from '../../components/FilamentPluginHooks.astro'
         if (!res.ok) throw new Error('API error')
         await dialogWindow.__fmSuccess(t('filaments.bulkDeleteSuccess', { count }))
         selectedFilamentIds.clear()
+        selectedPickerFilaments.clear()
         updateBulkBar()
         loadFilaments()
       } catch {

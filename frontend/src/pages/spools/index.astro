@@ -1,5 +1,7 @@
 ---
 import Layout from '../../layouts/Layout.astro'
+import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
+import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 ---
 
 <Layout title="FilaMan - Spools">
@@ -29,6 +31,7 @@ import Layout from '../../layouts/Layout.astro'
       <a href="/spools/new" class="fm-btn fm-btn-primary" data-i18n="spools.addSpool">
         Add Spool
       </a>
+      <InventoryFilterReset scope="all" />
     </div>
   </div>
   
@@ -43,16 +46,15 @@ import Layout from '../../layouts/Layout.astro'
       />
       <button id="filter-search-clear" class="fm-filter-search-clear" type="button" aria-label="Clear search" title="Clear search" data-i18n-aria-label="common.clearSearch" data-i18n-title="common.clearSearch">&times;</button>
     </div>
-    <label style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; cursor: pointer; white-space: nowrap;">
+    <label id="filter-group-control" class="fm-column-group-control" hidden>
       <input type="checkbox" id="filter-group" class="fm-checkbox" />
       <span data-i18n="spools.groupByFilament">Group by Filament</span>
     </label>
-    <button id="filter-clear-columns" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearColumnFilters">Clear column filters</button>
-    <button id="filter-clear" class="fm-btn fm-btn-outline" type="button" data-i18n="common.clearAllFilters">Clear all filters</button>
   </div>
 
-  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
-    <div class="pagination-container" id="pagination-top" style="flex: 1;"></div>
+  <div class="fm-inventory-toolbar">
+    <div data-inventory-count></div>
+    <InventoryFilterReset scope="columns" />
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -62,13 +64,13 @@ import Layout from '../../layouts/Layout.astro'
     </div>
   </div>
 
-  <div class="fm-card" style="padding: 0;">
+  <div class="fm-card fm-inventory-table">
     <table class="fm-table">
       <thead>
         <tr style="background: var(--bg-soft);">
-          <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" /></th>
-          <th data-i18n="spools.id" data-sort="id" class="sortable col-id">ID</th>
+          <th data-column-selection style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select loaded spools" data-i18n-aria-label="spools.selectLoaded" disabled /></th>
           <th data-i18n="spools.filament" data-sort="filament_id" class="sortable col-filament">Filament</th>
+          <th data-i18n="spools.id" data-sort="id" class="sortable col-id">ID</th>
           <th data-i18n="spools.manufacturer" data-sort="manufacturer" class="sortable col-manufacturer">Manufacturer</th>
           <th data-i18n="manufacturers.logo" class="col-logo" style="min-width: 114px;">Logo</th>
           <th data-i18n="spools.material" data-sort="material" class="sortable col-material">Material</th>
@@ -85,7 +87,7 @@ import Layout from '../../layouts/Layout.astro'
           <th data-i18n="spools.colLastUsed" data-sort="last_used_at" class="sortable col-last_used">Last Used</th>
           <th data-i18n="spools.colTotalWeight" data-sort="initial_total_weight_g" class="sortable col-total_weight">Total Weight</th>
           <th data-i18n="spools.colEmptyWeight" data-sort="empty_spool_weight_g" class="sortable col-empty_weight">Empty Weight</th>
-          <th style="width: 40px;"></th>
+          <th data-column-actions style="width: 40px;" aria-label="RFID"></th>
         </tr>
       </thead>
       <tbody id="spools-table">
@@ -96,7 +98,7 @@ import Layout from '../../layouts/Layout.astro'
     </table>
   </div>
   
-  <div class="pagination-container" id="pagination" style="margin-top: 16px;"></div>
+  <InventoryLoadMore />
 
   <!-- Bulk Action Bar -->
   <div id="bulk-action-bar" class="bulk-action-bar">
@@ -200,20 +202,13 @@ import Layout from '../../layouts/Layout.astro'
     } from '../../lib/table-column-filters'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency } from '../../lib/format'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
     import type { AppDialogs } from '../../lib/form-dialog'
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
 
-    let currentPage = 1
     let spoolExtraFields: SystemExtraFieldDef[] = []
-    const allowedPageSizes = [25, 50, 100, 150, 200]
-    let pageSize = (() => {
-      try {
-        const saved = parseInt(localStorage.getItem('filaman-pagesize-spools') || '50', 10)
-        return allowedPageSizes.includes(saved) ? saved : 50
-      } catch { return 50 }
-    })()
     type SpoolStatus = { id: number; key: string; label: string }
     let statuses: SpoolStatus[] = []
     let locations: (LocationLike & { id: number; name: string })[] = []
@@ -256,8 +251,9 @@ import Layout from '../../layouts/Layout.astro'
       custom_fields: Record<string, unknown> | null
       [key: string]: unknown
     }
-    let allSpools: Spool[] = []
-    let totalSpools = 0
+    const spoolList = initInventoryScroll<Spool>(
+      document.getElementById('spools-table')!, 'spools.spoolCount', renderSpools, updateBulkBar,
+    )
     let activeDevices: { id: number; name: string; ip_address: string }[] = []
     let sortKey: string | null = null
     let sortDirection: 'asc' | 'desc' | null = null
@@ -275,14 +271,6 @@ import Layout from '../../layouts/Layout.astro'
         }
       }
     } catch { /* ignore invalid data */ }
-    // Restore page from localStorage
-    try {
-      const savedPage = localStorage.getItem('filaman-page-spools')
-      if (savedPage) {
-        const p = parseInt(savedPage, 10)
-        if (p > 0) currentPage = p
-      }
-    } catch { /* ignore invalid data */ }
     // Restore filter state from localStorage
     let savedFilterState: {
       status?: string | string[]
@@ -296,8 +284,6 @@ import Layout from '../../layouts/Layout.astro'
       const sf = localStorage.getItem('filaman-filters-spools')
       if (sf) savedFilterState = JSON.parse(sf)
     } catch { /* ignore invalid data */ }
-    let isInitialLoad = true
-    let filterRequestId = 0
     let colorFilterPaged = true
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
     let splHeaderFilters: HeaderFilterController | null = null
@@ -306,7 +292,6 @@ import Layout from '../../layouts/Layout.astro'
     if (urlParams.get('clear_filters') === '1') {
       savedFilterState = null
       columnFilters = {}
-      currentPage = 1
       removeFilterUrlParams('clear_filters')
     }
     const normalizeSavedValues = (value: unknown): string[] => {
@@ -350,7 +335,7 @@ import Layout from '../../layouts/Layout.astro'
           sortDirection = 'asc'
         }
         updateSortIndicators()
-        loadSpools()
+        void loadSpools(true)
         // Save sort state to localStorage
         if (sortKey && sortDirection) {
           localStorage.setItem(sortStorageKey, JSON.stringify({ key: sortKey, direction: sortDirection }))
@@ -488,34 +473,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function applyFiltersAndRender() {
-      if (isInitialLoad) {
-        isInitialLoad = false
-      } else {
-        currentPage = 1
-      }
-      localStorage.setItem('filaman-page-spools', String(currentPage))
-      loadSpools()
-    }
-
-    function renderPage() {
-      const { groupBy } = getFilterValues()
-
-      if (groupBy) {
-        // Group-by mode: client-side sort (data already filtered by backend)
-        const sorted = sortSpools(allSpools)
-        renderGroupedSpools(sorted)
-        document.getElementById('pagination-top')!.innerHTML = ''
-        document.getElementById('pagination')!.innerHTML = `<div style="font-size: 0.85rem; color: var(--text-muted);">${t('spools.spoolCount', { count: totalSpools })}</div>`
-      } else if (needsAllSpoolData()) {
-        const sorted = sortSpools(allSpools)
-        const startIndex = (currentPage - 1) * pageSize
-        renderSpools(sorted.slice(startIndex, startIndex + pageSize))
-        renderPagination(totalSpools, currentPage)
-      } else {
-        // Normal mode: data already filtered, sorted and paginated by backend
-        renderSpools(allSpools)
-        renderPagination(totalSpools, currentPage)
-      }
+      void loadSpools(true)
     }
 
     async function fetchSpoolFilterFacets(signal: AbortSignal): Promise<SpoolFilterFacets> {
@@ -527,7 +485,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     function updateSpoolFilterOptions() {
-      if (!spoolFilterFacets) return
+      if (!splHeaderFilters || !spoolFilterFacets) return
 
       const selectedStatusFilter = columnFilters.status
       const selectedStatusIds = selectedStatusFilter?.type === 'multi'
@@ -646,10 +604,11 @@ import Layout from '../../layouts/Layout.astro'
         const response = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) throw new Error(`Failed to load spool statuses (${response.status})`)
         statuses = await response.json()
-        const scope = urlParams.get('status_scope')
+        const scope = new URLSearchParams(window.location.search).get('status_scope')
         if (['active', 'archived', 'all'].includes(scope || '')) {
           columnFilters.status = multiColumnFilter(statuses.filter(status => scope === 'all' || (status.key === 'archived') === (scope === 'archived')).map(status => String(status.id)))
           splHeaderFilters?.setValue('status', columnFilters.status)
+          updateFilterResets()
         }
         splHeaderFilters?.setOptions('status', statuses.map((status) => {
           const i18nKey = `spools.status${status.key.charAt(0).toUpperCase() + status.key.slice(1)}`
@@ -662,10 +621,10 @@ import Layout from '../../layouts/Layout.astro'
       }
     }
     
-    async function loadSpools() {
-      const requestId = ++filterRequestId
+    async function loadSpools(reset = false) {
+      if (!splHeaderFilters) return
+      updateFilterResets()
       const { search, statusIds, locationIds, manufacturerIds, materials, groupBy } = getFilterValues()
-
       // Check if archived status is selected
       const archivedStatus = statuses.find((s) => s.key === 'archived')
       const isArchivedSelected = !!archivedStatus && statusIds.includes(String(archivedStatus.id))
@@ -701,62 +660,22 @@ import Layout from '../../layouts/Layout.astro'
       colors?.forEach((value, key) => params.append(key, value))
 
       try {
-        const signal = getAbortSignal()
-
-        if (groupBy || needsAllSpoolData()) {
-          // Grouping and client-side typed filters require the complete backend-filtered result.
-          const data = await fetchAllPages<Spool>(`/api/v1/spools?${params}`)
-          if (requestId !== filterRequestId) return
-          allSpools = data.items
-          totalSpools = data.total
-          if (hasLocalColumnFilters()) {
-            allSpools = filterSpools(allSpools)
-            totalSpools = allSpools.length
-          }
-          currentPage = Math.min(currentPage, Math.ceil(totalSpools / pageSize) || 1)
-        } else {
-          // Normal mode: load only the current page
-          params.set('page', String(currentPage))
-          params.set('page_size', String(pageSize))
-          const response = await fetch(`/api/v1/spools?${params}`, { credentials: 'include', signal })
-          if (!response.ok) throw new Error('Failed to fetch spools')
-          const data = await response.json()
-          if (requestId !== filterRequestId) return
-          allSpools = data.items
-          totalSpools = data.total
-          // Clamp currentPage if it exceeds available pages
-          const maxPage = Math.ceil(totalSpools / pageSize) || 1
-          if (currentPage > maxPage) {
-            currentPage = maxPage
-            localStorage.setItem('filaman-page-spools', String(currentPage))
-            // Re-fetch with corrected page
-            params.set('page', String(currentPage))
-            const retry = await fetch(`/api/v1/spools?${params}`, { credentials: 'include', signal })
-            if (retry.ok) {
-              const retryData = await retry.json()
-              if (requestId !== filterRequestId) return
-              allSpools = retryData.items
-              totalSpools = retryData.total
-            }
-          }
-        }
-
-        // Save filter state
-        localStorage.setItem('filaman-page-spools', String(currentPage))
-        localStorage.setItem('filaman-filters-spools', JSON.stringify({
-          columns: columnFilters, group: groupBy
-        }))
-
-        if (requestId !== filterRequestId) return
-        renderPage()
+        const source = groupBy || needsAllSpoolData()
+          ? inventoryLocalPages(async () => {
+              const { items } = await fetchAllPages<Spool>(`/api/v1/spools?${params}`)
+              return sortSpools(hasLocalColumnFilters() ? filterSpools(items) : items)
+            }, groupBy)
+          : inventoryApiPages<Spool>('/api/v1/spools', params)
+        if (!await spoolList.load(source, reset, groupBy ? renderGroupedSpools : renderSpools)) return
+        localStorage.setItem('filaman-filters-spools', JSON.stringify({ columns: columnFilters, group: groupBy }))
       } catch (error) {
-        if (requestId !== filterRequestId || isAbortError(error)) return
         console.error('Failed to load spools:', error)
         document.getElementById('spools-table')!.innerHTML = `
           <tr>
             <td colspan="20" style="text-align: center; color: var(--error-text);">${t('spools.failedLoad')}</td>
           </tr>
         `
+        updateBulkBar()
       }
     }
     
@@ -835,9 +754,12 @@ import Layout from '../../layouts/Layout.astro'
       
       return `
         <tr class="${selectedSpoolIds.has(s.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/spools/${s.id}'">
-          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-spool-id="${s.id}" ${selectedSpoolIds.has(s.id) ? 'checked' : ''} onchange="window.__toggleSpoolSelection(${s.id}, this.checked)" /></td>
+          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()"><input type="checkbox" class="fm-checkbox bulk-checkbox" data-spool-id="${s.id}" aria-label="${t('spools.spoolId', { id: s.id })}" ${selectedSpoolIds.has(s.id) ? 'checked' : ''} onchange="window.__toggleSpoolSelection(${s.id}, this.checked)" /></td>
+          <td class="col-filament" style="padding: 12px;">
+            ${getFilamentName(s)}
+            <div class="fm-spool-id-subtitle">${t('spools.spoolId', { id: s.id })}</div>
+          </td>
           <td class="col-id" style="padding: 12px; font-weight: 500;">${t('spools.spoolId', { id: s.id })}</td>
-          <td class="col-filament" style="padding: 12px;">${getFilamentName(s)}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${getManufacturerName(s)}</td>
           <td class="col-logo" style="padding: 12px;">${getFilamentForSpool(s)?.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${fil?.manufacturer?.logo_url}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-material" style="padding: 12px; color: var(--text-muted);">${getMaterialType(s)}</td>
@@ -866,7 +788,7 @@ import Layout from '../../layouts/Layout.astro'
       `
     }
     
-    function renderSpools(spools: Spool[]) {
+    function renderSpools(spools: Spool[], append = false) {
       const tbody = document.getElementById('spools-table')!
       if (spools.length === 0) {
         const { search } = getFilterValues()
@@ -881,10 +803,11 @@ import Layout from '../../layouts/Layout.astro'
         return
       }
       
-      tbody.innerHTML = spools.map(s => renderSpoolRow(s)).join('')
+      const rows = spools.map(s => renderSpoolRow(s)).join('')
+      if (append) tbody.insertAdjacentHTML('beforeend', rows)
+      else tbody.innerHTML = rows
       translatePage()
       splReorder.applyOrder()
-      splResize.refreshColumns()
     }
 
     function renderGroupedSpools(spools: Spool[]) {
@@ -943,7 +866,6 @@ import Layout from '../../layouts/Layout.astro'
       tbody.innerHTML = html
       translatePage()
       splReorder.applyOrder()
-      splResize.refreshColumns()
 
       // Wire up group toggle
       tbody.querySelectorAll('tr[data-group]').forEach(header => {
@@ -956,109 +878,17 @@ import Layout from '../../layouts/Layout.astro'
           if (isCollapsed) {
             toggle.dataset.collapsed = 'false'
             toggle.innerHTML = toggle.innerHTML.replace('&#9654;', '&#9660;').replace('\u25B6', '\u25BC')
-            rows.forEach(r => (r as HTMLElement).style.display = '')
+            rows.forEach(r => (r as HTMLElement).hidden = false)
           } else {
             toggle.dataset.collapsed = 'true'
             toggle.innerHTML = toggle.innerHTML.replace('&#9660;', '&#9654;').replace('\u25BC', '\u25B6')
-            rows.forEach(r => (r as HTMLElement).style.display = 'none')
+            rows.forEach(r => (r as HTMLElement).hidden = true)
           }
+          updateBulkBar()
         })
       })
     }
     
-    function getPageNumbers(page: number, totalPages: number): (number | string)[] {
-      if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
-      const pages = new Set([1, totalPages])
-      for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.add(i)
-      const sorted = [...pages].sort((a, b) => a - b)
-      const result: (number | string)[] = []
-      sorted.forEach((p, i) => {
-        if (i > 0 && p - sorted[i - 1] > 1) result.push('\u2026')
-        result.push(p)
-      })
-      return result
-    }
-
-    function buildPaginationHtml(total: number, page: number): string {
-      const totalPages = Math.ceil(total / pageSize)
-      if (totalPages <= 1) {
-        const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
-        return `
-          <div style="font-size: 0.8rem; color: var(--text-muted);">${t('spools.spoolCount', { count: total })}</div>
-          <div></div>
-          <div class="pagination-pages">
-            <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
-            ${pageSizeItems}
-          </div>
-        `
-      }
-      const pageNumbers = getPageNumbers(page, totalPages)
-      const pageItems = pageNumbers.map(p => {
-        if (p === '\u2026') return `<span class="page-ellipsis">\u2026</span>`
-        if (p === page) return `<span class="page-current">${p}</span>`
-        return `<a class="page-link" data-page="${p}">${p}</a>`
-      }).join('')
-      const pageSizeItems = allowedPageSizes.map(s => s === pageSize ? `<span class="page-current">${s}</span>` : `<a class="page-link page-size-link" data-size="${s}">${s}</a>`).join('')
-      return `
-        <div style="font-size: 0.8rem; color: var(--text-muted);">
-          ${t('common.showing')} ${((page - 1) * pageSize) + 1}-${Math.min(page * pageSize, total)} ${t('common.of')} ${total}
-        </div>
-        <div class="pagination-pages">
-          <span style="color: var(--text-muted);">${t('common.page')}:</span>
-          ${page > 1 ? `<a class="page-link page-prev">\u2039</a>` : ''}
-          ${pageItems}
-          ${page < totalPages ? `<a class="page-link page-next">\u203A</a>` : ''}
-        </div>
-        <div class="pagination-pages">
-          <span style="color: var(--text-muted);">${t('common.perPage')}:</span>
-          ${pageSizeItems}
-        </div>
-      `
-    }
-
-    function renderPagination(total: number, page: number) {
-      const totalPages = Math.ceil(total / pageSize)
-      const html = buildPaginationHtml(total, page)
-      document.getElementById('pagination-top')!.innerHTML = html
-      document.getElementById('pagination')!.innerHTML = html
-
-      document.querySelectorAll('.pagination-container').forEach(container => {
-        container.querySelectorAll('.page-link[data-page]').forEach(link => {
-          link.addEventListener('click', () => {
-            currentPage = parseInt((link as HTMLElement).dataset.page!, 10)
-            localStorage.setItem('filaman-page-spools', String(currentPage))
-            loadSpools()
-          })
-        })
-        container.querySelector('.page-prev')?.addEventListener('click', () => {
-          if (page > 1) {
-            currentPage = page - 1
-            localStorage.setItem('filaman-page-spools', String(currentPage))
-            loadSpools()
-          }
-        })
-        container.querySelector('.page-next')?.addEventListener('click', () => {
-          if (page < totalPages) {
-            currentPage = page + 1
-            localStorage.setItem('filaman-page-spools', String(currentPage))
-            loadSpools()
-          }
-        })
-        container.querySelectorAll('.page-size-link').forEach(link => {
-          link.addEventListener('click', () => {
-            const newSize = parseInt((link as HTMLElement).dataset.size!, 10)
-            if (allowedPageSizes.includes(newSize)) {
-              pageSize = newSize
-              localStorage.setItem('filaman-pagesize-spools', String(newSize))
-              currentPage = 1
-              localStorage.setItem('filaman-page-spools', '1')
-              loadSpools()
-            }
-          })
-        })
-      })
-    }
-
     function setupHeaderFilters() {
       const table = document.querySelector('.fm-table') as HTMLTableElement | null
       if (!table) return
@@ -1073,6 +903,7 @@ import Layout from '../../layouts/Layout.astro'
         },
         {
           key: 'filament',
+          groupControlId: 'filter-group-control',
           label: t('spools.filament'),
           columnSelector: 'th.col-filament',
           type: 'text',
@@ -1213,6 +1044,7 @@ import Layout from '../../layouts/Layout.astro'
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
       definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
       splHeaderFilters = initHeaderColumnFilters(table, definitions)
+      updateFilterResets()
       updateSortIndicators()
     }
 
@@ -1237,16 +1069,10 @@ import Layout from '../../layouts/Layout.astro'
       if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
     }
 
-    bindTableFilterControls({
+    const updateFilterResets = bindTableFilterControls({
+      hasColumnFilters: () => splHeaderFilters !== null && Object.values(columnFilters).some(isColumnFilterActive),
       onApply: applyFiltersAndRender,
       onClearColumns: () => {
-        columnFilters = {}
-        splHeaderFilters?.resetAll()
-        updateSpoolFilterOptions()
-        removeFilterUrlParams('manufacturer_id', 'location_id', 'location_unassigned', 'material', 'status_scope')
-        applyFiltersAndRender()
-      },
-      onClearAll: () => {
         columnFilters = {}
         splHeaderFilters?.resetAll()
         updateSpoolFilterOptions()
@@ -1288,6 +1114,7 @@ import Layout from '../../layouts/Layout.astro'
     const splPicker = initColumnPicker({
       storageKey: 'filaman-columns-spools',
       defaultVisible: ['id', 'manufacturer', 'logo', 'material', 'colors', 'status', 'remaining', 'location'],
+      compactVisible: ['status', 'remaining'],
       groups: splColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
@@ -1297,6 +1124,10 @@ import Layout from '../../layouts/Layout.astro'
       onReset: () => splReorder.resetOrder(),
       onResetWidths: () => splResize.resetWidths(),
     })
+    const spoolTable = document.querySelector('.fm-inventory-table')
+    const syncSpoolId = () => spoolTable?.toggleAttribute('data-spool-id-hidden', !splPicker.isVisible('id'))
+    spoolTable?.querySelector('table')?.addEventListener('filaman:columns-changed', syncSpoolId)
+    syncSpoolId()
 
     const splReorder = initColumnReorder({
       tableSelector: '.fm-table',
@@ -1348,6 +1179,7 @@ import Layout from '../../layouts/Layout.astro'
     // Restore group checkbox from saved state
     if (savedFilterState?.group) {
       (document.getElementById('filter-group') as HTMLInputElement).checked = true
+      updateFilterResets()
     }
     Promise.all([initCurrency(), loadSpoolExtraFieldColumns(), loadActiveDevices()])
       .then(async () => {
@@ -1356,11 +1188,9 @@ import Layout from '../../layouts/Layout.astro'
         return loadFilters()
       })
       .then(() => loadSpools())
-      .then(() => {
-        // Refresh column utilities after first render to ensure handles are attached
-        splReorder.refreshColumns()
-        splResize.refreshColumns()
-      })
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) void loadSpools()
+    })
     // Live-Update via SSE: Spulen automatisch neu laden
     let _spoolsReloadTimer: ReturnType<typeof setTimeout> | null = null
     window.addEventListener('filaman:data-changed', (e: Event) => {
@@ -1388,12 +1218,16 @@ import Layout from '../../layouts/Layout.astro'
         bar.classList.remove('visible')
       }
       // Update select-all checkbox state
-      const visibleCheckboxes = document.querySelectorAll('#spools-table input.bulk-checkbox[data-spool-id]')
-      const visibleIds = Array.from(visibleCheckboxes).map(cb => Number((cb as HTMLInputElement).dataset.spoolId))
+      const visibleCheckboxes = document.querySelectorAll<HTMLInputElement>('#spools-table tr:not([hidden]) input.bulk-checkbox[data-spool-id]')
+      const visibleIds = Array.from(visibleCheckboxes, cb => Number(cb.dataset.spoolId))
       const allChecked = visibleIds.length > 0 && visibleIds.every(id => selectedSpoolIds.has(id))
       const someChecked = visibleIds.some(id => selectedSpoolIds.has(id))
+      selectAllCb.disabled = visibleIds.length === 0
       selectAllCb.checked = allChecked
       selectAllCb.indeterminate = someChecked && !allChecked
+      const label = allChecked ? 'spools.deselectLoaded' : 'spools.selectLoaded'
+      selectAllCb.dataset.i18nAriaLabel = label
+      selectAllCb.setAttribute('aria-label', t(label))
     }
 
     function toggleSpoolSelection(id: number, checked: boolean) {
@@ -1412,7 +1246,7 @@ import Layout from '../../layouts/Layout.astro'
     // Select all checkbox
     document.getElementById('bulk-select-all')?.addEventListener('change', (e) => {
       const checked = (e.target as HTMLInputElement).checked
-      const visibleCheckboxes = document.querySelectorAll('#spools-table input.bulk-checkbox[data-spool-id]') as NodeListOf<HTMLInputElement>
+      const visibleCheckboxes = document.querySelectorAll<HTMLInputElement>('#spools-table tr:not([hidden]) input.bulk-checkbox[data-spool-id]')
       visibleCheckboxes.forEach(cb => {
         const id = Number(cb.dataset.spoolId)
         cb.checked = checked
@@ -1667,7 +1501,7 @@ import Layout from '../../layouts/Layout.astro'
       status.classList.add('hidden')
       
       // A spool has two RFID slots: a write ADDS the chip; only a third chip replaces the second.
-      const spool = allSpools.find(s => s.id === spoolId)
+      const spool = spoolList.get(spoolId)
       if (spool && spool.rfid_uid && spool.rfid_uid_2) {
         warning.textContent = t('rfid.bothTagsExistWarning')
         warning.classList.remove('hidden')

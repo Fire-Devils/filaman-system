@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
@@ -65,6 +66,7 @@ class Filament(Base, TimestampMixin):
     __tablename__ = "filaments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    record_token: Mapped[str] = mapped_column(String(32), nullable=False, default=lambda: uuid4().hex)
     manufacturer_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("manufacturers.id"), nullable=False, index=True
     )

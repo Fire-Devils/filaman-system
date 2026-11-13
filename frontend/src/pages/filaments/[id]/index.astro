@@ -15,7 +15,7 @@ export function getStaticPaths() {
 
 <Layout title="FilaMan - Filament">
   <div class="detail-page-toolbar">
-    <div class="detail-toolbar-back"><a href="/filaments" class="detail-back-link">&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
+    <div class="detail-toolbar-back"><a href="/filaments" class="detail-back-link" data-inventory-back>&larr; <span data-i18n="filaments.backToFilaments">Back to Filaments</span></a>
       <span id="unsaved-changes-status" class="filament-change-pill hidden" role="status" aria-live="polite" data-i18n="filaments.changed">Changed</span></div>
     <div id="filament-page-actions"></div>
     <div id="filament-form-actions" class="hidden"><FilamentFormActions mode="edit" cancelHref="/filaments" /></div>
@@ -101,6 +101,7 @@ export function getStaticPaths() {
 
     type FilamentDetail = FilamentFormData & Parameters<typeof buildFilamentHeaderName>[0] & {
       id: number
+      record_token?: string
       price?: number | null
       price_currency?: string | null
     }
@@ -119,13 +120,15 @@ export function getStaticPaths() {
     }
 
     let currentFilament: FilamentDetail | null = null
-    const editSession = createDetailEditSession<FilamentDetail>(`/api/v1/filaments/${id}`, () => t('filaments.failedLoadSingle'))
+    const detailUrl = `/api/v1/filaments/${id}?include_record_token=true`
+    const editSession = createDetailEditSession<FilamentDetail>(detailUrl, () => t('filaments.failedLoadSingle'))
     let changingEdit = false
     let editGeneration = 0
     let filamentNeedsRefresh = false
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
     let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
     let closeFilamentPluginHooks: (() => void) | undefined
+    let editorRecordToken: string | undefined
     let statuses: SpoolStatus[] = []
     let locations: Location[] = []
     let systemFieldMap: Record<string, SystemExtraFieldDef> = {}
@@ -135,7 +138,7 @@ export function getStaticPaths() {
       try {
         const signal = getAbortSignal()
         const [response, sysFieldsRes] = await Promise.all([
-          fetch(`/api/v1/filaments/${id}`, { credentials: 'include', signal }),
+          fetch(detailUrl, { credentials: 'include', signal }),
           fetch('/api/v1/system-extra-fields?target_type=filament', { credentials: 'include', signal }),
         ])
 
@@ -256,9 +259,12 @@ export function getStaticPaths() {
       const controller = filamentFormController
       controller.resetInitialData(filament)
       controller.captureBaseline()
+      editorRecordToken = filament.record_token
       const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
       if (hooks && !closeFilamentPluginHooks) {
-        closeFilamentPluginHooks = mountFilamentPluginHooks(hooks, { mode: 'edit', filamentId: filament.id, form: controller })
+        closeFilamentPluginHooks = mountFilamentPluginHooks(hooks, {
+          mode: 'edit', filamentId: filament.id, getRecordToken: () => editorRecordToken, form: controller,
+        })
       }
       document.getElementById('filament-content')!.classList.add('hidden')
       document.getElementById('filament-editor')!.classList.remove('hidden')

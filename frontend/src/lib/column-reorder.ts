@@ -133,8 +133,12 @@ function reorderRow(row: Element, order: string[]): void {
 
   ordered.push(...trailing)
 
-  // Re-append in order (appendChild moves existing DOM nodes)
+  if (ordered.every((cell, index) => cell === cells[index])) return
+  const focused = document.activeElement
   ordered.forEach(cell => row.appendChild(cell))
+  if (focused instanceof HTMLElement && row.contains(focused) && document.activeElement !== focused) {
+    focused.focus({ preventScroll: true })
+  }
 }
 
 // ── Init ───────────────────────────────────────────────────────────
@@ -179,9 +183,12 @@ export function initColumnReorder(opts: ColumnReorderOptions): ColumnReorder {
 
   /** Apply column order to all rows in the table */
   function applyOrder(): void {
-    if (currentOrder.length === 0) return
-    const rows = table.querySelectorAll('tr')
-    rows.forEach(row => reorderRow(row, currentOrder))
+    if (currentOrder.length) {
+      table.querySelectorAll('tr').forEach(row => reorderRow(row, currentOrder))
+    }
+    if (table.parentElement?.matches('.fm-inventory-table')) {
+      table.dispatchEvent(new Event('filaman:columns-changed'))
+    }
   }
 
   /** Set up drag & drop handlers on header cells */
@@ -195,6 +202,7 @@ export function initColumnReorder(opts: ColumnReorderOptions): ColumnReorder {
 
     const ths = Array.from(headerRow.querySelectorAll('th')) as HTMLElement[]
     let draggedKey: string | null = null
+    const isCompact = () => table.parentElement?.matches('.fm-inventory-table[data-compact]')
 
     ths.forEach(th => {
       const key = getColKey(th)
@@ -203,6 +211,10 @@ export function initColumnReorder(opts: ColumnReorderOptions): ColumnReorder {
       th.draggable = true
 
       const onDragStart = (e: DragEvent) => {
+        if (isCompact()) {
+          e.preventDefault()
+          return
+        }
         draggedKey = key
         th.classList.add('col-dragging')
         e.dataTransfer!.effectAllowed = 'move'
@@ -249,7 +261,7 @@ export function initColumnReorder(opts: ColumnReorderOptions): ColumnReorder {
 
         th.classList.remove('col-drop-before', 'col-drop-after')
 
-        if (!fromKey || !toKey || fromKey === toKey) return
+        if (isCompact() || !fromKey || !toKey || fromKey === toKey) return
 
         const fromIdx = currentOrder.indexOf(fromKey)
         const toIdx = currentOrder.indexOf(toKey)
@@ -296,6 +308,7 @@ export function initColumnReorder(opts: ColumnReorderOptions): ColumnReorder {
 
   // ── Initialize ────────────────────────────────────────────────────
 
+  let defaultOrder = scanKeys()
   currentOrder = computeOrder()
   applyOrder()
   setupDrag()
@@ -309,13 +322,15 @@ export function initColumnReorder(opts: ColumnReorderOptions): ColumnReorder {
 
     resetOrder() {
       localStorage.removeItem(opts.storageKey)
-      currentOrder = scanKeys() // re-read from DOM (which is already in template order after a fresh render)
+      const keys = new Set(scanKeys())
+      currentOrder = defaultOrder.filter(key => keys.has(key))
       applyOrder()
       setupDrag()
       opts.onReorder?.(currentOrder)
     },
 
     refreshColumns() {
+      defaultOrder = [...new Set([...defaultOrder, ...scanKeys()])]
       currentOrder = computeOrder()
       applyOrder()
       setupDrag()

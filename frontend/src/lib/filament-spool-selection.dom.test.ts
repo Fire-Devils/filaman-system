@@ -15,10 +15,14 @@ afterEach(() => { document.body.innerHTML = ''; sessionStorage.clear(); vi.unstu
 it.each(['', '?select_for_spool=1', '?select_for_spool=0'])('keeps list navigation and selection controls consistent for %s', search => {
   document.body.innerHTML = listSource.slice(listSource.indexOf('<Layout'), listSource.indexOf('  <script>'))
   const setup = listSource.slice(listSource.indexOf('    const urlParams'), listSource.indexOf('    const normalizeSavedValues'))
-  const render = listSource.slice(listSource.indexOf('    function renderColorDots'), listSource.indexOf('    function getPageNumbers'))
-  const bulk = listSource.slice(listSource.indexOf('    function updateBulkBar'), listSource.indexOf('  </script>'))
+  const render = listSource.slice(listSource.indexOf('    function renderColorDots'), listSource.indexOf('    function setupHeaderFilters'))
+  const bulk = listSource.slice(listSource.indexOf('    const selectionLimit'), listSource.indexOf('  </script>'))
   const runtime = new Function('window', 'document', 't', 'escapeHtml', 'formatNumericRange', 'toColorSwatchBackground', 'formatPrice', `
-    const selectedFilamentIds = new Set(), getCurrency = () => 'EUR';
+    const selectedFilamentIds = new Set(), getCurrency = () => 'EUR', compactPicker = false;
+    const selectedPickerFilaments = new Map();
+    const filamentList = new Map([17, 18].map(id => [id, {
+      id, manufacturer_id: id - 16, designation: 'PLA', material_type: 'PLA', record_token: String(id),
+    }]));
     const filamentExtraFields = [];
     const columnFilters = {}, getFilterValues = () => ({ search: '' }), isEffectiveColumnFilterActive = () => false;
     const filReorder = { applyOrder() {} }, filResize = { refreshColumns() {} };
@@ -70,6 +74,24 @@ it.each(['', '?select_for_spool=1', '?select_for_spool=0'])('keeps list navigati
     }
     render([])
     expect(document.querySelector('#filaments-table a')?.getAttribute('href')).toBe(selecting ? '/filaments/new?create_spool=1' : '/filaments/new')
+  }
+  if (!selecting) {
+    const filament = { designation: 'PLA', material_type: 'PLA', colors: [] }
+    runtime.renderGroupedFilaments([
+      { ...filament, id: 17, manufacturer_id: 1, manufacturer: { name: 'One' } },
+      { ...filament, id: 18, manufacturer_id: 2, manufacturer: { name: 'Two' } },
+    ])
+    const groups = document.querySelectorAll<HTMLElement>('tr[data-group]')
+    groups[0].click()
+    const selectAll = document.querySelector<HTMLInputElement>('#bulk-select-all')!
+    selectAll.click()
+    expect([...runtime.selectedFilamentIds]).toEqual([18])
+    groups[1].click()
+    expect(selectAll.disabled).toBe(true)
+    expect([...runtime.selectedFilamentIds]).toEqual([18])
+    groups[0].click()
+    expect(selectAll.disabled).toBe(false)
+    expect(selectAll.checked).toBe(false)
   }
   if (selecting) {
     sessionStorage.setItem('filaman_spool_create_draft', '{"fields":{"spool_quantity":"3"}}')

@@ -541,6 +541,7 @@ async def list_spools(
     else:
         sort_column = getattr(Spool, sort_by, Spool.id)
     order = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+    tie_breaker = Spool.id.asc() if sort_order == "asc" else Spool.id.desc()
 
     # -- Data query --
     query = select(Spool)
@@ -567,7 +568,7 @@ async def list_spools(
         )
         .order_by(*(
             [sort_column.is_(None).asc(), order, Spool.id.asc()]
-            if sort_by in metrics else [order]
+            if sort_by in metrics else [order, tie_breaker]
         ))
         .offset((page - 1) * page_size)
         .limit(page_size)

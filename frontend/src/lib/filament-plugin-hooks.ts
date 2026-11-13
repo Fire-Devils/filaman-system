@@ -6,9 +6,17 @@ type FilamentPluginForm = {
   stagePluginDraft(units: unknown, draft: Record<string, unknown>): { staged: string[]; skipped: string[] }
 }
 
+export type SelectedFilament = {
+  id: number
+  manufacturer_id: number
+  designation: string
+  material_type: string
+  record_token?: string
+}
+
 type Hook =
-  | { mode: 'create' | 'edit'; filamentId: number | null; form: FilamentPluginForm }
-  | { mode: 'selection'; selectedIds: ReadonlySet<number> }
+  | { mode: 'create' | 'edit'; filamentId: number | null; getRecordToken?: () => string | undefined; form: FilamentPluginForm }
+  | { mode: 'selection'; selectedIds: ReadonlySet<number>; expectedFilaments?: ReadonlyMap<number, SelectedFilament> }
 
 type PluginHook = { name: string; page_url: string }
 
@@ -21,6 +29,7 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
   let frame: HTMLIFrameElement | undefined
   let path = ''
   let selection: number[] = []
+  let expectedSelection: SelectedFilament[] | undefined
   let draft: Record<string, unknown> | undefined
 
   function close() {
@@ -28,6 +37,7 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
     content.replaceChildren()
     frame = undefined
     selection = []
+    expectedSelection = undefined
     draft = undefined
   }
 
@@ -49,8 +59,8 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
     const { type, request_id } = message
     if (type === 'filaman:filament-context') {
       const context = hook.mode === 'selection'
-        ? { mode: hook.mode, filament_ids: selection }
-        : { mode: hook.mode, filament_id: hook.filamentId, fields: draft = hook.form.readPluginDraft() }
+        ? { mode: hook.mode, filament_ids: selection, expected_filaments: expectedSelection }
+        : { mode: hook.mode, filament_id: hook.filamentId, record_token: hook.getRecordToken?.(), fields: draft = hook.form.readPluginDraft() }
       sender.postMessage({ type, request_id, ...context }, origin)
     }
     if (type === 'filaman:filament-stage' && hook.mode !== 'selection' && draft) {
@@ -73,6 +83,12 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
         if (dialog.open) return
         selection = hook.mode === 'selection' ? [...hook.selectedIds] : []
         if (hook.mode === 'selection' && !selection.length) return
+        if (hook.mode === 'selection' && hook.expectedFilaments) {
+          expectedSelection = selection.flatMap(id => {
+            const expected = hook.expectedFilaments?.get(id)
+            return expected ? [expected] : []
+          })
+        }
         path = plugin.page_url
         heading.textContent = plugin.name
         frame = document.createElement('iframe')

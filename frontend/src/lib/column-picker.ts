@@ -23,7 +23,8 @@
  *   // picker.isVisible('id')  => boolean
  */
 
-import { columnCellSelector } from './column-key'
+import { columnCellSelector, getColKey } from './column-key'
+import { initColumnLocks } from './column-locks'
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export interface ColumnPickerOptions {
   storageKey: string
   /** Keys that are visible by default (when no saved preference exists) */
   defaultVisible: string[]
+  /** Default keys for the narrow inventory layout, saved independently. */
+  compactVisible?: string[]
   /** Column groups to render */
   groups: ColumnGroup[]
   /** ID of the toggle button */
@@ -114,11 +117,35 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
   let groups = opts.groups
   let allColKeys: string[] = flatKeys(groups)
 
-  // Load saved preference or use defaults
-  let visibleCols: Set<string> = loadSaved(opts.storageKey, allColKeys, opts.defaultVisible)
+  const compactVisible = opts.compactVisible
+  const wrapper = compactVisible ? document.querySelector<HTMLElement>('.fm-inventory-table') : null
+  let compact = false
+  let storageKey = opts.storageKey
+  let defaults = opts.defaultVisible
+  let visibleCols = loadSaved(storageKey, defaults)
+
+  function updateDensity() {
+    if (!wrapper || !compactVisible) return
+    const narrow = getComputedStyle(wrapper).getPropertyValue('--fm-narrow-columns').trim() === '1'
+    wrapper.toggleAttribute('data-compact', narrow || wrapper.hasAttribute('data-filament-picker'))
+    if (narrow === compact) return
+    compact = narrow
+    storageKey = compact ? opts.storageKey + '-compact' : opts.storageKey
+    defaults = compact ? compactVisible : opts.defaultVisible
+    visibleCols = loadSaved(storageKey, defaults)
+    applyVisibility()
+    updateCheckboxes()
+  }
+
+  function updateCheckboxes() {
+    for (const checkbox of dropdown?.querySelectorAll<HTMLInputElement>('input[data-col]') ?? []) {
+      checkbox.checked = visibleCols.has(checkbox.dataset.col!)
+    }
+  }
 
   // ── Apply visibility CSS ─────────────────────────────────────────
   function applyVisibility() {
+    const focused = document.activeElement
     let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null
     if (!style) {
       style = document.createElement('style')
@@ -129,6 +156,11 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
       .filter(k => !visibleCols.has(k))
       .map(k => `.fm-table ${columnCellSelector(k)} { display: none; }`)
       .join('\n')
+    wrapper?.querySelector('table')?.dispatchEvent(new Event('filaman:columns-changed'))
+    if (focused instanceof HTMLElement && wrapper?.contains(focused) &&
+        focused === document.activeElement && !focused.getClientRects().length) {
+      btn?.focus()
+    }
   }
 
   // ── Render dropdown ──────────────────────────────────────────────
@@ -174,21 +206,17 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
     resetBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       // Reset visibility
-      localStorage.removeItem(opts.storageKey)
-      visibleCols = new Set(opts.defaultVisible)
+      localStorage.removeItem(storageKey)
+      visibleCols = new Set(defaults)
       applyVisibility()
-      // Reset column order
-      if (opts.orderStorageKey) {
-        localStorage.removeItem(opts.orderStorageKey)
+      if (!compact) {
+        if (opts.orderStorageKey) localStorage.removeItem(opts.orderStorageKey)
+        if (opts.widthsStorageKey) localStorage.removeItem(opts.widthsStorageKey)
+        opts.onReset?.()
+        opts.onResetWidths?.()
       }
-      // Reset column widths
-      if (opts.widthsStorageKey) {
-        localStorage.removeItem(opts.widthsStorageKey)
-      }
-      opts.onReset?.()
-      opts.onResetWidths?.()
       opts.onVisibilityChange?.()
-      renderDropdown() // re-render checkboxes
+      updateCheckboxes()
     })
     resetDiv.appendChild(resetBtn)
     frag.appendChild(resetDiv)
@@ -199,32 +227,50 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
 
   // ── Persist ──────────────────────────────────────────────────────
   function persist() {
-    localStorage.setItem(opts.storageKey, JSON.stringify([...visibleCols]))
+    localStorage.setItem(storageKey, JSON.stringify([...visibleCols]))
   }
 
   // ── Wire up button & click-outside ───────────────────────────────
   const btn = document.getElementById(opts.btnId)
   const dropdown = document.getElementById(opts.dropdownId)
 
-  btn?.addEventListener('click', (e) => {
-    e.stopPropagation()
+  function setDropdownOpen(open: boolean) {
     if (!dropdown) return
-    if (dropdown.style.display === 'block') {
-      dropdown.style.display = 'none'
-    } else {
-      renderDropdown()
-      dropdown.style.display = 'block'
-    }
+    if (open) renderDropdown()
+    dropdown.style.display = open ? 'block' : 'none'
+    btn?.setAttribute('aria-expanded', String(open))
+  }
+
+  btn?.setAttribute('aria-controls', opts.dropdownId)
+  btn?.setAttribute('aria-expanded', 'false')
+  btn?.addEventListener('click', event => {
+    event.stopPropagation()
+    setDropdownOpen(dropdown?.style.display !== 'block')
   })
 
-  document.addEventListener('click', () => {
-    if (dropdown) dropdown.style.display = 'none'
-  })
+  document.addEventListener('click', () => setDropdownOpen(false))
+  dropdown?.addEventListener('click', event => event.stopPropagation())
+  function closeOnEscape(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || dropdown?.style.display !== 'block') return
+    event.stopPropagation()
+    setDropdownOpen(false)
+    btn?.focus()
+  }
+  btn?.addEventListener('keydown', closeOnEscape)
+  dropdown?.addEventListener('keydown', closeOnEscape)
 
-  dropdown?.addEventListener('click', e => e.stopPropagation())
-
-  // Apply on init
+  const container = wrapper?.closest('.fm-main')
+  if (container) {
+    new ResizeObserver(updateDensity).observe(container)
+    updateDensity()
+  }
   applyVisibility()
+
+  const table = wrapper?.querySelector('table')
+  if (table) initColumnLocks(table, opts.storageKey, cell => {
+    const key = getColKey(cell)
+    return !key || !allColKeys.includes(key) || visibleCols.has(key)
+  })
 
   // ── Public API ───────────────────────────────────────────────────
   return {
@@ -233,7 +279,7 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
       groups = newGroups
       allColKeys = flatKeys(groups)
       // Reload saved; new keys that weren't in the old save stay hidden (opt-in)
-      visibleCols = loadSaved(opts.storageKey, allColKeys, opts.defaultVisible)
+      visibleCols = loadSaved(storageKey, defaults)
       applyVisibility()
     },
     applyVisibility,
@@ -252,7 +298,7 @@ function flatKeys(groups: ColumnGroup[]): string[] {
  * - If a saved value exists, use it.
  * - Otherwise use defaultVisible.
  */
-function loadSaved(storageKey: string, _allKeys: string[], defaultVisible: string[]): Set<string> {
+function loadSaved(storageKey: string, defaultVisible: string[]): Set<string> {
   try {
     const raw = localStorage.getItem(storageKey)
     if (raw) {

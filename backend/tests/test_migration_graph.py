@@ -14,8 +14,39 @@ def test_migration_graph_has_one_head():
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
 
     assert ScriptDirectory.from_config(config).get_heads() == [
-        "c7e2a9f41b30"
+        "8fb4d987c203"
     ]
+
+
+def test_filament_record_token_migration_can_retry_after_failure(monkeypatch):
+    config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
+    migration = ScriptDirectory.from_config(config).get_revision("8fb4d987c203").module
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE filaments (id INTEGER PRIMARY KEY)")
+        connection.exec_driver_sql("INSERT INTO filaments VALUES (1)")
+
+    def fail():
+        raise RuntimeError("Interrupted backfill")
+
+    with engine.connect() as connection:
+        with monkeypatch.context() as patch:
+            patch.setattr(migration, "op", Operations(MigrationContext.configure(connection)))
+            patch.setattr(migration, "uuid4", fail)
+            with pytest.raises(RuntimeError, match="Interrupted backfill"):
+                migration.upgrade()
+        connection.rollback()
+        assert "record_token" not in {column["name"] for column in sa.inspect(connection).get_columns("filaments")}
+    with engine.begin() as connection:
+        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(connection)))
+        migration.upgrade()
+        assert len(connection.exec_driver_sql("SELECT record_token FROM filaments").scalar_one()) == 32
+    with engine.connect() as connection:
+        monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(connection)))
+        migration.downgrade()
+        connection.rollback()
+        assert len(connection.exec_driver_sql("SELECT record_token FROM filaments").scalar_one()) == 32
+    engine.dispose()
 
 
 @pytest.mark.parametrize("starting_revision", ["merge_standard_fields_ui", "add_filament_print_requests"])
@@ -33,6 +64,19 @@ def test_combined_head_upgrades_existing_ui_and_api_databases(tmp_path, monkeypa
                 "INSERT INTO manufacturers (id, name, created_at, updated_at) "
                 "VALUES (1, 'Preserved maker', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             )
+            connection.exec_driver_sql(
+                "INSERT INTO filaments (id, manufacturer_id, designation, type, diameter_mm, color_mode, created_at, updated_at) "
+                "VALUES (1, 1, 'First PLA', 'PLA', 1.75, 'single', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
+                "(2, 1, 'Second PLA', 'PLA', 1.75, 'single', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO colors (id, name, hex_code, created_at, updated_at) "
+                "VALUES (1, 'Black', '#000000', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO filament_colors (id, filament_id, color_id, position, created_at) "
+                "VALUES (1, 1, 1, 1, CURRENT_TIMESTAMP)"
+            )
         command.upgrade(config, "head")
         with engine.connect() as connection:
             assert connection.exec_driver_sql(
@@ -40,7 +84,12 @@ def test_combined_head_upgrades_existing_ui_and_api_databases(tmp_path, monkeypa
             ).scalar_one() == "Preserved maker"
             assert connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
-            ).scalar_one() == "c7e2a9f41b30"
+            ).scalar_one() == "8fb4d987c203"
+            tokens = connection.exec_driver_sql("SELECT record_token FROM filaments").scalars().all()
+            assert len(set(tokens)) == 2
+            assert all(len(token) == 32 for token in tokens)
+            assert connection.exec_driver_sql("SELECT filament_id FROM filament_colors").scalar_one() == 1
+            assert not connection.exec_driver_sql("PRAGMA foreign_key_check").all()
             inspector = sa.inspect(connection)
             assert "filament_printer_initializations" in inspector.get_table_names()
             for table, column in [
