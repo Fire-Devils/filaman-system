@@ -35,8 +35,9 @@ const { compactPicker = false } = Astro.props
   <div class="fm-list-toolbar">
     <h1 data-i18n="filaments.title">Filaments</h1>
     <div class="fm-list-controls">
-      <a href="/filaments/colors" class="fm-btn fm-btn-outline" data-i18n="filaments.manageColors">
-        Manage Colors
+      <a href="/filaments/colors" class="fm-btn fm-btn-outline fm-color-library-link">
+        <span class="fm-color-library-icon" aria-hidden="true"></span>
+        <span data-i18n="colors.title">Color Library</span>
       </a>
       <a id="spool-selection-import" href="/spools/new?from_tag=1" class="fm-btn fm-btn-outline spool-selection-only" hidden data-i18n="spools.importFromTag">Import from Tag</a>
       <a id="add-filament" href="/filaments/new" class="fm-btn fm-btn-primary" data-i18n="filaments.addFilament">

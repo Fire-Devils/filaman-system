@@ -202,6 +202,9 @@
     "statusEmpty": "Empty"
   },
   "settings": {
+    "sidebar": "Sidebar",
+    "showColorLibrary": "Show Color Library in the sidebar",
+    "browserOnly": "Applies to this browser only.",
     "title": "Settings",
     "profile": "Profile",
     "email": "Email",
@@ -225,7 +228,6 @@
     "apiKeys": "API Keys",
     "apiKeysDesc": "Manage API keys for external integrations like Bambuddy",
     "tagScanner": "Tag scanner",
-    "tagScannerDesc": "Applies to this browser only.",
     "scannerAutoOpen": "Open the spool that was scanned",
     "scannerAutoOpenHint": "Put a spool on the scale and this browser follows to it.",
     "scannerDevice": "Reader",
@@ -425,7 +427,6 @@
     "editFilament": "Edit Filament",
     "saveFilament": "Save Filament",
     "failedUpdate": "Failed to update filament",
-    "manageColors": "Manage Colors",
     "searchPlaceholder": "Search product/series, color, manufacturer...",
     "allManufacturers": "All Manufacturers",
     "allTypes": "All Types",
@@ -661,7 +662,7 @@
   },
   "colors": {
     "colorCount": "{count} color(s)",
-    "title": "Manage Colors",
+    "title": "Color Library",
     "addColor": "Add Color",
     "editColor": "Edit Color",
     "name": "Name",

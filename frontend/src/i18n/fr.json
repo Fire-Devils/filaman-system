@@ -202,6 +202,9 @@
     "statusEmpty": "Vide"
   },
   "settings": {
+    "sidebar": "Barre latérale",
+    "showColorLibrary": "Afficher la bibliothèque de couleurs dans la barre latérale",
+    "browserOnly": "S’applique uniquement à ce navigateur.",
     "title": "Réglages",
     "profile": "Profil",
     "email": "E-mail",
@@ -225,7 +228,6 @@
     "apiKeys": "Clés API",
     "apiKeysDesc": "Gérer les clés API pour des intégrations externes comme Bambuddy",
     "tagScanner": "Scanner de tags",
-    "tagScannerDesc": "S'applique uniquement à ce navigateur.",
     "scannerAutoOpen": "Ouvrir la bobine scannée",
     "scannerAutoOpenHint": "Posez une bobine sur la balance et ce navigateur ouvre sa page automatiquement.",
     "scannerDevice": "Lecteur",
@@ -425,7 +427,6 @@
     "editFilament": "Modifier le filament",
     "saveFilament": "Enregistrer le filament",
     "failedUpdate": "Échec de la mise à jour du filament",
-    "manageColors": "Gérer les couleurs",
     "searchPlaceholder": "Rechercher produit/série, couleur, fabricant…",
     "allManufacturers": "Tous les fabricants",
     "allTypes": "Tous les types",
@@ -661,7 +662,7 @@
   },
   "colors": {
     "colorCount": "{count} couleur(s)",
-    "title": "Gérer les couleurs",
+    "title": "Bibliothèque de couleurs",
     "addColor": "Ajouter une couleur",
     "editColor": "Modifier la couleur",
     "name": "Nom",

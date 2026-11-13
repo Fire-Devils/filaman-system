@@ -203,6 +203,9 @@
     "statusEmpty": "Leer"
   },
   "settings": {
+    "sidebar": "Seitenleiste",
+    "showColorLibrary": "Farbbibliothek in der Seitenleiste anzeigen",
+    "browserOnly": "Gilt nur für diesen Browser.",
     "title": "Einstellungen",
     "profile": "Profil",
     "email": "E-Mail",
@@ -226,7 +229,6 @@
     "apiKeys": "API Keys",
     "apiKeysDesc": "API Keys für externe Integrationen wie Bambuddy verwalten",
     "tagScanner": "Tag-Scanner",
-    "tagScannerDesc": "Gilt nur f\u00fcr diesen Browser.",
     "scannerAutoOpen": "Gescannte Spule \u00f6ffnen",
     "scannerAutoOpenHint": "Spule auf die Waage legen, und dieser Browser springt zu ihr.",
     "scannerDevice": "Leseger\u00e4t",
@@ -426,7 +428,6 @@
     "editFilament": "Filament bearbeiten",
     "saveFilament": "Filament speichern",
     "failedUpdate": "Filament konnte nicht aktualisiert werden",
-    "manageColors": "Farben verwalten",
     "searchPlaceholder": "Produkt/Serie, Farbe, Hersteller suchen...",
     "allManufacturers": "Alle Hersteller",
     "allTypes": "Alle Typen",
@@ -662,7 +663,7 @@
   },
   "colors": {
     "colorCount": "{count} Farbe(n)",
-    "title": "Farben verwalten",
+    "title": "Farbbibliothek",
     "addColor": "Farbe hinzufügen",
     "editColor": "Farbe bearbeiten",
     "name": "Name",
