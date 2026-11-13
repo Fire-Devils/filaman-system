@@ -62,6 +62,26 @@ The Spoolman import glyph adapts the reel geometry from [Spoolman's published mo
 - If no icon is declared or loading fails, a puzzle icon is displayed in the sidebar, admin plugin list, and plugin details dialog.
 - Catalog cards reuse an installed plugin's icon when available. Uninstalled plugins show the puzzle icon.
 
+## Filament Editor Launcher
+
+An integration that already declares `capabilities.filament_ui.editor` can opt into an icon button and let the user choose to open it on entry to edit mode:
+
+```json
+{
+  "icon": "icon.svg",
+  "capabilities": {
+    "filament_ui": {
+      "editor": true,
+      "editor_launcher": { "style": "icon", "allow_auto_open": true }
+    }
+  }
+}
+```
+
+`style` accepts `text` (the default) or `icon`. The icon button uses the plugin name as its accessible label and falls back to the puzzle icon. Create and selection launchers keep their text labels.
+
+`allow_auto_open` defaults to false. If enabled in the manifest, the plugin can offer a checkbox that sets the same-origin browser storage key `filaman:plugin:<plugin_key>:open-on-edit` to the string `true`. Clear the key when the user switches it off. Installing the plugin never enables the preference. FilaMan opens at most one opted-in plugin, in discovery order, after the editor is ready. The existing editor permissions and draft staging rules apply.
+
 ## Example SVG
 
 ```xml

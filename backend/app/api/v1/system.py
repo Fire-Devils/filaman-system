@@ -21,7 +21,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool, ValidationError
 from sqlalchemy import DateTime, LargeBinary, delete, func, select, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
@@ -150,6 +150,15 @@ class PluginNavItem(BaseModel):
         from_attributes = True
 
 
+class PluginEditorLauncher(BaseModel):
+    style: Literal["text", "icon"] = "text"
+    allow_auto_open: StrictBool = False
+
+
+class FilamentPluginHookItem(PluginNavItem):
+    editor_launcher: PluginEditorLauncher | None = None
+
+
 class PluginResponse(BaseModel):
     id: int
     plugin_key: str
@@ -242,11 +251,12 @@ async def plugin_icon(plugin_key: str, db: DBSession, _principal: PrincipalDep):
     })
 
 
-@public_router.get("/filament-plugin-hooks", response_model=list[PluginNavItem])
+@public_router.get("/filament-plugin-hooks", response_model=list[FilamentPluginHookItem], response_model_exclude_unset=True)
 async def filament_plugin_hooks(
     db: DBSession,
     principal: PrincipalDep,
     surface: Literal["create", "edit", "selection"],
+    include_launcher: bool = False,
 ):
     await ensure_any_permission(
         db, principal, "filaments:create" if surface == "create" else "filaments:update"
@@ -266,7 +276,15 @@ async def filament_plugin_hooks(
             and hooks.get(capability) is True
             and re.fullmatch(r"/plugin-page/[a-z0-9][a-z0-9_-]*(?:/[a-z0-9][a-z0-9_-]*)*", plugin.page_url or "")
         ):
-            result.append(PluginNavItem.model_validate(plugin))
+            item = FilamentPluginHookItem.model_validate(plugin)
+            if surface == "edit" and include_launcher and isinstance(hooks.get("editor_launcher"), dict):
+                try:
+                    launcher = PluginEditorLauncher.model_validate(hooks["editor_launcher"])
+                except ValidationError:
+                    pass
+                else:
+                    item.editor_launcher = launcher
+            result.append(item)
     return result
 
 

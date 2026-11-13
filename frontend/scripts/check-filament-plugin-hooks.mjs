@@ -12,7 +12,7 @@ const filament = (id, designation) => ({
   material_type: 'PLA', diameter_mm: 1.75, color_mode: 'single',
   colors: [{ color_id: 11, position: 1, color }],
 })
-const plugin = { plugin_key: 'fixture', name: 'Fixture Plugin', page_url: '/plugin-page/fixture' }
+const plugin = { plugin_key: 'fixture', name: 'Fixture Plugin', page_url: '/plugin-page/fixture', icon_url: '/api/v1/plugin-icons/fixture' }
 const first = { ...filament(10, 'Existing PLA'), manufacturer_color_name: ' Fixture Red ' }
 const inventory = [first, ...Array.from({ length: 49 }, (_, index) => filament(100 + index, 'Batch one PLA')), filament(12, 'Second batch PLA')]
 const pickerFilaments = [filament(20, 'Black PLA'), {
@@ -22,6 +22,11 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECU
 try {
   const page = await browser.newPage()
   page.setDefaultTimeout(6000)
+  const pageErrors = []
+  let delayedDiscovery
+  let iconAvailable = true
+  let editorPluginActive = true
+  page.on('pageerror', error => pageErrors.push(error.message))
   const writes = []
   let failFilamentLoad = false
   await page.addInitScript(() => { localStorage.setItem('lang', 'en') })
@@ -33,13 +38,24 @@ try {
     const url = new URL(req.url())
     const path = url.pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })
+    if (path === plugin.icon_url && !iconAvailable) return route.fulfill({ status: 404 })
+    if (path === plugin.icon_url) return route.fulfill({
+      contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>',
+    })
     if (req.method() !== 'GET') {
       if (path.endsWith('/filaments') || path.endsWith('/filaments/10')) writes.push(req.postDataJSON())
       return route.fulfill({ status: 422, json: { detail: { message: 'Fixture intercepted Save' } } })
     }
     let json = []
     if (path.endsWith('/me')) json = { id: 1, email: 'fixture@example.invalid', language: 'en', is_superadmin: true, permissions: [], roles: [] }
-    else if (path.endsWith('/filament-plugin-hooks')) json = [plugin, { ...plugin, name: 'External plugin', page_url: 'https://example.invalid/fixture' }]
+    else if (path.endsWith('/filament-plugin-hooks')) {
+      const editor = url.searchParams.get('surface') === 'edit' && url.searchParams.get('include_launcher') === 'true'
+      if (editor && delayedDiscovery) await delayedDiscovery
+      json = editor && !editorPluginActive ? [] : [
+        editor ? { ...plugin, editor_launcher: { style: 'icon', allow_auto_open: true } } : plugin,
+        { ...plugin, name: 'External plugin', page_url: 'https://example.invalid/fixture' },
+      ]
+    }
     else if (path.endsWith('/manufacturers')) json = { items: [manufacturer], total: 1 }
     else if (path.endsWith('/types')) json = ['PLA', 'PETG']
     else if (path.endsWith('/colors')) json = { items: [color], total: 1 }
@@ -97,6 +113,7 @@ try {
   }
 
   await page.goto(new URL('/filaments/new', base).href)
+  await page.setViewportSize({ width: 1600, height: 900 })
   await field('designation').fill('Unsaved draft')
   await field('default_spool_weight_g').fill('177')
   await field('spool_material').selectOption('Plastic')
@@ -105,6 +122,7 @@ try {
   const spoolProfile = field('filament-spool-profile').getByRole('status')
   await spoolProfile.filter({ hasText: reel.name }).waitFor()
   const create = await openPlugin('editor')
+  assert.equal(await launch.textContent(), plugin.name)
   const context = await message(create, 'filaman:filament-context')
   assert.equal(context.mode, 'create')
   assert.equal(context.filament_id, null)
@@ -153,6 +171,9 @@ try {
   await page.locator('#btn-enter-filament-edit').waitFor()
   assert.equal(await launch.isVisible(), false)
   await page.goto(new URL('/filaments/10?edit=1', base).href)
+  await launch.locator('.fm-plugin-icon-mask').waitFor()
+  assert.equal(await launch.textContent(), '')
+  assert.equal(await dialog.isVisible(), false)
   const edit = await openPlugin('editor')
   const editing = await message(edit, 'filaman:filament-context')
   assert.equal(editing.mode, 'edit')
@@ -191,6 +212,87 @@ try {
   await dialog.getByRole('button', { name: 'Close' }).click()
   first.record_token = originalToken
 
+  await page.evaluate(() => localStorage.setItem('filaman:plugin:fixture:open-on-edit', 'true'))
+  await page.goto(new URL('/filaments/10', base).href)
+  assert.equal(await dialog.isVisible(), false)
+  await page.locator('#btn-enter-filament-edit').click()
+  await dialog.frameLocator('iframe').getByText('Plugin fixture').waitFor()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await page.locator('#btn-edit-filament').click()
+  await page.locator('#btn-enter-filament-edit').click()
+  await dialog.frameLocator('iframe').getByText('Plugin fixture').waitFor()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await page.goto(new URL('/filaments/10?edit=1', base).href)
+  await dialog.frameLocator('iframe').getByText('Plugin fixture').waitFor()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  assert.equal(await launch.evaluate(button => button === document.activeElement), true)
+  await page.locator('#btn-edit-filament').click()
+  editorPluginActive = false
+  const rediscovery = page.waitForResponse(response => response.url().includes('surface=edit&include_launcher=true'), { timeout: 1000 })
+  await page.locator('#btn-enter-filament-edit').click()
+  await rediscovery
+  await launch.waitFor({ state: 'detached' })
+  assert.equal(await dialog.isVisible(), false)
+  editorPluginActive = true
+  await page.goto(new URL('/filaments/new', base).href)
+  await launch.waitFor()
+  assert.equal(await dialog.isVisible(), false)
+
+  let releaseDiscovery
+  delayedDiscovery = new Promise(resolve => { releaseDiscovery = resolve })
+  await page.goto(new URL('/filaments/10', base).href)
+  await page.locator('#btn-enter-filament-edit').click()
+  await field('designation').waitFor()
+  await field('designation').press('End')
+  await field('designation').press('X')
+  releaseDiscovery()
+  delayedDiscovery = undefined
+  await launch.waitFor()
+  assert.equal(await dialog.isVisible(), false)
+  await openPlugin('editor')
+  await dialog.getByRole('button', { name: 'Close' }).click()
+
+  delayedDiscovery = new Promise(resolve => { releaseDiscovery = resolve })
+  await page.goto(new URL('/filaments/10?edit=1', base).href)
+  await field('designation').waitFor()
+  await page.evaluate(() => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+  })
+  releaseDiscovery()
+  delayedDiscovery = undefined
+  await launch.waitFor()
+  assert.equal(await dialog.isVisible(), false)
+
+  delayedDiscovery = new Promise(resolve => { releaseDiscovery = resolve })
+  const pendingDiscovery = page.waitForRequest(request => request.url().includes('surface=edit&include_launcher=true'))
+  await page.goto(new URL('/filaments/10?edit=1', base).href)
+  await pendingDiscovery
+  const abortedDiscovery = page.waitForEvent('requestfailed', request => request.url().includes('surface=edit&include_launcher=true'))
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeunload')))
+  await abortedDiscovery
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
+  releaseDiscovery()
+  delayedDiscovery = undefined
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+  await launch.waitFor()
+  assert.equal(await dialog.isVisible(), false, 'Restoring a page can restore launchers without auto-opening one')
+
+  iconAvailable = false
+  await page.addInitScript(() => {
+    const getItem = Storage.prototype.getItem
+    Storage.prototype.getItem = function (key) {
+      if (key === 'filaman:plugin:fixture:open-on-edit') throw new DOMException('Storage disabled', 'SecurityError')
+      return getItem.call(this, key)
+    }
+  })
+  await page.goto(new URL('/filaments/10?edit=1', base).href)
+  await launch.locator('svg use[href$="#icon-plugin"]').waitFor({ state: 'attached' })
+  await launch.locator('img').waitFor({ state: 'detached' })
+  assert.equal(await dialog.isVisible(), false)
+  await openPlugin('editor')
+  assert.deepEqual(pageErrors, [])
+  await dialog.getByRole('button', { name: 'Close' }).click()
+
   await page.goto(new URL('/filaments', base).href)
   await page.locator('[data-filament-id="10"]').waitFor()
   await page.locator('[data-filament-id="10"]').check()
@@ -202,7 +304,9 @@ try {
   await page.locator('[data-filament-id="12"]').check()
   await page.getByRole('heading', { name: 'Filaments', level: 1, exact: true }).scrollIntoViewIfNeeded()
   const selection = await openPlugin('selection')
+  assert.equal(await launch.textContent(), plugin.name)
   const selected = await message(selection, 'filaman:filament-context')
+  assert.equal(await dialog.evaluate(el => el.matches(':modal')), true)
   assert.equal(selected.mode, 'selection')
   assert.deepEqual(selected.filament_ids, [10, 12])
   assert.deepEqual(selected.expected_filaments, [inventory[0], inventory[50]].map(
