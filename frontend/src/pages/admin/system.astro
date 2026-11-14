@@ -282,7 +282,7 @@ import FormDialog from '../../components/FormDialog.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { navHrefFor } from '../../lib/plugin-nav'
+    import { navHrefFor, notifyPluginNavChanged } from '../../lib/plugin-nav'
     import { createPluginIcon } from '../../lib/plugin-icon'
     import { ApiError, api, request } from '../../lib/api'
     import { bindFormDialog } from '../../lib/form-dialog'
@@ -499,6 +499,7 @@ import FormDialog from '../../components/FormDialog.astro'
             if (panelSignal.aborted) return
             button.disabled = true
             await api.delete(`/admin/system/plugins/${key}${deleteData ? '?delete_data=true' : ''}`)
+            notifyPluginNavChanged()
             removeInstalledPlugin(key)
           } catch (err) {
             if (panelSignal.aborted || isAbortError(err)) return
@@ -548,6 +549,7 @@ import FormDialog from '../../components/FormDialog.astro'
 
             if (panelSignal.aborted) return
             await api.patch(`/admin/system/plugins/${key}/active`, { is_active: newState })
+            notifyPluginNavChanged()
             appliedStatus.set(key, ++installedListRequest)
             const plugin = plugins.find(p => p.plugin_key === key)
             if (plugin) plugin.is_active = newState
@@ -1021,6 +1023,7 @@ import FormDialog from '../../components/FormDialog.astro'
 
     function applyInstalledPlugin(plugin: Plugin, startedAt: number) {
       window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: plugin.plugin_key }))
+      notifyPluginNavChanged(plugin.plugin_key)
       installedListRequest++
       const index = plugins.findIndex(installed => installed.plugin_key === plugin.plugin_key)
       if (index === -1) plugins.push(plugin)

@@ -242,8 +242,145 @@ class TestAuthMe:
 
         assert response.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_me_ignores_non_object_ui_preferences(self, auth_client, admin_user, db_session):
+        client, _ = auth_client
+        admin_user.ui_preferences = ["invalid restored preferences"]
+        await db_session.commit()
+
+        response = await client.get("/api/v1/me")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == admin_user.id
+        assert "X-Filaman-Theme" not in response.headers
+
 
 class TestMePreferences:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stored", [["invalid"], "invalid", 1, True, None])
+    @pytest.mark.parametrize("method", ["get", "patch"])
+    async def test_sidebar_recovers_non_object_preferences(
+        self, auth_client, admin_user, db_session, stored, method
+    ):
+        client, csrf = auth_client
+        admin_user.ui_preferences = stored
+        await db_session.commit()
+
+        response = await client.request(
+            method, "/api/v1/me/preferences/sidebar", headers={"X-CSRF-Token": csrf},
+            **({"json": {"theme": "dark"}} if method == "patch" else {}),
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "sidebar": None, "theme": "dark" if method == "patch" else None, "expanded": None,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stored, expected", [
+        (None, {"sidebar": None, "theme": None, "expanded": None}),
+        (["invalid"], {"sidebar": None, "theme": None, "expanded": None}),
+        ("invalid", {"sidebar": None, "theme": None, "expanded": None}),
+        ({"sidebar": {"navigation": [{"id": "bad id!"}]}, "theme": "dark", "expanded": True},
+         {"sidebar": None, "theme": "dark", "expanded": None}),
+        ({"sidebar": {"remember": True, "compact": True}, "theme": "unknown", "expanded": True},
+         {"sidebar": {"navigation": [], "plugins": [], "compact": True, "hover": True,
+                      "remember": True, "showColorMode": True}, "theme": None, "expanded": True}),
+        ({"sidebar": {"remember": True}, "theme": "light", "expanded": {"invalid": True}},
+         {"sidebar": {"navigation": [], "plugins": [], "compact": False, "hover": True,
+                      "remember": True, "showColorMode": True}, "theme": "light", "expanded": None}),
+        ({"sidebar": {}, "expanded": True},
+         {"sidebar": {"navigation": [], "plugins": [], "compact": False, "hover": True,
+                      "remember": False, "showColorMode": True}, "theme": None, "expanded": None}),
+    ])
+    async def test_sidebar_recovers_invalid_stored_fields_independently(
+        self, auth_client, admin_user, db_session, stored, expected
+    ):
+        client, csrf = auth_client
+        unrelated = {"dashboard_hidden_widgets": ["filamentStats"], "future_preference": {"enabled": True}}
+        admin_user.ui_preferences = {**unrelated, "sidebar_settings": stored}
+        await db_session.commit()
+
+        response = await client.get("/api/v1/me/preferences/sidebar")
+        assert response.status_code == 200
+        assert response.json() == expected
+        response = await client.patch(
+            "/api/v1/me/preferences/sidebar", headers={"X-CSRF-Token": csrf}, json={},
+        )
+        assert response.status_code == 200
+        assert response.json() == expected
+        await db_session.refresh(admin_user)
+        assert admin_user.ui_preferences == {**unrelated, "sidebar_settings": expected}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", [
+        {"sidebar": []}, {"sidebar": {"compact": "invalid"}}, {"expanded": {}},
+        {"sidebar": {"navigation": [{"id": "bad id!"}]}},
+        {"sidebar": {"navigation": [{"id": "/spools"}] * 129}},
+        {"sidebar": {"plugins": [{"id": "moonraker"}] * 513}},
+        {"expected_sidebar": {"navigation": [{"id": "x" * 129}]}},
+    ])
+    async def test_sidebar_rejects_invalid_incoming_preferences(self, auth_client, payload):
+        client, csrf = auth_client
+        response = await client.patch(
+            "/api/v1/me/preferences/sidebar", headers={"X-CSRF-Token": csrf}, json=payload,
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("compact", [True, None])
+    async def test_sidebar_preferences_survive_sessions_and_reject_stale_writes(
+        self, auth_client, normal_user, compact
+    ):
+        client, csrf = auth_client
+        headers = {"X-CSRF-Token": csrf}
+        path = "/api/v1/me/preferences/sidebar"
+        assert (await client.get(path)).json() == {"sidebar": None, "theme": None, "expanded": None}
+
+        sidebar = {
+            "navigation": [{"id": "/filaments/colors", "shown": False}],
+            "plugins": [{"id": "moonraker", "shown": True, "pinned": False}],
+            "remember": True,
+            "compact": compact,
+        }
+        saved = await client.patch(path, headers=headers, json={
+            "sidebar": sidebar, "expected_sidebar": None, "theme": "dark", "expanded": True,
+        })
+        assert saved.status_code == 200
+        assert saved.json()["theme"] == "dark"
+        assert saved.json()["expanded"] is True
+        assert saved.json()["sidebar"]["plugins"] == sidebar["plugins"]
+        assert saved.json()["sidebar"]["compact"] is compact
+        assert (await client.get("/api/v1/me")).headers["X-Filaman-Theme"] == "dark"
+
+        stale = await client.patch(path, headers=headers, json={"sidebar": {}, "expected_sidebar": None})
+        assert stale.status_code == 409
+        assert (await client.patch(path, headers=headers, json={"theme": "unknown"})).status_code == 422
+        assert (await client.patch(
+            f"{path}?account_id={normal_user.id}", headers=headers, json={"theme": "light"},
+        )).status_code == 403
+        imported = await client.patch(
+            path, headers=headers, json={"sidebar": {}, "theme": "light", "import_legacy": True, "expanded": False},
+        )
+        assert imported.json() == saved.json()
+        dashboard = await client.patch(
+            "/api/v1/me/preferences", headers=headers, json={"dashboard_hidden_widgets": ["filamentStats"]},
+        )
+        assert dashboard.json() == {"dashboard_hidden_widgets": ["filamentStats"]}
+        assert (await client.get(path)).json() == saved.json()
+
+        await client.post("/auth/logout", headers=headers)
+        assert (await client.get(path)).status_code == 401
+        client.cookies.clear()
+        credentials = {"email": "test-admin@example.com", "password": "testpassword"}
+        assert (await client.post("/auth/login", json=credentials)).status_code == 200
+        assert (await client.get(path)).json() == saved.json()
+        await client.post("/auth/logout", headers={"X-CSRF-Token": client.cookies.get("csrf_token")})
+        client.cookies.clear()
+        assert (await client.post("/auth/login", json={**credentials, "email": normal_user.email})).status_code == 200
+        assert (await client.get(path)).json() == {"sidebar": None, "theme": None, "expanded": None}
+        assert "X-Filaman-Theme" not in (await client.get("/api/v1/me")).headers
+
     @pytest.mark.asyncio
     async def test_preferences_roundtrip(self, auth_client):
         client, csrf = auth_client
