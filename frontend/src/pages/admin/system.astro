@@ -171,7 +171,7 @@ import FormDialog from '../../components/FormDialog.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
-    import { navHrefFor } from '../../lib/plugin-nav'
+    import { navHrefFor, notifyPluginNavChanged } from '../../lib/plugin-nav'
     import { createPluginIcon } from '../../lib/plugin-icon'
     import { ApiError, api, request } from '../../lib/api'
     import { bindFormDialog } from '../../lib/form-dialog'
@@ -307,6 +307,7 @@ import FormDialog from '../../components/FormDialog.astro'
             if (!(await confirmRelease(info))) return
             btnEl.textContent = t('admin.pluginUpdating')
             await installRelease(info)
+            notifyPluginNavChanged()
             showMessage(`${t('common.successTitle')}: ${plugins.find(plugin => plugin.plugin_key === key)?.name || key} · ${info.version}`)
             invalidateUpdate(key)
             loadPlugins()
@@ -353,6 +354,7 @@ import FormDialog from '../../components/FormDialog.astro'
           
           try {
             await api.delete(`/admin/system/plugins/${key}${qs}`)
+            notifyPluginNavChanged()
             invalidateUpdate(key)
             loadPlugins()
           } catch (err) {
@@ -407,6 +409,7 @@ import FormDialog from '../../components/FormDialog.astro'
           
           try {
             await api.patch(`/admin/system/plugins/${key}/active`, { is_active: newState })
+            notifyPluginNavChanged()
 
             // Lokalen State aktualisieren
             const plugin = plugins.find(p => p.plugin_key === key)
@@ -635,6 +638,7 @@ import FormDialog from '../../components/FormDialog.astro'
           result = await request<InstallResult>('/admin/system/plugins/install', { method: 'POST', body: formData })
         }
         const message = result.message || `${result.plugin.name} v${result.plugin.version}`
+        notifyPluginNavChanged()
         installSuccess.hidden = false
         installSuccess.textContent = message
         

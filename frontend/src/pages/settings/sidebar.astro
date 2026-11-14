@@ -1,0 +1,176 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import ColorModePicker from '../../components/ColorModePicker.astro'
+---
+
+<Layout title="FilaMan - Sidebar settings">
+  <div id="sidebar-settings" class="fm-settings-page">
+    <header class="fm-admin-toolbar sidebar-settings-toolbar">
+      <div>
+        <a href="/settings" class="fm-admin-back">← <span data-i18n="settings.title">Settings</span></a>
+        <h1 data-i18n="settings.sidebarTitle">Sidebar settings</h1>
+      </div>
+      <button type="button" class="fm-btn fm-btn-outline" id="sidebar-reset" data-i18n="settings.sidebarReset">Reset to defaults</button>
+    </header>
+
+    <form id="sidebar-settings-form" class="sidebar-settings-form">
+      <div class="sidebar-settings-sections" role="tablist" aria-label="Sidebar sections" data-i18n-aria-label="settings.sidebarSections">
+        <button type="button" id="sidebar-navigation-tab" role="tab" aria-selected="true" aria-controls="sidebar-navigation-section" data-i18n="settings.sidebarNavigation">Navigation</button>
+        <button type="button" id="sidebar-plugins-tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="sidebar-plugins-section" data-i18n="nav.plugins">Plugins</button>
+      </div>
+
+      <div class="sidebar-settings-lists">
+        <section id="sidebar-navigation-section" class="fm-card fm-section" aria-labelledby="sidebar-navigation-title">
+          <header class="fm-section-header">
+            <h2 id="sidebar-navigation-title" tabindex="-1" data-i18n="settings.sidebarNavigation">Navigation</h2>
+          </header>
+          <div class="sidebar-options">
+            <fieldset class="sidebar-density">
+              <legend data-i18n="settings.sidebarSpacing">Row spacing</legend>
+              <div>
+                <label><input type="radio" name="density" value="comfortable" checked /><span data-i18n="settings.sidebarComfortable">Comfortable</span></label>
+                <label><input type="radio" name="density" value="compact" /><span data-i18n="settings.sidebarCompact">Compact</span></label>
+              </div>
+            </fieldset>
+          </div>
+          <div class="sidebar-settings-list-heading">
+            <span data-i18n="settings.sidebarItem">Item</span><span data-i18n="settings.sidebarShow">Show</span>
+          </div>
+          <ul id="sidebar-navigation-order" class="sidebar-settings-list"></ul>
+        </section>
+        <section id="sidebar-plugins-section" class="fm-card fm-section" aria-labelledby="sidebar-plugins-title">
+          <header class="fm-section-header">
+            <h2 id="sidebar-plugins-title" tabindex="-1" data-i18n="nav.plugins">Plugins</h2>
+          </header>
+          <div class="sidebar-options sidebar-plugin-options">
+            <label class="sidebar-hover-option">
+              <span data-i18n="settings.sidebarHover">Preview plugins on hover</span>
+              <span class="fm-toggle"><input type="checkbox" name="hover" checked /><span class="fm-toggle-slider"></span></span>
+            </label>
+            <label>
+              <span data-i18n="settings.sidebarRemember">Remember expanded plugins</span>
+              <span class="fm-toggle"><input type="checkbox" name="remember" /><span class="fm-toggle-slider"></span></span>
+            </label>
+          </div>
+          <p class="fm-field-hint sidebar-plugin-hint" data-i18n="settings.sidebarPinHint">Unpinned plugins appear under the Plugins caret.</p>
+          <div class="sidebar-settings-list-heading sidebar-settings-plugin">
+            <span data-i18n="settings.sidebarItem">Item</span><span data-i18n="settings.sidebarPin">Pin</span><span data-i18n="settings.sidebarShow">Show</span>
+          </div>
+          <ul id="sidebar-plugins-order" class="sidebar-settings-list"></ul>
+          <p id="sidebar-plugins-empty" class="fm-field-hint sidebar-plugin-hint" role="status" data-i18n="common.loading">Loading…</p>
+        </section>
+      </div>
+
+      <div class="sidebar-settings-footer">
+        <button type="submit" class="fm-btn fm-btn-primary" data-i18n="settings.sidebarSave">Save changes</button>
+        <p class="fm-field-hint" data-i18n="settings.sidebarAccount">Saved to your account.</p>
+        <span id="sidebar-settings-status" role="status" class="fm-field-hint"></span>
+      </div>
+    </form>
+
+    <template id="sidebar-settings-row">
+      <li class="sidebar-settings-item">
+        <div class="sidebar-settings-row">
+          <div class="sidebar-reorder-controls">
+            <button type="button" class="fm-row-action sidebar-reorder" tabindex="-1">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
+            </button>
+            <button type="button" class="fm-row-action" data-step="-1" aria-label="Move up" data-i18n-aria-label="settings.sidebarMoveUp" data-i18n-title="settings.sidebarMoveUp">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+            </button>
+            <button type="button" class="fm-row-action" data-step="1" aria-label="Move down" data-i18n-aria-label="settings.sidebarMoveDown" data-i18n-title="settings.sidebarMoveDown">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+            </button>
+          </div>
+          <span class="sidebar-item-label"></span>
+          <label class="sidebar-pin"><input type="checkbox" /><span aria-hidden="true"></span></label>
+          <label class="sidebar-show"><span class="fm-toggle"><input type="checkbox" /><span class="fm-toggle-slider"></span></span></label>
+        </div>
+      </li>
+    </template>
+    <template id="sidebar-color-mode-preview"><ColorModePicker preview /></template>
+  </div>
+
+  <style is:global>
+    #sidebar-settings { max-width: var(--content-max-width); --sidebar-reorder-width: 108px; --sidebar-label-size: .88rem; }
+    .sidebar-settings-form { display: grid; gap: 16px; }
+    .sidebar-options { display: grid; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-density { margin: 0; padding: 0; border: 0; }
+    .sidebar-density legend { margin-bottom: 6px; font-weight: 600; }
+    .sidebar-density > div { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sidebar-density label { position: relative; cursor: pointer; }
+    .sidebar-density input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+    .sidebar-density span { display: grid; place-items: center; min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border); }
+    .sidebar-density input:checked + span { background: var(--accent); color: var(--btn-primary-text); }
+    .sidebar-density input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .sidebar-plugin-options { gap: 0; }
+    #sidebar-settings .fm-toggle input { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; margin: 0; cursor: pointer; }
+    .sidebar-options > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; cursor: pointer; }
+    .sidebar-settings-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+    .sidebar-settings-sections { display: none; }
+    .sidebar-settings-list { list-style: none; padding: 0; margin: 0; }
+    .sidebar-settings-list-heading, .sidebar-settings-row { display: grid; align-items: center; grid-template-columns: var(--sidebar-reorder-width) minmax(0, 1fr) 50px; column-gap: 4px; padding-inline: 8px; }
+    .sidebar-settings-plugin, #sidebar-plugins-order .sidebar-settings-row { grid-template-columns: var(--sidebar-reorder-width) minmax(0, 1fr) 44px 50px; }
+    .sidebar-settings-list-heading { min-height: 36px; background: var(--bg-soft); color: var(--text-muted); font-size: .8rem; font-weight: 600; text-align: center; }
+    .sidebar-settings-list-heading > :first-child { grid-column: 2; text-align: start; }
+    .sidebar-settings-item + .sidebar-settings-item { border-top: 1px solid var(--border); }
+    .sidebar-settings-item[data-drop-target] { background: var(--bg-hover); }
+    .sidebar-settings-row { min-height: 48px; }
+    .sidebar-reorder-controls { display: flex; align-items: center; }
+    .sidebar-reorder-controls button { width: 36px; height: 44px; }
+    .sidebar-reorder { touch-action: none; cursor: grab; }
+    .sidebar-reorder:active { cursor: grabbing; }
+    .sidebar-item-label { display: flex; min-width: 0; align-items: center; gap: 8px; overflow-wrap: anywhere; font-weight: 600; font-size: var(--sidebar-label-size); }
+    .sidebar-item-label .fm-nav-icon { flex-shrink: 0; width: 20px; }
+    .sidebar-item-label:has(.fm-theme-preview) { flex-wrap: wrap; gap: 4px 8px; padding-block: 4px; }
+    .sidebar-pin, .sidebar-show { display: grid; place-items: center; min-height: 44px; cursor: pointer; }
+    .sidebar-pin:has(input:disabled) { cursor: default; }
+    .sidebar-pin { position: relative; }
+    .sidebar-pin input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+    .sidebar-pin span {
+      display: grid; place-items: center; width: 18px; height: 18px; pointer-events: none;
+      border: 1px solid var(--text-muted); border-radius: 3px;
+    }
+    .sidebar-pin input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-text); }
+    .sidebar-pin input:checked + span::before {
+      content: ''; width: 8px; height: 5px; border: solid currentColor; border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg);
+    }
+    .sidebar-pin input:disabled + span { opacity: .45; }
+    #sidebar-plugins-empty[hidden] { display: none; }
+    .sidebar-plugin-hint { margin: 0; padding: 12px; }
+    .sidebar-settings-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-bottom: env(safe-area-inset-bottom); }
+    .sidebar-settings-footer .fm-btn, .sidebar-settings-toolbar .fm-btn { min-height: 44px; }
+    .sidebar-settings-footer p, #sidebar-settings-status { margin: 0; }
+    .sidebar-settings-footer .fm-btn:disabled {
+      background: var(--bg-soft); border-color: var(--border); color: var(--text-muted); box-shadow: none; cursor: not-allowed; transform: none;
+    }
+    .sidebar-settings-row label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+    @container detail-page (max-width: 52rem) {
+      .sidebar-settings-lists { grid-template-columns: minmax(0, 1fr); }
+      .sidebar-settings-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--border); }
+      .sidebar-settings-sections [role="tab"] {
+        min-height: 44px; padding: 8px; border: 0; border-bottom: 2px solid transparent;
+        background: transparent; color: var(--text-muted); font: 600 .9rem var(--font-sans); cursor: pointer;
+      }
+      .sidebar-settings-sections [aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); }
+      .sidebar-settings-sections [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+      #sidebar-settings:has([aria-controls="sidebar-plugins-section"][aria-selected="true"]) #sidebar-navigation-section,
+      #sidebar-settings:has([aria-controls="sidebar-navigation-section"][aria-selected="true"]) #sidebar-plugins-section { display: none; }
+    }
+    @media (hover: none), (max-width: 599px) {
+      .sidebar-plugin-options > .sidebar-hover-option { display: none; }
+    }
+    @media (max-width: 599px) {
+      .sidebar-plugin-options { padding-block: 4px; }
+      .sidebar-options > label { font-size: var(--sidebar-label-size); font-weight: 600; line-height: 1.35; }
+      .sidebar-settings-list-heading, .sidebar-settings-row { padding-inline: 4px; column-gap: 2px; }
+      .sidebar-settings-plugin, #sidebar-plugins-order .sidebar-settings-row {
+        grid-template-columns: var(--sidebar-reorder-width) minmax(0, 1fr) 44px 44px;
+      }
+      .sidebar-reorder-controls .sidebar-reorder { width: 44px; }
+      .sidebar-reorder-controls [data-step] { width: 32px; }
+      .sidebar-settings-row .sidebar-item-label .fm-nav-icon { display: none; }
+      .sidebar-settings-footer .fm-btn { width: 100%; }
+    }
+  </style>
+</Layout>

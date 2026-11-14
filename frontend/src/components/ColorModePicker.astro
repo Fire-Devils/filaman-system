@@ -1,0 +1,20 @@
+---
+interface Props { id?: string; preview?: boolean }
+const { id, preview = false } = Astro.props
+const Option = preview ? 'span' : 'button'
+---
+<div id={id} class:list={['fm-theme-toggle', { 'fm-theme-preview': preview }]} role={preview ? undefined : 'group'}
+  aria-hidden={preview ? 'true' : undefined} aria-label={preview ? undefined : 'Color mode'} data-i18n-aria-label={preview ? undefined : 'theme.colorMode'}>
+  <Option type={preview ? undefined : 'button'} data-theme="brand" class="fm-theme-option active" aria-pressed={preview ? undefined : 'true'}>
+    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path fill="currentColor" stroke="none" d="M12 3a9 9 0 0 1 0 18Z"/></svg>
+    <span data-i18n="theme.default">Default</span>
+  </Option>
+  <Option type={preview ? undefined : 'button'} data-theme="light" class="fm-theme-option" aria-pressed={preview ? undefined : 'false'}>
+    <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+    <span data-i18n="theme.light">Light</span>
+  </Option>
+  <Option type={preview ? undefined : 'button'} data-theme="dark" class="fm-theme-option" aria-pressed={preview ? undefined : 'false'}>
+    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20.9 13.3A9 9 0 0 1 10.7 3.1a9 9 0 1 0 10.2 10.2Z"/></svg>
+    <span data-i18n="theme.dark">Dark</span>
+  </Option>
+</div>
