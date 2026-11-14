@@ -4,7 +4,6 @@ import inspect
 import json
 import logging
 import math
-import shutil
 import sys
 from collections.abc import Callable, Iterable
 from contextlib import nullcontext
@@ -598,56 +597,15 @@ class PluginManager:
                 dependencies = manifest.get("dependencies", [])
                 if not dependencies:
                     continue
-                await self._install_pip_packages(
-                    dependencies, manifest.get("plugin_key", plugin_dir.name)
-                )
+                await self._install_pip_packages(dependencies, manifest.get("plugin_key", plugin_dir.name))
             except Exception:
                 logger.warning("Could not ensure dependencies for %s", plugin_dir.name, exc_info=True)
 
     @staticmethod
     async def _install_pip_packages(packages: list[str], plugin_key: str) -> None:
-        """Install Python packages via uv (preferred) or pip."""
-        commands: list[list[str]] = []
-        uv_path = shutil.which("uv")
-        if uv_path:
-            commands.append(
-                [
-                    uv_path,
-                    "pip",
-                    "install",
-                    "--python",
-                    sys.executable,
-                    "--quiet",
-                    *packages,
-                ]
-            )
-        commands.append([sys.executable, "-m", "pip", "install", "--quiet", *packages])
+        from app.services.plugin_service import PluginInstallService
 
-        for cmd in commands:
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=120
-                )
-                if process.returncode == 0:
-                    logger.info(f"Dependencies for '{plugin_key}' ensured successfully")
-                    return
-                logger.warning(
-                    f"Dependency install failed for '{plugin_key}' with {cmd[0]}: "
-                    f"{stderr.decode().strip() if stderr else 'unknown error'}"
-                )
-            except FileNotFoundError:
-                continue
-            except asyncio.TimeoutError:
-                logger.error(f"Timeout installing dependencies for '{plugin_key}'")
-                return
-        logger.error(
-            f"Could not install dependencies for '{plugin_key}': all methods failed"
-        )
+        await PluginInstallService(None)._install_dependencies(packages, plugin_key)
 
     async def start_all(self) -> None:
         await self._ensure_all_plugin_dependencies()
