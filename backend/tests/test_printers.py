@@ -3,17 +3,16 @@ import runpy
 from pathlib import Path
 from socket import socket
 from tempfile import TemporaryDirectory
-
-import httpx
-from fastapi import FastAPI, HTTPException, Request
-import pytest
-from sqlalchemy import event
-from sqlalchemy.orm.attributes import set_committed_value
 from unittest.mock import AsyncMock, patch
 
+import httpx
+import pytest
 from app.api.v1 import printers
 from app.core import primary_socket, worker_reload
 from app.models import Location, Printer, PrinterSlot
+from fastapi import FastAPI, HTTPException, Request
+from sqlalchemy import event
+from sqlalchemy.orm.attributes import set_committed_value
 
 
 def test_primary_socket_separates_databases_with_the_same_temp_root():
@@ -105,7 +104,8 @@ async def test_primary_socket_rejects_new_work_while_draining_inflight_requests(
                     rejected = await client.post("http://localhost/driver")
                     asyncio.get_running_loop().call_later(0.2, release.set)
                 assert rejected.status_code == 503
-                assert rejected.json()["detail"]["code"] == "primary_worker_required"
+                assert rejected.headers[primary_socket.PRIMARY_RETRY_HEADER] == "1"
+                assert rejected.json()["detail"]["code"] == "primary_worker_draining"
                 assert (await response).json() == {"completed": True}
                 assert not path.exists()
 
@@ -620,3 +620,88 @@ class TestDriverLifecycleWorkerRouting:
         assert response.status_code == 204
         await db_session.refresh(printer)
         assert printer.deleted_at is not None
+
+
+@pytest.mark.parametrize("gap", [False, True])
+async def test_primary_proxy_retries_explicit_drain_rejection(monkeypatch, private_socket_path, gap):
+    received = []
+
+    def handle(request):
+        received.append(request)
+        if len(received) == 1:
+            return httpx.Response(503, headers={primary_socket.PRIMARY_RETRY_HEADER: "1"},
+                                  json={"detail": {"code": "primary_worker_draining"}})
+        if gap and len(received) == 2:
+            raise httpx.ConnectError("Replacement socket is not ready", request=request)
+        return httpx.Response(200, json={"accepted": True})
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handle))
+    request = Request({"type": "http", "headers": [], "query_string": b"slot=1"})
+
+    assert await printers._proxy_to_primary(
+        request, "POST", "/driver/action", {"spool_id": 67}
+    ) == {"accepted": True}
+    assert len(received) == (3 if gap else 2)
+    assert all(r.url.query == b"slot=1" and r.content == b'{"spool_id":67}' for r in received)
+
+
+@pytest.mark.parametrize(
+    ("rejected_first", "failure"),
+    [(False, httpx.ConnectError), (False, httpx.ReadTimeout), (True, httpx.ReadTimeout)],
+)
+async def test_primary_proxy_stops_on_transport_failure(monkeypatch, private_socket_path, rejected_first, failure):
+    received = []
+
+    def handle(request):
+        received.append(request)
+        if rejected_first and len(received) == 1:
+            return httpx.Response(503, headers={primary_socket.PRIMARY_RETRY_HEADER: "1"},
+                                  json={"detail": {"code": "primary_worker_draining"}})
+        raise failure("Primary transport failed", request=request)
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handle))
+    request = Request({"type": "http", "headers": [], "query_string": b""})
+    with pytest.raises(HTTPException) as error:
+        await printers._proxy_to_primary(request, "POST", "/driver/action")
+    assert error.value.detail["code"] == "primary_proxy_failed"
+    assert len(received) == (2 if rejected_first else 1)
+
+
+async def test_primary_proxy_exhaustion_preserves_definite_rejection(monkeypatch, private_socket_path):
+    attempts = 0
+
+    def handle(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, headers={primary_socket.PRIMARY_RETRY_HEADER: "1"}, json={"detail": {
+                "code": "primary_worker_draining", "message": "Primary worker is draining. Please retry.",
+            }})
+        raise httpx.ConnectError("Replacement socket is not ready", request=request)
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handle))
+    monkeypatch.setattr(printers.asyncio, "sleep", AsyncMock())
+    request = Request({"type": "http", "headers": [], "query_string": b""})
+    with pytest.raises(HTTPException) as error:
+        await printers._proxy_to_primary(request, "POST", "/driver/action")
+
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "primary_worker_draining"
+    assert attempts == 11
+
+
+
+async def test_primary_proxy_does_not_retry_application_503(monkeypatch, private_socket_path):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(503, json={"detail": {"code": "primary_worker_draining"}})
+
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handle))
+    request = Request({"type": "http", "headers": [], "query_string": b""})
+    with pytest.raises(HTTPException) as error:
+        await printers._proxy_to_primary(request, "POST", "/driver/action")
+
+    assert error.value.detail["code"] == "primary_worker_draining"
+    assert len(requests) == 1

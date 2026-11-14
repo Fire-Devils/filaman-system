@@ -1,5 +1,6 @@
-import logging
+import asyncio
 import inspect
+import logging
 from typing import Any, Literal
 
 import httpx
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import selectinload
 
+from app.core import primary_socket
 from app.core.security import Principal
 from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.api.v1.schemas import PaginatedResponse
@@ -69,15 +71,41 @@ async def _proxy_to_primary(
     }
     body = {"json": json_body} if files is None else {"files": files}
     try:
-        transport = httpx.AsyncHTTPTransport(uds=str(primary_socket_path()))
-        async with httpx.AsyncClient(transport=transport, timeout=timeout) as client:
-            response = await client.request(
-                method,
-                f"http://localhost{path}",
-                params=request.query_params,
-                headers=headers,
-                **body,
-            )
+        socket_path = str(primary_socket_path())
+        # Limit the reconnect window while retaining the normal read timeout for accepted work.
+        for attempt in range(11):
+            if attempt:
+                await asyncio.sleep(0.2)
+            transport = httpx.AsyncHTTPTransport(uds=socket_path)
+            request_timeout = httpx.Timeout(timeout, connect=min(timeout, 0.2)) if attempt else timeout
+            try:
+                async with httpx.AsyncClient(transport=transport, timeout=request_timeout) as client:
+                    response = await client.request(
+                        method,
+                        f"http://localhost{path}",
+                        params=request.query_params,
+                        headers=headers,
+                        **body,
+                    )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                # Keep the last explicit rejection while waiting for the replacement to bind.
+                if attempt:
+                    continue
+                raise
+
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            # Only the private listener's pre-dispatch rejection permits a replay.
+            if not (
+                response.status_code == 503
+                and response.headers.get(primary_socket.PRIMARY_RETRY_HEADER) == "1"
+                and isinstance(detail, dict)
+                and detail.get("code") == primary_socket.PRIMARY_WORKER_DRAINING
+            ):
+                break
     except (OSError, httpx.TransportError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -90,14 +118,9 @@ async def _proxy_to_primary(
     if method == "DELETE" and response.status_code == status.HTTP_204_NO_CONTENT:
         return None
 
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = None
-
     if response.status_code >= 400:
         if isinstance(payload, dict) and "detail" in payload:
-            raise HTTPException(status_code=response.status_code, detail=payload["detail"])
+            raise HTTPException(status_code=response.status_code, detail=detail)
         raise HTTPException(
             status_code=response.status_code,
             detail={"code": "proxy_failed", "message": response.text},
