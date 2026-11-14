@@ -722,6 +722,7 @@
     "syncActionRunning": "Läuft…",
     "checkAll": "Alle Drucker prüfen",
     "reconnectDone": "Alle Drucker werden neu verbunden.",
+    "reconnectFailed": "Nicht alle Drucker konnten neu verbunden werden.",
     "externalSlot": "Externer Slot",
     "slotOccupied": "Belegt",
     "slotEmpty": "Leer",

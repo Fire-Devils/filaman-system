@@ -721,6 +721,7 @@
     "syncActionRunning": "En cours…",
     "checkAll": "Vérifier toutes les imprimantes",
     "reconnectDone": "Reconnexion de toutes les imprimantes.",
+    "reconnectFailed": "Impossible de reconnecter toutes les imprimantes.",
     "externalSlot": "Bobine externe",
     "slotOccupied": "Occupé",
     "slotEmpty": "Vide",

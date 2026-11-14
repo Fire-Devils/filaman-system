@@ -721,6 +721,7 @@
     "syncActionRunning": "Running…",
     "checkAll": "Check All Printers",
     "reconnectDone": "Reconnecting all printers.",
+    "reconnectFailed": "Could not reconnect all printers.",
     "externalSlot": "External Spool",
     "slotOccupied": "Occupied",
     "slotEmpty": "Empty",
