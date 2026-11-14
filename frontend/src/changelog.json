@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Plugins wie FilaBrain können sich im Filament-Editor als Symbol-Button einreihen. Auf Wunsch öffnet sich ein Plugin automatisch beim Bearbeiten – das lässt sich pro Browser ein- und ausschalten und ist nie von selbst aktiv. (Beigetragen von akira69)" },
+          { "type": "improved", "text": "Die FilaBrain-Vorschau im Plugin-Katalog ist auf Version 0.1.17 aktualisiert. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "AMS-Ansicht: Zeigt eine AMS ihre Fächer 2×2, endet die Linie vom Drucker jetzt am geladenen Fach selbst statt am Fach darüber. (Beigetragen von wolfrage76)" }
+        ],
+        "en": [
+          { "type": "feature", "text": "Plugins such as FilaBrain can add an icon button to the filament editor. If you like, a plugin can open automatically when you start editing – switch this on or off per browser; it is never enabled on its own. (Contributed by akira69)" },
+          { "type": "improved", "text": "The FilaBrain preview in the plugin catalog is updated to version 0.1.17. (Contributed by akira69)" },
+          { "type": "fix", "text": "AMS View: when an AMS shows its bays 2×2, the line from the printer now ends on the loaded bay itself instead of the bay above it. (Contributed by wolfrage76)" }
+        ]
+      }
+    },
+    {
       "version": "2.2.0",
       "date": "",
       "changes": {

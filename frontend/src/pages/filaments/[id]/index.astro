@@ -127,7 +127,7 @@ export function getStaticPaths() {
     let filamentNeedsRefresh = false
     let printerSetup: ReturnType<typeof initPrinterSetup> | null = null
     let filamentFormController: ReturnType<typeof createFilamentFormController> | null = null
-    let closeFilamentPluginHooks: (() => void) | undefined
+    let filamentPluginHooks: ReturnType<typeof mountFilamentPluginHooks> | undefined
     let editorRecordToken: string | undefined
     let statuses: SpoolStatus[] = []
     let locations: Location[] = []
@@ -182,6 +182,7 @@ export function getStaticPaths() {
           onDirtyChange: () => filamentFormController?.updateDirtyState(),
           getCsrfToken: getCsrfTokenGlobal, getAbortSignal, isAbortError,
         })
+        if (editMode) void filamentPluginHooks?.enterEdit()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load filament:', error)
@@ -261,8 +262,8 @@ export function getStaticPaths() {
       controller.captureBaseline()
       editorRecordToken = filament.record_token
       const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
-      if (hooks && !closeFilamentPluginHooks) {
-        closeFilamentPluginHooks = mountFilamentPluginHooks(hooks, {
+      if (hooks && !filamentPluginHooks) {
+        filamentPluginHooks = mountFilamentPluginHooks(hooks, {
           mode: 'edit', filamentId: filament.id, getRecordToken: () => editorRecordToken, form: controller,
         })
       }
@@ -291,7 +292,7 @@ export function getStaticPaths() {
           filamentNeedsRefresh = false
         })
         else {
-          closeFilamentPluginHooks?.()
+          filamentPluginHooks?.close()
           editSession.invalidate()
           if (filamentNeedsRefresh) await refreshFilamentSnapshot()
           if (!isCurrent()) return
@@ -313,10 +314,11 @@ export function getStaticPaths() {
         window.history.replaceState(null, '', url)
         const profileUpdate = printerSetup?.setEditing(value)
         restore()
+        document.getElementById(value ? 'btn-edit-filament' : 'btn-enter-filament-edit')?.focus({ preventScroll: true })
+        if (value) void filamentPluginHooks?.enterEdit()
         await profileUpdate
         if (!isCurrent()) return
         restore()
-        document.getElementById(value ? 'btn-edit-filament' : 'btn-enter-filament-edit')?.focus({ preventScroll: true })
       } catch (error) {
         if (isCurrent() && !isAbortError(error)) (window as unknown as { __fmAlert(message: string): Promise<void> }).__fmAlert(error instanceof Error ? error.message : String(error))
       } finally { if (isCurrent()) changingEdit = false }
