@@ -961,7 +961,7 @@ class TestDriverStateAcrossWorkers:
 
     async def test_a_real_board_fits_into_the_block(self, display_store):
         """Four AMS with sixteen trays must not trip the payload-size guard."""
-        unit = lambda i: {  # noqa: E731
+        unit = lambda i: {
             "id": i,
             "temp": 24.4,
             "humidity": 6,

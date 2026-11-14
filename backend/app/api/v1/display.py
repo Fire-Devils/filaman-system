@@ -27,6 +27,7 @@ from app.models import Printer
 from app.services.display_service import build_display, compute_etag
 
 router = APIRouter(prefix="/display", tags=["display"])
+_DISPLAY_READ = RequirePermission("display:read")
 
 
 async def _display_payload(db: DBSession, printers: list[Printer], fields: str) -> dict[str, Any]:
@@ -52,7 +53,7 @@ async def get_display(
     response: Response,
     db: DBSession,
     fields: Literal["full", "slots"] = Query("full"),
-    principal=RequirePermission("display:read"),
+    principal=_DISPLAY_READ,
 ):
     """All active printers with their AMS slots."""
     result = await db.execute(
@@ -72,7 +73,7 @@ async def get_printer_display(
     response: Response,
     db: DBSession,
     fields: Literal["full", "slots"] = Query("full"),
-    principal=RequirePermission("display:read"),
+    principal=_DISPLAY_READ,
 ):
     """One printer; same shape as the list entry, wrapped in the same envelope."""
     result = await db.execute(

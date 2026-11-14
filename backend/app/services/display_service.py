@@ -93,7 +93,7 @@ def _as_float(value: Any) -> float | None:
 
 def _as_int(value: Any) -> int | None:
     f = _as_float(value)
-    return int(round(f)) if f is not None else None
+    return round(f) if f is not None else None
 
 
 def _decode_active_tray(value: int | None) -> tuple[int, int] | None:
@@ -787,7 +787,7 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         net_initial = getattr(filament, "raw_material_weight_g", None) or None
     remaining_percent = None
     if remaining is not None and net_initial:
-        remaining_percent = max(0, min(100, int(round(remaining / net_initial * 100))))
+        remaining_percent = max(0, min(100, round(remaining / net_initial * 100)))
 
     nozzle_min, nozzle_max = _nozzle_range(spool, printer_id)
     return {
@@ -800,7 +800,7 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         "color_style": color_style,
         "finish": finish,
         "color_name": color_name,
-        "remaining_grams": int(round(remaining)) if remaining is not None else None,
+        "remaining_grams": round(remaining) if remaining is not None else None,
         "remaining_percent": remaining_percent,
         "nozzle_min": nozzle_min,
         "nozzle_max": nozzle_max,
