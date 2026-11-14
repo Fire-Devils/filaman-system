@@ -1,12 +1,15 @@
 """Display API: merge of FilaMan slot assignments and optional driver live state."""
 
-import os
 
 import pytest
-
 from app.api.v1 import display as display_api
 from app.core.shared_health import SharedStateStore
-from app.models import Filament, FilamentPrinterParam, PrinterSlotAssignment, SpoolPrinterParam
+from app.models import (
+    Filament,
+    FilamentPrinterParam,
+    PrinterSlotAssignment,
+    SpoolPrinterParam,
+)
 from app.services.display_service import (
     SCHEMA_VERSION,
     ams_model,
@@ -16,6 +19,7 @@ from app.services.display_service import (
     normalize_hex_color,
     slots_only,
 )
+
 from tests.test_devices import (
     _create_device,
     _create_filament,
@@ -779,14 +783,15 @@ class TestDisplayEndpoint:
         assert again.status_code == 304
         assert again.headers["etag"] == etag
 
-    async def test_driver_live_state_is_merged(self, auth_client, db_session, monkeypatch):
+    async def test_driver_live_state_is_merged(self, auth_client, db_session, display_store, drivers):
         client, _ = auth_client
         printer, _ = await _printer_with_spool(db_session)
 
-        async def fake_state(p):
-            return BAMBUDDY_STATUS if p.id == printer.id else None
+        class Driver:
+            async def get_display_state(self):
+                return BAMBUDDY_STATUS
 
-        monkeypatch.setattr(display_api, "_driver_state", fake_state)
+        drivers[printer.id] = Driver()
         response = await client.get(f"/api/v1/display/printers/{printer.id}")
         assert response.status_code == 200, response.text
         [p] = response.json()["printers"]
@@ -843,12 +848,10 @@ class _HealthOnlyDriver:
 
 
 @pytest.fixture
-def display_store(monkeypatch):
-    """A private shared-memory block, so tests never touch a running instance."""
-    store = SharedStateStore(name=f"filaman_display_test_{os.getpid()}", size=65536)
+def display_store(tmp_path, monkeypatch):
+    store = SharedStateStore(lambda: tmp_path / "display.json")
     monkeypatch.setattr(display_api, "shared_display_store", store)
-    yield store
-    store.cleanup()
+    return store
 
 
 @pytest.fixture
@@ -888,6 +891,7 @@ class TestDriverStateAcrossWorkers:
         primary = await client.get(f"/api/v1/display/printers/{printer.id}")
         assert primary.json()["printers"][0]["connected"] is True
 
+        display_store.publish({printer.id: drivers[printer.id].health()})
         drivers.clear()  # this worker never loaded a driver
         secondary = await client.get(f"/api/v1/display/printers/{printer.id}")
         assert secondary.status_code == 200, secondary.text
@@ -944,7 +948,7 @@ class TestDriverStateAcrossWorkers:
         printer, _ = await _printer_with_spool(db_session)
         driver = _HealthOnlyDriver()
         drivers[printer.id] = driver
-        await client.get(f"/api/v1/display/printers/{printer.id}")
+        display_store.publish({printer.id: driver.health()})
 
         def boom():
             raise RuntimeError("driver fell over")
@@ -979,3 +983,279 @@ class TestDriverStateAcrossWorkers:
         state = {"connected": True, "ams": {"ams": [unit(i) for i in range(4)]}}
         display_store.publish({n: state for n in range(1, 5)})
         assert display_store.read(3) == state
+
+
+async def test_display_collection_handles_driver_removed_during_await():
+    from app.plugins.manager import PluginManager
+
+    manager = PluginManager()
+
+    class RemovedDriver:
+        async def get_display_state(self):
+            manager.drivers.pop(1)
+            return {"connected": True}
+
+    manager.drivers.update({1: RemovedDriver(), 2: _HealthOnlyDriver()})
+    assert set(await manager.get_display_states()) == {2}
+
+
+async def test_all_printer_polls_batch_snapshot_io(auth_client, db_session, display_store, drivers, monkeypatch):
+    from unittest.mock import Mock
+
+    client, _ = auth_client
+    first, _ = await _printer_with_spool(db_session)
+    second = await _create_printer(db_session, name="Second", driver_key="bambuddy")
+    drivers.update({first.id: _HealthOnlyDriver(), second.id: _HealthOnlyDriver()})
+    display_store.publish({printer_id: driver.health() for printer_id, driver in drivers.items()})
+    load = Mock(wraps=display_store._load)
+    write = Mock(wraps=display_store._write)
+    monkeypatch.setattr(display_store, "_load", load)
+    monkeypatch.setattr(display_store, "_write", write)
+    response = await client.get("/api/v1/display")
+    assert response.status_code == 200 and all(p["connected"] for p in response.json()["printers"])
+    write.assert_not_called()
+    load.assert_called_once()
+
+    drivers.clear()
+    load.reset_mock()
+    write.reset_mock()
+    response = await client.get("/api/v1/display")
+    assert response.status_code == 200 and all(p["connected"] for p in response.json()["printers"])
+    load.assert_called_once()
+    write.assert_not_called()
+
+
+async def test_stalled_display_driver_does_not_hide_healthy_driver(monkeypatch):
+    import asyncio
+
+    from app.plugins import manager as driver_manager
+
+    class StalledDriver:
+        async def get_display_state(self):
+            await asyncio.Future()
+
+    manager = driver_manager.PluginManager()
+    manager.drivers.update({1: StalledDriver(), 2: _HealthOnlyDriver()})
+    monkeypatch.setattr(driver_manager, "_DISPLAY_STATE_TIMEOUT", 0.01, raising=False)
+
+    states = await asyncio.wait_for(manager.get_display_states(), 0.25)
+    assert set(states) == {2}
+    assert states[2]["connected"] is True
+
+
+async def test_healthy_display_poll_does_not_wait_for_another_printer(display_store, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from app.models import Printer
+    from app.plugins.manager import plugin_manager
+
+    slow_started, release = asyncio.Event(), asyncio.Event()
+
+    async def collect(ids):
+        if list(ids) == [1]:
+            slow_started.set()
+            await release.wait()
+            return {1: {"connected": False}}
+        return {2: {"connected": True}}
+
+    build = AsyncMock()
+    monkeypatch.setattr(plugin_manager, "get_display_states", collect)
+    monkeypatch.setattr(display_api, "build_display", build)
+    slow = asyncio.create_task(display_api._display_payload(None, [Printer(id=1)], "full"))
+    try:
+        await asyncio.wait_for(slow_started.wait(), 1)
+        await asyncio.wait_for(display_api._display_payload(None, [Printer(id=2)], "full"), 0.1)
+        assert build.call_args.args[2][2] == {"connected": True}
+    finally:
+        release.set()
+        await slow
+
+
+async def test_direct_display_poll_leaves_the_background_snapshot_intact(display_store, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app.models import Printer
+    from app.plugins.manager import plugin_manager
+
+    display_store.publish({1: {"connected": True}})
+    monkeypatch.setattr(plugin_manager, "get_display_states", AsyncMock(return_value={1: {"connected": False}}))
+    build = AsyncMock()
+    monkeypatch.setattr(display_api, "build_display", build)
+
+    await display_api._display_payload(None, [Printer(id=1)], "full")
+
+    assert build.call_args.args[2][1] == {"connected": False}
+    assert display_store.read(1) == {"connected": True}
+
+
+async def test_invalid_display_state_does_not_prevent_healthy_snapshot():
+    from app.plugins.manager import PluginManager
+
+    class InvalidDriver:
+        async def get_display_state(self):
+            return {"connected": True, "unexpected": object()}
+
+    manager = PluginManager()
+    manager.drivers.update({1: InvalidDriver(), 2: _HealthOnlyDriver()})
+    assert set(await manager.get_display_states()) == {2}
+
+
+async def test_cancelled_driver_does_not_stop_display_snapshot_refresh(tmp_path, monkeypatch):
+    import asyncio
+
+    from app import main
+    from app.plugins.manager import PluginManager
+
+    class CancelledDriver:
+        async def get_display_state(self):
+            raise asyncio.CancelledError
+
+    manager = PluginManager()
+    manager.drivers.update({1: CancelledDriver(), 2: _HealthOnlyDriver()})
+    store = SharedStateStore(lambda: tmp_path / "display.json")
+    monkeypatch.setattr(main, "plugin_manager", manager)
+    monkeypatch.setattr(main, "shared_display_store", store)
+    monkeypatch.setattr(main, "_is_primary", True)
+
+    async def end_cycle(_interval):
+        assert store.read(1) is None
+        assert store.read(2)["connected"] is True
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main.asyncio, "sleep", end_cycle)
+    with pytest.raises(asyncio.CancelledError):
+        await main._display_snapshot_loop()
+    assert store.read(2)["connected"] is True
+
+
+async def test_cancelled_display_poll_preserves_shared_getter_until_driver_stops():
+    import asyncio
+
+    from app.plugins.manager import PluginManager
+
+    started, cleaned = asyncio.Event(), asyncio.Event()
+
+    class PendingDriver:
+        async def get_display_state(self):
+            started.set()
+            try:
+                await asyncio.Future()
+            finally:
+                cleaned.set()
+
+        async def stop(self):
+            assert cleaned.is_set()
+
+    manager = PluginManager()
+    manager.drivers[1] = PendingDriver()
+    task = asyncio.create_task(manager.get_display_states())
+    await asyncio.wait_for(started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not cleaned.is_set()
+    await manager.stop_printer(1)
+    assert cleaned.is_set()
+
+
+async def test_stuck_display_getter_does_not_block_other_results_or_spawn_replacements(monkeypatch):
+    import asyncio
+
+    from app.plugins import manager as driver_manager
+
+    release, cancelling = asyncio.Event(), asyncio.Event()
+    starts = 0
+    calls = []
+
+    class StuckDriver:
+        async def get_display_state(self):
+            nonlocal starts
+            starts += 1
+            while not release.is_set():
+                try:
+                    await release.wait()
+                except asyncio.CancelledError:
+                    cancelling.set()
+
+        async def stop(self):
+            calls.append("stopped")
+
+    manager = driver_manager.PluginManager()
+    manager.drivers.update({1: StuckDriver(), 2: _HealthOnlyDriver()})
+    monkeypatch.setattr(driver_manager, "_DISPLAY_STATE_TIMEOUT", 0.01)
+    collecting = asyncio.create_task(manager.get_display_states())
+    stopping = None
+    try:
+        done, _ = await asyncio.wait({collecting}, timeout=0.2)
+        assert collecting in done
+        assert set(collecting.result()) == {2}
+        assert set(await manager.get_display_states()) == {2}
+        assert starts == 1
+        stopping = asyncio.create_task(manager.stop_printer(1))
+        await asyncio.wait_for(cancelling.wait(), 1)
+        await asyncio.sleep(0)
+        assert not stopping.done()
+    finally:
+        release.set()
+        await collecting
+        if stopping is not None:
+            await stopping
+    assert calls == ["stopped"]
+
+
+async def test_timed_out_display_getter_cannot_return_late_state_to_another_poll(monkeypatch):
+    import asyncio
+
+    from app.plugins import manager as driver_manager
+
+    started, cancelling, release = (asyncio.Event() for _ in range(3))
+
+    class LateDriver:
+        async def get_display_state(self):
+            started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                asyncio.current_task().uncancel()
+                cancelling.set()
+                await release.wait()
+                return {"connected": True}
+
+    manager = driver_manager.PluginManager()
+    manager.drivers[1] = LateDriver()
+    monkeypatch.setattr(driver_manager, "_DISPLAY_STATE_TIMEOUT", 0.02)
+    first = asyncio.create_task(manager.get_display_states())
+    await asyncio.wait_for(started.wait(), 1)
+    monkeypatch.setattr(driver_manager, "_DISPLAY_STATE_TIMEOUT", 1)
+    second = asyncio.create_task(manager.get_display_states())
+    try:
+        await asyncio.wait_for(cancelling.wait(), 1)
+        assert await first == {}
+    finally:
+        release.set()
+    assert await second == {}
+
+
+async def test_display_collection_detaches_validated_state():
+    from datetime import UTC, datetime
+
+    from app.plugins.manager import PluginManager
+
+    cached = {"connected": True}
+
+    class CachedDriver:
+        async def get_display_state(self):
+            return cached
+
+    class UpdatingDriver:
+        async def get_display_state(self):
+            cached["updated_at"] = datetime.now(UTC)
+            return {"connected": True}
+
+    manager = PluginManager()
+    manager.drivers.update({1: CachedDriver(), 2: UpdatingDriver()})
+    assert await manager.get_display_states() == {
+        1: {"connected": True},
+        2: {"connected": True},
+    }

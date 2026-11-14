@@ -1,256 +1,125 @@
-"""Cross-worker shared driver state via multiprocessing.shared_memory.
+"""Read-only standbys share the primary's latest printer health and Display state.
 
-The primary Gunicorn worker publishes per-printer dicts into a named
-shared-memory block.  Secondary workers (which have no drivers loaded)
-read from the same block so they can return accurate information
-to the frontend — preventing the "button toggling" issue caused by
-load-balanced requests hitting workers without drivers.
-
-Two blocks use this:
-
-* ``shared_health_store`` - driver health for the Printers page.
-* ``shared_display_store`` - live state for the Display API.  It carries
-  every tray of every AMS, so it gets its own, larger block and a shorter
-  staleness window: a board showing a dead printer as connected is worse
-  than one showing nothing.
-
-Memory layout:
-  [4 bytes uint32 LE — JSON payload length]
-  [N bytes — JSON payload: {"<printer_id>": {...state}, ...}]
-  [8 bytes float64 LE — UNIX timestamp of last write]
+Only the worker holding election writes these files. Readers open by name so
+they see the successor's state after handoff, even if the old file was deleted.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import struct
 import time
-from multiprocessing import shared_memory
+from collections.abc import Callable
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
+
+from app.core.primary_socket import primary_socket_path
 
 logger = logging.getLogger(__name__)
 
-_SHM_NAME = "filaman_health"
-_SHM_SIZE = 65536  # 64 KiB – plenty for dozens of printers
-_HEADER_FMT = "<I"  # uint32 LE (payload length)
-_HEADER_SIZE = struct.calcsize(_HEADER_FMT)
-_TS_FMT = "<d"  # float64 LE (timestamp)
-_TS_SIZE = struct.calcsize(_TS_FMT)
-_STALE_SECONDS = 120  # data older than this is considered stale
-
-_DISPLAY_SHM_NAME = "filaman_display"
-_DISPLAY_SHM_SIZE = 262144  # 256 KiB - live state carries every tray
-_DISPLAY_STALE_SECONDS = 45  # a board must not keep a dead driver alive
-
 
 class SharedStateStore:
-    """Read/write per-printer driver state across Gunicorn workers."""
-
-    def __init__(
-        self,
-        *,
-        name: str = _SHM_NAME,
-        size: int = _SHM_SIZE,
-        stale_seconds: float = _STALE_SECONDS,
-    ) -> None:
-        self._name = name
-        self._size = size
+    def __init__(self, path: Callable[[], Path], *, stale_seconds: float = 120) -> None:
+        self._path = path
         self._stale_seconds = stale_seconds
-        self._shm: shared_memory.SharedMemory | None = None
-        self._is_owner = False
 
-    # -- attach / create ------------------------------------------------
-
-    def _ensure_shm(self, *, create: bool = False) -> shared_memory.SharedMemory | None:
-        """Attach to (or create) the shared-memory block.
-
-        Returns the block or ``None`` if it does not exist yet and
-        *create* is False.
-        """
-        if self._shm is not None:
-            return self._shm
-
-        if create:
-            # Try to create; if it already exists (previous crash), attach.
-            try:
-                self._shm = shared_memory.SharedMemory(
-                    name=self._name,
-                    create=True,
-                    size=self._size,
-                )
-                self._is_owner = True
-                logger.debug("%s: created shared memory block", self._name)
-            except FileExistsError:
-                self._shm = shared_memory.SharedMemory(
-                    name=self._name,
-                    create=False,
-                )
-                logger.debug("%s: attached to existing block", self._name)
-        else:
-            try:
-                self._shm = shared_memory.SharedMemory(
-                    name=self._name,
-                    create=False,
-                )
-                logger.debug("%s: attached to existing block", self._name)
-            except FileNotFoundError:
-                return None
-
-        return self._shm
-
-    # -- public API -----------------------------------------------------
-
-    def publish(self, state: dict[int, dict[str, Any]]) -> None:
-        """Merge state for one or more printers into shared memory.
-
-        Callers may pass a full snapshot (all printers) or just the
-        printer(s) they have fresh data for — existing entries for other
-        printers are preserved rather than being wiped out.
-        """
-        shm = self._ensure_shm(create=True)
-        if shm is None:
-            return
-
-        current = self._read_raw(shm) or {}
-        current.update({str(k): v for k, v in state.items()})
-        self._write(shm, current)
-
-    def _read_raw(self, shm: shared_memory.SharedMemory) -> dict[str, Any] | None:
-        """Read the raw (string-keyed) payload, ignoring staleness."""
+    @staticmethod
+    def _load(path: Path) -> dict[str, dict[str, Any]]:
         try:
-            buf = shm.buf
-            (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
-            if length == 0 or length > self._size - _HEADER_SIZE - _TS_SIZE:
-                return None
-            payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
-            return json.loads(payload_bytes)
-        except Exception:
-            logger.debug("%s: failed to read raw payload", self._name, exc_info=True)
-            return None
+            printers = json.loads(path.read_bytes())
+            if not isinstance(printers, dict):
+                raise TypeError("Invalid printer snapshot")
+            return printers
+        except FileNotFoundError:
+            return {}
+        except (OSError, TypeError, ValueError):
+            logger.warning("Could not read printer snapshot %s", path, exc_info=True)
+            return {}
 
-    def _write(self, shm: shared_memory.SharedMemory, payload_dict: dict[str, Any]) -> None:
-        payload = json.dumps(payload_dict).encode()
-        ts = time.time()
+    @staticmethod
+    def _write(path: Path, state: dict[str, dict[str, Any]]) -> None:
+        temporary = None
+        try:
+            with NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(json.dumps(state).encode())
+            # Rename on the same filesystem so readers see one complete snapshot.
+            temporary.replace(path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
-        total = _HEADER_SIZE + len(payload) + _TS_SIZE
-        if total > self._size:
-            logger.warning(
-                "%s: payload too large (%d bytes), skipping",
-                self._name,
-                total,
-            )
-            return
+    def _is_fresh(self, value: dict[str, Any], now: float) -> bool:
+        return now - value["timestamp"] <= self._stale_seconds
 
-        buf = shm.buf
-        struct.pack_into(_HEADER_FMT, buf, 0, len(payload))
-        buf[_HEADER_SIZE : _HEADER_SIZE + len(payload)] = payload
-        struct.pack_into(_TS_FMT, buf, _HEADER_SIZE + len(payload), ts)
+    def publish(self, state: dict[int, dict[str, Any]], *, replace: bool = False) -> None:
+        """Merge fresh entries, or replace the full snapshot after election.
+
+        Each entry keeps its own timestamp so updating one printer cannot keep
+        another printer's stale state alive.
+        """
+        try:
+            path = self._path()
+            now = time.time()
+            printers = {} if replace else {
+                key: value for key, value in self._load(path).items() if self._is_fresh(value, now)
+            }
+            for printer_id, value in state.items():
+                try:
+                    snapshot = json.loads(json.dumps(value, allow_nan=False))
+                except (TypeError, ValueError, RecursionError):
+                    logger.warning("Ignoring invalid snapshot for printer %s", printer_id)
+                    continue
+                printers[str(printer_id)] = {"state": snapshot, "timestamp": now}
+            self._write(path, printers)
+        except (OSError, KeyError, TypeError, ValueError):
+            logger.warning("Could not publish printer snapshot", exc_info=True)
+
+    def read_all(self) -> dict[int, dict[str, Any]]:
+        try:
+            now = time.time()
+            return {
+                int(key): value["state"]
+                for key, value in self._load(self._path()).items()
+                if self._is_fresh(value, now)
+            }
+        except FileNotFoundError:
+            return {}
+        except (OSError, KeyError, TypeError, ValueError):
+            logger.warning("Could not open printer snapshot", exc_info=True)
+            return {}
 
     def read(self, printer_id: int) -> dict[str, Any] | None:
-        """Read state for a single printer.  Returns None if the block
-        doesn't exist, has no data for this printer, or the data is stale.
-        """
-        shm = self._ensure_shm(create=False)
-        if shm is None:
-            return None
-
         try:
-            buf = shm.buf
-            (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
-            if length == 0 or length > self._size - _HEADER_SIZE - _TS_SIZE:
-                return None
-
-            payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
-            (ts,) = struct.unpack_from(
-                _TS_FMT,
-                buf,
-                _HEADER_SIZE + length,
-            )
-
-            if time.time() - ts > self._stale_seconds:
-                return None
-
-            data: dict[str, Any] = json.loads(payload_bytes)
-            return data.get(str(printer_id))
-        except Exception:
-            logger.debug("%s: failed to read state", self._name, exc_info=True)
-            return None
-
-    def read_all(self) -> dict[int, dict[str, Any]] | None:
-        """Read state for all printers.  Returns None if stale/missing."""
-        shm = self._ensure_shm(create=False)
-        if shm is None:
-            return None
-
-        try:
-            buf = shm.buf
-            (length,) = struct.unpack_from(_HEADER_FMT, buf, 0)
-            if length == 0 or length > self._size - _HEADER_SIZE - _TS_SIZE:
-                return None
-
-            payload_bytes = bytes(buf[_HEADER_SIZE : _HEADER_SIZE + length])
-            (ts,) = struct.unpack_from(
-                _TS_FMT,
-                buf,
-                _HEADER_SIZE + length,
-            )
-
-            if time.time() - ts > self._stale_seconds:
-                return None
-
-            raw: dict[str, Any] = json.loads(payload_bytes)
-            return {int(k): v for k, v in raw.items()}
-        except Exception:
-            logger.debug("%s: failed to read_all", self._name, exc_info=True)
-            return None
+            value = self._load(self._path()).get(str(printer_id))
+            if value is not None and self._is_fresh(value, time.time()):
+                return value["state"]
+        except FileNotFoundError:
+            pass
+        except (OSError, KeyError, TypeError):
+            logger.warning("Could not open printer snapshot", exc_info=True)
+        return None
 
     def clear(self, printer_id: int) -> None:
-        """Remove a printer from the block (e.g. after a driver stop)."""
-        shm = self._ensure_shm(create=False)
-        if shm is None:
-            return
-        current = self._read_raw(shm)
-        if current is None:
-            return
-        if current.pop(str(printer_id), None) is None:
-            return
-        self._write(shm, current)
+        try:
+            path = self._path()
+            printers = self._load(path)
+            if printers.pop(str(printer_id), None) is not None:
+                self._write(path, printers)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.warning("Could not clear printer snapshot", exc_info=True)
 
     def cleanup(self) -> None:
-        """Close and unlink the shared-memory block.
-
-        Should be called once during shutdown — only by the owner
-        (primary worker).
-        """
-        if self._shm is not None:
-            try:
-                self._shm.close()
-            except Exception:
-                pass
-            if self._is_owner:
-                try:
-                    self._shm.unlink()
-                    logger.debug("%s: unlinked shared memory", self._name)
-                except Exception:
-                    pass
-            self._shm = None
-            self._is_owner = False
-
-    def close(self) -> None:
-        """Close handle without unlinking (for secondary workers)."""
-        if self._shm is not None:
-            try:
-                self._shm.close()
-            except Exception:
-                pass
-            self._shm = None
+        try:
+            self._path().unlink(missing_ok=True)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.warning("Could not remove printer snapshot", exc_info=True)
 
 
-# Module-level singletons — imported by printers.py, display.py and main.py
-shared_health_store = SharedStateStore()
-shared_display_store = SharedStateStore(
-    name=_DISPLAY_SHM_NAME,
-    size=_DISPLAY_SHM_SIZE,
-    stale_seconds=_DISPLAY_STALE_SECONDS,
-)
+shared_health_store = SharedStateStore(lambda: primary_socket_path().with_suffix(".health.json"))
+shared_display_store = SharedStateStore(lambda: primary_socket_path().with_suffix(".display.json"), stale_seconds=45)

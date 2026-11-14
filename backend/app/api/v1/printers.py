@@ -21,8 +21,8 @@ from app.models import (
     FilamentColor,
 )
 from app.core.primary_socket import primary_socket_path
-from app.core.shared_health import shared_display_store, shared_health_store
-from app.plugins.manager import plugin_manager
+from app.core.shared_health import shared_health_store
+from app.plugins.manager import PluginManager, plugin_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -875,36 +875,23 @@ async def driver_health(
         if isinstance(payload, dict):
             return payload
 
-    driver = plugin_manager.drivers.get(printer_id)
-    if driver:
-        if refresh:
-            refresh_status = getattr(driver, "refresh_status", None)
-            if callable(refresh_status):
-                try:
-                    refresh_payload = refresh_status()
-                    if inspect.isawaitable(refresh_payload):
-                        refresh_payload = await refresh_payload
-                    if isinstance(refresh_payload, dict):
-                        active_spool_id = refresh_payload.get("active_spool_id")
-                        await plugin_manager._handle_slots_update(
-                            printer_id,
-                            [],
-                            None,
-                            active_spool_id,
-                        )
-                except Exception:
-                    logger.debug(
-                        "driver_health refresh failed for printer %s",
-                        printer_id,
-                        exc_info=True,
-                    )
+    from contextlib import nullcontext
 
-        health = driver.health()
-        # Primary worker: update shared memory so secondaries stay in sync
-        shared_health_store.publish({printer_id: health})
-        return health
+    # Refresh can write slot data, so it must finish before a replacement can take over.
+    async with plugin_manager._printer_lock(printer_id) if refresh else nullcontext():
+        driver = plugin_manager.drivers.get(printer_id)
+        if driver:
+            if refresh:
+                await plugin_manager.refresh_driver_slots(printer_id, driver)
 
-    # No local driver – check shared memory from primary worker
+            from app.plugins.manager import PluginManager
+
+            health = PluginManager.read_driver_health(printer_id, driver)
+            # Primary worker: update the snapshot so secondaries stay in sync
+            shared_health_store.publish({printer_id: health})
+            return health
+
+    # No local driver – check the snapshot from the primary worker
     shared = shared_health_store.read(printer_id)
     if shared is not None:
         return shared
@@ -1064,13 +1051,10 @@ async def start_driver(
             detail={"code": "start_failed", "message": "Driver could not be started"},
         )
 
-    # Publish immediately so all workers see the new state
-    driver = plugin_manager.drivers.get(printer_id)
-    if driver:
-        shared_health_store.publish({printer_id: driver.health()})
-        state = await plugin_manager.get_display_state(printer_id)
-        if state is not None:
-            shared_display_store.publish({printer_id: state})
+    # Publish health immediately. The Display loop owns live snapshot writes.
+    health = plugin_manager.health_status.get(printer_id)
+    if health is not None:
+        shared_health_store.publish({printer_id: health})
 
     return DriverActionResponse(success=True, message="Driver started")
 
@@ -1104,11 +1088,6 @@ async def stop_driver(
         )
 
     await plugin_manager.stop_printer(printer_id)
-
-    # Clear shared state so secondaries immediately see running=False and the
-    # AMS View stops showing a stopped driver as live.
-    shared_health_store.clear(printer_id)
-    shared_display_store.clear(printer_id)
 
     return DriverActionResponse(success=True, message="Driver stopped")
 

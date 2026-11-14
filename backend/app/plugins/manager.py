@@ -11,17 +11,19 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from weakref import WeakValueDictionary
+from weakref import WeakSet, WeakValueDictionary
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.async_tasks import await_driver_startup, finish_on_cancel
 from app.core.cache import response_cache
 from app.core.database import async_session_maker
 from app.core.event_bus import event_bus
 from app.core.file_lock import FileLockBusy
+from app.core.shared_health import shared_display_store, shared_health_store
 from app.models import Printer
 from app.models.filament import Filament, FilamentColor
 from app.models.plugin import InstalledPlugin
@@ -44,6 +46,12 @@ from app.services.spoolman_projection import owns_retained_source
 from app.utils.colors import visible_rgb_hex_or_legacy
 
 logger = logging.getLogger(__name__)
+_EVENT_DRAIN_TIMEOUT = 5
+_EVENT_CANCEL_TIMEOUT = 5
+_DRIVER_START_TIMEOUT = 10
+_DRIVER_STOP_TIMEOUT = 10
+_DRIVER_REFRESH_TIMEOUT = 5
+_DISPLAY_STATE_TIMEOUT = 0.4
 
 # Built-in plugins ship with the image and live alongside this file
 BUILTIN_PLUGINS_DIR = Path(__file__).parent
@@ -77,7 +85,14 @@ class PluginManager:
     def __init__(self):
         self.drivers: dict[int, BaseDriver] = {}
         self.health_status: dict[int, dict[str, Any]] = {}
+        self._event_tasks: set[asyncio.Task[None]] = set()
+        self._event_sources: dict[int, object] = {}
+        self._accept_events = True
+        self._display_tasks: dict[int, asyncio.Task[dict[str, Any] | None]] = {}
+        self._timed_out_display_tasks: WeakSet[asyncio.Task[dict[str, Any] | None]] = WeakSet()
+        # Plugin locks protect module reloads. Printer locks also cover changes across driver keys.
         self._driver_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+        self._printer_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
         self._slot_write_locks: WeakValueDictionary[int, asyncio.Lock] = WeakValueDictionary()
 
     def _driver_lock(self, driver_key: str) -> asyncio.Lock:
@@ -86,8 +101,19 @@ class PluginManager:
             lock = self._driver_locks[driver_key] = asyncio.Lock()
         return lock
 
+    def _printer_lock(self, printer_id: int) -> asyncio.Lock:
+        lock = self._printer_locks.get(printer_id)
+        if lock is None:
+            lock = self._printer_locks[printer_id] = asyncio.Lock()
+        return lock
+
     def _create_event_handler(self, printer_id: int) -> Callable[[dict], None]:
+        # Register before start() can emit and invalidate this token when that driver stops.
+        source = self._event_sources[printer_id] = object()
+
         def handler(event: dict) -> None:
+            if not self._accept_events or self._event_sources.get(printer_id) is not source:
+                return
             logger.debug(
                 f"Event handler called for printer {printer_id}: {event.get('event_type')}"
             )
@@ -95,11 +121,18 @@ class PluginManager:
                 # Some drivers reuse their mutable slot records between reports.
                 if event.get("event_type") == "slots_update":
                     event = deepcopy(event)
-                asyncio.create_task(self._handle_event(printer_id, event))
+                task = asyncio.get_running_loop().create_task(self._handle_event(printer_id, event))
+                self._event_tasks.add(task)
+                task.add_done_callback(self._event_finished)
             except Exception:
                 logger.exception("Failed to create task for event")
 
         return handler
+
+    def _event_finished(self, task: asyncio.Task[None]) -> None:
+        self._event_tasks.discard(task)
+        if not task.cancelled() and (exc := task.exception()) is not None:
+            logger.error("Printer driver event failed", exc_info=exc)
 
     async def _handle_event(self, printer_id: int, event: dict) -> None:
         event_type = event.get("event_type")
@@ -488,7 +521,7 @@ class PluginManager:
         return None
 
     async def start_printer(self, printer: Printer) -> bool:
-        async with self._driver_lock(printer.driver_key):
+        async with self._driver_lock(printer.driver_key), self._printer_lock(printer.id):
             return await self._start_printer(printer)
 
     async def reload_driver(self, driver_key: str, printers: Iterable[Printer] = ()) -> None:
@@ -504,7 +537,8 @@ class PluginManager:
             importlib.invalidate_caches()
 
             for printer in printers:
-                await self._start_printer(printer)
+                async with self._printer_lock(printer.id):
+                    await self._start_printer(printer)
 
     async def _start_printer(self, printer: Printer) -> bool:
         if printer.id in self.drivers:
@@ -514,6 +548,7 @@ class PluginManager:
         if not driver_class:
             logger.error(f"Driver not found: {printer.driver_key}")
             self.health_status[printer.id] = {
+                "driver_key": printer.driver_key,
                 "status": "error",
                 "message": f"Driver not found: {printer.driver_key}",
             }
@@ -521,6 +556,7 @@ class PluginManager:
 
         emitter = EventEmitter(printer.id, self._create_event_handler(printer.id))
         config = printer.driver_config or {}
+        driver = None
 
         try:
             # Ensure plugin-specific extra fields exist before starting the driver
@@ -534,48 +570,67 @@ class PluginManager:
                 emitter=emitter.emit,
             )
             driver.validate_config()
-            await driver.start()
+            await await_driver_startup(driver.start(), _DRIVER_START_TIMEOUT)
 
-            # If supported, sync active spool immediately after startup so
-            # the spool page can render Moonraker state on first load.
-            refresh_status = getattr(driver, "refresh_status", None)
-            if callable(refresh_status):
-                try:
-                    refresh_payload = refresh_status()
-                    if asyncio.iscoroutine(refresh_payload):
-                        refresh_payload = await refresh_payload
-                    if isinstance(refresh_payload, dict):
-                        active_spool_id = refresh_payload.get("active_spool_id")
-                        await self._handle_slots_update(
-                            printer.id,
-                            [],
-                            None,
-                            active_spool_id,
-                        )
-                except Exception:
-                    logger.debug("Initial refresh_status failed for printer %s", printer.id, exc_info=True)
+            # Sync the active spool before the first load of the spool page.
+            await self.refresh_driver_slots(printer.id, driver)
 
+            self.health_status[printer.id] = self.read_driver_health(printer.id, driver)
             self.drivers[printer.id] = driver
-            self.health_status[printer.id] = driver.health()
             logger.info(f"Started driver {printer.driver_key} for printer {printer.id}")
             return True
-        except Exception as e:
-            logger.exception("Error starting driver for printer %s", printer.id)
+        except (Exception, asyncio.CancelledError) as exc:
+            self._event_sources.pop(printer.id, None)
+            if driver is not None:
+                try:
+                    await finish_on_cancel(driver.stop(), timeout=_DRIVER_STOP_TIMEOUT)
+                except Exception:
+                    logger.exception("Could not stop partially started driver for printer %s", printer.id)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            logger.error(f"Error starting driver for printer {printer.id}: {exc}")
             self.health_status[printer.id] = {
+                "driver_key": printer.driver_key,
                 "status": "error",
-                "message": str(e),
+                "message": "Driver start timed out" if isinstance(exc, TimeoutError) else str(exc),
             }
             return False
 
+    async def refresh_driver_slots(self, printer_id: int, driver: BaseDriver) -> None:
+        refresh_status = getattr(driver, "refresh_status", None)
+        if not callable(refresh_status):
+            return
+        try:
+            payload = refresh_status()
+            if inspect.isawaitable(payload):
+                payload = await await_driver_startup(payload, _DRIVER_REFRESH_TIMEOUT)
+            if isinstance(payload, dict):
+                await self._handle_slots_update(printer_id, [], None, payload.get("active_spool_id"))
+        except Exception:
+            logger.debug("Could not refresh slots for printer %s", printer_id, exc_info=True)
+
     async def stop_printer(self, printer_id: int) -> None:
-        driver = self.drivers.pop(printer_id, None)
-        self.health_status.pop(printer_id, None)
-        if driver:
+        async with self._printer_lock(printer_id):
+            driver = self.drivers.pop(printer_id, None)
+            self.health_status.pop(printer_id, None)
+            self._event_sources.pop(printer_id, None)
+            # Invalidate snapshots under the same lock that guards the replacement.
+            shared_health_store.clear(printer_id)
+            shared_display_store.clear(printer_id)
+            display_task = self._display_tasks.pop(printer_id, None)
             try:
-                await driver.stop()
-                logger.info(f"Stopped driver for printer {printer_id}")
-            except Exception:
-                logger.exception("Error stopping driver for printer %s", printer_id)
+                if display_task is not None and not display_task.done():
+                    display_task.cancel()
+                    await finish_on_cancel(
+                        asyncio.gather(display_task, return_exceptions=True), timeout=_DRIVER_STOP_TIMEOUT
+                    )
+            finally:
+                if driver:
+                    try:
+                        await finish_on_cancel(driver.stop(), timeout=_DRIVER_STOP_TIMEOUT)
+                        logger.info(f"Stopped driver for printer {printer_id}")
+                    except Exception:
+                        logger.exception("Error stopping driver for printer %s", printer_id)
 
     async def _ensure_all_plugin_dependencies(self) -> None:
         """Install missing Python dependencies for all user-installed plugins.
@@ -627,6 +682,7 @@ class PluginManager:
             )
             printers = result.scalars().all()
 
+            self._accept_events = True
             for printer in printers:
                 if printer.driver_key in disabled_drivers:
                     logger.info(
@@ -636,8 +692,24 @@ class PluginManager:
                 await self.start_printer(printer)
 
     async def stop_all(self) -> None:
-        for printer_id in list(self.drivers):
-            await self.stop_printer(printer_id)
+        # Prevent new writes while admitted events finish or roll back before election moves.
+        self._accept_events = False
+        self._event_sources.clear()
+        try:
+            for printer_id in list(self.drivers):
+                await self.stop_printer(printer_id)
+        finally:
+            tasks = tuple(self._event_tasks)
+            if tasks:
+                pending = tasks
+                try:
+                    _, pending = await asyncio.wait(tasks, timeout=_EVENT_DRAIN_TIMEOUT)
+                    if pending:
+                        logger.warning("Cancelling %d unfinished printer events during handoff", len(pending))
+                finally:
+                    for task in pending:
+                        task.cancel()
+                    await finish_on_cancel(asyncio.gather(*tasks, return_exceptions=True), timeout=_EVENT_CANCEL_TIMEOUT)
 
     async def reconnect_all(self) -> dict[int, str]:
         """Reconnect all active printers. Returns {printer_id: status} map."""
@@ -665,28 +737,67 @@ class PluginManager:
                 results[printer.id] = "started" if started else "start_failed"
         return results
 
+    @staticmethod
+    def read_driver_health(printer_id: int, driver: BaseDriver) -> dict[str, Any]:
+        try:
+            return driver.health()
+        except Exception:
+            logger.exception("Could not read health for printer %s", printer_id)
+            return {"driver_key": driver.driver_key, "status": "error"}
+
     def get_health(self) -> dict[int, dict[str, Any]]:
-        self.health_status = {
-            printer_id: driver.health() for printer_id, driver in self.drivers.items()
-        }
+        self.health_status.update({
+            printer_id: self.read_driver_health(printer_id, driver)
+            for printer_id, driver in self.drivers.items()
+        })
         return dict(self.health_status)
 
-    async def get_display_states(self) -> dict[int, dict[str, Any]]:
+    async def get_display_states(
+        self, printer_ids: Iterable[int] | None = None
+    ) -> dict[int, dict[str, Any]]:
         """Live state of every local driver, for the Display API.
 
         A driver without ``get_display_state()`` falls back to ``health()``:
         that already carries ``connected`` and the AMS ``ams_units``, which is
         what the display service needs for the online badge and the climate.
         """
-        states: dict[int, dict[str, Any]] = {}
-        for printer_id in self.drivers:
+        ids = list(self.drivers if printer_ids is None else printer_ids)
+        drivers = {printer_id: self.drivers[printer_id] for printer_id in ids if printer_id in self.drivers}
+
+        async def collect(printer_id: int) -> dict[str, Any] | None:
             try:
                 state = await self.get_display_state(printer_id)
+                return json.loads(json.dumps(state, allow_nan=False))
             except Exception:
-                logger.debug(
-                    "get_display_state failed for printer %s", printer_id, exc_info=True
-                )
+                logger.debug("get_display_state failed for printer %s", printer_id, exc_info=True)
+                return None
+
+        tasks = {}
+        for printer_id in drivers:
+            task = self._display_tasks.get(printer_id)
+            if task is None or task.done():
+                task = self._display_tasks[printer_id] = asyncio.create_task(collect(printer_id))
+            if task not in self._timed_out_display_tasks:
+                tasks[printer_id] = task
+        if not tasks:
+            return {}
+
+        # A stuck getter keeps its task slot until it exits, so later polls cannot spawn copies.
+        _, pending = await asyncio.wait(tasks.values(), timeout=_DISPLAY_STATE_TIMEOUT)
+        for task in pending:
+            if task not in self._timed_out_display_tasks:
+                self._timed_out_display_tasks.add(task)
+                task.cancel()
+
+        states = {}
+        for printer_id, task in tasks.items():
+            if (
+                task in self._timed_out_display_tasks
+                or task.cancelled()
+                or self.drivers.get(printer_id) is not drivers[printer_id]
+            ):
                 continue
+            state = task.result()
             if state is not None:
                 states[printer_id] = state
         return states
