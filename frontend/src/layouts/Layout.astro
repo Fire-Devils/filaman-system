@@ -1,4 +1,5 @@
 ---
+import ColorModePicker from '../components/ColorModePicker.astro'
 import '../styles/global.css'
 import { VERSION } from '../version.js'
 
@@ -60,7 +61,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
           </div>
 
           <!-- Navigation -->
-          <nav style="display: grid; gap: 6px;">
+          <nav id="sidebar-nav">
             <a href="/" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-dashboard"></use></svg></span>
               <span data-i18n="nav.dashboard">Dashboard</span>
@@ -98,7 +99,24 @@ const { title, noPadding = false, embedded = false } = Astro.props
               <span data-i18n="nav.spoolLog">Spool Log</span>
             </a>
 
-            <div id="plugin-nav" class="invisible" style="margin-top: 4px;"></div>
+            <div id="plugin-nav" hidden>
+              <hr class="fm-divider" />
+              <button id="sidebar-plugin-heading" type="button" aria-expanded="false" aria-controls="sidebar-plugin-preview">
+                <svg class="fm-nav-icon" width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=2#icon-plugin" /></svg>
+                <span data-i18n="nav.plugins">Plugins</span>
+                <span id="sidebar-plugin-count"></span>
+                <svg class="sidebar-plugin-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <p id="sidebar-plugin-label" data-i18n="nav.plugins">Plugins</p>
+              <div id="sidebar-pinned-plugins"></div>
+              <div id="sidebar-plugin-preview" hidden>
+                <a id="sidebar-plugin-settings-link" href="/settings/sidebar" class="fm-nav-item sidebar-plugin-settings-link"
+                  aria-current={Astro.url.pathname.replace(/\/$/, '') === '/settings/sidebar' ? 'page' : undefined}>
+                  <svg class="fm-nav-icon" aria-hidden="true"><use href="/icons.svg?v=2#icon-settings" /></svg>
+                  <span data-i18n="settings.sidebarTitle">Sidebar settings</span>
+                </a>
+              </div>
+            </div>
 
             <div id="admin-nav" class="invisible" style="margin-top: 4px;">
               <hr class="fm-divider" style="margin-bottom: 8px;" />
@@ -108,9 +126,10 @@ const { title, noPadding = false, embedded = false } = Astro.props
                 <span data-i18n="nav.adminPanel">Admin Panel</span>
               </a>
             </div>
+            <ColorModePicker id="sidebar-color-mode" />
           </nav>
 
-          <!-- Sidebar Footer: User + Theme -->
+          <!-- Sidebar Footer -->
           <div class="hide-collapsed" style="margin-top: auto; display: grid; gap: 12px;">
             <!-- User Profile Row -->
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-soft); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
@@ -138,12 +157,6 @@ const { title, noPadding = false, embedded = false } = Astro.props
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 </button>
               </div>
-            </div>
-
-            <div class="fm-theme-toggle" role="group" aria-label="Theme toggle" data-i18n-aria-label="theme.toggle">
-              <button type="button" data-theme="brand" class="active" data-i18n="theme.default">Default</button>
-              <button type="button" data-theme="light" data-i18n="theme.light">Light</button>
-              <button type="button" data-theme="dark" data-i18n="theme.dark">Dark</button>
             </div>
 
             <!-- Buy Me A Coffee -->
@@ -230,13 +243,13 @@ const { title, noPadding = false, embedded = false } = Astro.props
 
     <script>
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
-      import { getAbortSignal } from '../lib/abort'
+      import { getAbortSignal, isAbortError } from '../lib/abort'
       import type { User } from '../lib/auth'
       import type { AppDialogs } from '../lib/form-dialog'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
-      import { navHrefFor } from '../lib/plugin-nav'
-      import { createPluginIcon } from '../lib/plugin-icon'
+      import { setupSidebar } from '../lib/sidebar'
+      import { pluginNavChangedEvent } from '../lib/plugin-nav'
       import { loginUrlWithNext } from '../lib/login-redirect'
       import {
         isAutoOpenEnabled,
@@ -250,23 +263,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
 
-      const colorLibraryLink = document.getElementById('sidebar-color-library')!
-      const colorLibraryToggle = document.querySelector<HTMLInputElement>('#show-color-library')
-      const colorLibraryKey = 'sidebar-color-library'
-      function syncColorLibraryShortcut() {
-        const shown = localStorage.getItem(colorLibraryKey) !== 'false'
-        colorLibraryLink.hidden = !shown
-        if (colorLibraryToggle) colorLibraryToggle.checked = shown
-      }
-      syncColorLibraryShortcut()
-      colorLibraryToggle?.addEventListener('change', () => {
-        localStorage.setItem(colorLibraryKey, String(colorLibraryToggle.checked))
-        syncColorLibraryShortcut()
-      })
-      window.addEventListener('storage', event => {
-        if (event.key === colorLibraryKey || event.key === null) syncColorLibraryShortcut()
-      })
-      window.addEventListener('pageshow', syncColorLibraryShortcut)
+      const sidebar = setupSidebar()
 
       const inventoryBack = document.querySelector<HTMLAnchorElement>('[data-inventory-back]')
       if (inventoryBack && document.referrer && history.length > 1) {
@@ -396,28 +393,6 @@ const { title, noPadding = false, embedded = false } = Astro.props
       })()
 
 
-      /* ── Theme switcher ──────────────────────────────────────── */
-      const themeButtons = document.querySelectorAll('.fm-theme-toggle button')
-      const root = document.documentElement
-
-      function setTheme(theme: string) {
-        root.setAttribute('data-theme', theme)
-        localStorage.setItem('theme', theme)
-        themeButtons.forEach(btn => btn.classList.remove('active'))
-        document.querySelector(`.fm-theme-toggle button[data-theme="${theme}"]`)?.classList.add('active')
-      }
-
-      // Restore saved theme on load
-      const saved = localStorage.getItem('theme') || 'brand'
-      setTheme(saved)
-
-      themeButtons.forEach(button => {
-        button.addEventListener('click', () => {
-          const theme = button.getAttribute('data-theme')!
-          setTheme(theme)
-        })
-      })
-
       /* ── Auth check ──────────────────────────────────────────── */
       const userName = document.getElementById('user-name')!
       const userRole = document.getElementById('user-role')!
@@ -440,6 +415,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
           }
 
           const user: User = await response.json()
+          await sidebar.loadAccount(user.id)
           await ensureLabelPresetBrowserMigration(user.id).catch(error => {
             console.warn('Could not migrate label presets to the database', error)
           })
@@ -456,6 +432,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
             adminNav.classList.remove('invisible')
           }
 
+          sidebar.setAdmin(!adminNav.classList.contains('invisible'))
           loadPluginNav()
           checkSystemVersion(user)
 
@@ -473,6 +450,9 @@ const { title, noPadding = false, embedded = false } = Astro.props
         }
       }
 
+      let pluginNavRequest = 0
+      let lastPluginNav: string | undefined
+      let retryPluginNav: ReturnType<typeof setTimeout> | undefined
       checkAuth()
 
       /* ── System version check ────────────────────────────────── */
@@ -524,45 +504,40 @@ const { title, noPadding = false, embedded = false } = Astro.props
       }
 
       /* ── Plugin navigation ───────────────────────────────────── */
-      const pluginNav = document.getElementById('plugin-nav')!
-
-      async function loadPluginNav() {
+      async function loadPluginNav(retry = true) {
+        clearTimeout(retryPluginNav)
+        const request = ++pluginNavRequest
+        const signal = getAbortSignal()
         try {
-          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal: getAbortSignal() })
-          if (!resp.ok) return
-          const plugins: { plugin_key: string; name: string; page_url: string; icon_url?: string | null }[] = await resp.json()
-          if (!plugins.length) return
-
-          const hr = document.createElement('hr')
-          hr.className = 'fm-divider'
-          hr.style.marginBottom = '8px'
-          pluginNav.appendChild(hr)
-
-          const label = document.createElement('div')
-          label.className = 'hide-collapsed'
-          label.style.cssText = 'color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;'
-          label.setAttribute('data-i18n', 'nav.plugins')
-          label.textContent = t('nav.plugins') || 'Plugins'
-          pluginNav.appendChild(label)
-
-          for (const p of plugins) {
-            const a = document.createElement('a')
-            a.href = navHrefFor(p.page_url)
-            a.className = 'fm-nav-item'
-            const icon = createPluginIcon(p.icon_url)
-            icon.classList.add('fm-nav-icon')
-            const name = document.createElement('span')
-            name.textContent = p.name
-            a.append(icon, name)
-            pluginNav.appendChild(a)
-          }
-
-          pluginNav.classList.remove('invisible')
-          // Re-run active-highlighting now that plugin links are in the DOM,
-          // so the longest-prefix match wins across all nav items (including plugins).
+          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', cache: 'no-store', signal })
+          if (resp.status === 401 || resp.status === 403) retry = false
+          if (!resp.ok) throw new Error('Plugin navigation unavailable')
+          const plugins = await resp.json()
+          if (request !== pluginNavRequest) return
+          const snapshot = JSON.stringify(plugins)
+          if (snapshot === lastPluginNav) return
+          sidebar.setPlugins(plugins)
+          lastPluginNav = snapshot
           highlightActiveNav()
-        } catch { /* Plugin nav is non-critical */ }
+        } catch (error) {
+          if (request !== pluginNavRequest || isAbortError(error)) return
+          if (retry) retryPluginNav = setTimeout(() => {
+            if (!signal.aborted) void loadPluginNav(false)
+          }, 600)
+          else if (lastPluginNav === undefined) sidebar.setPluginsUnavailable()
+        }
       }
+
+      window.addEventListener(pluginNavChangedEvent, () => void loadPluginNav())
+      window.addEventListener('storage', event => {
+        if (event.key === pluginNavChangedEvent) void loadPluginNav()
+      })
+      window.addEventListener('pageshow', event => {
+        if (event.persisted) void loadPluginNav()
+      })
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) void loadPluginNav()
+      })
 
       logoutBtn.addEventListener('click', async () => {
         const csrfToken = document.cookie

@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro'
 import FormSection from '../components/FormSection.astro'
+import ColorModePicker from '../components/ColorModePicker.astro'
 ---
 <Layout title="FilaMan - Settings">
 <div class="fm-settings-page fm-settings-profile">
@@ -57,13 +58,14 @@ import FormSection from '../components/FormSection.astro'
 
       </form>
     </FormSection>
-    <FormSection titleKey="settings.sidebar" title="Sidebar">
-      <div class="fm-settings-row">
-        <label for="show-color-library" data-i18n="settings.showColorLibrary">Show Color Library in the sidebar</label>
-        <label class="fm-toggle"><input type="checkbox" id="show-color-library" aria-describedby="color-library-sidebar-hint" checked /><span class="fm-toggle-slider"></span></label>
-        <p id="color-library-sidebar-hint" class="fm-field-hint" data-i18n="settings.browserOnly">Applies to this browser only.</p>
-      </div>
-    </FormSection>
+    <section class="fm-card fm-section settings-appearance" aria-labelledby="settings-appearance-title">
+      <header class="fm-section-header"><h2 id="settings-appearance-title" data-i18n="settings.appearance">Appearance</h2></header>
+      <div class="fm-section-body"><ColorModePicker /></div>
+    </section>
+    <a href="/settings/sidebar" class="fm-settings-link fm-card fm-section">
+      <header class="fm-section-header"><h2 data-i18n="settings.sidebarTitle">Sidebar settings</h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></header>
+      <div class="fm-section-body"><p class="fm-field-hint" data-i18n="settings.sidebarDescription">Choose which shortcuts appear and how they’re arranged.</p></div>
+    </a>
     <a href="/settings/api-keys" class="fm-settings-link fm-card fm-section">
       <header class="fm-section-header"><h2 data-i18n="settings.apiKeys">API Keys</h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></header>
       <div class="fm-section-body"><p class="fm-field-hint" data-i18n="settings.apiKeysDesc">Manage API keys for external integrations like Bambuddy</p></div>

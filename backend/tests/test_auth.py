@@ -245,6 +245,56 @@ class TestAuthMe:
 
 class TestMePreferences:
     @pytest.mark.asyncio
+    async def test_sidebar_preferences_survive_sessions_and_reject_stale_writes(
+        self, auth_client, normal_user
+    ):
+        client, csrf = auth_client
+        headers = {"X-CSRF-Token": csrf}
+        path = "/api/v1/me/preferences/sidebar"
+        assert (await client.get(path)).json() == {"sidebar": None, "theme": None, "expanded": None}
+
+        sidebar = {
+            "navigation": [{"id": "/filaments/colors", "shown": False}],
+            "plugins": [{"id": "moonraker", "shown": True, "pinned": False}],
+            "remember": True,
+            "compact": True,
+        }
+        saved = await client.patch(path, headers=headers, json={
+            "sidebar": sidebar, "expected_sidebar": None, "theme": "dark", "expanded": True,
+        })
+        assert saved.status_code == 200
+        assert saved.json()["theme"] == "dark"
+        assert saved.json()["expanded"] is True
+        assert saved.json()["sidebar"]["plugins"] == sidebar["plugins"]
+
+        stale = await client.patch(path, headers=headers, json={"sidebar": {}, "expected_sidebar": None})
+        assert stale.status_code == 409
+        assert (await client.patch(path, headers=headers, json={"theme": "unknown"})).status_code == 422
+        assert (await client.patch(
+            f"{path}?account_id={normal_user.id}", headers=headers, json={"theme": "light"},
+        )).status_code == 403
+        imported = await client.patch(
+            path, headers=headers, json={"sidebar": {}, "theme": "light", "import_legacy": True, "expanded": False},
+        )
+        assert imported.json() == saved.json()
+        dashboard = await client.patch(
+            "/api/v1/me/preferences", headers=headers, json={"dashboard_hidden_widgets": ["filamentStats"]},
+        )
+        assert dashboard.json() == {"dashboard_hidden_widgets": ["filamentStats"]}
+        assert (await client.get(path)).json() == saved.json()
+
+        await client.post("/auth/logout", headers=headers)
+        assert (await client.get(path)).status_code == 401
+        client.cookies.clear()
+        credentials = {"email": "test-admin@example.com", "password": "testpassword"}
+        assert (await client.post("/auth/login", json=credentials)).status_code == 200
+        assert (await client.get(path)).json() == saved.json()
+        await client.post("/auth/logout", headers={"X-CSRF-Token": client.cookies.get("csrf_token")})
+        client.cookies.clear()
+        assert (await client.post("/auth/login", json={**credentials, "email": normal_user.email})).status_code == 200
+        assert (await client.get(path)).json() == {"sidebar": None, "theme": None, "expanded": None}
+
+    @pytest.mark.asyncio
     async def test_preferences_roundtrip(self, auth_client):
         client, csrf = auth_client
 
