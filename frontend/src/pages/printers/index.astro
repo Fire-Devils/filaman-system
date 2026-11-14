@@ -419,10 +419,13 @@ import Layout from '../../layouts/Layout.astro'
       })
       try {
         const { results } = await api.post<{ results: Record<string, string> }>('/printers/reconnect-all')
-        if (Object.values(results).some(result => result !== 'reconnected' && result !== 'started')) {
-          await dialogs.__fmAlert(t('printers.reconnectFailed'))
-        } else {
+        const outcomes = Object.values(results)
+        if (outcomes.length === 0) {
+          await dialogs.__fmAlert(t('printers.noActivePrintersToReconnect'))
+        } else if (outcomes.every(result => result === 'reconnected' || result === 'started')) {
           await dialogs.__fmSuccess(t('printers.reconnectDone'))
+        } else {
+          await dialogs.__fmAlert(t('printers.reconnectFailed'))
         }
       } catch (error) {
         if (!isAbortError(error)) await dialogs.__fmAlert(t('printers.reconnectFailed'))
