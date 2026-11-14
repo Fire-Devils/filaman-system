@@ -312,6 +312,11 @@ export function initSpoolmanRepairController(
   let exampleTimer: ReturnType<typeof setTimeout> | undefined;
   let exampleSequence = 0;
   let previewSequence = 0;
+  deps.signal()?.addEventListener("abort", () => {
+    clearTimeout(exampleTimer);
+    exampleSequence++;
+    previewSequence++;
+  }, { once: true });
 
   const previewButton = document.querySelector<HTMLButtonElement>(
     "#btn-repair-preview",

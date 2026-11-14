@@ -73,6 +73,7 @@ export type TableFilterControlOptions = {
   onClearAll?: () => void
   hasColumnFilters?: () => boolean
   debounceMs?: number
+  signal?: AbortSignal
 }
 
 type FilterState = {
@@ -450,6 +451,7 @@ export function bindTableFilterControls({
   onClearAll = onClearColumns,
   hasColumnFilters,
   debounceMs = 250,
+  signal,
 }: TableFilterControlOptions): () => void {
   const search = document.querySelector<HTMLInputElement>('#filter-search')
   const group = document.querySelector<HTMLInputElement>('#filter-group')
@@ -460,6 +462,7 @@ export function bindTableFilterControls({
     if (searchTimeout) clearTimeout(searchTimeout)
     searchTimeout = null
   }
+  signal?.addEventListener('abort', cancelSearchDebounce, { once: true })
 
   function showReset(button: HTMLButtonElement | null, visible: boolean, focus: HTMLElement | null) {
     if (!button?.hasAttribute('data-filter-reset')) return
@@ -920,6 +923,7 @@ function escapeHtml(value: string): string {
 export function initHeaderColumnFilters(
   table: HTMLTableElement,
   defs: HeaderFilterDefinition[],
+  signal?: AbortSignal,
 ): HeaderFilterController {
   const firstHeader = table.querySelector('thead tr')
   if (!firstHeader) throw new Error('initHeaderColumnFilters: missing table header row')
@@ -1089,10 +1093,13 @@ export function initHeaderColumnFilters(
     updateTrigger(state)
   })
 
-  document.addEventListener('click', () => openPanels.forEach(closePanel))
-  window.addEventListener('resize', repositionOpenPanels)
-  window.addEventListener('scroll', repositionOpenPanels, true)
-  table.addEventListener('filaman:columns-changed', repositionOpenPanels)
+  document.addEventListener('click', () => openPanels.forEach(closePanel), { signal })
+  window.addEventListener('resize', repositionOpenPanels, { signal })
+  window.addEventListener('scroll', repositionOpenPanels, { capture: true, signal })
+  table.addEventListener('filaman:columns-changed', repositionOpenPanels, { signal })
+  signal?.addEventListener('abort', () => {
+    states.forEach(({ panel }) => panel.remove())
+  }, { once: true })
 
   return {
     setOptions: (key, options) => {

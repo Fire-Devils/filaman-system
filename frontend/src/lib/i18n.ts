@@ -87,9 +87,9 @@ export async function initI18n(): Promise<void> {
 /**
  * Scan the DOM for data-i18n attributes and update them.
  */
-export function translatePage(): void {
+export function translatePage(root: ParentNode = document): void {
   // Translate text content
-  document.querySelectorAll('[data-i18n]').forEach((el) => {
+  root.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n')
     if (key) {
       el.textContent = t(key)
@@ -97,7 +97,7 @@ export function translatePage(): void {
   })
 
   // Translate placeholders
-  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+  root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder')
     if (key && el instanceof HTMLInputElement) {
       el.placeholder = t(key)
@@ -105,7 +105,7 @@ export function translatePage(): void {
   })
   
   // Translate titles (tooltips)
-  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+  root.querySelectorAll('[data-i18n-title]').forEach((el) => {
     const key = el.getAttribute('data-i18n-title')
     if (key && el instanceof HTMLElement) {
       el.title = t(key)
@@ -113,7 +113,7 @@ export function translatePage(): void {
   })
 
   // Translate accessible names
-  document.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+  root.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
     const key = el.getAttribute('data-i18n-aria-label')
     if (key) {
       el.setAttribute('aria-label', t(key))

@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs'
-import { createSourceFile, isFunctionDeclaration, ScriptTarget, transpileModule, type Node } from 'typescript'
+import { astroPageFunction } from '../../tests/helpers/astro-script'
 import { afterEach, expect, it, vi } from 'vitest'
 import { isIntegrationExtraFieldPath } from './extra-fields'
 import { normalizeSystemExtraFieldDefinitions } from './entity-extra-fields'
@@ -13,16 +12,6 @@ const definitions = [
   { key: 'filament_image_provider', label: 'Image provider', field_type: 'text' },
   { key: 'note', label: 'User note', field_type: 'text' },
 ]
-
-function pageFunction(page: string, name: string): string {
-  const source = readFileSync(`src/pages/${page}.astro`, 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1]
-  const parsed = createSourceFile('page.ts', source, ScriptTarget.Latest, true)
-  const findFunction = (node: Node): Node | undefined =>
-    isFunctionDeclaration(node) && node.name?.text === name ? node : node.forEachChild(findFunction)
-  const declaration = findFunction(parsed)
-  if (!declaration) throw new Error(`Missing ${name} in ${page}`)
-  return transpileModule(declaration.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText
-}
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -44,7 +33,7 @@ it.each(['filament', 'spool'] as const)('excludes metadata from %s list columns 
   const name = entity === 'filament' ? 'loadFilamentExtraFieldColumns' : 'loadSpoolExtraFieldColumns'
   const displayedFields: Array<{ key: string }> = await new Function(...Object.keys(runtime), `
     let filamentExtraFields=[],spoolExtraFields=[],sortKey=null;
-    ${pageFunction(`${entity}s/index`, name)}
+    ${astroPageFunction(`${entity}s/index`, name)}
     return ${name}().then(()=>${entity === 'filament' ? 'filamentExtraFields' : 'spoolExtraFields'});
   `)(...Object.values(runtime))
   expect(groups.flatMap(group => group.columns.map(field => field.key))).toEqual(['cf_note'])
@@ -68,8 +57,8 @@ for (const entity of ['filament', 'spool'] as const) {
     const fields: Array<{ key: string; target_type?: string }> = await new Function(...Object.keys(runtime), `
       let systemDefinitions=[],efDefs=[];
       const filaments=[],spools=[],STANDARD_FILAMENT_EF=[],legacyFieldKeys=new Set(),systemFieldKeys=new Set(),efCheckMap={};
-      ${pageFunction(`${entity}s/print`, 'efMapKey')}
-      ${pageFunction(`${entity}s/print`, 'loadExtraFieldDefs')}
+      ${astroPageFunction(`${entity}s/print`, 'efMapKey')}
+      ${astroPageFunction(`${entity}s/print`, 'loadExtraFieldDefs')}
       return loadExtraFieldDefs().then(()=>efDefs);
     `)(...Object.values(runtime))
     expect(fields.filter(field => field.key === 'filament_image_provider').map(field => field.target_type ?? 'filament'))

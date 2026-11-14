@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro'
 ---
 
-<Layout title="FilaMan - Spool Log">
+<Layout panel="spool-log" title="FilaMan - Spool Log">
   <style is:global>
     .fm-table .col-spool-id { width: 8rem; white-space: nowrap; }
   </style>
@@ -52,7 +52,10 @@ import Layout from '../layouts/Layout.astro'
     import { toColorSwatchBackground } from '../lib/colors'
     import { escapeHtml } from '../lib/extra-fields'
     import { bindTableFilterControls, initHeaderColumnFilters, isColumnFilterActive, syncHeaderSortButtons, type ColumnFilterValue, type HeaderFilterDefinition } from '../lib/table-column-filters'
+    import { mountPanel } from '../lib/panel-navigation'
+    import { trackListHistory } from '../lib/inventory-scroll'
 
+    mountPanel('spool-log', async (panelSignal) => {
     await initI18n()
 
     interface EventColor { name: string; hex_code: string }
@@ -71,6 +74,12 @@ import Layout from '../layouts/Layout.astro'
     const allowedPageSizes = [25, 50, 100, 150, 200]
     let pageSize = parseInt(localStorage.getItem('filaman-pagesize-spool-log') || '50', 10)
     if (!allowedPageSizes.includes(pageSize)) pageSize = 50
+    const listHistory = trackListHistory(document.querySelector('main'), () => ({
+      currentPage, pageSize, sortKey, sortDirection, columnFilters,
+    }), panelSignal)
+    if (listHistory.data) {
+      ({ currentPage, pageSize, sortKey, sortDirection, columnFilters } = listHistory.data)
+    }
 
     async function loadEvents() {
       const sequence = ++requestSequence
@@ -90,11 +99,12 @@ import Layout from '../layouts/Layout.astro'
         if (!response.ok) throw new Error('Failed to fetch events')
 
         const data = await response.json()
-        if (sequence !== requestSequence) return
+        if (panelSignal.aborted || sequence !== requestSequence) return
         renderEvents(data.items)
         renderPagination(data.total, data.page)
+        if (sequence === 1) listHistory.restoreScroll()
       } catch (error) {
-        if (isAbortError(error) || sequence !== requestSequence) return
+        if (panelSignal.aborted || isAbortError(error) || sequence !== requestSequence) return
         console.error('Failed to load events:', error)
         const tbody = document.getElementById('events-table')!
         tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--error-text);">${t('spoolLog.failedLoad')}</td></tr>`
@@ -283,13 +293,14 @@ import Layout from '../layouts/Layout.astro'
       ['note', 'spoolLog.eventNote', 'col-note', 'text'],
     ].map(([key, label, column, type]) => ({
       key, label: t(label), columnSelector: `th.${column}`, type: type as 'text' | 'number' | 'date',
+      initialValue: columnFilters[key],
       onApply(value: ColumnFilterValue) {
         if (isColumnFilterActive(value)) columnFilters[key] = value
         else delete columnFilters[key]
         applyFilters()
       },
     }))
-    const headerFilters = initHeaderColumnFilters(table, definitions)
+    const headerFilters = initHeaderColumnFilters(table, definitions, panelSignal)
     function syncSort() {
       table.querySelectorAll('th[data-sort]').forEach(cell => {
         cell.classList.toggle('sort-asc', cell.getAttribute('data-sort') === sortKey && sortDirection === 'asc')
@@ -307,9 +318,10 @@ import Layout from '../layouts/Layout.astro'
       applyFilters()
     })
     function clearColumns() { columnFilters = {}; headerFilters.resetAll(); applyFilters() }
-    bindTableFilterControls({ onApply: applyFilters, onClearColumns: clearColumns, onClearAll: clearColumns })
+    bindTableFilterControls({ signal: panelSignal, onApply: applyFilters, onClearColumns: clearColumns, onClearAll: clearColumns })
     syncSort()
     translatePage()
     loadEvents()
+    })
   </script>
 </Layout>

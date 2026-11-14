@@ -42,8 +42,9 @@ export function setupPcPrintPrompt() {
   let claimed = false
   let disposed = false
   let generation = 0
+  const lifetime = new AbortController()
 
-  const claim = (id: number) => api.post<void>(`/labels/print-requests/${id}/claim`)
+  const claim = (id: number) => api.post<void>(`/labels/print-requests/${id}/claim`, undefined, { signal: lifetime.signal })
   const printText = (key: string) => { printButton.querySelector('span')!.textContent = t(key) }
   function showError(error: unknown) {
     errorMessage.textContent = error instanceof Error ? error.message : t('labelPrint.browserPrintFailed')
@@ -177,7 +178,7 @@ export function setupPcPrintPrompt() {
     checking = true
     const before = generation
     try {
-      const pending = await api.get<PendingPrint | null>('/labels/print-requests/pending')
+      const pending = await api.get<PendingPrint | null>('/labels/print-requests/pending', { signal: lifetime.signal })
       if (disposed || before !== generation || busy) return
       if (claimed) {
         if (pending?.id !== active?.id) waiting.hidden = !pending
@@ -213,9 +214,9 @@ export function setupPcPrintPrompt() {
   const clock = window.setInterval(updateAge, 1000)
   document.addEventListener('visibilitychange', resume)
   window.addEventListener('pageshow', resume)
-  function onPageHide(event: PageTransitionEvent) {
-    if (event.persisted) return
+  function dispose() {
     disposed = true
+    lifetime.abort()
     hide()
     window.clearInterval(poll)
     window.clearInterval(clock)
@@ -223,5 +224,9 @@ export function setupPcPrintPrompt() {
     window.removeEventListener('pageshow', resume)
     window.removeEventListener('pagehide', onPageHide)
   }
+  function onPageHide(event: PageTransitionEvent) {
+    if (!event.persisted) dispose()
+  }
   window.addEventListener('pagehide', onPageHide)
+  return dispose
 }

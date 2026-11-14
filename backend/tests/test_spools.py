@@ -15,6 +15,34 @@ from app.models import (
 
 
 @pytest.mark.asyncio
+async def test_dashboard_inventory_totals_and_problem_spools(auth_client, db_session):
+    client, _ = auth_client
+    manufacturer = await _create_manufacturer(db_session)
+    filament = await _create_filament(db_session, manufacturer.id)
+    await _create_filament(db_session, manufacturer.id, designation="Unused")
+    active = await _get_status(db_session, "new")
+    archived = await _get_status(db_session, "archived")
+    low = await _create_spool(db_session, filament.id, active.id, remaining_weight_g=100, low_weight_threshold_g=100)
+    empty = await _create_spool(db_session, filament.id, active.id, remaining_weight_g=0, low_weight_threshold_g=-10)
+    await _create_spool(db_session, filament.id, active.id, remaining_weight_g=None)
+    await _create_spool(db_session, filament.id, active.id)
+    await _create_spool(db_session, filament.id, archived.id, remaining_weight_g=0)
+
+    default = (await client.get("/api/v1/dashboard/stats")).json()
+    summary = (await client.get("/api/v1/dashboard/stats", params={"include_totals": "true"})).json()
+    assert summary == {**default, "spool_count_total": 4, "filament_count_total": 2}
+    assert "spool_count_total" not in default and "filament_count_total" not in default
+
+    pages = [
+        (await client.get("/api/v1/spools", params={"low_or_empty": "true", "page_size": 1, "page": page})).json()
+        for page in (1, 2)
+    ]
+    assert [page["total"] for page in pages] == [2, 2]
+    assert [page["items"][0]["id"] for page in pages] == [empty.id, low.id]
+    assert pages[0]["items"][0]["filament"]["designation"] == filament.designation
+
+
+@pytest.mark.asyncio
 async def test_color_browsing_keeps_spool_status_scope_and_exact_page_totals(auth_client, db_session):
     client, _ = auth_client
     maker = await _create_manufacturer(db_session)

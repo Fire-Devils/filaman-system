@@ -4,7 +4,7 @@ import InventoryLoadMore from '../../components/InventoryLoadMore.astro'
 import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 ---
 
-<Layout title="FilaMan - Manufacturers">
+<Layout panel="manufacturers" title="FilaMan - Manufacturers">
   <div class="fm-list-toolbar">
     <h1 data-i18n="manufacturers.title">Manufacturers</h1>
     <div class="fm-list-controls">
@@ -94,14 +94,19 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { checkFilamentDbActive } from '../../lib/filamentdb-lookup'
     import { createManufacturerDialog, type Manufacturer } from '../../lib/manufacturer-dialog'
     import type { AppDialogs } from '../../lib/form-dialog'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('manufacturers', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
     await initCurrency()
 
     const filamentDbActive = await checkFilamentDbActive()
+    if (panelSignal.aborted) return
     const manufacturerDialog = createManufacturerDialog({
       filamentDbActive,
-      onSaved: () => loadManufacturers(),
+      signal: panelSignal,
+      onSaved: () => { if (!panelSignal.aborted) return loadManufacturers() },
     })
 
     type ManufacturerRow = Manufacturer & {
@@ -257,14 +262,15 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       mfrHeaderFilters?.setOptions('materials', materialOptions)
     }
 
-    async function loadManufacturers() {
+    async function loadManufacturers(reset = true) {
       try {
         const data = await cachedFetchAllPages<ManufacturerRow>(CACHE_KEYS.MANUFACTURERS, '/api/v1/manufacturers')
+        if (panelSignal.aborted) return
         manufacturers = data.items
         updateHeaderFilterOptions(manufacturers)
-        renderManufacturers()
+        renderManufacturers(reset)
       } catch (error) {
-        if (isAbortError(error)) return
+        if (panelSignal.aborted || isAbortError(error)) return
         manufacturerList.pause()
         console.error('Failed to load manufacturers:', error)
         document.getElementById('manufacturers-table')!.innerHTML = `
@@ -276,13 +282,19 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     }
 
     const manufacturerList = initInventoryScroll<ManufacturerRow>(
-      document.getElementById('manufacturers-table')!, 'manufacturers.manufacturerCount', renderManufacturerRows,
+      document.getElementById('manufacturers-table')!, 'manufacturers.manufacturerCount', renderManufacturerRows, undefined, panelSignal,
+      () => ({ columns: columnFilters, sort: { key: sortKey, direction: sortDirection } }),
     )
+    if (manufacturerList.view) {
+      columnFilters = manufacturerList.view.columns
+      sortKey = manufacturerList.view.sort.key
+      sortDirection = manufacturerList.view.sort.direction
+    }
 
-    function renderManufacturers() {
+    function renderManufacturers(reset = true) {
       updateFilterResets()
       localStorage.setItem('filaman-filters-manufacturers', JSON.stringify({ columns: columnFilters }))
-      void manufacturerList.load(inventoryLocalPages(() => sortManufacturers(filterManufacturers(manufacturers))), true)
+      void manufacturerList.load(inventoryLocalPages(() => sortManufacturers(filterManufacturers(manufacturers))), reset)
     }
 
     function renderManufacturerRows(items: ManufacturerRow[], append: boolean) {
@@ -355,6 +367,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           signal: getAbortSignal(),
         })
 
+        if (panelSignal.aborted) return
         // If conflict (409), prompt for cascade delete
         if (response.status === 409) {
           const confirmCascade = await dialogWindow.__fmConfirm(
@@ -379,15 +392,16 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
         if (!response.ok) {
           const data = await response.json().catch(() => ({}))
+          if (panelSignal.aborted) return
           await dialogWindow.__fmAlert(data.detail?.message || data.message || t('manufacturers.failedDelete'))
           return
         }
 
         // Invalidate cache after successful delete
         invalidateCachePrefix(CACHE_KEYS.MANUFACTURERS)
-        loadManufacturers()
+        if (!panelSignal.aborted) loadManufacturers()
       } catch {
-        await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
+        if (!panelSignal.aborted) await dialogWindow.__fmAlert(t('manufacturers.failedDelete'))
       }
     })
 
@@ -459,7 +473,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       ]
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
       definitions.forEach(definition => { definition.initialValue = columnFilters[definition.key] })
-      mfrHeaderFilters = initHeaderColumnFilters(table, definitions)
+      mfrHeaderFilters = initHeaderColumnFilters(table, definitions, panelSignal)
       syncHeaderSortButtons(table, sortKey, sortDirection)
     }
 
@@ -470,6 +484,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     }
 
     const updateFilterResets = bindTableFilterControls({
+      signal: panelSignal,
       hasColumnFilters: () => mfrHeaderFilters !== null && Object.values(columnFilters).some(isColumnFilterActive),
       onApply: renderManufacturers,
       onClearColumns: () => {
@@ -501,6 +516,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       },
     ]
     initColumnPicker({
+      signal: panelSignal,
       storageKey: 'filaman-columns-manufacturers',
       defaultVisible: ['logo', 'url', 'filaments', 'spools', 'materials'],
       compactVisible: ['filaments', 'spools'],
@@ -528,16 +544,22 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 
     setupSortableHeaders()
     if (sortKey && sortDirection) updateSortIndicators()
-    loadManufacturers()
+    loadManufacturers(false)
 
     // Live-Update via SSE: Hersteller automatisch neu laden
     let _mfrReloadTimer: ReturnType<typeof setTimeout> | null = null
+    panelSignal.addEventListener('abort', () => {
+      clearTimeout(_mfrReloadTimer ?? undefined)
+      mfrReorder.destroy()
+      mfrResize.destroy()
+    }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
       if (event === 'manufacturers_changed') {
         if (_mfrReloadTimer) clearTimeout(_mfrReloadTimer)
         _mfrReloadTimer = setTimeout(() => loadManufacturers(), 300)
       }
+    }, { signal: panelSignal })
     })
   </script>
 </Layout>

@@ -1,8 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createSpoolmanApi, SpoolmanApiError } from "./spoolman-api";
+import { abortAllRequests } from "./abort";
 
 describe("Spoolman API client", () => {
+  it("cancels requests on native and sidebar navigation", async () => {
+    const panel = new AbortController();
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const signal = init!.signal!;
+      signal.throwIfAborted();
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    };
+    const api = createSpoolmanApi({ fetchImpl, csrfToken: () => "csrf" });
+    const first = api.testConnection("http://spoolman", panel.signal);
+    const firstCancelled = expect(first).rejects.toMatchObject({ name: "AbortError" });
+    abortAllRequests();
+    await firstCancelled;
+
+    const retry = api.testConnection("http://spoolman", panel.signal);
+    const retryCancelled = expect(retry).rejects.toMatchObject({ name: "AbortError" });
+    panel.abort();
+    await retryCancelled;
+  });
+
   it("sends CSRF credentials and returns typed JSON", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(

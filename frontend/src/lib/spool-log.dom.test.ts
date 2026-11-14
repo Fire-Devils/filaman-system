@@ -5,8 +5,9 @@ import * as filters from './table-column-filters'
 import * as i18n from './i18n'
 import * as colors from './colors'
 import { escapeHtml } from './extra-fields'
+import { trackListHistory } from './inventory-scroll'
 
-const dependencies = { ...filters, ...i18n, ...colors, escapeHtml, initI18n: async () => {}, getAbortSignal: () => undefined, isAbortError: () => false }
+const dependencies = { ...filters, ...i18n, ...colors, escapeHtml, trackListHistory, initI18n: async () => {}, getAbortSignal: () => undefined, isAbortError: () => false }
 const boot = () => bootAstroPage('spool-log', dependencies)
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.replaceChildren(); localStorage.clear() })
 

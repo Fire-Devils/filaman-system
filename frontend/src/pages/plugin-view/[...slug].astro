@@ -7,7 +7,7 @@ export function getStaticPaths() {
 }
 ---
 
-<Layout title="FilaMan - Plugin" noPadding>
+<Layout panel="integration" title="FilaMan - Plugin" noPadding>
   <iframe
     id="plugin-iframe"
     title="Plugin"
@@ -16,9 +16,13 @@ export function getStaticPaths() {
 
   <script>
     import { mountIntegrationPlugin } from '../../lib/plugin-integration-shell'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('integration', () => {
     const frame = document.getElementById('plugin-iframe') as HTMLIFrameElement
     const slug = window.location.pathname.split('/').filter(Boolean)[1] || ''
     try { mountIntegrationPlugin(frame, slug) }
     catch { frame.hidden = true }
+    })
   </script>
 </Layout>

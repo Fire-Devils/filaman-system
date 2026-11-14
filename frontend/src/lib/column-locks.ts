@@ -5,6 +5,7 @@ export function initColumnLocks(
   table: HTMLTableElement,
   storageKey: string,
   isVisible: (cell: HTMLTableCellElement) => boolean = () => true,
+  signal?: AbortSignal,
 ) {
   const wrapper = table.parentElement!
   const header = table.querySelector('thead tr')!
@@ -51,6 +52,7 @@ export function initColumnLocks(
   const observer = new ResizeObserver(updateScrollPadding)
   observer.observe(wrapper)
   observer.observe(table)
+  signal?.addEventListener('abort', () => observer.disconnect(), { once: true })
 
   function updateLocks() {
     const headers = Array.from(header.querySelectorAll('th'))

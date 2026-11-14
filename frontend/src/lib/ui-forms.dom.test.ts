@@ -177,16 +177,17 @@ it('ignores a late RFID write response after Escape and reopening the dialog', a
   }
   await boot('locations/index')
   await vi.waitFor(() => expect(document.querySelector('.btn-edit')).not.toBeNull())
-  const openRfid = (window as unknown as { openRfidModal: (id: number) => void }).openRfidModal
-  openRfid(3)
+  const rfidButton = document.querySelector<HTMLButtonElement>('#locations-table [data-rfid-location]')!
+  rfidButton.click()
   vi.useFakeTimers()
-  document.querySelector<HTMLButtonElement>('#rfid-confirm')!.click()
   const rfid = document.querySelector<HTMLDialogElement>('#rfid-modal')!
+  expect(rfid.open).toBe(true)
+  document.querySelector<HTMLButtonElement>('#rfid-confirm')!.click()
   rfid.dispatchEvent(new Event('cancel', { cancelable: true }))
   resolveWrite(Response.json({ success: true }))
   await vi.advanceTimersByTimeAsync(5000)
   expect(calls.some(call => call.path.includes('write-status'))).toBe(false)
-  openRfid(3)
+  rfidButton.click()
   expect(rfid.open).toBe(true)
   expect(document.querySelector<HTMLButtonElement>('#rfid-confirm')!.disabled).toBe(false)
   expect(document.querySelector('#rfid-status')!.classList.contains('hidden')).toBe(true)

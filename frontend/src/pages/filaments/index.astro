@@ -8,7 +8,7 @@ interface Props { compactPicker?: boolean }
 const { compactPicker = false } = Astro.props
 ---
 
-<Layout title="FilaMan - Filaments" embedded={compactPicker}>
+<Layout panel="filaments" title="FilaMan - Filaments" embedded={compactPicker}>
   <style>
     :global(#fm-page:has([data-filament-picker])) { grid-template-columns: minmax(0, 1fr); }
     :global(#fm-page:has([data-filament-picker]) > .fm-main) { padding: 0; }
@@ -184,6 +184,9 @@ const { compactPicker = false } = Astro.props
     import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
     import { mountFilamentPluginHooks } from '../../lib/filament-plugin-hooks'
     import type { AppDialogs } from '../../lib/form-dialog'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('filaments', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
     await initI18n()
 
@@ -220,7 +223,8 @@ const { compactPicker = false } = Astro.props
       [key: string]: unknown
     }
     const filamentList = initInventoryScroll<Filament>(
-      document.getElementById('filaments-table')!, 'filaments.filamentCount', renderFilaments, updateBulkBar,
+      document.getElementById('filaments-table')!, 'filaments.filamentCount', renderFilaments, updateBulkBar, panelSignal,
+      () => ({ columns: columnFilters, sort: { key: sortKey, direction: sortDirection }, group: getFilterValues().groupBy }),
     )
     let filamentExtraFields: SystemExtraFieldDef[] = []
     let sortKey: string | null = null
@@ -300,6 +304,11 @@ const { compactPicker = false } = Astro.props
     if (!columnFilters.type) columnFilters.type = multiColumnFilter(normalizeSavedValues(savedFilterState?.type))
     if (!columnFilters.colors) columnFilters.colors = multiColumnFilter(normalizeSavedValues(savedFilterState?.color))
     if (filterManufacturerId) columnFilters.manufacturer = multiColumnFilter([filterManufacturerId])
+    if (filamentList.view) {
+      columnFilters = filamentList.view.columns
+      sortKey = filamentList.view.sort.key
+      sortDirection = filamentList.view.sort.direction
+    }
     // Debounce timer for search input
 
     function getCsrfToken(): string {
@@ -586,7 +595,7 @@ const { compactPicker = false } = Astro.props
         <tr class="${selectedFilamentIds.has(f.id) ? 'bulk-selected' : ''}" ${compactPicker ? '' : `style="cursor: pointer;" onclick="window.location='${href}'"`}>
           <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">${selectForSpool
             ? `<a href="${href}" class="filament-spool-select" aria-label="${selectionLabel}" title="${selectionLabel}"><svg width="28" height="28" aria-hidden="true"><use href="/icons.svg?v=2#icon-status" /></svg></a>`
-            : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" aria-label="${selectionLabel}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} onchange="window.__toggleFilamentSelection(${f.id}, this.checked)" />`}</td>
+            : `<input type="checkbox" class="fm-checkbox bulk-checkbox" data-filament-id="${f.id}" aria-label="${selectionLabel}" ${selectedFilamentIds.has(f.id) ? 'checked' : ''} />`}</td>
           <td class="col-manufacturer" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.manufacturer?.name || '-')}</td>
           <td class="col-logo" style="padding: 12px;">${f.manufacturer?.logo_url ? `<span style="color: var(--text-muted);" hidden>-</span><img src="${escapeHtml(f.manufacturer.logo_url)}" alt="" style="height: 24px; width: auto; max-width: 72px; object-fit: contain; background: color-mix(in srgb, white 30%, var(--bg-soft) 70%); border: 1px solid color-mix(in srgb, white 22%, var(--border) 78%); border-radius: 8px; padding: 4px 8px; vertical-align: middle;" onerror="this.style.display='none'; this.previousElementSibling?.removeAttribute('hidden')" />` : '<span style="color: var(--text-muted);">-</span>'}</td>
           <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(f.material_type)}</td>
@@ -840,7 +849,7 @@ const { compactPicker = false } = Astro.props
       ]
       columnFilters = sanitizeColumnFilters(columnFilters, definitions)
       definitions.forEach((definition) => { definition.initialValue = columnFilters[definition.key] })
-      filHeaderFilters = initHeaderColumnFilters(table, definitions)
+      filHeaderFilters = initHeaderColumnFilters(table, definitions, panelSignal)
       updateFilterResets()
       updateSortIndicators()
     }
@@ -866,10 +875,11 @@ const { compactPicker = false } = Astro.props
           changed = true
         }
       })
-      if (changed) window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+      if (changed) window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
     }
 
     const updateFilterResets = bindTableFilterControls({
+      signal: panelSignal,
       hasColumnFilters: () => filHeaderFilters !== null && Object.entries(columnFilters).some(([key, value]) => isEffectiveColumnFilterActive(key, value)),
       onApply: applyFiltersAndRender,
       onClearColumns: () => {
@@ -926,6 +936,7 @@ const { compactPicker = false } = Astro.props
       },
     ]
     const filPicker = initColumnPicker({
+      signal: panelSignal,
       storageKey: `filaman-columns-${storageScope}`,
       defaultVisible: compactPicker ? ['manufacturer', 'type', 'colors', 'spools']
         : ['manufacturer', 'logo', 'type', 'colors', 'diameter', 'spools'],
@@ -992,22 +1003,28 @@ const { compactPicker = false } = Astro.props
 
     setupSortableHeaders()
     // Restore group checkbox from saved state
-    if (savedFilterState?.group) {
+    if (filamentList.view?.group ?? savedFilterState?.group) {
       (document.getElementById('filter-group') as HTMLInputElement).checked = true
       updateFilterResets()
     }
     Promise.all([initCurrency(), loadFilamentExtraFieldColumns()])
       .then(() => {
+        if (panelSignal.aborted) return
         setupHeaderFilters()
         return Promise.all([populateFilterDropdowns(), populateSpoolStatusDropdown()])
       })
-      .then(() => loadFilaments())
+      .then(() => { if (!panelSignal.aborted) return loadFilaments() })
 
-    window.addEventListener('pageshow', event => {
-      if (event.persisted) void loadFilaments()
-    })
+    document.querySelector('main')!.addEventListener('filaman:panel-authorized', () => {
+      void loadFilaments()
+    }, { signal: panelSignal })
     // Live-Update via SSE: Filamente automatisch neu laden
     let _filamentsReloadTimer: ReturnType<typeof setTimeout> | null = null
+    panelSignal.addEventListener('abort', () => {
+      clearTimeout(_filamentsReloadTimer ?? undefined)
+      filReorder.destroy()
+      filResize.destroy()
+    }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
       if (event === 'filaments_changed' || event === 'spools_changed' || event === 'manufacturers_changed' || event === 'colors_changed') {
@@ -1019,16 +1036,16 @@ const { compactPicker = false } = Astro.props
         if (_filamentsReloadTimer) clearTimeout(_filamentsReloadTimer)
         _filamentsReloadTimer = setTimeout(async () => {
           await populateFilterDropdowns()
-          await loadFilaments()
+          if (!panelSignal.aborted) await loadFilaments()
         }, 300)
       }
-    })
+    }, { signal: panelSignal })
 
     // ── Bulk Selection & Actions ──────────────────────────────
     const hooks = document.querySelector<HTMLElement>('[data-filament-plugin-hooks]')
     if (!compactPicker && !selectForSpool && hooks) mountFilamentPluginHooks(hooks, {
       mode: 'selection', selectedIds: selectedFilamentIds, expectedFilaments: selectedPickerFilaments,
-    })
+    }, panelSignal)
 
     const selectionLimit = compactPicker ? 50 : Infinity
     function setFilamentSelected(id: number, checked: boolean): boolean {
@@ -1082,7 +1099,12 @@ const { compactPicker = false } = Astro.props
       publishSelection()
     }
 
-    ;(window as typeof window & { __toggleFilamentSelection: typeof toggleFilamentSelection }).__toggleFilamentSelection = toggleFilamentSelection
+    document.getElementById('filaments-table')!.addEventListener('change', event => {
+      const input = event.target
+      if (input instanceof HTMLInputElement && input.matches('input.bulk-checkbox[data-filament-id]')) {
+        toggleFilamentSelection(Number(input.dataset.filamentId), input.checked)
+      }
+    })
 
     function publishSelection(inventoryChanged = false) {
       updateBulkBar()
@@ -1216,13 +1238,15 @@ const { compactPicker = false } = Astro.props
           signal: getAbortSignal(),
         })
         if (!res.ok) throw new Error('API error')
+        if (panelSignal.aborted) return
         await dialogWindow.__fmSuccess(t('filaments.bulkSuccess', { count }))
+        if (panelSignal.aborted) return
         selectedFilamentIds.clear()
         selectedPickerFilaments.clear()
         updateBulkBar()
         loadFilaments()
       } catch {
-        dialogWindow.__fmAlert(t('filaments.bulkError'))
+        if (!panelSignal.aborted) dialogWindow.__fmAlert(t('filaments.bulkError'))
       }
     }
 
@@ -1256,13 +1280,15 @@ const { compactPicker = false } = Astro.props
           signal: getAbortSignal(),
         })
         if (!res.ok) throw new Error('API error')
+        if (panelSignal.aborted) return
         await dialogWindow.__fmSuccess(t('filaments.bulkDeleteSuccess', { count }))
+        if (panelSignal.aborted) return
         selectedFilamentIds.clear()
         selectedPickerFilaments.clear()
         updateBulkBar()
         loadFilaments()
       } catch {
-        dialogWindow.__fmAlert(t('filaments.bulkError'))
+        if (!panelSignal.aborted) dialogWindow.__fmAlert(t('filaments.bulkError'))
       }
     })
 
@@ -1308,6 +1334,7 @@ const { compactPicker = false } = Astro.props
       )
       if (value === null) return
       await bulkPatch({ density_g_cm3: Number(value) })
+    })
     })
   </script>
 </Layout>
