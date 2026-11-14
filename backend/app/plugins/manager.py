@@ -70,8 +70,8 @@ class EventEmitter:
         event_dict["printer_id"] = self.printer_id
         try:
             self.handler(event_dict)
-        except Exception as e:
-            logger.error(f"Error handling event for printer {self.printer_id}: {e}")
+        except Exception:
+            logger.exception("Error handling event for printer %s", self.printer_id)
 
 
 class PluginManager:
@@ -97,8 +97,8 @@ class PluginManager:
                 if event.get("event_type") == "slots_update":
                     event = deepcopy(event)
                 asyncio.create_task(self._handle_event(printer_id, event))
-            except Exception as e:
-                logger.error(f"Failed to create task for event: {e}", exc_info=True)
+            except Exception:
+                logger.exception("Failed to create task for event")
 
         return handler
 
@@ -169,7 +169,7 @@ class PluginManager:
             return None
         try:
             parsed = int(raw)
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return None
         return parsed if parsed > 0 else None
 
@@ -240,7 +240,7 @@ class PluginManager:
                     parsed_active = int(active_spool_id_raw)
                     if parsed_active > 0:
                         active_spool_id = parsed_active
-                except Exception:
+                except (TypeError, ValueError, OverflowError):
                     active_spool_id = None
 
             # A slower snapshot must not overwrite a later removal or insertion.
@@ -468,11 +468,8 @@ class PluginManager:
                         await event_bus.publish(
                             {"event": "printer_update", "printer_id": printer_id}
                         )
-        except Exception as e:
-            logger.error(
-                f"Error in _handle_slots_update for printer {printer_id}: {e}",
-                exc_info=True,
-            )
+        except Exception:
+            logger.exception("Error applying slot updates for printer %s", printer_id)
 
     def load_driver(self, driver_key: str) -> type[BaseDriver] | None:
         # app.plugins.__path__ includes both USER_PLUGINS_DIR and BUILTIN_PLUGINS_DIR,
@@ -556,19 +553,15 @@ class PluginManager:
                             None,
                             active_spool_id,
                         )
-                except Exception as refresh_exc:
-                    logger.debug(
-                        "Initial refresh_status failed for printer %s: %s",
-                        printer.id,
-                        refresh_exc,
-                    )
+                except Exception:
+                    logger.debug("Initial refresh_status failed for printer %s", printer.id, exc_info=True)
 
             self.drivers[printer.id] = driver
             self.health_status[printer.id] = driver.health()
             logger.info(f"Started driver {printer.driver_key} for printer {printer.id}")
             return True
         except Exception as e:
-            logger.error(f"Error starting driver for printer {printer.id}: {e}")
+            logger.exception("Error starting driver for printer %s", printer.id)
             self.health_status[printer.id] = {
                 "status": "error",
                 "message": str(e),
@@ -582,8 +575,8 @@ class PluginManager:
             try:
                 await driver.stop()
                 logger.info(f"Stopped driver for printer {printer_id}")
-            except Exception as e:
-                logger.error(f"Error stopping driver for printer {printer_id}: {e}")
+            except Exception:
+                logger.exception("Error stopping driver for printer %s", printer_id)
 
     async def _ensure_all_plugin_dependencies(self) -> None:
         """Install missing Python dependencies for all user-installed plugins.
@@ -608,10 +601,8 @@ class PluginManager:
                 await self._install_pip_packages(
                     dependencies, manifest.get("plugin_key", plugin_dir.name)
                 )
-            except Exception as e:
-                logger.warning(
-                    f"Could not ensure dependencies for {plugin_dir.name}: {e}"
-                )
+            except Exception:
+                logger.warning("Could not ensure dependencies for %s", plugin_dir.name, exc_info=True)
 
     @staticmethod
     async def _install_pip_packages(packages: list[str], plugin_key: str) -> None:
@@ -639,7 +630,7 @@ class PluginManager:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await asyncio.wait_for(
+                _, stderr = await asyncio.wait_for(
                     process.communicate(), timeout=120
                 )
                 if process.returncode == 0:
@@ -687,7 +678,7 @@ class PluginManager:
                 await self.start_printer(printer)
 
     async def stop_all(self) -> None:
-        for printer_id in list(self.drivers.keys()):
+        for printer_id in list(self.drivers):
             await self.stop_printer(printer_id)
 
     async def reconnect_all(self) -> dict[int, str]:
@@ -709,7 +700,7 @@ class PluginManager:
                     await driver.reconnect()
                     results[printer.id] = "reconnected"
                 except Exception as e:
-                    logger.error(f"Reconnect failed for printer {printer.id}: {e}")
+                    logger.exception("Reconnect failed for printer %s", printer.id)
                     results[printer.id] = f"error: {e}"
             else:
                 started = await self.start_printer(printer)
@@ -730,7 +721,7 @@ class PluginManager:
         what the display service needs for the online badge and the climate.
         """
         states: dict[int, dict[str, Any]] = {}
-        for printer_id, driver in self.drivers.items():
+        for printer_id in self.drivers:
             try:
                 state = await self.get_display_state(printer_id)
             except Exception:
