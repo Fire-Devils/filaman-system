@@ -51,6 +51,7 @@ _EVENT_CANCEL_TIMEOUT = 5
 _DRIVER_START_TIMEOUT = 10
 _DRIVER_STOP_TIMEOUT = 10
 _DRIVER_REFRESH_TIMEOUT = 5
+_DRIVER_RECONNECT_TIMEOUT = _DRIVER_START_TIMEOUT + _DRIVER_STOP_TIMEOUT
 _DISPLAY_STATE_TIMEOUT = 0.4
 
 # Built-in plugins ship with the image and live alongside this file
@@ -724,18 +725,48 @@ class PluginManager:
             printers = result.scalars().all()
 
         for printer in printers:
+            if (result := await self._reconnect_printer(printer)) is not None:
+                results[printer.id] = result
+        return results
+
+    async def _reconnect_printer(self, printer: Printer) -> str | None:
+        async with self._driver_lock(printer.driver_key), self._printer_lock(printer.id):
+            # A prior printer may have taken long enough for this printer to change.
+            async with async_session_maker() as db:
+                disabled_plugin = select(InstalledPlugin.id).where(
+                    InstalledPlugin.driver_key == Printer.driver_key,
+                    InstalledPlugin.is_active.is_(False),
+                ).exists()
+                current = await db.scalar(select(Printer).where(
+                    Printer.id == printer.id,
+                    Printer.driver_key == printer.driver_key,
+                    Printer.is_active.is_(True),
+                    Printer.deleted_at.is_(None),
+                    ~disabled_plugin,
+                ).execution_options(populate_existing=True))
+            if current is None:
+                return None
+
             driver = self.drivers.get(printer.id)
-            if driver:
+            if driver is None:
+                started = await self._start_printer(current)
+                result = "started" if started else "start_failed"
+            else:
                 try:
-                    await driver.reconnect()
-                    results[printer.id] = "reconnected"
+                    await await_driver_startup(driver.reconnect(), _DRIVER_RECONNECT_TIMEOUT)
+                except TimeoutError:
+                    logger.warning("Reconnect timed out for printer %s", printer.id)
+                    result = "error: reconnect timed out"
                 except Exception as e:
                     logger.exception("Reconnect failed for printer %s", printer.id)
-                    results[printer.id] = f"error: {e}"
-            else:
-                started = await self.start_printer(printer)
-                results[printer.id] = "started" if started else "start_failed"
-        return results
+                    result = f"error: {e}"
+                else:
+                    result = "reconnected"
+                self.health_status[printer.id] = self.read_driver_health(printer.id, driver)
+
+            if (health := self.health_status.get(printer.id)) is not None:
+                shared_health_store.publish({printer.id: health})
+            return result
 
     @staticmethod
     def read_driver_health(printer_id: int, driver: BaseDriver) -> dict[str, Any]:
