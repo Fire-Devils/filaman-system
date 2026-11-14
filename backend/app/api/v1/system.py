@@ -30,7 +30,12 @@ from sqlalchemy.orm import undefer
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Receive, Scope, Send
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
+from app.api.deps import (
+    DBSession,
+    PrincipalDep,
+    RequirePermission,
+    ensure_any_permission,
+)
 from app.api.v1.printers import (
     _is_primary_worker,
     _proxy_to_primary,
@@ -41,7 +46,11 @@ from app.core.file_lock import FileLockBusy
 from app.core.security import Principal
 from app.core.seeds import BUILTIN_PLUGINS, DEPRECATED_PLUGINS
 from app.core.shared_health import shared_display_store, shared_health_store
-from app.core.worker_reload import request_worker_reload, worker_is_gunicorn, worker_reload_available
+from app.core.worker_reload import (
+    request_worker_reload,
+    worker_is_gunicorn,
+    worker_reload_available,
+)
 from app.models import (
     AppSettings,
     Color,
@@ -476,14 +485,32 @@ async def _active_plugin_printers(db: DBSession, driver_key: str | None) -> list
 
 async def _activate_plugin_locally(
     request: Request, plugin: InstalledPlugin, printers: list[Printer],
+    previous_type: str | None = None,
 ) -> None:
     from app.plugins.manager import plugin_manager
 
     await plugin_manager.reload_driver(plugin.driver_key or plugin.plugin_key, printers)
-    if plugin.plugin_type in ("import", "integration"):
+    router_types = ("import", "integration")
+    if plugin.plugin_type in router_types or previous_type in router_types:
         from app.api.v1.router import mount_plugin_router_on_app
 
         mount_plugin_router_on_app(request.app, plugin.plugin_key)
+
+
+async def _recovered_plugins(db: DBSession, service: PluginInstallService) -> list[InstalledPlugin]:
+    if not service.recovered_plugins:
+        return []
+    return list((await db.scalars(
+        select(InstalledPlugin).where(InstalledPlugin.plugin_key.in_(service.recovered_plugins))
+    )).all())
+
+
+async def _activate_recovered_plugins(
+    request: Request, db: DBSession, plugins: list[InstalledPlugin],
+) -> None:
+    for plugin in plugins:
+        printers = await _active_plugin_printers(db, plugin.driver_key) if plugin.is_active else []
+        await _activate_plugin_locally(request, plugin, printers)
 
 
 def _plugin_change_needs_proxy() -> bool:
@@ -497,17 +524,25 @@ async def _install_plugin_archive(
     user_id: int,
     expected_release: tuple[str, str] | None = None,
 ) -> PluginInstallResponse:
+    service = PluginInstallService(db)
+
     async def activate(plugin: InstalledPlugin, previous_type: str | None) -> None:
         _invalidate_version_cache()
         response_cache.delete("plugin_nav")
         router_types = ("import", "integration")
-        if (plugin.plugin_type in router_types or previous_type in router_types) and request_worker_reload():
+        recovered = await _recovered_plugins(db, service)
+        routes_changed = (
+            plugin.plugin_type in router_types or previous_type in router_types
+            or any(peer.plugin_type in router_types for peer in recovered)
+        )
+        if routes_changed and request_worker_reload():
             return
 
         printers = await _active_plugin_printers(db, plugin.driver_key) if plugin.is_active else []
-        await _activate_plugin_locally(request, plugin, printers)
+        await _activate_plugin_locally(request, plugin, printers, previous_type)
+        await _activate_recovered_plugins(request, db, recovered)
 
-    plugin, is_upgrade = await PluginInstallService(db).install_from_zip(
+    plugin, is_upgrade = await service.install_from_zip(
         data,
         installed_by=user_id,
         expected_release=expected_release,
@@ -703,11 +738,14 @@ async def uninstall_plugin(
     async def deactivate(plugin: InstalledPlugin) -> None:
         _invalidate_version_cache()
         response_cache.delete("plugin_nav")
-        if plugin.plugin_type in ("import", "integration") and request_worker_reload():
+        router_types = ("import", "integration")
+        recovered = await _recovered_plugins(db, service)
+        if (
+            plugin.plugin_type in router_types or any(peer.plugin_type in router_types for peer in recovered)
+        ) and request_worker_reload():
             return
-        from app.plugins.manager import plugin_manager
-
-        await plugin_manager.reload_driver(plugin.driver_key or plugin.plugin_key)
+        await _activate_plugin_locally(request, plugin, [])
+        await _activate_recovered_plugins(request, db, recovered)
 
     try:
         await service.uninstall(plugin_key, before_delete, deactivate)
@@ -1866,9 +1904,10 @@ async def _reinstall_plugins_from_backup(
     service = PluginInstallService(db)
     reload_workers = worker_reload_available()
 
-    async def activate(plugin: InstalledPlugin, _previous_type: str | None) -> None:
+    async def activate(plugin: InstalledPlugin, previous_type: str | None) -> None:
         printers = await _active_plugin_printers(db, plugin.driver_key) if plugin.is_active else []
-        await _activate_plugin_locally(request, plugin, printers)
+        await _activate_plugin_locally(request, plugin, printers, previous_type)
+        await _activate_recovered_plugins(request, db, await _recovered_plugins(db, service))
 
     core_version = _read_installed_version()
     for plugin_info in to_install:

@@ -471,10 +471,15 @@ class PluginManager:
             logger.exception("Error applying slot updates for printer %s", printer_id)
 
     def load_driver(self, driver_key: str) -> type[BaseDriver] | None:
+        from app.services.plugin_service import plugin_dependencies_available
+
         # app.plugins.__path__ includes both USER_PLUGINS_DIR and BUILTIN_PLUGINS_DIR,
         # so a single import covers user-installed and built-in plugins.
         try:
             with plugin_archive_lock(driver_key, reading=True):
+                if not plugin_dependencies_available(USER_PLUGINS_DIR / driver_key):
+                    logger.warning("Driver %s has unresolved plugin dependencies", driver_key)
+                    return None
                 module = importlib.import_module(f"app.plugins.{driver_key}.driver")
                 driver_class = getattr(module, "Driver", None)
                 if driver_class and issubclass(driver_class, BaseDriver):
@@ -577,38 +582,7 @@ class PluginManager:
             except Exception:
                 logger.exception("Error stopping driver for printer %s", printer_id)
 
-    async def _ensure_all_plugin_dependencies(self) -> None:
-        """Install missing Python dependencies for all user-installed plugins.
-
-        After a Docker image update the container filesystem is replaced but
-        user-installed plugins persist on the volume.  Their pip dependencies
-        may be gone, so we re-install them on every startup."""
-        if USER_PLUGINS_DIR == BUILTIN_PLUGINS_DIR:
-            return  # dev mode — no separate user dir
-
-        for plugin_dir in USER_PLUGINS_DIR.iterdir():
-            if not plugin_dir.is_dir():
-                continue
-            manifest_path = plugin_dir / "plugin.json"
-            if not manifest_path.exists():
-                continue
-            try:
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                dependencies = manifest.get("dependencies", [])
-                if not dependencies:
-                    continue
-                await self._install_pip_packages(dependencies, manifest.get("plugin_key", plugin_dir.name))
-            except Exception:
-                logger.warning("Could not ensure dependencies for %s", plugin_dir.name, exc_info=True)
-
-    @staticmethod
-    async def _install_pip_packages(packages: list[str], plugin_key: str) -> None:
-        from app.services.plugin_service import PluginInstallService
-
-        await PluginInstallService(None)._install_dependencies(packages, plugin_key)
-
     async def start_all(self) -> None:
-        await self._ensure_all_plugin_dependencies()
         async with async_session_maker() as db:
             # Deaktivierte Plugins ermitteln (driver_key)
             disabled_result = await db.execute(

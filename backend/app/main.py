@@ -32,7 +32,11 @@ from app.core.shared_health import shared_display_store, shared_health_store
 from app.core.worker_reload import worker_is_draining
 from app.models.plugin import InstalledPlugin
 from app.plugins.manager import plugin_manager
-from app.services.plugin_service import PLUGINS_DIR, is_integration_slug
+from app.services.plugin_service import (
+    PLUGINS_DIR,
+    is_integration_slug,
+    provision_installed_plugin_dependencies,
+)
 
 setup_logging()
 logger = __import__("logging").getLogger(__name__)
@@ -353,6 +357,20 @@ def _release_primary_lock() -> None:
 
 async def _start_primary_drivers(app: FastAPI, *, initial: bool = False) -> None:
     global _is_primary
+    if initial and not os.environ.get("FILAMAN_GUNICORN_INSTANCE"):
+        # App servers without the master hook still need dependencies before driver startup.
+        try:
+            from app.api.v1.router import mount_plugin_router_on_app
+
+            availability = await provision_installed_plugin_dependencies()
+            mounted = getattr(app.state, "plugin_routes", {})
+            for key, available in availability.items():
+                if (key in mounted) != available:
+                    mount_plugin_router_on_app(app, key)
+        except BaseException:
+            _release_primary_lock()
+            raise
+
     async with AsyncExitStack() as rollback:
         rollback.callback(_release_primary_lock)
         rollback.push_async_callback(plugin_manager.stop_all)
