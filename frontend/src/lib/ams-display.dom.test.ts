@@ -185,3 +185,51 @@ it('points the strip, highlight and feed line at the printer-reported active slo
   expect(active()).toEqual(['9:0:2'])
   expect(document.querySelector<HTMLElement>('.ams-loaded-dot')?.dataset.bay).toBe('9:0:2')
 })
+
+it('runs the feed line to the bay row that holds the loaded bay when a unit wraps to 2×2', async () => {
+  i18n.setLang('en')
+  const slot = (n: number) => ({ ams_id: 0, slot: n, label: `A${n + 1}`, color: '#00FF00', material: 'PLA', spool_id: 10 + n, remaining_percent: 50 })
+  const printer: any = {
+    id: 9, name: 'H2D', state: 'RUNNING', active: { ams_id: 0, slot: 2 },
+    ams: [{ ams_id: 0, kind: 'ams', label: 'AMS A', slots: [slot(0), slot(1), slot(2), slot(3)] }],
+  }
+  // A 2×2 unit under the strip: A1 A2 on top, A3 A4 below.
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect
+  const bays: Record<string, DOMRect> = {
+    '9:0:0': rect(10, 160, 180, 150), '9:0:1': rect(210, 160, 180, 150),
+    '9:0:2': rect(10, 320, 180, 150), '9:0:3': rect(210, 320, 180, 150),
+  }
+  const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains('ams-bay')) return bays[this.dataset.key || ''] ?? rect(0, 0, 0, 0)
+    if (this.classList.contains('ams-loaded-dot')) return rect(20, 40, 12, 12)
+    if (this.classList.contains('ams-printer-head')) return rect(0, 0, 400, 100)
+    if (this.classList.contains('ams-unit')) return rect(0, 120, 400, 360)
+    return rect(0, 0, 400, 480)
+  })
+  const frames: FrameRequestCallback[] = []
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+  const draw = () => { frames.splice(0).forEach(callback => callback(0)) }
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ printers: [printer] })))
+  let poll!: () => Promise<void>
+  await bootAstroPage('display', {
+    ...i18n, ...swatch, renderSpoolReel, initI18n: async () => {},
+    getAbortSignal: () => undefined, isAbortError: () => false,
+    setInterval: (callback: () => Promise<void>) => { poll = callback },
+  })
+  const path = () => document.querySelector('.ams-feed-core')?.getAttribute('d') || ''
+
+  // A3 is in the lower row: along the gap between the rows (y 315), then
+  // down onto A3 itself, never ending on A1 above it.
+  draw()
+  expect(path()).toContain(' 315 ')
+  expect(path().endsWith('L 100 320')).toBe(true)
+
+  // A1 is in the top row: the line stops at the top of the unit, over A1.
+  printer.active = { ams_id: 0, slot: 0 }
+  await poll()
+  draw()
+  expect(path()).not.toContain(' 315 ')
+  expect(path().endsWith('L 100 120')).toBe(true)
+  measure.mockRestore()
+})
