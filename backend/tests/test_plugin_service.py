@@ -421,6 +421,54 @@ class TestInstallFromZip:
         assert plugin.plugin_key == "test_plugin"
 
 
+@pytest.mark.parametrize(
+    "previous", ["approved", "missing_manifest", "different_zip", "activation_failed", "dependencies_unavailable"],
+)
+async def test_update_only_skips_only_the_exact_activated_catalog_archive(db_session, monkeypatch, tmp_path, previous):
+    from unittest.mock import AsyncMock
+
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path / "data")
+    service = PluginInstallService(db_session)
+    archive = _make_valid_plugin_zip()
+    release = ("test_plugin", "1.0.0")
+    activate = AsyncMock()
+    if previous == "activation_failed":
+        with pytest.raises(RuntimeError, match="activation failed"):
+            await service.install_from_zip(
+                archive, installed_by=1, expected_release=release,
+                after_install=AsyncMock(side_effect=RuntimeError("activation failed")),
+            )
+    else:
+        await service.install_from_zip(archive, installed_by=1, expected_release=release, after_install=activate)
+        if previous == "different_zip":
+            manual_zip = _make_zip({
+                "plugin.json": json.dumps({**VALID_MANIFEST, "description": "Manual variant"}),
+                "driver.py": VALID_DRIVER_PY,
+                "__init__.py": VALID_INIT_PY,
+            })
+            await service.install_from_zip(manual_zip, installed_by=1)
+    manifest = tmp_path / "test_plugin" / "plugin.json"
+    if previous == "missing_manifest":
+        manifest.unlink()
+    if previous == "dependencies_unavailable":
+        plugin_service._set_dependency_availability(manifest.parent, available=False)
+    activate.reset_mock()
+
+    updated, is_upgrade = await service.install_from_zip(
+        archive, installed_by=1, expected_release=release,
+        after_install=activate, update_only=True,
+    )
+    assert updated.version == "1.0.0"
+    assert updated.description == VALID_MANIFEST["description"]
+    assert is_upgrade
+    assert manifest.is_file()
+    assert plugin_service.plugin_dependencies_available(manifest.parent)
+    assert activate.await_count == int(previous != "approved")
+
+
 async def test_failed_dependency_upgrade_preserves_installed_plugin(db_session, monkeypatch, tmp_path):
     from unittest.mock import AsyncMock
 

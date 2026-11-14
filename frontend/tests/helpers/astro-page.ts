@@ -12,7 +12,7 @@ const shellPattern = /<(FormDialog|FormSection|ColorEditorFields|AdminHeader|Inv
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...source: string[]) => (...values: unknown[]) => Promise<unknown>
 
 /** Render actual shared shells, then run the page script after DOM setup, without Layout's startup side effects. */
-export async function bootAstroPage(path: string, dependencies: Record<string, unknown>): Promise<void> {
+export async function bootAstroPage(path: string, dependencies: Record<string, unknown>, signal = new AbortController().signal): Promise<void> {
   const page = readFileSync(`src/pages/${path}.astro`, 'utf8')
   const container = await AstroContainer.create()
   async function renderShells(markup: string): Promise<string> {
@@ -38,7 +38,7 @@ export async function bootAstroPage(path: string, dependencies: Record<string, u
   const source = script.statements.filter(node => !isImportDeclaration(node)).map(node => node.getText(script)).join('\n')
   let mounted: Promise<unknown> | undefined
   const mountPanel = (_: string, setup: (signal: AbortSignal) => unknown) => {
-    mounted = Promise.resolve(setup(new AbortController().signal))
+    mounted = Promise.resolve(setup(signal))
   }
   await new AsyncFunction('mountPanel', ...Object.keys(dependencies), transpileModule(source, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText)(mountPanel, ...Object.values(dependencies))
   await mounted

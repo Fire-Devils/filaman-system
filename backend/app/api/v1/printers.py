@@ -80,6 +80,7 @@ async def _proxy_to_primary(
         if key in request.headers
     }
     body = {"json": json_body} if files is None else {"files": files}
+    response = None
     try:
         socket_path = str(primary_socket_path())
         # Limit the reconnect window while retaining the normal read timeout for accepted work.
@@ -98,17 +99,17 @@ async def _proxy_to_primary(
                         **body,
                     )
             except (httpx.ConnectError, httpx.ConnectTimeout):
-                # Keep the last explicit rejection while waiting for the replacement to bind.
-                if attempt:
-                    continue
-                raise
+                # No connection was opened, so the request could not have reached the worker.
+                if attempt == 10 and response is None:
+                    raise
+                continue
 
             try:
                 payload = response.json()
             except ValueError:
                 payload = None
             detail = payload.get("detail") if isinstance(payload, dict) else None
-            # Only the private listener's pre-dispatch rejection permits a replay.
+            # After connecting, only the private listener's pre-dispatch rejection permits a replay.
             if not (
                 response.status_code == 503
                 and response.headers.get(primary_socket.PRIMARY_RETRY_HEADER) == "1"
@@ -117,6 +118,7 @@ async def _proxy_to_primary(
             ):
                 break
     except (OSError, httpx.TransportError) as exc:
+        logger.warning("Could not route %s %s to primary worker: %r", method, path, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
