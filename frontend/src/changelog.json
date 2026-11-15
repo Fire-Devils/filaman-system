@@ -1,6 +1,26 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "improved", "text": "Die Seitenleiste bleibt beim Wechsel zwischen Seiten stehen, statt jedes Mal neu zu laden – kein Flackern mehr. Filter und die Spulen-Log-Ansicht bleiben bei Zurück und Vor erhalten, und das Dashboard lädt Spulen- und Filamentdaten erst, wenn sie gebraucht werden. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Drucker bleiben bei einem Neustart von FilaMan zuverlässiger erreichbar: Druckerbefehle gehen während des Wechsels nicht mehr verloren, Drucker- und AMS-Ansicht zeigen keinen veralteten Zustand mehr, und Plugins sind direkt nach dem Start verfügbar, statt erst nach einem weiteren Neuladen. (Beigetragen von akira69, mit Dank an Niko11111)" },
+          { "type": "fix", "text": "„Alle Drucker prüfen“ verbindet die Drucker jetzt tatsächlich neu und meldet Fehler, statt immer Erfolg anzuzeigen. Drucker mit deaktiviertem Plugin werden dabei nicht mehr gestartet. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Plugin-Seiten können wieder Dateien speichern, etwa Protokolle oder Screenshots, und von ihnen geöffnete Tabs funktionieren normal. (Beigetragen von Niko11111)" },
+          { "type": "improved", "text": "Plugin-Katalog: SpoolmanScale 0.2.0 ist neu dabei und zeigt die Weboberfläche einer SpoolmanScale-Waage direkt in FilaMan (beigetragen von Niko11111). Die FilaBrain-Vorschau ist auf Version 0.1.18 aktualisiert (beigetragen von akira69)." }
+        ],
+        "en": [
+          { "type": "improved", "text": "The sidebar now stays in place when you move between pages instead of reloading every time – no more flicker. Filters and the Spool Log view are kept on Back and Forward, and the Dashboard only loads spool and filament data when it is needed. (Contributed by akira69)" },
+          { "type": "fix", "text": "Printers stay reachable more reliably while FilaMan restarts: printer commands are no longer lost during the handover, Printers and AMS View no longer show stale status, and plugins are available right after startup instead of only after another reload. (Contributed by akira69, thanks to Niko11111)" },
+          { "type": "fix", "text": "Check All Printers now actually reconnects the printers and reports errors instead of always showing success. Printers whose plugin is disabled are no longer started. (Contributed by akira69)" },
+          { "type": "fix", "text": "Plugin pages can save files again, such as logs or screenshots, and tabs they open work normally. (Contributed by Niko11111)" },
+          { "type": "improved", "text": "Plugin catalog: SpoolmanScale 0.2.0 is new and shows the web interface of a SpoolmanScale scale right inside FilaMan (contributed by Niko11111). The FilaBrain preview is updated to version 0.1.18 (contributed by akira69)." }
+        ]
+      }
+    },
+    {
       "version": "2.2.1",
       "date": "",
       "changes": {
