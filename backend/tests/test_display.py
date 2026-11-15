@@ -1259,3 +1259,70 @@ async def test_display_collection_detaches_validated_state():
         1: {"connected": True},
         2: {"connected": True},
     }
+
+
+def _x1c_with_external(vt: dict) -> dict:
+    return {"connected": True, "gcode_state": "IDLE", "ams": {"ams": []}, "vt_tray": [vt]}
+
+
+def test_external_spool_entered_by_hand_has_no_fill_level():
+    """Bambu sends remain 0 and a tray_uuid of 32 zeros for a spool without a chip."""
+    out = build_printer_display(_P(), {}, _x1c_with_external({
+        "id": 255, "tray_type": "PETG", "tray_color": "FCE300FF", "remain": 0,
+        "tray_uuid": "00000000000000000000000000000000", "tag_uid": "0000000000000000",
+    }))
+    slot = next(u for u in out["ams"] if u["kind"] == "external")["slots"][0]
+    assert slot["material"] == "PETG"
+    assert slot["remaining_percent"] is None
+    assert slot["remaining_source"] is None
+    assert slot["rfid"] is False
+
+
+def test_rfid_spool_reading_empty_stays_empty():
+    out = build_printer_display(_P(), {}, _x1c_with_external({
+        "id": 255, "tray_type": "PLA", "tray_color": "FFFFFFFF", "remain": 0,
+        "tray_uuid": "D12461A84CE04762A1B2C3D4E5F60718", "tag_uid": "15B4B7A400000000",
+    }))
+    slot = next(u for u in out["ams"] if u["kind"] == "external")["slots"][0]
+    assert slot["remaining_percent"] == 0
+    assert slot["remaining_source"] == "printer"
+    assert slot["rfid"] is True
+
+
+def test_a_driver_reporting_remaining_percent_is_taken_at_its_word():
+    out = build_printer_display(_P(), {}, _x1c_with_external({
+        "id": 255, "material": "PLA", "color": "#FFFFFF", "remaining_percent": 0,
+    }))
+    slot = next(u for u in out["ams"] if u["kind"] == "external")["slots"][0]
+    assert slot["remaining_percent"] == 0
+
+
+def test_ams_tray_without_chip_has_no_fill_level():
+    status = {"connected": True, "ams": {"ams": [{"id": 0, "tray": [
+        {"id": 0, "tray_type": "PLA", "tray_color": "111111FF", "remain": 0,
+         "tray_uuid": "00000000000000000000000000000000"},
+        {"id": 1, "tray_type": "PLA", "tray_color": "222222FF", "remain": -1},
+    ]}]}}
+    slots = build_printer_display(_P(), {}, status)["ams"][0]["slots"]
+    assert slots[0]["remaining_percent"] is None
+    assert slots[1]["remaining_percent"] is None
+
+
+def test_bambuddy_shape_without_chip_has_no_fill_level():
+    """Bambuddy turns zero ids into None and defaults remain to 0."""
+    out = build_printer_display(_P(), {}, _x1c_with_external({
+        "id": 254, "tray_type": "PETG", "tray_color": "FCE300FF", "remain": 0,
+        "tray_uuid": None, "tag_uid": None,
+    }))
+    slot = next(u for u in out["ams"] if u["kind"] == "external")["slots"][0]
+    assert slot["remaining_percent"] is None
+    assert slot["rfid"] is False
+
+
+def test_chip_id_forms():
+    from app.services.display_service import _chip_id_present
+    for absent in (None, "", 0, 0.0, "0", " 0000 ", "0" * 32, "0x0000", "00:00:00:00",
+                   "00000000-0000-0000-0000-000000000000", False):
+        assert _chip_id_present(absent) is False, absent
+    for present in ("D12461A84CE04762", "15:B4:B7:A4", 12345):
+        assert _chip_id_present(present) is True, present
