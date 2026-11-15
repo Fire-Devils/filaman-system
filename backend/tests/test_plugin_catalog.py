@@ -6,11 +6,10 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from app.api.v1 import system
 from app.services.plugin_service import PluginInstallError, PluginInstallService
-from tests.test_plugin_service import _make_valid_plugin_zip
 
+from tests.test_plugin_service import _make_valid_plugin_zip
 
 GITHUB_ZIP_URL = "https://github.com/Fire-Devils/test-plugin/releases/download/v1.0.0/test-plugin.zip"
 GITHUB_ASSET_URL = "https://release-assets.githubusercontent.com/test-plugin.zip?signature=test"
@@ -144,9 +143,10 @@ def test_catalog_rejects_syntax_errors_in_plugin_helpers():
         "driver.py": "from . import helper\n" + VALID_DRIVER_PY,
         "helper.py": "def invalid syntax",
     })
-    with pytest.raises(PluginInstallError, match="helper.py") as error:
-        with PluginInstallService.validated_archive(archive, ("test_plugin", "1.0.0")):
-            pytest.fail("A broken helper passed archive validation")
+    with pytest.raises(PluginInstallError, match="helper.py") as error, PluginInstallService.validated_archive(
+        archive, ("test_plugin", "1.0.0")
+    ):
+        pytest.fail("A broken helper passed archive validation")
     assert error.value.code == "syntax_error"
 
 
@@ -295,6 +295,7 @@ async def test_automatic_backup_restores_plugin_and_activates_it(
 
     from app.main import app
     from app.services import plugin_service
+
     from tests.test_plugin_service import VALID_MANIFEST, _make_zip
 
     key = "catalog_restore_test"
@@ -355,10 +356,10 @@ async def test_worker_discovery_waits_for_archive_rollback(db_session, monkeypat
     import asyncio
     from importlib import import_module
 
+    from app.services import plugin_service
     from fastapi import FastAPI
     from sqlalchemy.exc import OperationalError
 
-    from app.services import plugin_service
     from tests.test_plugin_service import VALID_MANIFEST, _make_zip
 
     archive = _make_zip({
@@ -528,11 +529,11 @@ async def test_catalog_reports_install_eligibility(
 async def test_slow_catalog_install_cannot_replace_newer_manual_install(monkeypatch, tmp_path):
     import asyncio
 
+    from app.models import Base
+    from app.services import plugin_service
     from fastapi import HTTPException
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    from app.models import Base
-    from app.services import plugin_service
     from tests.test_plugin_service import VALID_DRIVER_PY, VALID_MANIFEST, _make_zip
 
     def archive(version):
@@ -612,11 +613,10 @@ async def test_catalog_install_coordinates_driver_startup(
 ):
     import asyncio
 
-    from fastapi import HTTPException
-
     from app.models import Printer
     from app.plugins.manager import plugin_manager
     from app.services import plugin_service
+    from fastapi import HTTPException
 
     from tests.test_plugin_service import VALID_DRIVER_PY, VALID_MANIFEST, _make_zip
 
@@ -814,3 +814,129 @@ async def test_restore_continues_after_one_plugin_has_a_disk_error(monkeypatch, 
     )
     assert len(restored) == 2 and "last_plugin" in restored[1]
     assert len(warnings) == 1 and "broken_plugin" in warnings[0]
+
+
+@pytest.mark.parametrize("worker_master, peer_type", [(False, "import"), (True, "import"), (True, "driver")])
+@pytest.mark.parametrize("repair", ["upgrade", "uninstall"])
+async def test_driver_mutation_activates_recovered_peer(
+    db_session, tmp_path, monkeypatch, worker_master, peer_type, repair,
+):
+    from app.models import Printer
+    from app.plugins.manager import plugin_manager
+    from app.services import plugin_service
+    from fastapi import FastAPI
+
+    from tests.test_plugin_service import VALID_DRIVER_PY, VALID_MANIFEST, _make_zip
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path / "plugins")
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
+    plugin_service.PLUGINS_DIR.mkdir()
+    monkeypatch.syspath_prepend(str(plugin_service.PLUGINS_DIR))
+
+    async def install(dependencies, plugin_key, *, dry_run=False):
+        if len(set(dependencies)) > 1:
+            raise PluginInstallError("incompatible fixture versions")
+
+    monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+    service = PluginInstallService(db_session)
+
+    def driver(version, dependency, key="test_plugin"):
+        return _make_zip({
+            "plugin.json": json.dumps({
+                **VALID_MANIFEST, "version": version, "dependencies": [dependency],
+                "plugin_key": key, "driver_key": key,
+            }),
+            "driver.py": VALID_DRIVER_PY.replace("test_plugin", key),
+            "__init__.py": "",
+        })
+
+    peer = "unavailable_peer"
+    await service.install_from_zip(driver("1.0.0", "shared-fixture==1"), installed_by=1)
+    if peer_type == "driver":
+        await service.install_from_zip(driver("1.0.0", "shared-fixture==1", peer), installed_by=1)
+        printer = Printer(name="Recovered printer", driver_key=peer, is_active=True)
+        db_session.add(printer)
+        await db_session.commit()
+        activated = []
+
+        async def start_printer(printer):
+            activated.append(printer.name)
+
+        monkeypatch.setattr(plugin_manager, "_start_printer", start_printer)
+    else:
+        await service.install_from_zip(_make_zip({
+            "plugin.json": json.dumps({
+                **VALID_MANIFEST, "plugin_key": peer, "plugin_type": "import",
+                "mount_prefix": "/peer", "dependencies": ["shared-fixture==1"],
+            }),
+            "__init__.py": "",
+            "router.py": (
+                "from fastapi import APIRouter\nrouter = APIRouter()\n"
+                "@router.get('/ping')\nasync def ping(): return {'restored': True}\n"
+            ),
+        }), installed_by=1)
+
+    manifest_path = plugin_service.PLUGINS_DIR / peer / "plugin.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest_path.write_text(json.dumps({**manifest, "dependencies": ["shared-fixture==2"]}))
+    await plugin_service.provision_installed_plugin_dependencies()
+    assert not plugin_service.plugin_dependencies_available(manifest_path.parent)
+
+    reloads = []
+
+    def reload_workers():
+        assert plugin_service.plugin_dependencies_available(manifest_path.parent)
+        reloads.append(True)
+        return worker_master
+
+    monkeypatch.setattr(system, "request_worker_reload", reload_workers)
+    request = SimpleNamespace(app=FastAPI())
+    principal = SimpleNamespace(user_id=1)
+    if repair == "upgrade":
+        await system._install_plugin_archive(request, db_session, driver("2.0.0", "shared-fixture==2"), 1)
+    else:
+        await system.uninstall_plugin("test_plugin", db_session, principal, request, delete_data=False)
+
+    assert reloads == ([True] if peer_type == "import" else [])
+    if peer_type == "driver":
+        assert activated == ["Recovered printer"]
+    elif not worker_master:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=request.app), base_url="http://test") as client:
+            assert (await client.get("/peer/ping")).json() == {"restored": True}
+
+
+@pytest.mark.parametrize("change", ["uninstall", "replace_with_driver"])
+async def test_plugin_mutation_removes_old_router_without_worker_reload(
+    db_session, tmp_path, monkeypatch, change,
+):
+    from app.services import plugin_service
+    from fastapi import FastAPI
+
+    from tests.test_plugin_service import VALID_MANIFEST, _make_zip
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path / "plugins")
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
+    plugin_service.PLUGINS_DIR.mkdir()
+    monkeypatch.syspath_prepend(str(plugin_service.PLUGINS_DIR))
+    monkeypatch.setattr(system, "request_worker_reload", lambda: False)
+
+    request = SimpleNamespace(app=FastAPI())
+    archive = _make_zip({
+        "plugin.json": json.dumps({
+            **VALID_MANIFEST, "plugin_type": "import", "mount_prefix": "/old-fixture",
+        }),
+        "__init__.py": "",
+        "router.py": (
+            "from fastapi import APIRouter\nrouter = APIRouter()\n"
+            "@router.get('/ping')\nasync def ping(): return {'old': True}\n"
+        ),
+    })
+    await system._install_plugin_archive(request, db_session, archive, 1)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=request.app), base_url="http://test") as client:
+        assert (await client.get("/old-fixture/ping")).status_code == 200
+        if change == "uninstall":
+            principal = SimpleNamespace(user_id=1)
+            await system.uninstall_plugin("test_plugin", db_session, principal, request, delete_data=False)
+        else:
+            await system._install_plugin_archive(request, db_session, _make_valid_plugin_zip(), 1)
+        assert (await client.get("/old-fixture/ping")).status_code == 404

@@ -18,12 +18,13 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.core.config import settings
 from app.core.worker_reload import worker_is_draining, worker_is_gunicorn
 
-
 # Use the same temp-root identity as the election lock, within the short,
 # sticky /tmp namespace so a long or shared TMPDIR cannot expose the socket.
 _runtime_key = blake2s(os.fsencode(Path(tempfile.gettempdir()).resolve()), digest_size=8).hexdigest()
 _runtime_dir = Path("/tmp") / f"filaman-{os.getuid()}-{_runtime_key}"
 _startup_directory = Path.cwd()
+PRIMARY_WORKER_DRAINING = "primary_worker_draining"
+PRIMARY_RETRY_HEADER = "x-filaman-primary-draining"
 
 
 @lru_cache(maxsize=1)
@@ -59,10 +60,12 @@ async def serve_primary_socket(app: ASGIApp) -> AsyncIterator[Callable[[], None]
     staged.unlink(missing_ok=True)
 
     async def dispatch(scope: Scope, receive: Receive, send: Send) -> None:
+        # This marker must be sent before dispatch so a standby can safely replay the request.
         if scope["type"] == "http" and worker_is_draining():
             response = JSONResponse(
-                {"detail": {"code": "primary_worker_required", "message": "Primary worker is draining. Please retry."}},
+                {"detail": {"code": PRIMARY_WORKER_DRAINING, "message": "Primary worker is draining. Please retry."}},
                 status_code=503,
+                headers={PRIMARY_RETRY_HEADER: "1"},
             )
             await response(scope, receive, send)
             return

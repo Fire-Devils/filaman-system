@@ -26,13 +26,20 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Filament, FilamentColor, Printer, PrinterSlot, PrinterSlotAssignment, Spool
+from app.models import (
+    Filament,
+    FilamentColor,
+    Printer,
+    PrinterSlot,
+    PrinterSlotAssignment,
+    Spool,
+)
 
 _NOZZLE_MIN_KEY = "bambu_nozzle_temp_min"
 _NOZZLE_MAX_KEY = "bambu_nozzle_temp_max"
@@ -86,7 +93,7 @@ def _as_float(value: Any) -> float | None:
 
 def _as_int(value: Any) -> int | None:
     f = _as_float(value)
-    return int(round(f)) if f is not None else None
+    return round(f) if f is not None else None
 
 
 def _decode_active_tray(value: int | None) -> tuple[int, int] | None:
@@ -780,7 +787,7 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         net_initial = getattr(filament, "raw_material_weight_g", None) or None
     remaining_percent = None
     if remaining is not None and net_initial:
-        remaining_percent = max(0, min(100, int(round(remaining / net_initial * 100))))
+        remaining_percent = max(0, min(100, round(remaining / net_initial * 100)))
 
     nozzle_min, nozzle_max = _nozzle_range(spool, printer_id)
     return {
@@ -793,7 +800,7 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         "color_style": color_style,
         "finish": finish,
         "color_name": color_name,
-        "remaining_grams": int(round(remaining)) if remaining is not None else None,
+        "remaining_grams": round(remaining) if remaining is not None else None,
         "remaining_percent": remaining_percent,
         "nozzle_min": nozzle_min,
         "nozzle_max": nozzle_max,
@@ -1114,24 +1121,19 @@ def slots_only(printer_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-DriverStateGetter = Callable[[Printer], Awaitable[dict[str, Any] | None]]
 
 
 async def build_display(
     db: AsyncSession,
     printers: list[Printer],
-    get_driver_state: DriverStateGetter,
+    driver_states: dict[int, dict[str, Any]],
     *,
     fields: str = "full",
 ) -> dict[str, Any]:
     payload_printers = []
     for printer in printers:
         fm_slots = await load_slot_spools(db, printer.id)
-        try:
-            driver_state = await get_driver_state(printer)
-        except Exception:  # a misbehaving driver must not blank the board
-            driver_state = None
-        item = build_printer_display(printer, fm_slots, driver_state)
+        item = build_printer_display(printer, fm_slots, driver_states.get(printer.id))
         payload_printers.append(slots_only(item) if fields == "slots" else item)
     return {
         "schema_version": SCHEMA_VERSION,

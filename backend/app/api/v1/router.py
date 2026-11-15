@@ -34,7 +34,10 @@ from app.api.v1.system_extra_fields import router as system_extra_fields_router
 from app.api.v1.tag import router as tag_router
 from app.core import database
 from app.models.plugin import InstalledPlugin
-from app.services.plugin_service import validate_integration_shell
+from app.services.plugin_service import (
+    plugin_dependencies_available,
+    validate_integration_shell,
+)
 from app.services.spoolman_projection import adapt_installed_spoolman
 
 try:
@@ -187,7 +190,7 @@ def mount_plugin_router_on_app(app, plugin_key: str) -> bool:
     manifest_path = plugin_dir / "plugin.json"
     router_path = plugin_dir / "router.py"
 
-    if not manifest_path.is_file() or not router_path.is_file():
+    if not plugin_dependencies_available(plugin_dir) or not manifest_path.is_file() or not router_path.is_file():
         _replace_plugin_router(app, plugin_key, None)
         return False
 
@@ -261,7 +264,7 @@ def _mount_plugin_routers() -> None:
 
     with plugin_archive_lock(reading=True, blocking=True):
         for plugin_dir in sorted(PLUGINS_DIR.iterdir()):
-            if not plugin_dir.is_dir():
+            if not plugin_dir.is_dir() or not plugin_dependencies_available(plugin_dir):
                 continue
             manifest_path = plugin_dir / "plugin.json"
             router_path = plugin_dir / "router.py"

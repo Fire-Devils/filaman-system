@@ -43,8 +43,10 @@ HOSTED_ROUTER = (
 
 @pytest.mark.parametrize("upgrade", [False, True])
 @pytest.mark.parametrize("invalid_router", [
-    "from fastapi import APIRouter\nfrom starlette.routing import Route\n"
-    "router = APIRouter(routes=[Route('/', lambda request: None)])\n",
+    (
+        "from fastapi import APIRouter\nfrom starlette.routing import Route\n"
+        "router = APIRouter(routes=[Route('/', lambda request: None)])\n"
+    ),
     HOSTED_ROUTER.replace("get('/')", "get('/other')"),
     HOSTED_ROUTER.replace("get('/')", "get('')"),
     "raise SystemExit(0)\n",

@@ -1,16 +1,25 @@
 """SSE stream endpoint — pushes real-time events to connected frontends."""
 
-import logging
-
+import anyio
 from fastapi import APIRouter
 from starlette.requests import Request
 from starlette.responses import StreamingResponse
+from starlette.types import Send
 
 from app.core.event_bus import event_bus
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/events", tags=["Events"])
+
+
+
+class EventStreamResponse(StreamingResponse):
+    async def stream_response(self, send: Send) -> None:
+        # A send can fail while the generator is suspended at a yielded frame.
+        try:
+            await super().stream_response(send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await self.body_iterator.aclose()
 
 
 @router.get("/stream")
@@ -22,16 +31,14 @@ async def event_stream(request: Request) -> StreamingResponse:
     """
 
     async def generate():
-        # Send initial keepalive so the connection is established
-        yield ": connected\n\n"
+        async with event_bus.subscribe() as subscription:
+            yield ": connected\n\n"
+            async for data in subscription:
+                if await request.is_disconnected():
+                    break
+                yield f"data: {data}\n\n"
 
-        async for data in event_bus.subscribe():
-            # Check if client disconnected
-            if await request.is_disconnected():
-                break
-            yield f"data: {data}\n\n"
-
-    return StreamingResponse(
+    return EventStreamResponse(
         generate(),
         media_type="text/event-stream",
         headers={
