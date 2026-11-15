@@ -41,7 +41,7 @@
     "version": "0.2.5",
     "min_filaman_version": "2.0.3",
     "zip_path": "moonraker_filaman-0.2.5.zip",
-    "sha256": "5eff0b9cb475bfdd76edbd16efd88f41a05f05c1a985bb045a7a19c7b851c74a"
+    "sha256": "f762043abaf267d32d11ae41ca03b2b2156afddd025d14d13391a224b150cd11"
   },
   {
     "plugin_key": "spoolmanapi",
