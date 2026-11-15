@@ -12,6 +12,7 @@ try {
   const errors = []
   const requests = []
   const problemSpools = []
+  const pluginDeletes = []
   let pendingPrint = null
   let previewGate
   let claimGate
@@ -20,6 +21,9 @@ try {
   let authFailure
   let pendingAuth
   let heldPanelAuth
+  let heldDestinationHtml
+  let heldSidebarSave
+  let sidebarPreferences = { sidebar: null, theme: 'dark', expanded: null }
   let versionCheckAvailable = false
   let showOtherPlugin = true
   page.on('pageerror', error => errors.push(error.message))
@@ -41,6 +45,10 @@ try {
     const url = new URL(route.request().url())
     if (url.origin !== origin) return route.abort()
     requests.push(url.pathname)
+    if (route.request().method() === 'DELETE' && url.pathname.startsWith('/api/v1/admin/system/plugins/')) {
+      pluginDeletes.push(url.pathname)
+      return route.fulfill({ status: 204 })
+    }
     if (url.pathname === '/spools/3/print') return route.fulfill({ contentType: 'text/html', body: '<title>Label editor</title>' })
     if (url.pathname === '/api/v1/plugin-nav' && requests.filter(path => path === url.pathname).length === 1) {
       return route.fulfill({ status: 503 })
@@ -49,6 +57,10 @@ try {
       return route.fulfill({ status: 503 })
     }
     if (url.pathname.startsWith('/plugin-page/')) return route.fulfill({ contentType: 'text/html', body: '<title>Example plugin</title>' })
+    if (url.pathname === '/printers' && heldDestinationHtml) {
+      await heldDestinationHtml
+      return route.fulfill({ status: 503, contentType: 'text/plain', body: 'Try again' })
+    }
     if (url.pathname === '/plugins/native-example/') return route.fulfill({ contentType: 'text/html', body: '<title>Native plugin</title>' })
     if (!/^\/(api|auth)\//.test(url.pathname)) return route.continue()
     if (url.pathname === '/api/v1/me') {
@@ -65,6 +77,12 @@ try {
         authFailure = undefined
         return failure === 'reset' ? route.abort('connectionreset') : route.fulfill({ status: 503 })
       }
+    }
+    if (url.pathname === '/api/v1/me/preferences/sidebar' && route.request().method() === 'PATCH') {
+      const saved = route.request().postDataJSON()
+      if (saved.sidebar && heldSidebarSave && !await heldSidebarSave) return route.fulfill({ status: 503 })
+      sidebarPreferences = { ...sidebarPreferences, ...saved }
+      return route.fulfill({ json: sidebarPreferences })
     }
     if (url.pathname === '/api/v1/spools' && url.searchParams.get('low_or_empty') === 'true') {
       problemSpools.push(url)
@@ -97,12 +115,16 @@ try {
       '/auth/me': user,
       '/api/v1/me/label-presets/migrate': [],
       '/api/v1/me/preferences': { dashboard_hidden_widgets: [] },
-      '/api/v1/me/preferences/sidebar': { sidebar: null, theme: 'dark', expanded: null },
+      '/api/v1/me/preferences/sidebar': sidebarPreferences,
       '/api/v1/app-settings/public-info': { currency: 'EUR' },
       '/api/v1/admin/system/version-check': { update_available: true, latest_version: '9.0.0' },
       '/api/v1/manufacturers': { items: inventory, total: inventory.length },
       '/api/v1/colors': { items: inventory, total: inventory.length },
+      '/api/v1/admin/system/plugins': [
+        { plugin_key: 'filabrain', name: 'FilaBrain', page_url: '/plugin-page/filabrain', version: '0.1.18', plugin_type: 'integration', is_active: true, installed_by: 1 },
+      ],
       '/api/v1/plugin-nav': [
+        { plugin_key: 'filabrain', name: 'FilaBrain', page_url: '/plugin-page/filabrain' },
         { plugin_key: 'example', name: 'Example', page_url: '/plugin-page/example' },
         ...(showOtherPlugin ? [{ plugin_key: 'other', name: 'Other', page_url: '/plugin-page/other' }] : []),
         { plugin_key: 'native', name: 'Native', page_url: '/plugin-view/native-example' },
@@ -133,13 +155,14 @@ try {
       await page.locator('#fm-changelog-close').click()
     }
   }
-  const clickNav = async path => {
+  const clickNav = async (path, link = sidebar.locator(`a[href="${path}"]:visible:not(#sidebar-version-update)`)) => {
     const before = await page.locator('main').elementHandle()
-    await sidebar.locator(`a[href="${path}"]:visible:not(#sidebar-version-update)`).click()
+    await link.click()
     const target = new URL(path, origin)
     await page.waitForURL(url => url.pathname.replace(/\/$/, '') === target.pathname.replace(/\/$/, '') && url.search === target.search)
-    await sidebar.locator(`a[href="${path}"].active`).waitFor()
-    assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+    const sidebarPath = path === '/admin/system' ? '/admin' : path
+    assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true, path)
+    await sidebar.locator(`a[href="${sidebarPath}"].active`).waitFor()
     assert.equal(await before.evaluate(main => main.isConnected), false)
     await before.dispose()
     await page.locator('main').waitFor()
@@ -258,6 +281,135 @@ try {
       await sidebar.locator('#sidebar-color-library').waitFor()
     }
   }
+
+  await clickNav('/admin')
+  await clickNav('/admin/system', page.locator('main a[href="/admin/system"]'))
+  const filaBrainPath = '/plugin-view?p=filabrain'
+  const filaBrainRow = page.locator('#plugins-table').getByRole('link', { name: 'FilaBrain', exact: true })
+  await clickNav(filaBrainPath, filaBrainRow)
+  await page.locator('#plugin-frame[src="/plugin-page/filabrain"]').waitFor()
+  await page.goBack()
+  await filaBrainRow.waitFor()
+  assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+  await page.locator('#plugins-table .btn-delete').click()
+  const uninstallDialog = page.locator('#fm-confirm-overlay')
+  await uninstallDialog.waitFor()
+  const uninstallMessage = await uninstallDialog.locator('#fm-confirm-message').textContent()
+  await uninstallDialog.locator('#fm-confirm-ok').click()
+  await page.waitForFunction(message => document.querySelector('#fm-confirm-message')?.textContent !== message, uninstallMessage)
+  await page.goBack()
+  await page.locator('main[data-panel="admin"][data-panel-authorized]').waitFor()
+  assert.equal(await uninstallDialog.evaluate(dialog => dialog.open), false)
+  assert.deepEqual(pluginDeletes, [], 'Back during the plugin data prompt must not send a DELETE request')
+  await clickNav('/admin/system', page.locator('main a[href="/admin/system"]'))
+  await clickNav(filaBrainPath)
+  await page.locator('#plugin-frame[src="/plugin-page/filabrain"]').waitFor()
+  await clickNav('/settings')
+  await page.locator('main a[href="/settings/sidebar"]').click()
+  const editor = page.locator('main[data-panel="sidebar-settings"][data-panel-authorized]')
+  await editor.locator('#sidebar-reset:enabled').waitFor()
+  assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+  const editorAuth = Promise.withResolvers()
+  heldPanelAuth = editorAuth.promise
+  const revalidation = page.waitForRequest(req => new URL(req.url()).pathname === '/api/v1/me')
+  await sidebar.locator('#admin-nav a[href="/admin"]').click()
+  await revalidation
+  assert.equal(await editor.isVisible(), true, 'Sidebar settings stays visible while the next panel checks the session')
+  assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+  heldPanelAuth = undefined
+  editorAuth.resolve()
+  await page.locator('main[data-panel="admin"][data-panel-authorized]').waitFor()
+  assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+
+  await page.goBack()
+  await editor.locator('#sidebar-reset:enabled').waitFor()
+  const save = editor.locator('button[type="submit"]')
+  const compact = editor.locator('input[name="density"][value="compact"]')
+  const comfortable = editor.locator('input[name="density"][value="comfortable"]')
+  const editorStatus = editor.locator('#sidebar-settings-status')
+  for (const [leave, saved] of [
+    ['link', false], ['link', true], ['back', false], ['back', true], ['bounce', false],
+    ['link-first', false], ['link-first', true], ['back-first', false], ['failed-before-auth', false], ['failed-before-html', false],
+  ]) {
+    const choice = await compact.isChecked() ? comfortable : compact
+    await choice.check()
+    const editorBeforeSave = await editor.elementHandle()
+    const write = Promise.withResolvers()
+    heldSidebarSave = write.promise
+    const requested = page.waitForRequest(req => req.method() === 'PATCH' && new URL(req.url()).pathname === '/api/v1/me/preferences/sidebar')
+    const leavesByLink = leave.startsWith('link') || leave === 'failed-before-auth'
+    const usesFallback = leave === 'failed-before-html'
+    const leaveFirst = leave.endsWith('-first') || leave.startsWith('failed-before-')
+    const destination = Promise.withResolvers()
+    const leaveEditor = async () => {
+      if (usesFallback) await sidebar.locator('a[href="/printers"]').click()
+      else if (leavesByLink) await sidebar.locator('#admin-nav a[href="/admin"]').click()
+      else {
+        await page.evaluate(() => history.back())
+        await page.waitForURL(url => url.pathname.replace(/\/$/, '') === '/settings')
+        if (leave === 'bounce') {
+          await page.evaluate(() => history.forward())
+          await page.waitForURL(url => url.pathname.replace(/\/$/, '') === '/settings/sidebar')
+        }
+      }
+    }
+    try {
+      if (leaveFirst) {
+        if (usesFallback) heldDestinationHtml = destination.promise
+        else heldPanelAuth = destination.promise
+        const destinationPath = usesFallback ? '/printers' : '/api/v1/me'
+        const navigating = page.waitForRequest(req => new URL(req.url()).pathname === destinationPath)
+        await leaveEditor()
+        await navigating
+      }
+      await save.click()
+      await requested
+      if (!leaveFirst) await leaveEditor()
+      if (leave.startsWith('failed-before-')) {
+        write.resolve(saved)
+        await editorStatus.filter({ hasText: 'konnten nicht gespeichert werden' }).waitFor()
+      }
+      if (usesFallback) await page.evaluate(() => {
+        window.canceledDeparture = false
+        document.addEventListener('astro:page-load', () => { window.canceledDeparture = true }, { once: true })
+      })
+      heldPanelAuth = undefined
+      heldDestinationHtml = undefined
+      destination.resolve()
+      if (usesFallback) await page.waitForFunction(() => window.canceledDeparture)
+      // Give the router time to reach the swap if navigation bypasses the guard.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      assert.equal(await editorBeforeSave.evaluate(main => main.isConnected && getComputedStyle(main).visibility === 'visible'),
+        true, 'Wait for the sidebar save before swapping panels')
+    } finally {
+      destination.resolve()
+      heldPanelAuth = undefined
+      heldDestinationHtml = undefined
+      write.resolve(saved)
+      heldSidebarSave = undefined
+    }
+    if (saved) {
+      const target = leavesByLink ? 'admin' : 'settings'
+      await page.locator(`main[data-panel="${target}"][data-panel-authorized]`).waitFor()
+      assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+      if (leavesByLink) await page.goBack()
+      else await page.goForward()
+      await editor.locator('#sidebar-reset:enabled').waitFor()
+      assert.equal(await choice.isChecked(), true)
+    } else {
+      await page.waitForURL(url => url.pathname.replace(/\/$/, '') === '/settings/sidebar')
+      await editorStatus.filter({ hasText: 'konnten nicht gespeichert werden' }).waitFor()
+      assert.equal(await choice.isChecked(), true, 'A failed write retains the editor draft')
+      assert.equal(await save.isEnabled(), true)
+      assert.equal(await editorBeforeSave.evaluate(main => main.isConnected), true)
+      await editor.locator('#sidebar-revert').click()
+      assert.equal(await editorBeforeSave.evaluate(main => main.isConnected), true)
+    }
+    await editorBeforeSave.dispose()
+  }
+  await editor.locator('.fm-admin-back[href="/settings"]').click()
+  await page.locator('main[data-panel="settings"][data-panel-authorized]').waitFor()
+  assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
 
   for (const [path, table] of [['/manufacturers', 'manufacturers'], ['/filaments/colors', 'colors']]) {
     await clickNav(path)

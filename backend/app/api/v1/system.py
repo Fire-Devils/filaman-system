@@ -523,6 +523,8 @@ async def _install_plugin_archive(
     data: bytes,
     user_id: int,
     expected_release: tuple[str, str] | None = None,
+    *,
+    update_only: bool = False,
 ) -> PluginInstallResponse:
     service = PluginInstallService(db)
 
@@ -547,6 +549,7 @@ async def _install_plugin_archive(
         installed_by=user_id,
         expected_release=expected_release,
         after_install=activate,
+        update_only=update_only,
     )
     action = "aktualisiert" if is_upgrade else "installiert"
     return PluginInstallResponse(
@@ -592,9 +595,10 @@ async def install_from_registry(
         return await _install_plugin_archive(
             request, db, await fetch_verified_zip(release), principal.user_id,
             expected_release=(release.plugin_key, release.version),
+            update_only=body.update_only,
         )
     except PluginInstallError as e:
-        if e.code in {"catalog_downgrade", "plugin_mutation_in_progress"}:
+        if e.code in {"catalog_downgrade", "catalog_plugin_uninstalled", "plugin_mutation_in_progress"}:
             status_code = status.HTTP_409_CONFLICT
         elif e.code in {"download_failed", "checksum_mismatch"}:
             status_code = status.HTTP_502_BAD_GATEWAY

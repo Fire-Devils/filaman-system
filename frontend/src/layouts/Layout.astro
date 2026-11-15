@@ -1,4 +1,5 @@
 ---
+import ColorModePicker from '../components/ColorModePicker.astro'
 import '../styles/global.css'
 import { ClientRouter } from 'astro:transitions'
 import { VERSION } from '../version.js'
@@ -64,7 +65,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           </div>
 
           <!-- Navigation -->
-          <nav style="display: grid; gap: 6px;">
+          <nav id="sidebar-nav">
             <a href="/" class="fm-nav-item">
               <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-dashboard"></use></svg></span>
               <span data-i18n="nav.dashboard">Dashboard</span>
@@ -102,34 +103,54 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
               <span data-i18n="nav.spoolLog">Spool Log</span>
             </a>
 
-            <div id="plugin-nav" class="invisible" style="margin-top: 4px;"></div>
+            <div id="plugin-nav" class="sidebar-plugin-group" hidden>
+              <hr class="fm-divider" data-sidebar-header />
+              <button id="sidebar-plugin-heading" class="sidebar-plugin-heading" type="button" aria-expanded="false" aria-controls="sidebar-plugin-preview">
+                <svg class="fm-nav-icon" width="18" height="18" aria-hidden="true"><use href="/icons.svg?v=2#icon-plugin" /></svg>
+                <span data-i18n="nav.plugins">Plugins</span>
+                <span id="sidebar-plugin-count" class="sidebar-plugin-count"></span>
+                <svg class="sidebar-plugin-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </button>
+              <p id="sidebar-plugin-label" class="sidebar-plugin-label" data-i18n="nav.plugins">Plugins</p>
+              <div id="sidebar-pinned-plugins" class="sidebar-pinned-plugins"></div>
+              <div id="sidebar-plugin-preview" class="sidebar-plugin-preview" hidden>
+                <a id="sidebar-plugin-settings-link" href="/settings/sidebar" class="fm-nav-item sidebar-plugin-settings-link"
+                  aria-current={Astro.url.pathname.replace(/\/$/, '') === '/settings/sidebar' ? 'page' : undefined}>
+                  <svg class="fm-nav-icon" aria-hidden="true"><use href="/icons.svg?v=2#icon-settings" /></svg>
+                  <span data-i18n="settings.sidebarTitle">Sidebar settings</span>
+                </a>
+              </div>
+            </div>
 
-            <div id="admin-nav" class="invisible" style="margin-top: 4px;">
-              <hr class="fm-divider" style="margin-bottom: 8px;" />
-              <div class="hide-collapsed" style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
+            <div id="admin-nav" class="sidebar-admin-group invisible">
+              <hr class="fm-divider" style="margin-bottom: 8px;" data-sidebar-header />
+              <div class="hide-collapsed" data-sidebar-header style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;" data-i18n="nav.admin">Admin</div>
               <a href="/admin" class="fm-nav-item">
                 <span class="fm-nav-icon"><svg><use href="/icons.svg?v=2#icon-admin"></use></svg></span>
                 <span data-i18n="nav.adminPanel">Admin Panel</span>
               </a>
             </div>
+            <ColorModePicker id="sidebar-color-mode" />
           </nav>
 
-          <!-- Sidebar Footer: User + Theme -->
-          <div class="hide-collapsed" style="margin-top: auto; display: grid; gap: 12px;">
+          <!-- Sidebar Footer -->
+          <div id="sidebar-footer" style="margin-top: auto; display: grid; gap: 12px;">
             <!-- User Profile Row -->
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--bg-soft); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
-              <div style="flex: 1 1 0%; min-width: 0; padding-right: 8px;">
+            <div id="sidebar-profile" class="sidebar-profile">
+              <div class="hide-collapsed" style="flex: 1 1 0%; min-width: 0; padding-right: 8px;">
                 <div id="user-name" style="font-weight: 600; color: var(--text); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">
                   <span style="color: var(--text-muted);" data-i18n="common.loading">Loading...</span>
                 </div>
                 <div id="user-role" class="invisible" style="color: var(--text-muted); font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">User</div>
               </div>
-              <div style="display: flex; gap: 4px; flex-shrink: 0;">
+              <div class="sidebar-profile-actions">
                 <a
                   href="/settings"
                   data-sidebar-link
                   class="fm-btn fm-btn-outline"
                   style="padding: 6px; line-height: 0; border-radius: 8px; flex-shrink: 0;"
+                  aria-label="User Settings"
+                  data-i18n-aria-label="nav.settings"
                   data-i18n-title="nav.settings"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -138,17 +159,13 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
                   id="logout-btn"
                   class="fm-btn fm-btn-outline"
                   style="padding: 6px; line-height: 0; border-radius: 8px; flex-shrink: 0;"
+                  aria-label="Logout"
+                  data-i18n-aria-label="nav.logout"
                   data-i18n-title="nav.logout"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 </button>
               </div>
-            </div>
-
-            <div class="fm-theme-toggle" role="group" aria-label="Theme toggle" data-i18n-aria-label="theme.toggle">
-              <button type="button" data-theme="brand" class="active" data-i18n="theme.default">Default</button>
-              <button type="button" data-theme="light" data-i18n="theme.light">Light</button>
-              <button type="button" data-theme="dark" data-i18n="theme.dark">Dark</button>
             </div>
 
             <!-- Buy Me A Coffee -->
@@ -239,13 +256,13 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
 
     <script>
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
-      import { abortAllRequests, getAbortSignal } from '../lib/abort'
+      import { abortAllRequests, getAbortSignal, isAbortError } from '../lib/abort'
       import type { User } from '../lib/auth'
       import type { AppDialogs } from '../lib/form-dialog'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
       import { setupPcPrintPrompt } from '../lib/label-pc-print-prompt'
-      import { navHrefFor } from '../lib/plugin-nav'
-      import { createPluginIcon } from '../lib/plugin-icon'
+      import { setupSidebar } from '../lib/sidebar'
+      import { pluginNavChangedEvent, type PluginNavChange } from '../lib/plugin-nav'
       import { loginUrlWithNext } from '../lib/login-redirect'
       import {
         isAutoOpenEnabled,
@@ -259,25 +276,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       /* ── i18n init ───────────────────────────────────────────── */
       await initI18n()
 
-      const colorLibraryLink = document.getElementById('sidebar-color-library')!
-      const colorLibraryKey = 'sidebar-color-library'
-      function syncColorLibraryShortcut() {
-        const shown = localStorage.getItem(colorLibraryKey) !== 'false'
-        colorLibraryLink.hidden = !shown
-        const colorLibraryToggle = document.querySelector<HTMLInputElement>('#show-color-library')
-        if (colorLibraryToggle) colorLibraryToggle.checked = shown
-      }
-      syncColorLibraryShortcut()
-      document.addEventListener('change', event => {
-        const toggle = event.target
-        if (!(toggle instanceof HTMLInputElement) || toggle.id !== 'show-color-library') return
-        localStorage.setItem(colorLibraryKey, String(toggle.checked))
-        syncColorLibraryShortcut()
-      })
-      window.addEventListener('storage', event => {
-        if (event.key === colorLibraryKey || event.key === null) syncColorLibraryShortcut()
-      })
-      window.addEventListener('pageshow', syncColorLibraryShortcut)
+      const sidebar = setupSidebar(highlightActiveNav)
 
       const inventoryBack = document.querySelector<HTMLAnchorElement>('[data-inventory-back]')
       if (inventoryBack && document.referrer && history.length > 1) {
@@ -287,7 +286,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           inventoryBack.addEventListener('click', event => {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
             event.preventDefault()
-            history.back()
+            void sidebar.navigate(() => history.back())
           })
         }
       }
@@ -413,28 +412,6 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       })()
 
 
-      /* ── Theme switcher ──────────────────────────────────────── */
-      const themeButtons = document.querySelectorAll('.fm-theme-toggle button')
-      const root = document.documentElement
-
-      function setTheme(theme: string) {
-        root.setAttribute('data-theme', theme)
-        localStorage.setItem('theme', theme)
-        themeButtons.forEach(btn => btn.classList.remove('active'))
-        document.querySelector(`.fm-theme-toggle button[data-theme="${theme}"]`)?.classList.add('active')
-      }
-
-      // Restore saved theme on load
-      const saved = localStorage.getItem('theme') || 'brand'
-      setTheme(saved)
-
-      themeButtons.forEach(button => {
-        button.addEventListener('click', () => {
-          const theme = button.getAttribute('data-theme')!
-          setTheme(theme)
-        })
-      })
-
       /* ── Auth check ──────────────────────────────────────────── */
       const userName = document.getElementById('user-name')!
       const userRole = document.getElementById('user-role')!
@@ -446,7 +423,6 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       let authenticatedUserId: User['id'] | undefined
       let disposePrintPrompt: (() => void) | undefined
       let sidebarAccess: string | undefined
-      let pluginNavContent = ''
 
       function closePrintPrompt() {
         disposePrintPrompt?.()
@@ -484,6 +460,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
             window.location.reload()
             return
           }
+          if (authenticatedUserId === undefined) void sidebar.loadAccount(user.id, response.headers.get('X-Filaman-Theme'))
           authenticatedUserId = user.id
           await ensureLabelPresetBrowserMigration(user.id).catch(error => {
             if (!signal.aborted) console.warn('Could not migrate label presets to the database', error)
@@ -505,12 +482,12 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           const access = JSON.stringify([user.id, user.is_superadmin, [...user.permissions].sort()])
           if (sidebarAccess !== access) {
             sidebarAccess = access
-            pluginNavContent = ''
-            pluginNav.replaceChildren()
-            pluginNav.classList.add('invisible')
+            lastPluginNav = undefined
+            sidebar.setPlugins([])
           }
+          sidebar.setAdmin(!adminNav.classList.contains('invisible'))
           void checkSystemVersion(user, signal)
-          void loadPluginNav(signal)
+          void loadPluginNav()
 
           // Auth succeeded — reveal page content
           document.getElementById('fm-page')!.style.visibility = 'visible'
@@ -531,6 +508,10 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           retryButton.focus({ preventScroll: true })
         }
       }
+
+      let pluginNavRequest = 0
+      let lastPluginNav: string | undefined
+      let retryPluginNav: ReturnType<typeof setTimeout> | undefined
 
       async function authorizePanel(main: HTMLElement) {
         if (await checkAuth(main) && main.isConnected) main.focus({ preventScroll: true })
@@ -590,52 +571,67 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       }
 
       /* ── Plugin navigation ───────────────────────────────────── */
-      const pluginNav = document.getElementById('plugin-nav')!
+      const pluginIconRevisions = new Map<string, string>()
+      window.addEventListener('filaman:plugin-installed', event => {
+        const { detail: pluginKey } = event as CustomEvent<string>
+        // A ZIP replacement can change the SVG without changing the version.
+        pluginIconRevisions.set(pluginKey, `${Date.now()}.${pluginNavRequest}`)
+        void loadPluginNav()
+      })
 
-      async function loadPluginNav(signal: AbortSignal) {
+      async function loadPluginNav(retry = true) {
+        clearTimeout(retryPluginNav)
+        const request = ++pluginNavRequest
+        const signal = getAbortSignal()
         try {
-          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal })
-          if (!resp.ok) return
+          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', cache: 'no-store', signal })
+          if (resp.status === 401 || resp.status === 403) retry = false
+          if (!resp.ok) throw new Error('Plugin navigation unavailable')
           const plugins: { plugin_key: string; name: string; page_url: string; icon_url?: string | null }[] = await resp.json()
-          const content = JSON.stringify(plugins)
-          if (signal.aborted || content === pluginNavContent) return
-          pluginNavContent = content
-          pluginNav.replaceChildren()
-          pluginNav.classList.add('invisible')
-          if (!plugins.length) return
-
-          const hr = document.createElement('hr')
-          hr.className = 'fm-divider'
-          hr.style.marginBottom = '8px'
-          pluginNav.appendChild(hr)
-
-          const label = document.createElement('div')
-          label.className = 'hide-collapsed'
-          label.style.cssText = 'color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0 12px; margin-bottom: 6px;'
-          label.setAttribute('data-i18n', 'nav.plugins')
-          label.textContent = t('nav.plugins') || 'Plugins'
-          pluginNav.appendChild(label)
-
-          for (const p of plugins) {
-            const a = document.createElement('a')
-            a.href = navHrefFor(p.page_url)
-            a.className = 'fm-nav-item'
-            const icon = createPluginIcon(p.icon_url)
-            icon.classList.add('fm-nav-icon')
-            const name = document.createElement('span')
-            name.textContent = p.name
-            a.append(icon, name)
-            pluginNav.appendChild(a)
+          if (signal.aborted || request !== pluginNavRequest) return
+          for (const plugin of plugins) {
+            const revision = pluginIconRevisions.get(plugin.plugin_key)
+            if (plugin.icon_url && revision) {
+              const separator = plugin.icon_url.includes('?') ? '.' : '?v='
+              plugin.icon_url += separator + revision
+            }
           }
-
-          pluginNav.classList.remove('invisible')
-          // Re-run active-highlighting now that plugin links are in the DOM,
-          // so the longest-prefix match wins across all nav items (including plugins).
+          const snapshot = JSON.stringify(plugins)
+          if (snapshot === lastPluginNav) return
+          sidebar.setPlugins(plugins)
+          lastPluginNav = snapshot
           highlightActiveNav()
-        } catch { /* Plugin navigation is optional and retried on the next panel. */ }
+        } catch (error) {
+          if (request !== pluginNavRequest || isAbortError(error)) return
+          if (retry) retryPluginNav = setTimeout(() => {
+            if (!signal.aborted) void loadPluginNav(false)
+          }, 600)
+          else if (lastPluginNav === undefined) sidebar.setPluginsUnavailable()
+        }
       }
 
-      logoutBtn.addEventListener('click', async () => {
+      function refreshPluginNav(change?: PluginNavChange) {
+        if (change?.pluginKey) pluginIconRevisions.set(change.pluginKey, change.revision)
+        void loadPluginNav()
+      }
+      window.addEventListener(pluginNavChangedEvent, event => refreshPluginNav((event as CustomEvent<PluginNavChange>).detail))
+      window.addEventListener('storage', event => {
+        if (event.key !== pluginNavChangedEvent) return
+        let change: PluginNavChange | undefined
+        try { change = JSON.parse(event.newValue || 'null') } catch { /* Older tabs send only a nonce. */ }
+        refreshPluginNav(change)
+      })
+      window.addEventListener('pageshow', event => {
+        if (event.persisted) void loadPluginNav()
+      })
+      window.addEventListener('focus', () => void loadPluginNav())
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) void loadPluginNav()
+      })
+
+      logoutBtn.addEventListener('click', () => void sidebar.navigate(async () => {
+        page.inert = true
+        window.addEventListener('pageshow', () => { page.inert = false }, { once: true })
         closePrintPrompt()
         const csrfToken = document.cookie
           .split('; ')
@@ -656,7 +652,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           localStorage.removeItem('lang')
           window.location.href = '/login'
         }
-      })
+      }))
 
       /* ── Active nav highlighting ─────────────────────────────── */
       function highlightActiveNav() {
@@ -669,7 +665,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
         for (const item of document.querySelectorAll<HTMLAnchorElement>('aside a.fm-nav-item, aside a[data-sidebar-link]')) {
           item.classList.remove('active')
           item.removeAttribute('aria-current')
-          if (item.origin !== window.location.origin) continue
+          if (item.origin !== window.location.origin || item.closest('[hidden]')) continue
           const path = item.pathname.replace(/\/$/, '') || '/'
           const matches = item.search
             ? path + item.search === currentTarget
@@ -756,17 +752,22 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           const target = new URL(link.href)
           const currentPanel = page.querySelector<HTMLElement>('main[data-panel]')?.dataset.panel
           const to = target.pathname.replace(/\/$/, '')
-          const settingsLink = target.origin === location.origin && (
+          const panelLink = target.origin === location.origin && (
             (currentPanel === 'settings' && to === '/settings/sidebar') ||
-            (currentPanel === 'sidebar-settings' && to === '/settings')
+            (currentPanel === 'sidebar-settings' && to === '/settings') ||
+            (currentPanel === 'admin' && to === '/admin/system') ||
+            (currentPanel === 'plugin-management' && (
+              to === '/admin' || to === '/plugin-view' || to.startsWith('/plugin-view/') ||
+              to === '/admin/system/filamentdb-import' || to === '/admin/system/spoolman-import'
+            ))
           )
-          if (!settingsLink) link.setAttribute('data-astro-reload', '')
+          if (!panelLink) link.setAttribute('data-astro-reload', '')
         }, { capture: true })
         document.addEventListener('astro:before-preparation', event => {
           const load = event.loader
-          event.loader = async () => {
+          event.loader = sidebar.guardPanelNavigation(event, async () => {
             await load()
-            if (event.defaultPrevented || event.signal.aborted) return
+            if (event.defaultPrevented || event.signal.aborted || event.newDocument === document) return
             const nextMain = event.newDocument.querySelector<HTMLElement>('main[data-panel]')
             if (!nextMain) return
             const departure = new AbortController()
@@ -783,7 +784,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
               }
             }
             departure.abort()
-          }
+          })
         })
         const { swapFunctions } = await import('astro:transitions/client')
         let restoreScroll: (() => void) | undefined
@@ -815,6 +816,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
         })
         document.addEventListener('astro:after-swap', () => {
           if (restoreScroll) {
+            highlightActiveNav()
             restoreScroll()
             restoreScroll = undefined
             return
@@ -823,7 +825,6 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           if (!main) return
           setSidebarCollapsed(mobileSidebar.matches || html.classList.contains('sidebar-collapsed'), false)
           highlightActiveNav()
-          syncColorLibraryShortcut()
           translatePage(main)
           void authorizePanel(main)
         })
@@ -910,6 +911,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
             }
             if (seq <= lastSeenSeq) return
             lastSeenSeq = seq
+            if (page.inert) return
 
             if (!scan.spool_id) {
               showScanNote(t('scanner.unknownTag', { uid: scan.uid || '?' }))
@@ -918,11 +920,11 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
             // Jumping is for the pages where it continues what you were doing.
             // Anywhere else - a plugin page, the AMS view, a form - the scan is
             // an interruption, so it is offered instead of obeyed.
-            if (mayNavigate(document, window.location.pathname)) {
-              // Handed to the page we are about to become, so it can say why it
-              // is there. A note put up here would die with this one.
-              rememberJump({ uid: scan.uid || '', spoolId: scan.spool_id, at: Date.now() })
-              window.location.href = `/spools/${scan.spool_id}`
+            if (!sidebar.isLeaving() && mayNavigate(document, window.location.pathname)) {
+              void sidebar.navigate(() => {
+                rememberJump({ uid: scan.uid || '', spoolId: scan.spool_id, at: Date.now() })
+                window.location.href = `/spools/${scan.spool_id}`
+              })
               return
             }
             showScanNote(

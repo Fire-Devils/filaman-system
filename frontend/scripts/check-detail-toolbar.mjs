@@ -290,11 +290,17 @@ try {
       await page.goto(new URL(url, baseUrl).href, { waitUntil: 'domcontentloaded' })
       await page.locator(url.includes('filaments/') && url.includes('edit=1') ? '#filament-editor:not(.hidden)' : '.detail-record-name').waitFor()
       const source = page.locator(url.includes('filaments/') && url.includes('edit=1') ? '#filament-editor-hero' : '.filament-hero:visible')
-      const scrollPastTitle = () => source.locator('.detail-record-name, #filament-editor-title').evaluate(title => {
-        title.closest('main').scrollTop += title.getBoundingClientRect().bottom - document.querySelector('.detail-page-toolbar').getBoundingClientRect().bottom + 8
-      })
+      const scrollPastTitle = () => page.waitForFunction(selector => {
+        const title = [...document.querySelectorAll(selector)].find(el => el.getClientRects().length)
+        if (!title) return false
+        const toolbar = document.querySelector('.detail-page-toolbar')
+        const remaining = title.getBoundingClientRect().bottom - toolbar.getBoundingClientRect().bottom
+        if (remaining <= 0) return toolbar.querySelector('.detail-scroll-identity')?.getAttribute('aria-hidden') === 'false'
+        // Fonts and the editor can finish laying out after the first scroll.
+        title.closest('main').scrollBy({ top: remaining + 32, behavior: 'instant' })
+        return false
+      }, url === '/filaments/10?edit=1' ? '#filament-editor-title' : '.filament-hero .detail-record-name')
       await scrollPastTitle()
-      await page.waitForFunction(() => document.querySelector('.detail-scroll-identity')?.getAttribute('aria-hidden') === 'false')
       const strip = page.locator('.detail-scroll-identity')
       const pill = strip.locator('.detail-scroll-swatch')
       assert.equal(await pill.isVisible(), colors.length > 0, `${style} ${url}: missing colors do not invent a pill`)
@@ -315,7 +321,6 @@ try {
         await page.locator('#btn-edit-spool').click()
         await page.locator('#btn-cancel-edit').waitFor()
         await scrollPastTitle()
-        await page.waitForFunction(() => document.querySelector('.detail-scroll-identity')?.getAttribute('aria-hidden') === 'false')
         assert.equal(await strip.locator('.detail-scroll-name').textContent(), await page.locator('.detail-record-name').textContent(), 'Spool view/edit rerender reconnects the strip to the replacement hero')
       }
     }

@@ -357,6 +357,7 @@ class PluginInstallService:
         after_install: Callable[[InstalledPlugin, str | None], Awaitable[None]] | None = None,
         *,
         backup_restore_locked: bool = False,
+        update_only: bool = False,
     ) -> tuple[InstalledPlugin, bool]:
         """Plugin aus ZIP-Daten installieren oder aktualisieren.
 
@@ -375,9 +376,26 @@ class PluginInstallService:
             ),
         ):
             plugin_key = manifest["plugin_key"]
+            approved_digest = sha256(zip_data).digest() if expected_release else None
+            applied_marker = PLUGINS_DIR / plugin_key / ".filaman-applied-catalog"
             self.recovered_plugins.clear()
             installed_requirements: set[str] = set()
             try:
+                existing = await self._find_existing(plugin_key)
+                if update_only:
+                    if existing is None:
+                        raise PluginInstallError(
+                            "The plugin was uninstalled. Its update was skipped.",
+                            "catalog_plugin_uninstalled",
+                        )
+                    if (
+                        approved_digest and existing.version == manifest["version"]
+                        and self.has_plugin_files(plugin_key, existing.version)
+                        and plugin_dependencies_available(applied_marker.parent)
+                    ):
+                        with suppress(OSError):
+                            if applied_marker.read_bytes() == approved_digest:
+                                return existing, True
                 page_url = manifest.get("page_url")
                 if isinstance(page_url, str) and page_url.startswith("/plugin-view/"):
                     owner = await self.db.scalar(
@@ -391,7 +409,6 @@ class PluginInstallService:
                             f"Integration shell URL is already used by '{owner}'",
                             "integration_shell_conflict",
                         )
-                existing = await self._find_existing(plugin_key)
                 previous_type = existing.plugin_type if existing else None
                 if (
                     expected_release and existing
@@ -441,6 +458,10 @@ class PluginInstallService:
                 await self.db.refresh(plugin)
                 if after_install:
                     await after_install(plugin, previous_type)
+                    if approved_digest:
+                        # ZIP validation forbids hidden files, so only a completed catalog activation can leave this marker.
+                        with suppress(OSError):
+                            applied_marker.write_bytes(approved_digest)
 
             if await _settle_plugin_write(activate()) or cancelled:
                 raise asyncio.CancelledError

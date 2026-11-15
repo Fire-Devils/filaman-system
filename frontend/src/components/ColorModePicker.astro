@@ -1,0 +1,9 @@
+---
+interface Props { id?: string }
+const { id } = Astro.props
+---
+<div id={id} class="fm-theme-toggle" role="group" aria-label="Color mode" data-i18n-aria-label="theme.colorMode">
+  <button type="button" data-theme="brand" class="fm-theme-option active" aria-pressed="true" data-i18n="theme.default">Default</button>
+  <button type="button" data-theme="light" class="fm-theme-option" aria-pressed="false" data-i18n="theme.light">Light</button>
+  <button type="button" data-theme="dark" class="fm-theme-option" aria-pressed="false" data-i18n="theme.dark">Dark</button>
+</div>
