@@ -774,11 +774,16 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           const target = new URL(link.href)
           const currentPanel = page.querySelector<HTMLElement>('main[data-panel]')?.dataset.panel
           const to = target.pathname.replace(/\/$/, '')
-          const settingsLink = target.origin === location.origin && (
+          const panelLink = target.origin === location.origin && (
             (currentPanel === 'settings' && to === '/settings/sidebar') ||
-            (currentPanel === 'sidebar-settings' && to === '/settings')
+            (currentPanel === 'sidebar-settings' && to === '/settings') ||
+            (currentPanel === 'admin' && to === '/admin/system') ||
+            (currentPanel === 'plugin-management' && (
+              to === '/admin' || to === '/plugin-view' || to.startsWith('/plugin-view/') ||
+              to === '/admin/system/filamentdb-import' || to === '/admin/system/spoolman-import'
+            ))
           )
-          if (!settingsLink) link.setAttribute('data-astro-reload', '')
+          if (!panelLink) link.setAttribute('data-astro-reload', '')
         }, { capture: true })
         document.addEventListener('astro:before-preparation', event => {
           const load = event.loader
