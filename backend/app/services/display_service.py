@@ -1021,7 +1021,13 @@ def _apply_extruders(units: list[dict[str, Any]], trays: dict[tuple[int, int], s
     """Name the hotend a loaded slot feeds; null on single-nozzle printers."""
     for unit in units:
         for slot in unit["slots"]:
-            side = trays.get((unit["ams_id"], slot["slot"]))
+            if unit["kind"] == "ams_ht":
+                # One bay, shown as slot 0 whichever tray id the printer used;
+                # _pick_ht_sources() accepts 0 and 1 the same way.
+                ams_id = unit["ams_id"]
+                side = trays.get((ams_id, 0)) or trays.get((ams_id, 1))
+            else:
+                side = trays.get((unit["ams_id"], slot["slot"]))
             slot["extruder"] = None if slot["empty"] else side
 
 

@@ -1320,3 +1320,22 @@ def test_single_nozzle_printer_has_no_extruder():
 def test_slots_projection_carries_the_extruder():
     out = build_printer_display(_P(), {}, _h2d_status({"1": {"ams_id": 0, "slot_id": 3, "has_filament": True}}))
     assert slots_only(out)["ams"][0]["slots"][3]["extruder"] == "left"
+
+
+def test_ams_ht_reported_as_tray_1_names_its_hotend():
+    """Legacy HT numbering: the hotend feeds (128, 1), the board shows the bay as slot 0."""
+    status = _h2d_status({"0": {"ams_id": 128, "slot_id": 1, "has_filament": True}}, active_extruder=0)
+    status["ams"]["ams"].append({"id": 128, "tray": [{"id": 1, "tray_type": "PETG", "tray_color": "00FF00FF"}]})
+    out = build_printer_display(_P(), {}, status)
+    ht = next(u for u in out["ams"] if u["kind"] == "ams_ht")
+    assert ht["slots"][0]["extruder"] == "right"
+
+
+def test_flagged_ams_ht_below_128_names_its_hotend():
+    status = _h2d_status({"1": {"ams_id": 5, "slot_id": 1, "has_filament": True}}, active_extruder=1)
+    status["ams"]["ams"].append({"id": 5, "is_ams_ht": True,
+                                 "tray": [{"id": 1, "tray_type": "PA", "tray_color": "333333FF"}]})
+    out = build_printer_display(_P(), {}, status)
+    ht = next(u for u in out["ams"] if u["ams_id"] == 5)
+    assert ht["kind"] == "ams_ht"
+    assert ht["slots"][0]["extruder"] == "left"
