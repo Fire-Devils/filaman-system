@@ -144,6 +144,11 @@ Driver authors: return either the normalised shape documented in
 status dict — both are accepted. Keep it cached; it is called on every poll.
 For `model`, pass an AMS unit's `info` hex string on as the printer sent it, or
 Bambuddy's `module_type` (`ams`, `n3f`, `n3s`); either one is enough.
+A Bambu-style `remain` of 0 counts as a fill level only when the tray carries a
+chip id (`tag_uid`, `tray_uuid`, `rfid_uid`); an id of only zeros is no chip.
+Bambu sends 0 for a spool entered by hand, which is unknown rather than empty,
+so the slot then gets `remaining_percent: null`. A driver that knows a real 0
+sends `remaining_percent: 0` instead.
 
 ### Freshness across workers
 
