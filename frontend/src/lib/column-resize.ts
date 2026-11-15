@@ -244,6 +244,7 @@ export function initColumnResize(opts: ColumnResizeOptions): ColumnResize {
       handle.addEventListener('click', e => e.stopPropagation())
 
       cleanupFns.push(() => {
+        onMouseUp()
         handle.removeEventListener('mousedown', onMouseDown)
         handle.removeEventListener('dblclick', onDblClick)
         handle.removeEventListener('dragstart', onDragStart)

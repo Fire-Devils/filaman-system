@@ -51,6 +51,7 @@ export function createManufacturerDialog(options: {
   filamentDbActive?: boolean
   sources?: ManufacturerSource[]
   onSaved: (manufacturer: Manufacturer, isCurrentSession: boolean) => void | Promise<void>
+  signal?: AbortSignal
 }): ManufacturerDialog {
   const sources = options.sources ?? (options.filamentDbActive ? [filamentDbSource()] : [])
   const e = escapeHtml
@@ -371,5 +372,11 @@ export function createManufacturerDialog(options: {
       if (activeSave === saveSequence) { busy = false; update() }
     }
   })
+  options.signal?.addEventListener('abort', () => {
+    session++
+    controller.abort()
+    for (const lookup of lookups.splice(0)) lookup.destroy()
+    overlay.remove()
+  }, { once: true })
   return { open, close }
 }

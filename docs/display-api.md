@@ -148,8 +148,9 @@ Bambuddy's `module_type` (`ams`, `n3f`, `n3s`); either one is enough.
 ### Freshness across workers
 
 FilaMan runs several Gunicorn workers, but a printer driver lives in the primary
-one only. The primary publishes what it sees into shared memory and every other
-worker serves that snapshot, so any worker can answer a poll. The price is that a
-value can be a few seconds behind: harmless for temperature and humidity, briefly
-visible on the active bay right after a filament change. A driver that is stopped
+one only. The primary publishes an atomic snapshot and every other
+worker serves that snapshot, so any worker can answer a poll. The primary
+refreshes the snapshot every 15 seconds independently of the driver watchdog.
+A poll served by the primary reads local driver state directly.
+A value can be briefly behind after a filament change. A driver that is stopped
 drops out of the snapshot at once rather than lingering.

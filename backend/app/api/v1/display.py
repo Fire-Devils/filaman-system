@@ -16,7 +16,6 @@ visible on the active bay.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
@@ -27,40 +26,16 @@ from app.core.shared_health import shared_display_store
 from app.models import Printer
 from app.services.display_service import build_display, compute_etag
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/display", tags=["display"])
+_DISPLAY_READ = RequirePermission("display:read")
 
 
-async def _driver_state(printer: Printer) -> dict[str, Any] | None:
-    """Live state for one printer, from wherever this worker can reach it.
-
-    Drivers live in the primary Gunicorn worker only, so on every other one
-    ``plugin_manager.drivers`` is empty and asking it would blank the board.
-    The primary publishes what it sees into shared memory and the secondaries
-    serve that, the same trick the Printers page uses for driver health.
-
-    A driver that does not implement ``get_display_state()`` still has
-    ``health()``, which carries ``connected`` and the AMS ``ams_units`` the
-    Printers page draws its climate from - both shapes the display service
-    already understands, so every driver contributes something.
-    """
+async def _display_payload(db: DBSession, printers: list[Printer], fields: str) -> dict[str, Any]:
     from app.plugins.manager import plugin_manager
 
-    if printer.id not in plugin_manager.drivers:
-        return shared_display_store.read(printer.id)
-
-    try:
-        state = await plugin_manager.get_display_state(printer.id)
-    except Exception:
-        # A driver that throws should cost the board its freshness, not its
-        # contents, so fall back to what was last published.
-        logger.debug("get_display_state failed for printer %s", printer.id, exc_info=True)
-        return shared_display_store.read(printer.id)
-    if state is None:
-        return None
-
-    shared_display_store.publish({printer.id: state})
-    return state
+    # The primary can overlay fresher readings. The background publisher owns shared writes.
+    live = await plugin_manager.get_display_states(printer.id for printer in printers)
+    return await build_display(db, printers, shared_display_store.read_all() | live, fields=fields)
 
 
 def _respond(request: Request, response: Response, payload: dict[str, Any]) -> Any:
@@ -78,7 +53,7 @@ async def get_display(
     response: Response,
     db: DBSession,
     fields: Literal["full", "slots"] = Query("full"),
-    principal=RequirePermission("display:read"),
+    principal=_DISPLAY_READ,
 ):
     """All active printers with their AMS slots."""
     result = await db.execute(
@@ -87,7 +62,7 @@ async def get_display(
         .order_by(Printer.id)
     )
     printers = list(result.scalars().all())
-    payload = await build_display(db, printers, _driver_state, fields=fields)
+    payload = await _display_payload(db, printers, fields)
     return _respond(request, response, payload)
 
 
@@ -98,7 +73,7 @@ async def get_printer_display(
     response: Response,
     db: DBSession,
     fields: Literal["full", "slots"] = Query("full"),
-    principal=RequirePermission("display:read"),
+    principal=_DISPLAY_READ,
 ):
     """One printer; same shape as the list entry, wrapped in the same envelope."""
     result = await db.execute(
@@ -110,5 +85,5 @@ async def get_printer_display(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Printer not found"},
         )
-    payload = await build_display(db, [printer], _driver_state, fields=fields)
+    payload = await _display_payload(db, [printer], fields)
     return _respond(request, response, payload)

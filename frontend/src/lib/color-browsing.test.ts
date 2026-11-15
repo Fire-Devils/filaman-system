@@ -1,18 +1,10 @@
-import { readFileSync } from 'node:fs'
-import { createSourceFile, isFunctionDeclaration, ScriptTarget, transpileModule } from 'typescript'
+import { astroPageFunction } from '../../tests/helpers/astro-script'
 import { expect, it, vi } from 'vitest'
 import { colorFilterParams } from './api'
 import { isColumnFilterActive, multiColumnFilter, type ColumnFilterValue } from './table-column-filters'
 
-function pageFunction(page: string, name: string) {
-  const source = readFileSync(`src/pages/${page}/index.astro`, 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1]
-  const parsed = createSourceFile(`${page}.ts`, source, ScriptTarget.Latest, true)
-  const declaration = parsed.statements.find(node => isFunctionDeclaration(node) && node.name?.text === name)!
-  return transpileModule(declaration.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText
-}
-
 it.each(['filaments', 'spools'])('keeps %s color browsing paginated with a safe fallback for large selections', page => {
-  const production = pageFunction(page, 'hasLocalColumnFilters')
+  const production = astroPageFunction(`${page}/index`, 'hasLocalColumnFilters')
   const requiresFullInventory = (columns: Record<string, ColumnFilterValue>) => new Function(
     'columnFilters', 'colorFilterParams', 'isColumnFilterActive', 'isEffectiveColumnFilterActive', 'colorFilterPaged',
     `${production}; return hasLocalColumnFilters();`,
@@ -35,7 +27,7 @@ it.each([true, false])('uses the current Spools status scope after a delayed res
     const columnFilters = {}, t = key => key;
     const getAbortSignal = () => undefined, updateSpoolFilterOptions = () => {}, updateFilterResets = () => {};
     let statuses = [];
-    ${pageFunction('spools', 'loadSpoolStatuses')}
+    ${astroPageFunction('spools/index', 'loadSpoolStatuses')}
     return loadSpoolStatuses;
   `)({ window, urlParams, fetch, multiColumnFilter, splHeaderFilters })
 

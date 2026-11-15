@@ -3,7 +3,7 @@ import FormDialog from '../../components/FormDialog.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
-<Layout title="FilaMan - Printers">
+<Layout panel="printers" title="FilaMan - Printers">
   <div class="fm-list-toolbar">
     <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="printers.title">Printers</h1>
     <div class="fm-list-controls">
@@ -82,11 +82,15 @@ import Layout from '../../layouts/Layout.astro'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { api } from '../../lib/api'
     import { buildDriverConfigPayload, renderDriverConfigFields, type DriverSchema, type SchemaProperty, type FieldValue } from '../../lib/driver-config-form'
     import { escapeHtml } from '../../lib/extra-fields'
     import { tableAction } from '../../lib/table-actions'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('printers', async (panelSignal) => {
     await initI18n()
 
     const modalForm = document.getElementById('modal-form') as HTMLFormElement
@@ -235,7 +239,7 @@ import Layout from '../../layouts/Layout.astro'
             const resp = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
             if (resp.ok) {
               const printer: PrinterRecord = await resp.json()
-              openModal(id, printer.name, printer.driver_key, printer.driver_config || undefined)
+              if (!panelSignal.aborted) openModal(id, printer.name, printer.driver_key, printer.driver_config || undefined)
             }
           } catch {}
         })
@@ -262,13 +266,14 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
+              if (panelSignal.aborted) return
               await dialogs.__fmAlert(data.message || t('printers.failedDelete'))
               return
             }
             
-            loadPrinters()
+            if (!panelSignal.aborted) loadPrinters()
           } catch {
-            await dialogs.__fmAlert(t('printers.failedDelete'))
+            if (!panelSignal.aborted) await dialogs.__fmAlert(t('printers.failedDelete'))
           }
         })
       })
@@ -400,6 +405,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     await loadDrivers()
+    if (panelSignal.aborted) return
     document.getElementById('printer-driver')?.addEventListener('change', (e) => {
       renderConfigFields((e.target as HTMLSelectElement).value)
     })
@@ -417,14 +423,28 @@ import Layout from '../../layouts/Layout.astro'
         }
       })
       try {
-        await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include', signal: getAbortSignal() })
-        await dialogs.__fmSuccess(t('printers.reconnectDone'))
-      } catch {}
-      await fetchHealthForAll()
-      btn.disabled = false
-      btn.textContent = t('printers.checkAll')
+        const { results } = await api.post<{ results: Record<string, string> }>('/printers/reconnect-all', undefined, { signal: panelSignal })
+        if (panelSignal.aborted) return
+        const outcomes = Object.values(results)
+        if (outcomes.length === 0) {
+          await dialogs.__fmAlert(t('printers.noActivePrintersToReconnect'))
+        } else if (outcomes.every(result => result === 'reconnected' || result === 'started')) {
+          await dialogs.__fmSuccess(t('printers.reconnectDone'))
+        } else {
+          await dialogs.__fmAlert(t('printers.reconnectFailed'))
+        }
+      } catch (error) {
+        if (!panelSignal.aborted && !isAbortError(error)) await dialogs.__fmAlert(t('printers.reconnectFailed'))
+      } finally {
+        if (!panelSignal.aborted) {
+          await fetchHealthForAll()
+          btn.disabled = false
+          btn.textContent = t('printers.checkAll')
+        }
+      }
     })
 
     loadPrinters()
+    })
   </script>
 </Layout>

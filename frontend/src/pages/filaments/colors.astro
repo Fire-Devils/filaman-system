@@ -6,7 +6,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
-<Layout title="FilaMan - Color Library">
+<Layout panel="colors" title="FilaMan - Color Library">
   <div class="fm-list-toolbar">
     <h1 data-i18n="colors.title">Color Library</h1>
     <div class="fm-list-controls">
@@ -68,6 +68,9 @@ import Layout from '../../layouts/Layout.astro'
     import { initColumnLocks } from '../../lib/column-locks'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('colors', async panelSignal => {
     await initI18n()
 
     const modalForm = document.getElementById('modal-form') as HTMLFormElement
@@ -97,9 +100,10 @@ import Layout from '../../layouts/Layout.astro'
       return match ? decodeURIComponent(match[1]) : ''
     }
     
-    async function loadColors() {
+    async function loadColors(reset = true) {
       try {
         const data = await fetchAllPages<ColorRecord>('/api/v1/colors')
+        if (panelSignal.aborted) return
         colors = data.items
         colorHeaderFilters?.setOptions('name', colors.map(color => ({
           value: String(color.id),
@@ -109,9 +113,9 @@ import Layout from '../../layouts/Layout.astro'
         colorHeaderFilters?.setOptions('usage_count', [...new Set<number>(colors.map(color => color.usage_count))]
           .sort((left, right) => left - right)
           .map(value => ({ value: String(value), label: String(value) })))
-        renderColors()
+        renderColors(reset)
       } catch (error) {
-        if (isAbortError(error)) return
+        if (panelSignal.aborted || isAbortError(error)) return
         colorList.pause()
         console.error('Failed to load colors:', error)
         document.getElementById('colors-table')!.innerHTML = `
@@ -123,10 +127,17 @@ import Layout from '../../layouts/Layout.astro'
     }
     
     const colorList = initInventoryScroll<ColorRecord>(
-      document.getElementById('colors-table')!, 'colors.colorCount', renderColorRows,
+      document.getElementById('colors-table')!, 'colors.colorCount', renderColorRows, undefined, panelSignal,
+      () => ({ columns: columnFilters, sort: { key: sortKey, direction: sortDirection } }),
     )
+    if (colorList.view) {
+      columnFilters = colorList.view.columns
+      const { key, direction } = colorList.view.sort
+      sortKey = isSortKey(key) ? key : null
+      sortDirection = direction
+    }
 
-    function renderColors() {
+    function renderColors(reset = true) {
       updateFilterReset()
       const visibleColors = colors.filter(color => Object.entries(columnFilters).every(([key, filter]) => {
         const value = key === 'name' ? String(color.id) : isSortKey(key) ? color[key] : undefined
@@ -143,7 +154,7 @@ import Layout from '../../layouts/Layout.astro'
         })
       }
       
-      void colorList.load(inventoryLocalPages(() => visibleColors), true)
+      void colorList.load(inventoryLocalPages(() => visibleColors), reset)
     }
 
     function renderColorRows(items: ColorRecord[], append: boolean) {
@@ -207,13 +218,14 @@ import Layout from '../../layouts/Layout.astro'
 
         if (!response.ok) {
           const data = await response.json()
+          if (panelSignal.aborted) return
           await dialogs.__fmAlert(data.message || t('colors.failedDelete'))
           return
         }
 
-        loadColors()
+        if (!panelSignal.aborted) loadColors()
       } catch {
-        await dialogs.__fmAlert(t('colors.failedDelete'))
+        if (!panelSignal.aborted) await dialogs.__fmAlert(t('colors.failedDelete'))
       }
     })
 
@@ -225,6 +237,7 @@ import Layout from '../../layouts/Layout.astro'
 
     const table = document.getElementById('colors-list-table') as HTMLTableElement
     const updateFilterReset = bindTableFilterControls({
+      signal: panelSignal,
       hasColumnFilters: () => Object.values(columnFilters).some(isColumnFilterActive),
       onApply: renderColors,
       onClearColumns: () => {
@@ -235,7 +248,7 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     function setupTableControls() {
-      initColumnLocks(table, 'filaman-columns-colors')
+      initColumnLocks(table, 'filaman-columns-colors', undefined, panelSignal)
       colorHeaderFilters = initHeaderColumnFilters(table, [
         {
           key: 'name',
@@ -244,6 +257,7 @@ import Layout from '../../layouts/Layout.astro'
           type: 'multi',
           multiDisplay: 'colors',
           options: [],
+          initialValue: columnFilters.name,
           onApply: value => applyColumnFilter('name', value),
         },
         {
@@ -251,6 +265,7 @@ import Layout from '../../layouts/Layout.astro'
           label: t('colors.hexCode'),
           columnSelector: 'th.col-hex',
           type: 'text',
+          initialValue: columnFilters.hex_code,
           onApply: value => applyColumnFilter('hex_code', value),
         },
         {
@@ -259,9 +274,10 @@ import Layout from '../../layouts/Layout.astro'
           columnSelector: 'th.col-usage',
           type: 'number',
           autocomplete: true,
+          initialValue: columnFilters.usage_count,
           onApply: value => applyColumnFilter('usage_count', value),
         },
-      ])
+      ], panelSignal)
       syncHeaderSortButtons(table, sortKey, sortDirection)
       if (sortKey && sortDirection) {
         table.querySelector(`th[data-sort="${sortKey}"]`)?.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc')
@@ -383,16 +399,18 @@ import Layout from '../../layouts/Layout.astro'
     })
     
     setupTableControls()
-    loadColors()
+    loadColors(false)
 
     // Live-Update via SSE: Farben automatisch neu laden
     let _colorsReloadTimer: ReturnType<typeof setTimeout> | null = null
+    panelSignal.addEventListener('abort', () => clearTimeout(_colorsReloadTimer ?? undefined), { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
       if (event === 'colors_changed') {
         if (_colorsReloadTimer) clearTimeout(_colorsReloadTimer)
         _colorsReloadTimer = setTimeout(() => loadColors(), 300)
       }
+    }, { signal: panelSignal })
     })
   </script>
 </Layout>

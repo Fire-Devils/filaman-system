@@ -8,7 +8,7 @@ import Layout from '../layouts/Layout.astro'
   starting point for your own dashboard / digital swatch board.
   Optional query: ?printer={id} focuses one printer; ?kiosk=1 hides chrome.
 -->
-<Layout title="FilaMan - AMS View">
+<Layout panel="display" title="FilaMan - AMS View">
   <style is:global>
     /* ── AMS View ─────────────────────────────────────────────────────
        The layout mirrors the hardware: printer → AMS unit → bay.
@@ -1135,6 +1135,7 @@ import Layout from '../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../lib/abort'
     import { amsFinish, amsSwatchFill, amsSwatchHexes } from '../lib/ams-swatch'
     import { renderSpoolReel } from '../lib/spool-reel'
+    import { mountPanel } from '../lib/panel-navigation'
 
     /** The Display API shapes this page reads (docs/display-api.md). */
     interface DisplaySlot {
@@ -1162,6 +1163,7 @@ import Layout from '../layouts/Layout.astro'
       ams?: DisplayUnit[]
     }
 
+    mountPanel('display', async (panelSignal) => {
     await initI18n()
     translatePage()
 
@@ -1875,7 +1877,7 @@ import Layout from '../layouts/Layout.astro'
       const url = new URL(location.href)
       if (value == null) url.searchParams.delete(name)
       else url.searchParams.set(name, value)
-      history.replaceState(null, '', url)
+      history.replaceState(history.state, '', url)
     }
 
     function jsonHref(id: number | null): string {
@@ -2019,6 +2021,7 @@ import Layout from '../layouts/Layout.astro'
     async function poll() {
       // A request still running from an earlier tick: do not stack another,
       // but let the clock decide whether the board has gone stale.
+      if (panelSignal.aborted) return
       if (inFlight) {
         if (lastOkAt && Date.now() - lastOkAt > STALE_MS) setStale(true)
         return
@@ -2026,13 +2029,14 @@ import Layout from '../layouts/Layout.astro'
       inFlight = true
       try {
         const result = await fetchFeed()
+        if (panelSignal.aborted) return
         if (result.status !== 304) renderBoard(result.data?.printers || [])
         failures = 0
         lastOkAt = Date.now()
         setStatus(t('display.upToDate', { time: new Date(lastOkAt).toLocaleTimeString() }), 'ok')
         setStale(false)
       } catch (e) {
-        if (isAbortError(e)) return
+        if (panelSignal.aborted || isAbortError(e)) return
         failures += 1
         const stale = !lastOkAt || failures >= STALE_FAILURES || Date.now() - lastOkAt > STALE_MS
         if (stale) {
@@ -2061,7 +2065,7 @@ import Layout from '../layouts/Layout.astro'
         try {
           const lock = await navigator.wakeLock.request('screen')
           // Kiosk may have been left while the request was pending.
-          if (!document.body.classList.contains('ams-kiosk')) { await lock.release().catch(() => {}); return }
+          if (panelSignal.aborted || !document.body.classList.contains('ams-kiosk')) { await lock.release().catch(() => {}); return }
           wakeLock = lock
           lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null })
         } catch { wakeLock = null }
@@ -2096,15 +2100,22 @@ import Layout from '../layouts/Layout.astro'
     document.getElementById('ams-kiosk')?.addEventListener('click', () => {
       const on = !document.body.classList.contains('ams-kiosk')
       setKiosk(on)
-      if (on) document.documentElement.requestFullscreen?.().catch(() => {})
-      else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+      if (on) {
+        void document.documentElement.requestFullscreen?.().then(() => {
+          if (panelSignal.aborted && document.fullscreenElement === document.documentElement) {
+            return document.exitFullscreen()
+          }
+        }).catch(() => {})
+      } else if (document.fullscreenElement) {
+        void document.exitFullscreen?.().catch(() => {})
+      }
     })
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement && document.body.classList.contains('ams-kiosk')) setKiosk(false)
-    })
+    }, { signal: panelSignal })
     document.addEventListener('visibilitychange', () => {
       if (document.body.classList.contains('ams-kiosk')) void holdWakeLock(true)
-    })
+    }, { signal: panelSignal })
     document.getElementById('ams-retry')?.addEventListener('click', () => { void poll() })
 
     function syncExternalButton() {
@@ -2126,7 +2137,7 @@ import Layout from '../layouts/Layout.astro'
       clearTimeout(idleTimer)
       idleTimer = window.setTimeout(() => document.body.classList.add('ams-idle'), 4000)
     }
-    for (const type of ['pointerdown', 'pointermove', 'keydown']) document.addEventListener(type, wake, { passive: true })
+    for (const type of ['pointerdown', 'pointermove', 'keydown']) document.addEventListener(type, wake, { passive: true, signal: panelSignal })
 
     document.getElementById('ams-printers')?.addEventListener('click', (event) => {
       const bay = (event.target as Element).closest<HTMLElement>('button.ams-bay')
@@ -2139,23 +2150,37 @@ import Layout from '../layouts/Layout.astro'
     })
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && openKey != null) closeDetail()
-    })
+    }, { signal: panelSignal })
     // Tapping the board outside any bay puts the panel away (tablet use).
     document.addEventListener('pointerdown', (event) => {
       if (openKey == null) return
       const target = event.target as Element
       if (panel.contains(target) || target.closest?.('button.ams-bay')) return
       closeDetail(false)
-    })
+    }, { signal: panelSignal })
 
     if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(scheduleFeeds).observe(document.getElementById('ams-printers')!)
+      const observer = new ResizeObserver(scheduleFeeds)
+      observer.observe(document.getElementById('ams-printers')!)
+      panelSignal.addEventListener('abort', () => observer.disconnect(), { once: true })
     }
-    addEventListener('resize', scheduleFeeds)
+    addEventListener('resize', scheduleFeeds, { signal: panelSignal })
 
     if (new URLSearchParams(location.search).get('kiosk') === '1') setKiosk(true)
 
+    const timer = setInterval(poll, POLL_MS)
+    panelSignal.addEventListener('abort', () => {
+      clearInterval(timer)
+      clearTimeout(idleTimer)
+      if (feedFrame) cancelAnimationFrame(feedFrame)
+      document.body.classList.remove('ams-idle')
+      if (document.body.classList.contains('ams-kiosk')) {
+        document.body.classList.remove('ams-kiosk')
+        void holdWakeLock(false)
+        if (document.fullscreenElement === document.documentElement) void document.exitFullscreen?.().catch(() => {})
+      }
+    }, { once: true })
     await poll()
-    setInterval(poll, POLL_MS)
+    })
   </script>
 </Layout>

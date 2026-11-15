@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro'
 import FormSection from '../components/FormSection.astro'
 ---
-<Layout title="FilaMan - Settings">
+<Layout panel="settings" title="FilaMan - Settings">
 <div class="fm-settings-page fm-settings-profile">
   <div class="fm-list-toolbar"><h1 data-i18n="settings.title">Settings</h1></div>
   <div class="fm-settings-stack">
@@ -147,6 +147,9 @@ import FormSection from '../components/FormSection.astro'
       setAutoOpenEnabled,
       setBoundReaderId,
     } from '../lib/tag-scanner'
+    import { mountPanel } from '../lib/panel-navigation'
+
+    mountPanel('settings', async () => {
     await initI18n()
 
     function getCsrfToken(): string {
@@ -353,5 +356,6 @@ import FormSection from '../components/FormSection.astro'
 
     loadProfile()
     loadScannerReaders()
+    })
   </script>
 </Layout>

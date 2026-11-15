@@ -1,5 +1,5 @@
 import { api } from './api'
-import { isAbortError } from './abort'
+import { getAbortSignal, isAbortError } from './abort'
 import { createPluginIcon } from './plugin-icon'
 import { isValidPluginSlug, PLUGIN_PAGE_PREFIX } from './plugin-nav'
 
@@ -28,7 +28,7 @@ type PluginHook = {
   editor_launcher?: { style?: 'text' | 'icon'; allow_auto_open?: boolean }
 }
 
-export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
+export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?: AbortSignal) {
   const actions = host.querySelector<HTMLElement>('[data-plugin-hook-actions]')!
   const dialog = host.querySelector<HTMLDialogElement>('dialog')!
   const heading = dialog.querySelector('h2')!
@@ -45,7 +45,7 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
   let resumeDiscovery = false
   if (hook.mode === 'edit') {
     for (const event of ['pointerdown', 'keydown', 'input', 'submit']) {
-      document.addEventListener(event, cancelAutoOpen, { capture: true })
+      document.addEventListener(event, cancelAutoOpen, { capture: true, signal })
     }
   }
 
@@ -68,12 +68,13 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
     const interrupted = event.persisted && discovering
     closeEntry()
     resumeDiscovery = interrupted
-  })
+  }, { signal })
   window.addEventListener('pageshow', event => {
     if (!event.persisted || !resumeDiscovery) return
     resumeDiscovery = false
     void discover()
-  })
+  }, { signal })
+  signal?.addEventListener('abort', closeEntry, { once: true })
 
   function closeEntry() {
     cancelAutoOpen()
@@ -104,14 +105,16 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook) {
     if (type === 'filaman:filament-stage' && hook.mode !== 'selection' && draft) {
       sender.postMessage({ type, request_id, ...hook.form.stagePluginDraft(message.units, draft) }, origin)
     }
-  })
+  }, { signal })
 
   const query = hook.mode === 'edit' ? 'edit&include_launcher=true' : hook.mode
   async function discover() {
     const request = ++discovery
     discovering = true
     actions.replaceChildren()
-    const plugins = await api.get<PluginHook[]>(`/filament-plugin-hooks?surface=${query}`).catch(error => isAbortError(error) ? null : [])
+    const requestSignal = signal ? AbortSignal.any([signal, getAbortSignal()]) : getAbortSignal()
+    const plugins = await api.get<PluginHook[]>(`/filament-plugin-hooks?surface=${query}`, { signal: requestSignal })
+      .catch(error => isAbortError(error) ? null : [])
     if (request !== discovery || plugins === null) return []
     discovering = false
     if (!Array.isArray(plugins)) return []

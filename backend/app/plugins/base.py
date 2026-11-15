@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 
 class BaseDriver(ABC):

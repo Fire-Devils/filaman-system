@@ -1,12 +1,8 @@
-import { readFileSync } from 'node:fs'
-import { createSourceFile, isFunctionDeclaration, ScriptTarget, transpileModule } from 'typescript'
+import { astroPageFunction } from '../../tests/helpers/astro-script'
 import { expect, it } from 'vitest'
 import type { HeaderFilterOption } from './table-column-filters'
 
-const source = readFileSync('src/pages/spools/index.astro', 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1]
-const parsed = createSourceFile('spools.ts', source, ScriptTarget.Latest, true)
-const declaration = parsed.statements.find(node => isFunctionDeclaration(node) && node.name?.text === 'updateSpoolFilterOptions')!
-const production = transpileModule(declaration.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText
+const production = astroPageFunction('spools/index', 'updateSpoolFilterOptions')
 const blue = { value: 'Blue', label: 'Blue', color_hexes: ['#0000FF'] }
 const red = { value: 'Red', label: 'Red', color_hexes: ['#FF0000'] }
 const scope = (colors: typeof blue[], has_empty_colors = false) => ({ manufacturers: [], materials: [], locations: [], has_empty_location: false, colors, has_empty_colors })
@@ -73,8 +69,7 @@ it('keeps a selected name removable after its last spool-backed color disappears
 })
 
 it.each([false, true])('handles failed facet refresh without blocking rows or swallowing aborts (aborted=%s)', async (aborted) => {
-  const declaration = parsed.statements.find(node => isFunctionDeclaration(node) && node.name?.text === 'refreshSpoolFilterOptions')!
-  const refreshSource = transpileModule(declaration.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText
+  const refreshSource = astroPageFunction('spools/index', 'refreshSpoolFilterOptions')
   const options: Record<string, HeaderFilterOption[]> = { colors: [{ value: 'Blue', label: 'Blue', colorHexes: ['#0000FF'] }] }
   let rowsReloaded = false
   const refresh = new Function('getAbortSignal', 'fetchSpoolFilterFacets', 'updateSpoolFilterOptions', 'splHeaderFilters', 'isAbortError', 'console', `let spoolFilterFacets = {}; ${refreshSource}; return refreshSpoolFilterOptions;`)(

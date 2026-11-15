@@ -4,7 +4,7 @@ import FormSection from '../components/FormSection.astro'
 import FormDialog from '../components/FormDialog.astro'
 ---
 
-<Layout title="FilaMan - Dashboard">
+<Layout panel="dashboard" title="FilaMan - Dashboard">
   <div class="dashboard-page">
     <div class="dashboard-header">
       <h1 class="dashboard-title" data-i18n="dashboard.title">Dashboard</h1>
@@ -156,17 +156,22 @@ import FormDialog from '../components/FormDialog.astro'
     import { formatPrice, getCurrency, initCurrency } from '../lib/format'
     import { VERSION } from '../version.js'
     import changelogData from '../changelog.json'
-    import { cachedFetchAllPages, fetchSequential, CACHE_KEYS } from '../lib/cache'
     import { getAbortSignal, isAbortError } from '../lib/abort'
-    import { getMe, hasPermission } from '../lib/auth'
-    import { api } from '../lib/api'
-    import { bindFormDialog } from '../lib/form-dialog'
+    import { hasPermission, type User } from '../lib/auth'
+    import { api, fetchAllPages } from '../lib/api'
+    import { bindFormDialog, type AppDialogs } from '../lib/form-dialog'
     import { escapeHtml } from '../lib/extra-fields'
+    import { mountPanel } from '../lib/panel-navigation'
 
-    interface DashboardSpool { id: number; filament_id: number; remaining_weight_g: number | null; low_weight_threshold_g: number }
-    interface DashboardFilament { id: number; designation: string; material_type: string | null }
+    mountPanel('dashboard', async (panelSignal) => {
+    interface ProblemSpool {
+      id: number
+      remaining_weight_g: number
+      filament: { designation: string; material_type: string | null } | null
+    }
     interface LocationStat { location_id: number; location_name: string; spool_count: number; total_weight_g: number }
     interface DashboardStats {
+      spool_count_total: number; filament_count_total: number
       filament_count_active: number; filament_count_used: number; total_value_available: number
       spool_distribution: Record<'full' | 'normal' | 'low' | 'critical' | 'empty', number>
       location_stats: LocationStat[]
@@ -174,39 +179,44 @@ import FormDialog from '../components/FormDialog.astro'
       manufacturers_with_spools: { id: number; name: string; spool_count: number }[]
       low_stock_spools: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; remaining_weight_g: number }[]
     }
-    interface DashboardWindow {
-      openSpoolModal: (type: 'problem') => Promise<void>
-      closeSpoolModal: () => void
-      archiveSpool: (id: number) => Promise<void>
-      archiveAll: (ids: number[]) => Promise<void>
-      __fmConfirm: (message: string, options?: { okLabel?: string; isDanger?: boolean }) => Promise<boolean>
-      __fmAlert?: (message: string) => Promise<boolean>
-    }
-    const dashboardWindow = window as unknown as DashboardWindow
+    const dialogs = window as unknown as AppDialogs
 
     let archivePending = false
+    let drilldownRequest: AbortController | undefined
     const spoolElement = document.getElementById('spool-modal') as HTMLDialogElement
-    const spoolDialog = bindFormDialog(spoolElement, { canClose: () => !archivePending })
+    const title = spoolElement.querySelector<HTMLElement>('#modal-title')!
+    const content = spoolElement.querySelector<HTMLElement>('#modal-content')!
+    const footer = spoolElement.querySelector<HTMLElement>('#modal-footer')!
+    const bulkBtn = spoolElement.querySelector<HTMLButtonElement>('#btn-archive-all')!
+    const problemButton = document.querySelector<HTMLButtonElement>('#problem-spools')!
+    const spoolDialog = bindFormDialog(spoolElement, {
+      canClose: () => !archivePending,
+      onClose: () => drilldownRequest?.abort(),
+    })
+    panelSignal.addEventListener('abort', () => drilldownRequest?.abort(), { once: true })
     const changelogElement = document.getElementById('fm-changelog-overlay') as HTMLDialogElement
     const changelogDialog = bindFormDialog(changelogElement)
     spoolElement.addEventListener('click', event => { if (event.target === spoolElement) spoolDialog.close() })
     changelogElement.addEventListener('click', event => { if (event.target === changelogElement) changelogDialog.close() })
-    document.getElementById('problem-spools')!.addEventListener('click', () => dashboardWindow.openSpoolModal('problem'))
+    problemButton.addEventListener('click', () => { void openSpoolModal() })
+    content.addEventListener('click', event => {
+      if (!(event.target instanceof Element)) return
+      const row = event.target.closest('button[data-archive-spool]')?.closest<HTMLElement>('[data-spool-id]')
+      if (row) void archiveSpools(Number(row.dataset.spoolId))
+    })
+    bulkBtn.addEventListener('click', () => {
+      void archiveSpools([...content.querySelectorAll<HTMLElement>('[data-spool-id]')].map(row => Number(row.dataset.spoolId)))
+    })
 
-    let allSpools: DashboardSpool[] = []
-    let allFilaments: DashboardFilament[] = []
-    const filamentCounts = { all: 0, active: 0, used: 0 }
+    let filamentCounts: Record<'all' | 'active' | 'used', number> | undefined
 
     // Archiving from the dashboard is a status change, same permission the
     // backend requires on /spools/{id}/status and /spools/bulk/status.
     let canArchive = false
-    const canArchiveReady = getMe()
-      .then(user => { canArchive = !!user && hasPermission(user, 'spool_events:create_status') })
-      .catch(() => { canArchive = false })
 
     function applyFilamentScope() {
       const scope = (localStorage.getItem('dashboard-filament-scope') || 'all') as 'all' | 'active' | 'used'
-      const count = filamentCounts[scope] ?? filamentCounts.all
+      const count = filamentCounts?.[scope] ?? filamentCounts?.all ?? '—'
       document.getElementById('stat-total-filaments')!.textContent = String(count)
       document.querySelectorAll<HTMLButtonElement>('.fm-scope-pill').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.scope === scope)
@@ -260,6 +270,7 @@ import FormDialog from '../components/FormDialog.astro'
       try {
         await api.patch('/me/preferences', { dashboard_hidden_widgets: [...hiddenWidgets] })
       } catch (error) {
+        if (panelSignal.aborted) return
         console.error('Failed to save dashboard preferences:', error)
         hiddenWidgets = previous
         applyWidgetVisibility()
@@ -308,7 +319,7 @@ import FormDialog from '../components/FormDialog.astro'
         e.stopPropagation()
         menu.style.display = menu.style.display === 'block' ? 'none' : 'block'
       })
-      document.addEventListener('click', () => { menu.style.display = 'none' })
+      document.addEventListener('click', () => { menu.style.display = 'none' }, { signal: panelSignal })
       menu.addEventListener('click', e => e.stopPropagation())
     }
 
@@ -318,15 +329,9 @@ import FormDialog from '../components/FormDialog.astro'
         const prefs = await api.get<{ dashboard_hidden_widgets: string[] }>('/me/preferences')
         hiddenWidgets = new Set(prefs.dashboard_hidden_widgets)
       } catch (error) {
-        console.error('Failed to load dashboard preferences:', error)
+        if (!isAbortError(error)) console.error('Failed to load dashboard preferences:', error)
       }
-      applyWidgetVisibility()
-    }
-
-    function getFilamentName(filamentId: number): string {
-      const f = allFilaments.find(fil => fil.id === filamentId)
-      if (!f) return '-'
-      return `${f.designation} (${f.material_type || '-'})`
+      if (!panelSignal.aborted) applyWidgetVisibility()
     }
 
     function formatWeight(g: number): string {
@@ -341,29 +346,30 @@ import FormDialog from '../components/FormDialog.astro'
     }
 
     // Modal functions
-    dashboardWindow.openSpoolModal = async function(type: 'problem') {
-      if (archivePending) return
-      await canArchiveReady
-      if (archivePending) return
+    async function openSpoolModal() {
+      if (spoolElement.open || panelSignal.aborted) return
 
-      const title = document.getElementById('modal-title') as HTMLElement
-      const content = document.getElementById('modal-content') as HTMLElement
-      const footer = document.getElementById('modal-footer') as HTMLElement
-      const bulkBtn = document.getElementById('btn-archive-all') as HTMLButtonElement
-
-      let filteredSpools: DashboardSpool[] = []
-
-      if (type === 'problem') {
-        title.textContent = t('dashboard.lowAndEmptySpools')
-        filteredSpools = allSpools.filter(s =>
-          s.remaining_weight_g !== null &&
-          s.remaining_weight_g <= s.low_weight_threshold_g
-        )
+      title.textContent = t('dashboard.lowAndEmptySpools')
+      content.textContent = t('common.loading')
+      footer.classList.add('hidden')
+      spoolDialog.open()
+      const request = drilldownRequest = new AbortController()
+      let problemSpools: ProblemSpool[]
+      try {
+        const [result, user] = await Promise.all([
+          fetchAllPages<ProblemSpool>('/api/v1/spools?low_or_empty=true', request.signal),
+          api.get<User>('/me', { signal: request.signal }).catch(() => null),
+        ])
+        if (request.signal.aborted) return
+        canArchive = !!user && hasPermission(user, 'spool_events:create_status')
+        problemSpools = result.items
+      } catch {
+        if (!request.signal.aborted) content.textContent = t('spools.failedLoad')
+        return
       }
 
-      if (filteredSpools.length === 0) {
+      if (!problemSpools.length) {
         content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
-        footer.classList.add('hidden')
       } else {
         content.innerHTML = `
           <table class="fm-table">
@@ -376,14 +382,14 @@ import FormDialog from '../components/FormDialog.astro'
               </tr>
             </thead>
             <tbody>
-              ${filteredSpools.map(s => `
+              ${problemSpools.map(s => `
                 <tr data-spool-id="${s.id}">
                   <td><a href="/spools/${s.id}">#${s.id}</a></td>
-                  <td><a href="/spools/${s.id}">${escapeHtml(getFilamentName(s.filament_id))}</a></td>
-                  <td style="text-align: right; font-family: monospace;">${s.remaining_weight_g?.toFixed(0)} g</td>
+                  <td><a href="/spools/${s.id}">${escapeHtml(s.filament ? `${s.filament.designation} (${s.filament.material_type || '-'})` : '-')}</a></td>
+                  <td style="text-align: right; font-family: monospace;">${s.remaining_weight_g.toFixed(0)} g</td>
                   ${canArchive ? `
                   <td style="text-align: right;">
-                    <button class="fm-btn fm-btn-outline" style="padding: 4px 10px; font-size: 0.75rem;" onclick="archiveSpool(${s.id})">
+                    <button type="button" class="fm-btn fm-btn-outline" style="padding: 4px 10px; font-size: 0.75rem;" data-archive-spool>
                       ${t('dashboard.archive')}
                     </button>
                   </td>` : ''}
@@ -398,31 +404,27 @@ import FormDialog from '../components/FormDialog.astro'
         if (canArchive) {
           footer.classList.remove('hidden')
           bulkBtn.textContent = t('dashboard.archiveAll') || 'Archive All'
-          bulkBtn.onclick = () => dashboardWindow.archiveAll(filteredSpools.map(s => s.id))
-        } else {
-          footer.classList.add('hidden')
         }
       }
-
-      spoolDialog.open()
     }
 
     async function archiveSpools(ids: number | number[]) {
-      if (archivePending || !canArchive || !spoolElement.open) return
+      if (panelSignal.aborted || archivePending || !canArchive || !spoolElement.open) return
       const bulk = Array.isArray(ids)
+      if (bulk && !ids.length) return
       const row = bulk ? null : spoolElement.querySelector(`tr[data-spool-id="${ids}"]`)
-      const btn = bulk ? document.getElementById('btn-archive-all') : row?.querySelector('button')
-      const controls = [...spoolElement.querySelectorAll('button'), document.getElementById('problem-spools') as HTMLButtonElement]
+      const btn = bulk ? bulkBtn : row?.querySelector('button')
+      const controls = [...spoolElement.querySelectorAll('button'), problemButton]
       archivePending = true
       spoolElement.setAttribute('aria-busy', 'true')
       controls.forEach(button => { button.disabled = true })
       let succeeded = false
 
       try {
-        if (!(await dashboardWindow.__fmConfirm(t(bulk ? 'dashboard.confirmArchiveAll' : 'dashboard.confirmArchiveOne'), {
+        if (!(await dialogs.__fmConfirm(t(bulk ? 'dashboard.confirmArchiveAll' : 'dashboard.confirmArchiveOne'), {
           okLabel: t('dashboard.archive'),
           isDanger: false
-        }))) return
+        })) || panelSignal.aborted) return
         if (btn) btn.textContent = bulk ? t('dashboard.archiving') : '...'
 
         const response = await fetch(bulk ? '/api/v1/spools/bulk/status' : `/api/v1/spools/${ids}/status`, {
@@ -436,24 +438,25 @@ import FormDialog from '../components/FormDialog.astro'
           signal: getAbortSignal(),
         })
 
+        if (panelSignal.aborted) return
         if (!response.ok) {
-          await dashboardWindow.__fmAlert?.(t('dashboard.archiveError'))
+          await dialogs.__fmAlert?.(t('dashboard.archiveError'))
           return
         }
         succeeded = true
         if (!bulk) {
           row?.remove()
-          const tbody = document.querySelector('#modal-content tbody')
+          const tbody = content.querySelector('tbody')
           if (tbody && tbody.children.length === 0) {
-            document.getElementById('modal-content')!.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
-            document.getElementById('modal-footer')!.classList.add('hidden')
+            content.innerHTML = `<p style="color: var(--text-muted); text-align: center; padding: 20px;">${t('dashboard.noData')}</p>`
+            footer.classList.add('hidden')
           }
         }
         void loadDashboardData()
       } catch (err) {
-        if (isAbortError(err)) return
+        if (panelSignal.aborted || isAbortError(err)) return
         console.error('Failed to archive spools:', err)
-        await dashboardWindow.__fmAlert?.(t('dashboard.archiveError'))
+        await dialogs.__fmAlert?.(t('dashboard.archiveError'))
       } finally {
         archivePending = false
         spoolElement.setAttribute('aria-busy', 'false')
@@ -462,11 +465,6 @@ import FormDialog from '../components/FormDialog.astro'
         if (bulk && succeeded) spoolDialog.close()
       }
     }
-    dashboardWindow.archiveSpool = id => archiveSpools(id)
-    dashboardWindow.archiveAll = ids => archiveSpools(ids)
-
-    ;dashboardWindow.closeSpoolModal = () => spoolDialog.close()
-
     let locationRequestId = 0
     let renderedLocationId = 0
     let lastLocationMarkup = ''
@@ -505,7 +503,10 @@ import FormDialog from '../components/FormDialog.astro'
         const response = await fetch('/api/v1/dashboard/locations', {
           credentials: 'include', cache: 'no-store', signal: getAbortSignal(),
         })
-        if (response.ok) renderLocations(await response.json(), requestId)
+        if (response.ok) {
+          const data = await response.json()
+          if (!panelSignal.aborted) renderLocations(data, requestId)
+        }
       } catch (error) {
         if (!isAbortError(error)) console.debug('Location refresh failed:', error)
       } finally {
@@ -516,141 +517,139 @@ import FormDialog from '../components/FormDialog.astro'
     function startLocationPolling() {
       // shortcut: another worker's SSE events can be missed, poll until events are shared.
       locationTimer ??= window.setInterval(refreshLocations, 15000)
-      document.addEventListener('visibilitychange', refreshLocations)
+      document.addEventListener('visibilitychange', refreshLocations, { signal: panelSignal })
     }
 
-    window.addEventListener('pagehide', () => {
+    function stopLocationPolling() {
       window.clearInterval(locationTimer)
       locationTimer = undefined
       document.removeEventListener('visibilitychange', refreshLocations)
-    })
+    }
+    panelSignal.addEventListener('abort', stopLocationPolling, { once: true })
+    window.addEventListener('pagehide', stopLocationPolling, { signal: panelSignal })
     window.addEventListener('pageshow', event => {
       if (event.persisted) {
         startLocationPolling()
         void refreshLocations()
       }
-    })
+    }, { signal: panelSignal })
 
+    let summaryRequestId = 0
+    let currencyReady: Promise<unknown>
     async function loadDashboardData() {
-      let locationsRequest = 0
+      const requestId = ++summaryRequestId
+      const locationsRequest = ++locationRequestId
       try {
-        // Sequential fetching mit Caching für bessere SQLite-Performance
-        const [spoolsData, filamentsData, dashboardRes] = await fetchSequential([
-          () => cachedFetchAllPages<DashboardSpool>('spools-dashboard', '/api/v1/spools'),
-          () => cachedFetchAllPages<DashboardFilament>(CACHE_KEYS.FILAMENTS, '/api/v1/filaments'),
-          () => {
-            locationsRequest = ++locationRequestId
-            return fetch('/api/v1/dashboard/stats?limit=20', { credentials: 'include', signal: getAbortSignal() })
-          },
-        ] as const)
+        const response = await fetch('/api/v1/dashboard/stats?limit=20&include_totals=true', {
+          credentials: 'include', signal: getAbortSignal(),
+        })
+        if (!response.ok) throw new Error(`Dashboard summary returned ${response.status}`)
+        const dashboardData: DashboardStats = await response.json()
+        if (panelSignal.aborted || requestId !== summaryRequestId) return
 
-        const dashboardData: DashboardStats | null = dashboardRes.ok ? await dashboardRes.json() : null
-
-        allSpools = spoolsData.items
-        allFilaments = filamentsData.items
-
-        document.getElementById('stat-total-spools')!.textContent = String(spoolsData.total)
-        filamentCounts.all = filamentsData.total
-        if (dashboardData) {
-          filamentCounts.active = dashboardData.filament_count_active ?? 0
-          filamentCounts.used = dashboardData.filament_count_used ?? 0
+        document.getElementById('stat-total-spools')!.textContent = String(dashboardData.spool_count_total)
+        filamentCounts = {
+          all: dashboardData.filament_count_total,
+          active: dashboardData.filament_count_active,
+          used: dashboardData.filament_count_used,
         }
         applyFilamentScope()
 
-        if (dashboardData) {
-          const dist = dashboardData.spool_distribution || { full: 0, normal: 0, low: 0, critical: 0, empty: 0 }
-          document.getElementById('stat-low-spools')!.textContent = (dist.low + dist.critical).toString()
-          document.getElementById('stat-empty-spools')!.textContent = dist.empty.toString()
+        const dist = dashboardData.spool_distribution
+        document.getElementById('stat-low-spools')!.textContent = (dist.low + dist.critical).toString()
+        document.getElementById('stat-empty-spools')!.textContent = dist.empty.toString()
+
+        const statusContainer = document.getElementById('spool-status')!
+        const statusItems = [
+          { key: 'full', label: t('dashboard.statusFull'), color: 'var(--success-text)', count: dist.full, hint: '>75%' },
+          { key: 'normal', label: t('dashboard.statusNormal'), color: 'var(--info-text)', count: dist.normal, hint: '50-75%' },
+          { key: 'low', label: t('dashboard.statusLow'), color: 'var(--accent-3)', count: dist.low, hint: '< Min' },
+          { key: 'critical', label: t('dashboard.statusCritical'), color: 'var(--error-text)', count: dist.critical, hint: '< 50% Min' },
+          { key: 'empty', label: t('dashboard.statusEmpty'), color: 'var(--text-muted)', count: dist.empty, hint: '0g' },
+        ]
+        statusContainer.innerHTML = statusItems.map(s => `
+          <div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: ${s.color};">${s.count}</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted);">${s.label}</div>
+            <div style="font-size: 0.6rem; color: var(--text-muted); opacity: 0.7;">${s.hint}</div>
+          </div>
+        `).join('')
+
+        renderLocations(dashboardData.location_stats ?? [], locationsRequest)
+
+        const filamentStatsContainer = document.getElementById('filament-stats')!
+        if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
+          filamentStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+        } else {
+          filamentStatsContainer.innerHTML = `<table class="fm-table">
+            <thead><tr>
+              <th>${t('dashboard.filament')}</th>
+              <th style="text-align: right;">${t('dashboard.spools')}</th>
+              <th style="text-align: right;">${t('dashboard.remaining')}</th>
+            </tr></thead>
+            <tbody>` +
+            dashboardData.filament_stats.map(f =>
+              `<tr>
+                <td><a href="/spools?material=${escapeHtml(encodeURIComponent(f.filament_type))}" title="${escapeHtml(f.filament_type)}">${escapeHtml(f.filament_type)}</a></td>
+                <td style="text-align: right; font-family: monospace;">${f.spool_count}</td>
+                <td style="text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
+              </tr>`
+            ).join('') +
+            `</tbody></table>`
+        }
+
+        const mfrContainer = document.getElementById('manufacturers-with-spools')!
+        if (dashboardData.manufacturers_with_spools.length === 0) {
+          mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
+        } else {
+          mfrContainer.innerHTML = `<table class="fm-table">
+            <thead><tr><th>${t('dashboard.manufacturer')}</th><th style="text-align: right;">${t('dashboard.spools')}</th></tr></thead><tbody>` +
+            dashboardData.manufacturers_with_spools.map(m =>
+              `<tr><td><a href="/spools?manufacturer_id=${m.id}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</a></td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
+            ).join('') +
+            `</tbody></table>`
+        }
+
+        const mfrLowStockContainer = document.getElementById('low-stock-spools')!
+        if (dashboardData.low_stock_spools.length === 0) {
+          mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
+        } else {
+          mfrLowStockContainer.innerHTML = `<table class="fm-table">
+            <thead><tr>
+              <th>${t('dashboard.spool')}</th>
+              <th>${t('dashboard.filament')}</th>
+              <th>${t('dashboard.manufacturer')}</th>
+              <th style="text-align: right;">${t('dashboard.remaining')}</th>
+            </tr></thead>
+            <tbody>` +
+            dashboardData.low_stock_spools.map(s =>
+              `<tr>
+                <td><a href="/spools/${s.spool_id}">#${s.spool_id}</a></td>
+                <td title="${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})">${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})</td>
+                <td title="${escapeHtml(s.manufacturer_name)}">${escapeHtml(s.manufacturer_name)}</td>
+                <td style="text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
+              </tr>`
+            ).join('') +
+            `</tbody></table>`
+        }
+        await currencyReady
+        if (!panelSignal.aborted && requestId === summaryRequestId) {
           document.getElementById('stat-total-value')!.textContent = formatPrice(dashboardData.total_value_available, getCurrency())
-
-          const statusContainer = document.getElementById('spool-status')!
-          const statusItems = [
-            { key: 'full', label: t('dashboard.statusFull'), color: 'var(--success-text)', count: dist.full, hint: '>75%' },
-            { key: 'normal', label: t('dashboard.statusNormal'), color: 'var(--info-text)', count: dist.normal, hint: '50-75%' },
-            { key: 'low', label: t('dashboard.statusLow'), color: 'var(--accent-3)', count: dist.low, hint: '< Min' },
-            { key: 'critical', label: t('dashboard.statusCritical'), color: 'var(--error-text)', count: dist.critical, hint: '< 50% Min' },
-            { key: 'empty', label: t('dashboard.statusEmpty'), color: 'var(--text-muted)', count: dist.empty, hint: '0g' },
-          ]
-          statusContainer.innerHTML = statusItems.map(s => `
-            <div>
-              <div style="font-size: 1.5rem; font-weight: 700; color: ${s.color};">${s.count}</div>
-              <div style="font-size: 0.7rem; color: var(--text-muted);">${s.label}</div>
-              <div style="font-size: 0.6rem; color: var(--text-muted); opacity: 0.7;">${s.hint}</div>
-            </div>
-          `).join('')
-
-          renderLocations(dashboardData.location_stats ?? [], locationsRequest)
-
-          const filamentStatsContainer = document.getElementById('filament-stats')!
-          if (!dashboardData.filament_stats || dashboardData.filament_stats.length === 0) {
-            filamentStatsContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
-          } else {
-            filamentStatsContainer.innerHTML = `<table class="fm-table">
-              <thead><tr>
-                <th>${t('dashboard.filament')}</th>
-                <th style="text-align: right;">${t('dashboard.spools')}</th>
-                <th style="text-align: right;">${t('dashboard.remaining')}</th>
-              </tr></thead>
-              <tbody>` +
-              dashboardData.filament_stats.map(f =>
-                `<tr>
-                  <td><a href="/spools?material=${escapeHtml(encodeURIComponent(f.filament_type))}" title="${escapeHtml(f.filament_type)}">${escapeHtml(f.filament_type)}</a></td>
-                  <td style="text-align: right; font-family: monospace;">${f.spool_count}</td>
-                  <td style="text-align: right; font-family: monospace;">${formatWeight(f.total_weight_g)}</td>
-                </tr>`
-              ).join('') +
-              `</tbody></table>`
-          }
-
-          const mfrContainer = document.getElementById('manufacturers-with-spools')!
-          if (dashboardData.manufacturers_with_spools.length === 0) {
-            mfrContainer.innerHTML = `<p style="color: var(--text-muted);">${t('dashboard.noData')}</p>`
-          } else {
-            mfrContainer.innerHTML = `<table class="fm-table">
-              <thead><tr><th>${t('dashboard.manufacturer')}</th><th style="text-align: right;">${t('dashboard.spools')}</th></tr></thead><tbody>` +
-              dashboardData.manufacturers_with_spools.map(m =>
-                `<tr><td><a href="/spools?manufacturer_id=${m.id}" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</a></td><td style="text-align: right; font-family: monospace;">${m.spool_count}</td></tr>`
-              ).join('') +
-              `</tbody></table>`
-          }
-
-          const mfrLowStockContainer = document.getElementById('low-stock-spools')!
-          if (dashboardData.low_stock_spools.length === 0) {
-            mfrLowStockContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.allSufficient')}</p>`
-          } else {
-            mfrLowStockContainer.innerHTML = `<table class="fm-table">
-              <thead><tr>
-                <th>${t('dashboard.spool')}</th>
-                <th>${t('dashboard.filament')}</th>
-                <th>${t('dashboard.manufacturer')}</th>
-                <th style="text-align: right;">${t('dashboard.remaining')}</th>
-              </tr></thead>
-              <tbody>` +
-              dashboardData.low_stock_spools.map(s =>
-                `<tr>
-                  <td><a href="/spools/${s.spool_id}">#${s.spool_id}</a></td>
-                  <td title="${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})">${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})</td>
-                  <td title="${escapeHtml(s.manufacturer_name)}">${escapeHtml(s.manufacturer_name)}</td>
-                  <td style="text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
-                </tr>`
-              ).join('') +
-              `</tbody></table>`
-          }
         }
       } catch (error) {
-        if (isAbortError(error)) return
-        console.error('Failed to load dashboard:', error)
+        if (!isAbortError(error)) console.error('Failed to load dashboard:', error)
       }
     }
 
     async function init() {
       await initI18n()
-      await initCurrency()
+      if (panelSignal.aborted) return
+      currencyReady = initCurrency()
       initFilamentScopePills()
-      await initWidgetVisibility()
+      const preferencesReady = initWidgetVisibility()
       startLocationPolling()
-      await loadDashboardData()
-      showChangelogIfNeeded()
+      await Promise.all([loadDashboardData(), preferencesReady])
+      if (!panelSignal.aborted) showChangelogIfNeeded()
     }
 
     function showChangelogIfNeeded() {
@@ -697,12 +696,14 @@ import FormDialog from '../components/FormDialog.astro'
 
     // Live-Update via SSE: Daten automatisch neu laden
     let _dashboardReloadTimer: ReturnType<typeof setTimeout> | null = null
+    panelSignal.addEventListener('abort', () => clearTimeout(_dashboardReloadTimer ?? undefined), { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent<{ event?: string }>).detail ?? {}
       if (event === 'spools_changed' || event === 'filaments_changed') {
         if (_dashboardReloadTimer) clearTimeout(_dashboardReloadTimer)
         _dashboardReloadTimer = setTimeout(() => loadDashboardData(), 300)
       }
+    }, { signal: panelSignal })
     })
   </script>
 </Layout>

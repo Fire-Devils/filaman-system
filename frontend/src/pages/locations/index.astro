@@ -3,7 +3,7 @@ import FormDialog from '../../components/FormDialog.astro'
 import Layout from '../../layouts/Layout.astro'
 ---
 
-<Layout title="FilaMan - Locations">
+<Layout panel="locations" title="FilaMan - Locations">
   <div class="fm-list-toolbar">
     <h1 style="font-weight: 700; margin: 0; font-family: var(--font-serif);" data-i18n="locations.title">Locations</h1>
     <button
@@ -118,6 +118,9 @@ import Layout from '../../layouts/Layout.astro'
     import { tableAction } from '../../lib/table-actions'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('locations', async (panelSignal) => {
     await initI18n()
 
     const modalForm = document.getElementById('modal-form') as HTMLFormElement
@@ -129,7 +132,6 @@ import Layout from '../../layouts/Layout.astro'
     const dialogs = window as unknown as {
       __fmConfirm: (message: string) => Promise<boolean>
       __fmAlert: (message: string) => Promise<boolean>
-      openRfidModal: (locationId: number) => void
     }
     let locations: LocationRecord[] = []
     let activeDevices: ActiveDevice[] = []
@@ -188,8 +190,8 @@ import Layout from '../../layouts/Layout.astro'
         const tooltip = isOnline ? t('rfid.writeTag') : t('rfid.noDeviceOnlineTooltip')
         
         const rfidIcon = `
-          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation(); ${isOnline ? `window.openRfidModal(${loc.id})` : ''}">
-            <button class="fm-btn" 
+          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">
+            <button type="button" class="fm-btn" data-rfid-location="${loc.id}"
                     style="border: none !important; background: transparent; padding: 4px; line-height: 0; ${iconColor} ${!isOnline ? 'cursor: not-allowed; opacity: 0.6;' : ''}" 
                     title="${tooltip}"
                     ${!isOnline ? 'disabled' : ''}>
@@ -212,6 +214,10 @@ import Layout from '../../layouts/Layout.astro'
       `}).join('')
       
       translatePage()
+
+      tbody.querySelectorAll<HTMLButtonElement>('button[data-rfid-location]').forEach(button => {
+        button.addEventListener('click', () => openRfidModal(Number(button.dataset.rfidLocation)))
+      })
 
       document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -238,15 +244,16 @@ import Layout from '../../layouts/Layout.astro'
             
             if (!response.ok) {
               const data = await response.json()
+              if (panelSignal.aborted) return
               await dialogs.__fmAlert(data.message || t('locations.failedDelete'))
               return
             }
             
             // Invalidate cache after successful delete
             invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
-            loadLocations()
+            if (!panelSignal.aborted) loadLocations()
           } catch {
-            await dialogs.__fmAlert(t('locations.failedDelete'))
+            if (!panelSignal.aborted) await dialogs.__fmAlert(t('locations.failedDelete'))
           }
         })
       })
@@ -338,7 +345,7 @@ import Layout from '../../layouts/Layout.astro'
       },
     })
     
-    ;dialogs.openRfidModal = (locationId: number) => {
+    function openRfidModal(locationId: number) {
       currentRfidLocationId = locationId
       rfidAbort?.abort()
       rfidAbort = new AbortController()
@@ -516,6 +523,7 @@ import Layout from '../../layouts/Layout.astro'
       },
     ]
     initColumnPicker({
+      signal: panelSignal,
       storageKey: 'filaman-columns-locations',
       defaultVisible: ['name', 'identifier', 'spools'],
       groups: locColumnGroups,
@@ -531,16 +539,23 @@ import Layout from '../../layouts/Layout.astro'
     })
     // ── End Column Picker & Resize ────────────────────────────────────
 
-    loadActiveDevices().then(() => loadLocations())
+    loadActiveDevices().then(() => { if (!panelSignal.aborted) return loadLocations() })
 
     // Live-Update via SSE: Standorte automatisch neu laden
     let _locationsReloadTimer: ReturnType<typeof setTimeout> | null = null
+    panelSignal.addEventListener('abort', () => {
+      clearTimeout(_locationsReloadTimer ?? undefined)
+      locResize.destroy()
+      rfidAbort?.abort()
+      clearTimeout(rfidTimer)
+    }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
       if (event === 'locations_changed' || event === 'spools_changed') {
         if (_locationsReloadTimer) clearTimeout(_locationsReloadTimer)
         _locationsReloadTimer = setTimeout(() => loadLocations(), 300)
       }
+    }, { signal: panelSignal })
     })
   </script>
 </Layout>

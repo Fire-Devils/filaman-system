@@ -2,7 +2,7 @@
 import Layout from '../../layouts/Layout.astro'
 ---
 
-<Layout title="FilaMan - Admin">
+<Layout panel="admin" title="FilaMan - Admin">
   <style>
     .admin-navigation h2 { display: flex; align-items: flex-start; gap: 10px; font-size: 1.2rem; font-weight: 600; margin-bottom: 8px; }
     .admin-navigation h2 svg { width: 22px; height: 22px; flex: 0 0 22px; margin-top: 2px; fill: currentColor; }
@@ -99,6 +99,9 @@ import Layout from '../../layouts/Layout.astro'
   <script>
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('admin', async () => {
     await initI18n()
     const dialogs = window as unknown as { __fmConfirm: (message: string) => Promise<boolean>; __fmAlert: (message: string) => Promise<boolean> }
 
@@ -208,5 +211,6 @@ import Layout from '../../layouts/Layout.astro'
         warning.style.display = 'block'
       }
     })()
+    })
   </script>
 </Layout>
