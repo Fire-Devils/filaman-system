@@ -82,6 +82,7 @@ import Layout from '../../layouts/Layout.astro'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { t, initI18n } from '../../lib/i18n'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { api } from '../../lib/api'
     import { buildDriverConfigPayload, renderDriverConfigFields, type DriverSchema, type SchemaProperty, type FieldValue } from '../../lib/driver-config-form'
     import { escapeHtml } from '../../lib/extra-fields'
     import { tableAction } from '../../lib/table-actions'
@@ -417,12 +418,22 @@ import Layout from '../../layouts/Layout.astro'
         }
       })
       try {
-        await fetch('/api/v1/printers/reconnect-all', { method: 'POST', credentials: 'include', signal: getAbortSignal() })
-        await dialogs.__fmSuccess(t('printers.reconnectDone'))
-      } catch {}
-      await fetchHealthForAll()
-      btn.disabled = false
-      btn.textContent = t('printers.checkAll')
+        const { results } = await api.post<{ results: Record<string, string> }>('/printers/reconnect-all')
+        const outcomes = Object.values(results)
+        if (outcomes.length === 0) {
+          await dialogs.__fmAlert(t('printers.noActivePrintersToReconnect'))
+        } else if (outcomes.every(result => result === 'reconnected' || result === 'started')) {
+          await dialogs.__fmSuccess(t('printers.reconnectDone'))
+        } else {
+          await dialogs.__fmAlert(t('printers.reconnectFailed'))
+        }
+      } catch (error) {
+        if (!isAbortError(error)) await dialogs.__fmAlert(t('printers.reconnectFailed'))
+      } finally {
+        await fetchHealthForAll()
+        btn.disabled = false
+        btn.textContent = t('printers.checkAll')
+      }
     })
 
     loadPrinters()

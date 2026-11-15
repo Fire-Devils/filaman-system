@@ -1007,6 +1007,7 @@ async def reconnect_all_printers(
             request,
             method="POST",
             path="/api/v1/printers/reconnect-all",
+            timeout=120.0,
         )
         return payload
 

@@ -694,6 +694,10 @@ class PluginManager:
                 select(Printer).where(
                     Printer.is_active.is_(True),
                     Printer.deleted_at.is_(None),
+                    ~select(InstalledPlugin.id).where(
+                        InstalledPlugin.driver_key == Printer.driver_key,
+                        InstalledPlugin.is_active.is_(False),
+                    ).exists(),
                 )
             )
             printers = result.scalars().all()
