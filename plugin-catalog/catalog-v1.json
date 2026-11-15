@@ -64,5 +64,16 @@
     "min_filaman_version": "2.0.5",
     "github_release_url": "https://github.com/akira69/filabrain/releases/download/v0.1.17-preview.1/filabrain-0.1.17.zip",
     "sha256": "0825fc0cf8facc54f305a4d1da8efa12833396962934d1a237afdbd8331a295d"
+  },
+  {
+    "plugin_key": "spoolmanscale",
+    "name": "SpoolmanScale",
+    "description": "Shows the web interface of a SpoolmanScale inside FilaMan. The scale's address comes from FilaMan's device list, so there is nothing to set up. Needs SpoolmanScale firmware 0.8.3 or newer with FilaMan as its backend.",
+    "publisher": "Niko11111",
+    "repository_url": "https://github.com/Niko11111/filaman-spoolmanscale-plugin",
+    "version": "0.2.0",
+    "min_filaman_version": "2.0.5",
+    "github_release_url": "https://github.com/Niko11111/filaman-spoolmanscale-plugin/releases/download/v0.2.0/spoolmanscale-0.2.0.zip",
+    "sha256": "fe042338cb677d46929a2a976e1b96453ede3461b6ab2b7f681dd66cb84b1dc8"
   }
 ]
