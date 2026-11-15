@@ -49,6 +49,8 @@ DEFAULT_EMPTY_COLOR = "#202020"
 AMS_HT_ID_BASE = 128  # Bambu numbers AMS-HT units from 128
 EXTERNAL_IDS = {254, 255}  # Bambu: external spool holder / virtual tray
 SLOTS_PER_AMS = 4
+# Dual-nozzle printers (H2D, H2C) number their hotends 0 = right, 1 = left.
+EXTRUDER_SIDES = {0: "right", 1: "left"}
 # BambuStudio DryStatus (bits 4–7 of ams info / dry_status on AMS 2 Pro / HT).
 # 0 = off; 1–4 are an in-progress cycle. Idle units still send dry_status=0.
 _DRY_STATUS_ACTIVE = {1, 2, 3, 4}  # checking, drying, cooling, stopping
@@ -140,6 +142,35 @@ def _pair_from_extruder_slots(raw: dict[str, Any]) -> tuple[int, int] | None:
     if ams_id is None or slot_no is None:
         return None
     return canonicalize_slot_key(ams_id, slot_no)
+
+
+def _extruder_trays(raw: dict[str, Any]) -> dict[tuple[int, int], str]:
+    """Which hotend each loaded slot feeds: ``extruder_slots`` read whole.
+
+    ``tray_now`` and ``active_extruder`` name only the hotend in use; on a
+    dual-nozzle printer the other one holds filament too, and a board that
+    wants to say "left" or "right" per slot needs both.
+    """
+    slots = raw.get("extruder_slots")
+    if not isinstance(slots, dict):
+        return {}
+    trays: dict[tuple[int, int], str] = {}
+    for ext_key, entry in slots.items():
+        side = EXTRUDER_SIDES.get(_as_int(ext_key))
+        if side is None or not isinstance(entry, dict) or entry.get("has_filament") is False:
+            continue
+        ams_id = _as_int(_first(entry, ("ams_id", "ams")))
+        slot_no = _as_int(_first(entry, ("slot_id", "slot", "tray_id", "tray")))
+        if ams_id is None or slot_no is None:
+            continue
+        if ams_id in EXTERNAL_IDS:
+            # An external spool is named by its holder as the AMS, slot 0:
+            # 254 is the left (deputy) holder, 255 the right (main) one.
+            # canonicalize_slot_key() takes the holder id as the tray.
+            trays[canonicalize_slot_key(255, ams_id)] = side
+        else:
+            trays[canonicalize_slot_key(ams_id, slot_no)] = side
+    return trays
 
 
 def normalize_hex_color(value: Any, default: str = DEFAULT_EMPTY_COLOR) -> str:
@@ -517,6 +548,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         speed_level          speed_level | spd_lvl
         active_tray          extruder_slots[active_extruder] | active_tray | tray_now
                              (ams*4+slot; AMS-HT 128–135 = that unit, slot 0; 254/255 = none)
+        extruders            extruder_slots{0: right, 1: left}: (ams_id, slot) -> side
         hms                  [{code, msg}] | []
         ams[]                ams_id|id, is_ams_ht, model|module_type|info (bits 0-3),
                              temperature|temp, humidity
@@ -700,6 +732,7 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         },
         "speed_level": _as_int(_first(raw, ("speed_level", "spd_lvl"))),
         "active_tray": active_tray,
+        "extruders": _extruder_trays(raw),
         "hms": hms,
         "ams": units,
     }
@@ -932,6 +965,7 @@ def _merge_slot(
         "label": slot_label(ams_id, slot_no, kind),
         "empty": empty,
         "active": bool(live.get("active", False)),
+        "extruder": None,
         "color": color,
         "colors": [] if empty else colors,
         "color_style": "" if empty else (fm.get("color_style") or ""),
@@ -981,6 +1015,20 @@ def _apply_active(units: list[dict[str, Any]], active_tray: int | None) -> dict[
             if slot["active"]:
                 return {"ams_id": unit["ams_id"], "slot": slot["slot"]}
     return None
+
+
+def _apply_extruders(units: list[dict[str, Any]], trays: dict[tuple[int, int], str]) -> None:
+    """Name the hotend a loaded slot feeds; null on single-nozzle printers."""
+    for unit in units:
+        for slot in unit["slots"]:
+            if unit["kind"] == "ams_ht":
+                # One bay, shown as slot 0 whichever tray id the printer used;
+                # _pick_ht_sources() accepts 0 and 1 the same way.
+                ams_id = unit["ams_id"]
+                side = trays.get((ams_id, 0)) or trays.get((ams_id, 1))
+            else:
+                side = trays.get((unit["ams_id"], slot["slot"]))
+            slot["extruder"] = None if slot["empty"] else side
 
 
 def _build_alerts(printer_name: str, live: dict[str, Any], units: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1080,6 +1128,7 @@ def build_printer_display(
     all_slots = [s for u in units for s in u["slots"]]
     _apply_backups(all_slots)
     active = _apply_active(units, live["active_tray"] if live else None)
+    _apply_extruders(units, live["extruders"] if live else {})
 
     out: dict[str, Any] = {
         "id": printer.id,
@@ -1112,7 +1161,7 @@ def slots_only(printer_payload: dict[str, Any]) -> dict[str, Any]:
                 "model": u.get("model"),
                 "label": u["label"],
                 "slots": [
-                    {k: s[k] for k in ("slot", "label", "empty", "active", "color", "material", "remaining_percent", "spool_id")}
+                    {k: s[k] for k in ("slot", "label", "empty", "active", "extruder", "color", "material", "remaining_percent", "spool_id")}
                     for s in u["slots"]
                 ],
             }
