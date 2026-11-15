@@ -64,6 +64,7 @@ export interface ColumnPickerOptions {
   onResetWidths?: () => void
   /** Label for the reset button (i18n). Defaults to 'Reset columns'. */
   resetLabel?: string
+  signal?: AbortSignal
 }
 
 export interface ColumnPicker {
@@ -248,7 +249,7 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
     setDropdownOpen(dropdown?.style.display !== 'block')
   })
 
-  document.addEventListener('click', () => setDropdownOpen(false))
+  document.addEventListener('click', () => setDropdownOpen(false), { signal: opts.signal })
   dropdown?.addEventListener('click', event => event.stopPropagation())
   function closeOnEscape(event: KeyboardEvent) {
     if (event.key !== 'Escape' || dropdown?.style.display !== 'block') return
@@ -261,7 +262,9 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
 
   const container = wrapper?.closest('.fm-main')
   if (container) {
-    new ResizeObserver(updateDensity).observe(container)
+    const observer = new ResizeObserver(updateDensity)
+    observer.observe(container)
+    opts.signal?.addEventListener('abort', () => observer.disconnect(), { once: true })
     updateDensity()
   }
   applyVisibility()
@@ -270,7 +273,7 @@ export function initColumnPicker(opts: ColumnPickerOptions): ColumnPicker {
   if (table) initColumnLocks(table, opts.storageKey, cell => {
     const key = getColKey(cell)
     return !key || !allColKeys.includes(key) || visibleCols.has(key)
-  })
+  }, opts.signal)
 
   // ── Public API ───────────────────────────────────────────────────
   return {

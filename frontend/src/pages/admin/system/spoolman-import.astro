@@ -5,7 +5,7 @@ import FormSection from '../../../components/FormSection.astro'
 import '../../../styles/spoolman-import.css'
 ---
 
-<Layout title="FilaMan - Spoolman Import">
+<Layout panel="spoolman-import" title="FilaMan - Spoolman Import">
   <div class="fm-admin-page">
   <a href="/admin/system" class="fm-admin-back">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
   <AdminHeader titleKey="spoolman.title" title="Spoolman Import" back={false} />
@@ -88,13 +88,14 @@ import '../../../styles/spoolman-import.css'
   </div>
 
   <script>
-    import { getAbortSignal } from '../../../lib/abort'
     import { initI18n, t } from '../../../lib/i18n'
     import { createSpoolmanApi } from '../../../lib/spoolman-api'
     import type { SpoolmanControllerDeps } from '../../../lib/spoolman-controller-types'
     import { initSpoolmanImportController } from '../../../lib/spoolman-import-controller'
     import { initSpoolmanRepairController } from '../../../lib/spoolman-repair-controller'
+    import { mountPanel } from '../../../lib/panel-navigation'
 
+    mountPanel('spoolman-import', async (panelSignal) => {
     await initI18n()
 
     const csrfToken = () => {
@@ -108,12 +109,13 @@ import '../../../styles/spoolman-import.css'
     const deps: SpoolmanControllerDeps = {
       api: createSpoolmanApi({ csrfToken }),
       t,
-      signal: getAbortSignal,
+      signal: () => panelSignal,
       confirm: (message, options) => modalWindow.__fmConfirm(message, options),
       alert: message => modalWindow.__fmAlert(message),
     }
 
     initSpoolmanImportController(deps)
     initSpoolmanRepairController(deps)
+    })
   </script>
 </Layout>

@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro'
 ---
 
-<Layout title="FilaMan - Plugin">
+<Layout panel="plugin" title="FilaMan - Plugin">
   <iframe
     id="plugin-frame"
     data-i18n-title="pluginPage.frameTitle"
@@ -14,11 +14,11 @@ import Layout from '../layouts/Layout.astro'
   <p id="plugin-missing" style="display: none; color: var(--text-muted);" data-i18n="pluginPage.notFound">
     This plugin page is not available.
   </p>
-</Layout>
-
 <script>
   import { PLUGIN_PAGE_PREFIX, isValidPluginSlug } from '../lib/plugin-nav'
+  import { mountPanel } from '../lib/panel-navigation'
 
+  mountPanel('plugin', () => {
   /* Plugin pages are served by the backend as plain HTML, outside this shell:
      the navigation links straight at page_url and serve_plugin_page() answers
      with the plugin's page.html. Opening one therefore replaces the whole
@@ -70,4 +70,6 @@ import Layout from '../layouts/Layout.astro'
     frame.style.display = 'none'
     missing.style.display = 'block'
   }
+  })
 </script>
+</Layout>

@@ -408,6 +408,7 @@ async def list_spools(
     type: list[str] | None = Query(None),
     include_archived: bool = Query(False),
     include_metrics: bool = Query(False),
+    low_or_empty: bool = False,
     remaining_percent_min: Annotated[float | None, Query(allow_inf_nan=False)] = None,
     remaining_percent_max: Annotated[float | None, Query(allow_inf_nan=False)] = None,
     remaining_length_m_min: Annotated[float | None, Query(allow_inf_nan=False)] = None,
@@ -429,6 +430,11 @@ async def list_spools(
         value is not None for pair in bounds.values() for value in pair
     )
     conditions = []
+    if low_or_empty:
+        conditions.append(or_(
+            Spool.remaining_weight_g <= 0,
+            Spool.remaining_weight_g <= Spool.low_weight_threshold_g,
+        ))
     for key, (minimum, maximum) in bounds.items():
         if minimum is not None:
             conditions.append(metrics[key] >= minimum)

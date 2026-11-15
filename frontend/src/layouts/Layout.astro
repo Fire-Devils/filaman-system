@@ -1,19 +1,22 @@
 ---
 import '../styles/global.css'
+import { ClientRouter } from 'astro:transitions'
 import { VERSION } from '../version.js'
 
 interface Props {
   title: string
+  panel?: string
   /** When true, removes main padding so the content can fill edge-to-edge.
    *  Used by plugin-view pages that embed a full-height iframe. */
   noPadding?: boolean
   embedded?: boolean
 }
 
-const { title, noPadding = false, embedded = false } = Astro.props
+const { title, panel: pagePanel, noPadding = false, embedded = false } = Astro.props
+const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings/sidebar' ? 'sidebar-settings' : undefined)
 ---
 
-<html lang="en" data-theme="brand">
+<html lang="en" data-theme="brand" transition:animate="none">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
@@ -25,6 +28,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
     />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+    {panel && <ClientRouter fallback="swap" />}
     <script is:inline>
       (function() {
         const t = localStorage.getItem('theme') || 'brand';
@@ -123,6 +127,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
               <div style="display: flex; gap: 4px; flex-shrink: 0;">
                 <a
                   href="/settings"
+                  data-sidebar-link
                   class="fm-btn fm-btn-outline"
                   style="padding: 6px; line-height: 0; border-radius: 8px; flex-shrink: 0;"
                   data-i18n-title="nav.settings"
@@ -178,9 +183,13 @@ const { title, noPadding = false, embedded = false } = Astro.props
       </aside>
       <div id="sidebar-backdrop" class="fm-sidebar-backdrop"></div>
 
-      <main class:list={['fm-main', { 'fm-main--flush': noPadding }]}>
+      <main class:list={['fm-main', { 'fm-main--flush': noPadding }]} data-panel={panel} tabindex={panel ? -1 : undefined}>
         <slot />
       </main>
+      <div id="session-check-retry" class="fm-main" style="visibility: visible;" hidden>
+        <p role="alert" data-i18n="common.networkError">Network error. Please try again.</p>
+        <button type="button" class="fm-btn fm-btn-primary" data-i18n="common.retry">Retry</button>
+      </div>
     </div>
 
     <div class="pc-print-prompt-stack">
@@ -230,7 +239,7 @@ const { title, noPadding = false, embedded = false } = Astro.props
 
     <script>
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
-      import { getAbortSignal } from '../lib/abort'
+      import { abortAllRequests, getAbortSignal } from '../lib/abort'
       import type { User } from '../lib/auth'
       import type { AppDialogs } from '../lib/form-dialog'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
@@ -251,16 +260,18 @@ const { title, noPadding = false, embedded = false } = Astro.props
       await initI18n()
 
       const colorLibraryLink = document.getElementById('sidebar-color-library')!
-      const colorLibraryToggle = document.querySelector<HTMLInputElement>('#show-color-library')
       const colorLibraryKey = 'sidebar-color-library'
       function syncColorLibraryShortcut() {
         const shown = localStorage.getItem(colorLibraryKey) !== 'false'
         colorLibraryLink.hidden = !shown
+        const colorLibraryToggle = document.querySelector<HTMLInputElement>('#show-color-library')
         if (colorLibraryToggle) colorLibraryToggle.checked = shown
       }
       syncColorLibraryShortcut()
-      colorLibraryToggle?.addEventListener('change', () => {
-        localStorage.setItem(colorLibraryKey, String(colorLibraryToggle.checked))
+      document.addEventListener('change', event => {
+        const toggle = event.target
+        if (!(toggle instanceof HTMLInputElement) || toggle.id !== 'show-color-library') return
+        localStorage.setItem(colorLibraryKey, String(toggle.checked))
         syncColorLibraryShortcut()
       })
       window.addEventListener('storage', event => {
@@ -371,6 +382,12 @@ const { title, noPadding = false, embedded = false } = Astro.props
           e.preventDefault()
           closeModal(false)
         })
+        overlay.addEventListener('close', () => {
+          if (!overlay.open && resolveFn) closeModal(false)
+        })
+        document.addEventListener('astro:before-swap', event => {
+          if (event.newDocument !== document && overlay.open) closeModal(false)
+        })
 
         // fmConfirm(message, options?) – replacement for window.confirm()
         type ConfirmOptions = { title?: string; okLabel?: string; isDanger?: boolean }
@@ -423,62 +440,110 @@ const { title, noPadding = false, embedded = false } = Astro.props
       const userRole = document.getElementById('user-role')!
       const logoutBtn = document.getElementById('logout-btn')!
       const adminNav = document.getElementById('admin-nav')!
+      const authRetry = document.getElementById('session-check-retry')!
+      const retryButton = authRetry.querySelector('button')!
+      const embedded = document.body.hasAttribute('data-embedded')
+      let authenticatedUserId: User['id'] | undefined
+      let disposePrintPrompt: (() => void) | undefined
+      let sidebarAccess: string | undefined
+      let pluginNavContent = ''
 
-      async function checkAuth() {
+      function closePrintPrompt() {
+        disposePrintPrompt?.()
+        disposePrintPrompt = undefined
+      }
+
+      async function readPanelSession(signal: AbortSignal) {
+        const response = await fetch('/api/v1/me', { credentials: 'include', signal })
+        const user: User | undefined = response.ok ? await response.json() : undefined
+        return { response, user }
+      }
+
+      const preparedSessions = new WeakMap<HTMLElement, Promise<Awaited<ReturnType<typeof readPanelSession>>>>()
+
+      async function checkAuth(main: HTMLElement) {
+        const signal = getAbortSignal()
+        retryButton.disabled = true
         try {
-          const response = await fetch('/api/v1/me', {
-            credentials: 'include',
-            signal: getAbortSignal(),
-          })
+          const prepared = preparedSessions.get(main)
+          preparedSessions.delete(main)
+          const { response, user } = await (prepared ?? readPanelSession(signal))
+          if (signal.aborted) return
 
-          if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            closePrintPrompt()
             // Server explicitly rejected auth — clear cookies and redirect
             document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
             document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
             window.location.href = loginUrlWithNext(window.location)
             return
           }
-
-          const user: User = await response.json()
+          if (!user) throw new Error(`Session check returned ${response.status}`)
+          if (authenticatedUserId !== undefined && authenticatedUserId !== user.id) {
+            closePrintPrompt()
+            window.location.reload()
+            return
+          }
+          authenticatedUserId = user.id
           await ensureLabelPresetBrowserMigration(user.id).catch(error => {
-            console.warn('Could not migrate label presets to the database', error)
+            if (!signal.aborted) console.warn('Could not migrate label presets to the database', error)
           })
+          if (signal.aborted) return
 
           // Sync language from user profile
           syncLangFromUser(user.language)
+          if (!embedded) disposePrintPrompt ??= setupPcPrintPrompt()
 
 
-          userName.innerHTML = user.display_name || user.email
-          userRole.innerHTML = user.roles.join(', ')
-          userRole.classList.remove('invisible');
+          const name = user.display_name || user.email
+          const roles = user.roles.join(', ')
+          if (userName.textContent !== name) userName.textContent = name
+          if (userRole.textContent !== roles) userRole.textContent = roles
+          userRole.classList.remove('invisible')
 
-          if (user.is_superadmin || user.permissions.some((p: string) => p.startsWith('admin:'))) {
-            adminNav.classList.remove('invisible')
+          adminNav.classList.toggle('invisible', !user.is_superadmin && !user.permissions.some(p => p.startsWith('admin:')))
+          const access = JSON.stringify([user.id, user.is_superadmin, [...user.permissions].sort()])
+          if (sidebarAccess !== access) {
+            sidebarAccess = access
+            pluginNavContent = ''
+            pluginNav.replaceChildren()
+            pluginNav.classList.add('invisible')
           }
-
-          loadPluginNav()
-          checkSystemVersion(user)
+          void checkSystemVersion(user, signal)
+          void loadPluginNav(signal)
 
           // Auth succeeded — reveal page content
           document.getElementById('fm-page')!.style.visibility = 'visible'
+          main.style.removeProperty('visibility')
+          main.style.removeProperty('display')
+          authRetry.hidden = true
+          main.dataset.panelAuthorized = ''
+          main.dispatchEvent(new Event('filaman:panel-authorized'))
+          return true
         } catch (err) {
-          // Network abort (e.g. fast page switch) — do NOT clear cookies
-          if (err instanceof DOMException && err.name === 'AbortError') return
-          if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('network'))) return
-
-          // Genuine network error (e.g. disconnected backend) — clear cookies and redirect
-          document.cookie = 'session_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-          document.cookie = 'csrf_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;'
-          window.location.href = loginUrlWithNext(window.location)
+          if (signal.aborted) return
+          console.warn('Could not check session', err)
+          // A restored native modal can block clicks on Retry even when hidden.
+          document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(dialog => dialog.close())
+          main.style.display = 'none'
+          authRetry.hidden = false
+          retryButton.disabled = false
+          retryButton.focus({ preventScroll: true })
         }
       }
 
-      checkAuth()
+      async function authorizePanel(main: HTMLElement) {
+        if (await checkAuth(main) && main.isConnected) main.focus({ preventScroll: true })
+      }
+
+      retryButton.addEventListener('click', () => {
+        void authorizePanel(document.querySelector<HTMLElement>('main')!)
+      })
 
       /* ── System version check ────────────────────────────────── */
       type VersionStatus = { update_available: boolean; latest_version: string | null }
 
-      async function checkSystemVersion(user: User) {
+      async function checkSystemVersion(user: User, signal: AbortSignal) {
         try {
           const cachedRaw = sessionStorage.getItem('fm_version_check')
           if (cachedRaw) {
@@ -491,26 +556,27 @@ const { title, noPadding = false, embedded = false } = Astro.props
             } catch { /* ignore corrupted cache */ }
           }
 
-          const resp = await fetch('/api/v1/admin/system/version-check', {
-            credentials: 'include',
-            signal: getAbortSignal(),
-          })
+          const resp = await fetch('/api/v1/admin/system/version-check', { credentials: 'include', signal })
           if (!resp.ok) return
           const data: VersionStatus = await resp.json()
+          if (signal.aborted) return
           sessionStorage.setItem('fm_version_check', JSON.stringify({ ts: Date.now(), data }))
           applyVersionStatus(data, user)
         } catch { /* Version check is non-critical */ }
       }
 
       function applyVersionStatus(data: VersionStatus, user: User) {
-        if (!data?.update_available) return
         const updateBadge = document.getElementById('sidebar-version-update') as HTMLAnchorElement | null
         const updateText = document.getElementById('sidebar-version-update-text')
         if (!updateBadge || !updateText) return
+        updateBadge.classList.toggle('invisible', !data.update_available)
+        if (!data.update_available) return
 
         const isAdmin = Boolean(user?.is_superadmin || (user?.permissions || []).some((p: string) => p.startsWith('admin:')))
         if (isAdmin) {
           updateBadge.href = '/admin'
+          updateBadge.removeAttribute('target')
+          updateBadge.removeAttribute('rel')
         } else {
           updateBadge.href = 'https://github.com/Fire-Devils/filaman-system/releases/latest'
           updateBadge.target = '_blank'
@@ -518,19 +584,24 @@ const { title, noPadding = false, embedded = false } = Astro.props
         }
 
         const label = t('nav.updateAvailable') || 'Update available'
-        updateText.textContent = data.latest_version ? `${label}: v${data.latest_version}` : label
+        const updateLabel = data.latest_version ? `${label}: v${data.latest_version}` : label
+        if (updateText.textContent !== updateLabel) updateText.textContent = updateLabel
         updateBadge.title = `${label}: v${data.latest_version || ''}`
-        updateBadge.classList.remove('invisible')
       }
 
       /* ── Plugin navigation ───────────────────────────────────── */
       const pluginNav = document.getElementById('plugin-nav')!
 
-      async function loadPluginNav() {
+      async function loadPluginNav(signal: AbortSignal) {
         try {
-          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal: getAbortSignal() })
+          const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal })
           if (!resp.ok) return
           const plugins: { plugin_key: string; name: string; page_url: string; icon_url?: string | null }[] = await resp.json()
+          const content = JSON.stringify(plugins)
+          if (signal.aborted || content === pluginNavContent) return
+          pluginNavContent = content
+          pluginNav.replaceChildren()
+          pluginNav.classList.add('invisible')
           if (!plugins.length) return
 
           const hr = document.createElement('hr')
@@ -561,10 +632,11 @@ const { title, noPadding = false, embedded = false } = Astro.props
           // Re-run active-highlighting now that plugin links are in the DOM,
           // so the longest-prefix match wins across all nav items (including plugins).
           highlightActiveNav()
-        } catch { /* Plugin nav is non-critical */ }
+        } catch { /* Plugin navigation is optional and retried on the next panel. */ }
       }
 
       logoutBtn.addEventListener('click', async () => {
+        closePrintPrompt()
         const csrfToken = document.cookie
           .split('; ')
           .find(row => row.startsWith('csrf_token='))
@@ -588,30 +660,30 @@ const { title, noPadding = false, embedded = false } = Astro.props
 
       /* ── Active nav highlighting ─────────────────────────────── */
       function highlightActiveNav() {
-        const currentPath = window.location.pathname
+        const currentPath = window.location.pathname.replace(/\/$/, '') || '/'
         // Plugin pages are told apart by their query, so the entry for the one
         // currently open is only found with it.
         const currentTarget = currentPath + window.location.search
-        let bestNavMatch: Element | null = null
+        let bestNavMatch: HTMLAnchorElement | undefined
         let bestNavLen = 0
-        const items = document.querySelectorAll('.fm-nav-item')
-        items.forEach(item => {
+        for (const item of document.querySelectorAll<HTMLAnchorElement>('aside a.fm-nav-item, aside a[data-sidebar-link]')) {
           item.classList.remove('active')
-          const href = item.getAttribute('href')
-          if (!href) return
-          if (href === currentPath || href === currentTarget || (href !== '/' && currentPath.startsWith(href + '/'))) {
-            if (href.length > bestNavLen) {
-              bestNavLen = href.length
-              bestNavMatch = item
-            }
+          item.removeAttribute('aria-current')
+          if (item.origin !== window.location.origin) continue
+          const path = item.pathname.replace(/\/$/, '') || '/'
+          const matches = item.search
+            ? path + item.search === currentTarget
+            : path === currentPath || (path !== '/' && currentPath.startsWith(path + '/'))
+          const length = path.length + item.search.length
+          if (matches && length > bestNavLen) {
+            bestNavLen = length
+            bestNavMatch = item
           }
-        })
-        if (bestNavMatch) (bestNavMatch as Element).classList.add('active')
+        }
+        bestNavMatch?.classList.add('active')
+        bestNavMatch?.setAttribute('aria-current', 'page')
       }
       highlightActiveNav()
-
-      const embedded = document.body.hasAttribute('data-embedded')
-      if (!embedded) setupPcPrintPrompt()
 
       /* ── Sidebar toggle ──────────────────────────────────────── */
       const page = document.getElementById('fm-page')!
@@ -620,7 +692,6 @@ const { title, noPadding = false, embedded = false } = Astro.props
 
       const mobileSidebar = window.matchMedia('(max-width: 599px)')
       const compactSidebar = window.matchMedia('(max-width: 1279px)')
-      const main = document.querySelector<HTMLElement>('main')!
       const sidebarContent = document.getElementById('sidebar-content')!
 
       function setSidebarCollapsed(collapsed: boolean, persist = true) {
@@ -633,7 +704,8 @@ const { title, noPadding = false, embedded = false } = Astro.props
         }
         sidebarToggle.setAttribute('aria-expanded', String(!collapsed))
         sidebarContent.inert = mobileSidebar.matches && collapsed
-        main.inert = mobileSidebar.matches && !collapsed
+        document.querySelector<HTMLElement>('main')!.inert = mobileSidebar.matches && !collapsed
+        authRetry.inert = mobileSidebar.matches && !collapsed
         // Only persist sidebar state on desktop
         if (persist && !mobileSidebar.matches) {
           localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false')
@@ -673,6 +745,95 @@ const { title, noPadding = false, embedded = false } = Astro.props
       sidebarBackdrop.addEventListener('click', () => {
         setSidebarCollapsed(true)
         sidebarToggle.focus()
+      })
+
+      /* ── Main panel navigation ───────────────────────────────── */
+      if (page.querySelector('main[data-panel]')) {
+        // Astro checks the opt-out on the link itself before fetching.
+        document.addEventListener('click', event => {
+          const link = event.target instanceof Element ? event.target.closest('a') : null
+          if (!link || link.closest('.fm-sidebar')) return
+          const target = new URL(link.href)
+          const currentPanel = page.querySelector<HTMLElement>('main[data-panel]')?.dataset.panel
+          const to = target.pathname.replace(/\/$/, '')
+          const settingsLink = target.origin === location.origin && (
+            (currentPanel === 'settings' && to === '/settings/sidebar') ||
+            (currentPanel === 'sidebar-settings' && to === '/settings')
+          )
+          if (!settingsLink) link.setAttribute('data-astro-reload', '')
+        }, { capture: true })
+        document.addEventListener('astro:before-preparation', event => {
+          const load = event.loader
+          event.loader = async () => {
+            await load()
+            if (event.defaultPrevented || event.signal.aborted) return
+            const nextMain = event.newDocument.querySelector<HTMLElement>('main[data-panel]')
+            if (!nextMain) return
+            const departure = new AbortController()
+            window.addEventListener('pagehide', () => departure.abort(), { once: true, signal: departure.signal })
+            const session = readPanelSession(AbortSignal.any([event.signal, departure.signal]))
+            preparedSessions.set(nextMain, session)
+            await session.catch(() => {})
+            if (departure.signal.aborted) {
+              // A page restored from the browser cache keeps the panel it left with.
+              if (event.navigationType === 'traverse') preparedSessions.delete(nextMain)
+              else {
+                event.to = event.from
+                event.newDocument = document
+              }
+            }
+            departure.abort()
+          }
+        })
+        const { swapFunctions } = await import('astro:transitions/client')
+        let restoreScroll: (() => void) | undefined
+        document.addEventListener('astro:before-swap', event => {
+          if (event.newDocument === document) {
+            const { scrollX, scrollY } = window
+            restoreScroll = () => window.scrollTo(scrollX, scrollY)
+            void event.viewTransition.ready.catch(() => {})
+            event.viewTransition.skipTransition()
+            event.swap = () => document.querySelector('.astro-route-announcer')?.remove()
+            return
+          }
+          const nextMain = event.newDocument.querySelector<HTMLElement>('main[data-panel]')
+          const main = page.querySelector<HTMLElement>('main[data-panel]')
+          if (!main || !nextMain) return
+
+          // Keep the mounted sidebar out of full-page view transition snapshots.
+          void event.viewTransition.ready.catch(() => {})
+          event.viewTransition.skipTransition()
+          event.swap = () => {
+            abortAllRequests()
+            authRetry.hidden = true
+            swapFunctions.deselectScripts(event.newDocument)
+            swapFunctions.swapHeadElements(event.newDocument)
+            document.querySelector('.astro-route-announcer')?.remove()
+            nextMain.style.visibility = 'hidden'
+            main.replaceWith(nextMain)
+          }
+        })
+        document.addEventListener('astro:after-swap', () => {
+          if (restoreScroll) {
+            restoreScroll()
+            restoreScroll = undefined
+            return
+          }
+          const main = page.querySelector<HTMLElement>('main[data-panel]')
+          if (!main) return
+          setSidebarCollapsed(mobileSidebar.matches || html.classList.contains('sidebar-collapsed'), false)
+          highlightActiveNav()
+          syncColorLibraryShortcut()
+          translatePage(main)
+          void authorizePanel(main)
+        })
+      }
+      void checkAuth(document.querySelector<HTMLElement>('main')!)
+      window.addEventListener('pageshow', event => {
+        if (!event.persisted) return
+        const main = document.querySelector<HTMLElement>('main')!
+        if (main.hasAttribute('data-panel-authorized')) void checkAuth(main)
+        else void authorizePanel(main)
       })
 
       /* ── SSE live-update connection ──────────────────────────── */

@@ -7,6 +7,7 @@ const isStatic = process.env.BUILD_MODE === 'static';
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
 
 export default defineConfig({
+  prefetch: { prefetchAll: false },
   integrations: [{ name: 'label-svg-bundle', hooks: { 'astro:build:done': () => buildLabelSvg() } }],
   output: isStatic ? 'static' : 'server',
   adapter: isStatic ? undefined : node({

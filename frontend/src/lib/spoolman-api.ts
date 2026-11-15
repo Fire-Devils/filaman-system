@@ -1,3 +1,4 @@
+import { getAbortSignal } from "./abort";
 import type {
   ImportStorageAction,
   ImportStorageMode,
@@ -190,7 +191,7 @@ export function createSpoolmanApi(options: SpoolmanApiOptions) {
       },
       credentials: "include",
       body: JSON.stringify(body),
-      signal,
+      signal: signal ? AbortSignal.any([signal, getAbortSignal()]) : getAbortSignal(),
     });
     const data: unknown = await response.json().catch(() => ({}));
     if (!response.ok) {

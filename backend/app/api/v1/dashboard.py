@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
-from sqlalchemy import func, select, case
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import case, func, select
 
 from app.api.deps import DBSession, PrincipalDep
 from app.models import Filament, Location, Manufacturer, Spool, SpoolStatus
@@ -59,6 +59,8 @@ class DashboardStatsResponse(BaseModel):
     low_stock_spools: list[LowStockSpool]
     empty_spools: list[EmptySpool]
     filament_types: list[FilamentTypeCount]
+    spool_count_total: int | None = Field(None, exclude_if=lambda value: value is None)
+    filament_count_total: int | None = Field(None, exclude_if=lambda value: value is None)
 
 
 @router.get("/locations", response_model=list[LocationStat])
@@ -100,6 +102,7 @@ async def get_dashboard_stats(
     db: DBSession,
     principal: PrincipalDep,
     limit: int = Query(20, ge=1, le=50),
+    include_totals: bool = False,
 ):
     # Spulen-Verteilung berechnen (Optimiert: DB-seitige Aggregation)
     spool_distribution_stmt = (
@@ -261,7 +264,7 @@ async def get_dashboard_stats(
 
     # Gesamtwert verfügbarer Spulen
     total_value_stmt = (
-        select(func.coalesce(func.sum(Spool.purchase_price), 0))
+        select(func.coalesce(func.sum(Spool.purchase_price), 0), func.count(Spool.id))
         .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
         .where(SpoolStatus.key != "archived")
     )
@@ -297,7 +300,7 @@ async def get_dashboard_stats(
     filament_count_active_res = await db.execute(filament_count_active_stmt)
     filament_count_used_res = await db.execute(filament_count_used_stmt)
 
-    total_value_available = float(total_val_res.scalar() or 0.0)
+    total_value_available, spool_count_total = total_val_res.one()
 
     dist_row = dist_res.first()
     spool_distribution = {
@@ -348,9 +351,16 @@ async def get_dashboard_stats(
         FilamentTypeCount(material_type=row[0], count=row[1]) for row in types_res.all()
     ]
 
+    totals = {}
+    if include_totals:
+        totals = {
+            "spool_count_total": spool_count_total,
+            "filament_count_total": await db.scalar(select(func.count(Filament.id))) or 0,
+        }
+
     return DashboardStatsResponse(
         spool_distribution=spool_distribution,
-        total_value_available=total_value_available,
+        total_value_available=float(total_value_available),
         filament_count_active=int(filament_count_active_res.scalar() or 0),
         filament_count_used=int(filament_count_used_res.scalar() or 0),
         filament_stats=filament_stats,
@@ -359,4 +369,5 @@ async def get_dashboard_stats(
         low_stock_spools=low_stock_spools,
         empty_spools=empty_spools,
         filament_types=filament_types,
+        **totals,
     )

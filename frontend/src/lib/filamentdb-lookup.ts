@@ -17,29 +17,12 @@ import { t } from './i18n'
 
 // ── Plugin status check (cached) ────────────────────────────────────
 
-let _pluginActiveCache: boolean | null = null
-let _pluginActivePromise: Promise<boolean> | null = null
-
-/**
- * Check whether the FilamentDB plugin is active.
- * Result is cached for the lifetime of the page.
- */
 export async function checkFilamentDbActive(): Promise<boolean> {
-  if (_pluginActiveCache !== null) return _pluginActiveCache
-  if (_pluginActivePromise) return _pluginActivePromise
-
-  _pluginActivePromise = (async () => {
-    try {
-      const data = await request<{ active: boolean }>('/filamentdb/status')
-      _pluginActiveCache = data.active
-      return _pluginActiveCache
-    } catch {
-      _pluginActiveCache = false
-      return false
-    }
-  })()
-
-  return _pluginActivePromise
+  try {
+    return (await request<{ active: boolean }>('/filamentdb/status')).active
+  } catch {
+    return false
+  }
 }
 
 // ── Fuzzy token matching ────────────────────────────────────────────

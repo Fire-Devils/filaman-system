@@ -36,5 +36,10 @@ export async function bootAstroPage(path: string, dependencies: Record<string, u
   document.body.innerHTML = await renderShells(page.match(/<Layout[^>]*>([\s\S]*?)<script>/)![1])
   const script = createSourceFile(`${path}.ts`, page.match(/<script>([\s\S]*?)<\/script>/)![1], ScriptTarget.Latest, true)
   const source = script.statements.filter(node => !isImportDeclaration(node)).map(node => node.getText(script)).join('\n')
-  await new AsyncFunction(...Object.keys(dependencies), transpileModule(source, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText)(...Object.values(dependencies))
+  let mounted: Promise<unknown> | undefined
+  const mountPanel = (_: string, setup: (signal: AbortSignal) => unknown) => {
+    mounted = Promise.resolve(setup(new AbortController().signal))
+  }
+  await new AsyncFunction('mountPanel', ...Object.keys(dependencies), transpileModule(source, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText)(mountPanel, ...Object.values(dependencies))
+  await mounted
 }

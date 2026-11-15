@@ -4,7 +4,7 @@ import AdminHeader from '../../../components/AdminHeader.astro'
 import FormSection from '../../../components/FormSection.astro'
 ---
 
-<Layout title="FilaMan - FilamentDB Import">
+<Layout panel="filamentdb-import" title="FilaMan - FilamentDB Import">
   <div class="fm-admin-page">
   <a href="/admin/system" class="fm-admin-back">&larr; <span data-i18n="admin.backToSystem">Back to System</span></a>
   <AdminHeader titleKey="filamentdb.title" title="FilamentDB Import" back={false} />
@@ -101,19 +101,76 @@ import FormSection from '../../../components/FormSection.astro'
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { checkFilamentDbActive } from '../../../lib/filamentdb-lookup'
     import { toColorSwatchBackground } from '../../../lib/colors'
+    import { mountPanel } from '../../../lib/panel-navigation'
+
+    mountPanel('filamentdb-import', async (panelSignal) => {
     await initI18n()
 
     // Check if plugin is active — redirect to system page if disabled
     const pluginActive = await checkFilamentDbActive()
+    if (panelSignal.aborted) return
     if (!pluginActive) {
       window.location.href = '/admin/system'
-      throw new Error('Plugin disabled')  // Stop further script execution
+      return
+    }
+
+    interface CatalogManufacturer {
+      id: number
+      name?: string
+      _exists?: boolean
+      _material_types?: string[]
+      _filament_count?: number
+    }
+
+    interface CatalogFilament {
+      id: number
+      manufacturer_id?: number | null
+      manufacturer?: { id: number } | null
+      designation?: string
+      name?: string
+      _exists?: boolean
+      _material_key?: string
+      _match_type?: 'exact' | 'fuzzy'
+      _matched_name?: string
+      _match_score?: number
+      spool_profile?: unknown
+      colors?: { hex_code?: string }[]
+      hex_color?: string
+    }
+
+    interface ImportPreview {
+      snapshot_id?: string | null
+      summary: Record<'manufacturers' | 'filaments' | 'materials' | 'colors', number>
+      manufacturers: CatalogManufacturer[]
+      materials?: { key?: string; name?: string }[]
+    }
+
+    interface FilamentDiff {
+      fdb_id: number
+      designation: string
+      manufacturer_name: string
+      identical: boolean
+      changes: { field: string; old: unknown; new: unknown }[]
+    }
+
+    interface ImportResult {
+      manufacturers_created: number
+      manufacturers_skipped: number
+      colors_created: number
+      colors_skipped: number
+      filaments_created: number
+      filaments_skipped: number
+      filaments_updated: number
+      logos_downloaded: number
+      logos_failed: number
+      errors?: string[] | null
+      warnings?: string[] | null
     }
 
     // ---- State ----
-    let previewData: any = null
+    let previewData: ImportPreview | null = null
     /** Filament data loaded on-demand for selected manufacturers */
-    let filamentData: any = null
+    let filamentData: { snapshot_id?: string | null; filaments: CatalogFilament[] } | null = null
     /** Set of selected FDB manufacturer IDs */
     const selectedMfrIds = new Set<number>()
     /** Set of selected FDB filament IDs */
@@ -128,8 +185,10 @@ import FormSection from '../../../components/FormSection.astro'
     let filamentDebounceTimer: ReturnType<typeof setTimeout> | null = null
     /** AbortController for filament fetch */
     let filamentAbortCtrl: AbortController | null = null
-    /** Track whether filaments are currently loading */
-    let filamentLoading = false
+    panelSignal.addEventListener('abort', () => {
+      clearTimeout(filamentDebounceTimer ?? undefined)
+      filamentAbortCtrl?.abort()
+    }, { once: true })
     /** Snapshot ID from server cache — reused across all steps to avoid redundant fetches */
     let currentSnapshotId: string | null = null
 
@@ -174,19 +233,19 @@ import FormSection from '../../../components/FormSection.astro'
     }
 
     /** Get FDB manufacturer ID for a filament dict */
-    function filMfrId(f: any): number | null {
+    function filMfrId(f: CatalogFilament): number | null {
       return f.manufacturer_id ?? f.manufacturer?.id ?? null
     }
 
     /** Check if a manufacturer passes the material filter */
-    function mfrPassesMaterialFilter(mfr: any): boolean {
+    function mfrPassesMaterialFilter(mfr: CatalogManufacturer): boolean {
       if (activeMaterials.size === 0) return true
       const types: string[] = mfr._material_types ?? []
       return types.some(t => activeMaterials.has(t))
     }
 
     /** Check if a filament passes the material filter */
-    function filPassesMaterialFilter(f: any): boolean {
+    function filPassesMaterialFilter(f: CatalogFilament): boolean {
       if (activeMaterials.size === 0) return true
       const k = (f._material_key || '').toUpperCase()
       return activeMaterials.has(k)
@@ -217,8 +276,9 @@ import FormSection from '../../../components/FormSection.astro'
           throw new Error(data.detail?.message || t('filamentdb.previewFailed'))
         }
 
-        previewData = await response.json()
-        currentSnapshotId = previewData.snapshot_id ?? null
+        const preview: ImportPreview = await response.json()
+        previewData = preview
+        currentSnapshotId = preview.snapshot_id ?? null
         resultDiv.style.display = 'block'
 
         // Default: kein Hersteller ausgewählt
@@ -230,10 +290,10 @@ import FormSection from '../../../components/FormSection.astro'
         disableStep('step-filaments')
         disableStep('step-import')
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         resultDiv.style.display = 'block'
-        resultDiv.innerHTML = `<div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">${escapeHtml(err.message)}</div>`
+        resultDiv.innerHTML = `<div style="padding: 10px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">${escapeHtml(err instanceof Error ? err.message : String(err))}</div>`
         disableStep('step-filaments')
         disableStep('step-import')
       } finally {
@@ -244,6 +304,7 @@ import FormSection from '../../../components/FormSection.astro'
 
     function renderStep1() {
       const resultDiv = document.getElementById('preview-result')!
+      if (!previewData) return
       const s = previewData.summary
       const materials = getAllMaterials()
 
@@ -324,7 +385,7 @@ import FormSection from '../../../components/FormSection.astro'
       const container = document.getElementById('mfr-list')
       if (!container || !previewData) return
 
-      const manufacturers: any[] = previewData.manufacturers
+      const manufacturers = previewData.manufacturers
       const searchLower = mfrSearchTerm.toLowerCase().trim()
       const sorted = [...manufacturers]
         .filter(m => {
@@ -385,7 +446,7 @@ import FormSection from '../../../components/FormSection.astro'
     function selectMfrs(mode: 'all' | 'new' | 'none') {
       selectedMfrIds.clear()
       if (mode !== 'none') {
-        for (const m of previewData.manufacturers) {
+        for (const m of previewData?.manufacturers ?? []) {
           if (!mfrPassesMaterialFilter(m)) continue
           if (mfrSearchTerm) {
             const searchLower = mfrSearchTerm.toLowerCase().trim()
@@ -443,7 +504,6 @@ import FormSection from '../../../components/FormSection.astro'
       filamentAbortCtrl = new AbortController()
 
       // Loading-State anzeigen
-      filamentLoading = true
       enableStep('step-filaments')
       container.style.display = 'block'
       hint.style.display = 'none'
@@ -463,9 +523,9 @@ import FormSection from '../../../components/FormSection.astro'
           throw new Error(data.detail?.message || t('filamentdb.previewFailed'))
         }
 
-        filamentData = await response.json()
-        currentSnapshotId = filamentData.snapshot_id ?? currentSnapshotId
-        filamentLoading = false
+        const catalog: NonNullable<typeof filamentData> = await response.json()
+        filamentData = catalog
+        currentSnapshotId = catalog.snapshot_id ?? currentSnapshotId
 
         selectedFilIds.clear()
         rejectedFuzzyIds.clear()
@@ -475,32 +535,26 @@ import FormSection from '../../../components/FormSection.astro'
         resetImportButton()
         enableStep('step-import')
 
-      } catch (err: any) {
-        if (err.name === 'AbortError') return  // Neuer Request laeuft bereits
-        filamentLoading = false
-        container.innerHTML = `<div style="padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">${escapeHtml(err.message)}</div>`
+      } catch (err) {
+        if (isAbortError(err)) return
+        container.innerHTML = `<div style="padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">${escapeHtml(err instanceof Error ? err.message : String(err))}</div>`
         disableStep('step-import')
       }
     }
 
-    function rebuildStep2() {
-      if (!filamentData) return
-      renderFilamentList()
-    }
-
     function renderFilamentList() {
       const container = document.getElementById('filament-list')!
-      if (!filamentData) return
+      if (!filamentData || !previewData) return
 
-      const filaments: any[] = filamentData.filaments
+      const filaments = filamentData.filaments
       // Group by manufacturer
-      const mfrMap = new Map<number, any>()
+      const mfrMap = new Map<number, CatalogManufacturer>()
       for (const m of previewData.manufacturers) {
         if (m.id && selectedMfrIds.has(m.id)) mfrMap.set(m.id, m)
       }
 
       // Group filaments
-      const grouped = new Map<number, any[]>()
+      const grouped = new Map<number, CatalogFilament[]>()
       for (const f of filaments) {
         const mId = filMfrId(f)
         if (!mId || !selectedMfrIds.has(mId)) continue
@@ -519,7 +573,7 @@ import FormSection from '../../../components/FormSection.astro'
       let html = ''
 
       // Hinweis zu Fuzzy-Matches anzeigen wenn welche vorhanden
-      const hasFuzzyMatches = filaments.some((f: any) => f._match_type === 'fuzzy' && !rejectedFuzzyIds.has(f.id))
+      const hasFuzzyMatches = filaments.some(f => f._match_type === 'fuzzy' && !rejectedFuzzyIds.has(f.id))
       if (hasFuzzyMatches) {
         html += `<div style="padding: 10px 14px; margin-bottom: 12px; border-radius: var(--radius-sm); background: rgba(var(--warning-rgb, 200,150,0), 0.08); border: 1px solid rgba(var(--warning-rgb, 200,150,0), 0.25); font-size: 0.85rem; color: var(--text);">
           ${escapeHtml(t('filamentdb.fuzzyHintBox'))}
@@ -562,7 +616,6 @@ import FormSection from '../../../components/FormSection.astro'
             : ''
           const matKey = f._material_key || ''
           const designation = f.designation || f.name || '-'
-          const colorCount = f.colors?.length ?? (f.hex_color ? 1 : 0)
           const colorSwatches = renderColorSwatches(f)
 
           html += `
@@ -615,7 +668,7 @@ import FormSection from '../../../components/FormSection.astro'
         btn.addEventListener('click', (e) => {
           e.preventDefault()
           const mfrId = Number((e.currentTarget as HTMLElement).dataset.mfr)
-          for (const f of filamentData.filaments) {
+          for (const f of filaments) {
             if (filMfrId(f) === mfrId && filPassesMaterialFilter(f) && f.id) selectedFilIds.add(f.id)
           }
           renderFilamentList()
@@ -628,7 +681,7 @@ import FormSection from '../../../components/FormSection.astro'
         btn.addEventListener('click', (e) => {
           e.preventDefault()
           const mfrId = Number((e.currentTarget as HTMLElement).dataset.mfr)
-          for (const f of filamentData.filaments) {
+          for (const f of filaments) {
             if (filMfrId(f) === mfrId && f.id) selectedFilIds.delete(f.id)
           }
           renderFilamentList()
@@ -638,7 +691,7 @@ import FormSection from '../../../components/FormSection.astro'
       })
     }
 
-    function renderColorSwatches(f: any): string {
+    function renderColorSwatches(f: CatalogFilament): string {
       const cols: { hex: string }[] = []
       const filColors = f.colors || []
       if (filColors.length) {
@@ -729,7 +782,7 @@ import FormSection from '../../../components/FormSection.astro'
           throw new Error(data.detail?.message || 'Diff failed')
         }
 
-        const diffData = await response.json()
+        const diffData: { snapshot_id?: string | null; results?: (FilamentDiff | { not_found: true })[] } = await response.json()
         currentSnapshotId = diffData.snapshot_id ?? currentSnapshotId
         loading.style.display = 'none'
 
@@ -741,19 +794,20 @@ import FormSection from '../../../components/FormSection.astro'
         renderDiffSection(diffData.results, content)
         return true
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return false
         loading.style.display = 'none'
-        content.innerHTML = `<div style="padding: 12px; color: var(--error-text); font-size: 0.9rem;">${escapeHtml(err.message)}</div>`
+        content.innerHTML = `<div style="padding: 12px; color: var(--error-text); font-size: 0.9rem;">${escapeHtml(err instanceof Error ? err.message : String(err))}</div>`
         return true
       }
     }
 
-    function renderDiffSection(results: any[], container: HTMLElement) {
+    function renderDiffSection(results: (FilamentDiff | { not_found: true })[], container: HTMLElement) {
       updateFilIds.clear()
 
-      const withChanges = results.filter((r: any) => !r.identical && !r.not_found)
-      const identical = results.filter((r: any) => r.identical && !r.not_found)
+      const found = results.filter((r): r is FilamentDiff => !('not_found' in r))
+      const withChanges = found.filter(r => !r.identical)
+      const identical = found.filter(r => r.identical)
 
       let html = `
         <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;">
@@ -824,7 +878,7 @@ import FormSection from '../../../components/FormSection.astro'
       })
     }
 
-    function renderDiffItem(r: any, hasChanges: boolean): string {
+    function renderDiffItem(r: FilamentDiff, hasChanges: boolean): string {
       let html = `
         <div style="padding: 8px 14px; border-bottom: 1px solid var(--border);">
           <div style="display: flex; align-items: center; gap: 10px;">
@@ -864,7 +918,7 @@ import FormSection from '../../../components/FormSection.astro'
                 </tr>
               </thead>
               <tbody>
-                ${r.changes.map((c: any) => `
+                ${r.changes.map(c => `
                   <tr style="border-top: 1px solid var(--border);">
                     <td style="padding: 3px 8px; color: var(--text-muted);">${escapeHtml(c.field)}</td>
                     <td style="padding: 3px 8px; color: var(--error-text);">${c.old != null ? escapeHtml(String(c.old)) : '<em style="opacity: 0.5;">-</em>'}</td>
@@ -920,21 +974,13 @@ import FormSection from '../../../components/FormSection.astro'
         progressBar.style.width = '50%'
         statusText.textContent = t('filamentdb.importing')
 
-        const requestBody: any = {
+        const requestBody = {
           spool_detail_target: getSelectedTarget(),
           manufacturer_ids: [...selectedMfrIds],
           filament_ids: [...selectedFilIds],
           snapshot_id: currentSnapshotId,
-        }
-
-        // Update-IDs mitsenden wenn vorhanden
-        if (updateFilIds.size > 0) {
-          requestBody.update_filament_ids = [...updateFilIds]
-        }
-
-        // Abgelehnte Fuzzy-Matches mitsenden
-        if (rejectedFuzzyIds.size > 0) {
-          requestBody.skip_fuzzy_ids = [...rejectedFuzzyIds]
+          update_filament_ids: updateFilIds.size ? [...updateFilIds] : undefined,
+          skip_fuzzy_ids: rejectedFuzzyIds.size ? [...rejectedFuzzyIds] : undefined,
         }
 
         const response = await fetch('/api/v1/admin/system/filamentdb-import/execute', {
@@ -959,14 +1005,14 @@ import FormSection from '../../../components/FormSection.astro'
         resultDiv.style.display = 'block'
         resultDiv.innerHTML = renderImportResult(result)
 
-      } catch (err: any) {
+      } catch (err) {
         if (isAbortError(err)) return
         progressDiv.style.display = 'none'
         resultDiv.style.display = 'block'
         resultDiv.innerHTML = `
           <div style="padding: 12px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid var(--error-text); color: var(--error-text);">
             <strong>${escapeHtml(t('filamentdb.importFailed'))}</strong><br>
-            ${escapeHtml(err.message)}
+            ${escapeHtml(err instanceof Error ? err.message : String(err))}
           </div>
         `
       } finally {
@@ -975,12 +1021,12 @@ import FormSection from '../../../components/FormSection.astro'
       }
     })
 
-    function renderImportResult(r: any): string {
-      const hasErrors = r.errors && r.errors.length > 0
-      const hasWarnings = r.warnings && r.warnings.length > 0
+    function renderImportResult(r: ImportResult): string {
+      const errors = r.errors ?? []
+      const warnings = r.warnings ?? []
 
       let html = `
-        <div style="padding: 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid ${hasErrors ? 'var(--error-text)' : 'var(--accent-2)'};">
+        <div style="padding: 16px; border-radius: var(--radius-sm); background: var(--bg-soft); border: 1px solid ${errors.length ? 'var(--error-text)' : 'var(--accent-2)'};">
           <h3 style="font-size: 1rem; font-weight: 600; margin: 0 0 12px;">${escapeHtml(t('filamentdb.importResults'))}</h3>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;">
             ${resultCard(t('filamentdb.manufacturers'), r.manufacturers_created, r.manufacturers_skipped)}
@@ -990,23 +1036,23 @@ import FormSection from '../../../components/FormSection.astro'
           </div>
       `
 
-      if (hasWarnings) {
+      if (warnings.length) {
         html += `
           <details style="margin-top: 16px;">
-            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.warnings'))} (${r.warnings.length})</summary>
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--text-muted);">${escapeHtml(t('filamentdb.warnings'))} (${warnings.length})</summary>
             <ul style="margin-top: 8px; padding-left: 20px; font-size: 0.85rem; color: var(--text-muted);">
-              ${r.warnings.map((w: string) => `<li>${escapeHtml(w)}</li>`).join('')}
+              ${warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
             </ul>
           </details>
         `
       }
 
-      if (hasErrors) {
+      if (errors.length) {
         html += `
           <details style="margin-top: 12px;" open>
-            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--error-text);">${escapeHtml(t('filamentdb.errors'))} (${r.errors.length})</summary>
+            <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--error-text);">${escapeHtml(t('filamentdb.errors'))} (${errors.length})</summary>
             <ul style="margin-top: 8px; padding-left: 20px; font-size: 0.85rem; color: var(--error-text);">
-              ${r.errors.map((e: string) => `<li>${escapeHtml(e)}</li>`).join('')}
+              ${errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
             </ul>
           </details>
         `
@@ -1038,6 +1084,7 @@ import FormSection from '../../../components/FormSection.astro'
         </div>
       `
     }
+    })
   </script>
   <style>
     @keyframes spin {

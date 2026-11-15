@@ -4,15 +4,16 @@ import { transpileModule, ScriptTarget } from 'typescript'
 import { afterEach, expect, it, vi } from 'vitest'
 
 const layout = readFileSync('src/layouts/Layout.astro', 'utf8')
-const source = layout.split('/* ── Sidebar toggle')[1].split('/* ── SSE live-update')[0].replace(/^[\s\S]*?\*\//, '')
+const source = layout.split('/* ── Sidebar toggle')[1].split('/* ── Main panel navigation')[0].replace(/^[\s\S]*?\*\//, '')
 const bootstrap = layout.match(/<script is:inline>([\s\S]*?)<\/script>/)![1]
-const start = new Function(bootstrap + transpileModule(source, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText)
+const start = new Function('authRetry', bootstrap + transpileModule(source, { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText)
 const cleanups: (() => void)[] = []
 afterEach(() => { cleanups.splice(0).forEach(fn => fn()); document.body.innerHTML = ''; document.documentElement.classList.remove('sidebar-collapsed'); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function setup(width: number, saved?: string) {
   if (saved) localStorage.setItem('sidebar-collapsed', saved)
-  document.body.innerHTML = '<div id="fm-page"><aside class="fm-sidebar"><button id="sidebar-toggle"></button><div id="sidebar-content"><a href="/spools">Spools</a></div></aside><main></main><div id="sidebar-backdrop"></div></div>'
+  document.body.innerHTML = '<div id="fm-page"><aside class="fm-sidebar"><button id="sidebar-toggle"></button><div id="sidebar-content"><a href="/spools">Spools</a></div></aside><main></main><div id="session-check-retry" hidden></div><div id="sidebar-backdrop"></div></div>'
+  const authRetry = document.getElementById('session-check-retry')!
   const queries = new Map<string, { matches: boolean; listeners: Set<() => void> }>()
   vi.stubGlobal('matchMedia', (query: string) => {
     const state = { matches: width <= Number(query.match(/max-width:\s*(\d+)/)![1]), listeners: new Set<() => void>() }
@@ -25,7 +26,7 @@ function setup(width: number, saved?: string) {
     add(...args)
     cleanups.push(() => document.removeEventListener(args[0], args[1], args[2]))
   })
-  start()
+  start(authRetry)
   const collapsed = () => document.documentElement.classList.contains('sidebar-collapsed')
   const resize = (next: number) => {
     vi.stubGlobal('innerWidth', next)
@@ -34,7 +35,7 @@ function setup(width: number, saved?: string) {
       if (matches !== state.matches) { state.matches = matches; state.listeners.forEach(fn => fn()) }
     }
   }
-  return { collapsed, resize, main: document.querySelector('main')!, content: document.getElementById('sidebar-content')!, toggle: document.getElementById('sidebar-toggle')! }
+  return { collapsed, resize, main: document.querySelector('main')!, authRetry, content: document.getElementById('sidebar-content')!, toggle: document.getElementById('sidebar-toggle')! }
 }
 
 it('uses the icon rail before the mobile drawer without overwriting the desktop preference', () => {
@@ -66,10 +67,12 @@ it('keeps mobile drawer focus protection and Escape without changing desktop sta
   const ui = setup(390, 'false')
   ui.toggle.click()
   expect(ui.main.inert).toBe(true)
+  expect(ui.authRetry.inert).toBe(true)
   expect(ui.content.inert).toBe(false)
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
   expect(ui.collapsed()).toBe(true)
   expect(ui.main.inert).toBe(false)
+  expect(ui.authRetry.inert).toBe(false)
   expect(ui.content.inert).toBe(true)
   expect(localStorage.getItem('sidebar-collapsed')).toBe('false')
 })

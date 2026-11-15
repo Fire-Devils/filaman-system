@@ -5,41 +5,54 @@ import { bindFormDialog } from './form-dialog'
 import { escapeHtml } from './extra-fields'
 import { hasPermission } from './auth'
 
-interface DashboardActions {
-  openSpoolModal: (type: 'problem') => Promise<void>
-  closeSpoolModal: () => void
-  archiveSpool: (id: number) => Promise<void>
-  archiveAll: (ids: number[]) => Promise<void>
+async function openDrilldown() {
+  document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-content a')).not.toBeNull())
+}
+
+function archiveButton(kind: 'single' | 'bulk') {
+  return document.querySelector<HTMLButtonElement>(kind === 'bulk' ? '#btn-archive-all' : '#modal-content [data-archive-spool]')!
 }
 
 async function boot(canArchive = false, poll = async () => Response.json([
   { location_id: 9, location_name: "Dry <box>", spool_count: 5, total_weight_g: 3000 },
-]), inventoryReady?: Promise<void>) {
-  const fetch = vi.fn(async (path: string, init?: RequestInit) => path === "/api/v1/dashboard/locations"
-    ? poll()
-    : init?.method
-    ? Response.json({ detail: 'Not permitted' }, { status: 403 })
-    : Response.json({ spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, filament_count_active: 1, filament_count_used: 0, total_value_available: 3, manufacturers_with_spools: [{ id: 7, name: 'Maker <clear>', spool_count: 2 }], low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }], filament_types: [{ material_type: 'Empty-only type', count: 4 }], location_stats: [{ location_id: 9, location_name: 'Dry <box>', spool_count: 4, total_weight_g: 2500 }], filament_stats: [{ filament_type: 'PLA', spool_count: 2, total_weight_g: 1500 }, { filament_type: 'PETG <clear>', spool_count: 1, total_weight_g: 250 }] }))
+]), summaryReady?: Promise<void>, currencyReady?: Promise<void>) {
+  const fetch = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path === '/api/v1/dashboard/locations') return poll()
+    if (init?.method) return Response.json({ detail: 'Not permitted' }, { status: 403 })
+    await summaryReady
+    return Response.json({
+      spool_count_total: 1, filament_count_total: 2, filament_count_active: 1, filament_count_used: 0,
+      spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, total_value_available: 3,
+      manufacturers_with_spools: [{ id: 7, name: 'Maker <clear>', spool_count: 2 }],
+      low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }],
+      filament_types: [{ material_type: 'Empty-only type', count: 4 }],
+      location_stats: [{ location_id: 9, location_name: 'Dry <box>', spool_count: 4, total_weight_g: 2500 }],
+      filament_stats: [{ filament_type: 'PLA', spool_count: 2, total_weight_g: 1500 }, { filament_type: 'PETG <clear>', spool_count: 1, total_weight_g: 250 }],
+    })
+  })
+  const fetchAllPages = vi.fn(async (_path: string) => ({
+    items: [{ id: 3, remaining_weight_g: 50, filament: { designation: '<img src=x onerror=alert(1)>', material_type: 'PLA' } }],
+    total: 1,
+  }))
   const dependencies = {
     t: (key: string) => key, initI18n: async () => {}, getLang: () => 'en',
-    formatPrice: (value: number) => `€${value}`, getCurrency: () => 'EUR', initCurrency: async () => {},
+    formatPrice: (value: number) => `€${value}`, getCurrency: () => 'EUR', initCurrency: async () => currencyReady,
     VERSION: '', changelogData: { versions: [] },
-    cachedFetchAllPages: async (_key: string, path: string) => {
-      await inventoryReady
-      return path.includes('filaments')
-        ? { items: [{ id: 2, designation: '<img src=x onerror=alert(1)>', material_type: 'PLA' }], total: 2 }
-        : { items: [{ id: 3, filament_id: 2, remaining_weight_g: 50, low_weight_threshold_g: 100 }], total: 1 }
-    },
-    fetchSequential: async (jobs: (() => Promise<unknown>)[]) => { const result = []; for (const job of jobs) result.push(await job()); return result },
-    CACHE_KEYS: { FILAMENTS: 'filaments' }, getAbortSignal: () => undefined,
+    fetchAllPages, getAbortSignal: () => undefined,
     isAbortError: () => false,
-    getMe: async () => ({ is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }), hasPermission,
+    hasPermission,
     bindFormDialog, escapeHtml, fetch,
-    api: { get: async () => ({ dashboard_hidden_widgets: [] }), patch: async () => {} },
+    api: {
+      get: async (path: string) => path === '/me'
+        ? { is_superadmin: false, permissions: canArchive ? ['spool_events:create_status'] : [] }
+        : { dashboard_hidden_widgets: [] },
+      patch: async () => {},
+    },
   }
   await bootAstroPage('index', dependencies)
-  if (!inventoryReady) await vi.waitFor(() => expect(document.querySelector('#stat-total-spools')!.textContent).toBe('1'))
-  return fetch
+  if (!summaryReady) await vi.waitFor(() => expect(document.querySelector('#stat-total-spools')!.textContent).toBe('1'))
+  return Object.assign(fetch, { fetchAllPages })
 }
 afterEach(() => {
   window.dispatchEvent(new Event("pagehide"))
@@ -64,7 +77,7 @@ it('renders safe material statistics and scope controls, and opens a read-only d
   const opener = document.querySelector<HTMLButtonElement>('#problem-spools')!
   opener.focus()
   opener.click()
-  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#spool-modal')!.open).toBe(true))
+  await vi.waitFor(() => expect(document.querySelector('#modal-content a')).not.toBeNull())
   expect(document.querySelector('#modal-content img')).toBeNull()
   expect(document.querySelector('#modal-content')!.textContent).toContain('<img src=x onerror=alert(1)>')
   expect(document.querySelector('#modal-content a')!.getAttribute('href')).toBe('/spools/3')
@@ -97,9 +110,9 @@ it('retains the archive request contract and leaves failed rows available for re
   const fetch = await boot(true)
   ;(window as unknown as { __fmConfirm: () => Promise<boolean>; __fmAlert: () => Promise<boolean> }).__fmConfirm = vi.fn(async () => true)
   ;(window as unknown as { __fmAlert: () => Promise<boolean> }).__fmAlert = vi.fn(async () => true)
-  document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
-  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#spool-modal')!.open).toBe(true))
-  await (window as unknown as { archiveSpool: (id: number) => Promise<void> }).archiveSpool(3)
+  await openDrilldown()
+  archiveButton('single').click()
+  await vi.waitFor(() => expect(archiveButton('single').disabled).toBe(false))
   const write = fetch.mock.calls.find(([, init]) => init?.method === 'POST')!
   expect(write[0]).toBe('/api/v1/spools/3/status')
   expect(JSON.parse(String(write[1]!.body))).toEqual({ status: 'archived' })
@@ -112,17 +125,16 @@ it.each(['single', 'bulk'] as const)('blocks dismissal and competing archives wh
   let confirmArchive!: (confirmed: boolean) => void
   const confirm = vi.fn(() => new Promise<boolean>(resolve => { confirmArchive = resolve }))
   Object.assign(window, { __fmConfirm: confirm })
-  const actions = window as unknown as DashboardActions
   const opener = document.querySelector<HTMLButtonElement>('#problem-spools')!
   opener.focus()
-  await actions.openSpoolModal('problem')
+  await openDrilldown()
   const modal = document.querySelector<HTMLDialogElement>('#spool-modal')!
   const row = document.querySelector('#modal-content tbody tr')!
   let finish!: (response: Response) => void
   fetch.mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve }))
-  const request = kind === 'bulk' ? actions.archiveAll([3]) : actions.archiveSpool(3)
-  await actions.archiveAll([3])
-  await actions.archiveSpool(3)
+  archiveButton(kind).click()
+  archiveButton('bulk').click()
+  archiveButton('single').click()
   expect(confirm).toHaveBeenCalledTimes(1)
   expect(modal.getAttribute('aria-busy')).toBe('true')
   confirmArchive(true)
@@ -131,11 +143,10 @@ it.each(['single', 'bulk'] as const)('blocks dismissal and competing archives wh
   modal.dispatchEvent(new Event('cancel', { cancelable: true }))
   expect(modal.open).toBe(true)
   modal.click()
-  actions.closeSpoolModal()
   document.querySelector<HTMLButtonElement>('#spool-modal [data-dialog-close]')!.click()
-  await actions.openSpoolModal('problem')
-  await actions.archiveAll([3])
-  await actions.archiveSpool(3)
+  opener.click()
+  archiveButton('bulk').click()
+  archiveButton('single').click()
   expect(modal.open).toBe(true)
   expect(document.querySelector('#modal-content tbody tr')).toBe(row)
   expect(modal.getAttribute('aria-busy')).toBe('true')
@@ -148,13 +159,16 @@ it.each(['single', 'bulk'] as const)('blocks dismissal and competing archives wh
   expect(writes[0][1]!.credentials).toBe('include')
 
   finish(Response.json({ success: true }))
-  await request
+  await vi.waitFor(() => expect(modal.getAttribute('aria-busy')).toBe('false'))
   expect(modal.getAttribute('aria-busy')).toBe('false')
   expect([...modal.querySelectorAll('button')].every(button => !button.disabled)).toBe(true)
   expect(modal.open).toBe(kind === 'single')
   if (kind === 'bulk') expect(document.activeElement).toBe(opener)
-  else expect(document.querySelector('#modal-content tbody tr')).toBeNull()
-  await actions.openSpoolModal('problem')
+  else {
+    expect(document.querySelector('#modal-content tbody tr')).toBeNull()
+    modal.querySelector<HTMLButtonElement>('[data-dialog-close]')!.click()
+  }
+  await openDrilldown()
   expect(modal.open).toBe(true)
 })
 
@@ -163,9 +177,11 @@ it.each(['single', 'bulk'] as const)('restores the %s archive controls after a n
   const confirm = vi.fn(async () => false)
   const alert = vi.fn(async () => true)
   Object.assign(window, { __fmConfirm: confirm, __fmAlert: alert })
-  const actions = window as unknown as DashboardActions
-  await actions.openSpoolModal('problem')
-  const archive = () => kind === 'bulk' ? actions.archiveAll([3]) : actions.archiveSpool(3)
+  await openDrilldown()
+  async function archive() {
+    archiveButton(kind).click()
+    await vi.waitFor(() => expect(archiveButton(kind).disabled).toBe(false))
+  }
   await archive()
   expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   confirm.mockResolvedValue(true)
@@ -230,12 +246,43 @@ it("keeps one location poll in flight and preserves focus when the counts change
   expect(fetch).toHaveBeenCalledTimes(1)
 })
 
-it("refreshes Locations independently of the initial inventory load", async () => {
+it("refreshes Locations independently of the initial summary request", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
   const fetch = await boot(false, undefined, new Promise(() => {}))
 
   await vi.advanceTimersByTimeAsync(15000)
-  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/dashboard/locations"])
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/v1/dashboard/stats?limit=20&include_totals=true", "/api/v1/dashboard/locations"])
   expect(document.querySelector("#location-stats")!.textContent).toContain("5 dashboard.spools")
+})
+
+it('loads summary counts on entry and fetches fresh problem spools only when the dialog opens', async () => {
+  let setCurrency!: () => void
+  const fetch = await boot(false, undefined, undefined, new Promise(resolve => { setCurrency = resolve }))
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(['/api/v1/dashboard/stats?limit=20&include_totals=true'])
+  expect(document.querySelector('#stat-total-filaments')!.textContent).toBe('2')
+  expect(document.querySelector('#stat-total-value')!.textContent).toBe('—')
+  setCurrency()
+  await vi.waitFor(() => expect(document.querySelector('#stat-total-value')!.textContent).toBe('€3'))
+  expect(fetch.fetchAllPages).not.toHaveBeenCalled()
+  fetch.fetchAllPages.mockRejectedValueOnce(new Error('Offline'))
+  document.querySelector<HTMLButtonElement>('#problem-spools')!.click()
+  await vi.waitFor(() => expect(document.querySelector('#modal-content')!.textContent).toContain('spools.failedLoad'))
+  document.querySelector<HTMLButtonElement>('#spool-modal [data-dialog-close]')!.click()
+  await openDrilldown()
+  expect(fetch.fetchAllPages.mock.calls.map(([path]) => path)).toEqual(Array(2).fill('/api/v1/spools?low_or_empty=true'))
+  expect(document.querySelector('#modal-content a')?.getAttribute('href')).toBe('/spools/3')
+})
+
+it('ignores an older drilldown response after closing and reopening the dialog', async () => {
+  const fetch = await boot()
+  let finish!: (value: Awaited<ReturnType<typeof fetch.fetchAllPages>>) => void
+  fetch.fetchAllPages.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const opener = document.querySelector<HTMLButtonElement>('#problem-spools')!
+  opener.click()
+  document.querySelector<HTMLButtonElement>('#spool-modal [data-dialog-close]')!.click()
+  await openDrilldown()
+  finish({ items: [], total: 0 })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(document.querySelector('#modal-content a')?.getAttribute('href')).toBe('/spools/3')
 })
