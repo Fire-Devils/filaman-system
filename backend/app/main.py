@@ -7,6 +7,7 @@ import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from math import isfinite
 from pathlib import Path
+from typing import TextIO
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -22,14 +23,15 @@ from app.api.auth_oidc import router as auth_oidc_router
 from app.api.deps import DBSession
 from app.api.mcp_server import router as mcp_router
 from app.api.v1.router import api_router, mount_deferred_plugin_routers
+from app.core.async_tasks import finish_on_cancel
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.database import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.middleware import AuthMiddleware, CsrfMiddleware, RequestIdMiddleware
 from app.core.primary_socket import serve_primary_socket
-from app.core.worker_reload import worker_is_draining
 from app.core.seeds import run_all_seeds
 from app.core.shared_health import shared_display_store, shared_health_store
+from app.core.worker_reload import worker_is_draining
 from app.models.plugin import InstalledPlugin
 from app.plugins.manager import plugin_manager
 from app.services.plugin_service import PLUGINS_DIR, is_integration_slug
@@ -44,8 +46,9 @@ logger = __import__("logging").getLogger(__name__)
 # ---------------------------------------------------------------------------
 _STARTUP_LOCK_PATH = Path(tempfile.gettempdir()) / "filaman-startup.lock"
 _is_primary = False
-_lock_fd = None
+_lock_fd: TextIO | None = None
 _primary_socket = AsyncExitStack()
+_DISPLAY_REFRESH_INTERVAL = 15
 _WATCHDOG_INTERVAL = 60  # seconds
 _TAKEOVER_INTERVAL = 1  # seconds
 _LABEL_ASSET_CLEANUP_INTERVAL = 24 * 60 * 60
@@ -126,9 +129,8 @@ def run_migrations() -> None:
     automatisch ein synchroner DB-Treiber verwendet, auch wenn die App
     asynchron konfiguriert ist.
     """
-    from alembic.config import Config
-
     from alembic import command
+    from alembic.config import Config
 
     alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option(
@@ -151,8 +153,6 @@ def run_migrations() -> None:
 # ---------------------------------------------------------------------------
 async def _driver_watchdog() -> None:
     """Background task: monitors driver health and handles primary failover."""
-    global _is_primary, _lock_fd
-
     if _is_primary:
         # Delay maintenance while the freshly started drivers connect.
         await asyncio.sleep(30)
@@ -175,6 +175,19 @@ async def _driver_watchdog() -> None:
             logger.exception("Driver watchdog error (will retry next cycle)")
 
         await asyncio.sleep(_WATCHDOG_INTERVAL if _is_primary else _TAKEOVER_INTERVAL)
+
+
+async def _display_snapshot_loop() -> None:
+    # Keep Display freshness independent of the slower driver recovery cycle.
+    while True:
+        if _is_primary and not worker_is_draining():
+            try:
+                states = await plugin_manager.get_display_states()
+                if states:
+                    shared_display_store.publish(states)
+            except Exception:
+                logger.exception("Display snapshot refresh failed")
+        await asyncio.sleep(_DISPLAY_REFRESH_INTERVAL if _is_primary else _TAKEOVER_INTERVAL)
 
 
 async def _cleanup_stale_label_assets() -> None:
@@ -203,16 +216,9 @@ async def _watchdog_health_check() -> None:
 
     health = plugin_manager.get_health()
 
-    # Publish current health to shared memory so secondary workers
+    # Publish current health so secondary workers
     # can return accurate status to the frontend.
-    if health:
-        shared_health_store.publish(health)
-
-    # Same for the Display API: a board whose polls never land on the primary
-    # would otherwise show nothing at all.
-    display_states = await plugin_manager.get_display_states()
-    if display_states:
-        shared_display_store.publish(display_states)
+    shared_health_store.publish(health, replace=True)
 
     # Deaktivierte Plugins ermitteln
     async with async_session_maker() as db:
@@ -315,28 +321,30 @@ async def _watchdog_health_check() -> None:
                 )
 
 
-async def _watchdog_try_takeover() -> None:
-    """Secondary worker: try to become primary if the lock is available."""
+def _try_primary_lock() -> bool:
     global _lock_fd
 
-    if worker_is_draining():
-        return
-
-    fd = open(_STARTUP_LOCK_PATH, "a")
+    # Close the descriptor on contention or I/O failure. Only contention makes us a standby.
+    fd = _STARTUP_LOCK_PATH.open("a")
+    acquired = False
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        fd.close()
+        acquired = True
+    except BlockingIOError:
+        return False
+    finally:
+        if not acquired:
+            fd.close()
+    _lock_fd = fd
+    return True
+
+
+async def _watchdog_try_takeover() -> None:
+    """Standby workers can take over once the primary releases election."""
+    if worker_is_draining() or not _try_primary_lock():
         return
 
-    _lock_fd = fd
-    promotion = asyncio.create_task(_start_primary_drivers(app))
-    try:
-        await asyncio.shield(promotion)
-    except asyncio.CancelledError:
-        # Keep the election lock until promotion has committed or finished rolling back.
-        await asyncio.gather(promotion, return_exceptions=True)
-        raise
+    await _start_primary_drivers(app)
     if _is_primary:
         logger.info("Watchdog: acquired lock and started drivers as primary worker")
 
@@ -352,26 +360,24 @@ def _release_primary_lock() -> None:
 async def _start_primary_drivers(app: FastAPI, *, initial: bool = False) -> None:
     global _is_primary
     async with AsyncExitStack() as rollback:
+        # Unwind in reverse order: close admission, settle drivers, clear snapshots, unlock.
         rollback.callback(_release_primary_lock)
-        rollback.push_async_callback(plugin_manager.stop_all)
+        rollback.callback(shared_health_store.cleanup)
+        rollback.callback(shared_display_store.cleanup)
+        rollback.push_async_callback(lambda: finish_on_cancel(plugin_manager.stop_all()))
         await plugin_manager.start_all()
-        if initial:
-            # Take the first snapshot before any forwarded request can change drivers.
-            initial_health = plugin_manager.get_health()
-            if initial_health:
-                shared_health_store.publish(initial_health)
-            initial_display = await plugin_manager.get_display_states()
-            if initial_display:
-                shared_display_store.publish(initial_display)
-
         if worker_is_draining():
             return
 
         rollback.push_async_callback(_primary_socket.aclose)
         publish = await _primary_socket.enter_async_context(serve_primary_socket(app))
+        # Replace any snapshots from a worker that was killed before cleanup.
+        shared_health_store.publish(plugin_manager.get_health(), replace=True)
+        shared_display_store.publish({}, replace=True)
         if worker_is_draining():
             return
 
+        # The staged socket becomes routable only after drivers and snapshots are ready.
         publish()
         _is_primary = True
         rollback.pop_all()
@@ -379,7 +385,7 @@ async def _start_primary_drivers(app: FastAPI, *, initial: bool = False) -> None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _is_primary, _lock_fd
+    global _is_primary
 
     logger.info("Starting FilaMan backend...")
     logger.info(f"Using database URL: {settings.database_url}")
@@ -394,65 +400,53 @@ async def lifespan(app: FastAPI):
             logger.info("Database migrations checked/applied")
         except Exception as e:
             logger.error(f"Error running migrations in app startup: {e}")
-            # We don't raise here to allow app to try starting, or we could raise to fail hard.
-            # Given entrypoint handles it in prod, this is mostly for dev safety.
-            raise e
+            raise
     else:
         logger.info("Skipping in-app migrations (RUN_MIGRATIONS_IN_APP is false)")
 
-    # --- Startup guard: run seeds & plugin start only in ONE worker ----------
-    # With Gunicorn prefork (multiple workers) every worker executes this
-    # lifespan independently.  Seeds and plugin drivers must only run once.
-    # We use an exclusive file-lock: the first worker wins and runs the
-    # one-time tasks; the others skip them.
-    try:
-        _lock_fd = open(_STARTUP_LOCK_PATH, "a")
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        _is_primary = True
-        logger.info("Primary worker – running seeds and starting plugins")
-    except OSError:
-        # Another worker already holds the lock
-        _release_primary_lock()
-        logger.info("Secondary worker – skipping seeds and plugin start")
-    except Exception as exc:
-        logger.warning(f"Startup lock failed ({exc}), running seeds as fallback")
-        _is_primary = True
-
+    # Only the elected worker seeds the database and starts drivers.
+    _is_primary = _try_primary_lock()
     if _is_primary:
-        async with async_session_maker() as db:
-            await run_all_seeds(db)
+        logger.info("Primary worker – running seeds and starting plugins")
+        try:
+            async with async_session_maker() as db:
+                await run_all_seeds(db)
+        except BaseException:
+            _release_primary_lock()
+            raise
         await _start_primary_drivers(app, initial=True)
+    else:
+        logger.info("Secondary worker – skipping seeds and plugin start")
 
     # Start the driver watchdog in every worker (handles health checks
     # for the primary and automatic takeover for secondary workers).
     watchdog_task = asyncio.create_task(_driver_watchdog())
+    display_task = asyncio.create_task(_display_snapshot_loop())
 
-    logger.info("FilaMan backend started")
-    yield
-    logger.info("Shutting down FilaMan backend...")
-
-    # Cancel the watchdog first
-    watchdog_task.cancel()
     try:
-        await watchdog_task
-    except asyncio.CancelledError:
-        pass
+        logger.info("FilaMan backend started")
+        yield
+    finally:
+        logger.info("Shutting down FilaMan backend...")
+        await finish_on_cancel(_shutdown_workers(watchdog_task, display_task))
+        logger.info("FilaMan backend stopped")
+
+
+async def _shutdown_workers(*tasks: asyncio.Task[None]) -> None:
+    # A watchdog may be mid-promotion. Let it settle before checking ownership.
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
     if _is_primary:
-        await _primary_socket.aclose()
-        await plugin_manager.stop_all()
-        # Clean up shared memory (primary is the owner of both blocks)
-        shared_health_store.cleanup()
-        shared_display_store.cleanup()
-        # Release the file lock (OS also releases automatically on exit).
-        # We intentionally do NOT delete the lock file so that secondary
-        # workers can still attempt flock() on it during takeover.
-        _release_primary_lock()
-    else:
-        # Secondary workers just close their handles (don't unlink)
-        shared_health_store.close()
-        shared_display_store.close()
-    logger.info("FilaMan backend stopped")
+        try:
+            await _primary_socket.aclose()
+        finally:
+            await plugin_manager.stop_all()
+            shared_health_store.cleanup()
+            shared_display_store.cleanup()
+            # Keep the lock file so every standby keeps locking the same inode.
+            _release_primary_lock()
 
 
 def _read_version() -> str:
@@ -589,7 +583,7 @@ async def allow_iframe_embedding(request, call_next):
 @app.middleware("http")
 async def add_cache_control_header(request, call_next):
     path = request.url.path
-    is_api = path.startswith("/api/") or path.startswith("/auth/")
+    is_api = path.startswith(("/api/", "/auth/"))
     is_label_render = path.startswith(("/api/v1/labels/spool/", "/api/v1/labels/filament/")) and path.rstrip("/").endswith("/render")
     try:
         response = await call_next(request)
@@ -622,8 +616,7 @@ async def add_cache_control_header(request, call_next):
         # Sprite v=2 is a one-time cache reset; future deployments revalidate.
         response.headers["Cache-Control"] = "no-cache"
     elif not is_api and (
-        path.startswith("/_astro/")
-        or path.startswith("/img/")
+        path.startswith(("/_astro/", "/img/"))
         or path.endswith((".js", ".css", ".png", ".jpg", ".svg", ".woff2", ".ico"))
     ):
         # Cache hashed static assets for 1 year
@@ -683,7 +676,7 @@ async def serve_plugin_page(plugin_slug: str):
         except HTTPException:
             raise
         except Exception:
-            continue
+            logger.debug("Could not inspect plugin page in %s", entry.name, exc_info=True)
 
     raise HTTPException(status_code=404, detail="Plugin page not found")
 
@@ -700,12 +693,12 @@ async def health_ready():
         async with async_session_maker() as db:
             await db.execute(text("SELECT 1"))
         db_ok = True
-    except Exception as e:
-        logger.error(f"DB health check failed: {e}")
+    except Exception:
+        logger.exception("DB health check failed")
 
     plugins_ok = True
     plugin_health = plugin_manager.get_health()
-    for printer_id, health in plugin_health.items():
+    for health in plugin_health.values():
         if health.get("status") == "error":
             plugins_ok = False
             break
