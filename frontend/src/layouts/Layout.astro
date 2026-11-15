@@ -591,14 +591,32 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
 
       /* ── Plugin navigation ───────────────────────────────────── */
       const pluginNav = document.getElementById('plugin-nav')!
+      let pluginNavRequest = 0
+      const pluginIconRevisions = new Map<string, string>()
+
+      window.addEventListener('filaman:plugin-installed', event => {
+        const { detail: pluginKey } = event as CustomEvent<string>
+        // A ZIP replacement can change the SVG without changing the version.
+        pluginIconRevisions.set(pluginKey, `${Date.now()}.${pluginNavRequest}`)
+        void loadPluginNav(getAbortSignal())
+      })
 
       async function loadPluginNav(signal: AbortSignal) {
+        const request = ++pluginNavRequest
         try {
           const resp = await fetch('/api/v1/plugin-nav', { credentials: 'include', signal })
           if (!resp.ok) return
           const plugins: { plugin_key: string; name: string; page_url: string; icon_url?: string | null }[] = await resp.json()
+          if (signal.aborted || request !== pluginNavRequest) return
+          for (const plugin of plugins) {
+            const revision = pluginIconRevisions.get(plugin.plugin_key)
+            if (plugin.icon_url && revision) {
+              const separator = plugin.icon_url.includes('?') ? '.' : '?v='
+              plugin.icon_url += separator + revision
+            }
+          }
           const content = JSON.stringify(plugins)
-          if (signal.aborted || content === pluginNavContent) return
+          if (content === pluginNavContent) return
           pluginNavContent = content
           pluginNav.replaceChildren()
           pluginNav.classList.add('invisible')
@@ -756,11 +774,16 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           const target = new URL(link.href)
           const currentPanel = page.querySelector<HTMLElement>('main[data-panel]')?.dataset.panel
           const to = target.pathname.replace(/\/$/, '')
-          const settingsLink = target.origin === location.origin && (
+          const panelLink = target.origin === location.origin && (
             (currentPanel === 'settings' && to === '/settings/sidebar') ||
-            (currentPanel === 'sidebar-settings' && to === '/settings')
+            (currentPanel === 'sidebar-settings' && to === '/settings') ||
+            (currentPanel === 'admin' && to === '/admin/system') ||
+            (currentPanel === 'plugin-management' && (
+              to === '/admin' || to === '/plugin-view' || to.startsWith('/plugin-view/') ||
+              to === '/admin/system/filamentdb-import' || to === '/admin/system/spoolman-import'
+            ))
           )
-          if (!settingsLink) link.setAttribute('data-astro-reload', '')
+          if (!panelLink) link.setAttribute('data-astro-reload', '')
         }, { capture: true })
         document.addEventListener('astro:before-preparation', event => {
           const load = event.loader
