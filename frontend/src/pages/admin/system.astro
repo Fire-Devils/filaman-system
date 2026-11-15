@@ -307,6 +307,7 @@ import FormDialog from '../../components/FormDialog.astro'
             if (!(await confirmRelease(info))) return
             btnEl.textContent = t('admin.pluginUpdating')
             await installRelease(info)
+            window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: key }))
             showMessage(`${t('common.successTitle')}: ${plugins.find(plugin => plugin.plugin_key === key)?.name || key} · ${info.version}`)
             invalidateUpdate(key)
             loadPlugins()
@@ -634,6 +635,7 @@ import FormDialog from '../../components/FormDialog.astro'
           formData.append('file', selectedFile!)
           result = await request<InstallResult>('/admin/system/plugins/install', { method: 'POST', body: formData })
         }
+        window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: result.plugin.plugin_key }))
         const message = result.message || `${result.plugin.name} v${result.plugin.version}`
         installSuccess.hidden = false
         installSuccess.textContent = message
