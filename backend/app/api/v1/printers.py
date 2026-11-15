@@ -1,31 +1,44 @@
-import logging
+import asyncio
 import inspect
+import logging
 from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.core.security import Principal
-from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
+from app.api.deps import (
+    DBSession,
+    PrincipalDep,
+    RequirePermission,
+    ensure_any_permission,
+)
 from app.api.v1.schemas import PaginatedResponse
+from app.core import shared_health
+from app.core.primary_socket import primary_socket_path
+from app.core.security import Principal
 from app.models import (
+    Filament,
+    FilamentColor,
     Location,
     Printer,
     PrinterSlot,
     PrinterSlotAssignment,
     Spool,
-    Filament,
-    FilamentColor,
 )
-from app.core.primary_socket import primary_socket_path
-from app.core.shared_health import shared_display_store, shared_health_store
 from app.plugins.manager import plugin_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
+
+shared_health_store, shared_display_store = shared_health.shared_health_store, shared_health.shared_display_store
+
+_PRINTER_CREATE = RequirePermission("printers:create")
+_PRINTER_UPDATE = RequirePermission("printers:update")
+_PRINTER_DELETE = RequirePermission("printers:delete")
 
 # Changing one of these restarts the printer's driver, and drivers live on the
 # primary worker only.  A request touching them has to be handled there.
@@ -34,12 +47,9 @@ _DRIVER_LIFECYCLE_FIELDS = frozenset({"driver_key", "driver_config", "is_active"
 
 def _is_primary_worker() -> bool:
     """Resolve primary worker state lazily to avoid import cycles."""
-    try:
-        from app import main as app_main
+    from app import main as app_main
 
-        return bool(getattr(app_main, "_is_primary", False))
-    except Exception:
-        return False
+    return app_main._is_primary
 
 
 def _ensure_primary_worker() -> None:
@@ -62,6 +72,8 @@ async def _proxy_to_primary(
     files: dict[str, tuple[str, bytes, str | None]] | None = None,
     timeout: float = 10.0,
 ) -> Any:
+    from app.core import primary_socket
+
     headers = {
         key: request.headers[key]
         for key in ("authorization", "cookie", "x-csrf-token", "accept")
@@ -69,15 +81,41 @@ async def _proxy_to_primary(
     }
     body = {"json": json_body} if files is None else {"files": files}
     try:
-        transport = httpx.AsyncHTTPTransport(uds=str(primary_socket_path()))
-        async with httpx.AsyncClient(transport=transport, timeout=timeout) as client:
-            response = await client.request(
-                method,
-                f"http://localhost{path}",
-                params=request.query_params,
-                headers=headers,
-                **body,
-            )
+        socket_path = str(primary_socket_path())
+        # Limit the reconnect window while retaining the normal read timeout for accepted work.
+        for attempt in range(11):
+            if attempt:
+                await asyncio.sleep(0.2)
+            transport = httpx.AsyncHTTPTransport(uds=socket_path)
+            request_timeout = httpx.Timeout(timeout, connect=min(timeout, 0.2)) if attempt else timeout
+            try:
+                async with httpx.AsyncClient(transport=transport, timeout=request_timeout) as client:
+                    response = await client.request(
+                        method,
+                        f"http://localhost{path}",
+                        params=request.query_params,
+                        headers=headers,
+                        **body,
+                    )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                # Keep the last explicit rejection while waiting for the replacement to bind.
+                if attempt:
+                    continue
+                raise
+
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            # Only the private listener's pre-dispatch rejection permits a replay.
+            if not (
+                response.status_code == 503
+                and response.headers.get(primary_socket.PRIMARY_RETRY_HEADER) == "1"
+                and isinstance(detail, dict)
+                and detail.get("code") == primary_socket.PRIMARY_WORKER_DRAINING
+            ):
+                break
     except (OSError, httpx.TransportError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -90,14 +128,9 @@ async def _proxy_to_primary(
     if method == "DELETE" and response.status_code == status.HTTP_204_NO_CONTENT:
         return None
 
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = None
-
     if response.status_code >= 400:
         if isinstance(payload, dict) and "detail" in payload:
-            raise HTTPException(status_code=response.status_code, detail=payload["detail"])
+            raise HTTPException(status_code=response.status_code, detail=detail)
         raise HTTPException(
             status_code=response.status_code,
             detail={"code": "proxy_failed", "message": response.text},
@@ -221,7 +254,7 @@ async def create_printer(
     data: PrinterCreate,
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:create"),
+    principal=_PRINTER_CREATE,
 ):
     if data.location_id:
         result = await db.execute(
@@ -369,7 +402,7 @@ async def update_printer(
     data: PrinterUpdate,
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:update"),
+    principal=_PRINTER_UPDATE,
 ):
     updates = data.model_dump(exclude_unset=True)
 
@@ -427,7 +460,7 @@ async def delete_printer(
     printer_id: int,
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:delete"),
+    principal=_PRINTER_DELETE,
     delete_params: bool = Query(
         False, description="Also hard-delete printer_params for this printer"
     ),
@@ -658,7 +691,7 @@ async def _driver_lifecycle_via_primary(
             method="POST",
             path=f"/api/v1/printers/{printer_id}/driver/{action}",
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort remote cleanup
         logger.warning(
             f"Could not {action} the driver for printer {printer_id} on the "
             f"primary worker: {exc}"
@@ -756,8 +789,6 @@ async def driver_action(
     try:
         result: Any = None
         if callable(method):
-            import asyncio
-
             if asyncio.iscoroutinefunction(method):
                 result = await method(**params)
             else:
@@ -772,7 +803,7 @@ async def driver_action(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_params", "message": str(e)},
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - third-party driver call
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "action_failed", "message": str(e)},
@@ -808,7 +839,7 @@ async def driver_connected_models(
         return await _invoke_driver_method(driver, "list_connected_models")
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - third-party driver call
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "action_failed", "message": str(e)},
@@ -851,7 +882,7 @@ async def driver_profile_coverage(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - third-party driver call
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "action_failed", "message": str(e)},
@@ -970,7 +1001,7 @@ async def driver_cloud_presets(
         if isinstance(result, dict):
             return result
         return {"presets": result or [], "count": len(result or [])}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - third-party driver call
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "action_failed", "message": str(e)},
@@ -981,7 +1012,7 @@ async def driver_cloud_presets(
 async def reconnect_all_printers(
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:update"),
+    principal=_PRINTER_UPDATE,
 ):
     """Force reconnect for all active printers."""
     if not _is_primary_worker():
@@ -1031,7 +1062,7 @@ async def start_driver(
     printer_id: int,
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:update"),
+    principal=_PRINTER_UPDATE,
 ):
     if not _is_primary_worker():
         payload = await _proxy_to_primary(
@@ -1080,7 +1111,7 @@ async def stop_driver(
     printer_id: int,
     request: Request,
     db: DBSession,
-    principal=RequirePermission("printers:update"),
+    principal=_PRINTER_UPDATE,
 ):
     if not _is_primary_worker():
         payload = await _proxy_to_primary(
@@ -1189,7 +1220,7 @@ async def import_printer_params(
     printer_id: int,
     body: PrinterParamsImportData,
     db: DBSession,
-    principal=RequirePermission("printers:update"),
+    principal=_PRINTER_UPDATE,
 ):
     """Import printer-specific params from JSON. Upserts all entries."""
     result = await db.execute(
