@@ -661,7 +661,7 @@ def test_slots_projection_and_etag_ignore_timestamp():
     out = build_printer_display(_P(), {}, BAMBUDDY_STATUS)
     small = slots_only(out)
     assert set(small) == {"id", "name", "connected", "state", "active", "ams"}
-    assert set(small["ams"][0]["slots"][0]) == {"slot", "label", "empty", "active", "color", "material", "remaining_percent", "spool_id"}
+    assert set(small["ams"][0]["slots"][0]) == {"slot", "label", "empty", "active", "extruder", "color", "material", "remaining_percent", "spool_id"}
     a = {"schema_version": SCHEMA_VERSION, "generated_at": "t1", "printers": [out]}
     b = {"schema_version": SCHEMA_VERSION, "generated_at": "t2", "printers": [out]}
     assert compute_etag(a) == compute_etag(b)
@@ -1259,3 +1259,64 @@ async def test_display_collection_detaches_validated_state():
         1: {"connected": True},
         2: {"connected": True},
     }
+
+
+def _h2d_status(extruder_slots, active_extruder=1):
+    return {
+        "connected": True,
+        "gcode_state": "RUNNING",
+        "active_extruder": active_extruder,
+        "extruder_slots": extruder_slots,
+        "ams": {
+            "ams": [
+                {"id": 0, "tray": [{"id": n, "tray_type": "PLA", "tray_color": "111111FF"} for n in range(4)]},
+                {"id": 1, "tray": [{"id": n, "tray_type": "PETG", "tray_color": "FFFFFFFF"} for n in range(4)]},
+            ]
+        },
+        "vt_tray": [{"id": 254, "tray_type": "TPU", "tray_color": "FF0000FF"}],
+    }
+
+
+def test_each_loaded_slot_names_its_hotend():
+    """Both hotends hold filament; tray_now could only ever name one of them."""
+    out = build_printer_display(_P(), {}, _h2d_status({
+        "0": {"ams_id": 0, "slot_id": 2, "has_filament": True},
+        "1": {"ams_id": 1, "slot_id": 0, "has_filament": True},
+    }))
+    ams_a, ams_b = out["ams"][0]["slots"], out["ams"][1]["slots"]
+    assert ams_a[2]["extruder"] == "right"
+    assert ams_b[0]["extruder"] == "left"
+    assert [s["extruder"] for s in ams_a if s["slot"] != 2] == [None, None, None]
+    assert out["active"] == {"ams_id": 1, "slot": 0}
+
+
+def test_external_spools_name_their_hotend():
+    """Both holders loaded: 254 feeds the left hotend, 255 the right one."""
+    out = build_printer_display(_P(), {}, _h2d_status({
+        "0": {"ams_id": 255, "slot_id": 0, "has_filament": True},
+        "1": {"ams_id": 254, "slot_id": 0, "has_filament": True},
+    }) | {"vt_tray": [{"id": 254, "tray_type": "TPU", "tray_color": "FF0000FF"},
+                      {"id": 255, "tray_type": "PLA", "tray_color": "00FF00FF"}]})
+    external = next(u for u in out["ams"] if u["kind"] == "external")
+    assert [(s["slot"], s["extruder"]) for s in external["slots"]] == [(0, "left"), (1, "right")]
+    assert all(s["extruder"] is None for u in out["ams"] if u["kind"] == "ams" for s in u["slots"])
+
+
+def test_a_hotend_without_filament_marks_nothing():
+    out = build_printer_display(_P(), {}, _h2d_status({
+        "0": {"ams_id": 0, "slot_id": 1, "has_filament": False},
+    }))
+    assert out["ams"][0]["slots"][1]["extruder"] is None
+
+
+def test_single_nozzle_printer_has_no_extruder():
+    status = {"connected": True, "tray_now": 1,
+              "ams": {"ams": [{"id": 0, "tray": [{"id": 1, "tray_type": "PLA", "tray_color": "111111FF"}]}]}}
+    out = build_printer_display(_P(), {}, status)
+    assert out["ams"][0]["slots"][1]["active"] is True
+    assert all(s["extruder"] is None for s in out["ams"][0]["slots"])
+
+
+def test_slots_projection_carries_the_extruder():
+    out = build_printer_display(_P(), {}, _h2d_status({"1": {"ams_id": 0, "slot_id": 3, "has_filament": True}}))
+    assert slots_only(out)["ams"][0]["slots"][3]["extruder"] == "left"
