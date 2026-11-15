@@ -622,16 +622,16 @@ class TestDriverLifecycleWorkerRouting:
         assert printer.deleted_at is not None
 
 
-@pytest.mark.parametrize("gap", [False, True])
-async def test_primary_proxy_retries_explicit_drain_rejection(monkeypatch, private_socket_path, gap):
+@pytest.mark.parametrize("first", ["draining", "draining_then_gap", "gap"])
+async def test_primary_proxy_waits_for_replacement(monkeypatch, private_socket_path, first):
     received = []
 
     def handle(request):
         received.append(request)
-        if len(received) == 1:
+        if first != "gap" and len(received) == 1:
             return httpx.Response(503, headers={primary_socket.PRIMARY_RETRY_HEADER: "1"},
                                   json={"detail": {"code": "primary_worker_draining"}})
-        if gap and len(received) == 2:
+        if (first == "gap" and len(received) == 1) or (first == "draining_then_gap" and len(received) == 2):
             raise httpx.ConnectError("Replacement socket is not ready", request=request)
         return httpx.Response(200, json={"accepted": True})
 
@@ -641,13 +641,13 @@ async def test_primary_proxy_retries_explicit_drain_rejection(monkeypatch, priva
     assert await printers._proxy_to_primary(
         request, "POST", "/driver/action", {"spool_id": 67}
     ) == {"accepted": True}
-    assert len(received) == (3 if gap else 2)
+    assert len(received) == (3 if first == "draining_then_gap" else 2)
     assert all(r.url.query == b"slot=1" and r.content == b'{"spool_id":67}' for r in received)
 
 
 @pytest.mark.parametrize(
     ("rejected_first", "failure"),
-    [(False, httpx.ConnectError), (False, httpx.ReadTimeout), (True, httpx.ReadTimeout)],
+    [(False, httpx.ReadTimeout), (True, httpx.ReadTimeout)],
 )
 async def test_primary_proxy_stops_on_transport_failure(monkeypatch, private_socket_path, rejected_first, failure):
     received = []

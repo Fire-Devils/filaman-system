@@ -12,6 +12,7 @@ try {
   const errors = []
   const requests = []
   const problemSpools = []
+  const pluginDeletes = []
   let pendingPrint = null
   let previewGate
   let claimGate
@@ -41,6 +42,10 @@ try {
     const url = new URL(route.request().url())
     if (url.origin !== origin) return route.abort()
     requests.push(url.pathname)
+    if (route.request().method() === 'DELETE' && url.pathname.startsWith('/api/v1/admin/system/plugins/')) {
+      pluginDeletes.push(url.pathname)
+      return route.fulfill({ status: 204 })
+    }
     if (url.pathname === '/spools/3/print') return route.fulfill({ contentType: 'text/html', body: '<title>Label editor</title>' })
     if (url.pathname === '/api/v1/plugin-nav' && requests.filter(path => path === url.pathname).length === 1) {
       return route.fulfill({ status: 503 })
@@ -102,7 +107,11 @@ try {
       '/api/v1/admin/system/version-check': { update_available: true, latest_version: '9.0.0' },
       '/api/v1/manufacturers': { items: inventory, total: inventory.length },
       '/api/v1/colors': { items: inventory, total: inventory.length },
+      '/api/v1/admin/system/plugins': [
+        { plugin_key: 'filabrain', name: 'FilaBrain', page_url: '/plugin-page/filabrain', version: '0.1.18', plugin_type: 'integration', is_active: true, installed_by: 1 },
+      ],
       '/api/v1/plugin-nav': [
+        { plugin_key: 'filabrain', name: 'FilaBrain', page_url: '/plugin-page/filabrain' },
         { plugin_key: 'example', name: 'Example', page_url: '/plugin-page/example' },
         ...(showOtherPlugin ? [{ plugin_key: 'other', name: 'Other', page_url: '/plugin-page/other' }] : []),
         { plugin_key: 'native', name: 'Native', page_url: '/plugin-view/native-example' },
@@ -133,13 +142,14 @@ try {
       await page.locator('#fm-changelog-close').click()
     }
   }
-  const clickNav = async path => {
+  const clickNav = async (path, link = sidebar.locator(`a[href="${path}"]:visible:not(#sidebar-version-update)`)) => {
     const before = await page.locator('main').elementHandle()
-    await sidebar.locator(`a[href="${path}"]:visible:not(#sidebar-version-update)`).click()
+    await link.click()
     const target = new URL(path, origin)
     await page.waitForURL(url => url.pathname.replace(/\/$/, '') === target.pathname.replace(/\/$/, '') && url.search === target.search)
-    await sidebar.locator(`a[href="${path}"].active`).waitFor()
-    assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+    const sidebarPath = path === '/admin/system' ? '/admin' : path
+    assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true, path)
+    await sidebar.locator(`a[href="${sidebarPath}"].active`).waitFor()
     assert.equal(await before.evaluate(main => main.isConnected), false)
     await before.dispose()
     await page.locator('main').waitFor()
@@ -258,6 +268,29 @@ try {
       await sidebar.locator('#sidebar-color-library').waitFor()
     }
   }
+
+  await clickNav('/admin')
+  await clickNav('/admin/system', page.locator('main a[href="/admin/system"]'))
+  const filaBrainPath = '/plugin-view?p=filabrain'
+  const filaBrainRow = page.locator('#plugins-table').getByRole('link', { name: 'FilaBrain', exact: true })
+  await clickNav(filaBrainPath, filaBrainRow)
+  await page.locator('#plugin-frame[src="/plugin-page/filabrain"]').waitFor()
+  await page.goBack()
+  await filaBrainRow.waitFor()
+  assert.equal(await page.evaluate(() => window.sidebarBefore === document.querySelector('.fm-sidebar')), true)
+  await page.locator('#plugins-table .btn-delete').click()
+  const uninstallDialog = page.locator('#fm-confirm-overlay')
+  await uninstallDialog.waitFor()
+  const uninstallMessage = await uninstallDialog.locator('#fm-confirm-message').textContent()
+  await uninstallDialog.locator('#fm-confirm-ok').click()
+  await page.waitForFunction(message => document.querySelector('#fm-confirm-message')?.textContent !== message, uninstallMessage)
+  await page.goBack()
+  await page.locator('main[data-panel="admin"][data-panel-authorized]').waitFor()
+  assert.equal(await uninstallDialog.evaluate(dialog => dialog.open), false)
+  assert.deepEqual(pluginDeletes, [], 'Back during the plugin data prompt must not send a DELETE request')
+  await clickNav('/admin/system', page.locator('main a[href="/admin/system"]'))
+  await clickNav(filaBrainPath)
+  await page.locator('#plugin-frame[src="/plugin-page/filabrain"]').waitFor()
 
   for (const [path, table] of [['/manufacturers', 'manufacturers'], ['/filaments/colors', 'colors']]) {
     await clickNav(path)
