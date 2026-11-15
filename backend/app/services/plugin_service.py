@@ -12,7 +12,14 @@ import sys
 import tempfile
 import zipfile
 from collections.abc import Awaitable, Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
+from contextlib import (
+    AbstractContextManager,
+    ExitStack,
+    contextmanager,
+    nullcontext,
+    suppress,
+)
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +36,7 @@ from app.services.plugin_icon_service import (
 )
 
 logger = logging.getLogger(__name__)
+_PEER_RECOVERY_TIMEOUT = 20
 
 
 def is_integration_slug(slug: str) -> bool:
@@ -224,6 +232,40 @@ def plugin_archive_lock(
     return file_lock(DATA_DIR / "locks" / filename, shared=reading, blocking=blocking)
 
 
+def _plugin_environment_lock() -> AbstractContextManager[None]:
+    return exclusive_file_lock(DATA_DIR / "locks" / "plugin-python-environment.lock")
+
+
+def _dependency_failure_marker(plugin_dir: Path) -> Path:
+    archive_id = sha256(os.fsencode(plugin_dir.parent.resolve())).hexdigest()
+    return DATA_DIR / "locks" / "plugin-dependencies" / archive_id / f"{plugin_dir.name}.unavailable"
+
+
+def _legacy_dependency_failure_marker(plugin_dir: Path) -> Path:
+    return plugin_dir.parent / ".locks" / f"{plugin_dir.name}.dependency-unavailable"
+
+
+def plugin_dependencies_available(plugin_dir: Path) -> bool:
+    marker = _dependency_failure_marker(plugin_dir)
+    return not marker.is_file() and (
+        marker.with_suffix(".available").is_file() or not _legacy_dependency_failure_marker(plugin_dir).is_file()
+    )
+
+
+def _set_dependency_availability(plugin_dir: Path, *, available: bool) -> None:
+    marker = _dependency_failure_marker(plugin_dir)
+    if available:
+        if _legacy_dependency_failure_marker(plugin_dir).is_file():
+            # Override the old failure even when the archive directory is read-only.
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.with_suffix(".available").touch()
+        marker.unlink(missing_ok=True)
+    else:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+        marker.with_suffix(".available").unlink(missing_ok=True)
+
+
 @contextmanager
 def _plugin_write_lock(
     plugin_key: str, *, backup_restore_locked: bool = False, page_url: str | None = None,
@@ -236,7 +278,8 @@ def _plugin_write_lock(
         locks = PLUGINS_DIR / ".locks"
         hosted = isinstance(page_url, str) and page_url.startswith("/plugin-view/")
         shell_guard = exclusive_file_lock(locks / "integration-shell.lock") if hosted else nullcontext()
-        with restore_guard, shell_guard, exclusive_file_lock(locks / f"{plugin_key}.lock"):
+        # Hold through publication so another install sees the same requirements we resolved.
+        with restore_guard, shell_guard, exclusive_file_lock(locks / f"{plugin_key}.lock"), _plugin_environment_lock():
             yield
     except FileLockBusy as exc:
         raise PluginInstallError(
@@ -300,6 +343,7 @@ class PluginInstallService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.recovered_plugins: set[str] = set()
 
     # ------------------------------------------------------------------ #
     #  Installation
@@ -331,6 +375,8 @@ class PluginInstallService:
             ),
         ):
             plugin_key = manifest["plugin_key"]
+            self.recovered_plugins.clear()
+            installed_requirements: set[str] = set()
             try:
                 page_url = manifest.get("page_url")
                 if isinstance(page_url, str) and page_url.startswith("/plugin-view/"):
@@ -359,7 +405,11 @@ class PluginInstallService:
                 with _stage_archive(plugin_dir) as staging:
                     dependencies = manifest.get("dependencies") or []
                     if dependencies:
-                        await self._install_dependencies(dependencies, plugin_key)
+                        with plugin_archive_lock(reading=True):
+                            requirements = _published_plugin_requirements()
+                        requirements[plugin_key] = dependencies
+                        await self._install_dependencies(_combine_requirements(requirements), plugin_key)
+                        installed_requirements = set(requirements)
                     if manifest["plugin_type"] in ("import", "integration") and (plugin_dir / "router.py").is_file():
                         await _preflight_plugin_router(plugin_dir)
 
@@ -384,6 +434,10 @@ class PluginInstallService:
                 raise
 
             async def activate() -> None:
+                self._clear_dependency_failures(installed_requirements | {plugin_key})
+                self.recovered_plugins.discard(plugin_key)
+                if not installed_requirements and existing is not None:
+                    await self._recover_blocked_dependencies()
                 await self.db.refresh(plugin)
                 if after_install:
                     await after_install(plugin, previous_type)
@@ -405,6 +459,7 @@ class PluginInstallService:
     ) -> InstalledPlugin:
         """Remove the plugin and its record under the same lock used for installs."""
         with _plugin_write_lock(plugin_key):
+            self.recovered_plugins.clear()
             try:
                 plugin = await self.get_plugin(plugin_key, for_update=True)
                 if not plugin:
@@ -427,12 +482,48 @@ class PluginInstallService:
                 await self.db.rollback()
                 raise
 
-            if after_delete:
-                cancelled = await _settle_plugin_write(after_delete(plugin)) or cancelled
-            if cancelled:
+            async def activate() -> None:
+                self._clear_dependency_failures({plugin_key})
+                self.recovered_plugins.discard(plugin_key)
+                await self._recover_blocked_dependencies()
+                if after_delete:
+                    await after_delete(plugin)
+
+            if await _settle_plugin_write(activate()) or cancelled:
                 raise asyncio.CancelledError
             logger.info(f"Plugin '{plugin_key}' deinstalliert")
             return plugin
+
+    def _clear_dependency_failures(self, plugin_keys: set[str]) -> None:
+        for plugin_key in plugin_keys:
+            plugin_dir = PLUGINS_DIR / plugin_key
+            try:
+                if not plugin_dependencies_available(plugin_dir):
+                    _set_dependency_availability(plugin_dir, available=True)
+                    self.recovered_plugins.add(plugin_key)
+            except OSError:
+                logger.exception("Could not clear dependency failure for plugin %s", plugin_key)
+
+    async def _recover_blocked_dependencies(self) -> None:
+        # The caller still holds the environment lock after publishing the archive change.
+        try:
+            requirements = _published_plugin_requirements()
+            blocked = {
+                key for key in requirements
+                if not plugin_dependencies_available(PLUGINS_DIR / key)
+            }
+        except OSError:
+            logger.exception("Could not read plugin dependency status after publishing the archive change")
+            return
+        if not blocked:
+            return
+        try:
+            async with asyncio.timeout(_PEER_RECOVERY_TIMEOUT):
+                available = await _provision_compatible_requirements(requirements, required=requirements.keys() - blocked)
+        except TimeoutError:
+            logger.warning("Timed out recovering blocked plugin dependencies; they will be retried on restart")
+        else:
+            self._clear_dependency_failures(available & blocked)
 
     # ------------------------------------------------------------------ #
     #  Installierte Plugins auflisten
@@ -575,7 +666,7 @@ class PluginInstallService:
         entries = [
             e
             for e in os.listdir(tmpdir)
-            if not e.startswith(".") and not e == "__MACOSX"
+            if not e.startswith(".") and e != "__MACOSX"
         ]
 
         if len(entries) == 1 and os.path.isdir(os.path.join(tmpdir, entries[0])):
@@ -768,7 +859,7 @@ class PluginInstallService:
 
         try:
             source = driver_path.read_text(encoding="utf-8")
-        except Exception as e:
+        except (OSError, UnicodeError) as e:
             raise PluginInstallError(
                 f"driver.py kann nicht gelesen werden: {e}",
                 "unreadable_driver",
@@ -791,9 +882,7 @@ class PluginInstallService:
                 driver_class_found = True
                 # Pruefen ob BaseDriver in den Basisklassen vorkommt
                 for base in node.bases:
-                    if isinstance(base, ast.Name) and base.id == "BaseDriver":
-                        inherits_base = True
-                    elif isinstance(base, ast.Attribute) and base.attr == "BaseDriver":
+                    if isinstance(base, ast.Name) and base.id == "BaseDriver" or isinstance(base, ast.Attribute) and base.attr == "BaseDriver":
                         inherits_base = True
 
         if not driver_class_found:
@@ -843,8 +932,9 @@ class PluginInstallService:
 
         return existing
 
+    @staticmethod
     async def _install_dependencies(
-        self, dependencies: list[str], plugin_key: str
+        dependencies: list[str], plugin_key: str, *, dry_run: bool = False
     ) -> None:
         """Python-Pakete installieren (versucht uv, dann pip)."""
         logger.info(f"Installiere Abhaengigkeiten fuer '{plugin_key}': {dependencies}")
@@ -861,11 +951,12 @@ class PluginInstallService:
                     "--python",
                     sys.executable,
                     "--quiet",
+                    *(["--dry-run"] if dry_run else []),
                     *dependencies,
                 ]
             )
         commands.append(
-            [sys.executable, "-m", "pip", "install", "--quiet", *dependencies]
+            [sys.executable, "-m", "pip", "install", "--quiet", *(["--dry-run"] if dry_run else []), *dependencies]
         )
 
         last_error = ""
@@ -878,7 +969,7 @@ class PluginInstallService:
                     start_new_session=True,
                 )
                 try:
-                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+                    _, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
                 except (asyncio.TimeoutError, asyncio.CancelledError):
                     with suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
@@ -887,11 +978,11 @@ class PluginInstallService:
 
                 if process.returncode == 0:
                     logger.info(
-                        f"Abhaengigkeiten fuer '{plugin_key}' erfolgreich installiert"
+                        "Dependencies for '%s' %s", plugin_key, "resolved" if dry_run else "installed"
                     )
                     return
 
-                last_error = stderr.decode().strip() if stderr else "Unbekannter Fehler"
+                last_error = stderr.decode(errors="replace").strip() if stderr else "Unbekannter Fehler"
                 logger.warning(
                     f"Dependency install fehlgeschlagen mit {cmd[0]}: {last_error}"
                 )
@@ -969,3 +1060,114 @@ class PluginInstallService:
 
         logger.info(f"Eingebautes Plugin '{plugin_key}' v{version} registriert")
         return plugin
+
+
+def _published_plugin_requirements() -> dict[str, list[str]]:
+    requirements: dict[str, list[str]] = {}
+    for manifest_path in sorted(PLUGINS_DIR.glob("*/plugin.json")):
+        plugin_key = manifest_path.parent.name
+        if not PLUGIN_KEY_PATTERN.fullmatch(plugin_key):
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(manifest, dict):
+                raise TypeError("Plugin manifest must be a JSON object")
+            dependencies = manifest.get("dependencies")
+            if dependencies is None:
+                continue
+            if not isinstance(dependencies, list) or any(
+                not isinstance(item, str) or not item.strip() for item in dependencies
+            ):
+                raise TypeError("Plugin dependencies must be a list of package requirements")
+            if dependencies:
+                requirements[plugin_key] = dependencies
+        except (OSError, TypeError, ValueError, RecursionError) as exc:
+            logger.warning("Could not read plugin requirements for %s: %s", plugin_key, exc)
+    return requirements
+
+
+def _combine_requirements(requirements: dict[str, list[str]]) -> list[str]:
+    return list(dict.fromkeys(dependency for packages in requirements.values() for dependency in packages))
+
+
+async def provision_installed_plugin_dependencies() -> dict[str, bool]:
+    """Restore persisted plugin requirements before Gunicorn imports any routes."""
+    builtin_plugins = Path(__file__).parent.parent / "plugins"
+    if PLUGINS_DIR == builtin_plugins or not PLUGINS_DIR.is_dir():
+        return {}
+
+    while True:
+        with ExitStack() as locks:
+            try:
+                locks.enter_context(_plugin_environment_lock())
+                with plugin_archive_lock(reading=True):
+                    requirements = _published_plugin_requirements()
+            except FileLockBusy:
+                locks.close()
+                # Leave the event loop free to process shutdown while another process publishes.
+                await asyncio.sleep(0.1)
+                continue
+
+            available = await _provision_compatible_requirements(requirements)
+            # New workers discover these markers after cold start and on every HUP.
+            for plugin_key in requirements:
+                _set_dependency_availability(PLUGINS_DIR / plugin_key, available=plugin_key in available)
+            return {key: key in available for key in requirements}
+
+
+async def _provision_compatible_requirements(
+    requirements: dict[str, list[str]], *, required: set[str] | None = None,
+) -> set[str]:
+    if not requirements:
+        return set()
+
+    try:
+        await PluginInstallService._install_dependencies(
+            _combine_requirements(requirements), ", ".join(requirements)
+        )
+    except (OSError, PluginInstallError) as exc:
+        logger.warning("Could not provision installed plugins together: %s", exc)
+    else:
+        return set(requirements)
+
+    if len(requirements) == 1:
+        return set()
+
+    installed = {key: requirements[key] for key in requirements if key in (required or ())}
+    accepted = installed.copy()
+    for plugin_key, dependencies in requirements.items():
+        if plugin_key in accepted:
+            continue
+        candidate = accepted | {plugin_key: dependencies}
+        try:
+            await PluginInstallService._install_dependencies(
+                _combine_requirements(candidate), plugin_key, dry_run=True
+            )
+        except (OSError, PluginInstallError) as exc:
+            logger.warning("Could not provision plugin %s: %s", plugin_key, exc)
+        else:
+            accepted = candidate
+
+    if not (accepted.keys() - installed.keys()):
+        return set(installed)
+    try:
+        await PluginInstallService._install_dependencies(
+            _combine_requirements(accepted), "compatible installed plugins"
+        )
+    except (OSError, PluginInstallError) as exc:
+        logger.warning("Could not provision compatible installed plugins: %s", exc)
+    else:
+        return set(accepted)
+
+    # Resolving metadata may succeed even when a package cannot build its wheel.
+    for plugin_key, dependencies in requirements.items():
+        if plugin_key in installed:
+            continue
+        candidate = installed | {plugin_key: dependencies}
+        try:
+            await PluginInstallService._install_dependencies(_combine_requirements(candidate), plugin_key)
+        except (OSError, PluginInstallError) as exc:
+            logger.warning("Could not install dependencies for plugin %s: %s", plugin_key, exc)
+        else:
+            installed = candidate
+    return set(installed)
