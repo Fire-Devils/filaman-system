@@ -315,6 +315,95 @@ class TestLocationCRUD:
         assert spool.location_id is None
 
 
+class TestLocationTypes:
+    @pytest.mark.asyncio
+    async def test_type_is_trimmed_and_reuses_existing_spelling(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        headers = {"X-CSRF-Token": csrf_token}
+
+        builtin = await client.post(
+            "/api/v1/locations", json={"name": "Shelf 1", "location_type": " storage "}, headers=headers
+        )
+        assert builtin.json()["location_type"] == "Storage"
+
+        first = await client.post(
+            "/api/v1/locations", json={"name": "Box 1", "location_type": "Dry Box"}, headers=headers
+        )
+        second = await client.post(
+            "/api/v1/locations", json={"name": "Box 2", "location_type": "dry box"}, headers=headers
+        )
+        assert first.json()["location_type"] == "Dry Box"
+        assert second.json()["location_type"] == "Dry Box"
+
+        cleared = await client.patch(
+            f"/api/v1/locations/{second.json()['id']}", json={"location_type": "  "}, headers=headers
+        )
+        assert cleared.json()["location_type"] is None
+
+    @pytest.mark.asyncio
+    async def test_driver_managed_location_defaults_to_ams(self, auth_client, db_session):
+        client, _ = auth_client
+        slot = await _create_location(db_session, name="AMS A1")
+        slot.custom_fields = {"managed_by": "bambuddy_plugin"}
+        await db_session.commit()
+
+        response = await client.get(f"/api/v1/locations/{slot.id}")
+        assert response.json()["location_type"] == "AMS"
+        await db_session.refresh(slot)
+        assert slot.location_type is None
+
+    @pytest.mark.asyncio
+    async def test_bulk_change_type(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        a = await _create_location(db_session, name="Bulk A")
+        b = await _create_location(db_session, name="Bulk B")
+
+        response = await client.request(
+            "PATCH",
+            "/api/v1/locations/bulk",
+            json={"location_ids": [a.id, b.id, 999999], "location_type": "Storage"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert sorted(body["updated"]) == sorted([a.id, b.id])
+        assert body["not_found"] == [999999]
+        for loc in (a, b):
+            await db_session.refresh(loc)
+            assert loc.location_type == "Storage"
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_skips_locations_with_active_spools(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        empty = await _create_location(db_session, name="Bulk Empty")
+        busy = await _create_location(db_session, name="Bulk Busy")
+        archived_only = await _create_location(db_session, name="Bulk Archived")
+        manufacturer = await _create_manufacturer(db_session)
+        filament = await _create_filament(db_session, manufacturer.id)
+        active = await _get_status(db_session, "new")
+        archived = await _get_status(db_session, "archived")
+        await _create_spool(db_session, filament.id, active.id, location_id=busy.id)
+        old_spool = await _create_spool(db_session, filament.id, archived.id, location_id=archived_only.id)
+
+        response = await client.request(
+            "DELETE",
+            "/api/v1/locations/bulk",
+            json={"location_ids": [empty.id, busy.id, archived_only.id]},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert sorted(body["deleted"]) == sorted([empty.id, archived_only.id])
+        assert body["skipped"] == [busy.id]
+        remaining = (await db_session.execute(select(Location.id))).scalars().all()
+        assert busy.id in remaining
+        assert empty.id not in remaining and archived_only.id not in remaining
+        await db_session.refresh(old_spool)
+        assert old_spool.location_id is None
+
+
 class TestSpoolCRUD:
     @pytest.mark.asyncio
     async def test_list_spool_statuses(self, auth_client):

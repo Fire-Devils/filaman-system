@@ -23,6 +23,9 @@ from app.api.v1.schemas_spool import (
     BulkStatusChangeRequest,
     ConsumptionRequest,
     DeviceMeasurementRequest,
+    LocationBulkDelete,
+    LocationBulkResult,
+    LocationBulkTypeUpdate,
     LocationCreate,
     LocationResponse,
     LocationUpdate,
@@ -92,6 +95,50 @@ async def _reject_driver_managed_create_location(
 
 router_locations = APIRouter(prefix="/locations", tags=["locations"])
 
+# Offered in the UI out of the box. Anything else is a user write-in.
+BUILTIN_LOCATION_TYPES = ("AMS", "Storage")
+DRIVER_MANAGED_DEFAULT_TYPE = "AMS"
+
+
+async def _normalize_location_type(db: AsyncSession, value: str | None) -> str | None:
+    """Trim the type and reuse an existing spelling, so "storage" typed into
+    the write-in box lands in the same bucket as "Storage"."""
+    if value is None:
+        return None
+    value = value.strip()[:50]
+    if not value:
+        return None
+    for builtin in BUILTIN_LOCATION_TYPES:
+        if builtin.casefold() == value.casefold():
+            return builtin
+    existing = await db.execute(
+        select(Location.location_type)
+        .where(func.lower(Location.location_type) == value.lower())
+        .limit(1)
+    )
+    return existing.scalar_one_or_none() or value
+
+
+def _effective_location_type(location: Location) -> str | None:
+    # Slots created by a printer driver predate this column, so they show up
+    # as AMS until someone sets a type explicitly.
+    if location.location_type:
+        return location.location_type
+    if location.is_driver_managed:
+        return DRIVER_MANAGED_DEFAULT_TYPE
+    return None
+
+
+def _location_response(location: Location, spool_count: int = 0) -> LocationResponse:
+    return LocationResponse(
+        id=location.id,
+        name=location.name,
+        identifier=location.identifier,
+        location_type=_effective_location_type(location),
+        custom_fields=location.custom_fields,
+        spool_count=spool_count,
+    )
+
 
 @router_locations.get("", response_model=PaginatedResponse[LocationResponse])
 async def list_locations(
@@ -121,19 +168,7 @@ async def list_locations(
     result = await db.execute(stmt)
     rows = result.all()
 
-    # Convert to response objects
-    items = []
-    for loc, count in rows:
-        # Dynamically attach count to location object so Pydantic can read it
-        # or construct dict
-        loc_dict = {
-            "id": loc.id,
-            "name": loc.name,
-            "identifier": loc.identifier,
-            "custom_fields": loc.custom_fields,
-            "spool_count": count,
-        }
-        items.append(LocationResponse(**loc_dict))
+    items = [_location_response(loc, count) for loc, count in rows]
 
     count_result = await db.execute(select(func.count()).select_from(Location))
     total = count_result.scalar() or 0
@@ -149,12 +184,73 @@ async def create_location(
     db: DBSession,
     principal=RequirePermission("locations:create"),
 ):
-    location = Location(**data.model_dump())
+    values = data.model_dump()
+    values["location_type"] = await _normalize_location_type(db, values.get("location_type"))
+    location = Location(**values)
     db.add(location)
     await db.commit()
     await db.refresh(location)
     await event_bus.publish({"event": "locations_changed"})
-    return location
+    return _location_response(location)
+
+
+@router_locations.patch("/bulk", response_model=LocationBulkResult)
+async def bulk_update_location_type(
+    data: LocationBulkTypeUpdate,
+    db: DBSession,
+    principal=RequirePermission("locations:update"),
+):
+    location_type = await _normalize_location_type(db, data.location_type)
+    ids = list(dict.fromkeys(data.location_ids))
+    result = await db.execute(select(Location).where(Location.id.in_(ids)))
+    found = {loc.id: loc for loc in result.scalars()}
+    for loc in found.values():
+        loc.location_type = location_type
+    await db.commit()
+    if found:
+        await event_bus.publish({"event": "locations_changed"})
+    return LocationBulkResult(
+        updated=[i for i in ids if i in found],
+        not_found=[i for i in ids if i not in found],
+    )
+
+
+@router_locations.delete("/bulk", response_model=LocationBulkResult)
+async def bulk_delete_locations(
+    data: LocationBulkDelete,
+    db: DBSession,
+    principal=RequirePermission("locations:delete"),
+):
+    ids = list(dict.fromkeys(data.location_ids))
+    result = await db.execute(select(Location).where(Location.id.in_(ids)))
+    found = {loc.id: loc for loc in result.scalars()}
+
+    archived_status_id = (
+        select(SpoolStatus.id).where(SpoolStatus.key == "archived").scalar_subquery()
+    )
+    busy_result = await db.execute(
+        select(Spool.location_id)
+        .where(Spool.location_id.in_(list(found)))
+        .where(or_(Spool.status_id != archived_status_id, archived_status_id.is_(None)))
+        .distinct()
+    )
+    busy = set(busy_result.scalars())
+    deletable = [i for i in ids if i in found and i not in busy]
+
+    if deletable:
+        await db.execute(
+            update(Spool).where(Spool.location_id.in_(deletable)).values(location_id=None)
+        )
+        for location_id in deletable:
+            await db.delete(found[location_id])
+        await db.commit()
+        await event_bus.publish({"event": "locations_changed"})
+
+    return LocationBulkResult(
+        deleted=deletable,
+        skipped=[i for i in ids if i in busy],
+        not_found=[i for i in ids if i not in found],
+    )
 
 
 @router_locations.get("/{location_id}", response_model=LocationResponse)
@@ -166,7 +262,7 @@ async def get_location(location_id: int, db: DBSession, principal: PrincipalDep)
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Location not found"},
         )
-    return location
+    return _location_response(location)
 
 
 @router_locations.patch("/{location_id}", response_model=LocationResponse)
@@ -184,13 +280,16 @@ async def update_location(
             detail={"code": "not_found", "message": "Location not found"},
         )
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    values = data.model_dump(exclude_unset=True)
+    if "location_type" in values:
+        values["location_type"] = await _normalize_location_type(db, values["location_type"])
+    for key, value in values.items():
         setattr(location, key, value)
 
     await db.commit()
     await db.refresh(location)
     await event_bus.publish({"event": "locations_changed"})
-    return location
+    return _location_response(location)
 
 
 @router_locations.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)

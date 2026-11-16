@@ -20,6 +20,10 @@ class Location(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     identifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Free-text label ("AMS", "Storage", or whatever the user writes in). Purely
+    # for grouping and filtering; driver ownership is still decided by
+    # custom_fields.managed_by, never by this column.
+    location_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     custom_fields: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
 
     spools: Mapped[list["Spool"]] = relationship(back_populates="location")

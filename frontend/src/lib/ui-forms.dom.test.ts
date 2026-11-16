@@ -12,6 +12,8 @@ import * as actions from './table-actions'
 import * as colors from './colors'
 import * as inventoryScroll from './inventory-scroll'
 import * as filters from './table-column-filters'
+import * as locationTypes from './location-types'
+import * as driverLocations from './driver-managed-locations'
 import { api } from './api'
 import { createExtraFieldDefinitionDialog } from './extra-field-definition-dialog'
 import { copyText } from './clipboard'
@@ -24,11 +26,11 @@ let intercept: ((path: string, init?: RequestInit) => Response | Promise<Respons
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
-  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks,
+  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, ...locationTypes, ...driverLocations, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
-  cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', spool_count: 1 }] }),
+  cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', location_type: 'Storage', spool_count: 1 }] }),
 }
 const boot = (path: string) => bootAstroPage(path, dependencies)
 function change(id: string, value: string | boolean) {
@@ -150,7 +152,50 @@ it.each([['en', 'Edit'], ['de', 'Bearbeiten']] as const)('retains quoted locatio
   change('location-name', 'Shelf B')
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
-  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf B', identifier: 'UID' })
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf B', identifier: 'UID', location_type: 'Storage' })
+})
+
+it('filters locations by type and bulk deletes only the shown selection', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'Storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', spool_count: 1 },
+    { id: 5, name: 'Dry box', identifier: null, location_type: 'Dry Box', spool_count: 0 },
+  ] } as never)
+  const confirm = vi.fn(async () => true)
+  vi.stubGlobal('__fmConfirm', confirm)
+  vi.stubGlobal('__fmSuccess', vi.fn(async () => true))
+  intercept = (path, init) => {
+    if (path === '/api/v1/locations/bulk' && init?.method === 'DELETE') {
+      return Response.json({ updated: [], deleted: [3], skipped: [], not_found: [] })
+    }
+  }
+  // A remembered filter for a type that no longer exists falls back to all.
+  localStorage.setItem('filaman-locations-type-filter', 'Gone')
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('#locations-table input[data-location-id]')).toHaveLength(3))
+    expect(document.querySelector<HTMLSelectElement>('#type-filter')!.value).toBe('')
+    const filterOptions = [...document.querySelectorAll<HTMLOptionElement>('#type-filter option')].map(o => o.textContent)
+    expect(filterOptions).toEqual(['All types', 'AMS', 'Storage', 'Dry Box', 'No type'])
+
+    change('type-filter', 'Storage')
+    const rows = document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')
+    expect([...rows].map(cb => cb.dataset.locationId)).toEqual(['3'])
+
+    change('type-filter', '')
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="5"]')!.click()
+    change('type-filter', 'Storage')
+    change('bulk-select-all', true)
+    expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(true)
+    document.querySelector<HTMLButtonElement>('#bulk-btn-delete')!.click()
+    await vi.waitFor(() => expect(writes()).toHaveLength(1))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(confirm.mock.calls[0][0]).toContain('(Shelf)')
+    expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ location_ids: [3] })
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
 })
 
 it('preserves alpha colors and keeps in-use Delete unavailable', async () => {

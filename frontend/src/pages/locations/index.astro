@@ -15,7 +15,11 @@ import Layout from '../../layouts/Layout.astro'
     </button>
   </div>
 
-  <div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem;">
+      <span data-i18n="locations.filterType">Type</span>
+      <select id="type-filter" class="fm-select" style="width: auto; min-width: 160px;"></select>
+    </label>
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -42,10 +46,16 @@ import Layout from '../../layouts/Layout.astro'
         to { transform: rotate(360deg); }
       }
     </style>
+    <style is:global>
+      /* Write-in box sits under the Type select, in the control column. */
+      .fm-compact-form .location-type-custom { grid-column: -2; }
+    </style>
     <table class="fm-table fm-admin-table">
       <thead>
         <tr>
+          <th style="width: 40px; text-align: center;"><input type="checkbox" id="bulk-select-all" class="fm-checkbox bulk-checkbox" aria-label="Select shown locations" data-i18n-aria-label="locations.selectShown" /></th>
           <th class="col-name" data-i18n="locations.name">Name</th>
+          <th class="col-type" data-i18n="locations.type">Type</th>
           <th class="col-identifier" data-i18n="locations.identifier">Identifier</th>
           <th class="col-spools" style="text-align: right;" data-i18n="locations.spools">Spools</th>
           <th style="text-align: right;" data-i18n="common.actions">Actions</th>
@@ -54,7 +64,7 @@ import Layout from '../../layouts/Layout.astro'
       </thead>
       <tbody id="locations-table">
         <tr>
-          <td colspan="5" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+          <td colspan="7" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -79,6 +89,18 @@ import Layout from '../../layouts/Layout.astro'
           />
         </div>
         <div>
+          <label for="location-type" class="fm-label" data-i18n="locations.type">Type</label>
+          <select id="location-type" class="fm-select"></select>
+          <input
+            type="text"
+            id="location-type-custom"
+            class="fm-input hidden location-type-custom"
+            maxlength="50"
+            data-i18n-placeholder="locations.typeWriteInPlaceholder"
+            placeholder="New type name"
+          />
+        </div>
+        <div>
           <label for="location-identifier" class="fm-label" data-i18n="locations.identifier">
             Identifier
           </label>
@@ -91,6 +113,35 @@ import Layout from '../../layouts/Layout.astro'
         <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
     </form>
   </FormDialog>
+
+  <FormDialog id="bulk-type-modal" titleId="bulk-type-title" titleKey="locations.bulkChangeType" title="Change Type">
+    <Fragment slot="actions">
+      <button type="submit" form="bulk-type-form" id="bulk-type-submit" class="fm-btn fm-btn-primary" data-i18n="common.save">Save</button>
+      <button type="button" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
+    </Fragment>
+    <form id="bulk-type-form" class="fm-compact-form">
+      <p id="bulk-type-text" style="margin: 0;"></p>
+        <div>
+          <label for="bulk-type" class="fm-label" data-i18n="locations.type">Type</label>
+          <select id="bulk-type" class="fm-select"></select>
+          <input
+            type="text"
+            id="bulk-type-custom"
+            class="fm-input hidden location-type-custom"
+            maxlength="50"
+            data-i18n-placeholder="locations.typeWriteInPlaceholder"
+            placeholder="New type name"
+          />
+        </div>
+    </form>
+  </FormDialog>
+
+  <div id="bulk-action-bar" class="bulk-action-bar">
+    <span class="bulk-count" id="bulk-count"></span>
+    <button class="fm-btn fm-btn-outline" id="bulk-btn-type" data-i18n="locations.bulkChangeType">Change Type</button>
+    <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="locations.bulkDelete">Delete</button>
+    <button class="fm-btn fm-btn-outline" id="bulk-btn-clear" data-i18n="locations.bulkClear">Clear Selection</button>
+  </div>
 
   <FormDialog id="rfid-modal" titleId="rfid-title" titleKey="rfid.writeTag" title="Write RFID Tag">
     <Fragment slot="actions">
@@ -119,6 +170,14 @@ import Layout from '../../layouts/Layout.astro'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { bindFormState } from '../../lib/form-state'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { isDriverManagedLocation } from '../../lib/driver-managed-locations'
+    import {
+      TYPE_FILTER_ALL,
+      TYPE_FILTER_NONE,
+      TYPE_WRITE_IN,
+      locationTypeOptions,
+      matchesTypeFilter,
+    } from '../../lib/location-types'
 
     mountPanel('locations', async (panelSignal) => {
     await initI18n()
@@ -127,14 +186,89 @@ import Layout from '../../layouts/Layout.astro'
     const formState = bindFormState(modalForm, document.getElementById('modal-submit') as HTMLButtonElement)
     const formDialog = bindFormDialog(document.getElementById('modal-container') as HTMLDialogElement, { canClose: () => !formState.busy })
 
-    interface LocationRecord { id: number; name: string; identifier: string | null; spool_count: number }
+    interface LocationRecord { id: number; name: string; identifier: string | null; location_type: string | null; custom_fields?: Record<string, unknown> | null; spool_count: number }
     interface ActiveDevice { id: number; name: string; ip_address: string | null }
+    interface BulkResult { updated: number[]; deleted: number[]; skipped: number[]; not_found: number[] }
     const dialogs = window as unknown as {
-      __fmConfirm: (message: string) => Promise<boolean>
+      __fmConfirm: (message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }) => Promise<boolean>
       __fmAlert: (message: string) => Promise<boolean>
+      __fmSuccess: (message: string) => Promise<boolean>
     }
     let locations: LocationRecord[] = []
     let activeDevices: ActiveDevice[] = []
+    const selectedIds = new Set<number>()
+
+    const FILTER_KEY = 'filaman-locations-type-filter'
+    const typeFilter = document.getElementById('type-filter') as HTMLSelectElement
+    let currentFilter = TYPE_FILTER_ALL
+    try { currentFilter = localStorage.getItem(FILTER_KEY) ?? TYPE_FILTER_ALL } catch { /* storage blocked */ }
+
+    function knownTypes(): string[] {
+      return locationTypeOptions(locations.map(loc => loc.location_type))
+    }
+
+    function visibleLocations(): LocationRecord[] {
+      return locations.filter(loc => matchesTypeFilter(loc.location_type, currentFilter))
+    }
+
+    function renderTypeFilter() {
+      const types = knownTypes()
+      // A saved filter whose type no longer exists would hide every row.
+      if (currentFilter !== TYPE_FILTER_ALL && currentFilter !== TYPE_FILTER_NONE &&
+          !types.some(type => matchesTypeFilter(type, currentFilter))) {
+        currentFilter = TYPE_FILTER_ALL
+      }
+      typeFilter.innerHTML = [
+        `<option value="${TYPE_FILTER_ALL}">${escapeHtml(t('locations.filterAll'))}</option>`,
+        ...types.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`),
+        `<option value="${TYPE_FILTER_NONE}">${escapeHtml(t('locations.typeNone'))}</option>`,
+      ].join('')
+      const special = currentFilter === TYPE_FILTER_ALL || currentFilter === TYPE_FILTER_NONE
+      typeFilter.value = special ? currentFilter
+        : types.find(type => matchesTypeFilter(type, currentFilter)) ?? TYPE_FILTER_ALL
+    }
+
+    typeFilter.addEventListener('change', () => {
+      currentFilter = typeFilter.value
+      try { localStorage.setItem(FILTER_KEY, currentFilter) } catch { /* storage blocked */ }
+      // Bulk actions only ever apply to rows you can see.
+      const shown = new Set(visibleLocations().map(loc => loc.id))
+      for (const id of selectedIds) if (!shown.has(id)) selectedIds.delete(id)
+      renderLocations()
+    }, { signal: panelSignal })
+
+    function fillTypePicker(prefix: string, current: string | null) {
+      const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
+      const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      select.innerHTML = [
+        `<option value="">${escapeHtml(t('locations.typeNone'))}</option>`,
+        ...knownTypes().map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`),
+        `<option value="${TYPE_WRITE_IN}">${escapeHtml(t('locations.typeWriteIn'))}</option>`,
+      ].join('')
+      select.value = current ?? ''
+      custom.value = ''
+      syncTypePicker(prefix)
+    }
+
+    function syncTypePicker(prefix: string) {
+      const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
+      const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      const writeIn = select.value === TYPE_WRITE_IN
+      custom.classList.toggle('hidden', !writeIn)
+      custom.required = writeIn
+      if (writeIn) custom.focus()
+    }
+
+    function readTypePicker(prefix: string): string | null {
+      const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
+      const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      const value = select.value === TYPE_WRITE_IN ? custom.value : select.value
+      return value.trim() || null
+    }
+
+    for (const prefix of ['location', 'bulk']) {
+      document.getElementById(`${prefix}-type`)?.addEventListener('change', () => syncTypePicker(prefix), { signal: panelSignal })
+    }
     
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
@@ -157,13 +291,16 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const data = await cachedFetchAllPages<LocationRecord>(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         locations = data.items
+        const ids = new Set(locations.map(loc => loc.id))
+        for (const id of selectedIds) if (!ids.has(id)) selectedIds.delete(id)
+        renderTypeFilter()
         renderLocations()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load locations:', error)
         document.getElementById('locations-table')!.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--error-text);">${t('locations.failedLoad')}</td>
+            <td colspan="7" style="text-align: center; color: var(--error-text);">${t('locations.failedLoad')}</td>
           </tr>
         `
       }
@@ -172,18 +309,20 @@ import Layout from '../../layouts/Layout.astro'
     function renderLocations() {
       const tbody = document.getElementById('locations-table')!
       
-      if (locations.length === 0) {
+      const shown = visibleLocations()
+      if (shown.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--text-muted);">
-              ${t('locations.noLocations')}
+            <td colspan="7" style="text-align: center; color: var(--text-muted);">
+              ${t(locations.length === 0 ? 'locations.noLocations' : 'locations.noMatches')}
             </td>
           </tr>
         `
+        updateBulkBar()
         return
       }
       
-      tbody.innerHTML = locations.map(loc => {
+      tbody.innerHTML = shown.map(loc => {
         const hasTag = !!loc.identifier
         const isOnline = activeDevices.length > 0
         const iconColor = hasTag ? 'color: #10b981;' : 'color: var(--text-muted);'
@@ -202,8 +341,12 @@ import Layout from '../../layouts/Layout.astro'
 
 
         return `
-        <tr style="cursor: pointer;" onclick="window.location='/spools?location_id=${loc.id}'">
+        <tr class="${selectedIds.has(loc.id) ? 'bulk-selected' : ''}" style="cursor: pointer;" onclick="window.location='/spools?location_id=${loc.id}'">
+          <td style="padding: 12px; text-align: center;" onclick="event.stopPropagation()">
+            <input type="checkbox" class="fm-checkbox bulk-checkbox" data-location-id="${loc.id}" aria-label="${escapeHtml(t('locations.selectLocation', { name: loc.name }))}" ${selectedIds.has(loc.id) ? 'checked' : ''} />
+          </td>
           <td class="col-name" style="padding: 12px; font-weight: 500;">${escapeHtml(loc.name)}</td>
+          <td class="col-type" style="padding: 12px; color: var(--text-muted);">${escapeHtml(loc.location_type || '-')}</td>
           <td class="col-identifier" style="padding: 12px; color: var(--text-muted); font-family: monospace; font-size: 0.85rem;">${escapeHtml(loc.identifier || '-')}</td>
           <td class="col-spools" style="padding: 12px; text-align: right; color: var(--text-muted);">${loc.spool_count || 0}</td>
           <td style="padding: 12px; text-align: right;" onclick="event.stopPropagation()">
@@ -214,6 +357,17 @@ import Layout from '../../layouts/Layout.astro'
       `}).join('')
       
       translatePage()
+      updateBulkBar()
+
+      tbody.querySelectorAll<HTMLInputElement>('input[data-location-id]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const id = Number(cb.dataset.locationId)
+          if (cb.checked) selectedIds.add(id)
+          else selectedIds.delete(id)
+          cb.closest('tr')?.classList.toggle('bulk-selected', cb.checked)
+          updateBulkBar()
+        })
+      })
 
       tbody.querySelectorAll<HTMLButtonElement>('button[data-rfid-location]').forEach(button => {
         button.addEventListener('click', () => openRfidModal(Number(button.dataset.rfidLocation)))
@@ -223,7 +377,7 @@ import Layout from '../../layouts/Layout.astro'
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
           const location = locations.find(location => location.id === Number(target.dataset.id))
-          if (location) openModal(location.id, location.name, location.identifier || '')
+          if (location) openModal(location.id, location.name, location.identifier || '', location.location_type)
         })
       })
       
@@ -259,7 +413,7 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
-    function openModal(id: number | null = null, name: string = '', identifier: string = '') {
+    function openModal(id: number | null = null, name: string = '', identifier: string = '', locationType: string | null = null) {
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('location-id') as HTMLInputElement
       const nameInput = document.getElementById('location-name') as HTMLInputElement
@@ -270,6 +424,10 @@ import Layout from '../../layouts/Layout.astro'
       idInput.value = id ? String(id) : ''
       nameInput.value = name
       identifierInput.value = identifier
+      // New locations start out as whatever the list is filtered to.
+      const filterType = currentFilter === TYPE_FILTER_ALL || currentFilter === TYPE_FILTER_NONE ? null
+        : knownTypes().find(type => matchesTypeFilter(type, currentFilter)) ?? null
+      fillTypePicker('location', id ? locationType : filterType)
       error.classList.add('hidden')
       
       formState.reset()
@@ -289,7 +447,7 @@ import Layout from '../../layouts/Layout.astro'
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
-      const data = { name, identifier }
+      const data = { name, identifier, location_type: readTypePicker('location') }
       
       error.classList.add('hidden')
       if (formState.busy || !modalForm.reportValidity()) return
@@ -511,12 +669,130 @@ import Layout from '../../layouts/Layout.astro'
       }
     })
     
+    // ── Bulk actions ──────────────────────────────────────────────────
+    const selectAll = document.getElementById('bulk-select-all') as HTMLInputElement
+
+    function updateBulkBar() {
+      document.getElementById('bulk-count')!.textContent = t('locations.bulkSelected', { count: selectedIds.size })
+      document.getElementById('bulk-action-bar')!.classList.toggle('visible', selectedIds.size > 0)
+      const shownIds = visibleLocations().map(loc => loc.id)
+      const all = shownIds.length > 0 && shownIds.every(id => selectedIds.has(id))
+      const some = shownIds.some(id => selectedIds.has(id))
+      selectAll.disabled = shownIds.length === 0
+      selectAll.checked = all
+      selectAll.indeterminate = some && !all
+    }
+
+    selectAll.addEventListener('change', () => {
+      // Only the rows on screen; selections hidden by the filter stay as they are.
+      for (const loc of visibleLocations()) {
+        if (selectAll.checked) selectedIds.add(loc.id)
+        else selectedIds.delete(loc.id)
+      }
+      renderLocations()
+    }, { signal: panelSignal })
+
+    document.getElementById('bulk-btn-clear')?.addEventListener('click', () => {
+      selectedIds.clear()
+      renderLocations()
+    }, { signal: panelSignal })
+
+    async function sendBulk(method: 'PATCH' | 'DELETE', body: Record<string, unknown>): Promise<BulkResult> {
+      const res = await fetch('/api/v1/locations/bulk', {
+        method,
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+        credentials: 'include',
+        signal: getAbortSignal(),
+        body: JSON.stringify({ location_ids: [...selectedIds], ...body }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.detail?.message || data.message || t('locations.bulkError'))
+      }
+      return res.json()
+    }
+
+    function namesOf(ids: number[]): string {
+      return ids.map(id => locations.find(loc => loc.id === id)?.name ?? `#${id}`).join(', ')
+    }
+
+    const bulkTypeForm = document.getElementById('bulk-type-form') as HTMLFormElement
+    const bulkTypeDialog = bindFormDialog(document.getElementById('bulk-type-modal') as HTMLDialogElement)
+
+    document.getElementById('bulk-btn-type')?.addEventListener('click', () => {
+      if (selectedIds.size === 0) return
+      document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: selectedIds.size })
+      const types = new Set(locations.filter(loc => selectedIds.has(loc.id)).map(loc => loc.location_type))
+      fillTypePicker('bulk', types.size === 1 ? [...types][0] : null)
+      bulkTypeDialog.open()
+    }, { signal: panelSignal })
+
+    bulkTypeForm.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      if (!bulkTypeForm.reportValidity()) return
+      const submit = document.getElementById('bulk-type-submit') as HTMLButtonElement
+      submit.disabled = true
+      try {
+        const result = await sendBulk('PATCH', { location_type: readTypePicker('bulk') })
+        if (panelSignal.aborted) return
+        bulkTypeDialog.close()
+        selectedIds.clear()
+        invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
+        await loadLocations()
+        if (result.not_found.length) await dialogs.__fmAlert(t('locations.bulkNotFound', { count: result.not_found.length }))
+      } catch (err) {
+        if (isAbortError(err) || panelSignal.aborted) return
+        await dialogs.__fmAlert(err instanceof Error ? err.message : t('locations.bulkError'))
+      } finally {
+        submit.disabled = false
+      }
+    }, { signal: panelSignal })
+
+    document.getElementById('bulk-btn-delete')?.addEventListener('click', async () => {
+      const count = selectedIds.size
+      if (count === 0) return
+      const selected = locations.filter(loc => selectedIds.has(loc.id))
+      const driverSlots = selected.filter(loc => isDriverManagedLocation(loc)).length
+      const listed = selected.slice(0, 10).map(loc => loc.name).join(', ')
+      const more = selected.length > 10 ? ` ${t('locations.bulkMore', { count: selected.length - 10 })}` : ''
+      // The confirm dialog collapses newlines, so keep this on one line.
+      let message = `${t('locations.bulkConfirmDelete', { count })} (${listed}${more})`
+      if (driverSlots) message += ` ${t('locations.bulkDeleteDriverWarning', { count: driverSlots })}`
+      const confirmed = await dialogs.__fmConfirm(message, {
+        title: t('locations.bulkDelete'),
+        okLabel: t('locations.bulkDelete'),
+        isDanger: true,
+      })
+      if (!confirmed || panelSignal.aborted) return
+      try {
+        const result = await sendBulk('DELETE', {})
+        if (panelSignal.aborted) return
+        selectedIds.clear()
+        invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
+        const skippedNames = namesOf(result.skipped)
+        await loadLocations()
+        if (result.skipped.length) {
+          await dialogs.__fmAlert(t('locations.bulkDeleteSkipped', {
+            deleted: result.deleted.length,
+            skipped: result.skipped.length,
+            names: skippedNames,
+          }))
+        } else {
+          await dialogs.__fmSuccess(t('locations.bulkDeleteSuccess', { count: result.deleted.length }))
+        }
+      } catch (err) {
+        if (isAbortError(err) || panelSignal.aborted) return
+        await dialogs.__fmAlert(err instanceof Error ? err.message : t('locations.bulkError'))
+      }
+    }, { signal: panelSignal })
+
     // ── Column Picker & Resize ─────────────────────────────────────────
     const locColumnGroups: ColumnGroup[] = [
       {
         heading: t('common.columnsStandard'),
         columns: [
           { key: 'name', label: t('locations.name') },
+          { key: 'type', label: t('locations.type') },
           { key: 'identifier', label: t('locations.identifier') },
           { key: 'spools', label: t('locations.spools') },
         ],
@@ -524,8 +800,9 @@ import Layout from '../../layouts/Layout.astro'
     ]
     initColumnPicker({
       signal: panelSignal,
-      storageKey: 'filaman-columns-locations',
-      defaultVisible: ['name', 'identifier', 'spools'],
+      // New key so the Type column shows up for people with saved column prefs.
+      storageKey: 'filaman-columns-locations-v2',
+      defaultVisible: ['name', 'type', 'identifier', 'spools'],
       groups: locColumnGroups,
       btnId: 'btn-columns',
       dropdownId: 'columns-dropdown',
