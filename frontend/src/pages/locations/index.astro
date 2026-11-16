@@ -100,6 +100,7 @@ import Layout from '../../layouts/Layout.astro'
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
+          <p id="location-type-hint" class="hidden" style="margin: 6px 0 0; color: var(--text-muted); font-size: 0.8rem;"></p>
         </div>
         <div>
           <label for="location-identifier" class="fm-label" data-i18n="locations.identifier">
@@ -110,6 +111,7 @@ import Layout from '../../layouts/Layout.astro'
             id="location-identifier"
             class="fm-input"
           />
+          <p id="location-identifier-hint" class="hidden" style="margin: 6px 0 0; color: var(--text-muted); font-size: 0.8rem;"></p>
         </div>
         <div id="modal-error" class="fm-alert-error hidden" role="alert"></div>
     </form>
@@ -122,6 +124,7 @@ import Layout from '../../layouts/Layout.astro'
     </Fragment>
     <form id="bulk-type-form" class="fm-compact-form">
       <p id="bulk-type-text" style="margin: 0;"></p>
+      <p id="bulk-type-hint" class="hidden" style="margin: 0; color: var(--text-muted); font-size: 0.85rem;"></p>
         <div>
           <label for="bulk-type" class="fm-label" data-i18n="locations.type">Type</label>
           <select id="bulk-type" class="fm-select"></select>
@@ -431,7 +434,12 @@ import Layout from '../../layouts/Layout.astro'
           const target = e.currentTarget as HTMLButtonElement
           const id = parseInt(target.dataset.id!)
           
-          if (!(await dialogs.__fmConfirm(t('locations.confirmDelete')))) return
+          const location = locations.find(loc => loc.id === id)
+          if (!(await dialogs.__fmConfirm(t('locations.confirmDelete', { name: location?.name ?? `#${id}` }), {
+            title: t('locations.bulkDelete'),
+            okLabel: t('locations.bulkDelete'),
+            isDanger: true,
+          }))) return
           
           try {
             const response = await fetch(`/api/v1/locations/${id}`, {
@@ -474,8 +482,16 @@ import Layout from '../../layouts/Layout.astro'
         ? null
         : decodeTypeOption(currentFilter) ?? currentFilter
       const filterType = resolveKnownType(knownTypes(), filterRaw)
-      const allowNone = !location || !isDriverManagedLocation(location)
+      const managed = Boolean(location && isDriverManagedLocation(location))
+      const allowNone = !managed
       fillTypePicker('location', location ? location.location_type : filterType, allowNone)
+      const typeHint = document.getElementById('location-type-hint')!
+      typeHint.textContent = managed ? t('locations.typeManagedHint') : ''
+      typeHint.classList.toggle('hidden', !managed)
+      identifierInput.readOnly = managed
+      const identifierHint = document.getElementById('location-identifier-hint')!
+      identifierHint.textContent = managed ? t('locations.identifierManaged') : ''
+      identifierHint.classList.toggle('hidden', !managed)
       error.classList.add('hidden')
       
       formState.reset()
@@ -766,6 +782,14 @@ import Layout from '../../layouts/Layout.astro'
       return ids.map(id => lookup.get(id) ?? locations.find(loc => loc.id === id)?.name ?? `#${id}`).join(', ')
     }
 
+    const BULK_LIMIT = 1000
+
+    function rejectIfTooMany(count: number): boolean {
+      if (count <= BULK_LIMIT) return false
+      void dialogs.__fmAlert(t('locations.bulkTooMany', { max: BULK_LIMIT, count }))
+      return true
+    }
+
     let bulkTypeTargetIds: number[] = []
     const bulkTypeForm = document.getElementById('bulk-type-form') as HTMLFormElement
     const bulkTypeDialog = bindFormDialog(document.getElementById('bulk-type-modal') as HTMLDialogElement, {
@@ -773,12 +797,16 @@ import Layout from '../../layouts/Layout.astro'
     })
 
     document.getElementById('bulk-btn-type')?.addEventListener('click', () => {
-      if (selectedIds.size === 0) return
+      if (selectedIds.size === 0 || rejectIfTooMany(selectedIds.size)) return
       bulkTypeTargetIds = [...selectedIds]
       document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: bulkTypeTargetIds.length })
       const targetSet = new Set(bulkTypeTargetIds)
       const selected = locations.filter(loc => targetSet.has(loc.id))
-      const allowNone = !selected.some(loc => isDriverManagedLocation(loc))
+      const driverSlots = selected.filter(loc => isDriverManagedLocation(loc)).length
+      const hint = document.getElementById('bulk-type-hint')!
+      hint.textContent = driverSlots ? t('locations.bulkTypeDriverHint', { count: driverSlots }) : ''
+      hint.classList.toggle('hidden', driverSlots === 0)
+      const allowNone = driverSlots === 0
       const known = knownTypes()
       const types = new Set(
         selected.map(loc => resolveKnownType(known, loc.location_type) ?? loc.location_type?.trim() ?? null),
@@ -804,6 +832,7 @@ import Layout from '../../layouts/Layout.astro'
         for (const id of targetIds) selectedIds.delete(id)
         invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
         await loadLocations()
+        if (result.updated.length) await dialogs.__fmSuccess(t('locations.bulkChangeTypeSuccess', { count: result.updated.length }))
         if (result.not_found.length) await dialogs.__fmAlert(t('locations.bulkNotFound', { count: result.not_found.length }))
       } catch (err) {
         if (isAbortError(err) || panelSignal.aborted) return
@@ -817,7 +846,7 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('bulk-btn-delete')?.addEventListener('click', async () => {
       const targetIds = [...selectedIds]
       const count = targetIds.length
-      if (count === 0) return
+      if (count === 0 || rejectIfTooMany(count)) return
       const targetSet = new Set(targetIds)
       const selected = locations.filter(loc => targetSet.has(loc.id))
       const nameSnapshot = new Map(selected.map(loc => [loc.id, loc.name]))

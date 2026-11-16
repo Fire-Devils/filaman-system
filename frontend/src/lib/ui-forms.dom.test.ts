@@ -153,6 +153,13 @@ it.each([['en', 'Edit'], ['de', 'Bearbeiten']] as const)('retains quoted locatio
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
   expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf B', identifier: 'UID', location_type: 'Storage' })
+  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(false))
+  const confirm = vi.fn(async (_message: string, _options?: { isDanger?: boolean }) => false)
+  vi.stubGlobal('__fmConfirm', confirm)
+  document.querySelector<HTMLButtonElement>('.btn-delete')!.click()
+  await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+  expect(confirm.mock.calls[0][0]).toContain('Shelf "A" <blue>')
+  expect(confirm.mock.calls[0][1]).toMatchObject({ isDanger: true })
 })
 
 it('filters locations by type and bulk deletes only the shown selection', async () => {
@@ -210,6 +217,8 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
 
     // Non-canonical "storage" resolves to "Storage" instead of falling back to No type.
     document.querySelector<HTMLButtonElement>('.btn-edit[data-id="3"]')!.click()
+    expect(document.querySelector<HTMLInputElement>('#location-identifier')!.readOnly).toBe(false)
+    expect(document.getElementById('location-type-hint')!.classList.contains('hidden')).toBe(true)
     const singleOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
     expect(singleOptions).toEqual(['No type', 'AMS', 'Storage', 'Other (write in)…'])
     expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('Storage'))
@@ -230,6 +239,9 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     const driverOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
     expect(driverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
     expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('AMS'))
+    expect(document.querySelector<HTMLInputElement>('#location-identifier')!.readOnly).toBe(true)
+    expect(document.getElementById('location-identifier-hint')!.textContent).toContain('printer driver')
+    expect(document.getElementById('location-type-hint')!.classList.contains('hidden')).toBe(false)
     document.querySelector<HTMLButtonElement>('#modal-cancel')!.click()
 
     document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
@@ -237,11 +249,14 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     const bulkDriverOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
     expect(bulkDriverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
     expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
+    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('must keep a type')
     document.querySelector<HTMLButtonElement>('#bulk-type-modal [data-dialog-close]')!.click()
 
     // Mixed selection (Storage + driver-managed AMS) requires an explicit choice instead of defaulting to AMS.
     const alert = vi.fn(async (_message: string) => true)
+    const success = vi.fn(async () => true)
     vi.stubGlobal('__fmAlert', alert)
+    vi.stubGlobal('__fmSuccess', success)
     intercept = (path, init) => {
       if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
         return Response.json({ detail: [{ msg: 'List should have at most 1000 items' }] }, { status: 422 })
@@ -250,6 +265,7 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="3"]')!.click()
     document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
     const mixedOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
+    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('must keep a type')
     expect(mixedOptions).toEqual(['Choose a type…', 'AMS', 'Storage', 'Other (write in)…'])
     expect(document.querySelector<HTMLSelectElement>('#bulk-type')!.value).toBe('')
     expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(true)
@@ -258,6 +274,15 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
     submit('bulk-type-form')
     await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('List should have at most 1000 items'))
+    await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false))
+
+    intercept = (path, init) => {
+      if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
+        return Response.json({ updated: [3, 4], deleted: [], skipped: [], not_found: [] })
+      }
+    }
+    submit('bulk-type-form')
+    await vi.waitFor(() => expect(success).toHaveBeenCalledWith('Updated the type of 2 location(s).'))
   } finally {
     dependencies.cachedFetchAllPages = fixture
   }

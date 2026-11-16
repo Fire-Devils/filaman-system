@@ -7,6 +7,7 @@ from app.models import (
     FilamentColor,
     Location,
     Manufacturer,
+    Printer,
     Spool,
     SpoolEvent,
     SpoolStatus,
@@ -430,6 +431,72 @@ class TestLocationTypes:
         assert empty.id not in remaining and archived_only.id not in remaining
         await db_session.refresh(old_spool)
         assert old_spool.location_id is None
+
+    @pytest.mark.asyncio
+    async def test_driver_managed_location_keeps_its_type_and_identifier(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        slot = await _create_location(db_session, name="AMS A1", identifier="bambuddy_13_0_0")
+        slot.custom_fields = {"managed_by": "bambuddy_plugin"}
+        slot.location_type = "AMS"
+        plain = await _create_location(db_session, name="Shelf")
+        plain.location_type = "Storage"
+        await db_session.commit()
+        headers = {"X-CSRF-Token": csrf_token}
+
+        cleared = await client.patch(
+            f"/api/v1/locations/{slot.id}", json={"location_type": None}, headers=headers
+        )
+        assert cleared.status_code == 400
+        await db_session.refresh(slot)
+        assert slot.location_type == "AMS"
+
+        renamed = await client.patch(
+            f"/api/v1/locations/{slot.id}", json={"identifier": "moved"}, headers=headers
+        )
+        assert renamed.status_code == 400
+        await db_session.refresh(slot)
+        assert slot.identifier == "bambuddy_13_0_0"
+
+        same = await client.patch(
+            f"/api/v1/locations/{slot.id}",
+            json={"identifier": "bambuddy_13_0_0", "name": "AMS A1 slot"},
+            headers=headers,
+        )
+        assert same.status_code == 200
+
+        bulk = await client.request(
+            "PATCH",
+            "/api/v1/locations/bulk",
+            json={"location_ids": [slot.id, plain.id], "location_type": None},
+            headers=headers,
+        )
+        assert bulk.status_code == 400
+        await db_session.refresh(plain)
+        assert plain.location_type == "Storage"
+
+    @pytest.mark.asyncio
+    async def test_delete_keeps_a_location_assigned_to_a_printer(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        slot = await _create_location(db_session, name="Workshop")
+        empty = await _create_location(db_session, name="Spare")
+        db_session.add(Printer(name="H2D", driver_key="bambuddy", location_id=slot.id))
+        await db_session.commit()
+        headers = {"X-CSRF-Token": csrf_token}
+
+        single = await client.delete(f"/api/v1/locations/{slot.id}", headers=headers)
+        assert single.status_code == 409
+        assert (await client.get(f"/api/v1/locations/{slot.id}")).status_code == 200
+
+        bulk = await client.request(
+            "DELETE",
+            "/api/v1/locations/bulk",
+            json={"location_ids": [slot.id, empty.id]},
+            headers=headers,
+        )
+        assert bulk.status_code == 200
+        body = bulk.json()
+        assert body["skipped"] == [slot.id]
+        assert body["deleted"] == [empty.id]
 
 
 class TestSpoolCRUD:

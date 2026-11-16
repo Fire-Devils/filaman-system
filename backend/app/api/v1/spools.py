@@ -51,6 +51,7 @@ from app.models import (
     FilamentColor,
     Location,
     Manufacturer,
+    Printer,
     Spool,
     SpoolEvent,
     SpoolStatus,
@@ -130,6 +131,28 @@ async def _normalize_location_type(
         if candidate and candidate.casefold() == folded:
             return candidate
     return value
+
+
+def _reject_clearing_driver_managed_type(
+    locations: Collection[Location], new_type: str | None
+) -> None:
+    """Driver slots always display a type. Clearing it is only a stored null that
+    the UI then shows as AMS again, so refuse the write."""
+    if new_type is not None:
+        return
+    managed = [loc.name for loc in locations if loc.is_driver_managed]
+    if not managed:
+        return
+    shown = ", ".join(repr(name) for name in managed[:5])
+    if len(managed) > 5:
+        shown = f"{shown} (+{len(managed) - 5})"
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "code": "driver_managed_type_required",
+            "message": f"Printer-managed locations must keep a type: {shown}",
+        },
+    )
 
 
 def _effective_location_type(location: Location) -> str | None:
@@ -217,6 +240,7 @@ async def bulk_update_location_type(
     location_type = await _normalize_location_type(db, data.location_type, exclude_ids=ids)
     result = await db.execute(select(Location).where(Location.id.in_(ids)))
     found = {loc.id: loc for loc in result.scalars()}
+    _reject_clearing_driver_managed_type(found.values(), location_type)
     for loc in found.values():
         loc.location_type = location_type
     await db.commit()
@@ -248,6 +272,13 @@ async def bulk_delete_locations(
         .distinct()
     )
     busy = set(busy_result.scalars())
+    if found:
+        printer_rows = await db.execute(
+            select(Printer.location_id).where(Printer.location_id.in_(list(found)))
+        )
+        # A printer pointing at this location would otherwise lose that link when
+        # the row is deleted. Keep the location and report it with the rest.
+        busy.update(row for row in printer_rows.scalars() if row is not None)
     deletable = [i for i in ids if i in found and i not in busy]
 
     if deletable:
@@ -298,6 +329,22 @@ async def update_location(
         values["location_type"] = await _normalize_location_type(
             db, values["location_type"], exclude_ids=(location_id,)
         )
+        _reject_clearing_driver_managed_type((location,), values["location_type"])
+    if location.is_driver_managed and "identifier" in values:
+        incoming = values["identifier"].strip() if isinstance(values["identifier"], str) else None
+        incoming = incoming or None
+        if incoming != location.identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "driver_managed_identifier",
+                    "message": (
+                        f"Location {location.name!r} is managed by a printer driver. "
+                        "Its identifier is set by the driver and cannot be changed."
+                    ),
+                },
+            )
+        values["identifier"] = location.identifier
     for key, value in values.items():
         setattr(location, key, value)
 
@@ -345,6 +392,18 @@ async def delete_location(
             detail={
                 "code": "conflict",
                 "message": "Location has spools, cannot delete",
+            },
+        )
+
+    printer_hit = await db.execute(
+        select(Printer.id).where(Printer.location_id == location_id).limit(1)
+    )
+    if printer_hit.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "conflict",
+                "message": "Location is assigned to a printer, cannot delete",
             },
         )
 
