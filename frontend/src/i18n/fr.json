@@ -121,6 +121,7 @@
     "deviceTimeout": "Délai dépassé : l'appareil n'a pas répondu dans les 180 secondes.",
     "deviceUnreachable": "Appareil injoignable. Veuillez vérifier le réseau.",
     "noDeviceOnlineTooltip": "Aucun appareil RFID en ligne",
+    "driverManagedTooltip": "Les emplacements AMS sont gérés par un pilote d'imprimante et ne peuvent pas recevoir de tag.",
     "noDeviceOnline": "Aucun appareil RFID en ligne",
     "removedFrom": "Il a été retiré de {item}",
     "secondTagWillBeAdded": "Remarque : cette bobine a déjà un tag RFID. Le nouveau tag sera ajouté comme deuxième tag (un par face).",

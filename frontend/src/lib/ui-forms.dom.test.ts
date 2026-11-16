@@ -214,6 +214,10 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
   try {
     await boot('locations/index')
     await vi.waitFor(() => expect(document.querySelectorAll('.btn-edit')).toHaveLength(2))
+    expect(document.querySelector<HTMLButtonElement>('[data-rfid-location="3"]')!.title).toBe('No RFID device online')
+    const amsTag = document.querySelector<HTMLButtonElement>('[data-rfid-location="4"]')!
+    expect(amsTag.disabled).toBe(true)
+    expect(amsTag.title).toContain('cannot take a location tag')
 
     // Non-canonical "storage" resolves to "Storage" instead of falling back to No type.
     document.querySelector<HTMLButtonElement>('.btn-edit[data-id="3"]')!.click()

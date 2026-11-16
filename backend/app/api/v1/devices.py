@@ -261,6 +261,23 @@ async def write_rfid_tag(
         await ensure_any_permission(db, principal, "spools:update")
     elif data.location_id:
         await ensure_any_permission(db, principal, "locations:update")
+        location = await db.get(Location, data.location_id)
+        if location is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "not_found", "message": "Location not found"},
+            )
+        if location.is_driver_managed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "driver_managed_location",
+                    "message": (
+                        f"Location {location.name!r} is an AMS slot managed by a "
+                        "printer driver and cannot take a location tag."
+                    ),
+                },
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -482,7 +499,17 @@ async def device_rfid_result(
     if data.location_id:
         loc_res = await db.execute(select(Location).where(Location.id == data.location_id))
         target_location = loc_res.scalar_one_or_none()
-        if target_location:
+        if target_location and target_location.is_driver_managed:
+            # The identifier is the driver's AMS address. Replacing it with a
+            # chip UID is what makes the printer driver lose the slot.
+            write_result["status"] = "error"
+            write_result["error_message"] = (
+                "AMS slots are managed by the printer driver and cannot take a location tag."
+            )
+            logger.warning(
+                f"Refused location tag for driver-managed location {target_location.id}"
+            )
+        elif target_location:
             removed_info.extend(
                 await service.release_rfid_uid(
                     data.tag_uuid,

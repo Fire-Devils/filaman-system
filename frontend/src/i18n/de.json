@@ -121,6 +121,7 @@
     "deviceTimeout": "Zeitüberschreitung: Das Gerät hat nicht innerhalb von 180 Sekunden geantwortet.",
     "deviceUnreachable": "Gerät nicht erreichbar. Bitte Netzwerk prüfen.",
     "noDeviceOnlineTooltip": "Kein RFID-Schreibgerät online",
+    "driverManagedTooltip": "AMS-Slots werden von einem Druckertreiber verwaltet und können keinen Standort-Tag erhalten.",
     "noDeviceOnline": "Kein RFID-Gerät online",
     "removedFrom": "Er wurde von {item} entfernt",
     "secondTagWillBeAdded": "Hinweis: Diese Spule hat bereits einen RFID-Tag. Der neue Tag wird als zweiter Tag hinzugefügt (einer pro Seite).",
