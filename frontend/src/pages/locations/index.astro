@@ -96,6 +96,7 @@ import Layout from '../../layouts/Layout.astro'
             id="location-type-custom"
             class="fm-input hidden location-type-custom"
             maxlength="50"
+            pattern=".*\S.*"
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
@@ -129,6 +130,7 @@ import Layout from '../../layouts/Layout.astro'
             id="bulk-type-custom"
             class="fm-input hidden location-type-custom"
             maxlength="50"
+            pattern=".*\S.*"
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
@@ -175,8 +177,11 @@ import Layout from '../../layouts/Layout.astro'
       TYPE_FILTER_ALL,
       TYPE_FILTER_NONE,
       TYPE_WRITE_IN,
+      decodeTypeOption,
+      encodeTypeOption,
       locationTypeOptions,
       matchesTypeFilter,
+      resolveKnownType,
     } from '../../lib/location-types'
 
     mountPanel('locations', async (panelSignal) => {
@@ -214,18 +219,17 @@ import Layout from '../../layouts/Layout.astro'
     function renderTypeFilter() {
       const types = knownTypes()
       // A saved filter whose type no longer exists would hide every row.
-      if (currentFilter !== TYPE_FILTER_ALL && currentFilter !== TYPE_FILTER_NONE &&
-          !types.some(type => matchesTypeFilter(type, currentFilter))) {
-        currentFilter = TYPE_FILTER_ALL
+      if (currentFilter !== TYPE_FILTER_ALL && currentFilter !== TYPE_FILTER_NONE) {
+        const raw = decodeTypeOption(currentFilter) ?? currentFilter
+        const resolved = resolveKnownType(types, raw)
+        currentFilter = resolved ? encodeTypeOption(resolved) : TYPE_FILTER_ALL
       }
       typeFilter.innerHTML = [
         `<option value="${TYPE_FILTER_ALL}">${escapeHtml(t('locations.filterAll'))}</option>`,
-        ...types.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`),
+        ...types.map(type => `<option value="${escapeHtml(encodeTypeOption(type))}">${escapeHtml(type)}</option>`),
         `<option value="${TYPE_FILTER_NONE}">${escapeHtml(t('locations.typeNone'))}</option>`,
       ].join('')
-      const special = currentFilter === TYPE_FILTER_ALL || currentFilter === TYPE_FILTER_NONE
-      typeFilter.value = special ? currentFilter
-        : types.find(type => matchesTypeFilter(type, currentFilter)) ?? TYPE_FILTER_ALL
+      typeFilter.value = currentFilter
     }
 
     typeFilter.addEventListener('change', () => {
@@ -237,32 +241,50 @@ import Layout from '../../layouts/Layout.astro'
       renderLocations()
     }, { signal: panelSignal })
 
-    function fillTypePicker(prefix: string, current: string | null) {
+    function fillTypePicker(prefix: string, current: string | null, allowNone = true) {
       const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
       const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      const types = knownTypes()
+      const resolved = resolveKnownType(types, current)
       select.innerHTML = [
-        `<option value="">${escapeHtml(t('locations.typeNone'))}</option>`,
-        ...knownTypes().map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`),
+        ...(allowNone ? [`<option value="">${escapeHtml(t('locations.typeNone'))}</option>`] : []),
+        ...types.map(type => `<option value="${escapeHtml(encodeTypeOption(type))}">${escapeHtml(type)}</option>`),
         `<option value="${TYPE_WRITE_IN}">${escapeHtml(t('locations.typeWriteIn'))}</option>`,
       ].join('')
-      select.value = current ?? ''
-      custom.value = ''
-      syncTypePicker(prefix)
+      if (resolved) {
+        select.value = encodeTypeOption(resolved)
+        custom.value = ''
+      } else if (current?.trim()) {
+        select.value = TYPE_WRITE_IN
+        custom.value = current.trim()
+      } else {
+        select.value = allowNone ? '' : encodeTypeOption(types[0])
+        custom.value = ''
+      }
+      syncTypePicker(prefix, false)
     }
 
-    function syncTypePicker(prefix: string) {
+    function syncTypePicker(prefix: string, focusCustom = true) {
       const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
       const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
       const writeIn = select.value === TYPE_WRITE_IN
       custom.classList.toggle('hidden', !writeIn)
       custom.required = writeIn
-      if (writeIn) custom.focus()
+      if (writeIn && focusCustom) custom.focus()
+    }
+
+    function normalizeWriteIn(prefix: string) {
+      const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
+      const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      if (select.value === TYPE_WRITE_IN) custom.value = custom.value.trim()
     }
 
     function readTypePicker(prefix: string): string | null {
       const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
       const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
-      const value = select.value === TYPE_WRITE_IN ? custom.value : select.value
+      const value = select.value === TYPE_WRITE_IN
+        ? custom.value
+        : decodeTypeOption(select.value) ?? select.value
       return value.trim() || null
     }
 
@@ -291,9 +313,11 @@ import Layout from '../../layouts/Layout.astro'
       try {
         const data = await cachedFetchAllPages<LocationRecord>(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
         locations = data.items
-        const ids = new Set(locations.map(loc => loc.id))
-        for (const id of selectedIds) if (!ids.has(id)) selectedIds.delete(id)
         renderTypeFilter()
+        // A live reload can delete a selected location or move it out of the
+        // current filter; bulk actions must only ever cover rows on screen.
+        const shown = new Set(visibleLocations().map(loc => loc.id))
+        for (const id of selectedIds) if (!shown.has(id)) selectedIds.delete(id)
         renderLocations()
       } catch (error) {
         if (isAbortError(error)) return
@@ -377,7 +401,7 @@ import Layout from '../../layouts/Layout.astro'
         btn.addEventListener('click', (e) => {
           const target = e.currentTarget as HTMLButtonElement
           const location = locations.find(location => location.id === Number(target.dataset.id))
-          if (location) openModal(location.id, location.name, location.identifier || '', location.location_type)
+          if (location) openModal(location)
         })
       })
       
@@ -413,21 +437,24 @@ import Layout from '../../layouts/Layout.astro'
       })
     }
     
-    function openModal(id: number | null = null, name: string = '', identifier: string = '', locationType: string | null = null) {
+    function openModal(location?: LocationRecord) {
       const title = document.getElementById('modal-title')!
       const idInput = document.getElementById('location-id') as HTMLInputElement
       const nameInput = document.getElementById('location-name') as HTMLInputElement
       const identifierInput = document.getElementById('location-identifier') as HTMLInputElement
       const error = document.getElementById('modal-error')!
       
-      title.textContent = id ? t('locations.editLocation') : t('locations.addLocation')
-      idInput.value = id ? String(id) : ''
-      nameInput.value = name
-      identifierInput.value = identifier
+      title.textContent = location ? t('locations.editLocation') : t('locations.addLocation')
+      idInput.value = location ? String(location.id) : ''
+      nameInput.value = location?.name ?? ''
+      identifierInput.value = location?.identifier ?? ''
       // New locations start out as whatever the list is filtered to.
-      const filterType = currentFilter === TYPE_FILTER_ALL || currentFilter === TYPE_FILTER_NONE ? null
-        : knownTypes().find(type => matchesTypeFilter(type, currentFilter)) ?? null
-      fillTypePicker('location', id ? locationType : filterType)
+      const filterRaw = currentFilter === TYPE_FILTER_ALL || currentFilter === TYPE_FILTER_NONE
+        ? null
+        : decodeTypeOption(currentFilter) ?? currentFilter
+      const filterType = resolveKnownType(knownTypes(), filterRaw)
+      const allowNone = !location || !isDriverManagedLocation(location)
+      fillTypePicker('location', location ? location.location_type : filterType, allowNone)
       error.classList.add('hidden')
       
       formState.reset()
@@ -447,10 +474,12 @@ import Layout from '../../layouts/Layout.astro'
       const error = document.getElementById('modal-error') as HTMLDivElement
       const submitBtn = document.getElementById('modal-submit') as HTMLButtonElement
       
-      const data = { name, identifier, location_type: readTypePicker('location') }
-      
       error.classList.add('hidden')
-      if (formState.busy || !modalForm.reportValidity()) return
+      if (formState.busy) return
+      normalizeWriteIn('location')
+      if (!modalForm.reportValidity()) return
+
+      const data = { name, identifier, location_type: readTypePicker('location') }
       formState.setBusy(true)
       submitBtn.textContent = t('common.saving')
       
@@ -684,7 +713,7 @@ import Layout from '../../layouts/Layout.astro'
     }
 
     selectAll.addEventListener('change', () => {
-      // Only the rows on screen; selections hidden by the filter stay as they are.
+      // Selection is always a subset of the rows on screen.
       for (const loc of visibleLocations()) {
         if (selectAll.checked) selectedIds.add(loc.id)
         else selectedIds.delete(loc.id)
@@ -722,13 +751,19 @@ import Layout from '../../layouts/Layout.astro'
     document.getElementById('bulk-btn-type')?.addEventListener('click', () => {
       if (selectedIds.size === 0) return
       document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: selectedIds.size })
-      const types = new Set(locations.filter(loc => selectedIds.has(loc.id)).map(loc => loc.location_type))
-      fillTypePicker('bulk', types.size === 1 ? [...types][0] : null)
+      const selected = locations.filter(loc => selectedIds.has(loc.id))
+      const allowNone = !selected.some(loc => isDriverManagedLocation(loc))
+      const known = knownTypes()
+      const types = new Set(
+        selected.map(loc => resolveKnownType(known, loc.location_type) ?? loc.location_type?.trim() ?? null),
+      )
+      fillTypePicker('bulk', types.size === 1 ? [...types][0] : null, allowNone)
       bulkTypeDialog.open()
     }, { signal: panelSignal })
 
     bulkTypeForm.addEventListener('submit', async (e) => {
       e.preventDefault()
+      normalizeWriteIn('bulk')
       if (!bulkTypeForm.reportValidity()) return
       const submit = document.getElementById('bulk-type-submit') as HTMLButtonElement
       submit.disabled = true

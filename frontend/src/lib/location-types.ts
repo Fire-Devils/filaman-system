@@ -13,6 +13,16 @@ export const TYPE_FILTER_ALL = ''
 export const TYPE_FILTER_NONE = '__none__'
 /** Select value that reveals the write-in box. */
 export const TYPE_WRITE_IN = '__write_in__'
+/** Prefix on <option> values for actual types so user write-ins never collide with sentinels. */
+export const TYPE_VALUE_PREFIX = 'type:'
+
+export function encodeTypeOption(type: string): string {
+  return `${TYPE_VALUE_PREFIX}${type}`
+}
+
+export function decodeTypeOption(value: string): string | null {
+  return value.startsWith(TYPE_VALUE_PREFIX) ? value.slice(TYPE_VALUE_PREFIX.length) : null
+}
 
 export function locationTypeOptions(types: Iterable<string | null | undefined>): string[] {
   const seen = new Set<string>()
@@ -32,8 +42,22 @@ export function locationTypeOptions(types: Iterable<string | null | undefined>):
   return options
 }
 
+export function resolveKnownType(
+  types: Iterable<string>,
+  value: string | null | undefined,
+): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  const needle = trimmed.toLocaleLowerCase()
+  for (const candidate of types) {
+    if (candidate.toLocaleLowerCase() === needle) return candidate
+  }
+  return null
+}
+
 export function matchesTypeFilter(type: string | null | undefined, filter: string): boolean {
   if (filter === TYPE_FILTER_ALL) return true
   if (filter === TYPE_FILTER_NONE) return !type
-  return (type ?? '').toLocaleLowerCase() === filter.toLocaleLowerCase()
+  const target = decodeTypeOption(filter) ?? filter
+  return Boolean(type) && type!.toLocaleLowerCase() === target.toLocaleLowerCase()
 }

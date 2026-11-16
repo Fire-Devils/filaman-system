@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -100,7 +101,11 @@ BUILTIN_LOCATION_TYPES = ("AMS", "Storage")
 DRIVER_MANAGED_DEFAULT_TYPE = "AMS"
 
 
-async def _normalize_location_type(db: AsyncSession, value: str | None) -> str | None:
+async def _normalize_location_type(
+    db: AsyncSession,
+    value: str | None,
+    exclude_ids: Collection[int] = (),
+) -> str | None:
     """Trim the type and reuse an existing spelling, so "storage" typed into
     the write-in box lands in the same bucket as "Storage"."""
     if value is None:
@@ -108,15 +113,23 @@ async def _normalize_location_type(db: AsyncSession, value: str | None) -> str |
     value = value.strip()[:50]
     if not value:
         return None
+    folded = value.casefold()
     for builtin in BUILTIN_LOCATION_TYPES:
-        if builtin.casefold() == value.casefold():
+        if builtin.casefold() == folded:
             return builtin
-    existing = await db.execute(
+    stmt = (
         select(Location.location_type)
-        .where(func.lower(Location.location_type) == value.lower())
-        .limit(1)
+        .where(Location.location_type.isnot(None))
+        .distinct()
+        .order_by(Location.location_type)
     )
-    return existing.scalar_one_or_none() or value
+    if exclude_ids:
+        stmt = stmt.where(Location.id.notin_(exclude_ids))
+    existing = (await db.execute(stmt)).scalars().all()
+    for candidate in existing:
+        if candidate and candidate.casefold() == folded:
+            return candidate
+    return value
 
 
 def _effective_location_type(location: Location) -> str | None:
@@ -200,8 +213,8 @@ async def bulk_update_location_type(
     db: DBSession,
     principal=RequirePermission("locations:update"),
 ):
-    location_type = await _normalize_location_type(db, data.location_type)
     ids = list(dict.fromkeys(data.location_ids))
+    location_type = await _normalize_location_type(db, data.location_type, exclude_ids=ids)
     result = await db.execute(select(Location).where(Location.id.in_(ids)))
     found = {loc.id: loc for loc in result.scalars()}
     for loc in found.values():
@@ -282,7 +295,9 @@ async def update_location(
 
     values = data.model_dump(exclude_unset=True)
     if "location_type" in values:
-        values["location_type"] = await _normalize_location_type(db, values["location_type"])
+        values["location_type"] = await _normalize_location_type(
+            db, values["location_type"], exclude_ids=(location_id,)
+        )
     for key, value in values.items():
         setattr(location, key, value)
 

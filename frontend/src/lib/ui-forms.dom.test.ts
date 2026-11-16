@@ -162,7 +162,7 @@ it('filters locations by type and bulk deletes only the shown selection', async 
     { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', spool_count: 1 },
     { id: 5, name: 'Dry box', identifier: null, location_type: 'Dry Box', spool_count: 0 },
   ] } as never)
-  const confirm = vi.fn(async () => true)
+  const confirm = vi.fn(async (_message: string) => true)
   vi.stubGlobal('__fmConfirm', confirm)
   vi.stubGlobal('__fmSuccess', vi.fn(async () => true))
   intercept = (path, init) => {
@@ -179,13 +179,13 @@ it('filters locations by type and bulk deletes only the shown selection', async 
     const filterOptions = [...document.querySelectorAll<HTMLOptionElement>('#type-filter option')].map(o => o.textContent)
     expect(filterOptions).toEqual(['All types', 'AMS', 'Storage', 'Dry Box', 'No type'])
 
-    change('type-filter', 'Storage')
+    change('type-filter', locationTypes.encodeTypeOption('Storage'))
     const rows = document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')
     expect([...rows].map(cb => cb.dataset.locationId)).toEqual(['3'])
 
     change('type-filter', '')
     document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="5"]')!.click()
-    change('type-filter', 'Storage')
+    change('type-filter', locationTypes.encodeTypeOption('Storage'))
     change('bulk-select-all', true)
     expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(true)
     document.querySelector<HTMLButtonElement>('#bulk-btn-delete')!.click()
@@ -193,6 +193,49 @@ it('filters locations by type and bulk deletes only the shown selection', async 
     expect(confirm).toHaveBeenCalledOnce()
     expect(confirm.mock.calls[0][0]).toContain('(Shelf)')
     expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ location_ids: [3] })
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
+})
+
+it('hides No type for driver-managed slots, resolves non-canonical casing, and rejects blank write-ins', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', custom_fields: { managed_by: 'bambuddy_plugin' }, spool_count: 1 },
+  ] } as never)
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('.btn-edit')).toHaveLength(2))
+
+    // Non-canonical "storage" resolves to "Storage" instead of falling back to No type.
+    document.querySelector<HTMLButtonElement>('.btn-edit[data-id="3"]')!.click()
+    const singleOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
+    expect(singleOptions).toEqual(['No type', 'AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('Storage'))
+
+    // Blank/whitespace write-in is rejected by form validity instead of saving null.
+    change('location-type', locationTypes.TYPE_WRITE_IN)
+    change('location-type-custom', '   ')
+    submit('modal-form')
+    expect(writes()).toHaveLength(0)
+
+    change('location-type-custom', 'Dry Box')
+    submit('modal-form')
+    await vi.waitFor(() => expect(writes()).toHaveLength(1))
+    expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf', identifier: null, location_type: 'Dry Box' })
+
+    // Driver-managed slot hides "No type" in both single edit and bulk Change Type.
+    document.querySelector<HTMLButtonElement>('.btn-edit[data-id="4"]')!.click()
+    const driverOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
+    expect(driverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('AMS'))
+    document.querySelector<HTMLButtonElement>('#modal-cancel')!.click()
+
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
+    document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
+    const bulkDriverOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
+    expect(bulkDriverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
   } finally {
     dependencies.cachedFetchAllPages = fixture
   }

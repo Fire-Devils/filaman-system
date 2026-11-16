@@ -340,6 +340,34 @@ class TestLocationTypes:
         )
         assert cleared.json()["location_type"] is None
 
+        # Fixing capitalization on the only location with that custom type updates it in place.
+        recased = await client.patch(
+            f"/api/v1/locations/{first.json()['id']}", json={"location_type": "DryBox"}, headers=headers
+        )
+        assert recased.json()["location_type"] == "DryBox"
+
+        # Non-ASCII folding works identically across SQLite/Postgres via Python casefold().
+        umlaut_a = await client.post(
+            "/api/v1/locations", json={"name": "Regal 1", "location_type": "Übergabe"}, headers=headers
+        )
+        umlaut_b = await client.post(
+            "/api/v1/locations", json={"name": "Regal 2", "location_type": "übergabe"}, headers=headers
+        )
+        assert umlaut_a.json()["location_type"] == "Übergabe"
+        assert umlaut_b.json()["location_type"] == "Übergabe"
+
+        # Bulk-updating all locations of a custom type can re-case them together.
+        bulk_recased = await client.request(
+            "PATCH",
+            "/api/v1/locations/bulk",
+            json={"location_ids": [umlaut_a.json()["id"], umlaut_b.json()["id"]], "location_type": "ÜBERGABE"},
+            headers=headers,
+        )
+        assert bulk_recased.status_code == 200
+        for loc_id in (umlaut_a.json()["id"], umlaut_b.json()["id"]):
+            res = await client.get(f"/api/v1/locations/{loc_id}")
+            assert res.json()["location_type"] == "ÜBERGABE"
+
     @pytest.mark.asyncio
     async def test_driver_managed_location_defaults_to_ams(self, auth_client, db_session):
         client, _ = auth_client
