@@ -241,13 +241,19 @@ import Layout from '../../layouts/Layout.astro'
       renderLocations()
     }, { signal: panelSignal })
 
+    let bulkTypeBusy = false
+
     function fillTypePicker(prefix: string, current: string | null, allowNone = true) {
       const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
       const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
       const types = knownTypes()
       const resolved = resolveKnownType(types, current)
+      const needsPlaceholder = !allowNone && !resolved && !current?.trim()
+      select.dataset.allowNone = String(allowNone)
+      select.required = !allowNone
       select.innerHTML = [
         ...(allowNone ? [`<option value="">${escapeHtml(t('locations.typeNone'))}</option>`] : []),
+        ...(needsPlaceholder ? [`<option value="" disabled>${escapeHtml(t('locations.selectTypePlaceholder'))}</option>`] : []),
         ...types.map(type => `<option value="${escapeHtml(encodeTypeOption(type))}">${escapeHtml(type)}</option>`),
         `<option value="${TYPE_WRITE_IN}">${escapeHtml(t('locations.typeWriteIn'))}</option>`,
       ].join('')
@@ -258,7 +264,7 @@ import Layout from '../../layouts/Layout.astro'
         select.value = TYPE_WRITE_IN
         custom.value = current.trim()
       } else {
-        select.value = allowNone ? '' : encodeTypeOption(types[0])
+        select.value = ''
         custom.value = ''
       }
       syncTypePicker(prefix, false)
@@ -270,6 +276,11 @@ import Layout from '../../layouts/Layout.astro'
       const writeIn = select.value === TYPE_WRITE_IN
       custom.classList.toggle('hidden', !writeIn)
       custom.required = writeIn
+      if (prefix === 'bulk') {
+        const submit = document.getElementById('bulk-type-submit') as HTMLButtonElement | null
+        const unchosen = select.dataset.allowNone === 'false' && select.value === ''
+        if (submit) submit.disabled = bulkTypeBusy || unchosen
+      }
       if (writeIn && focusCustom) custom.focus()
     }
 
@@ -295,6 +306,16 @@ import Layout from '../../layouts/Layout.astro'
     function getCsrfToken(): string {
       const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/)
       return match ? decodeURIComponent(match[1]) : ''
+    }
+
+    function extractApiError(data: Record<string, unknown>, fallback: string): string {
+      const detail = data.detail
+      if (typeof detail === 'string' && detail) return detail
+      if (Array.isArray(detail) && typeof detail[0]?.msg === 'string') return detail[0].msg
+      if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string' && detail.message) {
+        return detail.message
+      }
+      return typeof data.message === 'string' && data.message ? data.message : fallback
     }
     
     async function loadActiveDevices() {
@@ -421,9 +442,9 @@ import Layout from '../../layouts/Layout.astro'
             })
             
             if (!response.ok) {
-              const data = await response.json()
+              const data = await response.json().catch(() => ({}))
               if (panelSignal.aborted) return
-              await dialogs.__fmAlert(data.message || t('locations.failedDelete'))
+              await dialogs.__fmAlert(extractApiError(data, t('locations.failedDelete')))
               return
             }
             
@@ -499,8 +520,8 @@ import Layout from '../../layouts/Layout.astro'
         })
         
         if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.message || t('locations.failedSave'))
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(extractApiError(errorData, t('locations.failedSave')))
         }
         
         // Invalidate cache after successful save
@@ -726,32 +747,37 @@ import Layout from '../../layouts/Layout.astro'
       renderLocations()
     }, { signal: panelSignal })
 
-    async function sendBulk(method: 'PATCH' | 'DELETE', body: Record<string, unknown>): Promise<BulkResult> {
+    async function sendBulk(method: 'PATCH' | 'DELETE', ids: number[], body: Record<string, unknown>): Promise<BulkResult> {
       const res = await fetch('/api/v1/locations/bulk', {
         method,
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
         credentials: 'include',
         signal: getAbortSignal(),
-        body: JSON.stringify({ location_ids: [...selectedIds], ...body }),
+        body: JSON.stringify({ location_ids: ids, ...body }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.detail?.message || data.message || t('locations.bulkError'))
+        throw new Error(extractApiError(data, t('locations.bulkError')))
       }
       return res.json()
     }
 
-    function namesOf(ids: number[]): string {
-      return ids.map(id => locations.find(loc => loc.id === id)?.name ?? `#${id}`).join(', ')
+    function namesOf(ids: number[], lookup: Map<number, string>): string {
+      return ids.map(id => lookup.get(id) ?? locations.find(loc => loc.id === id)?.name ?? `#${id}`).join(', ')
     }
 
+    let bulkTypeTargetIds: number[] = []
     const bulkTypeForm = document.getElementById('bulk-type-form') as HTMLFormElement
-    const bulkTypeDialog = bindFormDialog(document.getElementById('bulk-type-modal') as HTMLDialogElement)
+    const bulkTypeDialog = bindFormDialog(document.getElementById('bulk-type-modal') as HTMLDialogElement, {
+      canClose: () => !bulkTypeBusy,
+    })
 
     document.getElementById('bulk-btn-type')?.addEventListener('click', () => {
       if (selectedIds.size === 0) return
-      document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: selectedIds.size })
-      const selected = locations.filter(loc => selectedIds.has(loc.id))
+      bulkTypeTargetIds = [...selectedIds]
+      document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: bulkTypeTargetIds.length })
+      const targetSet = new Set(bulkTypeTargetIds)
+      const selected = locations.filter(loc => targetSet.has(loc.id))
       const allowNone = !selected.some(loc => isDriverManagedLocation(loc))
       const known = knownTypes()
       const types = new Set(
@@ -763,15 +789,19 @@ import Layout from '../../layouts/Layout.astro'
 
     bulkTypeForm.addEventListener('submit', async (e) => {
       e.preventDefault()
+      if (bulkTypeBusy || bulkTypeTargetIds.length === 0) return
       normalizeWriteIn('bulk')
       if (!bulkTypeForm.reportValidity()) return
+      const targetIds = [...bulkTypeTargetIds]
       const submit = document.getElementById('bulk-type-submit') as HTMLButtonElement
+      bulkTypeBusy = true
       submit.disabled = true
       try {
-        const result = await sendBulk('PATCH', { location_type: readTypePicker('bulk') })
+        const result = await sendBulk('PATCH', targetIds, { location_type: readTypePicker('bulk') })
         if (panelSignal.aborted) return
+        bulkTypeBusy = false
         bulkTypeDialog.close()
-        selectedIds.clear()
+        for (const id of targetIds) selectedIds.delete(id)
         invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
         await loadLocations()
         if (result.not_found.length) await dialogs.__fmAlert(t('locations.bulkNotFound', { count: result.not_found.length }))
@@ -779,14 +809,18 @@ import Layout from '../../layouts/Layout.astro'
         if (isAbortError(err) || panelSignal.aborted) return
         await dialogs.__fmAlert(err instanceof Error ? err.message : t('locations.bulkError'))
       } finally {
-        submit.disabled = false
+        bulkTypeBusy = false
+        syncTypePicker('bulk', false)
       }
     }, { signal: panelSignal })
 
     document.getElementById('bulk-btn-delete')?.addEventListener('click', async () => {
-      const count = selectedIds.size
+      const targetIds = [...selectedIds]
+      const count = targetIds.length
       if (count === 0) return
-      const selected = locations.filter(loc => selectedIds.has(loc.id))
+      const targetSet = new Set(targetIds)
+      const selected = locations.filter(loc => targetSet.has(loc.id))
+      const nameSnapshot = new Map(selected.map(loc => [loc.id, loc.name]))
       const driverSlots = selected.filter(loc => isDriverManagedLocation(loc)).length
       const listed = selected.slice(0, 10).map(loc => loc.name).join(', ')
       const more = selected.length > 10 ? ` ${t('locations.bulkMore', { count: selected.length - 10 })}` : ''
@@ -800,11 +834,11 @@ import Layout from '../../layouts/Layout.astro'
       })
       if (!confirmed || panelSignal.aborted) return
       try {
-        const result = await sendBulk('DELETE', {})
+        const result = await sendBulk('DELETE', targetIds, {})
         if (panelSignal.aborted) return
-        selectedIds.clear()
+        for (const id of targetIds) selectedIds.delete(id)
         invalidateCachePrefix(CACHE_KEYS.LOCATIONS)
-        const skippedNames = namesOf(result.skipped)
+        const skippedNames = namesOf(result.skipped, nameSnapshot)
         await loadLocations()
         if (result.skipped.length) {
           await dialogs.__fmAlert(t('locations.bulkDeleteSkipped', {
@@ -812,6 +846,8 @@ import Layout from '../../layouts/Layout.astro'
             skipped: result.skipped.length,
             names: skippedNames,
           }))
+        } else if (result.deleted.length === 0 && result.not_found.length > 0) {
+          await dialogs.__fmAlert(t('locations.bulkNotFound', { count: result.not_found.length }))
         } else {
           await dialogs.__fmSuccess(t('locations.bulkDeleteSuccess', { count: result.deleted.length }))
         }

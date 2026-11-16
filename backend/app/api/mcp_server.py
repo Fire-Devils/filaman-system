@@ -302,7 +302,7 @@ TOOLS: tuple[Tool, ...] = (
          _schema(_PAGING), _get("/colors", "page", "page_size")),
     Tool("list_manufacturers", "List manufacturers.", _schema(_PAGING),
          _get("/manufacturers", "page", "page_size")),
-    Tool("list_locations", "List storage locations with their spool count.", _schema(_PAGING),
+    Tool("list_locations", "List storage locations with their type and spool count.", _schema(_PAGING),
          _get("/locations", "page", "page_size")),
     Tool("list_spool_statuses", "List spool statuses (id and key, e.g. new, opened, empty, archived).",
          _schema(), _get("/spools/statuses")),
@@ -416,10 +416,14 @@ TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         "update_location",
-        "Rename a storage location or change its identifier.",
+        "Rename a storage location or change its type or identifier. Pass null for location_type to clear it.",
         _schema({
             "location_id": _INT,
-            "fields": _schema({"name": {"type": "string", "minLength": 1}, "identifier": {"type": "string"}}),
+            "fields": _schema({
+                "name": {"type": "string", "minLength": 1},
+                "identifier": {"type": ["string", "null"]},
+                "location_type": {"type": ["string", "null"], "maxLength": 50},
+            }),
         }, ["location_id", "fields"]),
         _update_location,
         write=True,
@@ -513,8 +517,12 @@ TOOLS: tuple[Tool, ...] = (
     Tool(
         "create_location",
         "Create a storage location.",
-        _schema({"name": {"type": "string", "minLength": 1}, "identifier": {"type": "string"}}, ["name"]),
-        _post("/locations", "name", "identifier"),
+        _schema({
+            "name": {"type": "string", "minLength": 1},
+            "identifier": {"type": "string"},
+            "location_type": {"type": "string", "maxLength": 50},
+        }, ["name"]),
+        _post("/locations", "name", "identifier", "location_type"),
         write=True,
     ),
     Tool(

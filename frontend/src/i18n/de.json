@@ -853,6 +853,7 @@
     "filterType": "Typ",
     "filterAll": "Alle Typen",
     "typeNone": "Kein Typ",
+    "selectTypePlaceholder": "Typ auswählen…",
     "typeWriteIn": "Anderer (eingeben)…",
     "typeWriteInPlaceholder": "Name des neuen Typs",
     "noMatches": "Keine Standorte dieses Typs.",

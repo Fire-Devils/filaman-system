@@ -236,6 +236,28 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
     const bulkDriverOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
     expect(bulkDriverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
+    document.querySelector<HTMLButtonElement>('#bulk-type-modal [data-dialog-close]')!.click()
+
+    // Mixed selection (Storage + driver-managed AMS) requires an explicit choice instead of defaulting to AMS.
+    const alert = vi.fn(async (_message: string) => true)
+    vi.stubGlobal('__fmAlert', alert)
+    intercept = (path, init) => {
+      if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
+        return Response.json({ detail: [{ msg: 'List should have at most 1000 items' }] }, { status: 422 })
+      }
+    }
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="3"]')!.click()
+    document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
+    const mixedOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
+    expect(mixedOptions).toEqual(['Choose a type…', 'AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLSelectElement>('#bulk-type')!.value).toBe('')
+    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(true)
+
+    change('bulk-type', locationTypes.encodeTypeOption('Storage'))
+    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
+    submit('bulk-type-form')
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('List should have at most 1000 items'))
   } finally {
     dependencies.cachedFetchAllPages = fixture
   }
