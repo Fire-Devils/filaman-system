@@ -121,7 +121,6 @@
     "deviceTimeout": "Timeout: The device did not respond within 180 seconds.",
     "deviceUnreachable": "Device unreachable. Please check the network.",
     "noDeviceOnlineTooltip": "No RFID device online",
-    "driverManagedTooltip": "AMS slots are managed by the printer driver and cannot take a location tag.",
     "noDeviceOnline": "No RFID device online",
     "removedFrom": "It was removed from {item}",
     "secondTagWillBeAdded": "Note: This spool already has an RFID tag. The new tag will be added as its second tag (one per side).",
