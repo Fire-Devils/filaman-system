@@ -464,6 +464,31 @@ class TestWriteTag:
         assert device.custom_fields["last_write_result"]["status"] == "pending"
 
     @pytest.mark.asyncio
+    async def test_write_tag_rejects_driver_managed_location(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        device = await _create_device(db_session, ip_address="192.168.1.10")
+        slot = Location(
+            name="AMS A1",
+            identifier="bambuddy_13_0_0",
+            custom_fields={"managed_by": "bambuddy_plugin"},
+        )
+        db_session.add(slot)
+        await db_session.commit()
+
+        with patch("app.api.v1.devices.httpx.AsyncClient") as mock_httpx:
+            response = await client.post(
+                f"/api/v1/devices/{device.id}/write-tag",
+                json={"location_id": slot.id},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "driver_managed_location"
+        mock_httpx.assert_not_called()
+        await db_session.refresh(slot)
+        assert slot.identifier == "bambuddy_13_0_0"
+
+    @pytest.mark.asyncio
     async def test_write_tag_missing_ids(self, auth_client, db_session):
         client, csrf_token = auth_client
         device = await _create_device(db_session, ip_address="192.168.1.10")

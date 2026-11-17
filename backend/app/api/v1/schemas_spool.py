@@ -26,12 +26,14 @@ class SpoolStatusResponse(BaseModel):
 class LocationCreate(BaseModel):
     name: str
     identifier: str | None = None
+    location_type: str | None = Field(default=None, max_length=50)
     custom_fields: dict[str, Any] | None = None
 
 
 class LocationUpdate(BaseModel):
     name: str | None = None
     identifier: str | None = None
+    location_type: str | None = Field(default=None, max_length=50)
     custom_fields: dict[str, Any] | None = None
 
 
@@ -39,11 +41,30 @@ class LocationResponse(BaseModel):
     id: int
     name: str
     identifier: str | None
+    location_type: str | None = None
     custom_fields: dict[str, Any] | None
     spool_count: int = 0
 
     class Config:
         from_attributes = True
+
+
+class LocationBulkTypeUpdate(BaseModel):
+    location_ids: list[int] = Field(min_length=1, max_length=1000)
+    location_type: str | None = Field(default=None, max_length=50)
+
+
+class LocationBulkDelete(BaseModel):
+    location_ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+class LocationBulkResult(BaseModel):
+    updated: list[int] = []
+    deleted: list[int] = []
+    # Locations still holding active spools are left alone rather than failing
+    # the whole request.
+    skipped: list[int] = []
+    not_found: list[int] = []
 
 
 class SpoolCreate(BaseModel):

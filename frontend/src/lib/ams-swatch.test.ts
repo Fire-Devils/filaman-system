@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amsFinish, amsSwatchFill, amsSwatchHexes } from './ams-swatch'
+import { amsFiber, amsFinish, amsSparkleKind, amsSwatchFill, amsSwatchFinish, amsSwatchHexes } from './ams-swatch'
 
 describe('ams swatch', () => {
   it('keeps valid hexes and falls back to one color', () => {
@@ -24,5 +24,16 @@ describe('ams swatch', () => {
     expect(amsFinish('translucent')).toBe('translucent')
     expect(amsFinish('neon')).toBe('')
     expect(amsFinish('solid')).toBe('')
+  })
+
+  it('paints fiber ticks and specks from the subgroup or the material', () => {
+    expect(amsFiber('cf', 'PLA')).toBe('cf')
+    expect(amsFiber('', 'PA6-GF')).toBe('gf')
+    expect(amsFiber('silk', 'PLA')).toBe('')
+    expect(amsSparkleKind('Galaxy')).toBe('galaxy')
+    expect(amsSparkleKind('glitter')).toBe('glitter')
+    expect(amsSparkleKind('silk')).toBe('')
+    expect(amsSwatchFinish('', 'translucent')).toBe('translucent')
+    expect(amsSwatchFinish('glow', 'galaxy')).toBe('glow')
   })
 })

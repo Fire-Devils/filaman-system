@@ -194,6 +194,21 @@ class TestRoleBasedAccess:
         assert response.json()["detail"]["code"] == "forbidden"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("method", "body"),
+        [("PATCH", {"location_ids": [1], "location_type": "Storage"}), ("DELETE", {"location_ids": [1]})],
+    )
+    async def test_viewer_cannot_bulk_edit_locations(self, viewer_auth_client, method, body):
+        client, csrf_token = viewer_auth_client
+
+        response = await client.request(
+            method, "/api/v1/locations/bulk", json=body, headers={"X-CSRF-Token": csrf_token}
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "forbidden"
+
+    @pytest.mark.asyncio
     async def test_viewer_cannot_manage_users(self, viewer_auth_client):
         client, _ = viewer_auth_client
 

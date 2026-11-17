@@ -585,12 +585,22 @@ async def test_bulk_spools_adjustment_and_events(client, db_session, admin_key):
 @pytest.mark.asyncio
 async def test_update_location_and_manufacturer(client, db_session, admin_key):
     await _set_flags(db_session, enabled=True, write=True)
-    location = _json(await _call(client, admin_key, "create_location", {"name": "Alt"}))
+    location = _json(await _call(client, admin_key, "create_location", {"name": "Alt", "location_type": "storage"}))
+    assert location["location_type"] == "Storage"
     result = await _call(client, admin_key, "update_location", {
-        "location_id": location["id"], "fields": {"name": "Neu", "identifier": "R1"},
+        "location_id": location["id"],
+        "fields": {"name": "Neu", "identifier": "R1", "location_type": "Dry Box"},
     })
     assert result["isError"] is False, result
-    assert _json(result)["name"] == "Neu" and _json(result)["identifier"] == "R1"
+    updated_loc = _json(result)
+    assert updated_loc["name"] == "Neu" and updated_loc["identifier"] == "R1"
+    assert updated_loc["location_type"] == "Dry Box"
+
+    cleared = await _call(client, admin_key, "update_location", {
+        "location_id": location["id"], "fields": {"location_type": None},
+    })
+    assert cleared["isError"] is False, cleared
+    assert _json(cleared)["location_type"] is None
 
     manufacturer = _json(await _call(client, admin_key, "create_manufacturer", {"name": "Alt GmbH"}))
     result = await _call(client, admin_key, "update_manufacturer", {

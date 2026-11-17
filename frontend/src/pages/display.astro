@@ -607,7 +607,8 @@ import Layout from '../layouts/Layout.astro'
     }
     /* Translucent: the filament color stays. A corner highlight and a
        fine frost line keep it from reading as an opaque solid. */
-    .ams-swatch[data-finish='translucent']::before {
+    .ams-swatch[data-finish='translucent']::before,
+    .ams-detail-swatch[data-finish='translucent']::before {
       content: '';
       position: absolute;
       inset: 0;
@@ -620,7 +621,8 @@ import Layout from '../layouts/Layout.astro'
     /* Glow in the dark: an opaque phosphor frame. A dark stroke under the
        chartreuse keeps the rim visible on yellow, white, and green filament.
        Screen blending was dropping out on those colors. */
-    .ams-swatch[data-finish='glow']::after {
+    .ams-swatch[data-finish='glow']::after,
+    .ams-detail-swatch[data-finish='glow']::after {
       content: '';
       position: absolute;
       inset: 0;
@@ -635,6 +637,91 @@ import Layout from '../layouts/Layout.astro'
     @keyframes ams-phosphor {
       0%, 100% { opacity: 0.82; }
       50% { opacity: 1; }
+    }
+    /* Overlays sit on the color and under the bay label. */
+    .ams-swatch > .ams-sparkle,
+    .ams-swatch > .ams-fiber,
+    .ams-detail-swatch > .ams-sparkle,
+    .ams-detail-swatch > .ams-fiber {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .ams-detail-swatch > :not(.ams-sparkle):not(.ams-fiber) {
+      position: relative;
+      z-index: 1;
+    }
+    /* CF / GF: chopped diagonal ticks, light and dark so black and white both read. */
+    .ams-fiber {
+      background: repeating-linear-gradient(
+        128deg,
+        transparent 0 9px,
+        rgba(255, 255, 255, 0.72) 9px 10.5px,
+        transparent 10.5px 18px,
+        rgba(0, 0, 0, 0.42) 18px 19.5px,
+        transparent 19.5px 28px
+      );
+      -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 12px);
+      mask-image: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 12px);
+    }
+    .ams-sparkle::before,
+    .ams-sparkle::after {
+      content: '';
+      position: absolute;
+      width: 3px;
+      height: 3px;
+      margin: -1.5px 0 0 -1.5px;
+      border-radius: 50%;
+      background: #fff;
+      pointer-events: none;
+    }
+    .ams-sparkle::before {
+      left: 24%;
+      top: 68%;
+      box-shadow:
+        0 0 0 1px rgba(8, 10, 18, 0.55),
+        0 0 8px 2px rgba(255, 255, 255, 0.95),
+        42px -26px 0 -0.5px #fff,
+        42px -26px 0 1px rgba(8, 10, 18, 0.45),
+        18px -34px 0 -1px #f7f9ff,
+        58px -6px 0 -1px rgba(255, 255, 255, 0.92);
+      animation: ams-twinkle 2.8s ease-in-out infinite;
+    }
+    .ams-sparkle[data-density='glitter']::before {
+      box-shadow:
+        0 0 0 1px rgba(8, 10, 18, 0.55),
+        0 0 8px 2px rgba(255, 255, 255, 0.95),
+        42px -26px 0 -0.5px #fff,
+        18px -34px 0 -1px #f7f9ff,
+        58px -6px 0 -1px rgba(255, 255, 255, 0.92),
+        8px -16px 0 -1px #fff,
+        28px 6px 0 -1px #fff,
+        -18px 12px 0 -0.5px rgba(255, 255, 255, 0.95);
+    }
+    .ams-sparkle::after {
+      left: 72%;
+      top: 36%;
+      width: 2px;
+      height: 2px;
+      margin: -1px 0 0 -1px;
+      box-shadow:
+        0 0 0 1px rgba(8, 10, 18, 0.5),
+        0 0 6px 1px rgba(236, 244, 255, 0.95),
+        -34px 18px 0 0 #fff,
+        16px 22px 0 -0.5px #fff;
+      animation: ams-twinkle 3.4s ease-in-out infinite reverse;
+    }
+    @keyframes ams-twinkle {
+      0%, 100% { opacity: 0.45; }
+      50% { opacity: 1; }
+    }
+    .ams-job-queue {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .ams-bay[data-empty='1'] .ams-swatch {
       background: transparent;
@@ -1075,6 +1162,8 @@ import Layout from '../layouts/Layout.astro'
       .ams-feeding::before,
       .ams-feed-flow[data-moving='1'],
       .ams-swatch[data-finish='glow']::after { animation: none; }
+      .ams-sparkle::before,
+      .ams-sparkle::after { animation: none; opacity: 1; }
       .ams-bay,
       .ams-printer,
       .ams-printer-units,
@@ -1133,7 +1222,7 @@ import Layout from '../layouts/Layout.astro'
   <script>
     import { t, getLang, initI18n, translatePage } from '../lib/i18n'
     import { getAbortSignal, isAbortError } from '../lib/abort'
-    import { amsFinish, amsSwatchFill, amsSwatchHexes } from '../lib/ams-swatch'
+    import { amsFiber, amsSparkleKind, amsSwatchFill, amsSwatchFinish, amsSwatchHexes } from '../lib/ams-swatch'
     import { renderSpoolReel } from '../lib/spool-reel'
     import { mountPanel } from '../lib/panel-navigation'
 
@@ -1142,10 +1231,13 @@ import Layout from '../layouts/Layout.astro'
       ams_id: number; slot: number; label: string
       empty?: boolean; active?: boolean
       color?: string; colors?: string[]; color_style?: string; finish?: string
-      color_name?: string | null; material?: string | null; manufacturer?: string | null; filament?: string | null
+      color_name?: string | null; material?: string | null; material_subgroup?: string | null
+      manufacturer?: string | null; filament?: string | null
       spool_id?: number | null
-      remaining_percent?: number | null; remaining_grams?: number | null; remaining_source?: 'filaman' | 'printer' | null
+      remaining_percent?: number | null; remaining_grams?: number | null; remaining_cost?: number | null
+      remaining_source?: 'filaman' | 'printer' | null
       nozzle_min?: number | null; nozzle_max?: number | null
+      profile_base_name?: string | null
       rfid?: boolean; last_used?: string | null; backup_of?: string | null
     }
     interface DisplayUnit {
@@ -1156,7 +1248,11 @@ import Layout from '../layouts/Layout.astro'
     }
     interface DisplayPrinter {
       id: number; name: string; connected?: boolean | null; state?: string | null
-      job?: { name?: string | null, progress?: number | null, layer?: number | null, total_layers?: number | null, remaining_seconds?: number | null } | null
+      job?: {
+        name?: string | null, progress?: number | null, layer?: number | null, total_layers?: number | null
+        remaining_seconds?: number | null, elapsed_seconds?: number | null, filament_grams?: number | null, eta?: string | null
+      } | null
+      queue?: { depth?: number | null, next?: { name?: string | null } | null } | null
       temperatures?: Record<string, number | null> | null
       active?: { ams_id: number, slot: number } | null
       alerts?: { id?: string, severity?: string, title?: string, detail?: string }[]
@@ -1196,6 +1292,7 @@ import Layout from '../layouts/Layout.astro'
     const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>'
 
     let etag: string | null = null
+    let boardCurrency = 'EUR'
     let lastPrinters: DisplayPrinter[] = []
     let shownPrinters: DisplayPrinter[] = []
     let lastOkAt = 0
@@ -1338,6 +1435,25 @@ import Layout from '../layouts/Layout.astro'
       return `${pctMarkup(m.pct!)}${note ? `<span class="ams-grams">${esc(note)}</span>` : ''}`
     }
 
+    function money(amount: number): string {
+      try {
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: boardCurrency || 'EUR' }).format(amount)
+      } catch {
+        return `${amount.toFixed(2)} ${boardCurrency || 'EUR'}`
+      }
+    }
+
+    function swatchDecor(s: DisplaySlot, unknown: boolean) {
+      const finish = unknown ? '' : amsSwatchFinish(s.finish, s.material_subgroup)
+      const fiber = unknown ? '' : amsFiber(s.material_subgroup, s.material)
+      const sparkle = unknown ? '' : amsSparkleKind(s.material_subgroup)
+      const html = [
+        fiber ? `<span class="ams-fiber" data-fiber="${fiber}" aria-hidden="true"></span>` : '',
+        sparkle ? `<span class="ams-sparkle" data-density="${sparkle}" aria-hidden="true"></span>` : '',
+      ].join('')
+      return { finish, html }
+    }
+
     function renderBay(s: DisplaySlot, printer: DisplayPrinter) {
       const label = esc(s.label)
       const key = slotKey(s, printer)
@@ -1351,7 +1467,7 @@ import Layout from '../layouts/Layout.astro'
       }
 
       const m = bayModel(s)
-      const finish = amsFinish(s.finish)
+      const decor = swatchDecor(s, m.unknownColor)
       const reel = renderSpoolReel(m.pct === null ? null : m.pct / 100, m.hexes.length ? m.hexes : [m.swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped')
       const manufacturer = s.manufacturer || (m.tracked ? '' : t('display.unlinkedSpool'))
       const flag = m.level === 'crit' ? t('display.critical') : m.level === 'low' ? t('display.low') : m.level === 'untracked' ? t('display.notTracked') : ''
@@ -1367,7 +1483,8 @@ import Layout from '../layouts/Layout.astro'
         <button type="button" class="ams-bay" data-key="${esc(key)}" data-active="${active ? '1' : '0'}" data-level="${m.level}"
                 aria-haspopup="dialog" aria-controls="ams-detail" aria-expanded="${openKey === key ? 'true' : 'false'}"
                 style="${style}" title="${esc(bayTitle(s))}">
-          <span class="ams-swatch" data-finish="${m.unknownColor ? '' : finish}" data-multi="${m.hexes.length > 1 ? '1' : '0'}" data-unknown="${m.unknownColor ? '1' : '0'}">
+          <span class="ams-swatch" data-finish="${decor.finish}" data-multi="${m.hexes.length > 1 ? '1' : '0'}" data-unknown="${m.unknownColor ? '1' : '0'}">
+            ${decor.html}
             <span class="ams-bay-label">${label}</span>
             <span class="ams-material">${esc(s.material || '—')}</span>
             ${s.rfid || m.spoolId != null
@@ -1479,11 +1596,24 @@ import Layout from '../layouts/Layout.astro'
       // Same label-over-value form as the Nozzle/Bed/Chamber readouts.
       const jobMeta: [string, string][] = []
       if (job.layer != null && job.total_layers) jobMeta.push([t('display.layerLabel'), `${job.layer}/${job.total_layers}`])
+      if (job.elapsed_seconds) jobMeta.push([t('display.elapsed'), fmtDuration(job.elapsed_seconds)])
       if (job.remaining_seconds) jobMeta.push([t('display.remainingLabel'), fmtDuration(job.remaining_seconds)])
+      if (job.filament_grams != null) jobMeta.push([t('display.filamentUsed'), `${job.filament_grams} g`])
+      if (job.eta) {
+        const at = new Date(job.eta)
+        if (!Number.isNaN(at.getTime())) jobMeta.push([t('display.eta'), at.toLocaleTimeString()])
+      }
+      const queue = p.queue
+      const queueBits = [
+        queue && Number(queue.depth) > 0 ? t('display.queue', { count: queue.depth }) : '',
+        queue?.next?.name ? t('display.nextJob', { name: queue.next.name }) : '',
+      ].filter(Boolean)
+      const queueLine = queueBits.length ? `<div class="ams-job-queue">${esc(queueBits.join(' · '))}</div>` : ''
       const progress = job.progress != null ? pctWidth(job.progress) : null
-      const jobBlock = job.name || progress != null
+      const jobBlock = job.name || progress != null || queueLine
         ? `<div class="ams-job" data-done="${state.tone === 'ok' ? '1' : '0'}">
              ${job.name ? `<div class="ams-job-name" title="${esc(job.name)}">${esc(job.name)}</div>` : ''}
+             ${queueLine}
              ${progress != null || jobMeta.length ? `<div class="ams-job-line">
                ${jobMeta.length ? `<span class="ams-job-meta">${jobMeta.map(([k, v]) => `<span class="ams-job-stat"><small>${esc(k)}</small> <b>${esc(v)}</b></span>`).join('')}</span>` : ''}
                ${progress != null ? `<span class="ams-track"><i style="width:${progress}%"></i></span><span class="ams-job-pct">${progress}%</span>` : ''}
@@ -1493,6 +1623,7 @@ import Layout from '../layouts/Layout.astro'
 
       const readouts = [
         readout(t('display.nozzle'), temps.nozzle, temps.nozzle_target),
+        readout(t('display.nozzle2'), temps.nozzle_2, temps.nozzle_2_target),
         readout(t('display.bed'), temps.bed, temps.bed_target),
         readout(t('display.chamber'), temps.chamber, temps.chamber_target),
       ].join('')
@@ -1733,6 +1864,7 @@ import Layout from '../layouts/Layout.astro'
       if (!entry) return ''
       const { slot: s, unit: u, printer: p } = entry
       const m = bayModel(s)
+      const decor = swatchDecor(s, m.unknownColor)
       const style = m.unknownColor ? '' : ` style="--ams-swatch: ${m.swatchColor}; --ams-fill: ${m.fill}; --ams-ink: ${m.ink}"`
       const reel = renderSpoolReel(m.pct === null ? null : m.pct / 100, m.hexes.length ? m.hexes : [m.swatchColor], s.color_style === 'gradient' ? 'gradient' : 'striped', { view: 'full' })
       const title = [m.colorName, s.material].filter(Boolean).join(' ') || s.label
@@ -1740,6 +1872,8 @@ import Layout from '../layouts/Layout.astro'
       if (m.spoolId != null) facts.push([t('display.spool'), `#${m.spoolId}`])
       if (s.manufacturer) facts.push([t('display.manufacturer'), s.manufacturer])
       if (s.filament) facts.push([t('display.filament'), s.filament])
+      if (s.profile_base_name) facts.push([t('display.profile'), s.profile_base_name])
+      if (s.remaining_cost != null) facts.push([t('display.remainingValue'), money(s.remaining_cost)])
       if (s.nozzle_min != null && s.nozzle_max != null) facts.push([t('display.nozzleRange'), `${s.nozzle_min}–${s.nozzle_max}°C`])
       facts.push([t('display.source'), t(m.estimate ? 'display.printerEstimate' : 'display.sourceInventory')])
       if (s.rfid) facts.push(['RFID', t('display.rfidRead')])
@@ -1748,7 +1882,8 @@ import Layout from '../layouts/Layout.astro'
       facts.push([t('display.location'), `${p.name} · ${u.label}`])
 
       return `
-        <div class="ams-detail-swatch"${style} data-unknown="${m.unknownColor ? '1' : '0'}">
+        <div class="ams-detail-swatch"${style} data-finish="${decor.finish}" data-unknown="${m.unknownColor ? '1' : '0'}">
+          ${decor.html}
           <span class="ams-detail-label">${esc(s.label)}</span>
           <button type="button" class="ams-detail-close" data-close aria-label="${esc(t('display.close'))}">${ICON_CLOSE}</button>
         </div>
@@ -1992,7 +2127,7 @@ import Layout from '../layouts/Layout.astro'
 
     /** One poll: request and body both have to arrive within
      *  FETCH_TIMEOUT_MS, or the request is aborted and counted as failed. */
-    async function fetchFeed(): Promise<{ status: number, data?: { printers?: DisplayPrinter[] } }> {
+    async function fetchFeed(): Promise<{ status: number, data?: { printers?: DisplayPrinter[], currency?: string } }> {
       const controller = new AbortController()
       let timedOut = false
       const timer = setTimeout(() => { timedOut = true; controller.abort() }, FETCH_TIMEOUT_MS)
@@ -2030,7 +2165,10 @@ import Layout from '../layouts/Layout.astro'
       try {
         const result = await fetchFeed()
         if (panelSignal.aborted) return
-        if (result.status !== 304) renderBoard(result.data?.printers || [])
+        if (result.status !== 304) {
+          if (result.data?.currency) boardCurrency = String(result.data.currency)
+          renderBoard(result.data?.printers || [])
+        }
         failures = 0
         lastOkAt = Date.now()
         setStatus(t('display.upToDate', { time: new Date(lastOkAt).toLocaleTimeString() }), 'ok')

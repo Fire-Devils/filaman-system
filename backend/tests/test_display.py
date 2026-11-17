@@ -387,7 +387,17 @@ def test_normalize_bambuddy_status():
     live = normalize_driver_state(BAMBUDDY_STATUS)
     assert live["connected"] is True
     assert live["state"] == "RUNNING"
-    assert live["job"] == {"name": "benchy.3mf", "progress": 42, "layer": 57, "total_layers": 130, "remaining_seconds": 3720}
+    assert live["job"]["name"] == "benchy.3mf"
+    assert live["job"]["progress"] == 42
+    assert live["job"]["layer"] == 57
+    assert live["job"]["total_layers"] == 130
+    assert live["job"]["remaining_seconds"] == 3720
+    assert live["job"]["elapsed_seconds"] is None
+    assert live["job"]["filament_grams"] is None
+    assert str(live["job"]["eta"]).endswith("+00:00")
+    assert live["queue"] is None
+    assert live["temperatures"]["nozzle_2"] is None
+    assert live["temperatures"]["nozzle_2_target"] is None
     assert live["temperatures"]["nozzle"] == 220 and live["temperatures"]["bed"] == 60
     assert live["active_tray"] == 1
     assert live["hms"] == [{"code": "0x0500", "message": "Nozzle clog"}]
@@ -395,6 +405,75 @@ def test_normalize_bambuddy_status():
     assert [u["kind"] for u in live["ams"]] == ["ams", "ams_ht", "external"]
     tray0 = live["ams"][0]["slots"][0]
     assert tray0["color"] == "#0000FF" and tray0["rfid"] is True and tray0["remaining_percent"] == 80
+
+
+def test_job_timing_queue_and_second_nozzle():
+    live = normalize_driver_state(
+        {
+            "state": "RUNNING",
+            "job": {
+                "name": "box.3mf",
+                "progress": 10,
+                "remaining_seconds": 60,
+                "elapsed_seconds": 30,
+                "filament_grams": 12.5,
+            },
+            "queue": {
+                "depth": 2,
+                "next": {"name": "lid.3mf", "filament_grams": 4, "print_time_seconds": 90},
+            },
+            "temperatures": {"nozzle_2": 200, "nozzle_2_target": 210},
+        }
+    )
+    assert live["job"]["elapsed_seconds"] == 30
+    assert live["job"]["filament_grams"] == 12.5
+    assert str(live["job"]["eta"]).endswith("+00:00")
+    assert live["queue"] == {
+        "depth": 2,
+        "next": {"name": "lid.3mf", "filament_grams": 4.0, "print_time_seconds": 90},
+    }
+    assert live["temperatures"]["nozzle_2"] == 200
+    assert live["temperatures"]["nozzle_2_target"] == 210
+
+
+def test_profile_base_name_prefers_the_spool_and_prices_what_remains():
+    from types import SimpleNamespace
+
+    from app.services.display_service import _spool_swatch
+
+    filament = SimpleNamespace(
+        designation="PLA",
+        material_type="PLA",
+        material_subgroup="galaxy",
+        manufacturer_color_name="",
+        manufacturer=None,
+        filament_colors=[],
+        printer_params=[],
+        raw_material_weight_g=1000,
+        price=20,
+        custom_fields={"bambu_profile_base_name": "Filament PLA"},
+        finish_type="",
+        color_mode="single",
+    )
+    spool = SimpleNamespace(
+        id=1,
+        filament=filament,
+        remaining_weight_g=500,
+        initial_total_weight_g=1250,
+        empty_spool_weight_g=250,
+        purchase_price=40,
+        custom_fields={"bambu_profile_base_name": "Spool PLA"},
+        rfid_uid=None,
+        rfid_uid_2=None,
+        last_used_at=None,
+        printer_params=[],
+    )
+    painted = _spool_swatch(spool, 1)
+    assert painted["profile_base_name"] == "Spool PLA"
+    assert painted["material_subgroup"] == "galaxy"
+    assert painted["remaining_cost"] == 20.0
+    spool.custom_fields = {}
+    assert _spool_swatch(spool, 1)["profile_base_name"] == "Filament PLA"
 
 
 def test_normalize_documented_shape():

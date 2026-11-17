@@ -3101,7 +3101,8 @@ html.sidebar-collapsed .fm-logo-text {
 .fm-inventory-table td[data-column-pin] { background: var(--bg-elevated); }
 .fm-inventory-table tr:hover td[data-column-pin] { background: var(--bg-soft); }
 .fm-inventory-table tr.bulk-selected td[data-column-pin],
-.fm-inventory-table tr.bulk-selected {
+.fm-inventory-table tr.bulk-selected,
+.fm-table tbody tr.bulk-selected {
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
 }
 .fm-inventory-table[data-overflow-start] [data-column-pin="start"]::after,
