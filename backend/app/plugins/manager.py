@@ -206,6 +206,88 @@ class PluginManager:
             return None
         return parsed if parsed > 0 else None
 
+    @staticmethod
+    def _ams_unit_id(slot_index: str) -> int | None:
+        """AMS or AMS-HT unit id for a slot, or None for an external holder.
+
+        External trays (``254`` / ``255``) are not AMS bays. Unplugging one
+        does not go through the disappeared-unit pass; the legacy-key pass
+        still retires ``255-254`` / ``255-255``.
+        """
+        canon = PluginManager._canonicalize_slot_index(slot_index or "")
+        if not canon or "-" not in canon:
+            return None
+        ams_text, _, _tray = canon.partition("-")
+        try:
+            ams_id = int(ams_text)
+        except ValueError:
+            return None
+        if ams_id in (254, 255):
+            return None
+        return ams_id
+
+    @staticmethod
+    def _reported_ams_unit_ids(ams_info: dict | None) -> set[int] | None:
+        """Unit ids in this snapshot.
+
+        ``None`` means the driver did not send a unit list (Moonraker, and
+        the empty refresh path). An empty set means the snapshot listed no
+        AMS or AMS-HT units.
+        """
+        if not isinstance(ams_info, dict) or "ams_units" not in ams_info:
+            return None
+        units = ams_info.get("ams_units")
+        if not isinstance(units, list):
+            return None
+        ids: set[int] = set()
+        for unit in units:
+            if not isinstance(unit, dict):
+                continue
+            try:
+                ids.add(int(unit["ams_id"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return ids
+
+    @staticmethod
+    def _color_key(value: Any) -> str:
+        """First 6 hex digits, so ``FF0000`` and ``FF0000FF`` compare equal."""
+        text = str(value or "").strip().lstrip("#")
+        if len(text) >= 6 and all(c in "0123456789abcdefABCDEF" for c in text[:6]):
+            return text[:6].upper()
+        return ""
+
+    @staticmethod
+    def _materials_conflict(stored: str, incoming: str) -> bool:
+        """True when two material names cannot be the same filament.
+
+        ``PLA`` and ``PLA-CF`` do not conflict: the printer's tray code is
+        often more specific than the filament's material type.
+        """
+        left = stored.strip().lower()
+        right = incoming.strip().lower()
+        if not left or not right or left == right:
+            return False
+        return not (left.startswith(right) or right.startswith(left))
+
+    @staticmethod
+    def _tray_contradicts_stored(incoming: dict, stored: dict | None) -> bool:
+        """True when a loaded tray cannot still be the spool last saved here.
+
+        A restart sends no spool id for a bay that still holds the same
+        filament. A swap sends no spool id too, but the material or color
+        has changed. Only that second case should drop the stored link.
+        """
+        previous = stored or {}
+        if PluginManager._materials_conflict(
+            str(previous.get("tray_type") or ""),
+            str(incoming.get("tray_type") or ""),
+        ):
+            return True
+        old_color = PluginManager._color_key(previous.get("tray_color"))
+        new_color = PluginManager._color_key(incoming.get("tray_color"))
+        return bool(old_color and new_color and old_color != new_color)
+
     async def _apply_spool_to_assignment(
         self,
         db: AsyncSession,
@@ -283,8 +365,10 @@ class PluginManager:
                 # the printer-wide fallback below.
                 per_slot_spools = False
 
-                # Upsert slots if any
+                # Upsert slots if any. An empty list is the driver-health
+                # refresh and must not retire bays.
                 if slots_data:
+                    reported_ams_units = self._reported_ams_unit_ids(ams_info)
                     for slot_data in slots_data:
                         slot_index = self._canonicalize_slot_index(
                             slot_data.get("slot_index", "") or ""
@@ -344,8 +428,12 @@ class PluginManager:
                         # Upsert PrinterSlotAssignment
                         # For new slots, always create assignment (no lazy-load risk)
                         # For existing slots, assignment is eager-loaded via selectinload
+                        stored_meta: dict = {}
+                        stored_spool_id = None
                         if not is_new and printer_slot.assignment:
                             assignment = printer_slot.assignment
+                            stored_meta = dict(assignment.meta or {})
+                            stored_spool_id = assignment.spool_id
                             assignment.present = present
                             assignment.meta = meta
                         else:
@@ -361,14 +449,33 @@ class PluginManager:
                         # active spool, which cannot say *which* slot it belongs to.
                         if "spool_id" in slot_data or not active:
                             per_slot_spools |= active
-                            assignment.meta = await self._apply_spool_to_assignment(
-                                db,
-                                assignment,
-                                self._parse_spool_id(slot_data.get("spool_id")) if active else None,
-                                meta,
-                                present=slot_data.get("present") if active else False,
+                            incoming_spool_id = (
+                                self._parse_spool_id(slot_data.get("spool_id")) if active else None
                             )
-                            assignment.updated_at = datetime.now(UTC)
+                            # A loaded bay with no spool id means the driver does
+                            # not know the spool (Bambuddy's sticky map is empty
+                            # after a restart). Keep the stored link, and its
+                            # meta, unless the live tray is a different filament.
+                            # An empty bay (present false) still clears it.
+                            if (
+                                active
+                                and incoming_spool_id is None
+                                and present
+                                and stored_spool_id
+                                and not self._tray_contradicts_stored(meta, stored_meta)
+                            ):
+                                assignment.spool_id = stored_spool_id
+                                assignment.meta = stored_meta
+                                assignment.present = present
+                            else:
+                                assignment.meta = await self._apply_spool_to_assignment(
+                                    db,
+                                    assignment,
+                                    incoming_spool_id,
+                                    meta,
+                                    present=slot_data.get("present") if active else False,
+                                )
+                                assignment.updated_at = datetime.now(UTC)
 
                     # Retire legacy external keys (255-254 / 255-255) once the
                     # canonical 255-0 / 255-1 rows exist, so AMS View and the
@@ -402,6 +509,21 @@ class PluginManager:
                             logger.info(
                                 f"Deactivated legacy external slot {raw!r} "
                                 f"on printer {printer_id} (canonical {canon})"
+                            )
+                            continue
+                        # A snapshot that names AMS units drops bays it no
+                        # longer lists. Otherwise an unplugged AMS-HT stays
+                        # active and the Display API keeps drawing an empty HT.
+                        if reported_ams_units is None or not slot.is_active:
+                            continue
+                        unit_id = self._ams_unit_id(raw)
+                        if unit_id is not None and unit_id not in reported_ams_units:
+                            slot.is_active = False
+                            logger.info(
+                                "Deactivated unplugged AMS unit %s slot %s on printer %s",
+                                unit_id,
+                                raw,
+                                printer_id,
                             )
 
                     await db.commit()
