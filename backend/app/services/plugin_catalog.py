@@ -66,6 +66,7 @@ class CatalogSelection(BaseModel):
     plugin_key: PluginKey
     version: ReleaseVersion
     release_id: ReleaseDigest
+    update_only: bool = False
 
 
 _CATALOG = TypeAdapter(list[CatalogRelease])

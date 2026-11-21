@@ -7,15 +7,43 @@ import FormDialog from '../../components/FormDialog.astro'
 <Layout panel="plugin-management" title="FilaMan - Plugins">
   <style>
     .plugin-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .plugin-toolbar-actions .fm-btn, #install-submit, #catalog-update-all, :global(.plugin-actions .btn-update) {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .plugin-toolbar-actions .fm-btn[hidden] { display: none; }
+    .plugin-toolbar-actions svg, #install-submit svg, #catalog-update-all svg, :global(.plugin-actions .btn-update svg) { flex: none; }
+    .plugin-toolbar-actions .fm-btn:disabled { opacity: .55; cursor: not-allowed; }
     .plugin-table { width: 100%; }
-    .plugin-table :global(td:first-child) { min-width: 180px; }
-    .plugin-table :global(:is(th, td):not(:first-child)) { width: 1%; white-space: nowrap; }
+    @container detail-page (width > 48rem) {
+      .plugin-table :global(td:first-child) { min-width: 180px; }
+      .plugin-table :global(:is(th, td):not(:first-child)) { width: 1%; }
+      .plugin-table :global(:is(th, td):not(:first-child, .plugin-controls, .plugin-author, .plugin-version)) { white-space: nowrap; }
+      .plugin-table :global(.plugin-author) { min-width: 5.5rem; max-width: 10rem; }
+      .plugin-table :global(.plugin-version) { min-width: 5rem; max-width: 8rem; }
+      .plugin-table :global(.plugin-actions .btn-update) { max-width: 10rem; }
+      .plugin-table :global(.plugin-actions) { width: max-content; margin-inline-start: auto; }
+      .plugin-table :global(.plugin-update-message:not(:empty)) { width: 13rem; }
+    }
     :global(.plugin-actions) { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
     :global(.plugin-actions > *) { flex-shrink: 0; }
+    :global(.plugin-description) { color: var(--text-muted); font-size: .8rem; line-height: 1.5; margin: 4px 0 0; }
+    .plugin-table :global(.plugin-description-toggle),
+    .plugin-table :global(.plugin-mobile-label) { display: none; }
+    :global(.plugin-version) { font: .85rem monospace; overflow-wrap: anywhere; }
+    :global(.plugin-type span) {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: .75rem; font-weight: 600; background: var(--bg-soft); color: var(--text-muted);
+    }
+    :global(.plugin-author) { color: var(--text-muted); overflow-wrap: anywhere; }
+    :global(.plugin-state) { display: flex; align-items: center; }
+    :global(.plugin-state .fm-toggle:has(:focus-visible)) { outline: 2px solid var(--accent); outline-offset: 2px; }
+    :global(.plugin-actions .btn-update) { font-size: .8rem; padding: 4px 10px; white-space: normal; overflow-wrap: anywhere; }
+    :global(.plugin-update-message:not(:empty)) { margin-top: 8px; min-width: 0; overflow-wrap: anywhere; }
+    :global(.plugin-update-message:empty) { padding: 0; border: 0; }
     :global(.plugin-detail-row) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
     :global(.plugin-detail-value) { text-align: right; overflow-wrap: anywhere; }
     :global(.plugin-schema) { margin-top: 8px; background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px; font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .plugin-message { margin-bottom: 16px; }
+    .plugin-message:not(:empty) { margin-bottom: 16px; }
     .plugin-drop-zone { display: block; border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 20px; text-align: center; cursor: pointer; }
     .plugin-drop-zone:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     :global(#install-modal [hidden]) { display: none; }
@@ -28,11 +56,12 @@ import FormDialog from '../../components/FormDialog.astro'
       :global(#install-modal.catalog-dialog) { width: min(58rem, calc(100vw - 32px)); }
     }
     :global(#install-modal.catalog-dialog h2) { font-size: 1.08rem; }
-    :global(body:has(#install-modal.catalog-dialog[open]) #fm-confirm-overlay.open) { transition: none; }
-    :global(body:has(#install-modal.catalog-dialog[open]) #fm-confirm-overlay .fm-modal) {
-      overflow-wrap: anywhere; transform: none; transition: none;
+    :global(body:has(.plugin-admin) #fm-confirm-overlay.open) { transition: none; }
+    :global(body:has(.plugin-admin) #fm-confirm-overlay .fm-modal) {
+      max-height: calc(100dvh - 32px); overflow: auto; overflow-wrap: anywhere; transform: none; transition: none;
     }
-    :global(body:has(#install-modal.catalog-dialog[open]) #fm-confirm-overlay .fm-modal-actions) { flex-wrap: wrap; }
+    :global(body:has(.plugin-admin) #fm-confirm-overlay .fm-modal-actions) { flex-wrap: wrap; }
+    :global(body:has(.plugin-admin) #fm-confirm-message) { white-space: pre-line; }
     .catalog-intro, #catalog-status { margin: 0; }
     #catalog-status:empty { position: absolute; }
     #catalog-retry { justify-self: start; }
@@ -78,35 +107,110 @@ import FormDialog from '../../components/FormDialog.astro'
     .catalog-list :global(.catalog-footer .fm-btn svg) { flex-shrink: 0; }
     .catalog-list :global(.catalog-publisher) { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
     .catalog-submit { color: var(--accent); font-size: .85rem; }
-    .toggle-spinner { display: none; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: toggle-spin .6s linear infinite; margin-left: 8px; }
-    .toggle-spinner.visible { display: inline-block; }
+    .plugin-table :global(.toggle-spinner) { display: none; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: toggle-spin .6s linear infinite; margin-left: 8px; }
+    .plugin-table :global(.toggle-spinner.visible) { display: inline-block; }
+    @media (prefers-reduced-motion: reduce) {
+      .plugin-table :global(.toggle-spinner) { animation: none; }
+    }
     @keyframes toggle-spin { to { transform: rotate(360deg); } }
+
+    @container detail-page (max-width: 48rem) {
+      .plugin-list { padding: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
+      .plugin-table, .plugin-table :global(tbody) { display: block; }
+      .plugin-table thead {
+        display: block; position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+      }
+      .plugin-table :global(tbody) { display: grid; gap: 12px; }
+      .plugin-table :global(tbody > tr) {
+        display: grid; grid-template-columns: fit-content(25%) max-content minmax(0, 1fr); align-items: center; gap: 2px 8px;
+        padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-elevated);
+      }
+      .plugin-table :global(tbody > tr:hover) { background: var(--bg-elevated); }
+      .plugin-table :global(td) { width: auto; padding: 0; border: 0; }
+      .plugin-table :global(td[colspan], .plugin-identity, .plugin-controls) { grid-column: 1 / -1; }
+      .plugin-table :global(.plugin-author) { display: none; }
+      .plugin-table :global(.fm-plugin-name) { font-size: 1rem; }
+      .plugin-table :global(.plugin-description-wrap) {
+        display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: start; gap: 4px;
+      }
+      .plugin-table :global(.plugin-description-wrap:has([aria-expanded="false"]) .plugin-description) {
+        display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+      }
+      .plugin-table :global(.plugin-description-toggle:not([hidden])) {
+        display: inline-flex; width: 44px; height: 44px;
+      }
+      .plugin-table :global(.plugin-description-toggle[aria-expanded="true"] svg) { transform: rotate(180deg); }
+      .plugin-table :global(.plugin-status) { justify-self: end; }
+      .plugin-table :global(.plugin-state) { gap: 6px; position: relative; }
+      .plugin-table :global(.plugin-state .fm-toggle) { width: 44px; height: 44px; }
+      .plugin-table :global(.plugin-state .fm-toggle-slider) { inset: 11px 2px; }
+      .plugin-table :global(.plugin-state .toggle-spinner) { position: absolute; right: 14px; margin: 0; pointer-events: none; }
+      .plugin-table :global(.plugin-mobile-label) { display: inline; color: var(--text-muted); font-size: .8rem; }
+      .plugin-table :global(.plugin-controls) { padding-top: 4px; }
+      .plugin-table :global(.plugin-actions) {
+        display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px;
+        border-top: 1px solid var(--border); padding-top: 8px;
+      }
+      .plugin-table :global(.plugin-actions .btn-update) { flex: 1 0 100%; min-height: 44px; font-size: .85rem; }
+      .plugin-table :global(.plugin-actions .fm-row-action) { width: auto; min-width: 44px; height: 44px; gap: 6px; padding: 0 8px; }
+      .plugin-table :global(.plugin-actions .btn-delete) { margin-inline-start: auto; }
+    }
+
+    @media (max-width: 640px) {
+      .plugin-admin :global(.fm-admin-toolbar) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+      .plugin-admin :global(.fm-list-controls) { display: block; }
+      .plugin-toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .plugin-toolbar-actions .fm-btn { min-height: 44px; white-space: normal; overflow-wrap: anywhere; }
+      #btn-browse-plugins:has(+ #btn-update-all[hidden]) { grid-column: 1 / -1; }
+      .catalog-list :global(.catalog-footer .fm-btn) { justify-content: center; justify-self: stretch; min-height: 44px; }
+      .catalog-tools :is(input, select), .plugin-install-actions .fm-btn, #catalog-retry,
+      :global(#detail-close), :global(body:has(.plugin-admin) #fm-confirm-overlay .fm-btn) { min-height: 44px; }
+      .catalog-tools input { font-size: 1rem; }
+      :global(#install-modal .fm-form-dialog-header) { overflow-wrap: anywhere; }
+      :global(body:has(.plugin-admin) #fm-confirm-overlay .fm-modal) { padding: 20px; }
+      :global(body:has(.plugin-admin) #fm-confirm-overlay .fm-modal-actions .fm-btn) {
+        flex: 1 1 auto; padding-inline: 12px; white-space: normal;
+      }
+    }
   </style>
-  <div class="fm-admin-page">
+  <div class="fm-admin-page plugin-admin">
   <AdminHeader titleKey="admin.systemPlugins" title="Plugins">
     <div class="plugin-toolbar-actions">
-      <button id="btn-check-updates" class="fm-btn fm-btn-outline" data-i18n="admin.pluginCheckUpdates">Check for Updates</button>
-      <button id="btn-install" class="fm-btn fm-btn-outline" data-i18n="admin.pluginUploadZip">Upload ZIP</button>
-      <button id="btn-browse-plugins" class="fm-btn fm-btn-primary" data-i18n="admin.pluginBrowse">Browse Plugins</button>
+      <button type="button" id="btn-check-updates" class="fm-btn fm-btn-outline">
+        <svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-change-status" /></svg>
+        <span data-i18n="admin.pluginCheckUpdates">Check for Updates</span>
+      </button>
+      <button type="button" id="btn-install" class="fm-btn fm-btn-outline">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 16v5h16v-5" /></svg>
+        <span data-i18n="admin.pluginUploadZip">Upload ZIP</span>
+      </button>
+      <button type="button" id="btn-browse-plugins" class="fm-btn fm-btn-primary">
+        <svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-plugin" /></svg>
+        <span data-i18n="admin.pluginBrowse">Browse Plugins</span>
+      </button>
+      <button type="button" id="btn-update-all" class="fm-btn fm-btn-primary" hidden>
+        <svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-change-status" /></svg>
+        <span data-i18n="admin.pluginUpdateAll">Update All</span>
+      </button>
     </div>
   </AdminHeader>
-  <div id="plugin-message" class="plugin-message hidden" role="status"></div>
+  <div id="plugin-message" class="plugin-message" role="status"></div>
   <!-- Plugin-Liste -->
-  <div class="fm-card" style="padding: 0;">
-    <table class="fm-table fm-admin-table plugin-table">
-      <thead>
-        <tr>
-          <th data-i18n="common.name">Name</th>
-          <th data-i18n="admin.pluginVersion">Version</th>
-          <th data-i18n="admin.pluginType">Type</th>
-          <th data-i18n="admin.pluginAuthor">Author</th>
-          <th data-i18n="common.status">Status</th>
-          <th style="text-align: right;" data-i18n="common.actions">Actions</th>
+  <div class="fm-card plugin-list">
+    <table class="fm-table fm-admin-table plugin-table" role="table">
+      <thead role="rowgroup">
+        <tr role="row">
+          <th role="columnheader" scope="col" data-i18n="common.name">Name</th>
+          <th role="columnheader" scope="col" data-i18n="admin.pluginVersion">Version</th>
+          <th role="columnheader" scope="col" data-i18n="admin.pluginType">Type</th>
+          <th role="columnheader" scope="col" data-i18n="admin.pluginAuthor">Author</th>
+          <th role="columnheader" scope="col" data-i18n="common.status">Status</th>
+          <th role="columnheader" scope="col" style="text-align: right;" data-i18n="common.actions">Actions</th>
         </tr>
       </thead>
-      <tbody id="plugins-table">
-        <tr>
-          <td colspan="6" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
+      <tbody id="plugins-table" role="rowgroup">
+        <tr role="row">
+          <td role="cell" colspan="6" style="text-align: center; color: var(--text-muted);" data-i18n="common.loading">Loading...</td>
         </tr>
       </tbody>
     </table>
@@ -116,7 +220,14 @@ import FormDialog from '../../components/FormDialog.astro'
   <FormDialog id="install-modal" titleId="install-title" titleKey="admin.installPlugin" title="Install Plugin" wide>
     <Fragment slot="actions">
       <div class="plugin-install-actions">
-        <button type="submit" form="install-form" id="install-submit" class="fm-btn fm-btn-primary" disabled data-i18n="admin.installPlugin">Install Plugin</button>
+        <button type="submit" form="install-form" id="install-submit" class="fm-btn fm-btn-primary" disabled>
+          <svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-plugin" /></svg>
+          <span data-i18n="admin.installPlugin">Install Plugin</span>
+        </button>
+        <button type="button" id="catalog-update-all" class="fm-btn fm-btn-primary" hidden>
+          <svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-change-status" /></svg>
+          <span data-i18n="admin.pluginUpdateAll">Update All</span>
+        </button>
         <button type="button" id="install-cancel" data-dialog-close class="fm-btn fm-btn-outline" data-i18n="common.cancel">Cancel</button>
       </div>
       <span id="catalog-progress" class="fm-sr-only" role="status"></span>
@@ -197,22 +308,50 @@ import FormDialog from '../../components/FormDialog.astro'
       update_available: boolean; is_installed: boolean; requires_newer_zip: boolean; installed_version?: string | null
       icon_url?: string | null
     }
-    interface InstallResult { plugin: { plugin_key: string; name: string; version: string }; message: string }
+    interface InstallResult { plugin: Plugin; message: string }
     const fm = window as unknown as { __fmConfirm: (message: string, options?: { title?: string; okLabel?: string; isDanger?: boolean }) => Promise<boolean> }
     let plugins: Plugin[] = []
+    let installedListRequest = 0
+    let pendingInstalledList: number | null = null
+    const pendingStatus = new Map<string, boolean>()
+    const appliedStatus = new Map<string, number>()
     let selectedFile: File | null = null
     let availablePlugins: RegistryPlugin[] = []
     let updateMap = new Map<string, RegistryPlugin>()
     let updateRequest = 0
-    const pendingUpdates = new Set<string>()
+    let updating = false
+    let uninstalling = false
+    let pendingUpdate: string | null = null
+    const updateAllButton = panel.querySelector<HTMLButtonElement>('#btn-update-all')!
+    const catalogUpdateAllButton = panel.querySelector<HTMLButtonElement>('#catalog-update-all')!
+    const checkUpdatesButton = panel.querySelector<HTMLButtonElement>('#btn-check-updates')!
+    const updateMessages = new Map<string, { text: string; error: boolean }>()
+    const descriptionObserver = new ResizeObserver(entries => {
+      for (const { target } of entries) {
+        const toggle = target.parentElement!.querySelector<HTMLButtonElement>('.plugin-description-toggle')!
+        if (toggle.getAttribute('aria-expanded') === 'false') {
+          toggle.hidden = target.scrollHeight <= target.clientHeight
+        }
+      }
+    })
     
+    panelSignal.addEventListener('abort', () => descriptionObserver.disconnect(), { once: true })
+
     let installing = false
-    const installModal = panel.querySelector('#install-modal') as HTMLDialogElement
-    const installDialog = bindFormDialog(installModal, { canClose: () => !installing })
-    const detailDialog = bindFormDialog(panel.querySelector('#detail-modal') as HTMLDialogElement)
+    const installModal = panel.querySelector<HTMLElement>('#install-modal') as HTMLDialogElement
+    const installDialog = bindFormDialog(installModal, { canClose: () => !installing && !updating })
+    let detailOpener: HTMLButtonElement | undefined
+    const detailDialog = bindFormDialog(panel.querySelector<HTMLElement>('#detail-modal') as HTMLDialogElement, {
+      onClose() {
+        if (detailOpener && !detailOpener.isConnected) {
+          focusPluginControl(detailOpener.dataset.pluginFocus!, checkUpdatesButton)
+        }
+        detailOpener = undefined
+      },
+    })
     function showMessage(message: string, error = false) {
-      const host = panel.querySelector('#plugin-message')!
-      host.className = `plugin-message ${error ? 'fm-alert-error' : 'fm-alert-success'}`
+      const host = panel.querySelector<HTMLElement>('#plugin-message')!
+      host.className = `plugin-message ${message ? (error ? 'fm-alert-error' : 'fm-alert-success') : ''}`
       host.setAttribute('role', error ? 'alert' : 'status')
       host.textContent = message
     }
@@ -223,22 +362,46 @@ import FormDialog from '../../components/FormDialog.astro'
     
     async function loadPlugins() {
       if (panelSignal.aborted) return
+      const currentRequest = ++installedListRequest
+      pendingInstalledList = currentRequest
       try {
-        plugins = await api.get<Plugin[]>('/admin/system/plugins')
+        const installed = await api.get<Plugin[]>('/admin/system/plugins')
+        if (panelSignal.aborted || currentRequest !== installedListRequest) return
+        plugins = installed
         renderPlugins()
+        return true
       } catch (error) {
-        if (isAbortError(error)) return
+        if (panelSignal.aborted || currentRequest !== installedListRequest || isAbortError(error)) return
         console.error('Failed to load plugins:', error)
-        const tbody = panel.querySelector('#plugins-table')!
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--error-text);">${escapeHtml(t('admin.pluginFailedLoad'))}</td></tr>`
+        const message = t('admin.pluginFailedLoad')
+        if (plugins.length) {
+          showMessage(message, true)
+        } else {
+          const tbody = panel.querySelector<HTMLElement>('#plugins-table')!
+          tbody.innerHTML = `<tr role="row"><td role="cell" colspan="6" style="text-align: center; color: var(--error-text);">${escapeHtml(message)}</td></tr>`
+        }
+        return false
+      } finally {
+        if (pendingInstalledList === currentRequest) pendingInstalledList = null
       }
+    }
+
+    function focusPluginControl(id: string, fallback?: HTMLElement) {
+      const control = panel.querySelector<HTMLElement>(`#plugins-table [data-plugin-focus="${CSS.escape(id)}"]`) ?? fallback
+      control?.focus({ preventScroll: true })
     }
     
     function renderPlugins() {
-      const tbody = panel.querySelector('#plugins-table')!
+      if (panelSignal.aborted) return
+      updateAllButton.hidden = installedUpdates().length === 0
+      const tbody = panel.querySelector<HTMLElement>('#plugins-table')!
+      descriptionObserver.disconnect()
+      const focused = tbody.querySelector<HTMLElement>('[data-plugin-focus]:focus')
+      const expanded = new Set([...tbody.querySelectorAll('[aria-expanded="true"][aria-controls]')].map(button => button.getAttribute('aria-controls')))
       
       if (plugins.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">${escapeHtml(t('admin.noPlugins'))}</td></tr>`
+        tbody.innerHTML = `<tr role="row"><td role="cell" colspan="6" style="text-align: center; color: var(--text-muted);">${escapeHtml(t('admin.noPlugins'))}</td></tr>`
+        if (focused) checkUpdatesButton.focus({ preventScroll: true })
         return
       }
       
@@ -249,39 +412,50 @@ import FormDialog from '../../components/FormDialog.astro'
       }
       
       tbody.innerHTML = plugins.map(p => {
-        const update = updateMap.get(p.plugin_key)
+        const update = updateFor(p)
+        const feedback = updateMessages.get(p.plugin_key)
+        const pendingActive = pendingStatus.get(p.plugin_key)
+        const descriptionId = `plugin-description-${p.plugin_key}`
+        const focusKey = escapeHtml(p.plugin_key)
         const openLabel = escapeHtml(`${t('common.open')} ${p.name}`)
         const nameHtml = p.page_url
-          ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" style="color: var(--accent); text-decoration: none; font-weight: 600;">${escapeHtml(p.name)}</a>`
+          ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" data-plugin-focus="${focusKey}:title" style="color: var(--accent); text-decoration: none; font-weight: 600;">${escapeHtml(p.name)}</a>`
           : `<span style="font-weight: 600;">${escapeHtml(p.name)}</span>`
         
         return `
-        <tr>
-          <td>
+        <tr role="row">
+          <td role="cell" class="plugin-identity">
             <div class="fm-plugin-name"><span data-plugin-icon="${escapeHtml(p.plugin_key)}"></span>${nameHtml}</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(p.description || '')}</div>
+            ${p.description ? `<div class="plugin-description-wrap">
+              <p id="${escapeHtml(descriptionId)}" class="plugin-description">${escapeHtml(p.description)}</p>
+              <button type="button" class="plugin-description-toggle fm-row-action" data-plugin-focus="${focusKey}:description" aria-label="${escapeHtml(t('admin.pluginDescription'))}" aria-expanded="${expanded.has(descriptionId)}" aria-controls="${escapeHtml(descriptionId)}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+            </div>` : ''}
           </td>
-          <td style="font-family: monospace; font-size: 0.85rem;">${escapeHtml(p.version)}</td>
-          <td>
-            <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; background: var(--bg-soft); color: var(--text-muted);">${escapeHtml(typeLabels[p.plugin_type] || p.plugin_type)}</span>
+          <td role="cell" class="plugin-version">${escapeHtml(p.version)}</td>
+          <td role="cell" class="plugin-type">
+            <span>${escapeHtml(typeLabels[p.plugin_type] || p.plugin_type)}</span>
           </td>
-          <td style="color: var(--text-muted);">${escapeHtml(p.author || '-')}</td>
-          <td>
-            <div style="display: flex; align-items: center;">
+          <td role="cell" class="plugin-author">${escapeHtml(p.author || '-')}</td>
+          <td role="cell" class="plugin-status">
+            <div class="plugin-state">
+              <span class="plugin-mobile-label" aria-hidden="true">${escapeHtml(t(p.is_active ? 'common.active' : 'common.inactive'))}</span>
               <label class="fm-toggle" title="${escapeHtml(p.is_active ? t('admin.pluginDeactivate') : t('admin.pluginActivate'))}">
-                <input type="checkbox" class="toggle-active" aria-label="${escapeHtml(p.name)}: ${escapeHtml(t('common.status'))}" data-key="${escapeHtml(p.plugin_key)}" ${p.is_active ? 'checked' : ''} />
+                <input type="checkbox" class="toggle-active" data-plugin-focus="${focusKey}:status" aria-label="${escapeHtml(p.name)}: ${escapeHtml(t('common.status'))}" data-key="${escapeHtml(p.plugin_key)}" ${(pendingActive ?? p.is_active) ? 'checked' : ''} ${pendingActive !== undefined ? 'disabled' : ''} />
                 <span class="fm-toggle-slider"></span>
               </label>
-              <span class="toggle-spinner" data-spinner-key="${escapeHtml(p.plugin_key)}"></span>
+              <span class="toggle-spinner${pendingActive !== undefined ? ' visible' : ''}"></span>
             </div>
           </td>
-          <td>
+          <td role="cell" class="plugin-controls">
             <div class="plugin-actions">
-            ${update ? `<button data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-outline" style="font-size:.8rem;padding:4px 10px" ${pendingUpdates.has(p.plugin_key) ? 'disabled' : ''}>${escapeHtml(t('admin.pluginUpdateTo').replace('{version}', update.version))}</button>` : ''}
-            <button data-key="${escapeHtml(p.plugin_key)}" class="btn-detail fm-row-action" aria-label="${escapeHtml(t('admin.pluginDetails'))}" title="${escapeHtml(t('admin.pluginDetails'))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg></button>
-            ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-row-action" aria-label="${openLabel}" title="${openLabel}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></a>` : ''}
-            ${p.installed_by != null ? tableAction('delete', { key: p.plugin_key, name: p.name }, { title: t('admin.uninstallPlugin') }) : ''}
+            ${update ? `<button type="button" data-key="${escapeHtml(p.plugin_key)}" class="btn-update fm-btn fm-btn-primary" data-plugin-focus="${focusKey}:update" aria-live="polite" ${updating || uninstalling ? 'disabled' : ''}><svg width="16" height="16" aria-hidden="true"><use href="/icons.svg?v=2#icon-change-status"></use></svg><span>${escapeHtml(pendingUpdate === p.plugin_key ? t('admin.pluginUpdating') : updateLabel(update))}</span></button>` : ''}
+            <button type="button" data-key="${escapeHtml(p.plugin_key)}" class="btn-detail fm-row-action" data-plugin-focus="${focusKey}:details" aria-label="${escapeHtml(t('admin.pluginDetails'))}" title="${escapeHtml(t('admin.pluginDetails'))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></svg><span class="plugin-mobile-label">${escapeHtml(t('admin.pluginDetails'))}</span></button>
+            ${p.page_url ? `<a href="${escapeHtml(navHrefFor(p.page_url))}" class="fm-row-action" data-plugin-focus="${focusKey}:open" aria-label="${openLabel}" title="${openLabel}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg><span class="plugin-mobile-label">${escapeHtml(t('common.open'))}</span></a>` : ''}
+            ${p.installed_by != null ? tableAction('delete', { key: p.plugin_key, name: p.name, 'plugin-focus': `${p.plugin_key}:delete` }, { title: t('admin.uninstallPlugin'), disabled: updating || uninstalling }) : ''}
             </div>
+            <div data-update-message="${escapeHtml(p.plugin_key)}" class="plugin-update-message${feedback ? (feedback.error ? ' fm-alert-error' : ' fm-alert-success') : ''}" role="${feedback?.error ? 'alert' : 'status'}">${escapeHtml(feedback?.text ?? '')}</div>
           </td>
         </tr>
       `}).join('')
@@ -290,165 +464,292 @@ import FormDialog from '../../components/FormDialog.astro'
         const plugin = plugins.find(p => p.plugin_key === host.dataset.pluginIcon)
         host.replaceWith(createPluginIcon(plugin?.icon_url))
       })
-      
-      // Detail-Buttons
-      tbody.querySelectorAll('.btn-detail').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const key = (e.currentTarget as HTMLButtonElement).dataset.key!
-          showPluginDetails(key)
+      tbody.querySelectorAll('.plugin-description').forEach(description => descriptionObserver.observe(description))
+      tbody.querySelectorAll('.plugin-description-toggle').forEach(button => {
+        button.addEventListener('click', () => {
+          button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'))
         })
       })
       
-      // Update-Buttons
-      tbody.querySelectorAll('.btn-update').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const btnEl = e.currentTarget as HTMLButtonElement
-          const key = btnEl.dataset.key!
-          const info = updateMap.get(key)
-          if (!info || pendingUpdates.has(key)) return
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-detail').forEach(button => {
+        button.addEventListener('click', () => showPluginDetails(button))
+      })
 
-          pendingUpdates.add(key)
-          btnEl.disabled = true
-          try {
-            if (!(await confirmRelease(info)) || panelSignal.aborted) return
-            btnEl.textContent = t('admin.pluginUpdating')
-            await installRelease(info)
-            window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: key }))
-            showMessage(`${t('common.successTitle')}: ${plugins.find(plugin => plugin.plugin_key === key)?.name || key} · ${info.version}`)
-            invalidateUpdate(key)
-            loadPlugins()
-          } catch (err) {
-            if (isAbortError(err)) return
-            if (releaseIsStale(err)) {
-              invalidateUpdate(key)
-              renderPlugins()
-              showMessage(t('admin.pluginCatalogChanged'), true)
-              panel.querySelector<HTMLElement>('#btn-check-updates')?.focus()
-              try {
-                await refreshUpdateActions()
-              } catch (refreshError) {
-                if (!isAbortError(refreshError)) console.error('Plugin catalog refresh failed:', refreshError)
-              }
-              return
-            }
-            console.error('Plugin update failed:', err)
-            showMessage(err instanceof Error ? err.message : t('admin.pluginInstallFailed'), true)
-          } finally {
-            pendingUpdates.delete(key)
-            const action = tbody.querySelector<HTMLButtonElement>(`.btn-update[data-key="${key}"]`)
-            const update = updateMap.get(key)
-            if (action && update) {
-              action.disabled = false
-              action.textContent = t('admin.pluginUpdateTo').replace('{version}', update.version)
-            }
-          }
+      // Update-Buttons
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-update').forEach(button => {
+        button.addEventListener('click', () => {
+          const release = updateMap.get(button.dataset.key!)
+          if (release) void runUpdates([release], button)
         })
       })
 
       // Uninstall-Buttons
-      tbody.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const key = (e.currentTarget as HTMLButtonElement).dataset.key!
-          const name = (e.currentTarget as HTMLButtonElement).dataset.name!
-          
-          const msg = t('admin.confirmUninstall').replace('{name}', name)
-          if (!(await fm.__fmConfirm(msg)) || panelSignal.aborted) return
-          
-          // Ask whether to also delete plugin data
-          const deleteData = await fm.__fmConfirm(t('admin.confirmUninstallDeleteData'), { title: t('admin.uninstallPlugin'), okLabel: t('common.yes') || 'Yes', isDanger: false })
-          if (panelSignal.aborted) return
-          const qs = deleteData ? '?delete_data=true' : ''
-          
+      tbody.querySelectorAll<HTMLButtonElement>('.btn-delete').forEach(button => {
+        button.addEventListener('click', async () => {
+          if (updating || installing || uninstalling) return
+          const key = button.dataset.key!
+          const name = button.dataset.name!
+          uninstalling = true
+          setInstalledMutationControlsDisabled(true, button)
           try {
-            await api.delete(`/admin/system/plugins/${key}${qs}`)
-            invalidateUpdate(key)
-            loadPlugins()
-          } catch (err) {
-            if (isAbortError(err)) return
-            showMessage(err instanceof Error ? err.message : t('admin.pluginUninstallFailed'), true)
-          }
-        })
-      })
-      
-      // Toggle active/inactive
-      tbody.querySelectorAll('.toggle-active').forEach(input => {
-        input.addEventListener('change', async (e) => {
-          const checkbox = e.currentTarget as HTMLInputElement
-          const key = checkbox.dataset.key!
-          const newState = checkbox.checked
-          const spinner = tbody.querySelector(`.toggle-spinner[data-spinner-key="${key}"]`) as HTMLElement
+            const msg = t('admin.confirmUninstall').replace('{name}', () => name)
+            if (!(await fm.__fmConfirm(msg)) || panelSignal.aborted) return
 
-          // Bei Deaktivierung: pruefen ob Drucker betroffen sind
-          if (!newState) {
-            try {
-              const infoResp = await fetch(`/api/v1/admin/system/plugins/${key}/affected-printers`, {
-                credentials: 'include',
-                signal: getAbortSignal(),
-              })
-              if (infoResp.ok) {
-                const info = await infoResp.json()
-                if (panelSignal.aborted) return
-                if (info.count > 0) {
-                  if (document.querySelector('#fm-confirm-overlay[open]')) {
-                    checkbox.checked = true
-                    return
-                  }
-                  const msg = t('admin.pluginDeactivateConfirm').replace('{count}', info.count)
-                  const confirmed = await fm.__fmConfirm(msg, {
-                    title: t('admin.pluginDeactivate'),
-                    isDanger: true,
-                  })
-                  if (!confirmed) {
-                    checkbox.checked = true
-                    return
-                  }
-                }
-              }
-            } catch (err) {
-              if (isAbortError(err)) return
-              // Bei Fehler trotzdem fortfahren (Vorschau ist optional)
+            const deleteData = await fm.__fmConfirm(t('admin.confirmUninstallDeleteData'), { title: t('admin.uninstallPlugin'), okLabel: t('common.yes') || 'Yes', isDanger: false })
+            if (panelSignal.aborted) return
+            button.disabled = true
+            await api.delete(`/admin/system/plugins/${key}${deleteData ? '?delete_data=true' : ''}`)
+            removeInstalledPlugin(key)
+          } catch (err) {
+            if (panelSignal.aborted || isAbortError(err)) return
+            showMessage(err instanceof Error ? err.message : t('admin.pluginUninstallFailed'), true)
+          } finally {
+            uninstalling = false
+            setInstalledMutationControlsDisabled(false)
+            if (!panelSignal.aborted && document.activeElement === document.body) {
+              focusPluginControl(`${key}:delete`, checkUpdatesButton)
             }
           }
+        })
+      })
 
-          if (panelSignal.aborted) return
-          // Spinner anzeigen + Toggle deaktivieren
+      tbody.querySelectorAll<HTMLInputElement>('.toggle-active').forEach(checkbox => {
+        checkbox.addEventListener('change', async () => {
+          const key = checkbox.dataset.key!
+          const newState = checkbox.checked
+          const restoreFocus = document.activeElement === checkbox
+          pendingStatus.set(key, newState)
           checkbox.disabled = true
-          if (spinner) spinner.classList.add('visible')
-          
-          try {
-            await api.patch(`/admin/system/plugins/${key}/active`, { is_active: newState })
+          checkbox.closest('.plugin-state')?.querySelector('.toggle-spinner')?.classList.add('visible')
 
-            // Lokalen State aktualisieren
+          try {
+            if (!newState) {
+              let affected = 0
+              try {
+                const response = await fetch(`/api/v1/admin/system/plugins/${key}/affected-printers`, {
+                  credentials: 'include',
+                  signal: getAbortSignal(),
+                })
+                if (response.ok) affected = (await response.json()).count
+              } catch (err) {
+                if (panelSignal.aborted || isAbortError(err)) return
+                // The affected-printer preview is optional.
+              }
+              if (panelSignal.aborted) return
+              if (affected > 0) {
+                if (document.querySelector('#fm-confirm-overlay[open]')) return
+                const confirmed = await fm.__fmConfirm(t('admin.pluginDeactivateConfirm').replace('{count}', String(affected)), {
+                  title: t('admin.pluginDeactivate'),
+                  isDanger: true,
+                })
+                if (!confirmed || panelSignal.aborted) return
+              }
+            }
+
+            if (panelSignal.aborted) return
+            await api.patch(`/admin/system/plugins/${key}/active`, { is_active: newState })
+            appliedStatus.set(key, ++installedListRequest)
             const plugin = plugins.find(p => p.plugin_key === key)
             if (plugin) plugin.is_active = newState
-            
-            // Tooltip aktualisieren
-            const label = checkbox.closest('.fm-toggle') as HTMLElement
-            if (label) label.title = newState ? t('admin.pluginDeactivate') : t('admin.pluginActivate')
-            
+            if (pendingInstalledList !== null) void loadPlugins()
           } catch (err) {
-            if (isAbortError(err)) return
-            // Bei Fehler: Checkbox zuruecksetzen
-            checkbox.checked = !newState
+            if (panelSignal.aborted || isAbortError(err)) return
             showMessage(err instanceof Error ? err.message : t('admin.pluginToggleFailed'), true)
           } finally {
-            checkbox.disabled = false
-            if (spinner) spinner.classList.remove('visible')
+            pendingStatus.delete(key)
+            const current = tbody.querySelector<HTMLInputElement>(`.toggle-active[data-key="${CSS.escape(key)}"]`)
+            const plugin = plugins.find(p => p.plugin_key === key)
+            if (current && plugin) {
+              const state = current.closest('.plugin-state')!
+              current.checked = plugin.is_active
+              state.querySelector<HTMLElement>('.fm-toggle')!.title = t(plugin.is_active ? 'admin.pluginDeactivate' : 'admin.pluginActivate')
+              state.querySelector('.plugin-mobile-label')!.textContent = t(plugin.is_active ? 'common.active' : 'common.inactive')
+              state.querySelector('.toggle-spinner')!.classList.remove('visible')
+              current.disabled = false
+              if (!panelSignal.aborted && restoreFocus && document.activeElement === document.body) current.focus({ preventScroll: true })
+            }
           }
         })
       })
+      if (focused) focusPluginControl(focused.dataset.pluginFocus!, checkUpdatesButton)
+    }
+
+    function setInstalledMutationControlsDisabled(disabled: boolean, opener?: HTMLButtonElement) {
+      for (const button of panel.querySelectorAll<HTMLButtonElement>('#plugins-table .btn-update, #plugins-table .btn-delete, #btn-browse-plugins, #btn-install, #btn-update-all')) {
+        if (button !== opener) button.disabled = disabled
+      }
+    }
+
+    function updateFor(plugin: Plugin) {
+      const release = updateMap.get(plugin.plugin_key)
+      return release?.installed_version === plugin.version ? release : undefined
+    }
+
+    function installedUpdates() {
+      return plugins.flatMap(plugin => updateFor(plugin) ?? [])
+    }
+
+    updateAllButton.addEventListener('click', () => {
+      const releases = installedUpdates()
+      if (releases.length) void runUpdates(releases, updateAllButton)
+    })
+
+    function catalogUpdates() {
+      return availablePlugins.filter(p => p.update_available && p.is_compatible && !p.requires_newer_zip)
+    }
+
+    catalogUpdateAllButton.addEventListener('click', () => {
+      const releases = catalogUpdates()
+      if (releases.length) void runUpdates(releases, catalogUpdateAllButton)
+    })
+
+    function updateLabel(release: RegistryPlugin) {
+      return t('admin.pluginUpdateTo').replace('{version}', () => release.version)
+    }
+
+    async function runUpdates(releases: RegistryPlugin[], opener: HTMLButtonElement) {
+      if (updating || installing || uninstalling) return
+      const first = releases[0]
+      const fromCatalog = opener === catalogUpdateAllButton
+      const bulk = fromCatalog || opener === updateAllButton
+      const resumeCatalogRefresh = fromCatalog ? suspendCatalogRefresh() : undefined
+      const failures: string[] = []
+      updating = true
+      setInstalledMutationControlsDisabled(true, opener)
+      opener.focus({ preventScroll: true })
+      let stale = false
+      let installedAny = false
+      try {
+        const confirmed = bulk
+          ? await fm.__fmConfirm(
+            t('admin.pluginConfirmUpdateAll').replace('{count}', String(releases.length)) +
+              '\n\n' + releases.map(p => `${p.name} v${p.version} · ${p.publisher}`).join('\n'),
+            { title: t('admin.pluginUpdateAll'), okLabel: t('admin.pluginUpdateAll'), isDanger: false },
+          )
+          : await confirmRelease(first)
+        if (!confirmed || panelSignal.aborted) return
+        opener.disabled = true
+        showMessage('')
+        if (fromCatalog) {
+          clearInstallResult()
+          installClose.disabled = true
+          installForm.inert = true
+          catalogProgress.textContent = t('admin.pluginUpdating')
+          opener.querySelector('span')!.textContent = catalogProgress.textContent
+        }
+        for (const release of releases) {
+          if (panelSignal.aborted) return
+          const key = release.plugin_key
+          pendingUpdate = key
+          const actionLabel = () => panel.querySelector(`.btn-update[data-key="${CSS.escape(key)}"] span`)
+          const label = actionLabel()
+          if (label) label.textContent = t('admin.pluginUpdating')
+          showUpdateMessage(key, '')
+          try {
+            const startedAt = installedListRequest
+            const result = await installRelease(release)
+            installedAny = true
+            applyInstalledPlugin(result.plugin, startedAt)
+            if (fromCatalog) {
+              availablePlugins = availablePlugins.map(p => p.plugin_key === key
+                ? { ...p, is_installed: true, installed_version: result.plugin.version, update_available: false }
+                : p)
+            }
+            showUpdateMessage(key, `${t('common.successTitle')} · v${result.plugin.version}`)
+          } catch (err) {
+            if (panelSignal.aborted || isAbortError(err)) return
+            if (pluginWasUninstalled(err)) {
+              removeInstalledPlugin(key)
+              if (fromCatalog) availablePlugins = availablePlugins.filter(p => p.plugin_key !== key)
+              const message = t('admin.pluginUpdateUninstalled')
+              showMessage(message, true)
+              failures.push(`${release.name}: ${message}`)
+            } else if (releaseIsStale(err)) {
+              stale = true
+              if (fromCatalog) availablePlugins = availablePlugins.filter(p => p.plugin_key !== key)
+              invalidateUpdate(key)
+              renderPlugins()
+              const message = t('admin.pluginCatalogChanged')
+              showUpdateMessage(key, message, true)
+              failures.push(`${release.name}: ${message}`)
+            } else {
+              console.error('Plugin update failed:', err)
+              const message = err instanceof Error ? err.message : t('admin.pluginInstallFailed')
+              showUpdateMessage(key, message, true)
+              failures.push(`${release.name}: ${message}`)
+            }
+          } finally {
+            pendingUpdate = null
+            const currentLabel = actionLabel()
+            const currentRelease = updateMap.get(key)
+            if (currentLabel && currentRelease) currentLabel.textContent = updateLabel(currentRelease)
+          }
+        }
+        if (fromCatalog) {
+          if (failures.length) showValidationError(failures.join('\n'))
+          else {
+            installSuccess.textContent = t('common.successTitle')
+            installSuccess.hidden = false
+          }
+          renderCatalog()
+          void loadAvailablePlugins(true)
+        }
+        if (installedAny || stale) {
+          const refresh = refreshAfterUpdates(stale)
+          if (!fromCatalog) await refresh
+        }
+      } finally {
+        updating = false
+        setInstalledMutationControlsDisabled(false)
+        if (fromCatalog) {
+          resumeCatalogRefresh?.()
+          opener.disabled = false
+          opener.querySelector('span')!.textContent = t('admin.pluginUpdateAll')
+          catalogProgress.textContent = ''
+          installForm.inert = false
+          installClose.disabled = false
+          if (!panelSignal.aborted && installModal.open) (opener.hidden ? installClose : opener).focus({ preventScroll: true })
+        } else if (!panelSignal.aborted && document.activeElement === document.body && !document.querySelector('dialog[open]')) {
+          const key = CSS.escape(first.plugin_key)
+          const next = bulk
+            ? (updateAllButton.hidden ? checkUpdatesButton : updateAllButton)
+            : panel.querySelector<HTMLButtonElement>(`.btn-update[data-key="${key}"], .btn-detail[data-key="${key}"]`)
+          const focus = next ?? checkUpdatesButton
+          focus.focus({ preventScroll: true })
+        }
+      }
+    }
+
+    async function refreshAfterUpdates(stale: boolean) {
+      await loadPlugins()
+      if (!stale) return
+      try {
+        await refreshUpdateActions()
+      } catch (err) {
+        if (!isAbortError(err)) console.error('Plugin catalog refresh failed:', err)
+      }
+    }
+
+    function showUpdateMessage(key: string, text: string, error = false) {
+      if (text) updateMessages.set(key, { text, error })
+      else updateMessages.delete(key)
+      const host = panel.querySelector<HTMLElement>(`[data-update-message="${CSS.escape(key)}"]`)
+      if (!host) return
+      host.className = `plugin-update-message ${text ? (error ? 'fm-alert-error' : 'fm-alert-success') : ''}`
+      host.setAttribute('role', error ? 'alert' : 'status')
+      host.textContent = text
     }
     
     // ----------------------------------------------------------------
     //  Plugin-Details anzeigen
     // ----------------------------------------------------------------
     
-    function showPluginDetails(key: string) {
-      const plugin = plugins.find(p => p.plugin_key === key)
+    function showPluginDetails(opener: HTMLButtonElement) {
+      const plugin = plugins.find(p => p.plugin_key === opener.dataset.key)
       if (!plugin) return
       
-      const title = panel.querySelector('#detail-title')!
-      const content = panel.querySelector('#detail-content')!
+      const title = panel.querySelector<HTMLElement>('#detail-title')!
+      const content = panel.querySelector<HTMLElement>('#detail-content')!
       
       title.textContent = plugin.name
       title.classList.add('fm-plugin-name')
@@ -483,6 +784,8 @@ import FormDialog from '../../components/FormDialog.astro'
         `
       }
       
+      detailOpener = opener
+      opener.focus({ preventScroll: true })
       detailDialog.open()
     }
     
@@ -491,15 +794,15 @@ import FormDialog from '../../components/FormDialog.astro'
     // ----------------------------------------------------------------
     
     const dropZone = panel.querySelector<HTMLElement>('#drop-zone')!
-    const fileInput = panel.querySelector('#file-input') as HTMLInputElement
+    const fileInput = panel.querySelector<HTMLElement>('#file-input') as HTMLInputElement
     const fileName = panel.querySelector<HTMLElement>('#file-name')!
-    const installForm = panel.querySelector('#install-form') as HTMLFormElement
-    const installSubmit = panel.querySelector('#install-submit') as HTMLButtonElement
-    const installClose = panel.querySelector('#install-cancel') as HTMLButtonElement
+    const installForm = panel.querySelector<HTMLElement>('#install-form') as HTMLFormElement
+    const installSubmit = panel.querySelector<HTMLElement>('#install-submit') as HTMLButtonElement
+    const installClose = panel.querySelector<HTMLElement>('#install-cancel') as HTMLButtonElement
     
     const catalogBrowser = panel.querySelector<HTMLElement>('#catalog-browser')!
-    const catalogSearch = panel.querySelector('#catalog-search') as HTMLInputElement
-    const catalogFilter = panel.querySelector('#catalog-filter') as HTMLSelectElement
+    const catalogSearch = panel.querySelector<HTMLElement>('#catalog-search') as HTMLInputElement
+    const catalogFilter = panel.querySelector<HTMLElement>('#catalog-filter') as HTMLSelectElement
     const catalogStatus = panel.querySelector<HTMLElement>('#catalog-status')!
     const catalogList = panel.querySelector<HTMLElement>('#catalog-list')!
     const catalogRetry = panel.querySelector<HTMLElement>('#catalog-retry')!
@@ -507,14 +810,17 @@ import FormDialog from '../../components/FormDialog.astro'
     const installSuccess = panel.querySelector<HTMLElement>('#validation-details')!
     const installError = panel.querySelector<HTMLElement>('#error-details')!
     const installProgress = panel.querySelector<HTMLElement>('#upload-progress')!
+    const desktopInstaller = matchMedia('(min-width: 641px)')
     let catalogRequest = 0
+    let pendingCatalogRequest: number | null = null
 
-    panel.querySelector('#btn-browse-plugins')?.addEventListener('click', () => openInstaller(true))
-    panel.querySelector('#btn-install')?.addEventListener('click', () => openInstaller(false))
+    panel.querySelector<HTMLElement>('#btn-browse-plugins')?.addEventListener('click', () => openInstaller(true))
+    panel.querySelector<HTMLElement>('#btn-install')?.addEventListener('click', () => openInstaller(false))
 
     function openInstaller(browse: boolean) {
       catalogRequest++
       availablePlugins = []
+      catalogUpdateAllButton.hidden = true
       catalogList.replaceChildren()
       selectedFile = null
       installModal.classList.toggle('catalog-dialog', browse)
@@ -537,7 +843,7 @@ import FormDialog from '../../components/FormDialog.astro'
       dropZone.style.background = 'transparent'
       installDialog.open()
       if (browse) {
-        catalogSearch.focus()
+        if (desktopInstaller.matches) catalogSearch.focus()
         loadAvailablePlugins()
       }
     }
@@ -617,9 +923,10 @@ import FormDialog from '../../components/FormDialog.astro'
       if (catalogBrowser.hidden && selectedFile && !installSubmit.disabled) void installPlugin()
     })
     async function installPlugin(release?: RegistryPlugin, submit = installSubmit) {
-      if (installing) return
+      if (installing || updating) return
       installing = true
-      const label = release ? submit.querySelector('span')! : submit
+      catalogUpdateAllButton.disabled = true
+      const label = submit.querySelector('span')!
       const action = label.textContent
       installForm.inert = true
       installForm.setAttribute('aria-busy', 'true')
@@ -636,6 +943,7 @@ import FormDialog from '../../components/FormDialog.astro'
       let focusAfterInstall: HTMLElement | undefined
       
       try {
+        const startedAt = installedListRequest
         let result: InstallResult
         if (release) {
           result = await installRelease(release)
@@ -644,32 +952,39 @@ import FormDialog from '../../components/FormDialog.astro'
           formData.append('file', selectedFile!)
           result = await request<InstallResult>('/admin/system/plugins/install', { method: 'POST', body: formData })
         }
-        window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: result.plugin.plugin_key }))
         const message = result.message || `${result.plugin.name} v${result.plugin.version}`
         installSuccess.hidden = false
         installSuccess.textContent = message
         
         selectedFile = null
-        invalidateUpdate(result.plugin.plugin_key)
+        updateMessages.delete(result.plugin.plugin_key)
+        applyInstalledPlugin(result.plugin, startedAt)
         if (release) {
           loadAvailablePlugins()
-          focusAfterInstall = catalogSearch
+          focusAfterInstall = desktopInstaller.matches ? catalogSearch : installClose
         }
         showMessage(message)
-        loadPlugins()
+        void loadPlugins()
       } catch (err) {
-        if (isAbortError(err)) return
-        if (release && releaseIsStale(err)) {
-          invalidateUpdate(release.plugin_key)
-          renderPlugins()
-          showValidationError(t('admin.pluginCatalogChanged'))
+        if (panelSignal.aborted || isAbortError(err)) return
+        if (release && (pluginWasUninstalled(err) || releaseIsStale(err))) {
+          if (pluginWasUninstalled(err)) {
+            removeInstalledPlugin(release.plugin_key)
+            showValidationError(t('admin.pluginUpdateUninstalled'))
+          } else {
+            invalidateUpdate(release.plugin_key)
+            renderPlugins()
+            showValidationError(t('admin.pluginCatalogChanged'))
+            void loadPlugins()
+          }
           loadAvailablePlugins()
-          focusAfterInstall = catalogSearch
+          focusAfterInstall = desktopInstaller.matches ? catalogSearch : installClose
         } else {
           showValidationError(err instanceof Error ? err.message : t('admin.pluginInstallFailed'))
         }
       } finally {
         installing = false
+        catalogUpdateAllButton.disabled = false
         installProgress.hidden = true
         catalogProgress.textContent = ''
         installForm.inert = false
@@ -677,7 +992,7 @@ import FormDialog from '../../components/FormDialog.astro'
         installClose.disabled = false
         label.textContent = action
         submit.disabled = !release && !selectedFile
-        if (installModal.open) (focusAfterInstall ?? (submit.disabled ? installClose : submit)).focus({ preventScroll: true })
+        if (!panelSignal.aborted && installModal.open) (focusAfterInstall ?? (submit.disabled ? installClose : submit)).focus({ preventScroll: true })
       }
     }
 
@@ -697,8 +1012,39 @@ import FormDialog from '../../components/FormDialog.astro'
       })
     }
 
-    function installRelease({ plugin_key, version, release_id }: RegistryPlugin) {
-      return api.post<InstallResult>('/admin/system/plugins/install-from-registry', { plugin_key, version, release_id })
+    function installRelease({ plugin_key, version, release_id, update_available }: RegistryPlugin) {
+      panelSignal.throwIfAborted()
+      return api.post<InstallResult>('/admin/system/plugins/install-from-registry', {
+        plugin_key, version, release_id, ...(update_available ? { update_only: true } : {}),
+      })
+    }
+
+    function applyInstalledPlugin(plugin: Plugin, startedAt: number) {
+      window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: plugin.plugin_key }))
+      installedListRequest++
+      const index = plugins.findIndex(installed => installed.plugin_key === plugin.plugin_key)
+      if (index === -1) plugins.push(plugin)
+      else {
+        const isActive = (appliedStatus.get(plugin.plugin_key) ?? 0) > startedAt
+          ? plugins[index].is_active
+          : plugin.is_active
+        plugins[index] = { ...plugin, is_active: isActive }
+      }
+      invalidateUpdate(plugin.plugin_key)
+      renderPlugins()
+    }
+
+    function removeInstalledPlugin(key: string) {
+      appliedStatus.delete(key)
+      updateMessages.delete(key)
+      invalidateUpdate(key)
+      plugins = plugins.filter(plugin => plugin.plugin_key !== key)
+      renderPlugins()
+      if (pendingInstalledList !== null) void loadPlugins()
+    }
+
+    function pluginWasUninstalled(error: unknown) {
+      return error instanceof ApiError && error.code === 'catalog_plugin_uninstalled'
     }
 
     function releaseIsStale(error: unknown) {
@@ -710,42 +1056,65 @@ import FormDialog from '../../components/FormDialog.astro'
       updateMap.delete(key)
     }
 
-    async function refreshUpdateActions(): Promise<number | null> {
+    async function refreshUpdateActions() {
       if (panelSignal.aborted) return null
       const currentRequest = ++updateRequest
       try {
         const releases = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
-        if (currentRequest !== updateRequest) return null
-        const updates = releases.filter(release => release.update_available)
-        updateMap = new Map(updates.map(release => [release.plugin_key, release]))
+        if (panelSignal.aborted || currentRequest !== updateRequest) return null
+        const installedVersions = new Map(plugins.map(plugin => [plugin.plugin_key, plugin.version]))
+        const listChanged = releases.some(release => release.installed_version !== undefined
+          && release.installed_version !== (installedVersions.get(release.plugin_key) ?? null))
+        updateMap = new Map(releases.filter(release => release.update_available).map(release => [
+          release.plugin_key, { ...release, installed_version: release.installed_version ?? installedVersions.get(release.plugin_key) },
+        ]))
         renderPlugins()
-        return updates.length
+        return { listChanged }
       } catch (err) {
-        if (currentRequest !== updateRequest) return null
+        if (panelSignal.aborted || currentRequest !== updateRequest) return null
         throw err
       }
     }
 
-    async function loadAvailablePlugins() {
+    function suspendCatalogRefresh() {
+      if (pendingCatalogRequest === null) return
+      pendingCatalogRequest = null
+      const pausedRequest = ++catalogRequest
+      return () => {
+        if (installModal.open && pausedRequest === catalogRequest) void loadAvailablePlugins(true)
+      }
+    }
+
+    async function loadAvailablePlugins(keepResults = false) {
       if (panelSignal.aborted) return
       const currentRequest = ++catalogRequest
-      catalogList.replaceChildren()
-      availablePlugins = []
+      pendingCatalogRequest = currentRequest
       catalogRetry.hidden = true
-      catalogStatus.textContent = t('common.loading')
+      if (!keepResults) {
+        catalogList.replaceChildren()
+        availablePlugins = []
+        catalogUpdateAllButton.hidden = true
+        catalogStatus.textContent = t('common.loading')
+      }
       try {
         const releases = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
-        if (currentRequest !== catalogRequest) return
+        if (panelSignal.aborted || currentRequest !== catalogRequest) return
         availablePlugins = releases.sort((a, b) => a.name.localeCompare(b.name))
         renderCatalog()
       } catch (err) {
-        if (currentRequest !== catalogRequest || isAbortError(err)) return
+        if (panelSignal.aborted || currentRequest !== catalogRequest || isAbortError(err)) return
         catalogStatus.textContent = t('admin.pluginRegistryFailed')
         catalogRetry.hidden = false
+      } finally {
+        if (pendingCatalogRequest === currentRequest) pendingCatalogRequest = null
       }
     }
 
     function renderCatalog() {
+      if (panelSignal.aborted) return
+      const focused = document.activeElement
+      const focusedCard = catalogList.contains(focused) ? focused?.closest<HTMLElement>('[data-catalog-key]') : null
+      catalogUpdateAllButton.hidden = catalogUpdates().length === 0
       const query = catalogSearch.value.trim().toLocaleLowerCase()
       const filter = catalogFilter.value
       const matches = availablePlugins.filter(p => {
@@ -769,9 +1138,9 @@ import FormDialog from '../../components/FormDialog.astro'
           ? t('admin.pluginUpdateTo').replace('{version}', p.version)
           : t('admin.installPlugin')
         const actionIcon = p.update_available
-          ? 'M4 9a8 8 0 0 1 13.5-4.5L20 7V3M20 7h-4M20 15a8 8 0 0 1-13.5 4.5L4 17v4M4 17h4'
-          : 'M12 3v12m-5-5 5 5 5-5M5 21h14'
-        return `<li class="catalog-card">
+          ? '<use href="/icons.svg?v=2#icon-change-status"></use>'
+          : '<path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/>'
+        return `<li class="catalog-card" data-catalog-key="${escapeHtml(p.plugin_key)}">
           <div class="catalog-heading">
             <span class="catalog-icon"></span>
             <div>
@@ -786,7 +1155,7 @@ import FormDialog from '../../components/FormDialog.astro'
           <p class="catalog-description">${escapeHtml(p.description)}</p>
           ${blocked || offersInstall ? `<div class="catalog-footer">
             <p class="fm-field-hint">${escapeHtml(blocked || requirement)}</p>
-            ${!blocked && offersInstall ? `<button type="button" class="fm-btn fm-btn-primary" data-release="${escapeHtml(p.plugin_key)}"><span>${escapeHtml(action)}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${actionIcon}"/></svg></button>` : ''}
+            ${!blocked && offersInstall ? `<button type="button" class="fm-btn fm-btn-primary" data-release="${escapeHtml(p.plugin_key)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${actionIcon}</svg><span>${escapeHtml(action)}</span></button>` : ''}
           </div>` : ''}
         </li>`
       }).join('')
@@ -794,6 +1163,15 @@ import FormDialog from '../../components/FormDialog.astro'
         host.append(createPluginIcon(matches[index].icon_url))
       })
       catalogStatus.textContent = matches.length ? '' : t(availablePlugins.length ? 'admin.pluginNoMatches' : 'admin.pluginNoAvailable')
+      if (focusedCard) {
+        const key = CSS.escape(focusedCard.dataset.catalogKey!)
+        const action = focused?.matches('[data-release]') ? '[data-release]' : '.catalog-publisher'
+        const replacement = catalogList.querySelector<HTMLElement>(`[data-catalog-key="${key}"] ${action}`)
+        const target = replacement ?? installClose
+        target.focus({ preventScroll: true })
+      } else if (focused === catalogUpdateAllButton && catalogUpdateAllButton.hidden) {
+        installClose.focus({ preventScroll: true })
+      }
     }
 
     catalogSearch.addEventListener('keydown', event => {
@@ -804,15 +1182,20 @@ import FormDialog from '../../components/FormDialog.astro'
     }
     catalogSearch.addEventListener('input', applyCatalogFilters)
     catalogFilter.addEventListener('change', applyCatalogFilters)
-    catalogRetry.addEventListener('click', loadAvailablePlugins)
+    catalogRetry.addEventListener('click', () => void loadAvailablePlugins(true))
     catalogList.addEventListener('click', async event => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-release]')
-      if (!button || installing) return
+      if (!button || installing || updating) return
       const release = availablePlugins.find(p => p.plugin_key === button.dataset.release)
       if (!release) return
       button.focus({ preventScroll: true })
-      if (await confirmRelease(release) && installModal.open && button.isConnected) {
-        await installPlugin(release, button)
+      const resumeCatalogRefresh = suspendCatalogRefresh()
+      try {
+        if (await confirmRelease(release) && !panelSignal.aborted && installModal.open && button.isConnected) {
+          await installPlugin(release, button)
+        }
+      } finally {
+        resumeCatalogRefresh?.()
       }
     })
 
@@ -820,16 +1203,22 @@ import FormDialog from '../../components/FormDialog.astro'
     //  Auf Aktualisierungen pruefen
     // ----------------------------------------------------------------
 
-    panel.querySelector<HTMLElement>('#btn-check-updates')?.addEventListener('click', async () => {
-      const btn = panel.querySelector<HTMLButtonElement>('#btn-check-updates')!
+    checkUpdatesButton.addEventListener('click', async () => {
+      const btn = checkUpdatesButton
+      const label = btn.querySelector('span')!
       btn.disabled = true
-      btn.textContent = t('admin.pluginCheckingUpdates')
+      label.textContent = t('admin.pluginCheckingUpdates')
 
       try {
-        const count = await refreshUpdateActions()
-        if (count === null) return
+        const loaded = await loadPlugins()
+        if (loaded === false && plugins.length === 0) return
+        const checked = await refreshUpdateActions()
+        if (loaded === false || !checked) return
 
-        if (count === 0) {
+        const count = installedUpdates().length
+        if (checked.listChanged || count < updateMap.size) {
+          showMessage(t('admin.pluginUpdateListChanged'), true)
+        } else if (count === 0) {
           showMessage(t('admin.pluginUpToDate'))
         } else {
           const msg = t('admin.pluginUpdatesAvailable').replace('{count}', String(count))
@@ -837,12 +1226,12 @@ import FormDialog from '../../components/FormDialog.astro'
         }
 
       } catch (err) {
-        if (isAbortError(err)) return
+        if (panelSignal.aborted || isAbortError(err)) return
         console.error('Update check failed:', err)
         showMessage(err instanceof Error ? err.message : t('admin.pluginRegistryFailed'), true)
       } finally {
         btn.disabled = false
-        btn.textContent = t('admin.pluginCheckUpdates')
+        label.textContent = t('admin.pluginCheckUpdates')
       }
     })
     

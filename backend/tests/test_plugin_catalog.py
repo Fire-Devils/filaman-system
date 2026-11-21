@@ -278,6 +278,44 @@ async def test_install_uses_current_catalog_zip_and_manifest(monkeypatch, db_ses
     assert requested[1:] == expected_zip_requests
 
 
+async def test_catalog_update_cannot_reinstall_a_plugin_removed_during_download(
+    auth_client, db_session, monkeypatch, tmp_path,
+):
+    from app.services import plugin_service
+
+    archive = _make_valid_plugin_zip()
+    release = entry(sha256=hashlib.sha256(archive).hexdigest())
+    mock_registry(monkeypatch, lambda request: httpx.Response(200, content=archive)
+                  if request.url.path.endswith(".zip") else httpx.Response(200, json=[release]))
+    monkeypatch.setattr(system, "_read_installed_version", lambda: "2.0.3")
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
+
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(archive, installed_by=1)
+    download = system.fetch_verified_zip
+
+    async def download_then_uninstall(selected):
+        data = await download(selected)
+        await service.uninstall("test_plugin")
+        return data
+
+    client, token = auth_client
+    headers = {"X-CSRF-Token": token}
+    path = "/api/v1/admin/system/plugins/install-from-registry"
+    approved = selection(release).model_dump(exclude_defaults=True)
+    with monkeypatch.context() as patch:
+        patch.setattr(system, "fetch_verified_zip", download_then_uninstall)
+        response = await client.post(path, json={**approved, "update_only": True}, headers=headers)
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "catalog_plugin_uninstalled"
+    assert await service.get_plugin("test_plugin") is None
+    assert not (tmp_path / "test_plugin").exists()
+
+    response = await client.post(path, json=approved, headers=headers)
+    assert response.status_code == 201, response.text
+    assert (tmp_path / "test_plugin" / "plugin.json").is_file()
+
+
 async def test_backup_reinstall_warns_without_installing_when_catalog_unavailable(monkeypatch):
     mock_registry(monkeypatch, lambda request: httpx.Response(503))
     restored, warnings = await system._reinstall_plugins_from_backup(
@@ -706,14 +744,13 @@ async def test_plugin_changes_on_a_secondary_forward_before_writing(auth_client,
     assert forwarded.await_args.args[1:3] == ("DELETE", f"{path}/test_plugin")
     assert forwarded.await_args.kwargs["timeout"] == 120.0
 
+    catalog_update = {**selection(entry()).model_dump(), "update_only": True}
     response = await client.post(
-        f"{path}/install-from-registry", json=selection(entry()).model_dump(),
+        f"{path}/install-from-registry", json=catalog_update,
         headers={**headers, "X-FilaMan-Primary-Hop": "1"},
     )
     assert response.status_code == 201, response.text
-    assert forwarded.await_args.args[1:4] == (
-        "POST", f"{path}/install-from-registry", selection(entry()).model_dump(),
-    )
+    assert forwarded.await_args.args[1:4] == ("POST", f"{path}/install-from-registry", catalog_update)
     for expected in (disabled, enabled):
         body = {"is_active": expected["plugin"]["is_active"]}
         response = await client.patch(f"{path}/test_plugin/active", json=body, headers=headers)
