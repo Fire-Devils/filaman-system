@@ -16,10 +16,10 @@
     "description": "Connects to Bambuddy for AMS inventory and filament usage.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/filaman-bambuddy-plugin",
-    "version": "1.3.10",
+    "version": "1.3.14",
     "min_filaman_version": "2.0.3",
-    "zip_path": "bambuddy-1.3.10.zip",
-    "sha256": "7c83ed9cc15bed95fb2089a3fa0b461c30c58dccc2f1e90ccb66df915487146f"
+    "zip_path": "bambuddy-1.3.14.zip",
+    "sha256": "a1d20bc2570e3d0c2624f4d0156c35dfaf5c256f75c55b1cde27521a3f120664"
   },
   {
     "plugin_key": "filament_swatch",
