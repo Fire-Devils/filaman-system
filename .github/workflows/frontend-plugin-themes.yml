@@ -38,3 +38,7 @@ jobs:
       - run: node scripts/check-filament-plugin-hooks.mjs
         env:
           CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
+      - name: Check plugin pages and downloads
+        run: node scripts/check-plugin-page-layout.mjs
+        env:
+          CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome

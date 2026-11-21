@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { chromium } from 'playwright-core'
@@ -26,6 +27,22 @@ let finishStatusChange
 const statusChange = new Promise(resolve => { finishStatusChange = resolve })
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname
+  if (path === '/api/v1/fixture-export') {
+    response.setHeader('Content-Type', 'application/json')
+    return response.end('{"exported":true}')
+  }
+  if (path === '/plugin-page/export-fixture') {
+    response.setHeader('Content-Type', 'text/html')
+    return response.end(`<!doctype html><title>Export fixture</title>
+      <input id="export-draft">
+      <a id="blob-export" download="blob-export.json">Download blob</a>
+      <a href="/api/v1/fixture-export" download="api-export.json">Download API</a>
+      <a id="blob-preview">Preview blob</a><a href="/settings">Open settings</a>
+      <script>
+        document.getElementById('blob-export').href = URL.createObjectURL(new Blob(['{"exported":true}'], { type: 'application/json' }));
+        document.getElementById('blob-preview').href = URL.createObjectURL(new Blob(['<p>Blob preview</p>'], { type: 'text/html' }));
+      </script>`)
+  }
   if (path === '/api/v1/plugin-icons/example_0') {
     const shape = zipReplaced ? '<path d="M12 4 20 20H4Z"/>' : request.url === '/api/v1/plugin-icons/example_0?v=2.10.1'
       ? '<circle cx="12" cy="12" r="8"/>'
@@ -285,6 +302,34 @@ try {
     assert.ok(fits, `${width}px: long versions, author names and update labels fit`)
   }
   console.log('Plugin layouts fit 320–1440px. Phone button icons, confirmation, cancel, retry, Update All, and catalog passed.')
+
+  const origin = `http://127.0.0.1:${server.address().port}`
+  await page.goto(`${origin}/plugin-view?p=export-fixture`)
+  const plugin = page.frameLocator('#plugin-frame')
+  await plugin.locator('#export-draft').fill('Keep my draft')
+  const hostUrl = page.url()
+  let downloads = 0
+  let expectedDownloads = 0
+  page.on('download', () => { downloads++ })
+  for (const [name, filename] of [['Download blob', 'blob-export.json'], ['Download API', 'api-export.json']]) {
+    const nextDownload = page.waitForEvent('download', { timeout: 6000 })
+    await plugin.getByRole('link', { name, exact: true }).click()
+    const file = await nextDownload
+    assert.equal(file.suggestedFilename(), filename)
+    assert.equal(await file.failure(), null)
+    assert.equal(await readFile(await file.path(), 'utf8'), '{"exported":true}')
+    expectedDownloads++
+    assert.equal(downloads, expectedDownloads)
+    assert.equal(page.url(), hostUrl)
+    assert.equal(await plugin.locator('#export-draft').inputValue(), 'Keep my draft')
+  }
+  await plugin.getByRole('link', { name: 'Open settings', exact: true }).click()
+  await page.waitForURL(`${origin}/settings`)
+  await page.goto(hostUrl)
+  await plugin.getByRole('link', { name: 'Preview blob', exact: true }).click()
+  await plugin.getByText('Blob preview', { exact: true }).waitFor()
+  assert.equal(page.url(), hostUrl)
+  console.log('Plugin exports download complete bytes without losing drafts; blob previews stay in-frame and app links leave it.')
 } finally {
   finishStatusChange()
   failFirstUpdate()
