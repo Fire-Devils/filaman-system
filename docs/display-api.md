@@ -22,7 +22,7 @@ Query parameters:
 
 - `fields=full` (default) — everything below.
 - `fields=slots` — only what a swatch board needs (id/name/state/active + per slot:
-  `slot, label, empty, active, color, material, remaining_percent, spool_id`).
+  `slot, label, empty, active, extruder, color, material, remaining_percent, spool_id`).
   A two-AMS printer is well under 2 KB; fine for a microcontroller.
 
 ## Authentication
@@ -90,6 +90,7 @@ Authorization: Device 12.34.abcdef…
               "ams_id": 0, "slot": 0, "label": "A1",
               "empty": false,
               "active": false,
+              "extruder": null,       // dual-nozzle printers: "left" | "right", the hotend this slot is loaded in
               "color": "#F8A813",     // always #RRGGBB; first color; "#202020" when empty
               "colors": ["#F8A813"],  // ordered #RRGGBB; more than one when the filament is multi
               "color_style": "",      // "striped" | "gradient" | "" (only when colors has 2+)
