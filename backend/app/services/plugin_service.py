@@ -10,6 +10,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import tomllib
 import zipfile
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import (
@@ -20,9 +21,12 @@ from contextlib import (
     suppress,
 )
 from hashlib import sha256
+from importlib.metadata import distributions
 from pathlib import Path
 from typing import Any
 
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -338,6 +342,44 @@ async def _settle_plugin_write(work: Awaitable[None]) -> bool:
     return cancelled
 
 
+def _installed_package_versions(requirements: list[str] | None = None) -> dict[str, str]:
+    installed = {}
+    for distribution in distributions():
+        if name := distribution.metadata["Name"]:
+            installed.setdefault(re.sub(r"[-_.]+", "-", name).lower(), distribution)
+    versions = {name: distribution.version for name, distribution in installed.items()}
+    if requirements is None:
+        return versions
+
+    try:
+        project = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text())
+        pending = [(requirement, {""}) for requirement in [*requirements, *project["project"]["dependencies"]]]
+        protected = set()
+        visited = set()
+        while pending:
+            text, parent_extras = pending.pop()
+            requirement = Requirement(text)
+            if requirement.marker and not any(
+                requirement.marker.evaluate({"extra": extra}) for extra in parent_extras
+            ):
+                continue
+            if requirement.name.lower().endswith((".whl", ".zip", ".tar.gz", ".tar.bz2", ".tar.xz")):
+                return versions
+            name = canonicalize_name(requirement.name)
+            if name not in installed:
+                continue
+            protected.add(name)
+            extras = frozenset({"", *requirement.extras})
+            if (name, extras) in visited:
+                continue
+            visited.add((name, extras))
+            pending.extend((dependency, extras) for dependency in installed[name].requires or ())
+    except (OSError, KeyError, TypeError, ValueError):
+        logger.warning("Could not determine protected package versions; retaining all installed versions")
+        return versions
+    return {name: version for name, version in versions.items() if name in protected}
+
+
 class PluginInstallService:
     """Service fuer Plugin-Installation, -Validierung und -Deinstallation."""
 
@@ -380,6 +422,7 @@ class PluginInstallService:
             applied_marker = PLUGINS_DIR / plugin_key / ".filaman-applied-catalog"
             self.recovered_plugins.clear()
             installed_requirements: set[str] = set()
+            original_versions: dict[str, str] | None = None
             try:
                 existing = await self._find_existing(plugin_key)
                 if update_only:
@@ -423,10 +466,21 @@ class PluginInstallService:
                     dependencies = manifest.get("dependencies") or []
                     if dependencies:
                         with plugin_archive_lock(reading=True):
-                            requirements = _published_plugin_requirements()
+                            published_requirements = _published_plugin_requirements()
+                            requirements = {
+                                key: peer_dependencies
+                                for key, peer_dependencies in published_requirements.items()
+                                if plugin_dependencies_available(PLUGINS_DIR / key)
+                            }
                         requirements[plugin_key] = dependencies
+                        original_versions = _installed_package_versions()
                         await self._install_dependencies(_combine_requirements(requirements), plugin_key)
                         installed_requirements = set(requirements)
+                        published_requirements[plugin_key] = dependencies
+                        # Optional recovery must preserve the packages selected for working plugins.
+                        installed_requirements.update(
+                            await _resolve_blocked_requirements(published_requirements, installed_requirements)
+                        )
                     if manifest["plugin_type"] in ("import", "integration") and (plugin_dir / "router.py").is_file():
                         await _preflight_plugin_router(plugin_dir)
 
@@ -446,8 +500,40 @@ class PluginInstallService:
                         if existing is None:
                             self.db.add(plugin)
                         cancelled = await _settle_plugin_write(self.db.commit())
-            except (Exception, asyncio.CancelledError):
-                await self.db.rollback()
+            except (Exception, asyncio.CancelledError) as error:
+                failure_message = str(error)
+                caller = asyncio.current_task()
+                assert caller is not None
+                cancellations = caller.cancelling()
+
+                async def rollback() -> None:
+                    try:
+                        await self.db.rollback()
+                    finally:
+                        if original_versions is not None:
+                            current = _installed_package_versions()
+                            restore_pins = [
+                                f"{name}=={version}" for name, version in original_versions.items()
+                                if current.get(name) != version
+                            ]
+                            if restore_pins:
+                                try:
+                                    await self._install_dependencies(restore_pins, "previously installed dependencies")
+                                except Exception as repair_error:
+                                    raise PluginInstallError(
+                                        f"Plugin installation failed ({failure_message}); could not confirm restoration of {restore_pins}.",
+                                        "dependency_restore_failed",
+                                    ) from repair_error
+
+                try:
+                    cancelled = await _settle_plugin_write(rollback())
+                except Exception as cleanup_error:
+                    logger.exception("Could not roll back failed plugin installation")
+                    if isinstance(error, asyncio.CancelledError) or caller.cancelling() > cancellations:
+                        raise asyncio.CancelledError from cleanup_error
+                    raise
+                if cancelled:
+                    raise asyncio.CancelledError
                 raise
 
             async def activate() -> None:
@@ -529,22 +615,14 @@ class PluginInstallService:
         # The caller still holds the environment lock after publishing the archive change.
         try:
             requirements = _published_plugin_requirements()
-            blocked = {
+            installed = {
                 key for key in requirements
-                if not plugin_dependencies_available(PLUGINS_DIR / key)
+                if plugin_dependencies_available(PLUGINS_DIR / key)
             }
         except OSError:
             logger.exception("Could not read plugin dependency status after publishing the archive change")
             return
-        if not blocked:
-            return
-        try:
-            async with asyncio.timeout(_PEER_RECOVERY_TIMEOUT):
-                available = await _provision_compatible_requirements(requirements, required=requirements.keys() - blocked)
-        except TimeoutError:
-            logger.warning("Timed out recovering blocked plugin dependencies; they will be retried on restart")
-        else:
-            self._clear_dependency_failures(available & blocked)
+        self._clear_dependency_failures(await _resolve_blocked_requirements(requirements, installed))
 
     # ------------------------------------------------------------------ #
     #  Installierte Plugins auflisten
@@ -955,12 +1033,13 @@ class PluginInstallService:
 
     @staticmethod
     async def _install_dependencies(
-        dependencies: list[str], plugin_key: str, *, dry_run: bool = False
+        dependencies: list[str], plugin_key: str, *, dry_run: bool = False, constraints: Path | None = None
     ) -> None:
         """Python-Pakete installieren (versucht uv, dann pip)."""
         logger.info(f"Installiere Abhaengigkeiten fuer '{plugin_key}': {dependencies}")
 
         # Kommandos: uv pip (falls vorhanden), dann sys.executable -m pip
+        constraint_args = ["--constraint", str(constraints)] if constraints is not None else []
         commands: list[list[str]] = []
         uv_path = shutil.which("uv")
         if uv_path:
@@ -973,11 +1052,13 @@ class PluginInstallService:
                     sys.executable,
                     "--quiet",
                     *(["--dry-run"] if dry_run else []),
+                    *constraint_args,
                     *dependencies,
                 ]
             )
         commands.append(
-            [sys.executable, "-m", "pip", "install", "--quiet", *(["--dry-run"] if dry_run else []), *dependencies]
+            [sys.executable, "-m", "pip", "install", "--quiet", *(["--dry-run"] if dry_run else []),
+             *constraint_args, *dependencies]
         )
 
         last_error = ""
@@ -1129,22 +1210,55 @@ async def provision_installed_plugin_dependencies() -> dict[str, bool]:
                 await asyncio.sleep(0.1)
                 continue
 
-            available = await _provision_compatible_requirements(requirements)
+            healthy = {
+                key: dependencies for key, dependencies in requirements.items()
+                if plugin_dependencies_available(PLUGINS_DIR / key)
+            }
+            available = await _provision_compatible_requirements(healthy)
+            if healthy.keys() != requirements.keys():
+                available.update(await _resolve_blocked_requirements(requirements, available))
             # New workers discover these markers after cold start and on every HUP.
             for plugin_key in requirements:
                 _set_dependency_availability(PLUGINS_DIR / plugin_key, available=plugin_key in available)
             return {key: key in available for key in requirements}
 
 
+async def _resolve_blocked_requirements(
+    requirements: dict[str, list[str]], installed: set[str],
+) -> set[str]:
+    blocked = requirements.keys() - installed
+    if not blocked:
+        return set()
+    try:
+        with tempfile.TemporaryDirectory(prefix="plugin-constraints-") as directory:
+            constraints = Path(directory) / "constraints.txt"
+            versions = _installed_package_versions(
+                _combine_requirements({key: requirements[key] for key in installed})
+            )
+            constraints.write_text("".join(f"{name}=={version}\n" for name, version in versions.items()))
+            async with asyncio.timeout(_PEER_RECOVERY_TIMEOUT):
+                available = await _provision_compatible_requirements(
+                    requirements, required=installed, constraints=constraints,
+                )
+    except TimeoutError:
+        logger.warning("Timed out recovering blocked plugin dependencies; they will be retried on restart")
+        return set()
+    except OSError:
+        logger.exception("Could not prepare optional plugin recovery; it will be retried on restart")
+        return set()
+    return available & blocked
+
+
 async def _provision_compatible_requirements(
-    requirements: dict[str, list[str]], *, required: set[str] | None = None,
+    requirements: dict[str, list[str]], *, required: set[str] | None = None, constraints: Path | None = None,
 ) -> set[str]:
     if not requirements:
         return set()
+    options = {"constraints": constraints} if constraints is not None else {}
 
     try:
         await PluginInstallService._install_dependencies(
-            _combine_requirements(requirements), ", ".join(requirements)
+            _combine_requirements(requirements), ", ".join(requirements), **options
         )
     except (OSError, PluginInstallError) as exc:
         logger.warning("Could not provision installed plugins together: %s", exc)
@@ -1162,7 +1276,7 @@ async def _provision_compatible_requirements(
         candidate = accepted | {plugin_key: dependencies}
         try:
             await PluginInstallService._install_dependencies(
-                _combine_requirements(candidate), plugin_key, dry_run=True
+                _combine_requirements(candidate), plugin_key, dry_run=True, **options
             )
         except (OSError, PluginInstallError) as exc:
             logger.warning("Could not provision plugin %s: %s", plugin_key, exc)
@@ -1173,7 +1287,7 @@ async def _provision_compatible_requirements(
         return set(installed)
     try:
         await PluginInstallService._install_dependencies(
-            _combine_requirements(accepted), "compatible installed plugins"
+            _combine_requirements(accepted), "compatible installed plugins", **options
         )
     except (OSError, PluginInstallError) as exc:
         logger.warning("Could not provision compatible installed plugins: %s", exc)
@@ -1186,7 +1300,7 @@ async def _provision_compatible_requirements(
             continue
         candidate = installed | {plugin_key: dependencies}
         try:
-            await PluginInstallService._install_dependencies(_combine_requirements(candidate), plugin_key)
+            await PluginInstallService._install_dependencies(_combine_requirements(candidate), plugin_key, **options)
         except (OSError, PluginInstallError) as exc:
             logger.warning("Could not install dependencies for plugin %s: %s", plugin_key, exc)
         else:
