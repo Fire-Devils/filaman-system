@@ -451,20 +451,52 @@ def _tray_has_filament(tray: dict[str, Any]) -> bool:
     return tray.get("exists") is True and state not in (0, 8)
 
 
+def _chip_id_present(value: Any) -> bool:
+    """An RFID id that names a chip; Bambu sends 16 or 32 zeros for a spool without one.
+
+    Only the hex digits count, so separators and a ``0x`` prefix around zeros
+    are no chip either.
+    """
+    if value is None or isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value).strip().lower()
+    if text.startswith("0x"):
+        text = text[2:]
+    digits = "".join(c for c in text if c in "0123456789abcdef")
+    return digits.strip("0") != ""
+
+
+def _live_remaining(tray: dict[str, Any], rfid: bool) -> int | None:
+    """The fill level a driver reports, or None when the printer only guessed.
+
+    Bambu measures only a spool with an RFID chip. For one entered by hand in
+    Bambu Studio it sends ``remain`` 0 on the external holder, which means
+    "unknown", not "empty". (The -1 an AMS sends is passed on and dropped by
+    ``_merge_slot``'s range check.) A driver that already reports
+    ``remaining_percent`` is taken at its word.
+    """
+    if tray.get("remaining_percent") not in (None, ""):
+        return _as_int(tray.get("remaining_percent"))
+    remain = _as_int(tray.get("remain"))
+    if remain == 0 and not rfid:
+        return None
+    return remain
+
+
 def _normalize_live_slot(tray: dict[str, Any], slot_no: int) -> dict[str, Any]:
     """Normalize one driver tray without deciding which source should win."""
+    rfid = any(_chip_id_present(tray.get(k)) for k in ("tag_uid", "tray_uuid", "rfid_uid"))
     return {
         "slot": slot_no,
         "material": str(_first(tray, ("material", "tray_type", "filament_type"), "") or ""),
         "color": normalize_hex_color(_first(tray, ("color", "tray_color", "filament_color")), ""),
         "color_name": str(_first(tray, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
-        "remaining_percent": _as_int(_first(tray, ("remaining_percent", "remain"))),
+        "remaining_percent": _live_remaining(tray, rfid),
         "nozzle_min": _as_int(_first(tray, ("nozzle_min", "nozzle_temp_min"))),
         "nozzle_max": _as_int(_first(tray, ("nozzle_max", "nozzle_temp_max"))),
-        "rfid": any(
-            tray.get(k) not in (None, "", 0, "0", "0000000000000000")
-            for k in ("tag_uid", "tray_uuid", "rfid_uid")
-        ),
+        "rfid": rfid,
         "active": bool(_first(tray, ("active", "is_active"), False)) or tray.get("state") == 27,
         "has_filament": _tray_has_filament(tray),
     }
@@ -523,7 +555,8 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                              (percent, or 1–5 level on X1C), humidity_raw (%),
                              dry_status, dry_target_temp, dry_time,
                              slots|trays|tray[]: slot|id|tray_id, material|tray_type,
-                             color|tray_color, remaining_percent|remain, tag_uid,
+                             color|tray_color, remaining_percent|remain (a remain
+                             of 0 without a chip id is no reading), tag_uid,
                              tray_uuid, nozzle_min|nozzle_temp_min, nozzle_max|
                              nozzle_temp_max, color_name|tray_id_name|tray_sub_brands,
                              active | state==27
