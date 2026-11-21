@@ -1,6 +1,28 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "feature", "text": "Lagerorte haben jetzt einen Typ (z. B. AMS oder Lager), lassen sich danach filtern und gesammelt bearbeiten oder löschen. Lagerorte, die einem Drucker zugeordnet sind, sind vor dem Löschen geschützt. (Beigetragen von wolfrage76)" },
+          { "type": "fix", "text": "AMS-Plätze: Ein abgezogenes AMS (auch AMS-HT) wird nicht mehr als belegt angezeigt, und ein geänderter Filament-Werkstoff setzt die gelernte Bambu-Zuordnung zurück. (Beigetragen von wolfrage76)" },
+          { "type": "feature", "text": "Seitenleiste anpassen: Unter Einstellungen → Seitenleiste lassen sich Einträge ein- und ausblenden, umsortieren und Plugins anheften oder in die Hauptnavigation holen. Auch die Zeilenabstände sind wählbar. (Beigetragen von akira69)" },
+          { "type": "feature", "text": "Plugin-Verwaltung: „Alle aktualisieren“ spielt alle verfügbaren Plugin-Updates nacheinander ein und zeigt das Ergebnis je Plugin. Die Verwaltung ist auf dem Handy besser bedienbar, die Seitenleiste bleibt beim Öffnen von Plugins stehen und zeigt nach Updates sofort die neuen Icons. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Display-API: Spulen ohne RFID-Chip zeigen keinen Füllstand mehr statt fälschlich 0 %, und bei Druckern mit zwei Düsen (H2D/H2C) ist zu sehen, in welchem Hotend ein Slot steckt. (Beigetragen von Niko11111)" },
+          { "type": "improved", "text": "Plugin-Katalog: Bambu Usage Tracking 1.0.0 ist neu dabei und bucht den Verbrauch von Bambu-Lab-Drucken automatisch von den passenden Spulen ab (beigetragen von Niko11111). Die FilaBrain-Vorschau ist auf 0.1.20 aktualisiert, und das Moonraker-Plugin 0.2.5 lässt sich wieder aus dem Katalog installieren (beigetragen von akira69)." }
+        ],
+        "en": [
+          { "type": "feature", "text": "Locations now have a type (e.g. AMS or Storage), can be filtered by it, and can be edited or deleted in bulk. Locations assigned to a printer are protected from deletion. (Contributed by wolfrage76)" },
+          { "type": "fix", "text": "AMS slots: an unplugged AMS (including AMS-HT) no longer shows as loaded, and changing a filament's material resets the learned Bambu mapping. (Contributed by wolfrage76)" },
+          { "type": "feature", "text": "Customize the sidebar: under Settings → Sidebar you can show, hide and reorder entries, pin plugins or promote them to the main navigation, and choose the row spacing. (Contributed by akira69)" },
+          { "type": "feature", "text": "Plugin management: \"Update All\" installs all available plugin updates one after another and shows the result for each plugin. Management works better on phones, the sidebar stays in place when opening plugins, and new icons appear right after an update. (Contributed by akira69)" },
+          { "type": "fix", "text": "Display API: spools without an RFID chip no longer report a false 0 % fill level, and on dual-nozzle printers (H2D/H2C) each slot shows which hotend it is loaded in. (Contributed by Niko11111)" },
+          { "type": "improved", "text": "Plugin catalog: Bambu Usage Tracking 1.0.0 is now available and automatically deducts Bambu Lab print usage from the matching spools (contributed by Niko11111). The FilaBrain preview is updated to 0.1.20, and the Moonraker plugin 0.2.5 can be installed from the catalog again (contributed by akira69)." }
+        ]
+      }
+    },
+    {
       "version": "2.2.2",
       "date": "",
       "changes": {
