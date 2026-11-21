@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import (
+    AppSettings,
     Filament,
     FilamentColor,
     Printer,
@@ -96,6 +97,107 @@ def _as_float(value: Any) -> float | None:
 def _as_int(value: Any) -> int | None:
     f = _as_float(value)
     return round(f) if f is not None else None
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        started = value
+    elif isinstance(value, (int, float)) or (
+        isinstance(value, str) and value.strip().lstrip("-").replace(".", "", 1).isdigit()
+    ):
+        stamp = float(value)
+        if stamp > 10_000_000_000:
+            stamp /= 1000
+        started = datetime.fromtimestamp(stamp, timezone.utc)
+    elif isinstance(value, str) and value.strip():
+        try:
+            started = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return started.astimezone(timezone.utc)
+
+
+def _elapsed_seconds(job_src: dict[str, Any], raw: dict[str, Any], now: datetime) -> int | None:
+    direct = _as_int(_first(job_src, ("elapsed_seconds",), _first(raw, ("elapsed_seconds",))))
+    if direct is not None and direct >= 0:
+        return direct
+    started = _parse_utc(
+        _first(
+            job_src,
+            ("started_at", "gcode_start_time"),
+            _first(raw, ("gcode_start_time", "print_start_time")),
+        )
+    )
+    if started is None:
+        return None
+    return max(0, int((now - started).total_seconds()))
+
+
+def _filament_grams(job_src: dict[str, Any], raw: dict[str, Any]) -> float | None:
+    return _as_float(
+        _first(
+            job_src,
+            ("filament_grams", "filament_used_grams"),
+            _first(raw, ("filament_grams", "filament_used_grams", "filament_used")),
+        )
+    )
+
+
+def _wall_eta(remaining_seconds: int | None, now: datetime) -> str | None:
+    """UTC timestamp when the current job should finish. Null when no time remains."""
+    if remaining_seconds is None or remaining_seconds <= 0:
+        return None
+    return (now + timedelta(seconds=remaining_seconds)).isoformat(timespec="seconds")
+
+
+def _normalize_queue(raw: dict[str, Any]) -> dict[str, Any] | None:
+    src = raw.get("queue")
+    if not isinstance(src, dict):
+        return None
+    depth = _as_int(src.get("depth"))
+    nxt = src.get("next") if isinstance(src.get("next"), dict) else None
+    next_out = None
+    if nxt:
+        name = str(_first(nxt, ("name",), "") or "")
+        grams = _as_float(_first(nxt, ("filament_grams", "filament_used_grams")))
+        seconds = _as_int(_first(nxt, ("print_time_seconds",)))
+        if name or grams is not None or seconds is not None:
+            next_out = {"name": name, "filament_grams": grams, "print_time_seconds": seconds}
+    if depth is None and next_out is None:
+        return None
+    return {"depth": depth if depth is not None else 0, "next": next_out}
+
+
+def _remaining_cost(price: Any, remaining: Any, net_initial: Any) -> float | None:
+    """Purchase price still on the spool, from remaining filament over a full spool."""
+    amount = _as_float(price)
+    left = _as_float(remaining)
+    capacity = _as_float(net_initial)
+    if amount is None or left is None or not capacity or capacity <= 0:
+        return None
+    fraction = max(0.0, min(1.0, left / capacity))
+    return round(amount * fraction, 2)
+
+
+def _profile_base_name(spool: Spool) -> str:
+    """Slicer profile base name stored from Bambuddy.
+
+    The spool extra field wins. A spool with no name of its own uses the
+    parent filament's ``bambu_profile_base_name``.
+    """
+    spool_fields = spool.custom_fields if isinstance(getattr(spool, "custom_fields", None), dict) else {}
+    spool_name = str(spool_fields.get("bambu_profile_base_name") or "").strip()
+    if spool_name:
+        return spool_name
+    filament = spool.filament
+    filament_fields = getattr(filament, "custom_fields", None) if filament is not None else None
+    if isinstance(filament_fields, dict):
+        return str(filament_fields.get("bambu_profile_base_name") or "").strip()
+    return ""
 
 
 def _decode_active_tray(value: int | None) -> tuple[int, int] | None:
@@ -404,7 +506,7 @@ def _or_none(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     """Drop a sub-object that carries nothing, so ``null`` keeps meaning "unknown".
 
     A driver that only reports ``connected`` (health, no display hook) would
-    otherwise hand out ``temperatures`` with six nulls in it, and a board that
+    otherwise hand out ``temperatures`` full of nulls, and a board that
     tests the object for truthiness would draw an empty row.
     """
     if not payload:
@@ -524,6 +626,7 @@ def _normalize_live_slot(tray: dict[str, Any], slot_no: int) -> dict[str, Any]:
         "material": str(_first(tray, ("material", "tray_type", "filament_type"), "") or ""),
         "color": normalize_hex_color(_first(tray, ("color", "tray_color", "filament_color")), ""),
         "color_name": str(_first(tray, ("color_name", "tray_id_name", "tray_sub_brands"), "") or ""),
+        "manufacturer": str(_first(tray, ("manufacturer", "brand", "vendor"), "") or ""),
         "remaining_percent": _live_remaining(tray, rfid),
         "nozzle_min": _as_int(_first(tray, ("nozzle_min", "nozzle_temp_min"))),
         "nozzle_max": _as_int(_first(tray, ("nozzle_max", "nozzle_temp_max"))),
@@ -576,7 +679,11 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         job.progress         progress | mc_percent (0-100)
         job.layer / total    layer_num | current_layer, total_layers | total_layer_num
         job.remaining_sec    remaining_seconds | remaining_time (minutes) | mc_remaining_time
-        temperatures.*       temperatures.{nozzle,bed,chamber,*_target} | nozzle_temper ...
+        job.elapsed_seconds  elapsed_seconds | started_at | gcode_start_time
+        job.filament_grams   filament_grams | filament_used_grams | filament_used
+        job.eta              wall-clock UTC from remaining time; null when none remains
+        queue                {depth, next:{name, filament_grams, print_time_seconds}}
+        temperatures.*       temperatures.{nozzle,nozzle_2,bed,chamber,*_target} | nozzle_temper ...
         speed_level          speed_level | spd_lvl
         active_tray          extruder_slots[active_extruder] | active_tray | tray_now
                              (ams*4+slot; AMS-HT 128–135 = that unit, slot 0; 254/255 = none)
@@ -618,6 +725,10 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
                 )
             )
             remaining_seconds = int(minutes * 60) if minutes is not None else None
+
+    now = datetime.now(timezone.utc)
+    elapsed_seconds = _elapsed_seconds(job_src, raw, now)
+    filament_grams = _filament_grams(job_src, raw)
 
     job_name = _first(
         job_src,
@@ -754,10 +865,16 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
             "layer": _as_int(_first(job_src, ("layer",), _first(raw, ("layer_num", "current_layer"), _first(cur, ("current_layer", "layer_num"))))),
             "total_layers": _as_int(_first(job_src, ("total_layers",), _first(raw, ("total_layers", "total_layer_num"), _first(cur, ("total_layers",))))),
             "remaining_seconds": remaining_seconds,
+            "elapsed_seconds": elapsed_seconds,
+            "filament_grams": filament_grams,
+            "eta": _wall_eta(remaining_seconds, now),
         },
+        "queue": _normalize_queue(raw),
         "temperatures": {
             "nozzle": _as_int(_first(temps, ("nozzle",), _first(raw, ("nozzle_temper",)))),
             "nozzle_target": _as_int(_first(temps, ("nozzle_target",), _first(raw, ("nozzle_target_temper",)))),
+            "nozzle_2": _as_int(_first(temps, ("nozzle_2",), _first(raw, ("nozzle_temper_2",)))),
+            "nozzle_2_target": _as_int(_first(temps, ("nozzle_2_target",), _first(raw, ("nozzle_target_temper_2",)))),
             "bed": _as_int(_first(temps, ("bed",), _first(raw, ("bed_temper",)))),
             "bed_target": _as_int(_first(temps, ("bed_target",), _first(raw, ("bed_target_temper",)))),
             "chamber": _as_int(_first(temps, ("chamber",), _first(raw, ("chamber_temper",)))),
@@ -837,6 +954,7 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         color_style = "striped"
     finish_raw = (getattr(filament, "finish_type", None) or "").strip().lower() if filament else ""
     finish = finish_raw if finish_raw in _FINISH_TYPES else ""
+    subgroup = (getattr(filament, "material_subgroup", None) or "").strip() if filament else ""
     # AMS View shows the filament's Manufacturer Color Name, not Color.name
     # (that field is often a hex code or a generic swatch label).
     color_name = (filament.manufacturer_color_name or "").strip() if filament else ""
@@ -855,11 +973,17 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
     if remaining is not None and net_initial:
         remaining_percent = max(0, min(100, round(remaining / net_initial * 100)))
 
+    price = getattr(spool, "purchase_price", None)
+    if price is None and filament is not None:
+        price = getattr(filament, "price", None)
+    remaining_cost = _remaining_cost(price, remaining, net_initial)
+
     nozzle_min, nozzle_max = _nozzle_range(spool, printer_id)
     return {
         "spool_id": spool.id,
         "filament": filament.designation if filament else "",
         "material": (filament.material_type if filament else "") or "",
+        "material_subgroup": subgroup,
         "manufacturer": manufacturer,
         "color": normalize_hex_color(color_hex, ""),
         "colors": hexes,
@@ -868,8 +992,10 @@ def _spool_swatch(spool: Spool, printer_id: int) -> dict[str, Any]:
         "color_name": color_name,
         "remaining_grams": round(remaining) if remaining is not None else None,
         "remaining_percent": remaining_percent,
+        "remaining_cost": remaining_cost,
         "nozzle_min": nozzle_min,
         "nozzle_max": nozzle_max,
+        "profile_base_name": _profile_base_name(spool),
         "rfid": bool(spool.rfid_uid or getattr(spool, "rfid_uid_2", None)),
         "last_used": spool.last_used_at.isoformat() if spool.last_used_at else None,
     }
@@ -1005,15 +1131,18 @@ def _merge_slot(
         "finish": "" if empty else (fm.get("finish") or ""),
         "color_name": fm.get("color_name") or live.get("color_name") or "",
         "material": fm.get("material") or live.get("material") or "",
-        "manufacturer": fm.get("manufacturer") or "",
+        "material_subgroup": "" if empty else (fm.get("material_subgroup") or ""),
+        "manufacturer": fm.get("manufacturer") or live.get("manufacturer") or "",
         "filament": fm.get("filament") or "",
         "spool_id": fm.get("spool_id"),
         "remaining_percent": remaining_percent,
         "remaining_grams": fm.get("remaining_grams"),
+        "remaining_cost": None if empty else fm.get("remaining_cost"),
         "remaining_source": remaining_source,
         "nozzle_min": fm.get("nozzle_min") if fm.get("nozzle_min") is not None else live.get("nozzle_min"),
         "nozzle_max": fm.get("nozzle_max") if fm.get("nozzle_max") is not None else live.get("nozzle_max"),
         "rfid": bool(fm.get("rfid") or live.get("rfid")),
+        "profile_base_name": "" if empty else str(fm.get("profile_base_name") or ""),
         "last_used": fm.get("last_used"),
         "backup_of": None,
     }
@@ -1170,6 +1299,7 @@ def build_printer_display(
         "connected": bool(live["connected"]) if live else None,
         "state": live["state"] if live else "unknown",
         "job": _or_none(live["job"]) if live else None,
+        "queue": live.get("queue") if live else None,
         "temperatures": _or_none(live["temperatures"]) if live else None,
         "speed_level": live["speed_level"] if live else None,
         "active": active,
@@ -1220,8 +1350,16 @@ async def build_display(
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "currency": await _board_currency(db),
         "printers": payload_printers,
     }
+
+
+async def _board_currency(db: AsyncSession) -> str:
+    """ISO currency for remaining_cost. The settings row defaults to EUR."""
+    row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
+    code = (getattr(row, "currency", None) or "EUR").strip().upper()
+    return code or "EUR"
 
 
 def compute_etag(payload: dict[str, Any]) -> str:

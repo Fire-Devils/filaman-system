@@ -13,6 +13,7 @@ from app.models.filament import Manufacturer, Filament, Color, FilamentColor
 from app.models.spool import Spool, SpoolStatus
 from app.models.location import Location
 from app.models.app_settings import AppSettings
+from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.services.spool_service import SpoolService
 from app.services.spoolman_projection import FilamentCompatibilityView, project_extra
 from app.utils.colors import normalize_hex_color
@@ -304,7 +305,16 @@ class SpoolmanService:
         if "vendor_id" in payload:
             filament.manufacturer_id = payload["vendor_id"]
         if "material" in payload:
+            previous_material = (filament.material_type or "").casefold()
             filament.material_type = payload["material"] or "PLA"
+            if previous_material != (filament.material_type or "").casefold():
+                removed = await clear_bambu_idx_for_filament(self.db, filament.id)
+                if removed:
+                    logger.info(
+                        "Cleared %s bambu_idx row(s) after Spoolman filament %s changed material",
+                        removed,
+                        filament.id,
+                    )
         if "density" in payload:
             filament.density_g_cm3 = payload["density"]
         if "diameter" in payload:

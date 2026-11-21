@@ -53,6 +53,7 @@ Authorization: Device 12.34.abcdef…
 {
   "schema_version": 3,
   "generated_at": "2026-09-04T18:00:00+00:00",
+  "currency": "EUR",              // for remaining_cost; app setting, default EUR
   "printers": [
     {
       "id": 11,
@@ -64,10 +65,22 @@ Authorization: Device 12.34.abcdef…
         "name": "benchy.3mf",
         "progress": 42,               // 0-100
         "layer": 57, "total_layers": 130,
-        "remaining_seconds": 3720
+        "remaining_seconds": 3720,
+        "elapsed_seconds": 900,       // null when the queue did not start this job
+        "filament_grams": 42.5,       // slicer estimate for this job, null if unknown
+        "eta": "2026-09-04T19:02:00+00:00"  // UTC wall clock; null when no time remains
+      },
+      "queue": {                      // null when the driver has no queue
+        "depth": 2,                   // jobs waiting; the one printing is not counted
+        "next": {                     // null when the queue has nothing waiting
+          "name": "lid.3mf",
+          "filament_grams": 12,
+          "print_time_seconds": 1800
+        }
       },
       "temperatures": {               // null without live data; °C integers
         "nozzle": 220, "nozzle_target": 220,
+        "nozzle_2": null, "nozzle_2_target": null,  // second hotend; null on a single-nozzle printer
         "bed": 60,  "bed_target": 60,
         "chamber": 31, "chamber_target": null
       },
@@ -97,14 +110,17 @@ Authorization: Device 12.34.abcdef…
               "finish": "",           // "solid" | "translucent" | "neon" | "glow" | ""
               "color_name": "Orange",
               "material": "PLA",
+              "material_subgroup": "", // filament subgroup, e.g. "galaxy"; "" when unset or empty
               "manufacturer": "SUNLU",
               "filament": "PLA Plus",
               "spool_id": 128,        // FilaMan spool id, null if only the printer sees filament
               "remaining_percent": 51,
               "remaining_grams": 510,
+              "remaining_cost": 12.75, // purchase price still on the spool; null without a price or weight
               "remaining_source": "filaman",   // "filaman" | "printer" | null
               "nozzle_min": 190, "nozzle_max": 230,
               "rfid": true,
+              "profile_base_name": "eSun PLA+",  // slicer profile base name; "" when unset
               "last_used": "2026-09-03T21:10:00+00:00",
               "backup_of": "B2"       // another slot with the same material+colour, or null
             }
@@ -119,7 +135,11 @@ Authorization: Device 12.34.abcdef…
 Rules you can rely on:
 
 - Numbers are raw. No pre-formatted strings, no thresholds — decide "low" yourself.
-- `color` is always a 7-char `#RRGGBB`. Alpha is stripped. `colors` is that same list in filament order: one entry unless the filament's color mode is multi. `color_style` is `striped` or `gradient` only then. `finish` is the filament finish type (`translucent` and `glow` are the ones AMS View paints over the swatch). `fields=slots` does not include these extra keys.
+- `color` is always a 7-char `#RRGGBB`. Alpha is stripped. `colors` is that same list in filament order: one entry unless the filament's color mode is multi. `color_style` is `striped` or `gradient` only then. `finish` is the filament finish type. AMS View paints `translucent` and `glow` from that field, and also when `material_subgroup` is exactly `translucent` or `glow` and finish is unset. `galaxy`, `sparkle`, and `glitter` get specks. `cf` or `gf` on the subgroup or the material type (`PA6-CF`) gets a fiber tick. `fields=slots` does not include these extra keys.
+- `profile_base_name` is the Bambuddy slicer profile base name, without the printer or nozzle suffix. It is the assigned spool's extra field `bambu_profile_base_name`, or the parent filament's field when the spool has none. It is `""` when neither is set, and when the bay has no FilaMan spool. `fields=slots` omits it.
+- `job.eta` is UTC (`YYYY-MM-DDTHH:MM:SS+00:00`). Format it in the viewer's timezone. `job.filament_grams` is the job's filament weight when the queue knows it, not a live scale reading. `job.elapsed_seconds` is set when that queue item recorded a start time.
+- `nozzle_2` / `nozzle_2_target` are null when the printer has one nozzle or is not reporting the second hotend.
+- `remaining_cost` uses the same currency as `currency` on the payload. It is the spool purchase price (or the filament price) times remaining filament over a full spool. `fields=slots` omits it.
 - A regular AMS always lists slots 0–3, even when empty. An AMS-HT lists slot 0; the external holder lists as many trays as the printer reports (labels `Ext1`, `Ext2`, …).
 - `spool_id` is set only when FilaMan has a spool assigned to that slot; a slot
   can still be non-empty (the printer sees filament) with `spool_id: null`.

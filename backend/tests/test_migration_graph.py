@@ -14,7 +14,7 @@ def test_migration_graph_has_one_head():
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
 
     assert ScriptDirectory.from_config(config).get_heads() == [
-        "8fb4d987c203"
+        "c4e2a7b91f30"
     ]
 
 
@@ -84,7 +84,7 @@ def test_combined_head_upgrades_existing_ui_and_api_databases(tmp_path, monkeypa
             ).scalar_one() == "Preserved maker"
             assert connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
-            ).scalar_one() == "8fb4d987c203"
+            ).scalar_one() == "c4e2a7b91f30"
             tokens = connection.exec_driver_sql("SELECT record_token FROM filaments").scalars().all()
             assert len(set(tokens)) == 2
             assert all(len(token) == 32 for token in tokens)

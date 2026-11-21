@@ -37,6 +37,7 @@ from app.api.v1.schemas_filament import (
     ResolveFilamentFromTagResponse,
 )
 from app.core.cache import response_cache
+from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.core.config import MANUFACTURER_LOGO_DIR, settings
 from app.core.db_utils import get_next_available_id
 from app.core.event_bus import event_bus
@@ -1323,8 +1324,18 @@ async def update_filament(
             detail={"code": "not_found", "message": "Filament not found"},
         )
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    previous_material = (filament.material_type or "").casefold()
+    for key, value in updates.items():
         setattr(filament, key, value)
+    if "material_type" in updates and previous_material != (filament.material_type or "").casefold():
+        removed = await clear_bambu_idx_for_filament(db, filament.id)
+        if removed:
+            logger.info(
+                "Cleared %s bambu_idx row(s) after filament %s changed material",
+                removed,
+                filament.id,
+            )
 
     await db.commit()
     await db.refresh(filament)

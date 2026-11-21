@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -23,6 +24,9 @@ from app.api.v1.schemas_spool import (
     BulkStatusChangeRequest,
     ConsumptionRequest,
     DeviceMeasurementRequest,
+    LocationBulkDelete,
+    LocationBulkResult,
+    LocationBulkTypeUpdate,
     LocationCreate,
     LocationResponse,
     LocationUpdate,
@@ -47,6 +51,7 @@ from app.models import (
     FilamentColor,
     Location,
     Manufacturer,
+    Printer,
     Spool,
     SpoolEvent,
     SpoolStatus,
@@ -92,6 +97,84 @@ async def _reject_driver_managed_create_location(
 
 router_locations = APIRouter(prefix="/locations", tags=["locations"])
 
+# Offered in the UI out of the box. Anything else is a user write-in.
+BUILTIN_LOCATION_TYPES = ("AMS", "Storage")
+DRIVER_MANAGED_DEFAULT_TYPE = "AMS"
+
+
+async def _normalize_location_type(
+    db: AsyncSession,
+    value: str | None,
+    exclude_ids: Collection[int] = (),
+) -> str | None:
+    """Trim the type and reuse an existing spelling, so "storage" typed into
+    the write-in box lands in the same bucket as "Storage"."""
+    if value is None:
+        return None
+    value = value.strip()[:50]
+    if not value:
+        return None
+    folded = value.casefold()
+    for builtin in BUILTIN_LOCATION_TYPES:
+        if builtin.casefold() == folded:
+            return builtin
+    stmt = (
+        select(Location.location_type)
+        .where(Location.location_type.isnot(None))
+        .distinct()
+        .order_by(Location.location_type)
+    )
+    if exclude_ids:
+        stmt = stmt.where(Location.id.notin_(exclude_ids))
+    existing = (await db.execute(stmt)).scalars().all()
+    for candidate in existing:
+        if candidate and candidate.casefold() == folded:
+            return candidate
+    return value
+
+
+def _reject_clearing_driver_managed_type(
+    locations: Collection[Location], new_type: str | None
+) -> None:
+    """Driver slots always display a type. Clearing it is only a stored null that
+    the UI then shows as AMS again, so refuse the write."""
+    if new_type is not None:
+        return
+    managed = [loc.name for loc in locations if loc.is_driver_managed]
+    if not managed:
+        return
+    shown = ", ".join(repr(name) for name in managed[:5])
+    if len(managed) > 5:
+        shown = f"{shown} (+{len(managed) - 5})"
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "code": "driver_managed_type_required",
+            "message": f"Printer-managed locations must keep a type: {shown}",
+        },
+    )
+
+
+def _effective_location_type(location: Location) -> str | None:
+    # Slots created by a printer driver predate this column, so they show up
+    # as AMS until someone sets a type explicitly.
+    if location.location_type:
+        return location.location_type
+    if location.is_driver_managed:
+        return DRIVER_MANAGED_DEFAULT_TYPE
+    return None
+
+
+def _location_response(location: Location, spool_count: int = 0) -> LocationResponse:
+    return LocationResponse(
+        id=location.id,
+        name=location.name,
+        identifier=location.identifier,
+        location_type=_effective_location_type(location),
+        custom_fields=location.custom_fields,
+        spool_count=spool_count,
+    )
+
 
 @router_locations.get("", response_model=PaginatedResponse[LocationResponse])
 async def list_locations(
@@ -121,19 +204,7 @@ async def list_locations(
     result = await db.execute(stmt)
     rows = result.all()
 
-    # Convert to response objects
-    items = []
-    for loc, count in rows:
-        # Dynamically attach count to location object so Pydantic can read it
-        # or construct dict
-        loc_dict = {
-            "id": loc.id,
-            "name": loc.name,
-            "identifier": loc.identifier,
-            "custom_fields": loc.custom_fields,
-            "spool_count": count,
-        }
-        items.append(LocationResponse(**loc_dict))
+    items = [_location_response(loc, count) for loc, count in rows]
 
     count_result = await db.execute(select(func.count()).select_from(Location))
     total = count_result.scalar() or 0
@@ -149,12 +220,81 @@ async def create_location(
     db: DBSession,
     principal=RequirePermission("locations:create"),
 ):
-    location = Location(**data.model_dump())
+    values = data.model_dump()
+    values["location_type"] = await _normalize_location_type(db, values.get("location_type"))
+    location = Location(**values)
     db.add(location)
     await db.commit()
     await db.refresh(location)
     await event_bus.publish({"event": "locations_changed"})
-    return location
+    return _location_response(location)
+
+
+@router_locations.patch("/bulk", response_model=LocationBulkResult)
+async def bulk_update_location_type(
+    data: LocationBulkTypeUpdate,
+    db: DBSession,
+    principal=RequirePermission("locations:update"),
+):
+    ids = list(dict.fromkeys(data.location_ids))
+    location_type = await _normalize_location_type(db, data.location_type, exclude_ids=ids)
+    result = await db.execute(select(Location).where(Location.id.in_(ids)))
+    found = {loc.id: loc for loc in result.scalars()}
+    _reject_clearing_driver_managed_type(found.values(), location_type)
+    for loc in found.values():
+        loc.location_type = location_type
+    await db.commit()
+    if found:
+        await event_bus.publish({"event": "locations_changed"})
+    return LocationBulkResult(
+        updated=[i for i in ids if i in found],
+        not_found=[i for i in ids if i not in found],
+    )
+
+
+@router_locations.delete("/bulk", response_model=LocationBulkResult)
+async def bulk_delete_locations(
+    data: LocationBulkDelete,
+    db: DBSession,
+    principal=RequirePermission("locations:delete"),
+):
+    ids = list(dict.fromkeys(data.location_ids))
+    result = await db.execute(select(Location).where(Location.id.in_(ids)))
+    found = {loc.id: loc for loc in result.scalars()}
+
+    archived_status_id = (
+        select(SpoolStatus.id).where(SpoolStatus.key == "archived").scalar_subquery()
+    )
+    busy_result = await db.execute(
+        select(Spool.location_id)
+        .where(Spool.location_id.in_(list(found)))
+        .where(or_(Spool.status_id != archived_status_id, archived_status_id.is_(None)))
+        .distinct()
+    )
+    busy = set(busy_result.scalars())
+    if found:
+        printer_rows = await db.execute(
+            select(Printer.location_id).where(Printer.location_id.in_(list(found)))
+        )
+        # A printer pointing at this location would otherwise lose that link when
+        # the row is deleted. Keep the location and report it with the rest.
+        busy.update(row for row in printer_rows.scalars() if row is not None)
+    deletable = [i for i in ids if i in found and i not in busy]
+
+    if deletable:
+        await db.execute(
+            update(Spool).where(Spool.location_id.in_(deletable)).values(location_id=None)
+        )
+        for location_id in deletable:
+            await db.delete(found[location_id])
+        await db.commit()
+        await event_bus.publish({"event": "locations_changed"})
+
+    return LocationBulkResult(
+        deleted=deletable,
+        skipped=[i for i in ids if i in busy],
+        not_found=[i for i in ids if i not in found],
+    )
 
 
 @router_locations.get("/{location_id}", response_model=LocationResponse)
@@ -166,7 +306,7 @@ async def get_location(location_id: int, db: DBSession, principal: PrincipalDep)
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "Location not found"},
         )
-    return location
+    return _location_response(location)
 
 
 @router_locations.patch("/{location_id}", response_model=LocationResponse)
@@ -184,13 +324,34 @@ async def update_location(
             detail={"code": "not_found", "message": "Location not found"},
         )
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    values = data.model_dump(exclude_unset=True)
+    if "location_type" in values:
+        values["location_type"] = await _normalize_location_type(
+            db, values["location_type"], exclude_ids=(location_id,)
+        )
+        _reject_clearing_driver_managed_type((location,), values["location_type"])
+    if location.is_driver_managed and "identifier" in values:
+        incoming = values["identifier"].strip() if isinstance(values["identifier"], str) else None
+        incoming = incoming or None
+        if incoming != location.identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "driver_managed_identifier",
+                    "message": (
+                        f"Location {location.name!r} is managed by a printer driver. "
+                        "Its identifier is set by the driver and cannot be changed."
+                    ),
+                },
+            )
+        values["identifier"] = location.identifier
+    for key, value in values.items():
         setattr(location, key, value)
 
     await db.commit()
     await db.refresh(location)
     await event_bus.publish({"event": "locations_changed"})
-    return location
+    return _location_response(location)
 
 
 @router_locations.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -231,6 +392,18 @@ async def delete_location(
             detail={
                 "code": "conflict",
                 "message": "Location has spools, cannot delete",
+            },
+        )
+
+    printer_hit = await db.execute(
+        select(Printer.id).where(Printer.location_id == location_id).limit(1)
+    )
+    if printer_hit.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "conflict",
+                "message": "Location is assigned to a printer, cannot delete",
             },
         )
 

@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.cache import response_cache
 from app.models.filament import Color, Filament, FilamentColor, Manufacturer
+from app.services.bambu_idx import clear_bambu_idx_for_filament
 from app.services.extra_field_validation import normalize_numeric_range
 from app.services.filamentdb_field_mapping import standard_filamentdb_fields
 from app.services.spoolman_projection import catalog_promotion_aliases
@@ -1459,7 +1460,16 @@ class FilamentDBImportService:
         existing.designation = (
             fil_data.get("designation") or existing.designation
         ).strip()
+        previous_material = (existing.material_type or "").casefold()
         existing.material_type = material_key
+        if previous_material != (material_key or "").casefold():
+            removed = await clear_bambu_idx_for_filament(self.db, existing.id)
+            if removed:
+                logger.info(
+                    "Cleared %s bambu_idx row(s) after FilamentDB updated filament %s",
+                    removed,
+                    existing.id,
+                )
         existing.material_subgroup = (
             fil_data.get("material_subtype") or existing.material_subgroup
         )

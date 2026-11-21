@@ -12,6 +12,8 @@ import * as actions from './table-actions'
 import * as colors from './colors'
 import * as inventoryScroll from './inventory-scroll'
 import * as filters from './table-column-filters'
+import * as locationTypes from './location-types'
+import * as driverLocations from './driver-managed-locations'
 import { api } from './api'
 import { createExtraFieldDefinitionDialog } from './extra-field-definition-dialog'
 import { copyText } from './clipboard'
@@ -24,11 +26,11 @@ let intercept: ((path: string, init?: RequestInit) => Response | Promise<Respons
 const settings = { login_disabled: false, currency: 'EUR', rfid_protocol: 'openspool', rfid_extended_data_enabled: false, rfid_display_colons: true, default_spool_core_weight_g: 0, bambu_unmatched_profile_fallback: 'generic', filament_lookup_source: 'filamandb' }
 const printer = { id: 4, name: 'Example printer', driver_key: 'moonraker', driver_config: { url: 'http://printer.local', enabled: true, targets: [{ slot: 1 }] } }
 const dependencies = {
-  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks,
+  ...dialog, ...state, ...driver, ...i18n, ...abort, ...scanner, ...escape, ...actions, ...colors, ...filters, ...inventoryScroll, ...locationTypes, ...driverLocations, api, createExtraFieldDefinitionDialog, copyText, initColumnLocks,
   fetchAllPages: async () => ({ items: [{ id: 2, name: 'Translucent blue', hex_code: fixtureColorHex, usage_count: 1 }] }),
   initI18n: async () => {}, initCurrency: async () => {}, initColumnPicker: () => {}, initColumnResize: () => {},
   invalidateCachePrefix: () => {}, CACHE_KEYS: { LOCATIONS: 'locations' },
-  cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', spool_count: 1 }] }),
+  cachedFetchAllPages: async () => ({ items: [{ id: 3, name: 'Shelf "A" <blue>', identifier: 'UID', location_type: 'Storage', spool_count: 1 }] }),
 }
 const boot = (path: string) => bootAstroPage(path, dependencies)
 function change(id: string, value: string | boolean) {
@@ -150,7 +152,142 @@ it.each([['en', 'Edit'], ['de', 'Bearbeiten']] as const)('retains quoted locatio
   change('location-name', 'Shelf B')
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
-  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf B', identifier: 'UID' })
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf B', identifier: 'UID', location_type: 'Storage' })
+  await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(false))
+  const confirm = vi.fn(async (_message: string, _options?: { isDanger?: boolean }) => false)
+  vi.stubGlobal('__fmConfirm', confirm)
+  document.querySelector<HTMLButtonElement>('.btn-delete')!.click()
+  await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+  expect(confirm.mock.calls[0][0]).toContain('Shelf "A" <blue>')
+  expect(confirm.mock.calls[0][1]).toMatchObject({ isDanger: true })
+})
+
+it('filters locations by type and bulk deletes only the shown selection', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'Storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', spool_count: 1 },
+    { id: 5, name: 'Dry box', identifier: null, location_type: 'Dry Box', spool_count: 0 },
+  ] } as never)
+  const confirm = vi.fn(async (_message: string) => true)
+  vi.stubGlobal('__fmConfirm', confirm)
+  vi.stubGlobal('__fmSuccess', vi.fn(async () => true))
+  intercept = (path, init) => {
+    if (path === '/api/v1/locations/bulk' && init?.method === 'DELETE') {
+      return Response.json({ updated: [], deleted: [3], skipped: [], not_found: [] })
+    }
+  }
+  // A remembered filter for a type that no longer exists falls back to all.
+  localStorage.setItem('filaman-locations-type-filter', 'Gone')
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('#locations-table input[data-location-id]')).toHaveLength(3))
+    expect(document.querySelector<HTMLSelectElement>('#type-filter')!.value).toBe('')
+    const filterOptions = [...document.querySelectorAll<HTMLOptionElement>('#type-filter option')].map(o => o.textContent)
+    expect(filterOptions).toEqual(['All types', 'AMS', 'Storage', 'Dry Box', 'No type'])
+
+    change('type-filter', locationTypes.encodeTypeOption('Storage'))
+    const rows = document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')
+    expect([...rows].map(cb => cb.dataset.locationId)).toEqual(['3'])
+
+    change('type-filter', '')
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="5"]')!.click()
+    change('type-filter', locationTypes.encodeTypeOption('Storage'))
+    change('bulk-select-all', true)
+    expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(true)
+    document.querySelector<HTMLButtonElement>('#bulk-btn-delete')!.click()
+    await vi.waitFor(() => expect(writes()).toHaveLength(1))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(confirm.mock.calls[0][0]).toContain('(Shelf)')
+    expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ location_ids: [3] })
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
+})
+
+it('hides No type for driver-managed slots, resolves non-canonical casing, and rejects blank write-ins', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', custom_fields: { managed_by: 'bambuddy_plugin' }, spool_count: 1 },
+  ] } as never)
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('.btn-edit')).toHaveLength(2))
+    expect(document.querySelector('[data-rfid-location="3"]')).not.toBeNull()
+    expect(document.querySelector('[data-rfid-location="4"]')).toBeNull()
+
+    // Non-canonical "storage" resolves to "Storage" instead of falling back to No type.
+    document.querySelector<HTMLButtonElement>('.btn-edit[data-id="3"]')!.click()
+    expect(document.querySelector<HTMLInputElement>('#location-identifier')!.readOnly).toBe(false)
+    expect(document.getElementById('location-type-hint')!.classList.contains('hidden')).toBe(true)
+    const singleOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
+    expect(singleOptions).toEqual(['No type', 'AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('Storage'))
+
+    // Blank/whitespace write-in is rejected by form validity instead of saving null.
+    change('location-type', locationTypes.TYPE_WRITE_IN)
+    change('location-type-custom', '   ')
+    submit('modal-form')
+    expect(writes()).toHaveLength(0)
+
+    change('location-type-custom', 'Dry Box')
+    submit('modal-form')
+    await vi.waitFor(() => expect(writes()).toHaveLength(1))
+    expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf', identifier: null, location_type: 'Dry Box' })
+
+    // Driver-managed slot hides "No type" in both single edit and bulk Change Type.
+    document.querySelector<HTMLButtonElement>('.btn-edit[data-id="4"]')!.click()
+    const driverOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
+    expect(driverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('AMS'))
+    expect(document.querySelector<HTMLInputElement>('#location-identifier')!.readOnly).toBe(true)
+    expect(document.getElementById('location-identifier-hint')!.textContent).toContain('printer driver')
+    expect(document.getElementById('location-type-hint')!.classList.contains('hidden')).toBe(false)
+    document.querySelector<HTMLButtonElement>('#modal-cancel')!.click()
+
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
+    document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
+    const bulkDriverOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
+    expect(bulkDriverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
+    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('must keep a type')
+    document.querySelector<HTMLButtonElement>('#bulk-type-modal [data-dialog-close]')!.click()
+
+    // Mixed selection (Storage + driver-managed AMS) requires an explicit choice instead of defaulting to AMS.
+    const alert = vi.fn(async (_message: string) => true)
+    const success = vi.fn(async () => true)
+    vi.stubGlobal('__fmAlert', alert)
+    vi.stubGlobal('__fmSuccess', success)
+    intercept = (path, init) => {
+      if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
+        return Response.json({ detail: [{ msg: 'List should have at most 1000 items' }] }, { status: 422 })
+      }
+    }
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="3"]')!.click()
+    document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
+    const mixedOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
+    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('must keep a type')
+    expect(mixedOptions).toEqual(['Choose a type…', 'AMS', 'Storage', 'Other (write in)…'])
+    expect(document.querySelector<HTMLSelectElement>('#bulk-type')!.value).toBe('')
+    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(true)
+
+    change('bulk-type', locationTypes.encodeTypeOption('Storage'))
+    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
+    submit('bulk-type-form')
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('List should have at most 1000 items'))
+    await vi.waitFor(() => expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false))
+
+    intercept = (path, init) => {
+      if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
+        return Response.json({ updated: [3, 4], deleted: [], skipped: [], not_found: [] })
+      }
+    }
+    submit('bulk-type-form')
+    await vi.waitFor(() => expect(success).toHaveBeenCalledWith('Updated the type of 2 location(s).'))
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
 })
 
 it('preserves alpha colors and keeps in-use Delete unavailable', async () => {
