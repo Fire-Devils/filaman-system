@@ -1,10 +1,9 @@
 name: Frontend typecheck
 
+# Required check on devel: runs for every pull request (no path filter),
+# otherwise PRs without frontend changes would wait for it forever.
 on:
   pull_request:
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/frontend-typecheck.yml'
   push:
     branches: [devel]
     paths:
