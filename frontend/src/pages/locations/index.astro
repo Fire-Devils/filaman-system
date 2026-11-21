@@ -336,6 +336,7 @@ import Layout from '../../layouts/Layout.astro'
     async function loadLocations() {
       try {
         const data = await cachedFetchAllPages<LocationRecord>(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
+        if (panelSignal.aborted) return
         locations = data.items
         renderTypeFilter()
         // A live reload can delete a selected location or move it out of the
@@ -344,7 +345,7 @@ import Layout from '../../layouts/Layout.astro'
         for (const id of selectedIds) if (!shown.has(id)) selectedIds.delete(id)
         renderLocations()
       } catch (error) {
-        if (isAbortError(error)) return
+        if (panelSignal.aborted || isAbortError(error)) return
         console.error('Failed to load locations:', error)
         document.getElementById('locations-table')!.innerHTML = `
           <tr>
@@ -929,7 +930,7 @@ import Layout from '../../layouts/Layout.astro'
     }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'locations_changed' || event === 'spools_changed') {
+      if (event === 'resync' || event === 'locations_changed' || event === 'spools_changed') {
         if (_locationsReloadTimer) clearTimeout(_locationsReloadTimer)
         _locationsReloadTimer = setTimeout(() => loadLocations(), 300)
       }

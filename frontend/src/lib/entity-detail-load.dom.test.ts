@@ -18,7 +18,7 @@ function detailLoader(entity: 'spool' | 'filament') {
     const id = '16';
     const detailUrl = '/api/v1/filaments/' + id + '?include_record_token=true';
     const editing = editMode;
-    let currentFilament = null, remainingRequest = 0;
+    let currentFilament = null, spoolMissing = false, remainingRequest = 0;
     const updatePrinterSaveState = () => {};
     let spool, statuses, locations, activeDevices, printerSetup = null, filamentFormController = null, spoolSystemFieldMap = {}, filamentSystemFieldMap = {}, systemFieldMap = {};
     ${transpileModule(loader.getText(parsed), { compilerOptions: { target: ScriptTarget.ES2022 } }).outputText}

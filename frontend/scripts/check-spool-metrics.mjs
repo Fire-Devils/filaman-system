@@ -22,22 +22,34 @@ try {
   let emptySlots = false
   let driverConnected = true, failHealth = false
   let printerCount = 1, amsCount = 1
+  let missingSpool = false
   let failSpoolRead = false
+  let syncPosts = 0
   let spoolReads = 0, printerReads = 0
   let holdWeightRead = null
+  let holdEditRead = null
+  let holdLocationsRead = null
+  const bulkPatches = []
   let locationName = 'Shelf A'
   await page.addInitScript(() => {
     localStorage.setItem('lang', 'en')
+    const NativeEventSource = window.EventSource
+    window.EventSource = class extends NativeEventSource {
+      constructor(...args) { super(...args); window.fixtureEventSource = this }
+    }
   })
   await page.route(/\/(?:api\/|auth\/me$)/, async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })
     if (request.method() !== 'GET') {
       if (path.endsWith('/spools/16')) patches.push(request.postDataJSON())
+      if (path.endsWith('/spools/bulk')) bulkPatches.push(request.postDataJSON())
+      if (path.endsWith('/printers/1/driver/action') && request.postDataJSON()?.action === 'sync') syncPosts++
       return route.fulfill({ json: spool })
     }
     let json = []
     if (path.endsWith('/me')) json = { id: 1, email: 'fixture@example.invalid', language: 'en', is_superadmin: true, roles: [], permissions: [] }
+    else if (path.endsWith('/printers/1')) json = { id: 1, name: 'Fixture Printer 1', driver_key: 'fixture', is_active: true, slots: [], driver_config: {} }
     else if (path.endsWith('/printers')) {
       printerReads++
       if (failPrinter) return route.fulfill({ status: 503, json: { detail: 'Fixture driver unavailable' } })
@@ -45,7 +57,7 @@ try {
     }
     else if (/\/printers\/\d+\/driver\/health$/.test(path)) {
       if (failHealth) return route.fulfill({ status: 503, json: { detail: 'Fixture health unavailable' } })
-      json = { connected: driverConnected, slots: emptySlots ? [] : [
+      json = { running: true, connected: driverConnected, sync_actions: [{ action: 'sync', label: 'Sync slots' }], slots: emptySlots ? [] : [
       { slot_index: '255-0', tray_color: '#FFBB00', present: true },
       ...Array.from({ length: amsCount * 4 }, (_, i) => ({ slot_index: `${Math.floor(i / 4)}-${i % 4}`, tray_color: '#FFBB00', present: true })),
       ] }
@@ -53,17 +65,27 @@ try {
     else if (path.endsWith('/print-requests/pending')) json = null
     else if (path.endsWith('/spools/16')) {
       spoolReads++
+      if (holdEditRead) {
+        const held = holdEditRead
+        holdEditRead = null
+        held.started()
+        await held.release
+      }
       if (holdWeightRead) await holdWeightRead
+      if (missingSpool) return route.fulfill({ status: 404, json: { detail: 'Spool not found' } })
       if (failSpoolRead) return route.fulfill({ status: 503, json: { detail: 'Fixture temporarily unavailable' } })
       json = spool
     }
     else if (path.endsWith('/spools/16/events')) json = { items: [], total: 0 }
     else if (path.endsWith('/spools/filter-options')) json = { used_status_ids: [1], by_status: { 1: {
-      manufacturers: [{ value: '7', label: 'Fixture Brand' }], materials: ['PLA'], locations: [{ value: '2', label: 'Shelf A' }], has_empty_location: false,
+      manufacturers: [{ value: '7', label: 'Fixture Brand' }], materials: ['PLA'], locations: [{ value: '2', label: locationName }], has_empty_location: false,
       colors: [{ value: 'Copper', label: 'Copper', color_hexes: ['#B15821'] }, { value: 'Gold', label: 'Gold', color_hexes: ['#FFBB00'] }], has_empty_colors: false,
     } } }
     else if (path.endsWith('/spools/statuses')) json = [{ id: 1, key: 'opened', label: 'Opened' }]
-    else if (path.endsWith('/locations')) json = { items: [{ id: 2, name: locationName }], total: 1 }
+    else if (path.endsWith('/locations')) {
+      if (holdLocationsRead) await holdLocationsRead
+      json = { items: [{ id: 2, name: locationName }, { id: 3, name: 'Driver slot', custom_fields: { managed_by: 'fixture_plugin' } }], total: 2 }
+    }
     else if (path.endsWith('/filaments')) json = { items: [filament], total: 1 }
     else if (path.endsWith('/public-info')) json = { currency: 'EUR', filament_lookup_source: 'disabled' }
     else if (path.endsWith('/status')) json = { active: false }
@@ -88,6 +110,25 @@ try {
   await page.goto(new URL('/spools', base).href)
   await page.locator('#spools-table tr[data-group-row], #spools-table tr[onclick]').first().waitFor()
   assert.equal(requests.at(-1).searchParams.get('include_metrics'), 'true', 'Native table explicitly requests metrics')
+  locationName = 'Shelf after remote rename'
+  await page.evaluate(() => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'locations_changed' }) })))
+  await page.locator('#spools-table .col-location').filter({ hasText: locationName }).first().waitFor()
+  await page.locator('#spools-table input.bulk-checkbox[data-spool-id="1"]').check()
+  let releaseLocations
+  holdLocationsRead = new Promise(resolve => { releaseLocations = resolve })
+  const freshLocationsStarted = page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/locations')
+  await page.locator('#bulk-btn-location').click()
+  await freshLocationsStarted
+  assert.equal(await page.locator('#bulk-btn-status').isDisabled(), true)
+  await page.locator('#bulk-btn-status').evaluate(button => button.click())
+  holdLocationsRead = null
+  releaseLocations()
+  await page.locator('#bulk-prompt-content select option').filter({ hasText: locationName }).waitFor({ state: 'attached' })
+  assert.deepEqual(await page.locator('#bulk-prompt-content select option').allTextContents(), [locationName], 'Bulk choices are fresh and exclude driver-managed locations')
+  await page.locator('#bulk-prompt-ok').click()
+  await page.locator('#fm-confirm-ok').click()
+  await page.waitForFunction(() => !document.getElementById('bulk-btn-location').disabled)
+  assert.deepEqual(bulkPatches, [{ spool_ids: [1], location_id: 2 }], 'One confirmation issues only the intended location update')
   const locationFilter = page.locator('th.col-location .fm-header-filter-trigger')
   await locationFilter.focus()
   await page.setViewportSize({ width: 320, height: 844 })
@@ -360,6 +401,57 @@ try {
   await page.locator('#btn-edit-spool[aria-pressed="false"]').waitFor()
   assert.equal(patches.at(-1).low_weight_threshold_g, 120)
   assert.equal('metrics' in patches.at(-1), false)
+  for (const event of ['spools_changed', 'resync']) {
+    await page.goto(new URL('/spools/16', base).href)
+    await page.locator('#btn-edit-spool').waitFor()
+    missingSpool = true
+    await page.evaluate(event => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event }) })), event)
+    await page.getByRole('alert').getByText('Spool not found', { exact: true }).waitFor()
+    assert.equal(await page.locator('#btn-edit-spool, .spool-remaining-grams').count(), 0)
+    missingSpool = false
+  }
+  missingSpool = true
+  for (const path of ['/spools/16', '/spools/16?edit=1']) {
+    await page.goto(new URL(path, base).href)
+    await page.getByRole('alert').getByText('Spool not found', { exact: true }).waitFor()
+    assert.equal(await page.locator('#btn-edit-spool, .spool-remaining-grams').count(), 0)
+  }
+  missingSpool = false
+  await page.goto(new URL('/spools/16', base).href)
+  await page.locator('#btn-edit-spool').waitFor()
+  let editStarted, releaseEdit
+  const editRequested = new Promise(resolve => { editStarted = resolve })
+  holdEditRead = { started: editStarted, release: new Promise(resolve => { releaseEdit = resolve }) }
+  await page.locator('#btn-edit-spool').click()
+  await editRequested
+  missingSpool = true
+  const deletedDuringEdit = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/spools/16' && response.status() === 404)
+  await page.evaluate(() => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'resync' }) })))
+  await deletedDuringEdit
+  releaseEdit()
+  await page.getByRole('alert').getByText('Spool not found', { exact: true }).waitFor()
+  missingSpool = false
+  await page.goto(new URL('/spools/16?edit=1', base).href)
+  await page.locator('[name="lot_number"]').fill('Draft survives deletion')
+  missingSpool = true
+  const deletedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/spools/16' && response.status() === 404)
+  await page.evaluate(() => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'resync' }) })))
+  await deletedResponse
+  assert.equal(await page.locator('[name="lot_number"]').inputValue(), 'Draft survives deletion')
+  await page.locator('#btn-cancel-edit').click()
+  await page.getByRole('alert').getByText('Spool not found', { exact: true }).waitFor()
+  missingSpool = false
+  await page.goto(new URL('/printers/1', base).href)
+  await page.getByRole('button', { name: 'Sync slots', exact: true }).waitFor()
+  for (const event of ['resync', 'printer_update']) {
+    const refreshed = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/printers/1/driver/health'))
+    await page.evaluate(event => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event, printer_id: 1 }) })), event)
+    await refreshed
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  }
+  await page.getByRole('button', { name: 'Sync slots', exact: true }).click()
+  await page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/printers/1/driver/health'))
+  assert.equal(syncPosts, 1, 'Repeated notices leave one command per Sync click')
   assert.deepEqual(errors, [])
   console.log('PASS native metric table columns/persistence/server pagination, detailed reel modes/fill states/responsive geometry, read-only estimates and retained threshold editing; fixture writes only')
 } finally {

@@ -100,10 +100,12 @@ import Layout from '../../layouts/Layout.astro'
       return match ? decodeURIComponent(match[1]) : ''
     }
     
+    let colorRequestId = 0
     async function loadColors(reset = true) {
+      const requestId = ++colorRequestId
       try {
         const data = await fetchAllPages<ColorRecord>('/api/v1/colors')
-        if (panelSignal.aborted) return
+        if (panelSignal.aborted || requestId !== colorRequestId) return
         colors = data.items
         colorHeaderFilters?.setOptions('name', colors.map(color => ({
           value: String(color.id),
@@ -115,7 +117,7 @@ import Layout from '../../layouts/Layout.astro'
           .map(value => ({ value: String(value), label: String(value) })))
         renderColors(reset)
       } catch (error) {
-        if (panelSignal.aborted || isAbortError(error)) return
+        if (panelSignal.aborted || requestId !== colorRequestId || isAbortError(error)) return
         colorList.pause()
         console.error('Failed to load colors:', error)
         document.getElementById('colors-table')!.innerHTML = `
@@ -406,7 +408,8 @@ import Layout from '../../layouts/Layout.astro'
     panelSignal.addEventListener('abort', () => clearTimeout(_colorsReloadTimer ?? undefined), { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'colors_changed') {
+      if (event === 'resync' || event === 'colors_changed' || event === 'filaments_changed') {
+        ++colorRequestId
         if (_colorsReloadTimer) clearTimeout(_colorsReloadTimer)
         _colorsReloadTimer = setTimeout(() => loadColors(), 300)
       }

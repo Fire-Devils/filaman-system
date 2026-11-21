@@ -257,6 +257,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
     <script>
       import { t, initI18n, syncLangFromUser, translatePage } from '../lib/i18n'
       import { abortAllRequests, getAbortSignal, isAbortError } from '../lib/abort'
+      import { invalidateAllCaches } from '../lib/cache'
       import type { User } from '../lib/auth'
       import type { AppDialogs } from '../lib/form-dialog'
       import { clearLabelPresetBrowserStorage, ensureLabelPresetBrowserMigration } from '../lib/label-preset-storage'
@@ -850,6 +851,9 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
           es.onmessage = (e) => {
             try {
               const data = JSON.parse(e.data)
+              if (['resync', 'filaments_changed', 'manufacturers_changed', 'colors_changed', 'spools_changed', 'locations_changed', 'statuses_changed'].includes(data.event)) {
+                invalidateAllCaches()
+              }
               window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: data }))
             } catch {}
           }
@@ -880,10 +884,7 @@ const panel = pagePanel ?? (Astro.url.pathname.replace(/\/$/, '') === '/settings
       })()
 
       /* ── Follow a tag reader to the spool it scanned ──────────── */
-      // Polled rather than pushed: drivers and the event bus are per Gunicorn
-      // worker, so an event would reach only the browsers on one of the four.
-      // The scan sits on the reader's row in tag_readers instead, which every
-      // worker can read.
+      // Poll the persisted scan sequence so navigation survives disconnected clients.
       ;(function followTagScanner() {
         if (embedded) return
         const POLL_MS = 1200

@@ -8,9 +8,12 @@
  * - Sequential Fetching für SQLite-Umgebungen
  */
 
+import { isAbortError } from './abort'
+
 const DEFAULT_TTL_MS = 5 * 60 * 1000 // 5 Minuten
 const CACHE_PREFIX = 'filaman-cache:'
 const SESSION_KEY = 'filaman-cache-session'
+const pendingReads = new Map<string, Promise<unknown>>()
 
 interface CacheEntry<T> {
   data: T
@@ -37,7 +40,12 @@ function getSessionId(): string {
   return sessionId
 }
 
-const currentSessionId = getSessionId()
+let currentSessionId: string
+try {
+  currentSessionId = getSessionId()
+} catch {
+  currentSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 /**
  * Holt Daten aus dem Cache oder führt den Fetch aus
@@ -66,28 +74,48 @@ export async function cachedFetch<T>(
     // Cache-Read fehlgeschlagen, ignorieren
   }
   
-  // Fetch ausführen
-  const data = await fetchFn()
-  
-  // In Cache speichern
-  try {
-    const entry: CacheEntry<T> = {
-      data,
-      timestamp: Date.now(),
-      sessionId: currentSessionId
+  const pending = pendingReads.get(key)
+  if (pending) {
+    try {
+      return await pending as T
+    } catch (error) {
+      if (!isAbortError(error)) throw error
+      // Navigation may cancel the previous panel's shared request.
+      return cachedFetch(key, fetchFn, ttlMs)
     }
-    localStorage.setItem(cacheKey, JSON.stringify(entry))
-  } catch {
-    // Cache-Write fehlgeschlagen (z.B. localStorage voll), ignorieren
   }
-  
-  return data
+
+  const read = Promise.resolve().then(async () => {
+    try {
+      let data: T
+      try {
+        data = await fetchFn()
+      } catch (error) {
+        if (pendingReads.get(key) !== read) return cachedFetch(key, fetchFn, ttlMs)
+        throw error
+      }
+      // Invalidated reads must neither refill storage nor return obsolete data to callers.
+      if (pendingReads.get(key) !== read) return cachedFetch(key, fetchFn, ttlMs)
+      try {
+        const entry: CacheEntry<T> = { data, timestamp: Date.now(), sessionId: currentSessionId }
+        localStorage.setItem(cacheKey, JSON.stringify(entry))
+      } catch {
+        // Cache-Write fehlgeschlagen (z.B. localStorage voll), ignorieren
+      }
+      return data
+    } finally {
+      if (pendingReads.get(key) === read) pendingReads.delete(key)
+    }
+  })
+  pendingReads.set(key, read)
+  return read
 }
 
 /**
  * Invalidiert einen spezifischen Cache-Eintrag
  */
 export function invalidateCache(key: string): void {
+  pendingReads.delete(key)
   try {
     localStorage.removeItem(CACHE_PREFIX + key)
   } catch {
@@ -100,6 +128,9 @@ export function invalidateCache(key: string): void {
  * z.B. invalidateCachePrefix('filaments') löscht 'filaments', 'filaments-list', etc.
  */
 export function invalidateCachePrefix(prefix: string): void {
+  for (const key of pendingReads.keys()) {
+    if (key.startsWith(prefix)) pendingReads.delete(key)
+  }
   try {
     const keysToRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
@@ -118,6 +149,7 @@ export function invalidateCachePrefix(prefix: string): void {
  * Invalidiert den gesamten FilaMan-Cache
  */
 export function invalidateAllCaches(): void {
+  pendingReads.clear()
   try {
     const keysToRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {

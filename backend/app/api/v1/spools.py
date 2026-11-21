@@ -464,10 +464,6 @@ async def list_spool_statuses(
 @router_spools.get("/filter-options", response_model=SpoolFilterOptionsResponse)
 async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
     """Return spool-backed categorical values grouped by status in one query."""
-    cached = response_cache.get("filter_options:spools")
-    if cached is not None:
-        return cached
-
     result = await db.execute(
         select(
             Spool.status_id,
@@ -560,7 +556,6 @@ async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
         used_status_ids=sorted(scopes),
         by_status=by_status,
     )
-    response_cache.set("filter_options:spools", payload, ttl=300)
     return payload
 
 
@@ -1777,6 +1772,5 @@ async def backfill_spool_profiles_to_filament(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_state", "message": str(e)},
         )
-    await event_bus.publish({"event": "filaments_changed"})
-    await event_bus.publish({"event": "spools_changed"})
+    await event_bus.publish({"event": "filaments_changed"}, {"event": "spools_changed"})
     return result

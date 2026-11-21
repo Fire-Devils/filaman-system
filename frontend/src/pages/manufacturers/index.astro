@@ -555,7 +555,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'manufacturers_changed') {
+      if (event === 'resync' || event === 'manufacturers_changed' || event === 'filaments_changed' || event === 'spools_changed') {
         if (_mfrReloadTimer) clearTimeout(_mfrReloadTimer)
         _mfrReloadTimer = setTimeout(() => loadManufacturers(), 300)
       }

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 
 const base = process.argv[2] || 'http://127.0.0.1:4321'
-const manufacturer = { id: 7, name: 'Fixture Brand', empty_spool_weight_g: 201 }
-const color = { id: 11, name: 'Fixture Red', hex_code: '#FF0000' }
+const manufacturer = { id: 7, name: 'Fixture Brand', empty_spool_weight_g: 201, spool_count: 1, filament_count: 1, archived_spool_count: 0 }
+const color = { id: 11, name: 'Fixture Red', hex_code: '#FF0000', usage_count: 1 }
 const reel = { id: 4, name: 'Fixture reel', empty_weight_g: 177, spool_material: 'Plastic', outer_diameter_mm: 200, width_mm: 66 }
 const filament = (id, designation) => ({
   id, designation, manufacturer_id: 7, manufacturer,
@@ -27,10 +27,20 @@ try {
   let iconAvailable = true
   let editorPluginActive = true
   page.on('pageerror', error => pageErrors.push(error.message))
+  let filamentReads = 0
   const writes = []
   let accountTheme = 'light'
   let failFilamentLoad = false
-  await page.addInitScript(() => { localStorage.setItem('lang', 'en') })
+  let locationName = 'Initial fixture room'
+  const entityReads = { manufacturers: 0, locations: 0, colors: 0 }
+  const heldEntityReads = new Map()
+  await page.addInitScript(() => {
+    localStorage.setItem('lang', 'en')
+    const NativeEventSource = window.EventSource
+    window.EventSource = class extends NativeEventSource {
+      constructor(...args) { super(...args); window.fixtureEventSource = this }
+    }
+  })
   await page.route('**/plugin-page/fixture?*', route => route.fulfill({
     contentType: 'text/html', body: '<!doctype html><title>Plugin fixture</title><p>Plugin fixture</p>',
   }))
@@ -61,9 +71,19 @@ try {
         { ...plugin, name: 'External plugin', page_url: 'https://example.invalid/fixture' },
       ]
     }
-    else if (path.endsWith('/manufacturers')) json = { items: [manufacturer], total: 1 }
+    else if (path.endsWith('/manufacturers')) {
+      entityReads.manufacturers++
+      json = { items: [manufacturer], total: 1 }
+    }
+    else if (path.endsWith('/locations')) {
+      entityReads.locations++
+      json = { items: [{ id: 7, name: locationName, spool_count: 1, custom_fields: {} }], total: 1 }
+    }
     else if (path.endsWith('/types')) json = ['PLA', 'PETG']
-    else if (path.endsWith('/colors')) json = { items: [color], total: 1 }
+    else if (path.endsWith('/colors')) {
+      entityReads.colors++
+      json = { items: [color], total: 1 }
+    }
     else if (path.endsWith('/filaments/10')) {
       assert.equal(url.searchParams.get('include_record_token'), 'true')
       json = first
@@ -74,6 +94,7 @@ try {
     else if (path.endsWith('/status')) json = { active: false }
     else if (path.endsWith('/filaments/filter-options')) json = { manufacturers: [], types: [], designations: [], diameters: [], finishes: [], subgroups: [], spool_counts: [], colors: [] }
     else if (path.endsWith('/filaments')) {
+      filamentReads++
       if (failFilamentLoad) return route.fulfill({ status: 500, json: {} })
       if (req.frame().url().includes('/filament-picker')) {
         const ids = url.searchParams.getAll('filament_id')
@@ -90,6 +111,15 @@ try {
       }
     }
     else if (path.endsWith('/spools') || path.endsWith('/locations') || path.endsWith('/printers')) json = { items: [], total: 0 }
+    const kind = path.split('/').at(-1)
+    const held = heldEntityReads.get(kind)
+    if (held) {
+      heldEntityReads.delete(kind)
+      json = structuredClone(json)
+      held.started()
+      await held.release
+      if (held.fail) return route.fulfill({ status: 500, json: {} })
+    }
     return route.fulfill({ json })
   })
 
@@ -394,6 +424,19 @@ try {
   await pickerRows.nth(1).waitFor()
   assert.equal(await pickerRows.nth(1).isChecked(), false)
 
+  await pickerRows.nth(1).check()
+  await page.waitForFunction(() => window.latestPickerSelection?.filament_ids.length === 2)
+  pickerFilaments[0].record_token = 'replacement-20'
+  const resyncRows = await picker.locator('body').evaluate(() => {
+    window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'resync' } }))
+    return document.querySelectorAll('#filaments-table input[data-filament-id]').length
+  })
+  assert.equal(resyncRows, 0)
+  await page.waitForFunction(() => window.latestPickerSelection?.inventory_changed && window.latestPickerSelection.filament_ids.length === 1)
+  assert.deepEqual(await page.evaluate(() => window.latestPickerSelection.filament_ids), [21])
+  await pickerRows.first().waitFor()
+  assert.equal(await pickerRows.first().isChecked(), false)
+
   await page.evaluate(() => localStorage.setItem('filaman-columns-filaments-compact', '["type","colors"]'))
   await page.setViewportSize({ width: 1280, height: 844 })
   await page.goto(new URL('/filaments', base).href)
@@ -406,6 +449,20 @@ try {
   await page.setViewportSize({ width: 1280, height: 844 })
   await grouping.waitFor({ state: 'hidden' })
   assert.equal(await manufacturerFilter.evaluate(el => document.activeElement === el), true)
+
+  const filtered = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/filaments')
+  await field('filter-search').fill('Keep this filter')
+  await filtered
+  const beforeResync = filamentReads
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/filaments')
+  await page.evaluate(() => {
+    for (let i = 0; i < 3; i++) window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'resync' } }))
+  })
+  await refreshed
+  await page.waitForTimeout(500)
+  assert.equal(filamentReads - beforeResync, 1)
+  assert.equal(await field('filter-search').inputValue(), 'Keep this filter')
+  console.log('Resync: stale picker selections reconciled; list refresh debounced and filter preserved')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.route('**/plugins/fixture/?*', route => route.fulfill({
@@ -447,6 +504,60 @@ try {
   await page.reload()
   await page.frameLocator('#plugin-frame').locator('html[data-theme="light"]').waitFor()
   assert.equal(await page.evaluate(() => localStorage.getItem('theme')), null)
+  for (const kind of ['manufacturers', 'locations']) {
+    await page.goto(new URL(`/${kind}`, base).href)
+    const rows = page.locator(`#${kind}-table`)
+    await rows.getByText(kind === 'manufacturers' ? manufacturer.name : locationName, { exact: true }).first().waitFor()
+    for (const event of ['resync', `${kind}_changed`, ...(kind === 'manufacturers' ? ['spools_changed', 'filaments_changed'] : [])]) {
+      const updated = `${kind} after ${event}`
+      if (kind === 'manufacturers') { manufacturer.name = updated; manufacturer.spool_count++ }
+      else locationName = updated
+      const before = entityReads[kind]
+      await page.evaluate(event => {
+        window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event }) }))
+      }, event)
+      await rows.getByText(updated, { exact: true }).first().waitFor()
+      assert.equal(entityReads[kind] - before, 1)
+      if (kind === 'manufacturers') assert.equal((await rows.locator('.col-spools').textContent()).trim(), String(manufacturer.spool_count))
+    }
+  }
+  for (const [kind, fail] of [['manufacturers', false], ['locations', false], ['colors', false], ['colors', true]]) {
+    let release
+    let started
+    const startedRead = new Promise(resolve => { started = resolve })
+    heldEntityReads.set(kind, { started, fail, release: new Promise(resolve => { release = resolve }) })
+    const before = entityReads[kind]
+    await page.evaluate(kind => localStorage.removeItem(`filaman-cache:${kind}`), kind)
+    await page.goto(new URL(kind === 'colors' ? '/filaments/colors' : `/${kind}`, base).href)
+    await startedRead
+    const updated = `${kind} after unfinished ${fail ? 'failed ' : ''}read resync`
+    if (kind === 'manufacturers') manufacturer.name = updated
+    else if (kind === 'locations') locationName = updated
+    else color.name = updated
+    await page.evaluate(() => {
+      window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'resync' }) }))
+    })
+    const rows = page.locator(`#${kind}-table`)
+    await rows.getByText(updated, { exact: true }).first().waitFor()
+    const oldResponse = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/${kind}`)
+    release()
+    await (await oldResponse).finished()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    assert.equal(await rows.getByText(updated, { exact: true }).count(), 1)
+    if (kind !== 'colors') {
+      const cached = await page.evaluate(kind => JSON.parse(localStorage.getItem(`filaman-cache:${kind}`)), kind)
+      assert.equal(cached.data.items[0].name, updated)
+    }
+    assert.equal(entityReads[kind] - before, 2)
+  }
+  await page.goto(new URL('/filaments/colors', base).href)
+  await page.locator('#colors-table .btn-delete:disabled').waitFor()
+  color.usage_count = 0
+  const beforeUsage = entityReads.colors
+  await page.evaluate(() => window.fixtureEventSource.onmessage(new MessageEvent('message', { data: JSON.stringify({ event: 'filaments_changed' }) })))
+  await page.locator('#colors-table .btn-delete:not(:disabled)').waitFor()
+  assert.equal(entityReads.colors - beforeUsage, 1)
+  console.log('Shared event handler: inventory rows, manufacturer aggregates and color usage follow live changes')
   assert.deepEqual(pageErrors, [])
   console.log('Plugin themes: account theme on load, all modes without reload, late plugin reset, and reload persistence')
 } finally {
