@@ -1605,7 +1605,7 @@ import Layout from '../layouts/Layout.astro'
       }
       const queue = p.queue
       const queueBits = [
-        queue && Number(queue.depth) > 0 ? t('display.queue', { count: queue.depth }) : '',
+        queue && Number(queue.depth) > 0 ? t('display.queue', { count: Number(queue.depth) }) : '',
         queue?.next?.name ? t('display.nextJob', { name: queue.next.name }) : '',
       ].filter(Boolean)
       const queueLine = queueBits.length ? `<div class="ams-job-queue">${esc(queueBits.join(' · '))}</div>` : ''
