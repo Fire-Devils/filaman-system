@@ -4,7 +4,7 @@ import AdminHeader from '../../components/AdminHeader.astro'
 import FormDialog from '../../components/FormDialog.astro'
 ---
 
-<Layout title="FilaMan - Plugins">
+<Layout panel="plugin-management" title="FilaMan - Plugins">
   <style>
     .plugin-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .plugin-table { width: 100%; }
@@ -177,7 +177,12 @@ import FormDialog from '../../components/FormDialog.astro'
     import { bindFormDialog } from '../../lib/form-dialog'
     import { escapeHtml } from '../../lib/extra-fields'
     import { tableAction } from '../../lib/table-actions'
+    import { mountPanel } from '../../lib/panel-navigation'
+
+    mountPanel('plugin-management', async panelSignal => {
     await initI18n()
+    if (panelSignal.aborted) return
+    const panel = document.querySelector('.fm-admin-page')!
 
     interface Plugin {
       plugin_key: string; name: string; version: string; plugin_type: string; is_active: boolean
@@ -202,11 +207,11 @@ import FormDialog from '../../components/FormDialog.astro'
     const pendingUpdates = new Set<string>()
     
     let installing = false
-    const installModal = document.getElementById('install-modal') as HTMLDialogElement
+    const installModal = panel.querySelector('#install-modal') as HTMLDialogElement
     const installDialog = bindFormDialog(installModal, { canClose: () => !installing })
-    const detailDialog = bindFormDialog(document.getElementById('detail-modal') as HTMLDialogElement)
+    const detailDialog = bindFormDialog(panel.querySelector('#detail-modal') as HTMLDialogElement)
     function showMessage(message: string, error = false) {
-      const host = document.getElementById('plugin-message')!
+      const host = panel.querySelector('#plugin-message')!
       host.className = `plugin-message ${error ? 'fm-alert-error' : 'fm-alert-success'}`
       host.setAttribute('role', error ? 'alert' : 'status')
       host.textContent = message
@@ -217,19 +222,20 @@ import FormDialog from '../../components/FormDialog.astro'
     // ----------------------------------------------------------------
     
     async function loadPlugins() {
+      if (panelSignal.aborted) return
       try {
         plugins = await api.get<Plugin[]>('/admin/system/plugins')
         renderPlugins()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load plugins:', error)
-        const tbody = document.getElementById('plugins-table')!
+        const tbody = panel.querySelector('#plugins-table')!
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--error-text);">${escapeHtml(t('admin.pluginFailedLoad'))}</td></tr>`
       }
     }
     
     function renderPlugins() {
-      const tbody = document.getElementById('plugins-table')!
+      const tbody = panel.querySelector('#plugins-table')!
       
       if (plugins.length === 0) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">${escapeHtml(t('admin.noPlugins'))}</td></tr>`
@@ -286,7 +292,7 @@ import FormDialog from '../../components/FormDialog.astro'
       })
       
       // Detail-Buttons
-      document.querySelectorAll('.btn-detail').forEach(btn => {
+      tbody.querySelectorAll('.btn-detail').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const key = (e.currentTarget as HTMLButtonElement).dataset.key!
           showPluginDetails(key)
@@ -294,7 +300,7 @@ import FormDialog from '../../components/FormDialog.astro'
       })
       
       // Update-Buttons
-      document.querySelectorAll('.btn-update').forEach(btn => {
+      tbody.querySelectorAll('.btn-update').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const btnEl = e.currentTarget as HTMLButtonElement
           const key = btnEl.dataset.key!
@@ -304,7 +310,7 @@ import FormDialog from '../../components/FormDialog.astro'
           pendingUpdates.add(key)
           btnEl.disabled = true
           try {
-            if (!(await confirmRelease(info))) return
+            if (!(await confirmRelease(info)) || panelSignal.aborted) return
             btnEl.textContent = t('admin.pluginUpdating')
             await installRelease(info)
             window.dispatchEvent(new CustomEvent('filaman:plugin-installed', { detail: key }))
@@ -317,7 +323,7 @@ import FormDialog from '../../components/FormDialog.astro'
               invalidateUpdate(key)
               renderPlugins()
               showMessage(t('admin.pluginCatalogChanged'), true)
-              document.getElementById('btn-check-updates')?.focus()
+              panel.querySelector<HTMLElement>('#btn-check-updates')?.focus()
               try {
                 await refreshUpdateActions()
               } catch (refreshError) {
@@ -329,7 +335,7 @@ import FormDialog from '../../components/FormDialog.astro'
             showMessage(err instanceof Error ? err.message : t('admin.pluginInstallFailed'), true)
           } finally {
             pendingUpdates.delete(key)
-            const action = document.querySelector<HTMLButtonElement>(`.btn-update[data-key="${key}"]`)
+            const action = tbody.querySelector<HTMLButtonElement>(`.btn-update[data-key="${key}"]`)
             const update = updateMap.get(key)
             if (action && update) {
               action.disabled = false
@@ -340,16 +346,17 @@ import FormDialog from '../../components/FormDialog.astro'
       })
 
       // Uninstall-Buttons
-      document.querySelectorAll('.btn-delete').forEach(btn => {
+      tbody.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const key = (e.currentTarget as HTMLButtonElement).dataset.key!
           const name = (e.currentTarget as HTMLButtonElement).dataset.name!
           
           const msg = t('admin.confirmUninstall').replace('{name}', name)
-          if (!(await fm.__fmConfirm(msg))) return
+          if (!(await fm.__fmConfirm(msg)) || panelSignal.aborted) return
           
           // Ask whether to also delete plugin data
           const deleteData = await fm.__fmConfirm(t('admin.confirmUninstallDeleteData'), { title: t('admin.uninstallPlugin'), okLabel: t('common.yes') || 'Yes', isDanger: false })
+          if (panelSignal.aborted) return
           const qs = deleteData ? '?delete_data=true' : ''
           
           try {
@@ -364,12 +371,12 @@ import FormDialog from '../../components/FormDialog.astro'
       })
       
       // Toggle active/inactive
-      document.querySelectorAll('.toggle-active').forEach(input => {
+      tbody.querySelectorAll('.toggle-active').forEach(input => {
         input.addEventListener('change', async (e) => {
           const checkbox = e.currentTarget as HTMLInputElement
           const key = checkbox.dataset.key!
           const newState = checkbox.checked
-          const spinner = document.querySelector(`.toggle-spinner[data-spinner-key="${key}"]`) as HTMLElement
+          const spinner = tbody.querySelector(`.toggle-spinner[data-spinner-key="${key}"]`) as HTMLElement
 
           // Bei Deaktivierung: pruefen ob Drucker betroffen sind
           if (!newState) {
@@ -380,6 +387,7 @@ import FormDialog from '../../components/FormDialog.astro'
               })
               if (infoResp.ok) {
                 const info = await infoResp.json()
+                if (panelSignal.aborted) return
                 if (info.count > 0) {
                   if (document.querySelector('#fm-confirm-overlay[open]')) {
                     checkbox.checked = true
@@ -402,6 +410,7 @@ import FormDialog from '../../components/FormDialog.astro'
             }
           }
 
+          if (panelSignal.aborted) return
           // Spinner anzeigen + Toggle deaktivieren
           checkbox.disabled = true
           if (spinner) spinner.classList.add('visible')
@@ -438,8 +447,8 @@ import FormDialog from '../../components/FormDialog.astro'
       const plugin = plugins.find(p => p.plugin_key === key)
       if (!plugin) return
       
-      const title = document.getElementById('detail-title')!
-      const content = document.getElementById('detail-content')!
+      const title = panel.querySelector('#detail-title')!
+      const content = panel.querySelector('#detail-content')!
       
       title.textContent = plugin.name
       title.classList.add('fm-plugin-name')
@@ -481,27 +490,27 @@ import FormDialog from '../../components/FormDialog.astro'
     //  Install-Modal: Drag & Drop, Dateiauswahl, Upload
     // ----------------------------------------------------------------
     
-    const dropZone = document.getElementById('drop-zone')!
-    const fileInput = document.getElementById('file-input') as HTMLInputElement
-    const fileName = document.getElementById('file-name')!
-    const installForm = document.getElementById('install-form') as HTMLFormElement
-    const installSubmit = document.getElementById('install-submit') as HTMLButtonElement
-    const installClose = document.getElementById('install-cancel') as HTMLButtonElement
+    const dropZone = panel.querySelector<HTMLElement>('#drop-zone')!
+    const fileInput = panel.querySelector('#file-input') as HTMLInputElement
+    const fileName = panel.querySelector<HTMLElement>('#file-name')!
+    const installForm = panel.querySelector('#install-form') as HTMLFormElement
+    const installSubmit = panel.querySelector('#install-submit') as HTMLButtonElement
+    const installClose = panel.querySelector('#install-cancel') as HTMLButtonElement
     
-    const catalogBrowser = document.getElementById('catalog-browser')!
-    const catalogSearch = document.getElementById('catalog-search') as HTMLInputElement
-    const catalogFilter = document.getElementById('catalog-filter') as HTMLSelectElement
-    const catalogStatus = document.getElementById('catalog-status')!
-    const catalogList = document.getElementById('catalog-list')!
-    const catalogRetry = document.getElementById('catalog-retry')!
-    const catalogProgress = document.getElementById('catalog-progress')!
-    const installSuccess = document.getElementById('validation-details')!
-    const installError = document.getElementById('error-details')!
-    const installProgress = document.getElementById('upload-progress')!
+    const catalogBrowser = panel.querySelector<HTMLElement>('#catalog-browser')!
+    const catalogSearch = panel.querySelector('#catalog-search') as HTMLInputElement
+    const catalogFilter = panel.querySelector('#catalog-filter') as HTMLSelectElement
+    const catalogStatus = panel.querySelector<HTMLElement>('#catalog-status')!
+    const catalogList = panel.querySelector<HTMLElement>('#catalog-list')!
+    const catalogRetry = panel.querySelector<HTMLElement>('#catalog-retry')!
+    const catalogProgress = panel.querySelector<HTMLElement>('#catalog-progress')!
+    const installSuccess = panel.querySelector<HTMLElement>('#validation-details')!
+    const installError = panel.querySelector<HTMLElement>('#error-details')!
+    const installProgress = panel.querySelector<HTMLElement>('#upload-progress')!
     let catalogRequest = 0
 
-    document.getElementById('btn-browse-plugins')?.addEventListener('click', () => openInstaller(true))
-    document.getElementById('btn-install')?.addEventListener('click', () => openInstaller(false))
+    panel.querySelector('#btn-browse-plugins')?.addEventListener('click', () => openInstaller(true))
+    panel.querySelector('#btn-install')?.addEventListener('click', () => openInstaller(false))
 
     function openInstaller(browse: boolean) {
       catalogRequest++
@@ -511,8 +520,8 @@ import FormDialog from '../../components/FormDialog.astro'
       installModal.classList.toggle('catalog-dialog', browse)
       catalogBrowser.hidden = !browse
       installSubmit.hidden = browse
-      document.getElementById('plugin-zip-upload')!.hidden = browse
-      const title = document.getElementById('install-title')!
+      panel.querySelector<HTMLElement>('#plugin-zip-upload')!.hidden = browse
+      const title = panel.querySelector<HTMLElement>('#install-title')!
       title.dataset.i18n = browse ? 'admin.pluginBrowse' : 'admin.installPlugin'
       title.textContent = t(title.dataset.i18n)
       installClose.dataset.i18n = browse ? 'common.close' : 'common.cancel'
@@ -702,6 +711,7 @@ import FormDialog from '../../components/FormDialog.astro'
     }
 
     async function refreshUpdateActions(): Promise<number | null> {
+      if (panelSignal.aborted) return null
       const currentRequest = ++updateRequest
       try {
         const releases = await api.get<RegistryPlugin[]>('/admin/system/plugins/available')
@@ -717,6 +727,7 @@ import FormDialog from '../../components/FormDialog.astro'
     }
 
     async function loadAvailablePlugins() {
+      if (panelSignal.aborted) return
       const currentRequest = ++catalogRequest
       catalogList.replaceChildren()
       availablePlugins = []
@@ -809,8 +820,8 @@ import FormDialog from '../../components/FormDialog.astro'
     //  Auf Aktualisierungen pruefen
     // ----------------------------------------------------------------
 
-    document.getElementById('btn-check-updates')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-check-updates') as HTMLButtonElement
+    panel.querySelector<HTMLElement>('#btn-check-updates')?.addEventListener('click', async () => {
+      const btn = panel.querySelector<HTMLButtonElement>('#btn-check-updates')!
       btn.disabled = true
       btn.textContent = t('admin.pluginCheckingUpdates')
 
@@ -839,6 +850,7 @@ import FormDialog from '../../components/FormDialog.astro'
     //  Initialisierung
     // ----------------------------------------------------------------
     
-    loadPlugins()
+    void loadPlugins()
+    })
   </script>
 </Layout>
