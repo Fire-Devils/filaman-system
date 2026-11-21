@@ -28,6 +28,7 @@ try {
   let editorPluginActive = true
   page.on('pageerror', error => pageErrors.push(error.message))
   const writes = []
+  let accountTheme = 'light'
   let failFilamentLoad = false
   await page.addInitScript(() => { localStorage.setItem('lang', 'en') })
   await page.route('**/plugin-page/fixture?*', route => route.fulfill({
@@ -37,6 +38,10 @@ try {
     const req = route.request()
     const url = new URL(req.url())
     const path = url.pathname
+    if (path.endsWith('/me/preferences/sidebar')) {
+      if (req.method() === 'PATCH') accountTheme = req.postDataJSON().theme ?? accountTheme
+      return route.fulfill({ json: { sidebar: null, theme: accountTheme, expanded: false } })
+    }
     if (path.endsWith('/events/stream')) return route.fulfill({ status: 204 })
     if (path === plugin.icon_url && !iconAvailable) return route.fulfill({ status: 404 })
     if (path === plugin.icon_url) return route.fulfill({
@@ -96,6 +101,9 @@ try {
     await dialog.frameLocator('iframe').getByText('Plugin fixture').waitFor()
     const frame = page.frames().find(frame => new URL(frame.url()).searchParams.get('filament_host') === mode)
     assert.ok(frame, 'the plugin iframe receives the host surface')
+    await frame.waitForFunction(() => document.documentElement.dataset.theme === 'light')
+    await frame.evaluate(() => { document.documentElement.dataset.theme = 'brand' })
+    await frame.waitForFunction(() => document.documentElement.dataset.theme === 'light')
     return frame
   }
   function message(frame, type, payload = {}) {
@@ -409,6 +417,38 @@ try {
   await mobileControl.click()
   await page.frameLocator('#plugin-iframe').getByRole('button', { name: 'Clicked' }).waitFor()
   console.log('Integration shell: mobile plugin controls remain clickable')
+
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  async function checkThemes(selector) {
+    const plugin = page.frameLocator(selector)
+    await plugin.locator('html[data-theme="light"]').waitFor()
+    const state = await plugin.locator('body').evaluate(body => {
+      const input = document.createElement('input')
+      input.id = 'plugin-draft'
+      input.value = 'Keep this draft'
+      body.append(input)
+      return location.href
+    })
+    for (const theme of ['dark', 'brand', 'light']) {
+      await page.locator(`.fm-sidebar .fm-theme-toggle button[data-theme="${theme}"]`).click()
+      await plugin.locator(`html[data-theme="${theme}"]`).waitFor()
+      assert.equal(await plugin.locator('#plugin-draft').inputValue(), 'Keep this draft')
+      assert.equal(await plugin.locator('body').evaluate(() => location.href), state)
+    }
+    await plugin.locator('html').evaluate(root => { root.dataset.theme = 'brand' })
+    await plugin.locator('html[data-theme="light"]').waitFor()
+  }
+  await checkThemes('#plugin-iframe')
+  await page.route('**/plugin-page/fixture', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><html data-theme="brand"><title>Plugin fixture</title><p>Plugin fixture</p></html>',
+  }))
+  await page.goto(new URL('/plugin-view?p=fixture', base).href)
+  await checkThemes('#plugin-frame')
+  await page.reload()
+  await page.frameLocator('#plugin-frame').locator('html[data-theme="light"]').waitFor()
+  assert.equal(await page.evaluate(() => localStorage.getItem('theme')), null)
+  assert.deepEqual(pageErrors, [])
+  console.log('Plugin themes: account theme on load, all modes without reload, late plugin reset, and reload persistence')
 } finally {
   await browser.close()
 }

@@ -17,11 +17,15 @@ export function getStaticPaths() {
   <script>
     import { mountIntegrationPlugin } from '../../lib/plugin-integration-shell'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { syncPluginTheme } from '../../lib/plugin-theme'
 
-    mountPanel('integration', () => {
+    mountPanel('integration', (signal) => {
     const frame = document.getElementById('plugin-iframe') as HTMLIFrameElement
     const slug = window.location.pathname.split('/').filter(Boolean)[1] || ''
-    try { mountIntegrationPlugin(frame, slug) }
+    try {
+      syncPluginTheme(frame, signal)
+      mountIntegrationPlugin(frame, slug)
+    }
     catch { frame.hidden = true }
     })
   </script>

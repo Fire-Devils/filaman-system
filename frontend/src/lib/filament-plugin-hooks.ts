@@ -2,6 +2,7 @@ import { api } from './api'
 import { getAbortSignal, isAbortError } from './abort'
 import { createPluginIcon } from './plugin-icon'
 import { isValidPluginSlug, PLUGIN_PAGE_PREFIX } from './plugin-nav'
+import { syncPluginTheme } from './plugin-theme'
 
 type FilamentPluginForm = {
   readPluginDraft(): Record<string, unknown>
@@ -35,6 +36,7 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?:
   const content = dialog.querySelector<HTMLElement>('[data-plugin-hook-content]')!
   const origin = window.location.origin
   let frame: HTMLIFrameElement | undefined
+  let frameTheme: AbortController | undefined
   let path = ''
   let selection: number[] = []
   let expectedSelection: SelectedFilament[] | undefined
@@ -54,6 +56,7 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?:
   }
 
   function close() {
+    frameTheme?.abort()
     if (dialog.open) dialog.close()
     content.replaceChildren()
     frame = undefined
@@ -153,6 +156,8 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?:
         frame.sandbox.add('allow-same-origin', 'allow-scripts', 'allow-forms', 'allow-popups')
         frame.src = path + '?filament_host=' + (hook.mode === 'selection' ? 'selection' : 'editor')
         content.replaceChildren(frame)
+        frameTheme = new AbortController()
+        syncPluginTheme(frame, frameTheme.signal)
         dialog.showModal()
       }
       button.addEventListener('click', () => {
