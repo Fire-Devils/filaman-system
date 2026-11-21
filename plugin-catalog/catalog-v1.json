@@ -60,10 +60,10 @@
     "description": "Development preview of source-backed filament and spool research in FilaMan. Connect an OpenAI-compatible model endpoint for model-assisted research and chat.",
     "publisher": "akira69",
     "repository_url": "https://github.com/akira69/filabrain",
-    "version": "0.1.18",
-    "min_filaman_version": "2.0.5",
-    "github_release_url": "https://github.com/akira69/filabrain/releases/download/v0.1.18-preview.1/filabrain-0.1.18.zip",
-    "sha256": "4b32dc067d9fa577d629f68ff860e5d4900f1bc6b3d83a5f7b83c1b676a9c986"
+    "version": "0.1.20",
+    "min_filaman_version": "2.2.2",
+    "github_release_url": "https://github.com/akira69/filabrain/releases/download/v0.1.20-preview.1/filabrain-0.1.20.zip",
+    "sha256": "7813d4b02b7a5497cc77503831cafb47f51d8f7dd605ac3799d0cc566616f87c"
   },
   {
     "plugin_key": "spoolmanscale",
@@ -75,5 +75,16 @@
     "min_filaman_version": "2.0.5",
     "github_release_url": "https://github.com/Niko11111/filaman-spoolmanscale-plugin/releases/download/v0.2.0/spoolmanscale-0.2.0.zip",
     "sha256": "fe042338cb677d46929a2a976e1b96453ede3461b6ab2b7f681dd66cb84b1dc8"
+  },
+  {
+    "plugin_key": "bambu_usage",
+    "name": "Bambu Usage Tracking",
+    "description": "Deducts the filament of Bambu Lab prints from the matching FilaMan spools and keeps a print history with plate previews. Needs the Bambu Lab driver plugin with the printer set up, and one restart of FilaMan after the first install. Do not combine with Bambuddy's usage tracking on the same printer.",
+    "publisher": "Niko11111",
+    "repository_url": "https://github.com/Niko11111/FilaManBambuUsage",
+    "version": "1.0.0",
+    "min_filaman_version": "2.0.6",
+    "github_release_url": "https://github.com/Niko11111/FilaManBambuUsage/releases/download/v1.0.0/bambu_usage-1.0.0.zip",
+    "sha256": "70db18b5c7be8e3f4059a1df47a1e531335b8dfa04bf601788ddcfee0313a1de"
   }
 ]
