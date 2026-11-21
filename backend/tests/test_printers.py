@@ -533,6 +533,43 @@ class TestDriverLifecycleWorkerRouting:
         mock_plugin_manager.start_printer.assert_not_awaited()
         mock_plugin_manager.stop_printer.assert_not_awaited()
 
+    @pytest.mark.parametrize("response_lost", [False, True])
+    @pytest.mark.usefixtures("private_socket_path")
+    async def test_slow_config_update_completes_once_without_replaying_accepted_work(
+        self, auth_client, db_session, mock_plugin_manager, monkeypatch, response_lost
+    ):
+        client, csrf_token = auth_client
+        printer = await _create_printer(db_session, name="Bambu")
+        received = []
+
+        async def primary(request):
+            received.append(request)
+            with patch("app.api.v1.printers._is_primary_worker", return_value=True):
+                response = await client.send(request)
+            # Model a 12-second driver restart without making the test sleep.
+            if response_lost or request.extensions["timeout"]["read"] < 12:
+                raise httpx.ReadTimeout("Primary committed but response timed out", request=request)
+            return response
+
+        monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(primary))
+        with patch("app.api.v1.printers._is_primary_worker", return_value=False):
+            response = await client.patch(
+                f"/api/v1/printers/{printer.id}",
+                json={"driver_config": {"host": "192.168.0.9"}},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+        assert response.status_code == (503 if response_lost else 200)
+        if response_lost:
+            assert response.json()["detail"]["code"] == "primary_proxy_failed"
+        else:
+            assert response.json()["id"] == printer.id
+        await db_session.refresh(printer)
+        assert printer.driver_config == {"host": "192.168.0.9"}
+        assert len(received) == 1
+        mock_plugin_manager.stop_printer.assert_awaited_once_with(printer.id)
+        mock_plugin_manager.start_printer.assert_awaited_once()
+
     @pytest.mark.asyncio
     async def test_rename_is_handled_locally(self, auth_client, db_session):
         client, csrf_token = auth_client
