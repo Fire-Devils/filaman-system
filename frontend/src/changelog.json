@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Eingebettete Plugins wie Bambu Usage Tracking und FilaBrain übernehmen wieder das gewählte Farbschema (Standard, Hell, Dunkel) und wechseln es sofort mit, ohne neu zu laden oder Eingaben zu verlieren. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Embedded plugins such as Bambu Usage Tracking and FilaBrain follow the selected color theme (Default, Light, Dark) again and switch along instantly, without reloading or losing your input. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.2.3",
       "date": "",
       "changes": {
