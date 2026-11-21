@@ -1398,10 +1398,9 @@ import Layout from '../layouts/Layout.astro'
         || (hexes.length === 1 && hexes[0] === PLACEHOLDER_HEX && !s.color_name && spoolId == null)
       const pct = Number.isFinite(s.remaining_percent) ? pctWidth(s.remaining_percent) : null
       const tracked = spoolId != null
-      // An untracked bay's number is the printer's guess. "0%" from a printer
-      // that cannot read the spool is not a reading, so it is not shown as one.
+      // The backend uses null for unavailable levels; a numeric zero is a valid reading.
       const estimate = !tracked || s.remaining_source === 'printer'
-      const noReading = pct === null || (estimate && pct === 0)
+      const noReading = pct === null
       const level = !tracked ? 'untracked'
         : pct === null ? '' : pct <= CRITICAL_PERCENT ? 'crit' : pct <= LOW_PERCENT ? 'low' : 'ok'
       const barLevel = noReading ? 'unknown' : estimate ? 'estimate' : level
@@ -1428,7 +1427,7 @@ import Layout from '../layouts/Layout.astro'
 
     function amountsMarkup(m: ReturnType<typeof bayModel>): string {
       if (m.noReading) {
-        const note = m.pct === 0 ? t('display.printerReads', { percent: 0 }) : (m.grams || t('display.amountUnknown'))
+        const note = m.grams || t('display.amountUnknown')
         return `<span class="ams-pct"><b>—</b></span><span class="ams-grams">${esc(note)}</span>`
       }
       const note = m.estimate ? [m.grams, t('display.printerEstimate')].filter(Boolean).join(' · ') : m.grams
@@ -1896,7 +1895,7 @@ import Layout from '../layouts/Layout.astro'
             <div>
               ${m.noReading ? `<span class="ams-pct"><b>—</b></span>` : pctMarkup(m.pct!)}
               ${(() => {
-                const note = m.noReading ? (m.pct === 0 ? t('display.printerReads', { percent: 0 }) : (m.grams || t('display.amountUnknown'))) : m.grams
+                const note = m.noReading ? (m.grams || t('display.amountUnknown')) : m.grams
                 return note ? `<span class="ams-grams">${esc(note)}</span>` : ''
               })()}
               <span class="ams-bar" data-level="${m.barLevel}" aria-hidden="true"><i${m.noReading ? '' : ` style="width:${m.pct}%"`}></i></span>

@@ -243,6 +243,16 @@ def _pair_from_extruder_slots(raw: dict[str, Any]) -> tuple[int, int] | None:
     slot_no = _as_int(_first(entry, ("slot_id", "slot", "tray_id", "tray")))
     if ams_id is None or slot_no is None:
         return None
+    return ams_id, slot_no
+
+
+def _canonical_extruder_slot(location: tuple[int, int]) -> tuple[int, int] | None:
+    ams_id, slot_no = location
+    if ams_id in EXTERNAL_IDS:
+        # Extruder telemetry names the physical holder (254/255), with local slot 0.
+        return canonicalize_slot_key(255, ams_id) if slot_no == 0 else None
+    if AMS_HT_ID_BASE <= ams_id < 254:
+        return ams_id, 0
     return canonicalize_slot_key(ams_id, slot_no)
 
 
@@ -265,13 +275,9 @@ def _extruder_trays(raw: dict[str, Any]) -> dict[tuple[int, int], str]:
         slot_no = _as_int(_first(entry, ("slot_id", "slot", "tray_id", "tray")))
         if ams_id is None or slot_no is None:
             continue
-        if ams_id in EXTERNAL_IDS:
-            # An external spool is named by its holder as the AMS, slot 0:
-            # 254 is the left (deputy) holder, 255 the right (main) one.
-            # canonicalize_slot_key() takes the holder id as the tray.
-            trays[canonicalize_slot_key(255, ams_id)] = side
-        else:
-            trays[canonicalize_slot_key(ams_id, slot_no)] = side
+        location = _canonical_extruder_slot((ams_id, slot_no))
+        if location is not None:
+            trays[location] = side
     return trays
 
 
@@ -747,9 +753,16 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
     active_tray = _as_int(_first(raw, ("active_tray", "tray_now")))
     if active_tray is None:
         active_tray = _as_int(_deep_get(raw, ("ams", "tray_now")))
-    active_tray = _encode_active_tray(
-        _pair_from_extruder_slots(raw) or _decode_active_tray(active_tray)
+    explicit_slot = _pair_from_extruder_slots(raw)
+    active_slot = _canonical_extruder_slot(explicit_slot) if explicit_slot is not None else _decode_active_tray(active_tray)
+    active_slot_conflict = bool(
+        active_slot is not None and active_slot[0] in EXTERNAL_IDS
+        and _decode_active_tray(active_tray) is not None
     )
+    if active_slot_conflict:
+        # Partial pushes retain the other source; neither report proves which one is newer.
+        active_slot = None
+    active_tray = _encode_active_tray(active_slot)
 
     hms_raw = raw.get("hms") or raw.get("hms_errors") or []
     hms: list[dict[str, Any]] = []
@@ -882,6 +895,9 @@ def normalize_driver_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         },
         "speed_level": _as_int(_first(raw, ("speed_level", "spd_lvl"))),
         "active_tray": active_tray,
+        # Preserve explicit external pairs that the legacy tray integer cannot represent.
+        "active_slot": active_slot,
+        "active_slot_conflict": active_slot_conflict,
         "extruders": _extruder_trays(raw),
         "hms": hms,
         "ams": units,
@@ -1164,14 +1180,14 @@ def _apply_backups(slots: list[dict[str, Any]]) -> None:
                 break
 
 
-def _apply_active(units: list[dict[str, Any]], active_tray: int | None) -> dict[str, Any] | None:
+def _apply_active(units: list[dict[str, Any]], location: tuple[int, int] | None) -> dict[str, Any] | None:
     """Return {ams_id, slot} of the active slot; honour tray_now over per-tray flags."""
-    location = _decode_active_tray(active_tray)
     if location is not None:
         ams_id, slot_no = location
         for unit in units:
+            displayed_slot = 0 if unit["kind"] == "ams_ht" and slot_no in (0, 1) else slot_no
             for slot in unit["slots"]:
-                slot["active"] = unit["ams_id"] == ams_id and slot["slot"] == slot_no and not slot["empty"]
+                slot["active"] = unit["ams_id"] == ams_id and slot["slot"] == displayed_slot and not slot["empty"]
     for unit in units:
         for slot in unit["slots"]:
             if slot["active"]:
@@ -1289,7 +1305,22 @@ def build_printer_display(
 
     all_slots = [s for u in units for s in u["slots"]]
     _apply_backups(all_slots)
-    active = _apply_active(units, live["active_tray"] if live else None)
+    location = live["active_slot"] if live else None
+    external = units_by_id.get(255, {}).get("slots", [])
+    if (
+        location == (255, 1)
+        and len(external) == 1 and external[0]["slot"] == 0
+        and external[0]["active"] and not external[0]["empty"]
+        and {str(key) for key in driver_state.get("extruder_slots", {})} == {"0"}
+        and live["temperatures"]["nozzle_2"] is None
+        and live["temperatures"]["nozzle_2_target"] is None
+    ):
+        # Preserve a sole holder's explicit activity flag when no second holder is reported.
+        location = (255, 0)
+    if live and live["active_slot_conflict"]:
+        for slot in all_slots:
+            slot["active"] = False
+    active = _apply_active(units, location)
     _apply_extruders(units, live["extruders"] if live else {})
 
     out: dict[str, Any] = {
