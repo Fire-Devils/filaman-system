@@ -1,17 +1,17 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, StringConstraints
-from sqlalchemy import select
+from pydantic import BaseModel, Field, StringConstraints, ValidationError
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, PrincipalDep
 from app.core.csrf import maybe_attach_csrf_cookie
 from app.core.security import hash_password_async, verify_password_async
-from app.models import User, Role, Permission, UserRole, RolePermission
+from app.models import Role, User
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -43,6 +43,32 @@ class PreferencesResponse(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     dashboard_hidden_widgets: Annotated[list[WidgetId], Field(max_length=50)] | None = None
+
+
+class SidebarItemPreference(BaseModel):
+    id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_/-]{1,128}$")]
+    shown: bool = True
+    pinned: bool | None = None
+
+
+class SidebarPreferences(BaseModel):
+    navigation: Annotated[list[SidebarItemPreference], Field(max_length=128)] = Field(default_factory=list)
+    plugins: Annotated[list[SidebarItemPreference], Field(max_length=512)] = Field(default_factory=list)
+    compact: bool | None = False
+    hover: bool = True
+    remember: bool = False
+    showColorMode: bool = True
+
+
+class SidebarPreferencesResponse(BaseModel):
+    sidebar: SidebarPreferences | None = None
+    theme: Literal["brand", "light", "dark"] | None = None
+    expanded: bool | None = None
+
+
+class SidebarPreferencesUpdate(SidebarPreferencesResponse):
+    expected_sidebar: SidebarPreferences | None = None
+    import_legacy: bool = False
 
 
 class ChangePasswordRequest(BaseModel):
@@ -84,6 +110,10 @@ async def get_me(
         permissions=permissions,
     )
     response = JSONResponse(content=jsonable_encoder(payload))
+    prefs = user.ui_preferences
+    sidebar = prefs.get("sidebar_settings") if isinstance(prefs, dict) else None
+    if isinstance(sidebar, dict) and (theme := sidebar.get("theme")) in ("brand", "light", "dark"):
+        response.headers["X-Filaman-Theme"] = theme
     maybe_attach_csrf_cookie(request, response)
     return response
 
@@ -138,14 +168,26 @@ def _preferences_payload(user: User) -> PreferencesResponse:
     )
 
 
-@router.get("/preferences", response_model=PreferencesResponse)
-async def get_preferences(principal: PrincipalDep, db: DBSession):
-    user = await db.get(User, principal.user_id)
-    if not user:
+async def _preferences_user(db: AsyncSession, user_id: int, *, lock: bool = False) -> User:
+    query = select(User).where(User.id == user_id).execution_options(populate_existing=True)
+    if lock:
+        if db.get_bind().dialect.name == "sqlite":
+            # Acquire SQLite's write lock before reading the shared preferences JSON.
+            await db.execute(update(User).where(User.id == user_id).values(updated_at=User.updated_at))
+        else:
+            query = query.with_for_update()
+    user = await db.scalar(query)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": "User not found"},
         )
+    return user
+
+
+@router.get("/preferences", response_model=PreferencesResponse)
+async def get_preferences(principal: PrincipalDep, db: DBSession):
+    user = await _preferences_user(db, principal.user_id)
     return _preferences_payload(user)
 
 
@@ -155,12 +197,7 @@ async def update_preferences(
     principal: PrincipalDep,
     db: DBSession,
 ):
-    user = await db.get(User, principal.user_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "not_found", "message": "User not found"},
-        )
+    user = await _preferences_user(db, principal.user_id, lock=True)
 
     # Reassign a new dict so SQLAlchemy detects the JSON change.
     prefs = dict(user.ui_preferences or {})
@@ -170,6 +207,63 @@ async def update_preferences(
 
     await db.commit()
     return _preferences_payload(user)
+
+
+def _sidebar_preferences_payload(prefs: object) -> SidebarPreferencesResponse:
+    saved = prefs.get("sidebar_settings") if isinstance(prefs, dict) else None
+    current = SidebarPreferencesResponse()
+    if isinstance(saved, dict):
+        # Restored JSON may contain invalid fields; retain the valid preferences.
+        for field in SidebarPreferencesResponse.model_fields:
+            try:
+                parsed = SidebarPreferencesResponse.model_validate({field: saved.get(field)})
+            except ValidationError:
+                continue
+            setattr(current, field, getattr(parsed, field))
+    if not current.sidebar or not current.sidebar.remember:
+        current.expanded = None
+    return current
+
+
+@router.get("/preferences/sidebar", response_model=SidebarPreferencesResponse)
+async def get_sidebar_preferences(principal: PrincipalDep, db: DBSession, account_id: int | None = None):
+    _check_sidebar_account(principal.user_id, account_id)
+    user = await _preferences_user(db, principal.user_id)
+    return _sidebar_preferences_payload(user.ui_preferences)
+
+
+@router.patch("/preferences/sidebar", response_model=SidebarPreferencesResponse)
+async def update_sidebar_preferences(
+    data: SidebarPreferencesUpdate, principal: PrincipalDep, db: DBSession, account_id: int | None = None
+):
+    _check_sidebar_account(principal.user_id, account_id)
+    user = await _preferences_user(db, principal.user_id, lock=True)
+    prefs = dict(user.ui_preferences) if isinstance(user.ui_preferences, dict) else {}
+    current = _sidebar_preferences_payload(prefs)
+    if "expected_sidebar" in data.model_fields_set and data.expected_sidebar != current.sidebar:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "sidebar_changed", "message": "Sidebar settings have changed"},
+        )
+    importing_sidebar = data.import_legacy and current.sidebar is None
+    if data.sidebar is not None and (not data.import_legacy or importing_sidebar):
+        current.sidebar = data.sidebar
+    if data.theme is not None and (not data.import_legacy or current.theme is None):
+        current.theme = data.theme
+    if current.sidebar and current.sidebar.remember:
+        if data.expanded is not None and (not data.import_legacy or importing_sidebar):
+            current.expanded = data.expanded
+    else:
+        current.expanded = None
+    prefs["sidebar_settings"] = current.model_dump()
+    user.ui_preferences = prefs
+    await db.commit()
+    return current
+
+
+def _check_sidebar_account(user_id: int, account_id: int | None) -> None:
+    if account_id is not None and account_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signed-in account changed")
 
 
 @router.post("/change-password")

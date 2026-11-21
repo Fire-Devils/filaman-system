@@ -41,3 +41,16 @@ const MAX_SLUG_LENGTH = 500 - PLUGIN_PAGE_PREFIX.length
 export function isValidPluginSlug(slug: string): boolean {
   return slug.length > 0 && slug.length <= MAX_SLUG_LENGTH && SLUG_PATTERN.test(slug)
 }
+
+export const pluginNavChangedEvent = 'filaman:plugin-nav-changed'
+
+export interface PluginNavChange { pluginKey?: string; revision: string }
+
+export function notifyPluginNavChanged(pluginKey?: string) {
+  const detail: PluginNavChange = { pluginKey, revision: crypto.randomUUID?.() ?? String(Date.now()) }
+  window.dispatchEvent(new CustomEvent(pluginNavChangedEvent, { detail }))
+  // Use storage to notify other tabs on the same origin.
+  try {
+    localStorage.setItem(pluginNavChangedEvent, JSON.stringify(detail))
+  } catch { /* The current tab already received the event. */ }
+}

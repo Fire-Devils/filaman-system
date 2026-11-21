@@ -84,7 +84,8 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE_PATH, headless: true })
 try {
-  const page = await browser.newPage()
+  const context = await browser.newContext()
+  const page = await context.newPage()
   await page.goto(`http://127.0.0.1:${server.address().port}/admin/system`, { waitUntil: 'networkidle' })
   await page.locator('#plugins-table tr').first().waitFor()
   const sidebar = await page.locator('.fm-sidebar').elementHandle()
@@ -237,6 +238,11 @@ try {
 
   await page.locator('#plugin-nav .fm-plugin-icon-mask[style*="v=3.0.0"]').waitFor({ state: 'attached' })
   const registryMask = await sidebarIcon.getAttribute('style')
+  const observerPage = await page.context().newPage()
+  await observerPage.goto(page.url(), { waitUntil: 'networkidle' })
+  const observerIcon = observerPage.locator('#plugin-nav .fm-plugin-icon-mask')
+  await observerIcon.waitFor()
+  const observerMask = await observerIcon.getAttribute('style')
   await page.locator('#btn-install').click()
   await page.locator('#file-input').setInputFiles({
     name: 'replacement.zip', mimeType: 'application/zip', buffer: Buffer.from('mock plugin ZIP'),
@@ -250,7 +256,14 @@ try {
   }, registryMask)
   assert.equal(await sidebarIcon.count(), 1)
   assert.equal(await sidebar.evaluate(element => element.isConnected), true)
-  console.log('The sidebar loads the new icon after a registry upgrade and a same-version ZIP replacement.')
+  await observerPage.waitForFunction(previous => {
+    const mask = document.querySelector('#plugin-nav .fm-plugin-icon-mask')
+    return mask && mask.getAttribute('style') !== previous
+  }, observerMask, { timeout: 10000 })
+  assert.equal(await observerIcon.count(), 1)
+  assert.equal(await observerIcon.getAttribute('style'), await sidebarIcon.getAttribute('style'))
+  await observerPage.close()
+  console.log('The sidebar loads the new icon after a registry upgrade and a same-version ZIP replacement, including another open tab.')
 
   const longVersion = '123456789.123456789.123456789'
   plugins[1].version = longVersion
