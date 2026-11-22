@@ -101,6 +101,9 @@ def test_combined_head_upgrades_existing_ui_and_api_databases(tmp_path, monkeypa
                 ("filaments", "filamentdb_spool_profile_id"),
                 ("label_presets", "selected"),
                 ("label_print_requests", "filament_id"),
+                ("print_jobs", "project_id"),
+                ("print_job_usages", "spool_event_id"),
+                ("spools", "opened_at"),
             ]:
                 assert column in {item["name"] for item in inspector.get_columns(table)}
     finally:
