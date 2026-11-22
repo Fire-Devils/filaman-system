@@ -11,6 +11,17 @@ const components = { FormDialog, FormSection, ColorEditorFields, AdminHeader, In
 const shellPattern = /<(FormDialog|FormSection|ColorEditorFields|AdminHeader|InventoryLoadMore)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)/g
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (...source: string[]) => (...values: unknown[]) => Promise<unknown>
 
+/** Page markup is not compiled by Astro here — only named shells are. Evaluate `attr={'string'}` so tests see the same attributes as `astro build`. */
+export function compileQuotedAttrExpressions(markup: string): string {
+  return markup.replace(
+    /(\s[\w.:-]+)=\{('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")\}/g,
+    (_all, attr: string, quoted: string) => {
+      const value = Function(`"use strict"; return (${quoted})`)() as string
+      return `${attr}="${value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"`
+    },
+  )
+}
+
 /** Render actual shared shells, then run the page script after DOM setup, without Layout's startup side effects. */
 export async function bootAstroPage(path: string, dependencies: Record<string, unknown>): Promise<void> {
   const page = readFileSync(`src/pages/${path}.astro`, 'utf8')
@@ -33,7 +44,7 @@ export async function bootAstroPage(path: string, dependencies: Record<string, u
     }
     return markup
   }
-  document.body.innerHTML = await renderShells(page.match(/<Layout[^>]*>([\s\S]*?)<script>/)![1])
+  document.body.innerHTML = await renderShells(compileQuotedAttrExpressions(page.match(/<Layout[^>]*>([\s\S]*?)<script>/)![1]))
   const script = createSourceFile(`${path}.ts`, page.match(/<script>([\s\S]*?)<\/script>/)![1], ScriptTarget.Latest, true)
   const source = script.statements.filter(node => !isImportDeclaration(node)).map(node => node.getText(script)).join('\n')
   let mounted: Promise<unknown> | undefined
