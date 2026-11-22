@@ -443,6 +443,22 @@ class SpoolService:
                     },
                 )
 
+    async def lock_balance(self, spool: Spool) -> None:
+        """Refresh the current balance under a write lock held until commit."""
+        if self.db.get_bind().dialect.name == "sqlite":
+            # SQLite ignores FOR UPDATE. A no-op UPDATE starts its write transaction.
+            await self.db.execute(
+                update(Spool)
+                .where(Spool.id == spool.id)
+                .values(updated_at=Spool.updated_at)
+                .execution_options(synchronize_session=False)
+            )
+        await self.db.refresh(
+            spool,
+            ["remaining_weight_g", "empty_spool_weight_g", "spool_core_weight_g", "last_used_at", "status_id", "status"],
+            with_for_update=True,
+        )
+
     async def record_measurement(
         self,
         spool: Spool,
@@ -452,6 +468,7 @@ class SpoolService:
         source: str = "ui",
         note: str | None = None,
     ) -> tuple[SpoolEvent, float | None]:
+        await self.lock_balance(spool)
         core_weight_g = await self._resolve_core_weight(spool)
         tara = self._get_tara(spool, core_weight_g)
         meta: dict[str, Any] = {}
@@ -469,6 +486,7 @@ class SpoolService:
                 note=note,
                 meta=meta,
             )
+            await self.db.commit()
             return event, spool.remaining_weight_g
 
         remaining = measured_weight_g - tara
@@ -518,6 +536,7 @@ class SpoolService:
             if delta_weight_g is None:
                 raise ValueError("delta_weight_g required for relative adjustment")
 
+            await self.lock_balance(spool)
             if spool.remaining_weight_g is None:
                 event = await self._create_event(
                     spool_id=spool.id,
@@ -539,6 +558,7 @@ class SpoolService:
             if measured_weight_g is None:
                 raise ValueError("measured_weight_g required for absolute adjustment")
 
+            await self.lock_balance(spool)
             core_weight_g = await self._resolve_core_weight(spool)
             tara = self._get_tara(spool, core_weight_g)
 
@@ -607,19 +627,7 @@ class SpoolService:
         if delta_weight_g > 0:
             delta_weight_g = -delta_weight_g
 
-        # Lock before reading the balance or ledger so deduplication and aggregation agree.
-        if self.db.get_bind().dialect.name == "sqlite":
-            # SQLite ignores FOR UPDATE. A no-op UPDATE starts its write transaction.
-            await self.db.execute(
-                update(Spool)
-                .where(Spool.id == spool.id)
-                .values(updated_at=Spool.updated_at)
-                .execution_options(synchronize_session=False)
-            )
-        await self.db.refresh(
-            spool, ["remaining_weight_g", "last_used_at", "status_id", "status"],
-            with_for_update=True,
-        )
+        await self.lock_balance(spool)
 
         # Bambuddy (and similar drivers) tag each usage report with a stable
         # key so WebSocket redelivery does not subtract the same grams twice.
