@@ -187,7 +187,7 @@ def test_migration_adds_and_drops_columns():
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.down_revision == "b8f2d6a41c93"
+    assert module.down_revision == "c3e9a71f2d85"
 
     engine = sa.create_engine("sqlite://")
     metadata = sa.MetaData()

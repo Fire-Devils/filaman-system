@@ -138,7 +138,7 @@ it('retains structured driver config when editing through the printer dialog', a
   change('printer-name', 'Updated printer')
   submit('modal-form')
   await vi.waitFor(() => expect(writes()).toHaveLength(1))
-  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Updated printer', driver_key: 'moonraker', driver_config: printer.driver_config })
+  expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Updated printer', driver_key: 'moonraker', driver_config: printer.driver_config, nozzle_diameter_mm: null, nozzle_hardened: null })
   await vi.waitFor(() => expect(document.querySelector<HTMLDialogElement>('#modal-container')!.open).toBe(false))
 })
 it.each([['en', 'Edit'], ['de', 'Bearbeiten']] as const)('retains quoted location names and translated actions (%s)', async (lang, label) => {

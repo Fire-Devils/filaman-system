@@ -335,7 +335,7 @@ def _load_migration():
 
 def test_migration_adds_columns_and_backfills_opened_at():
     migration = _load_migration()
-    assert migration.down_revision == "b8f2d6a41c93"
+    assert migration.down_revision == "c3e9a17d5f42"
     ts_col = lambda name: sa.Column(name, sa.DateTime(timezone=True), nullable=False)  # noqa: E731
     metadata = sa.MetaData()
     statuses = sa.Table(

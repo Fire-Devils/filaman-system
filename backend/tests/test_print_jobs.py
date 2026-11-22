@@ -384,6 +384,32 @@ async def test_permissions_viewer_cannot_write_user_can_log_only_admin_deletes(c
 
 
 @pytest.mark.asyncio
+async def test_completing_requires_consumption_permission(client, db_session):
+    from app.models import Permission, RolePermission
+    from sqlalchemy import delete
+
+    role = await db_session.scalar(select(Role).where(Role.key == "user"))
+    permission = await db_session.scalar(
+        select(Permission).where(Permission.key == "spool_events:create_consumption")
+    )
+    await db_session.execute(
+        delete(RolePermission).where(
+            RolePermission.role_id == role.id, RolePermission.permission_id == permission.id
+        )
+    )
+    await db_session.commit()
+    await _login_as_role(client, db_session, "user")
+
+    booked = await client.post("/api/v1/print-jobs", json={"name": "x", "usages": [], "complete": True})
+    assert booked.status_code == 403
+    job = await client.post("/api/v1/print-jobs", json={"name": "y", "usages": []})
+    assert job.status_code == 201
+    denied = await client.post(f"/api/v1/print-jobs/{job.json()['id']}/complete", json={"success": True, "usages": []})
+    assert denied.status_code == 403
+    assert (await client.get(f"/api/v1/print-jobs/{job.json()['id']}")).json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
 async def test_unauthenticated_requests_are_rejected(client):
     assert (await client.get("/api/v1/print-jobs")).status_code == 401
     assert (await client.get("/api/v1/print-projects")).status_code == 401

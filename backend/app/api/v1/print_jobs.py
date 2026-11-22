@@ -16,7 +16,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, case, func, select, update
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.deps import DBSession, PrincipalDep, RequirePermission, ensure_any_permission
 from app.api.v1.schemas import PaginatedResponse
 from app.core.config import DATA_DIR
 from app.core.event_bus import event_bus
@@ -40,6 +40,7 @@ Grams = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 _CREATE = RequirePermission("print_jobs:create")
 _UPDATE = RequirePermission("print_jobs:update")
 _DELETE = RequirePermission("print_jobs:delete")
+_BOOKING_PERMISSION = "spool_events:create_consumption"
 
 
 # ------------------------------------------------------------------ schemas
@@ -410,6 +411,10 @@ async def get_job(job_id: int, db: DBSession, principal: PrincipalDep):
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 async def create_job(data: JobCreate, db: DBSession, principal=_CREATE):
+    if data.complete:
+        # Completing books spool consumption, so it needs the same right as a
+        # direct consumption booking.
+        await ensure_any_permission(db, principal, _BOOKING_PERMISSION)
     await _check_refs(db, data.project_id, data.printer_id)
     try:
         usages = await svc.build_usages(
@@ -483,6 +488,7 @@ async def delete_job(
 
 @router.post("/{job_id}/complete", response_model=JobResponse)
 async def complete_job(job_id: int, data: CompleteRequest, db: DBSession, principal=_UPDATE):
+    await ensure_any_permission(db, principal, _BOOKING_PERMISSION)
     job = await _load_job(db, job_id)
     override = {u.usage_id: u.used_weight_g for u in data.usages}
     try:
