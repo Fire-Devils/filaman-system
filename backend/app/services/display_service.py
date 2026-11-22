@@ -1040,6 +1040,24 @@ def _assignment_meta_swatch(assignment: PrinterSlotAssignment) -> dict[str, Any]
     return out
 
 
+def _raw_slot_index(slot: PrinterSlot) -> str:
+    raw = (slot.custom_fields or {}).get("slot_index")
+    return raw if isinstance(raw, str) else ""
+
+
+def _drop_stale_legacy_external(rows: list[PrinterSlot]) -> list[PrinterSlot]:
+    """Ignore legacy ``255-254`` / ``255-255`` rows when a canonical ``255-0`` / ``255-1`` row exists.
+
+    Old builds persisted the VT trays under 255-254/255-255. Once the plugin
+    feeds the canonical row, the legacy one is stale and would show up as a
+    phantom empty external bay. Without any canonical row it stays (old installs).
+    """
+    raws = {_raw_slot_index(s) for s in rows}
+    if not raws & {"255-0", "255-1"}:
+        return rows
+    return [s for s in rows if _raw_slot_index(s) not in ("255-254", "255-255")]
+
+
 async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int, int], dict[str, Any]]:
     """{(ams_id, tray): swatch} from FilaMan's slot assignments for one printer."""
     result = await db.execute(
@@ -1067,7 +1085,8 @@ async def load_slot_spools(db: AsyncSession, printer_id: int) -> dict[tuple[int,
         .order_by(PrinterSlot.slot_no)
     )
     out: dict[tuple[int, int], dict[str, Any]] = {}
-    for slot in result.scalars().all():
+    rows = _drop_stale_legacy_external(list(result.scalars().all()))
+    for slot in rows:
         key = parse_slot_index(slot)
         assignment = slot.assignment
         entry: dict[str, Any] = {"present": bool(assignment and assignment.present)}
@@ -1301,6 +1320,8 @@ def build_printer_display(
                 _merge_slot(ams_id, n, kind, live_slots.get((ams_id, n)), fm_slots.get((ams_id, n)))
                 for n in sorted(slot_nos)
             ]
+        if kind == "external" and len(unit["slots"]) == 1:
+            unit["slots"][0]["label"] = "Ext"  # single holder: no numbering
         units.append(unit)
 
     all_slots = [s for u in units for s in u["slots"]]

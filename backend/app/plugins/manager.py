@@ -503,7 +503,13 @@ class PluginManager:
                             slot.is_active
                             and raw
                             and canon != raw
-                            and canon in active_indexes
+                            and (
+                                canon in active_indexes
+                                or (
+                                    raw in ("255-254", "255-255")
+                                    and active_indexes & {"255-0", "255-1"}
+                                )
+                            )
                         ):
                             slot.is_active = False
                             logger.info(
