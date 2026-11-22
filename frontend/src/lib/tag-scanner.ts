@@ -3,9 +3,7 @@
  *
  * A reader posts every scan to /api/v1/tag/scan, which records it on the
  * reader's row in tag_readers, and the browser polls /api/v1/tag/last-scan for it.
- * The database is the hand-off on purpose: FilaMan runs several Gunicorn
- * workers and its event bus is per-worker, so an event would only reach the
- * browsers that happen to hang off the same one.
+ * The persisted scan sequence lets a browser catch up after disconnection.
  *
  * The preference is per browser and off by default. A page that navigates
  * itself unasked is hostile, and the kiosk on the wall and the laptop in the

@@ -176,7 +176,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
   <script>
     import { formatSpoolMetrics, spoolRemainingWeight } from '../../lib/spool-reel'
     import { t, getLang, initI18n, translatePage } from '../../lib/i18n'
-    import { cachedFetch, CACHE_KEYS, fetchSequential, invalidateCache } from '../../lib/cache'
+    import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
     import { assignableLocations, type LocationLike } from '../../lib/driver-managed-locations'
     import { filamentColorValues, inventoryColorMatcher, toColorSwatchBackground } from '../../lib/colors'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
@@ -214,7 +214,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     let spoolExtraFields: SystemExtraFieldDef[] = []
     type SpoolStatus = { id: number; key: string; label: string }
     let statuses: SpoolStatus[] = []
-    let locations: (LocationLike & { id: number; name: string })[] = []
+    const allLocations = new Map<string, HeaderFilterOption>()
     type SpoolFilterScope = {
       manufacturers: HeaderFilterOption[]
       materials: string[]
@@ -511,7 +511,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       const materials = new Set<string>()
       const locationOptions = new Map<string, HeaderFilterOption>()
       const allManufacturers = new Map<string, HeaderFilterOption>()
-      const allLocations = new Map<string, HeaderFilterOption>()
+      allLocations.clear()
       const colors = new Map<string, HeaderFilterOption>()
       const addColor = (color: SpoolFilterScope['colors'][number]) => {
         const existing = colors.get(color.value)
@@ -589,19 +589,17 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     async function loadFilters() {
       try {
         const signal = getAbortSignal()
-        // One aggregate facet request plus reference data used by bulk-action dialogs.
-        const [filterFacets, locationsRes] = await fetchSequential([
-          () => fetchSpoolFilterFacets(signal),
-          () => fetch('/api/v1/locations?page=1&page_size=200', { credentials: 'include', signal }).catch(() => null),
-        ] as const)
-
-        spoolFilterFacets = filterFacets
-        
-        if (locationsRes?.ok) {
-          const locationsData = await locationsRes.json()
-          locations = locationsData.items || locationsData
+        await refreshSpoolFilterOptions()
+        if (spoolFilterFacets) return
+        // Keep row labels available when the independent facet request fails.
+        const response = await fetch('/api/v1/locations?page=1&page_size=200', { credentials: 'include', signal })
+        if (!response.ok) return
+        const data = await response.json()
+        if (spoolFilterFacets) return
+        for (const { id, name } of data.items ?? data) {
+          const value = String(id)
+          allLocations.set(value, { value, label: name })
         }
-        updateSpoolFilterOptions()
       } catch (error) {
         if (isAbortError(error)) return
         console.error('Failed to load filters:', error)
@@ -702,8 +700,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     
     function getLocationName(locationId: number | null): string {
       if (!locationId) return '-'
-      const l = locations.find(l => l.id === locationId)
-      return l ? l.name : `#${locationId}`
+      return allLocations.get(String(locationId))?.label ?? `#${locationId}`
     }
 
     function getColorDots(spool: Spool): string {
@@ -779,7 +776,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           </td>
           <td class="col-remaining_percent" style="padding: 12px; font-family: monospace;">${metrics.percentText ?? '—'}</td>
           <td class="col-remaining_length_m" style="padding: 12px; font-family: monospace;">${metrics.lengthText ?? '—'}</td>
-          <td class="col-location" style="padding: 12px;">${getLocationName(s.location_id)}</td>
+          <td class="col-location" style="padding: 12px;">${escapeHtml(getLocationName(s.location_id))}</td>
           <td class="col-price" style="padding: 12px; font-family: monospace;">${s.purchase_price != null ? formatPrice(s.purchase_price, currency) : '-'}</td>
           <td class="col-mfr_color" style="padding: 12px; color: var(--text-muted);">${fil?.manufacturer_color_name || '-'}</td>
           <td class="col-lot" style="padding: 12px; color: var(--text-muted);">${s.lot_number || '-'}</td>
@@ -1212,7 +1209,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'spools_changed' || event === 'filaments_changed' || event === 'manufacturers_changed' || event === 'locations_changed' || event === 'colors_changed') {
+      if (event === 'resync' || event === 'spools_changed' || event === 'filaments_changed' || event === 'manufacturers_changed' || event === 'locations_changed' || event === 'colors_changed') {
         invalidateCache(CACHE_KEYS.SPOOL_FILTER_OPTIONS)
         invalidateCache(CACHE_KEYS.FILAMENT_FILTER_OPTIONS)
         if (_spoolsReloadTimer) clearTimeout(_spoolsReloadTimer)
@@ -1390,14 +1387,24 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     // Set Location
     document.getElementById('bulk-btn-location')?.addEventListener('click', async () => {
       if (selectedSpoolIds.size === 0) return
-      // Driver-managed AMS slots are claimed by the driver, never in bulk.
-      const options = assignableLocations(locations).map((l) => `<option value="${l.id}">${l.name}</option>`).join('')
-      const value = await openBulkPrompt(
-        t('spools.bulkSetLocation'),
-        `<select class="fm-select" style="width: 100%;">${options}</select>`
-      )
-      if (value === null) return
-      await bulkPatch({ location_id: Number(value) })
+      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('#bulk-action-bar button'), button => ({ button, disabled: button.disabled }))
+      for (const { button } of buttons) button.disabled = true
+      try {
+        const data = await fetchAllPages<LocationLike & { id: number; name: string }>('/api/v1/locations')
+        if (panelSignal.aborted || selectedSpoolIds.size === 0) return
+        // Driver-managed AMS slots are claimed by the driver, never in bulk.
+        const options = assignableLocations(data.items).map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('')
+        const value = await openBulkPrompt(
+          t('spools.bulkSetLocation'),
+          `<select class="fm-select" style="width: 100%;">${options}</select>`
+        )
+        if (value === null) return
+        await bulkPatch({ location_id: Number(value) })
+      } catch (error) {
+        if (!isAbortError(error)) await dialogWindow.__fmAlert(t('locations.failedLoad'))
+      } finally {
+        for (const { button, disabled } of buttons) button.disabled = disabled
+      }
     })
 
     // Clear Location

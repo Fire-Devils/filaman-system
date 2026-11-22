@@ -191,6 +191,20 @@ it('waits for the requested spool in the requested slot even after a same-printe
   expect(dot.classList.contains('slot-success')).toBe(true)
 })
 
+it('resync refreshes weight once while preserving a pending slot assignment', async () => {
+  const http = await setup({ slots: [{ slot_index: '0-0', present: true, spool_id: 99 }] })
+  const dot = slotDots()[0]
+  await assign(dot)
+  const before = http.calls.length
+  for (let count = 0; count < 3; count++) window.dispatchEvent(new CustomEvent('filaman:data-changed', { detail: { event: 'resync' } }))
+  await vi.advanceTimersByTimeAsync(200)
+  const reads = http.calls.slice(before).filter(call => call.method === 'GET')
+  expect(reads.filter(call => call.path.startsWith('/api/v1/spools/17?'))).toHaveLength(1)
+  expect(reads.filter(call => call.path.startsWith('/api/v1/printers'))).toHaveLength(0)
+  expect(slotDots()[0]).toBe(dot)
+  expect(dot.classList.contains('slot-sending')).toBe(true)
+})
+
 it.each([null, undefined])('rejects a stale DB link when Bambu health reports spool_id %s', async spoolId => {
   await setup({
     slots: [{ slot_index: '0-0', present: true, tray_color: 'FF0000FF', spool_id: spoolId }],

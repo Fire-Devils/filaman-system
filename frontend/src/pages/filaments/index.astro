@@ -1027,9 +1027,9 @@ const { compactPicker = false } = Astro.props
     }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'filaments_changed' || event === 'spools_changed' || event === 'manufacturers_changed' || event === 'colors_changed') {
+      if (event === 'resync' || event === 'filaments_changed' || event === 'spools_changed' || event === 'manufacturers_changed' || event === 'colors_changed') {
         invalidateCache(CACHE_KEYS.FILAMENT_FILTER_OPTIONS)
-        if (compactPicker && (event === 'filaments_changed' || event === 'manufacturers_changed')) {
+        if (compactPicker && (event === 'resync' || event === 'filaments_changed' || event === 'manufacturers_changed')) {
           invalidatePickerRows()
           void refreshPickerSelection()
         }

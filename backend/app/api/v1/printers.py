@@ -417,6 +417,7 @@ async def update_printer(
             method="PATCH",
             path=f"/api/v1/printers/{printer_id}",
             json_body=data.model_dump(exclude_unset=True, mode="json"),
+            timeout=120.0,
         )
         return PrinterResponse.model_validate(payload)
 

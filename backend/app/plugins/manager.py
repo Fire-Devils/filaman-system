@@ -596,10 +596,8 @@ class PluginManager:
                 if active_spool_synced:
                     await db.commit()
                     await event_bus.publish(
-                        {"event": "slots_update", "printer_id": printer_id}
-                    )
-                    await event_bus.publish(
-                        {"event": "printer_update", "printer_id": printer_id}
+                        {"event": "slots_update", "printer_id": printer_id},
+                        {"event": "printer_update", "printer_id": printer_id},
                     )
 
                 # Persist AMS/slot summary to Printer.custom_fields

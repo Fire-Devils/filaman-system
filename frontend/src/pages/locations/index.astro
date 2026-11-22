@@ -16,10 +16,16 @@ import Layout from '../../layouts/Layout.astro'
   </div>
 
   <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
-    <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem;">
-      <span data-i18n="locations.filterType">Type</span>
-      <select id="type-filter" class="fm-select" style="width: auto; min-width: 160px;"></select>
-    </label>
+    <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem;">
+        <span data-i18n="locations.filterType">Type</span>
+        <select id="type-filter" class="fm-select" style="width: auto; min-width: 160px;"></select>
+      </label>
+      <label class="fm-column-group-control" for="hide-driver-managed">
+        <input type="checkbox" id="hide-driver-managed" class="fm-checkbox" />
+        <span data-i18n="locations.hideDriverManaged">Hide Driver Managed</span>
+      </label>
+    </div>
     <div class="col-picker-wrap">
       <button id="btn-columns" class="fm-btn fm-btn-outline" style="padding: 5px 10px; font-size: 0.8rem; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
@@ -96,7 +102,7 @@ import Layout from '../../layouts/Layout.astro'
             id="location-type-custom"
             class="fm-input hidden location-type-custom"
             maxlength="50"
-            pattern=".*\S.*"
+            pattern={'.*\\S.*'}
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
@@ -133,7 +139,7 @@ import Layout from '../../layouts/Layout.astro'
             id="bulk-type-custom"
             class="fm-input hidden location-type-custom"
             maxlength="50"
-            pattern=".*\S.*"
+            pattern={'.*\\S.*'}
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
@@ -207,16 +213,30 @@ import Layout from '../../layouts/Layout.astro'
     const selectedIds = new Set<number>()
 
     const FILTER_KEY = 'filaman-locations-type-filter'
+    const HIDE_DRIVER_KEY = 'filaman-locations-hide-driver-managed'
     const typeFilter = document.getElementById('type-filter') as HTMLSelectElement
+    const hideDriverManaged = document.getElementById('hide-driver-managed') as HTMLInputElement
     let currentFilter = TYPE_FILTER_ALL
+    let hideDriver = false
     try { currentFilter = localStorage.getItem(FILTER_KEY) ?? TYPE_FILTER_ALL } catch { /* storage blocked */ }
+    try { hideDriver = localStorage.getItem(HIDE_DRIVER_KEY) === '1' } catch { /* storage blocked */ }
+    hideDriverManaged.checked = hideDriver
 
     function knownTypes(): string[] {
       return locationTypeOptions(locations.map(loc => loc.location_type))
     }
 
     function visibleLocations(): LocationRecord[] {
-      return locations.filter(loc => matchesTypeFilter(loc.location_type, currentFilter))
+      return locations.filter(loc => {
+        if (hideDriver && isDriverManagedLocation(loc)) return false
+        return matchesTypeFilter(loc.location_type, currentFilter)
+      })
+    }
+
+    function applyListFilters() {
+      const shown = new Set(visibleLocations().map(loc => loc.id))
+      for (const id of selectedIds) if (!shown.has(id)) selectedIds.delete(id)
+      renderLocations()
     }
 
     function renderTypeFilter() {
@@ -239,16 +259,33 @@ import Layout from '../../layouts/Layout.astro'
       currentFilter = typeFilter.value
       try { localStorage.setItem(FILTER_KEY, currentFilter) } catch { /* storage blocked */ }
       // Bulk actions only ever apply to rows you can see.
-      const shown = new Set(visibleLocations().map(loc => loc.id))
-      for (const id of selectedIds) if (!shown.has(id)) selectedIds.delete(id)
-      renderLocations()
+      applyListFilters()
+    }, { signal: panelSignal })
+
+    hideDriverManaged.addEventListener('change', () => {
+      hideDriver = hideDriverManaged.checked
+      try { localStorage.setItem(HIDE_DRIVER_KEY, hideDriver ? '1' : '0') } catch { /* storage blocked */ }
+      applyListFilters()
     }, { signal: panelSignal })
 
     let bulkTypeBusy = false
 
-    function fillTypePicker(prefix: string, current: string | null, allowNone = true) {
+    function fillTypePicker(prefix: string, current: string | null, allowNone = true, locked = false) {
       const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
       const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      select.disabled = locked
+      custom.disabled = locked
+      if (locked) {
+        const type = 'AMS'
+        select.dataset.allowNone = 'false'
+        select.required = false
+        select.innerHTML = `<option value="${escapeHtml(encodeTypeOption(type))}">${escapeHtml(type)}</option>`
+        select.value = encodeTypeOption(type)
+        custom.value = ''
+        custom.required = false
+        custom.classList.add('hidden')
+        return
+      }
       const types = knownTypes()
       const resolved = resolveKnownType(types, current)
       const needsPlaceholder = !allowNone && !resolved && !current?.trim()
@@ -336,6 +373,7 @@ import Layout from '../../layouts/Layout.astro'
     async function loadLocations() {
       try {
         const data = await cachedFetchAllPages<LocationRecord>(CACHE_KEYS.LOCATIONS, '/api/v1/locations')
+        if (panelSignal.aborted) return
         locations = data.items
         renderTypeFilter()
         // A live reload can delete a selected location or move it out of the
@@ -344,7 +382,7 @@ import Layout from '../../layouts/Layout.astro'
         for (const id of selectedIds) if (!shown.has(id)) selectedIds.delete(id)
         renderLocations()
       } catch (error) {
-        if (isAbortError(error)) return
+        if (panelSignal.aborted || isAbortError(error)) return
         console.error('Failed to load locations:', error)
         document.getElementById('locations-table')!.innerHTML = `
           <tr>
@@ -484,8 +522,7 @@ import Layout from '../../layouts/Layout.astro'
         : decodeTypeOption(currentFilter) ?? currentFilter
       const filterType = resolveKnownType(knownTypes(), filterRaw)
       const managed = Boolean(location && isDriverManagedLocation(location))
-      const allowNone = !managed
-      fillTypePicker('location', location ? location.location_type : filterType, allowNone)
+      fillTypePicker('location', location ? location.location_type : filterType, !managed, managed)
       const typeHint = document.getElementById('location-type-hint')!
       typeHint.textContent = managed ? t('locations.typeManagedHint') : ''
       typeHint.classList.toggle('hidden', !managed)
@@ -799,20 +836,24 @@ import Layout from '../../layouts/Layout.astro'
 
     document.getElementById('bulk-btn-type')?.addEventListener('click', () => {
       if (selectedIds.size === 0 || rejectIfTooMany(selectedIds.size)) return
-      bulkTypeTargetIds = [...selectedIds]
+      const selected = locations.filter(loc => selectedIds.has(loc.id))
+      const driverSlots = selected.filter(loc => isDriverManagedLocation(loc))
+      const editable = selected.filter(loc => !isDriverManagedLocation(loc))
+      if (editable.length === 0) {
+        void dialogs.__fmAlert(t('locations.bulkTypeDriverOnly'))
+        return
+      }
+      bulkTypeTargetIds = editable.map(loc => loc.id)
       document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: bulkTypeTargetIds.length })
-      const targetSet = new Set(bulkTypeTargetIds)
-      const selected = locations.filter(loc => targetSet.has(loc.id))
-      const driverSlots = selected.filter(loc => isDriverManagedLocation(loc)).length
       const hint = document.getElementById('bulk-type-hint')!
-      hint.textContent = driverSlots ? t('locations.bulkTypeDriverHint', { count: driverSlots }) : ''
-      hint.classList.toggle('hidden', driverSlots === 0)
-      const allowNone = driverSlots === 0
+      hint.textContent = driverSlots.length ? t('locations.bulkTypeDriverHint', { count: driverSlots.length }) : ''
+      hint.classList.toggle('hidden', driverSlots.length === 0)
       const known = knownTypes()
       const types = new Set(
-        selected.map(loc => resolveKnownType(known, loc.location_type) ?? loc.location_type?.trim() ?? null),
+        editable.map(loc => resolveKnownType(known, loc.location_type) ?? loc.location_type?.trim() ?? null),
       )
-      fillTypePicker('bulk', types.size === 1 ? [...types][0] : null, allowNone)
+      const sameType = types.size === 1
+      fillTypePicker('bulk', sameType ? [...types][0] : null, sameType)
       bulkTypeDialog.open()
     }, { signal: panelSignal })
 
@@ -929,7 +970,7 @@ import Layout from '../../layouts/Layout.astro'
     }, { once: true })
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const { event } = (e as CustomEvent).detail ?? {}
-      if (event === 'locations_changed' || event === 'spools_changed') {
+      if (event === 'resync' || event === 'locations_changed' || event === 'spools_changed') {
         if (_locationsReloadTimer) clearTimeout(_locationsReloadTimer)
         _locationsReloadTimer = setTimeout(() => loadLocations(), 300)
       }

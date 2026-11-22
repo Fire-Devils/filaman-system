@@ -381,6 +381,10 @@ class TestLocationTypes:
         await db_session.refresh(slot)
         assert slot.location_type is None
 
+        slot.location_type = "Storage"
+        await db_session.commit()
+        assert (await client.get(f"/api/v1/locations/{slot.id}")).json()["location_type"] == "AMS"
+
     @pytest.mark.asyncio
     async def test_bulk_change_type(self, auth_client, db_session):
         client, csrf_token = auth_client
@@ -447,8 +451,23 @@ class TestLocationTypes:
             f"/api/v1/locations/{slot.id}", json={"location_type": None}, headers=headers
         )
         assert cleared.status_code == 400
+        assert cleared.json()["detail"]["code"] == "driver_managed_type_locked"
         await db_session.refresh(slot)
         assert slot.location_type == "AMS"
+
+        retyped = await client.patch(
+            f"/api/v1/locations/{slot.id}", json={"location_type": "Storage"}, headers=headers
+        )
+        assert retyped.status_code == 400
+        assert retyped.json()["detail"]["code"] == "driver_managed_type_locked"
+        await db_session.refresh(slot)
+        assert slot.location_type == "AMS"
+
+        keep_ams = await client.patch(
+            f"/api/v1/locations/{slot.id}", json={"location_type": "ams"}, headers=headers
+        )
+        assert keep_ams.status_code == 200
+        assert keep_ams.json()["location_type"] == "AMS"
 
         renamed = await client.patch(
             f"/api/v1/locations/{slot.id}", json={"identifier": "moved"}, headers=headers
@@ -470,8 +489,26 @@ class TestLocationTypes:
             json={"location_ids": [slot.id, plain.id], "location_type": None},
             headers=headers,
         )
-        assert bulk.status_code == 400
+        assert bulk.status_code == 200
+        assert bulk.json()["updated"] == [plain.id]
+        assert bulk.json()["skipped"] == [slot.id]
+        await db_session.refresh(slot)
         await db_session.refresh(plain)
+        assert slot.location_type == "AMS"
+        assert plain.location_type is None
+
+        restype = await client.request(
+            "PATCH",
+            "/api/v1/locations/bulk",
+            json={"location_ids": [slot.id, plain.id], "location_type": "Storage"},
+            headers=headers,
+        )
+        assert restype.status_code == 200
+        assert restype.json()["updated"] == [plain.id]
+        assert restype.json()["skipped"] == [slot.id]
+        await db_session.refresh(slot)
+        await db_session.refresh(plain)
+        assert slot.location_type == "AMS"
         assert plain.location_type == "Storage"
 
     @pytest.mark.asyncio

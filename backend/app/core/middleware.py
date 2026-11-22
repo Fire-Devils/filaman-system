@@ -1,48 +1,34 @@
-import asyncio
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
 import logging
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 
 from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy import select, update
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core.config import settings
 from app.core.database import async_session_maker
+from app.core.logging_config import set_request_id
 from app.core.security import (
-    parse_token,
-    pwd_context,
     Principal,
+    hash_token,
+    is_argon2_hash,
+    parse_token,
     verify_password_async,
     verify_token,
-    is_argon2_hash,
-    hash_token,
 )
-from app.core.logging_config import set_request_id
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# In-memory session and API-key auth caches
-# ---------------------------------------------------------------------------
-_SESSION_CACHE_TTL = 60  # seconds – cached Principal lives this long
-_LAST_USED_THROTTLE = 300  # seconds – only write last_used_at every 5 min
-_API_KEY_CACHE_TTL = 60
-
-# {session_id: (Principal, token_hash, user_active, expires_at, cached_at)}
-_session_cache: dict[int, tuple[Principal, str, bool, datetime | None, float]] = {}
-# {api_key_id: (Principal, key_hash, user_active, cached_at)}
-_api_key_cache: dict[int, tuple[Principal, str, bool, float]] = {}
-# Track last_used_at write timestamps to throttle DB writes
-_last_used_writes: dict[str, float] = {}  # "sess:123" -> monotonic timestamp
+# Credential and account state are read from the database on every request.
+_LAST_USED_THROTTLE = 300
+_last_used_writes: dict[str, float] = {}
 
 
 def invalidate_auth_caches() -> None:
-    """Clear all auth caches. Call after user/session/key changes."""
-    _session_cache.clear()
-    _api_key_cache.clear()
+    """Reset usage-write throttles; authorization itself is never cached."""
     _last_used_writes.clear()
 
 
@@ -54,33 +40,6 @@ def _should_write_last_used(cache_key: str) -> bool:
         _last_used_writes[cache_key] = now
         return True
     return False
-
-
-async def _bg_write_last_used(
-    model_class: type,
-    pk_column: str,
-    pk_value: int,
-    extra_values: dict[str, Any] | None = None,
-) -> None:
-    """Fire-and-forget background task to update last_used_at.
-
-    Runs in its own DB session so it never interferes with the
-    request-handler's session (avoids SQLAlchemy concurrent-state errors
-    with BaseHTTPMiddleware).
-    """
-    try:
-        async with async_session_maker() as db:
-            values: dict[str, Any] = {"last_used_at": datetime.now(timezone.utc)}
-            if extra_values:
-                values.update(extra_values)
-            await db.execute(
-                update(model_class)
-                .where(getattr(model_class, pk_column) == pk_value)
-                .values(**values)
-            )
-            await db.commit()
-    except Exception:
-        logger.debug("Background last_used_at write failed", exc_info=True)
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -177,57 +136,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         _, session_id, secret = parsed
 
-        # --- Fast path: check in-memory cache first ---
-        cached = _session_cache.get(session_id)
-        if cached is not None:
-            principal, cached_hash, user_active, expires_at, cached_at = cached
-            now_mono = time.monotonic()
-            if now_mono - cached_at < _SESSION_CACHE_TTL:
-                # Verify token against cached hash (constant-time, microseconds)
-                if not verify_token(secret, cached_hash):
-                    return None
-                if not user_active:
-                    return None
-                if expires_at and expires_at < datetime.now(timezone.utc):
-                    _session_cache.pop(session_id, None)
-                    return None
-
-                # Throttled last_used_at write
-                now = datetime.now(timezone.utc)
-                needs_extension = False
-                if expires_at and (expires_at - now).days < 15:
-                    needs_extension = True
-
-                cache_key = f"sess:{session_id}"
-                if _should_write_last_used(cache_key) or needs_extension:
-                    from app.models import UserSession
-
-                    extra: dict[str, Any] | None = None
-                    if needs_extension:
-                        new_expires = now + timedelta(days=30)
-                        extra = {"expires_at": new_expires}
-                        # Update cached expires_at
-                        _session_cache[session_id] = (
-                            principal,
-                            cached_hash,
-                            user_active,
-                            new_expires,
-                            cached_at,
-                        )
-                    asyncio.create_task(
-                        _bg_write_last_used(UserSession, "id", session_id, extra)
-                    )
-
-                if needs_extension:
-                    principal.needs_cookie_extension = True
-                else:
-                    principal.needs_cookie_extension = False
-                return principal
-            else:
-                # Cache expired, remove entry
-                _session_cache.pop(session_id, None)
-
-        # --- Slow path: full DB lookup ---
         async with async_session_maker() as db:
             from app.models import User, UserSession
 
@@ -242,6 +150,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return None
             if session.expires_at and session.expires_at < datetime.now(timezone.utc):
                 return None
+            needs_commit = False
             if is_argon2_hash(session.session_token_hash):
                 # Legacy argon2 hash — verify and migrate to SHA-256
                 if not await verify_password_async(secret, session.session_token_hash):
@@ -249,6 +158,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 # Migrate: replace argon2 hash with fast SHA-256 hash
                 new_hash = hash_token(secret)
                 session.session_token_hash = new_hash
+                needs_commit = True
                 await db.execute(
                     update(UserSession)
                     .where(UserSession.id == session_id)
@@ -266,7 +176,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return None
 
             now = datetime.now(timezone.utc)
-            update_values_db: dict[str, Any] = {"last_used_at": now}
+            update_values_db: dict[str, Any] = {}
+            if _should_write_last_used(f"sess:{session_id}"):
+                update_values_db["last_used_at"] = now
 
             # Rolling session: If session expires in less than 15 days, extend it by another 30 days
             needs_extension = False
@@ -274,15 +186,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 update_values_db["expires_at"] = now + timedelta(days=30)
                 needs_extension = True
 
-            await db.execute(
-                update(UserSession)
-                .where(UserSession.id == session_id)
-                .values(**update_values_db)
-            )
-            await db.commit()
-
-            # Record the last_used write
-            _last_used_writes[f"sess:{session_id}"] = time.monotonic()
+            if update_values_db:
+                await db.execute(
+                    update(UserSession)
+                    .where(UserSession.id == session_id)
+                    .values(**update_values_db)
+                )
+                needs_commit = True
+            if needs_commit:
+                await db.commit()
 
             principal = Principal(
                 auth_type="session",
@@ -292,16 +204,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_email=user.email,
                 user_display_name=user.display_name,
                 user_language=user.language,
-            )
-
-            # Populate cache
-            effective_expires = update_values_db.get("expires_at", session.expires_at)
-            _session_cache[session_id] = (
-                principal,
-                session.session_token_hash,
-                True,  # user_active
-                effective_expires,
-                time.monotonic(),
             )
 
             # Attach a flag so we can update the cookie in the response
@@ -317,26 +219,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         _, key_id, secret = parsed
 
-        # --- Fast path: check in-memory cache ---
-        cached = _api_key_cache.get(key_id)
-        if cached is not None:
-            principal, cached_hash, user_active, cached_at = cached
-            if time.monotonic() - cached_at < _API_KEY_CACHE_TTL:
-                if not verify_token(secret, cached_hash):
-                    return None
-                if not user_active:
-                    return None
-                # Throttled last_used_at write
-                cache_key = f"uak:{key_id}"
-                if _should_write_last_used(cache_key):
-                    from app.models import UserApiKey
-
-                    asyncio.create_task(_bg_write_last_used(UserApiKey, "id", key_id))
-                return principal
-            else:
-                _api_key_cache.pop(key_id, None)
-
-        # --- Slow path: full DB lookup ---
         async with async_session_maker() as db:
             from app.models import User, UserApiKey
 
@@ -345,6 +227,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             if api_key is None:
                 return None
+            needs_commit = False
             if is_argon2_hash(api_key.key_hash):
                 # Legacy argon2 hash — verify and migrate to SHA-256
                 if not await verify_password_async(secret, api_key.key_hash):
@@ -356,6 +239,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     .values(key_hash=new_hash)
                 )
                 api_key.key_hash = new_hash
+                needs_commit = True
             else:
                 if not verify_token(secret, api_key.key_hash):
                     return None
@@ -366,14 +250,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if user is None or not user.is_active or user.deleted_at is not None:
                 return None
 
-            await db.execute(
-                update(UserApiKey)
-                .where(UserApiKey.id == key_id)
-                .values(last_used_at=datetime.now(timezone.utc))
-            )
-            await db.commit()
-
-            _last_used_writes[f"uak:{key_id}"] = time.monotonic()
+            if _should_write_last_used(f"uak:{key_id}"):
+                await db.execute(
+                    update(UserApiKey)
+                    .where(UserApiKey.id == key_id)
+                    .values(last_used_at=datetime.now(timezone.utc))
+                )
+                needs_commit = True
+            if needs_commit:
+                await db.commit()
 
             principal = Principal(
                 auth_type="api_key",
@@ -384,14 +269,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 user_email=user.email,
                 user_display_name=user.display_name,
                 user_language=user.language,
-            )
-
-            # Populate cache
-            _api_key_cache[key_id] = (
-                principal,
-                api_key.key_hash,
-                True,
-                time.monotonic(),
             )
 
             return principal

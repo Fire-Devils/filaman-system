@@ -1,0 +1,41 @@
+name: Frontend authentication
+
+on:
+  pull_request:
+  push:
+    branches: [devel]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-auth.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  login-browser:
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run dev -- --host 127.0.0.1 > /tmp/filaman-login-astro.log 2>&1 &
+      - name: Wait for Astro
+        run: |
+          for attempt in {1..60}; do
+            curl --fail --silent http://127.0.0.1:4321/login >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/filaman-login-astro.log
+          exit 1
+      - name: Check login initialization and submission
+        run: node scripts/check-login.mjs
+        env:
+          CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome

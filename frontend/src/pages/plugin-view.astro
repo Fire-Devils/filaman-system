@@ -42,10 +42,10 @@ import Layout from '../layouts/Layout.astro'
   function keepFilaManLinksOutOfTheFrame(embedded: Document): void {
     embedded.addEventListener('click', (event) => {
       const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
-      if (!anchor || anchor.target) return
+      if (!anchor || anchor.target || anchor.hasAttribute('download')) return
 
       const target = new URL(anchor.href, embedded.baseURI)
-      if (target.origin !== window.location.origin) return
+      if (target.protocol === 'blob:' || target.origin !== window.location.origin) return
       if (target.pathname.startsWith(PLUGIN_PAGE_PREFIX)) return
 
       event.preventDefault()

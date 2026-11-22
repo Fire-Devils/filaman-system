@@ -1,17 +1,19 @@
 import asyncio
+from contextlib import asynccontextmanager
 from socket import socket
 from unittest.mock import Mock
 
 import pytest
+from fastapi import FastAPI
+from starlette.requests import Request
+from uvicorn import Config
+from uvicorn.server import ServerState
+
 from app.api.v1.events import event_stream
 from app.core import worker_reload
 from app.core.event_bus import event_bus
 from app.core.gunicorn_worker import FilaManWorker
 from app.main import app
-from fastapi import FastAPI
-from starlette.requests import Request
-from uvicorn import Config
-from uvicorn.server import ServerState
 
 
 @pytest.mark.asyncio
@@ -107,7 +109,7 @@ async def test_event_stream_flushes_queued_updates_on_drain(monkeypatch):
         assert not event_bus._subscribers
 
 
-async def test_worker_drain_aborts_stalled_event_stream_only(monkeypatch):
+async def test_worker_drain_aborts_stalled_event_stream_only(monkeypatch, auth_client):
     server_state = ServerState()
     public_response_paused = asyncio.Event()
     event_aborted = asyncio.Event()
@@ -147,7 +149,11 @@ async def test_worker_drain_aborts_stalled_event_stream_only(monkeypatch):
         monkeypatch.setattr(worker_reload, "_worker_listeners", (listener,))
         event_protocol.connection_made(event_transport)
         command_protocol.connection_made(command_transport)
-        event_protocol.data_received(b"GET /api/v1/events/stream HTTP/1.1\r\nHost: test\r\n\r\n")
+        client, _ = auth_client
+        cookie = client.cookies.get("session_id")
+        event_protocol.data_received(
+            f"GET /api/v1/events/stream HTTP/1.1\r\nHost: test\r\nCookie: session_id={cookie}\r\n\r\n".encode()
+        )
         command_protocol.data_received(b"POST /fixture-command HTTP/1.1\r\nHost: test\r\n\r\n")
         try:
             await asyncio.wait_for(public_response_paused.wait(), 1)
@@ -168,3 +174,30 @@ async def test_worker_drain_aborts_stalled_event_stream_only(monkeypatch):
                 event_protocol.connection_lost(None)
             release_command.set()
             await asyncio.gather(*server_state.tasks, return_exceptions=True)
+
+
+@pytest.mark.parametrize("credential", [None, "invalid-session", "valid-session"])
+async def test_event_stream_requires_authentication(monkeypatch, auth_client, credential):
+    @asynccontextmanager
+    async def finite_subscription():
+        async def updates():
+            yield '{"event": "manufacturers_changed"}'
+
+        yield updates()
+
+    monkeypatch.setattr(event_bus, "subscribe", finite_subscription)
+    client, _ = auth_client
+    if credential != "valid-session":
+        client.cookies.clear()
+        if credential is not None:
+            client.cookies.set("session_id", credential)
+
+    response = await client.get("/api/v1/events/stream")
+
+    if credential == "valid-session":
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.text == ': connected\n\ndata: {"event": "manufacturers_changed"}\n\n'
+    else:
+        assert response.status_code == 401
+        assert response.json()["detail"]["code"] == "unauthenticated"

@@ -42,7 +42,7 @@ const { error } = Astro.props
           </div>
         )}
 
-        <form id="login-form" style="display: grid; gap: 16px;">
+        <form id="login-form" method="post" style="display: grid; gap: 16px;">
           <div>
             <label for="email" class="fm-label" data-i18n="login.email">Email</label>
             <input
@@ -71,6 +71,7 @@ const { error } = Astro.props
 
           <button
             type="submit"
+            disabled
             id="submit-btn"
             class="fm-btn fm-btn-primary"
             style="width: 100%; padding: 12px 20px;"
@@ -196,6 +197,8 @@ const { error } = Astro.props
             submitBtn.textContent = t('login.signIn')
           }
         })
+
+        submitBtn.disabled = false
 
         // Check URL for OIDC error params
         const urlParams = new URLSearchParams(window.location.search)

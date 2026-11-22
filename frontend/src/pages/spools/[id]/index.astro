@@ -201,6 +201,7 @@ const { id } = Astro.params
 
     const editSession = createDetailEditSession<any>(`/api/v1/spools/${id}?include_metrics=true`, () => t('spools.failedLoadSingle'))
     let spool: any = null
+    let spoolMissing = false
     let spoolNeedsRefresh = false
     let pendingSpoolActions = 0
     let changingSpoolEdit = false
@@ -264,13 +265,15 @@ const { id } = Astro.params
         
         if (!spoolRes.ok) {
           if (spoolRes.status === 404) {
-            document.getElementById('spool-content')!.innerHTML = `<div style="color: var(--error-text);">${t('spools.notFound')}</div>`
+            spoolMissing = true
+            renderSpool()
             return
           }
           throw new Error('Failed to fetch spool')
         }
         
         spool = await spoolRes.json()
+        spoolMissing = false
         remainingRequest++
         
         if (statusesRes.ok) {
@@ -406,7 +409,10 @@ const { id } = Astro.params
       pendingSpoolActions++
       updateSpoolActionState()
       try { await action() }
-      finally { pendingSpoolActions--; updateSpoolActionState() }
+      finally {
+        pendingSpoolActions--; updateSpoolActionState()
+        if (spoolMissing && !editing) renderSpool()
+      }
     }
 
     function bindSpoolContentActions() {
@@ -424,7 +430,7 @@ const { id } = Astro.params
           if (editing) exitEditMode()
           else {
             await printerSetup?.setFilament(spool.filament_id, spool.filament?.designation || `#${spool.filament_id}`)
-            if (!isCurrent()) return
+            if (!isCurrent() || spoolMissing) return
             editing = true
             window.dispatchEvent(new CustomEvent('fm:detail-edit', { detail: { editing: true } }))
           }
@@ -436,7 +442,11 @@ const { id } = Astro.params
           restore()
           document.getElementById('btn-edit-spool')?.focus({ preventScroll: true })
         } finally {
-          if (isCurrent()) { changingSpoolEdit = false; updateSpoolActionState() }
+          if (isCurrent()) {
+            changingSpoolEdit = false
+            updateSpoolActionState()
+            if (spoolMissing && !editing) renderSpool()
+          }
         }
       })
       document.getElementById('btn-edit-extra-fields')?.addEventListener('click', event => {
@@ -444,7 +454,7 @@ const { id } = Astro.params
       })
       document.getElementById('btn-cancel-edit')?.addEventListener('click', async () => {
         if (pendingSpoolActions || printerSetup?.isSaving()) return
-        if (spoolNeedsRefresh && !(await refreshSpoolSnapshot())) return
+        if (!spoolMissing && spoolNeedsRefresh && !(await refreshSpoolSnapshot())) return
         const request = ++spoolEditGeneration
         changingSpoolEdit = false
         const restore = captureDetailEditPosition(document.querySelector('main')!)
@@ -481,17 +491,19 @@ const { id } = Astro.params
     }
 
     async function refreshSpoolSnapshot(enterEdit = false, isCurrent = () => true) {
+      const startingRequest = remainingRequest
       try {
         if (enterEdit) await editSession.edit(async latest => {
           const [spoolFields, filamentFields] = await Promise.all([loadEntitySystemFields('spool'), loadEntitySystemFields('filament')])
-          if (!isCurrent()) return
+          if (!isCurrent() || (spoolMissing && startingRequest !== remainingRequest)) return
           spoolSystemFieldMap = spoolFields
           filamentSystemFieldMap = filamentFields
           spool = latest
         })
         else spool = await editSession.read()
-        if (!isCurrent()) return false
+        if (!isCurrent() || (spoolMissing && startingRequest !== remainingRequest)) return false
         remainingRequest++
+        spoolMissing = false
         spoolNeedsRefresh = false
         return true
       } catch (cause) {
@@ -659,6 +671,12 @@ const { id } = Astro.params
       const request = ++remainingRequest
       try {
         const response = await fetch(`/api/v1/spools/${id}?include_metrics=true`, { credentials: 'include', signal: getAbortSignal() })
+        if (request !== remainingRequest) return
+        if (response.status === 404) {
+          spoolMissing = true
+          if (!editing && !pendingSpoolActions && !changingSpoolEdit) renderSpool()
+          return
+        }
         if (!response.ok) return
         const latest = await response.json()
         if (request !== remainingRequest || !spool || latest.id !== spool.id) return
@@ -720,6 +738,13 @@ const { id } = Astro.params
       spoolDraftObserver?.disconnect()
       spoolProfileLookup?.destroy()
       spoolProfileLookup = null
+      if (spoolMissing && (!editing || !spool)) {
+        document.getElementById('spool-content')!.innerHTML = `<div role="alert" style="color: var(--error-text);">${t('spools.notFound')}</div>`
+        document.querySelector('.detail-page-toolbar .detail-page-actions, #spool-page-actions')?.replaceChildren()
+        document.getElementById('actions-section')?.classList.add('hidden')
+        document.getElementById('printer-setup')!.classList.add('hidden')
+        return
+      }
       const metrics = formatSpoolMetrics(spool.metrics, getLang())
       const colors = getFilamentColors(spool.filament || {})
       const spoolSections = buildSpoolDetailSections({
@@ -2010,7 +2035,7 @@ const { id } = Astro.params
     let printersPending = false
     let overviewDisposed = false
     function queueOverviewReload({ weight = true, printers = true } = {}) {
-      if (overviewDisposed) return
+      if (overviewDisposed || spoolMissing) return
       weightPending ||= weight
       printersPending ||= printers
       if (pendingOverviewReload != null || overviewRefreshing) return
@@ -2035,7 +2060,9 @@ const { id } = Astro.params
 
     window.addEventListener('filaman:data-changed', (e: Event) => {
       const data = (e as CustomEvent).detail
-      if (data.event === 'slots_update') {
+      if (data.event === 'resync') {
+        queueOverviewReload()
+      } else if (data.event === 'slots_update') {
         if (!pendingSlotAssign) queueOverviewReload({ weight: false })
       } else if (data.event === 'spools_changed') {
         queueOverviewReload({ printers: false })
@@ -2044,8 +2071,7 @@ const { id } = Astro.params
       }
     })
 
-    // Multi-worker fallback: keep slots and remaining values fresh even
-    // if SSE events are handled by another worker process.
+    // Keep slots and remaining values fresh across missed or disconnected live updates.
     function startOverviewPolling() {
       overviewIntervalId ??= window.setInterval(() => queueOverviewReload(), 15000)
     }

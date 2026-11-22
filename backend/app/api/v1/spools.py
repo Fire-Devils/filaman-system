@@ -133,35 +133,45 @@ async def _normalize_location_type(
     return value
 
 
-def _reject_clearing_driver_managed_type(
+def _is_ams_type(value: str | None) -> bool:
+    return bool(value) and value.casefold() == DRIVER_MANAGED_DEFAULT_TYPE.casefold()
+
+
+def _format_location_names(names: Collection[str]) -> str:
+    shown = ", ".join(repr(name) for name in list(names)[:5])
+    extra = len(names) - 5
+    if extra > 0:
+        shown = f"{shown} (+{extra})"
+    return shown
+
+
+def _reject_changing_driver_managed_type(
     locations: Collection[Location], new_type: str | None
 ) -> None:
-    """Driver slots always display a type. Clearing it is only a stored null that
-    the UI then shows as AMS again, so refuse the write."""
-    if new_type is not None:
-        return
+    """Printer-managed slots are AMS. Their type cannot be changed to or from AMS."""
     managed = [loc.name for loc in locations if loc.is_driver_managed]
     if not managed:
         return
-    shown = ", ".join(repr(name) for name in managed[:5])
-    if len(managed) > 5:
-        shown = f"{shown} (+{len(managed) - 5})"
+    # An explicit AMS write is a no-op for these slots (and repairs a stored
+    # non-AMS value from before the type was locked).
+    if _is_ams_type(new_type):
+        return
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={
-            "code": "driver_managed_type_required",
-            "message": f"Printer-managed locations must keep a type: {shown}",
+            "code": "driver_managed_type_locked",
+            "message": f"Printer-managed locations cannot change type: {_format_location_names(managed)}",
         },
     )
 
 
 def _effective_location_type(location: Location) -> str | None:
-    # Slots created by a printer driver predate this column, so they show up
-    # as AMS until someone sets a type explicitly.
-    if location.location_type:
-        return location.location_type
+    # Printer-managed slots are AMS even when the stored column is empty or was
+    # edited to something else before the type was locked.
     if location.is_driver_managed:
         return DRIVER_MANAGED_DEFAULT_TYPE
+    if location.location_type:
+        return location.location_type
     return None
 
 
@@ -240,14 +250,23 @@ async def bulk_update_location_type(
     location_type = await _normalize_location_type(db, data.location_type, exclude_ids=ids)
     result = await db.execute(select(Location).where(Location.id.in_(ids)))
     found = {loc.id: loc for loc in result.scalars()}
-    _reject_clearing_driver_managed_type(found.values(), location_type)
-    for loc in found.values():
+    updated: list[int] = []
+    skipped: list[int] = []
+    for loc_id in ids:
+        loc = found.get(loc_id)
+        if loc is None:
+            continue
+        if loc.is_driver_managed and not _is_ams_type(location_type):
+            skipped.append(loc_id)
+            continue
         loc.location_type = location_type
-    await db.commit()
-    if found:
+        updated.append(loc_id)
+    if updated:
+        await db.commit()
         await event_bus.publish({"event": "locations_changed"})
     return LocationBulkResult(
-        updated=[i for i in ids if i in found],
+        updated=updated,
+        skipped=skipped,
         not_found=[i for i in ids if i not in found],
     )
 
@@ -329,7 +348,7 @@ async def update_location(
         values["location_type"] = await _normalize_location_type(
             db, values["location_type"], exclude_ids=(location_id,)
         )
-        _reject_clearing_driver_managed_type((location,), values["location_type"])
+        _reject_changing_driver_managed_type((location,), values["location_type"])
     if location.is_driver_managed and "identifier" in values:
         incoming = values["identifier"].strip() if isinstance(values["identifier"], str) else None
         incoming = incoming or None
@@ -464,10 +483,6 @@ async def list_spool_statuses(
 @router_spools.get("/filter-options", response_model=SpoolFilterOptionsResponse)
 async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
     """Return spool-backed categorical values grouped by status in one query."""
-    cached = response_cache.get("filter_options:spools")
-    if cached is not None:
-        return cached
-
     result = await db.execute(
         select(
             Spool.status_id,
@@ -560,7 +575,6 @@ async def list_spool_filter_options(db: DBSession, principal: PrincipalDep):
         used_status_ids=sorted(scopes),
         by_status=by_status,
     )
-    response_cache.set("filter_options:spools", payload, ttl=300)
     return payload
 
 
@@ -1206,6 +1220,8 @@ async def update_spool(
 
     # Capture pre-update tara/remaining for tara-change propagation
     tara_in_payload = "empty_spool_weight_g" in update_data
+    if tara_in_payload:
+        await SpoolService(db).lock_balance(spool)
     old_tara = spool.empty_spool_weight_g
     old_remaining = spool.remaining_weight_g
 
@@ -1777,6 +1793,5 @@ async def backfill_spool_profiles_to_filament(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_state", "message": str(e)},
         )
-    await event_bus.publish({"event": "filaments_changed"})
-    await event_bus.publish({"event": "spools_changed"})
+    await event_bus.publish({"event": "filaments_changed"}, {"event": "spools_changed"})
     return result

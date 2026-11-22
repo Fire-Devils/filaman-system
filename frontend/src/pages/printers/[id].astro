@@ -52,6 +52,7 @@ export function getStaticPaths() {
     let printer: PrinterRecord
     let pluginSchema: DriverSchema | null = null
     let editingConfig = false
+    let printerMissing = false
     let configState: ReturnType<typeof bindFormState> | null = null
     let driverHealth: DriverHealth | null = null
     let debugOpen = false
@@ -66,39 +67,51 @@ export function getStaticPaths() {
     }
 
     
+    let printerRequest = 0
     async function loadPrinter() {
+      const request = ++printerRequest
       try {
         const response = await fetch(`/api/v1/printers/${id}`, { credentials: 'include', signal: getAbortSignal() })
         
+        if (request !== printerRequest) return
         if (!response.ok) {
           if (response.status === 404) {
-            document.getElementById('printer-content')!.innerHTML = `<a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a><div role="alert" style="color: var(--error-text);">${t('printers.notFound')}</div>`
+            printerMissing = true
+            if (healthPollTimer) { clearInterval(healthPollTimer); healthPollTimer = null }
+            stopDebugPolling()
+            if (!editingConfig) renderPrinter()
             return
           }
           throw new Error('Failed to fetch printer')
         }
         
-        printer = await response.json()
-        await loadPluginSchema()
+        const latest = await response.json()
+        if (request !== printerRequest) return
+        printer = latest
+        printerMissing = false
+        await loadPluginSchema(request)
+        if (request !== printerRequest) return
         await loadDriverHealth()
+        if (request !== printerRequest) return
         renderPrinter()
         startHealthPolling()
       } catch (error) {
-        if (isAbortError(error)) return
+        if (isAbortError(error) || request !== printerRequest) return
         console.error('Failed to load printer:', error)
+        if (editingConfig) return
         document.getElementById('printer-content')!.innerHTML = `<a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a><div role="alert" style="color: var(--error-text);">${t('printers.failedLoadSingle')}</div>`
       }
     }
 
-    async function loadPluginSchema() {
+    async function loadPluginSchema(request: number) {
       try {
         const response = await fetch('/api/v1/admin/system/plugins', { credentials: 'include', signal: getAbortSignal() })
         if (!response.ok) return
         const plugins: { driver_key?: string | null; config_schema?: DriverSchema | null }[] = await response.json()
         const plugin = plugins.find(p => p.driver_key === printer.driver_key)
-        pluginSchema = plugin?.config_schema || null
+        if (request === printerRequest) pluginSchema = plugin?.config_schema || null
       } catch {
-        pluginSchema = null
+        if (request === printerRequest) pluginSchema = null
       }
     }
 
@@ -158,6 +171,10 @@ export function getStaticPaths() {
     
     function renderPrinter() {
       const container = document.getElementById('printer-content')!
+      if (printerMissing && !editingConfig) {
+        container.innerHTML = `<a href="/printers" class="fm-admin-back">&larr; ${t('printers.backToPrinters')}</a><div role="alert" style="color: var(--error-text);">${t('printers.notFound')}</div>`
+        return
+      }
       const configEditor = editingConfig ? document.getElementById('config-content')?.closest('section') : null
 
       let configSection = ''
@@ -563,62 +580,6 @@ export function getStaticPaths() {
         renderPrinter()
       })
 
-      // Copy button delegation for debug log entries
-      document.addEventListener('click', (e) => {
-        const btn = (e.target as HTMLElement).closest('.btn-copy-debug') as HTMLButtonElement
-        if (!btn) return
-        const pre = btn.closest('div')?.nextElementSibling as HTMLElement
-        if (!pre) return
-        // Same reason as elsewhere: navigator.clipboard is absent over plain
-        // HTTP. There is no input to fall back on here, so a failure selects
-        // the log entry itself and the user copies it by hand.
-        void copyText(pre.textContent || '').then((ok) => {
-          if (ok) {
-            btn.textContent = '\u2713'
-          } else {
-            btn.textContent = '\u2715'
-            const range = document.createRange()
-            range.selectNodeContents(pre)
-            const selection = window.getSelection()
-            selection?.removeAllRanges()
-            selection?.addRange(range)
-          }
-          setTimeout(() => btn.innerHTML = '&#x29C9;', 1000)
-        })
-      })
-
-      // Sync-Action button delegation (generisch aus health.sync_actions)
-      document.addEventListener('click', async (e) => {
-        const btn = (e.target as HTMLElement).closest('.btn-sync-action') as HTMLButtonElement
-        if (!btn) return
-        const action = btn.dataset.action
-        if (!action) return
-        btn.disabled = true
-        const originalText = btn.textContent || ''
-        btn.textContent = t('printers.syncActionRunning')
-        try {
-          const res = await fetch(`/api/v1/printers/${id}/driver/action`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-            credentials: 'include',
-            signal: getAbortSignal(),
-            body: JSON.stringify({ action, params: {} }),
-          })
-          if (!res.ok) {
-            const d = await res.json().catch(() => ({}))
-            throw new Error(d.detail?.message || 'Failed')
-          }
-          await loadDriverHealth()
-          renderPrinter()
-        } catch (err) {
-          if (isAbortError(err)) return
-          await dialogs.__fmAlert((err instanceof Error && err.message) || t('printers.failedUpdate'))
-        } finally {
-          btn.disabled = false
-          btn.textContent = originalText
-        }
-      })
-
       // Export params button
       document.getElementById('btn-export-params')?.addEventListener('click', async () => {
         try {
@@ -678,6 +639,63 @@ export function getStaticPaths() {
         debugContainer.scrollTop = debugContainer.scrollHeight
       }
     }
+
+    // Copy button delegation for debug log entries
+    document.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('.btn-copy-debug') as HTMLButtonElement
+      if (!btn) return
+      const pre = btn.closest('div')?.nextElementSibling as HTMLElement
+      if (!pre) return
+      // Same reason as elsewhere: navigator.clipboard is absent over plain
+      // HTTP. There is no input to fall back on here, so a failure selects
+      // the log entry itself and the user copies it by hand.
+      void copyText(pre.textContent || '').then((ok) => {
+        if (ok) {
+          btn.textContent = '\u2713'
+        } else {
+          btn.textContent = '\u2715'
+          const range = document.createRange()
+          range.selectNodeContents(pre)
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
+        }
+        setTimeout(() => btn.innerHTML = '&#x29C9;', 1000)
+      })
+    })
+
+    // Sync-Action button delegation (generisch aus health.sync_actions)
+    document.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest('.btn-sync-action') as HTMLButtonElement
+      if (!btn) return
+      const action = btn.dataset.action
+      if (!action) return
+      btn.disabled = true
+      const originalText = btn.textContent || ''
+      btn.textContent = t('printers.syncActionRunning')
+      try {
+        const res = await fetch(`/api/v1/printers/${id}/driver/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+          credentials: 'include',
+          signal: getAbortSignal(),
+          body: JSON.stringify({ action, params: {} }),
+        })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          throw new Error(d.detail?.message || 'Failed')
+        }
+        await loadDriverHealth()
+        renderPrinter()
+      } catch (err) {
+        if (isAbortError(err)) return
+        await dialogs.__fmAlert((err instanceof Error && err.message) || t('printers.failedUpdate'))
+      } finally {
+        btn.disabled = false
+        btn.textContent = originalText
+      }
+    })
+
 
     function bindConfigForm() {
       const form = document.getElementById('config-form') as HTMLFormElement
@@ -754,26 +772,30 @@ export function getStaticPaths() {
       })
     }
 
-    async function loadDriverHealth() {
+    let healthRequest = 0
+    let healthApplied = 0
+    async function loadDriverHealth(): Promise<boolean> {
+      const request = ++healthRequest
+      const printerVersion = printerRequest
+      let latest: DriverHealth | null
       try {
         const response = await fetch(`/api/v1/printers/${id}/driver/health`, { credentials: 'include', signal: getAbortSignal() })
-        if (response.ok) {
-          driverHealth = await response.json()
-        }
+        if (!response.ok) return false
+        latest = await response.json()
       } catch {
-        driverHealth = null
+        latest = null
       }
+      if (request <= healthApplied || printerVersion !== printerRequest || printerMissing) return false
+      healthApplied = request
+      const changed = driverHealth?.connected !== latest?.connected || driverHealth?.running !== latest?.running
+      driverHealth = latest
+      return changed
     }
 
     function startHealthPolling() {
       if (healthPollTimer) clearInterval(healthPollTimer)
       healthPollTimer = window.setInterval(async () => {
-        const prevConnected = driverHealth?.connected
-        await loadDriverHealth()
-        if (driverHealth?.connected !== prevConnected) {
-          // Connection state changed — full re-render to show/hide summary + AMS
-          renderPrinter()
-        }
+        if (await loadDriverHealth()) renderPrinter()
       }, 5000)
     }
 
@@ -837,10 +859,7 @@ export function getStaticPaths() {
     window.addEventListener('filaman:data-changed', async (e: Event) => {
       const data = (e as CustomEvent).detail
       if (data.printer_id !== undefined && String(data.printer_id) !== String(id)) return
-      if (data.event === 'slots_update') {
-        await loadDriverHealth()
-        renderPrinter()
-      } else if (data.event === 'printer_update') {
+      if (data.event === 'slots_update' || data.event === 'printer_update' || data.event === 'resync') {
         await loadPrinter()
       }
     })

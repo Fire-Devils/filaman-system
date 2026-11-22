@@ -58,15 +58,18 @@ it out.
 
 ## API keys are self-service
 
-`backend/app/api/v1/me_api_keys.py` (create, list, delete) is scoped to the
-caller's own keys via `PrincipalDep` and checks no permission. So
-`user_api_keys:read_own`, `:create_own` and `:delete_own` have no effect — a
-`viewer` can create a personal API key even though the role does not grant
-`create_own`. The impact is bounded by the intersection rule above: the key
-cannot do more than its owner.
+`backend/app/api/v1/me_api_keys.py` (create, list, delete) preserves ownership-based
+self-service for user sessions and unrestricted user API keys. A `viewer` can
+still create a personal key; role grants for these operations do not restrict
+this self-service access. Keys cannot do more than their owner.
 
-These three keys are kept (their endpoints exist and could start checking) and
-are listed in `KNOWN_UNENFORCED` in `backend/tests/test_permission_hygiene.py`.
+Scoped credentials must additionally include the corresponding
+`user_api_keys:read_own`, `:create_own` or `:delete_own` scope. A delegated key
+inherits its parent's scope ceiling. Devices have no user account and cannot
+manage personal keys.
+
+These three keys remain available as credential scopes. The permission-hygiene
+test checks that each key participates in an application permission or scope check.
 `user_api_keys:update_own` and `:rotate_own` were removed in migration
 `d5f3b8c2a614` — there is no update and no rotate endpoint at all.
 
