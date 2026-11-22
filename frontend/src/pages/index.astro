@@ -6,6 +6,7 @@ import FormDialog from '../components/FormDialog.astro'
 
 <Layout panel="dashboard" title="FilaMan - Dashboard">
   <div class="dashboard-page">
+    <div id="spool-link-banner"></div>
     <div class="dashboard-header">
       <h1 class="dashboard-title" data-i18n="dashboard.title">Dashboard</h1>
       <div id="widget-menu" class="dashboard-widget-menu">
@@ -165,6 +166,7 @@ import FormDialog from '../components/FormDialog.astro'
     import { bindFormDialog, type AppDialogs } from '../lib/form-dialog'
     import { escapeHtml } from '../lib/extra-fields'
     import { mountPanel } from '../lib/panel-navigation'
+    import { mountSpoolLinkBanner } from '../lib/spool-link-banner'
 
     mountPanel('dashboard', async (panelSignal) => {
     interface ProblemSpool {
@@ -718,6 +720,7 @@ import FormDialog from '../components/FormDialog.astro'
       changelogDialog.open()
     }
     init()
+    void mountSpoolLinkBanner(document.getElementById('spool-link-banner')!, panelSignal, () => loadDashboardData())
 
     // Live-Update via SSE: Daten automatisch neu laden
     let _dashboardReloadTimer: ReturnType<typeof setTimeout> | null = null

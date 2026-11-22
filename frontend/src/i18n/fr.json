@@ -501,6 +501,7 @@
   },
   "spools": {
     "title": "Bobines",
+    "hideSealed": "Masquer les bobines scellées",
     "addSpool": "Ajouter une bobine",
     "addSpoolFromEmpty": "À partir d'une bobine vide",
     "selectEmptySpoolTitle": "Sélectionner une bobine vide",
@@ -2279,5 +2280,17 @@
     "nozzleRange": "Température de buse",
     "pressureAdvance": "Avance de pression K",
     "inactiveProfiles": "Activez l’extension pour choisir un profil de trancheur."
+  },
+  "spoolLink": {
+    "detected": "Tag RFID inconnu détecté pour {filament} dans {where}",
+    "unknownPrinter": "une imprimante",
+    "link": "Lier et activer",
+    "create": "Créer une nouvelle bobine",
+    "spool": "Bobine n° {id}",
+    "created": "ajoutée le {date}",
+    "weight": "{weight} g",
+    "lot": "lot {lot}",
+    "select": "Bobine à lier",
+    "failed": "La suggestion n’a pas pu être appliquée."
   }
 }
