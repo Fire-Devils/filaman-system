@@ -2351,6 +2351,30 @@
     "pressureAdvance": "Pressure Advance K",
     "inactiveProfiles": "Plugin aktivieren, um ein Slicer-Profil auszuwählen."
   },
+  "moisture": {
+    "column": "Feuchte",
+    "level": {
+      "dry": "Trocken",
+      "fair": "Okay",
+      "damp": "Feucht",
+      "wet": "Nass"
+    },
+    "daysSinceOpened": "{days} Tage seit dem Öffnen",
+    "daysSinceDried": "{days} Tage seit dem Trocknen",
+    "markDried": "Getrocknet",
+    "dryDialogTitle": "Trocknung protokollieren",
+    "dryTemp": "Temperatur (°C)",
+    "dryHours": "Dauer (Stunden)",
+    "dryHint": "Vorbelegt mit den Trocknungsempfehlungen des Filaments.",
+    "dryError": "Die Trocknung konnte nicht gespeichert werden.",
+    "bulkMarkDried": "Als getrocknet markieren",
+    "bulkConfirm": "{count} Spulen als getrocknet markieren?",
+    "bulkSuccess": "{count} Spulen als getrocknet markiert.",
+    "bulkError": "Die Spulen konnten nicht als getrocknet markiert werden.",
+    "dashboardTitle": "Trocknen empfohlen",
+    "dashboardOk": "Keine Spule muss gerade getrocknet werden",
+    "daysShort": "Tage"
+  },
   "spoolLink": {
     "detected": "Unbekannter RFID-Tag für {filament} in {where} erkannt",
     "unknownPrinter": "einem Drucker",

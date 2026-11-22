@@ -61,6 +61,9 @@ import FormDialog from '../components/FormDialog.astro'
       <FormSection widget="lowStockFilaments" id="low-stock-filaments-title" titleKey="dashboard.lowStockFilaments" title="Low stock filaments" class="dashboard-low-stock">
         <div id="low-stock-filaments" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-filaments-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
+      <FormSection widget="moistureAttention" id="moisture-attention-title" titleKey="moisture.dashboardTitle" title="Drying recommended" class="dashboard-low-stock">
+        <div id="moisture-attention" class="dashboard-table dashboard-list" role="region" aria-labelledby="moisture-attention-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
       <FormSection widget="manufacturersWithSpools" id="manufacturers-title" titleKey="nav.manufacturers" title="Manufacturers">
         <div id="manufacturers-with-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="manufacturers-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
@@ -165,6 +168,7 @@ import FormDialog from '../components/FormDialog.astro'
     import { api, fetchAllPages } from '../lib/api'
     import { bindFormDialog, type AppDialogs } from '../lib/form-dialog'
     import { escapeHtml } from '../lib/extra-fields'
+    import { isMoistureLevel, moistureBadgeClass, moistureLabelKey } from '../lib/moisture'
     import { mountPanel } from '../lib/panel-navigation'
     import { mountSpoolLinkBanner } from '../lib/spool-link-banner'
 
@@ -183,6 +187,7 @@ import FormDialog from '../components/FormDialog.astro'
       filament_stats: { filament_type: string; spool_count: number; total_weight_g: number }[]
       manufacturers_with_spools: { id: number; name: string; spool_count: number }[]
       low_stock_filaments?: { filament_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; total_remaining_g: number; low_stock_threshold_g: number; spool_count: number }[]
+      moisture_attention?: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; level: string; days_exposed: number }[]
       low_stock_spools: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; remaining_weight_g: number }[]
     }
     const dialogs = window as unknown as AppDialogs
@@ -655,6 +660,32 @@ import FormDialog from '../components/FormDialog.astro'
                 <td title="${escapeHtml(f.filament_designation)} (${escapeHtml(f.filament_type)})"><a href="/filaments/${f.filament_id}">${escapeHtml(f.filament_designation)} (${escapeHtml(f.filament_type)})</a></td>
                 <td title="${escapeHtml(f.manufacturer_name)}">${escapeHtml(f.manufacturer_name)}</td>
                 <td style="text-align: right; font-family: monospace; color: var(--error-text);">${f.total_remaining_g.toFixed(0)} / ${f.low_stock_threshold_g.toFixed(0)}g</td>
+              </tr>`
+            ).join('') +
+            `</tbody></table>`
+        }
+        const moistureContainer = document.getElementById('moisture-attention')!
+        const moistureSpools = (dashboardData.moisture_attention ?? [])
+          .flatMap(item => isMoistureLevel(item.level)
+            ? [{ item, moisture: { level: item.level, days_exposed: item.days_exposed } }]
+            : [])
+        if (moistureSpools.length === 0) {
+          moistureContainer.innerHTML = `<p style="color: var(--accent);">${t('moisture.dashboardOk')}</p>`
+        } else {
+          moistureContainer.innerHTML = `<table class="fm-table">
+            <thead><tr>
+              <th>${t('dashboard.spool')}</th>
+              <th>${t('dashboard.filament')}</th>
+              <th>${t('moisture.column')}</th>
+              <th style="text-align: right;">${t('moisture.daysShort')}</th>
+            </tr></thead>
+            <tbody>` +
+            moistureSpools.map(({ item, moisture }) =>
+              `<tr>
+                <td><a href="/spools/${item.spool_id}">#${item.spool_id}</a></td>
+                <td title="${escapeHtml(item.filament_designation)} (${escapeHtml(item.filament_type)})">${escapeHtml(item.filament_designation)} (${escapeHtml(item.filament_type)})</td>
+                <td><span class="${moistureBadgeClass(moisture.level)}">${t(moistureLabelKey(moisture.level))}</span></td>
+                <td style="text-align: right; font-family: monospace;">${moisture.days_exposed}</td>
               </tr>`
             ).join('') +
             `</tbody></table>`

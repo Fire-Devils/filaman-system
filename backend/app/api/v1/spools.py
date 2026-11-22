@@ -20,10 +20,12 @@ from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas_spool import (
     AdjustmentRequest,
     BulkSpoolDeleteRequest,
+    BulkDryRequest,
     BulkSpoolUpdateRequest,
     BulkStatusChangeRequest,
     ConsumptionRequest,
     DeviceMeasurementRequest,
+    DryRequest,
     LocationBulkDelete,
     LocationBulkResult,
     LocationBulkTypeUpdate,
@@ -60,7 +62,7 @@ from app.services.custom_field_search import (
     any_custom_field_matches,
     searchable_custom_field_keys,
 )
-from app.services.spool_service import SpoolService
+from app.services.spool_service import OPENING_STATUS_KEYS, SpoolService
 from app.services.spool_metrics import spool_metric_expressions
 from app.utils.query_params import parse_multi_int, parse_multi_str
 
@@ -758,6 +760,7 @@ async def list_spools(
             selectinload(Spool.filament)
             .selectinload(Filament.filament_colors)
             .selectinload(FilamentColor.color),
+            selectinload(Spool.status),
         )
         .order_by(*(
             [sort_column.is_(None).asc(), order, Spool.id.asc()]
@@ -791,6 +794,15 @@ async def list_spools(
     total = count_result.scalar() or 0
 
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+
+
+async def _apply_initial_opened_at(db: AsyncSession, spool_data: dict[str, Any]) -> None:
+    """Spools created already opened/active/drying start their moisture clock now."""
+    if spool_data.get("opened_at") is not None or spool_data.get("status_id") is None:
+        return
+    created_status = await db.get(SpoolStatus, spool_data["status_id"])
+    if created_status is not None and created_status.key in OPENING_STATUS_KEYS:
+        spool_data["opened_at"] = datetime.now(timezone.utc)
 
 
 @router_spools.post(
@@ -859,6 +871,7 @@ async def create_spool(
 
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id
+    await _apply_initial_opened_at(db, spool_data)
 
     # RFID slots go through the service: stored as submitted, compared
     # without regard to hex spelling, and stolen from any other owner.
@@ -953,6 +966,7 @@ async def create_spools_bulk(
 
     if "status_id" not in spool_data or spool_data["status_id"] is None:
         spool_data["status_id"] = status_obj.id
+    await _apply_initial_opened_at(db, spool_data)
 
     # Unique fields cannot be duplicated across multiple spools
     rfid_primary = spool_data.pop("rfid_uid", None)
@@ -1007,16 +1021,32 @@ async def update_spools_bulk(
     principal=RequirePermission("spools:update"),
 ):
     """Bulk update fields on multiple spools (location, threshold, empty weight, price)."""
-    result = await db.execute(select(Spool).where(Spool.id.in_(data.spool_ids)))
+    result = await db.execute(
+        select(Spool)
+        .where(Spool.id.in_(data.spool_ids))
+        .options(selectinload(Spool.status))
+    )
     spools = result.scalars().all()
+    new_status = (
+        await db.get(SpoolStatus, data.status_id)
+        if data.status_id is not None
+        else None
+    )
 
     count = 0
+    now = datetime.now(timezone.utc)
     for spool in spools:
         if data.clear_location:
             spool.location_id = None
         elif data.location_id is not None:
             spool.location_id = data.location_id
         if data.status_id is not None:
+            SpoolService.mark_opened(
+                spool,
+                spool.status.key if spool.status else None,
+                new_status.key if new_status else None,
+                now,
+            )
             spool.status_id = data.status_id
         if data.low_weight_threshold_g is not None:
             spool.low_weight_threshold_g = data.low_weight_threshold_g
@@ -1181,6 +1211,7 @@ async def get_spool(spool_id: int, db: DBSession, principal: PrincipalDep,
             selectinload(Spool.filament)
             .selectinload(Filament.filament_colors)
             .selectinload(FilamentColor.color),
+            selectinload(Spool.status),
         )
     )
     row = result.one_or_none()
@@ -1224,6 +1255,17 @@ async def update_spool(
         await SpoolService(db).lock_balance(spool)
     old_tara = spool.empty_spool_weight_g
     old_remaining = spool.remaining_weight_g
+
+    new_status_id = update_data.get("status_id")
+    if new_status_id is not None and new_status_id != spool.status_id:
+        old_status = await db.get(SpoolStatus, spool.status_id)
+        new_status = await db.get(SpoolStatus, new_status_id)
+        SpoolService.mark_opened(
+            spool,
+            old_status.key if old_status else None,
+            new_status.key if new_status else None,
+            datetime.now(timezone.utc),
+        )
 
     for key, value in update_data.items():
         setattr(spool, key, value)
@@ -1297,6 +1339,7 @@ async def update_spool(
             selectinload(Spool.filament)
             .selectinload(Filament.filament_colors)
             .selectinload(FilamentColor.color),
+            selectinload(Spool.status),
         )
     )
     return result.scalar_one()
@@ -1366,6 +1409,58 @@ async def change_statuses_bulk(
     )
     await event_bus.publish({"event": "spools_changed"})
     return {"success": True, "count": count}
+
+
+@router_spools.post("/dry", status_code=status.HTTP_200_OK)
+async def record_drying_bulk(
+    data: BulkDryRequest,
+    db: DBSession,
+    principal=RequirePermission("spools:update"),
+):
+    """Log a drying run for several spools at once."""
+    service = SpoolService(db)
+    result = await db.execute(select(Spool).where(Spool.id.in_(set(data.spool_ids))))
+    count = 0
+    for spool in result.scalars().all():
+        await service.record_drying(
+            spool,
+            principal=principal,
+            temp_c=data.temp_c,
+            duration_hours=data.duration_hours,
+            note=data.note,
+            dried_at=data.dried_at,
+            commit=False,
+        )
+        count += 1
+    await db.commit()
+    await event_bus.publish({"event": "spools_changed"})
+    return {"success": True, "count": count}
+
+
+@router_spools.post("/{spool_id}/dry", response_model=SpoolEventResponse)
+async def record_drying(
+    spool_id: int,
+    data: DryRequest,
+    db: DBSession,
+    principal=RequirePermission("spools:update"),
+):
+    service = SpoolService(db)
+    spool = await service.get_spool(spool_id)
+    if not spool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": "Spool not found"},
+        )
+    event = await service.record_drying(
+        spool,
+        principal=principal,
+        temp_c=data.temp_c,
+        duration_hours=data.duration_hours,
+        note=data.note,
+        dried_at=data.dried_at,
+    )
+    await event_bus.publish({"event": "spools_changed"})
+    return event
 
 
 @router_spools.post("/{spool_id}/measurements", response_model=SpoolEventResponse)

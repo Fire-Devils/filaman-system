@@ -2350,6 +2350,30 @@
     "pressureAdvance": "Avance de pression K",
     "inactiveProfiles": "Activez l’extension pour choisir un profil de trancheur."
   },
+  "moisture": {
+    "column": "Humidité",
+    "level": {
+      "dry": "Sec",
+      "fair": "Correct",
+      "damp": "Humide",
+      "wet": "Mouillé"
+    },
+    "daysSinceOpened": "{days} jours depuis l'ouverture",
+    "daysSinceDried": "{days} jours depuis le séchage",
+    "markDried": "Séché",
+    "dryDialogTitle": "Enregistrer un séchage",
+    "dryTemp": "Température (°C)",
+    "dryHours": "Durée (heures)",
+    "dryHint": "Pré-rempli avec la recommandation de séchage du filament.",
+    "dryError": "Le séchage n'a pas pu être enregistré.",
+    "bulkMarkDried": "Marquer comme séchées",
+    "bulkConfirm": "Marquer {count} bobines comme séchées ?",
+    "bulkSuccess": "{count} bobines marquées comme séchées.",
+    "bulkError": "Les bobines n'ont pas pu être marquées comme séchées.",
+    "dashboardTitle": "Séchage recommandé",
+    "dashboardOk": "Aucune bobine n'a besoin d'être séchée pour le moment",
+    "daysShort": "Jours"
+  },
   "spoolLink": {
     "detected": "Tag RFID inconnu détecté pour {filament} dans {where}",
     "unknownPrinter": "une imprimante",

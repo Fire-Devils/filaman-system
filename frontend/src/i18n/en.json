@@ -2350,6 +2350,30 @@
     "pressureAdvance": "Pressure advance K",
     "inactiveProfiles": "Enable the plugin to choose a slicer profile."
   },
+  "moisture": {
+    "column": "Moisture",
+    "level": {
+      "dry": "Dry",
+      "fair": "Fair",
+      "damp": "Damp",
+      "wet": "Wet"
+    },
+    "daysSinceOpened": "{days} days since opened",
+    "daysSinceDried": "{days} days since dried",
+    "markDried": "Dried",
+    "dryDialogTitle": "Log drying",
+    "dryTemp": "Temperature (°C)",
+    "dryHours": "Duration (hours)",
+    "dryHint": "Prefilled with the filament's drying recommendation.",
+    "dryError": "The drying could not be saved.",
+    "bulkMarkDried": "Mark as dried",
+    "bulkConfirm": "Mark {count} spools as dried?",
+    "bulkSuccess": "{count} spools marked as dried.",
+    "bulkError": "The spools could not be marked as dried.",
+    "dashboardTitle": "Drying recommended",
+    "dashboardOk": "No spool needs drying right now",
+    "daysShort": "Days"
+  },
   "spoolLink": {
     "detected": "Unknown RFID tag detected for {filament} in {where}",
     "unknownPrinter": "a printer",

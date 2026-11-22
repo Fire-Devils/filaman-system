@@ -24,6 +24,7 @@ import * as filamentLabel from './filament-label-data'
 import * as labelSession from './label-print-session'
 import * as locations from './driver-managed-locations'
 import * as reel from './spool-reel'
+import * as moisture from './moisture'
 import * as spoolDetail from './spool-detail'
 import * as lookup from './filamentdb-lookup'
 import * as labelFields from './label-extra-fields'
@@ -88,6 +89,7 @@ const dependencies = {
   ...labelSession,
   ...locations,
   ...reel,
+  ...moisture,
   ...spoolDetail,
   ...lookup,
   ...labelFields,
