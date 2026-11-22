@@ -204,6 +204,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
+    import { colorFilterFromIds } from '../../lib/color-library-links'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
 
@@ -604,6 +605,27 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         if (isAbortError(error)) return
         console.error('Failed to load filters:', error)
       }
+    }
+
+    function applyUrlColorFilter() {
+      const ids = urlParams.getAll('color_id')
+      if (!ids.length) return
+      const options = Object.values(spoolFilterFacets?.by_status ?? {}).flatMap(scope => scope.colors)
+      const filter = colorFilterFromIds(ids, options)
+      if (filter) {
+        columnFilters.colors = filter
+        splHeaderFilters?.setValue('colors', filter)
+        updateFilterResets()
+      } else {
+        // Color without any spool (e.g. only used by filaments): filter by its id
+        // server-side so the list is empty instead of silently showing everything.
+        const known = ids.map(Number).filter(Number.isInteger)
+        if (known.length) {
+          columnFilters.colors = { type: 'multi', values: ['#color'], colorStopIds: [['#color', known]] }
+          updateFilterResets()
+        }
+      }
+      removeFilterUrlParams('color_id')
     }
 
     async function loadSpoolStatuses() {
@@ -1194,7 +1216,8 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         if (panelSignal.aborted) return
         setupHeaderFilters()
         await loadSpoolStatuses()
-        if (!panelSignal.aborted) return loadFilters()
+        if (!panelSignal.aborted) await loadFilters()
+        if (!panelSignal.aborted) applyUrlColorFilter()
       })
       .then(() => { if (!panelSignal.aborted) return loadSpools() })
     document.querySelector('main')!.addEventListener('filaman:panel-authorized', () => {

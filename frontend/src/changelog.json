@@ -5,10 +5,12 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Color Library: Die Nutzung einer Farbe verlinkt jetzt direkt auf die passenden Filamente und Spulen." },
           { "type": "feature", "text": "Mindestbestand pro Filament (#275): Im Filament kann ein Schwellwert in Gramm hinterlegt werden. Unterschreitet die Summe der Restgewichte aller Spulen (ohne archivierte und leere, versiegelte Spulen zählen mit), erscheint das Filament auf dem Dashboard unter „Filamente mit niedrigem Bestand“." },
           { "type": "fix", "text": "Plugin-Katalog: Spoolman API 1.2.10 bucht von Moonraker gemeldeten Verbrauch jetzt auch bei Filamenten ohne hinterlegte Dichte ab. Bisher ging der Verbrauch verloren, obwohl die API Standardwerte anzeigte; jetzt werden dieselben Standardwerte (1,24 g/cm³, 1,75 mm) verwendet." }
         ],
         "en": [
+          { "type": "feature", "text": "Color Library: A color's usage now links directly to the matching filaments and spools." },
           { "type": "feature", "text": "Minimum stock per filament (#275): a filament can now have a threshold in grams. When the summed remaining weight of its spools (excluding archived and empty ones, sealed spools count) falls below it, the filament shows up on the dashboard under \"Low stock filaments\"." },
           { "type": "fix", "text": "Plugin catalog: Spoolman API 1.2.10 now books usage reported by Moonraker for filaments without a stored density. Previously that usage was lost even though the API showed default values; the same defaults (1.24 g/cm³, 1.75 mm) are now used." }
         ]
