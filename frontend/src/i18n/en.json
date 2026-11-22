@@ -20,7 +20,8 @@
     "supportProject": "Support the project",
     "toggleSidebar": "Toggle Sidebar",
     "plugins": "Plugins",
-    "updateAvailable": "Update available"
+    "updateAvailable": "Update available",
+    "printJobs": "Print Jobs"
   },
   "theme": {
     "colorMode": "Color mode",
@@ -272,7 +273,7 @@
     "scannerDevice": "Reader",
     "scannerDeviceAny": "Whichever scanned last",
     "scannerDeviceHint": "Pick one if several scales are in use and this screen should follow only one of them.",
-    "scannerDeviceOffline": "Reader \u201c{id}\u201d (has not reported yet)"
+    "scannerDeviceOffline": "Reader “{id}” (has not reported yet)"
   },
   "apiKeys": {
     "title": "API Keys",
@@ -702,7 +703,8 @@
     "importFromTagNoDevices": "No active devices available. Please switch on and connect a device.",
     "importFromTagNoMatch": "No matching filament found for",
     "importFromTagMatched": "Filament detected",
-    "importFromTagSelectManually": "Please select filament manually"
+    "importFromTagSelectManually": "Please select filament manually",
+    "printJobs": "Prints"
   },
   "colors": {
     "colorCount": "{count} color(s)",
@@ -1466,6 +1468,69 @@
     "eventNote": "Note",
     "noEvents": "No events recorded",
     "failedLoad": "Failed to load spool events"
+  },
+  "printJobs": {
+    "title": "Print Jobs",
+    "logPrint": "Log print",
+    "newProject": "New project",
+    "tabJobs": "Prints",
+    "tabProjects": "Projects",
+    "allStatuses": "All statuses",
+    "allProjects": "All projects",
+    "allPrinters": "All printers",
+    "from": "From",
+    "to": "To",
+    "project": "Project",
+    "printer": "Printer",
+    "date": "Date",
+    "weight": "Weight",
+    "cost": "Cost",
+    "jobCount": "Prints",
+    "complete": "Complete",
+    "discard": "Discard",
+    "discardConfirm": "Discard print \"{name}\"? Nothing will be deducted.",
+    "noJobs": "No prints found",
+    "noProjects": "No projects yet",
+    "failedLoad": "Failed to load prints",
+    "failedLoadSingle": "Failed to load print",
+    "failedSave": "Failed to save",
+    "status": {
+      "pending": "Open",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Discarded"
+    },
+    "spools": "Spools and grams",
+    "spool": "Spool",
+    "selectSpool": "Select spool",
+    "addSpool": "Add spool",
+    "usedGrams": "Used (g)",
+    "plannedGrams": "Planned (g)",
+    "photo": "Photo",
+    "noPhoto": "No photo",
+    "noProject": "No project",
+    "createProject": "Create new project…",
+    "newProjectName": "New project name",
+    "noPrinter": "No printer",
+    "bookNow": "Book filament now (print is finished)",
+    "printSucceeded": "Print succeeded",
+    "completeTitle": "Complete print",
+    "completeHint": "Adjust the grams actually used per spool. They are deducted from the spools.",
+    "invalidWeight": "Please enter valid grams",
+    "invalidForm": "Please enter a name and a spool with grams for each line",
+    "description": "Description",
+    "archived": "Archived",
+    "showPrints": "Show prints",
+    "deleteProjectConfirm": "Delete project \"{name}\"? Its prints are kept.",
+    "backToJobs": "Back to prints",
+    "started": "Started",
+    "finished": "Finished",
+    "duration": "Duration",
+    "source": "Source",
+    "slot": "Slot",
+    "noUsages": "No spools recorded",
+    "deleteConfirm": "Delete print \"{name}\"?",
+    "deleteBookedConfirm": "Delete print \"{name}\"? The booked consumption stays on the spools."
   },
   "spoolman": {
     "title": "Spoolman Import",

@@ -1,0 +1,135 @@
+---
+import Layout from '../../layouts/Layout.astro'
+
+export function getStaticPaths() {
+  return [
+    {params: {id: 'detail'}},
+  ];
+}
+---
+
+<Layout title="FilaMan - Print Job">
+  <div id="job-content" class="fm-admin-page fm-settings-page">
+    <a href="/print-jobs" class="fm-admin-back">&larr; <span data-i18n="printJobs.backToJobs">Back to prints</span></a>
+    <p style="color: var(--text-muted);" data-i18n="common.loading">Loading...</p>
+  </div>
+
+  <style is:global>
+    #job-content h1, #job-content dd { overflow-wrap: anywhere; }
+    #job-content dl { margin: 0; }
+    #job-content dd { margin: 0; min-width: 0; }
+    #job-content .job-metadata { display: flex; flex-wrap: wrap; gap: 16px 32px; }
+    #job-content .job-metadata dt { color: var(--text-muted); font-size: .85rem; margin-bottom: 4px; }
+    #job-content .job-metadata dd { font-weight: 600; }
+    #job-content .job-photo { max-width: min(100%, 520px); border-radius: 8px; }
+  </style>
+
+  <script>
+    import type { AppDialogs } from '../../lib/form-dialog'
+    import { t, initI18n } from '../../lib/i18n'
+    import { isAbortError } from '../../lib/abort'
+    import { api, request } from '../../lib/api'
+    import { escapeHtml } from '../../lib/extra-fields'
+    import { formatPrice, getCurrency, initCurrency } from '../../lib/format'
+    import { formatDuration, formatGrams, statusPillStyle, type PrintJob } from '../../lib/print-jobs'
+    await initI18n()
+    await initCurrency()
+
+    const id = window.location.pathname.split('/').filter(Boolean).pop()!
+    if (id === 'detail') {
+      window.location.href = '/print-jobs'
+    }
+    const dialogs = window as unknown as AppDialogs
+    const content = document.getElementById('job-content')!
+    const back = `<a href="/print-jobs" class="fm-admin-back">&larr; ${t('printJobs.backToJobs')}</a>`
+    const money = (value: number | null) => value == null ? '–' : formatPrice(value, getCurrency())
+    const date = (value: string | null) => value ? new Date(value).toLocaleString() : '–'
+
+    async function load() {
+      let job: PrintJob
+      try {
+        job = await api.get<PrintJob>(`/print-jobs/${id}`)
+      } catch (error) {
+        if (isAbortError(error)) return
+        content.innerHTML = `${back}<div role="alert" style="color: var(--error-text);">${t('printJobs.failedLoadSingle')}</div>`
+        return
+      }
+      render(job)
+    }
+
+    function render(job: PrintJob) {
+      const closed = job.status === 'completed' || job.status === 'failed'
+      const rows = job.usages.map(usage => `<tr>
+        <td>${usage.spool_id ? `<a href="/spools/${usage.spool_id}">#${usage.spool_id}</a> ` : ''}${escapeHtml(usage.spool_name || (usage.slot_no != null ? `${t('printJobs.slot')} ${usage.slot_no}` : '–'))}</td>
+        <td>${escapeHtml(usage.material_type || '–')}</td>
+        <td style="font-family: monospace;">${formatGrams(usage.planned_weight_g)}</td>
+        <td style="font-family: monospace;">${formatGrams(usage.used_weight_g)}</td>
+        <td>${money(usage.cost)}</td></tr>`).join('')
+      content.innerHTML = `
+        ${back}
+        <header class="fm-section-header" style="flex-wrap: wrap; gap: 12px;">
+          <h1 style="margin: 0;">${escapeHtml(job.name)} <span class="fm-pill" style="${statusPillStyle(job.status)}">${t(`printJobs.status.${job.status}`)}</span></h1>
+          <div class="fm-header-actions">
+            <button id="btn-delete" type="button" class="fm-btn fm-btn-outline">${t('common.delete')}</button>
+          </div>
+        </header>
+        <section class="fm-card" style="padding: 16px; margin-bottom: 16px;">
+          <dl class="job-metadata">
+            <div><dt>${t('printJobs.project')}</dt><dd>${job.project_id ? `<a href="/print-jobs">${escapeHtml(job.project_name || '')}</a>` : '–'}</dd></div>
+            <div><dt>${t('printJobs.printer')}</dt><dd>${escapeHtml(job.printer_name || '–')}</dd></div>
+            <div><dt>${t('printJobs.started')}</dt><dd>${date(job.started_at || job.created_at)}</dd></div>
+            <div><dt>${t('printJobs.finished')}</dt><dd>${date(job.finished_at)}</dd></div>
+            <div><dt>${t('printJobs.duration')}</dt><dd>${formatDuration(job.print_time_s)}</dd></div>
+            <div><dt>${t('printJobs.weight')}</dt><dd>${formatGrams(job.total_weight_g)}</dd></div>
+            <div><dt>${t('printJobs.cost')}</dt><dd>${money(job.total_cost)}</dd></div>
+            <div><dt>${t('printJobs.source')}</dt><dd>${escapeHtml(job.source)}</dd></div>
+          </dl>
+          ${job.notes ? `<p style="white-space: pre-wrap; margin-top: 12px;">${escapeHtml(job.notes)}</p>` : ''}
+        </section>
+        <section class="fm-card" style="padding: 0; margin-bottom: 16px;">
+          <table class="fm-table">
+            <thead><tr>
+              <th>${t('printJobs.spool')}</th><th>${t('spools.material')}</th>
+              <th>${t('printJobs.plannedGrams')}</th><th>${t('printJobs.usedGrams')}</th><th>${t('printJobs.cost')}</th>
+            </tr></thead>
+            <tbody>${rows || `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">${t('printJobs.noUsages')}</td></tr>`}</tbody>
+          </table>
+        </section>
+        <section class="fm-card" style="padding: 16px;">
+          <h2 style="margin-top: 0;">${t('printJobs.photo')}</h2>
+          ${job.has_photo ? `<img class="job-photo" src="/api/v1/print-jobs/${job.id}/photo?v=${encodeURIComponent(job.updated_at)}" alt="${escapeHtml(job.name)}" />` : `<p style="color: var(--text-muted);">${t('printJobs.noPhoto')}</p>`}
+          <div style="margin-top: 8px;"><input id="photo-input" type="file" accept="image/jpeg,image/png,image/webp" class="fm-input" aria-label="${t('printJobs.photo')}" /></div>
+          <div id="photo-error" class="fm-alert-error hidden" role="alert" style="margin-top: 8px;"></div>
+        </section>`
+
+      document.getElementById('photo-input')!.addEventListener('change', async (event) => {
+        const file = (event.target as HTMLInputElement).files?.[0]
+        if (!file) return
+        const form = new FormData()
+        form.append('file', file)
+        try {
+          await request(`/print-jobs/${job.id}/photo`, { method: 'POST', body: form })
+          await load()
+        } catch (error) {
+          if (isAbortError(error)) return
+          const el = document.getElementById('photo-error')!
+          el.textContent = error instanceof Error ? error.message : t('printJobs.failedSave')
+          el.classList.remove('hidden')
+        }
+      })
+
+      document.getElementById('btn-delete')!.addEventListener('click', async () => {
+        const message = closed ? t('printJobs.deleteBookedConfirm', { name: job.name }) : t('printJobs.deleteConfirm', { name: job.name })
+        if (!await dialogs.__fmConfirm(message, { isDanger: true, okLabel: t('common.delete') })) return
+        try {
+          await api.delete(`/print-jobs/${job.id}${closed ? '?force=true' : ''}`)
+          window.location.href = '/print-jobs'
+        } catch (error) {
+          if (!isAbortError(error)) await dialogs.__fmAlert(error instanceof Error ? error.message : t('printJobs.failedSave'))
+        }
+      })
+    }
+
+    if (id !== 'detail') await load()
+  </script>
+</Layout>

@@ -33,6 +33,13 @@ locations (`api/v1/spools.py:156`) are read with `PrincipalDep`, while
 `manufacturers:create/update/delete`, `colors:*` and `locations:*` are guarded
 with `RequirePermission`.
 
+The print job log follows the same rule: `GET /print-jobs`, `/print-projects` and
+`/spools/{id}/print-jobs` are read with `PrincipalDep`; `print_jobs:create`
+(create jobs/projects), `print_jobs:update` (edit, complete, cancel, photo) and
+`print_jobs:delete` guard the writes. Role `user` holds create and update;
+deleting is admin only. Completing a job books spool consumption itself, so it
+does not additionally need `spool_events:create_consumption`.
+
 Consequences, on purpose:
 
 - A `viewer` can read everything, no matter which read keys the role holds.

@@ -167,6 +167,22 @@ PERMISSIONS = [
         "description": "Delete printers",
         "category": "printers",
     },
+    # Reading print jobs/projects needs authentication only (docs/permissions.md).
+    {
+        "key": "print_jobs:create",
+        "description": "Create print jobs and projects",
+        "category": "print_jobs",
+    },
+    {
+        "key": "print_jobs:update",
+        "description": "Update, complete and cancel print jobs and projects",
+        "category": "print_jobs",
+    },
+    {
+        "key": "print_jobs:delete",
+        "description": "Delete print jobs and projects",
+        "category": "print_jobs",
+    },
     # ratings:read / ratings:write / ratings:delete were removed in migration
     # a4d1c8b7e903: FilamentRating has no API endpoints, so nothing ever checked
     # them. Re-add them here (and grant them) if ratings ever get an API.
@@ -252,6 +268,8 @@ USER_PERMISSIONS = [
     "spool_events:create_consumption",
     "spool_events:create_status",
     "spool_events:create_move_location",
+    "print_jobs:create",
+    "print_jobs:update",
     "user_api_keys:read_own",
     "user_api_keys:create_own",
     "user_api_keys:delete_own",

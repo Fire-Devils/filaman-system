@@ -847,6 +847,18 @@ if not settings.debug:
                 os.path.join(static_files_path, "printers/detail/index.html")
             )
 
+        @app.get("/print-jobs/detail")
+        async def serve_print_job_detail_placeholder():
+            return FileResponse(
+                os.path.join(static_files_path, "print-jobs/detail/index.html")
+            )
+
+        @app.get("/print-jobs/{id}")
+        async def serve_print_job_detail(id: int):
+            return FileResponse(
+                os.path.join(static_files_path, "print-jobs/detail/index.html")
+            )
+
         @app.get("/filaments/colors")
         async def serve_filament_colors():
             return FileResponse(

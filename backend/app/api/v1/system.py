@@ -77,6 +77,9 @@ from app.models import (
     PrinterSlot,
     PrinterSlotAssignment,
     PrinterSlotEvent,
+    PrintJob,
+    PrintJobUsage,
+    PrintProject,
     Role,
     RolePermission,
     Spool,
@@ -1223,6 +1226,9 @@ async def killswitch(
 
     # Reihenfolge beachten: abhaengige Tabellen zuerst loeschen
     tables_in_order: list[tuple[str, type]] = [
+        ("print_job_usages", PrintJobUsage),
+        ("print_jobs", PrintJob),
+        ("print_projects", PrintProject),
         ("printer_slot_events", PrinterSlotEvent),
         ("printer_slot_assignments", PrinterSlotAssignment),
         ("printer_slots", PrinterSlot),
@@ -1313,6 +1319,9 @@ INVENTORY_BACKUP_TABLES: tuple[tuple[str, type[Any]], ...] = (
     ("printer_slots", PrinterSlot),
     ("printer_slot_assignments", PrinterSlotAssignment),
     ("printer_slot_events", PrinterSlotEvent),
+    ("print_projects", PrintProject),
+    ("print_jobs", PrintJob),
+    ("print_job_usages", PrintJobUsage),
 )
 
 COMPLETE_BACKUP_TABLES: tuple[tuple[str, type[Any]], ...] = (
