@@ -87,6 +87,7 @@ class Filament(Base, TimestampMixin):
 
     raw_material_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     default_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    low_stock_threshold_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     spool_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     spool_material: Mapped[str | None] = mapped_column(String(100), nullable=True)

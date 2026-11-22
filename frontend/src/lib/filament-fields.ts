@@ -46,6 +46,7 @@ export const filamentSections: FilamentSection[] = [
     key: 'spool', titleKey: 'filaments.spoolDetails', fields: [
       { key: 'raw_material_weight_g', labelKey: 'filaments.rawMaterialWeightLabel', kind: 'number', unit: 'g', step: '1', placeholderKey: 'filaments.rawMaterialPlaceholder' },
       { key: 'default_spool_weight_g', labelKey: 'filaments.defaultSpoolWeightLabel', kind: 'number', unit: 'g', step: '1', placeholderKey: 'filaments.defaultSpoolWeightPlaceholder' },
+      { key: 'low_stock_threshold_g', labelKey: 'filaments.lowStockThresholdLabel', kind: 'number', unit: 'g', step: '1', min: 0, placeholderKey: 'filaments.lowStockThresholdPlaceholder' },
       { key: 'spool_material', labelKey: 'spools.spoolMaterial', kind: 'select', options: [
         ['Plastic', 'spools.spoolMaterialPlastic'], ['Cardboard', 'spools.spoolMaterialCardboard'],
         ['Metal', 'spools.spoolMaterialMetal'], ['Other', 'spools.spoolMaterialOther'],

@@ -64,6 +64,7 @@ interface FilamentDetailData {
   is_discontinued?: boolean | null
   raw_material_weight_g?: number | null
   default_spool_weight_g?: number | null
+  low_stock_threshold_g?: number | null
   spool_outer_diameter_mm?: number | null
   spool_width_mm?: number | null
   spool_material?: string | null

@@ -551,6 +551,7 @@ TOOLS: tuple[Tool, ...] = (
             "finish_type": {"type": "string"},
             "raw_material_weight_g": {"type": "number", "minimum": 0},
             "default_spool_weight_g": {"type": "number", "minimum": 0},
+            "low_stock_threshold_g": {"type": "number", "minimum": 0, "description": "Warn on the dashboard when the summed remaining weight of the filament's spools falls below this (grams)"},
             "price": {"type": "number", "minimum": 0},
             "shop_url": {"type": "string"},
             "density_g_cm3": {"type": "number", "exclusiveMinimum": 0},
@@ -561,6 +562,7 @@ TOOLS: tuple[Tool, ...] = (
         _post(
             "/filaments", "manufacturer_id", "designation", "material_type", "diameter_mm",
             "manufacturer_color_name", "finish_type", "raw_material_weight_g", "default_spool_weight_g",
+            "low_stock_threshold_g",
             "price", "shop_url", "density_g_cm3", "color_mode", "multi_color_style", "colors",
         ),
         write=True,
