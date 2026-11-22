@@ -61,8 +61,8 @@ class LocationBulkDelete(BaseModel):
 class LocationBulkResult(BaseModel):
     updated: list[int] = []
     deleted: list[int] = []
-    # Locations still holding active spools are left alone rather than failing
-    # the whole request.
+    # Left alone rather than failing the whole request: locations still holding
+    # active spools (delete) or printer-managed AMS slots (type change).
     skipped: list[int] = []
     not_found: list[int] = []
 

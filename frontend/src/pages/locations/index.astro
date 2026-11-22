@@ -96,7 +96,7 @@ import Layout from '../../layouts/Layout.astro'
             id="location-type-custom"
             class="fm-input hidden location-type-custom"
             maxlength="50"
-            pattern=".*\S.*"
+            pattern={'.*\\S.*'}
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
@@ -133,7 +133,7 @@ import Layout from '../../layouts/Layout.astro'
             id="bulk-type-custom"
             class="fm-input hidden location-type-custom"
             maxlength="50"
-            pattern=".*\S.*"
+            pattern={'.*\\S.*'}
             data-i18n-placeholder="locations.typeWriteInPlaceholder"
             placeholder="New type name"
           />
@@ -246,9 +246,22 @@ import Layout from '../../layouts/Layout.astro'
 
     let bulkTypeBusy = false
 
-    function fillTypePicker(prefix: string, current: string | null, allowNone = true) {
+    function fillTypePicker(prefix: string, current: string | null, allowNone = true, locked = false) {
       const select = document.getElementById(`${prefix}-type`) as HTMLSelectElement
       const custom = document.getElementById(`${prefix}-type-custom`) as HTMLInputElement
+      select.disabled = locked
+      custom.disabled = locked
+      if (locked) {
+        const type = 'AMS'
+        select.dataset.allowNone = 'false'
+        select.required = false
+        select.innerHTML = `<option value="${escapeHtml(encodeTypeOption(type))}">${escapeHtml(type)}</option>`
+        select.value = encodeTypeOption(type)
+        custom.value = ''
+        custom.required = false
+        custom.classList.add('hidden')
+        return
+      }
       const types = knownTypes()
       const resolved = resolveKnownType(types, current)
       const needsPlaceholder = !allowNone && !resolved && !current?.trim()
@@ -484,8 +497,7 @@ import Layout from '../../layouts/Layout.astro'
         : decodeTypeOption(currentFilter) ?? currentFilter
       const filterType = resolveKnownType(knownTypes(), filterRaw)
       const managed = Boolean(location && isDriverManagedLocation(location))
-      const allowNone = !managed
-      fillTypePicker('location', location ? location.location_type : filterType, allowNone)
+      fillTypePicker('location', location ? location.location_type : filterType, !managed, managed)
       const typeHint = document.getElementById('location-type-hint')!
       typeHint.textContent = managed ? t('locations.typeManagedHint') : ''
       typeHint.classList.toggle('hidden', !managed)
@@ -799,20 +811,24 @@ import Layout from '../../layouts/Layout.astro'
 
     document.getElementById('bulk-btn-type')?.addEventListener('click', () => {
       if (selectedIds.size === 0 || rejectIfTooMany(selectedIds.size)) return
-      bulkTypeTargetIds = [...selectedIds]
+      const selected = locations.filter(loc => selectedIds.has(loc.id))
+      const driverSlots = selected.filter(loc => isDriverManagedLocation(loc))
+      const editable = selected.filter(loc => !isDriverManagedLocation(loc))
+      if (editable.length === 0) {
+        void dialogs.__fmAlert(t('locations.bulkTypeDriverOnly'))
+        return
+      }
+      bulkTypeTargetIds = editable.map(loc => loc.id)
       document.getElementById('bulk-type-text')!.textContent = t('locations.bulkChangeTypeText', { count: bulkTypeTargetIds.length })
-      const targetSet = new Set(bulkTypeTargetIds)
-      const selected = locations.filter(loc => targetSet.has(loc.id))
-      const driverSlots = selected.filter(loc => isDriverManagedLocation(loc)).length
       const hint = document.getElementById('bulk-type-hint')!
-      hint.textContent = driverSlots ? t('locations.bulkTypeDriverHint', { count: driverSlots }) : ''
-      hint.classList.toggle('hidden', driverSlots === 0)
-      const allowNone = driverSlots === 0
+      hint.textContent = driverSlots.length ? t('locations.bulkTypeDriverHint', { count: driverSlots.length }) : ''
+      hint.classList.toggle('hidden', driverSlots.length === 0)
       const known = knownTypes()
       const types = new Set(
-        selected.map(loc => resolveKnownType(known, loc.location_type) ?? loc.location_type?.trim() ?? null),
+        editable.map(loc => resolveKnownType(known, loc.location_type) ?? loc.location_type?.trim() ?? null),
       )
-      fillTypePicker('bulk', types.size === 1 ? [...types][0] : null, allowNone)
+      const sameType = types.size === 1
+      fillTypePicker('bulk', sameType ? [...types][0] : null, sameType)
       bulkTypeDialog.open()
     }, { signal: panelSignal })
 
