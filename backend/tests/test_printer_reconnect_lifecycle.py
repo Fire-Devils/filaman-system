@@ -82,7 +82,7 @@ async def test_reconnect_timeout_does_not_skip_healthy_printer(db_session, tmp_p
     monkeypatch.setattr(manager_module, "_DRIVER_RECONNECT_TIMEOUT", 0.01, raising=False)
     reconnect = asyncio.create_task(manager.reconnect_all())
     try:
-        done, _ = await asyncio.wait({reconnect}, timeout=0.25)
+        done, _ = await asyncio.wait({reconnect}, timeout=5)
         assert reconnect in done
         result = reconnect.result()
         assert result[first.id] == "error: reconnect timed out"

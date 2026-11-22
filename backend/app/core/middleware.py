@@ -35,8 +35,9 @@ def invalidate_auth_caches() -> None:
 def _should_write_last_used(cache_key: str) -> bool:
     """Return True if enough time has passed to justify a DB write."""
     now = time.monotonic()
-    last_write = _last_used_writes.get(cache_key, 0)
-    if now - last_write >= _LAST_USED_THROTTLE:
+    last_write = _last_used_writes.get(cache_key)
+    # monotonic() starts near zero after boot, so "never written" must not be 0.
+    if last_write is None or now - last_write >= _LAST_USED_THROTTLE:
         _last_used_writes[cache_key] = now
         return True
     return False
