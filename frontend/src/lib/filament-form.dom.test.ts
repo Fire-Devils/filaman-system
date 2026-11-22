@@ -106,6 +106,128 @@ afterEach(() => {
 })
 
 describe('shared filament form controller', () => {
+  it.each(['create', 'edit'] as const)('stages a single color in %s without saving it', async mode => {
+    const { controller, onSubmit } = await createLoadedController(mode)
+    controller.resetInitialData({ manufacturer_id: 7, designation: 'Original', material_type: 'PLA', colors: [{ color_id: 11, position: 1 }] })
+    controller.captureBaseline()
+    const draft = controller.readPluginDraft()
+    expect(await controller.stagePluginDraft([{ color_id: { old: 11, value: 12 } }], draft))
+      .toEqual({ staged: ['color_id'], skipped: [] })
+    expect(controller.collectPayload().colors).toEqual([{ color_id: 12, position: 1 }])
+    expect(controller.hasColorChanges(controller.collectPayload())).toBe(true)
+    expect(onSubmit).not.toHaveBeenCalled()
+    controller.destroy()
+  })
+
+  it('loads only missing plugin color and manufacturer records before staging a new filament', async () => {
+    const { controller, form } = await createLoadedController()
+    controller.applyInitialData({ manufacturer_id: 7, designation: 'Original', default_spool_weight_g: 333, colors: [{ color_id: 11, position: 1 }] })
+    const draft = controller.readPluginDraft()
+    const reads: string[] = []
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input)
+      reads.push(url)
+      if (url === '/api/v1/colors/99') return jsonResponse({ id: 99, name: 'Publisher preview', hex_code: '#243746' })
+      if (url === '/api/v1/manufacturers/88') return jsonResponse({ id: 88, name: 'New manufacturer', empty_spool_weight_g: 999 })
+      throw new Error(`Unnecessary request: ${url}`)
+    })
+    expect(await controller.stagePluginDraft([{
+      designation: { old: 'Original', value: 'Researched' },
+      manufacturer_id: { old: 7, value: 88 }, color_id: { old: 11, value: 99 },
+    }], draft)).toEqual({ staged: ['designation', 'manufacturer_id', 'color_id'], skipped: [] })
+    expect(reads.sort()).toEqual(['/api/v1/colors/99', '/api/v1/manufacturers/88'])
+    expect(controller.readPluginDraft()).toMatchObject({ manufacturer_id: 88, manufacturer_name: 'New manufacturer', color_id: 99, palette_color_name: 'Publisher preview' })
+    expect(controller.collectPayload().scalar.default_spool_weight_g).toBe(333)
+    expect(form.querySelector('#filament-editor-color-name')?.textContent).toContain('Publisher preview')
+    controller.destroy()
+  })
+
+  it.each(['multi', 'multiple swatches'])('rejects plugin color replacement for %s', async kind => {
+    const { controller } = await createLoadedController('edit')
+    controller.applyInitialData({ color_mode: kind === 'multi' ? 'multi' : 'single', colors: [{ color_id: 11 }, { color_id: 12 }] })
+    const colors = controller.collectPayload().colors
+    expect(await controller.stagePluginDraft([{ color_id: { old: controller.readPluginDraft().color_id, value: 13 } }], controller.readPluginDraft()))
+      .toEqual({ staged: [], skipped: ['color_id'] })
+    expect(controller.collectPayload().colors).toEqual(colors)
+    controller.destroy()
+  })
+
+  it.each([404, 'wrong id', 'invalid color'])('skips the entire unit when a plugin reference is %s', async failure => {
+    const { controller } = await createLoadedController()
+    controller.applyInitialData({ designation: 'Original' })
+    const draft = controller.readPluginDraft()
+    vi.stubGlobal('fetch', async () => failure === 404 ? jsonResponse({}, 404)
+      : jsonResponse({ id: failure === 'wrong id' ? 100 : 99, name: 'New', hex_code: failure === 'invalid color' ? 'bogus' : '#243746' }))
+    expect(await controller.stagePluginDraft([{ designation: { old: 'Original', value: 'Changed' }, color_id: { old: null, value: 99 } }], draft))
+      .toEqual({ staged: [], skipped: ['designation', 'color_id'] })
+    expect(controller.readPluginDraft()).toMatchObject({ designation: 'Original', color_id: null })
+    controller.destroy()
+  })
+
+  it.each(['change', 'reset', 'destroy', 'abort', 'context'] as const)('discards a pending plugin reference after %s', async action => {
+    const { controller, form } = await createLoadedController('edit')
+    const initial = { designation: 'Original', colors: [{ color_id: 11 }] }
+    controller.resetInitialData(initial)
+    const draft = controller.readPluginDraft()
+    let finish!: (value: Response) => void
+    vi.stubGlobal('fetch', () => new Promise<Response>(resolve => { finish = resolve }))
+    const abort = new AbortController()
+    let currentContext = true
+    const pending = controller.stagePluginDraft([{ color_id: { old: 11, value: 99 } }], draft, { signal: abort.signal, isCurrent: () => currentContext })
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    if (action === 'change') form.querySelector<HTMLInputElement>('#designation')!.value = 'Later draft'
+    if (action === 'reset') controller.resetInitialData(initial)
+    if (action === 'destroy') controller.destroy()
+    if (action === 'abort') abort.abort()
+    if (action === 'context') currentContext = false
+    finish(jsonResponse({ id: 99, name: 'New', hex_code: '#243746' }))
+    expect(await pending).toEqual({ staged: [], skipped: ['color_id'] })
+    expect(controller.collectPayload().colors).toEqual([{ color_id: 11, position: 1 }])
+    controller.destroy()
+  })
+
+  it('returns before the plugin timeout and rejects late reference reads that ignore abort', async () => {
+    const { controller } = await createLoadedController('edit')
+    controller.applyInitialData({ designation: 'Original', colors: [{ color_id: 11 }] })
+    let finish!: (value: Response) => void
+    vi.stubGlobal('fetch', () => new Promise<Response>(resolve => { finish = resolve }))
+    vi.useFakeTimers()
+    try {
+      let result: unknown
+      const pending = controller.stagePluginDraft([{
+        designation: { old: 'Original', value: 'Too late' }, color_id: { old: 11, value: 99 },
+      }], controller.readPluginDraft()).then(value => { result = value })
+      await vi.advanceTimersByTimeAsync(2600)
+      expect(result).toEqual({ staged: [], skipped: ['designation', 'color_id'] })
+      finish(jsonResponse({ id: 99, name: 'Late', hex_code: '#243746' }))
+      await pending
+      await vi.advanceTimersByTimeAsync(0)
+      expect(controller.readPluginDraft()).toMatchObject({ designation: 'Original', color_id: 11 })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      controller.destroy()
+      finish(jsonResponse({ id: 99, name: 'Late', hex_code: '#243746' }))
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the first completed plugin stage when two reference reads overlap', async () => {
+    const { controller } = await createLoadedController('edit')
+    controller.applyInitialData({ colors: [{ color_id: 11 }] })
+    const draft = controller.readPluginDraft()
+    const finishes = new Map<string, (value: Response) => void>()
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => new Promise<Response>(resolve => finishes.set(String(input), resolve)))
+    const first = controller.stagePluginDraft([{ color_id: { old: 11, value: 99 } }], draft)
+    const second = controller.stagePluginDraft([{ color_id: { old: 11, value: 100 } }], draft)
+    await vi.waitFor(() => expect(finishes.size).toBe(2))
+    finishes.get('/api/v1/colors/100')!(jsonResponse({ id: 100, name: 'Second', hex_code: '#243746' }))
+    expect(await second).toEqual({ staged: ['color_id'], skipped: [] })
+    finishes.get('/api/v1/colors/99')!(jsonResponse({ id: 99, name: 'First', hex_code: '#880088' }))
+    expect(await first).toEqual({ staged: [], skipped: ['color_id'] })
+    expect(controller.collectPayload().colors).toEqual([{ color_id: 100, position: 1 }])
+    controller.destroy()
+  })
+
   it('does not rewrite unchanged palette attributes', async () => {
     const { controller } = await createLoadedController()
     document.querySelector<HTMLButtonElement>('#filament-color-launcher')!.click()
