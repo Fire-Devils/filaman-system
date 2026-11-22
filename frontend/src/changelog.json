@@ -1,6 +1,32 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "Sicherheit: Eingeschränkte API-Keys können keine uneingeschränkten Keys mehr erzeugen, Superadmin-Konten lassen sich nur noch von uneingeschränkten Superadmins verwalten, und gesperrte Zugänge gelten sofort. Live-Aktualisierungen gibt es nur noch für angemeldete Nutzer und Geräte. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Live-Aktualisierungen erreichen jetzt alle geöffneten Browser zuverlässig, auch wenn die Änderung von einem anderen Server-Prozess kommt. Listen und Filterwerte bleiben dadurch aktuell. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Backups und Wiederherstellungen sind konsistenter: Sicherungen enthalten alle zuletzt gespeicherten Daten, eine abgebrochene Wiederherstellung kann die Datenbank nicht mehr halb überschreiben, und ein Inventar-Backup löst keine Komplett-Wiederherstellung mehr aus. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Spulen: Messungen ohne hinterlegtes Leergewicht werden zuverlässig gespeichert, und gleichzeitige Gewichtsbuchungen überschreiben sich nicht mehr gegenseitig. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Plugins: Ein Plugin mit nicht installierbaren Abhängigkeiten blockiert keine anderen Plugins mehr, eine fehlgeschlagene Installation stellt die vorherigen Versionen wieder her, und Dateien aus Plugin-Seiten lassen sich herunterladen, ohne dass Eingaben verloren gehen. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Display: Ein Füllstand von 0 % wird angezeigt, und aktive externe Spulenhalter sowie AMS-HT-Plätze werden korrekt hervorgehoben. Das Speichern von Druckereinstellungen schlägt bei langsamen Druckern nicht mehr fälschlich fehl. (Beigetragen von akira69)" },
+          { "type": "fix", "text": "Lagerorte: Druckerverwaltete AMS-Plätze haben fest den Typ AMS und lassen sich in der Liste ausblenden, und eigene Typen ohne den Buchstaben „S“ (z. B. „Regal“) lassen sich wieder speichern. (Beigetragen von wolfrage76)" },
+          { "type": "improved", "text": "Plugin-Katalog: Die FilaBrain-Vorschau ist auf 0.1.23 aktualisiert. (Beigetragen von akira69)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "Security: restricted API keys can no longer create unrestricted keys, superadmin accounts can only be managed by unrestricted superadmins, and revoked credentials take effect immediately. Live updates are now only available to signed-in users and devices. (Contributed by akira69)" },
+          { "type": "fix", "text": "Live updates now reliably reach every open browser, even when the change happens in another server process, so lists and filter values stay current. (Contributed by akira69)" },
+          { "type": "fix", "text": "Backups and restores are more consistent: backups include all recently saved data, an interrupted restore can no longer leave the database half overwritten, and an inventory backup no longer triggers a full restore. (Contributed by akira69)" },
+          { "type": "fix", "text": "Spools: measurements without a stored empty weight are saved reliably, and simultaneous weight bookings no longer overwrite each other. (Contributed by akira69)" },
+          { "type": "fix", "text": "Plugins: a plugin with uninstallable dependencies no longer blocks other plugins, a failed installation restores the previous versions, and files from plugin pages can be downloaded without losing your input. (Contributed by akira69)" },
+          { "type": "fix", "text": "Display: a fill level of 0 % is shown, and active external spool holders and AMS-HT bays are highlighted correctly. Saving printer settings no longer reports a false failure on slow printers. (Contributed by akira69)" },
+          { "type": "fix", "text": "Locations: printer-managed AMS slots always have the AMS type and can be hidden from the list, and custom types without the letter \"S\" (e.g. \"Rack\") can be saved again. (Contributed by wolfrage76)" },
+          { "type": "improved", "text": "Plugin catalog: the FilaBrain preview is updated to 0.1.23. (Contributed by akira69)" }
+        ]
+      }
+    },
+    {
       "version": "2.2.4",
       "date": "",
       "changes": {
