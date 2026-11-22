@@ -205,7 +205,52 @@ it('filters locations by type and bulk deletes only the shown selection', async 
   }
 })
 
-it('hides No type for driver-managed slots, resolves non-canonical casing, and rejects blank write-ins', async () => {
+it('hides driver-managed slots and drops them from the bulk selection', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'Storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', custom_fields: { managed_by: 'bambuddy_plugin' }, spool_count: 1 },
+  ] } as never)
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('#locations-table input[data-location-id]')).toHaveLength(2))
+    const hide = document.querySelector<HTMLInputElement>('#hide-driver-managed')!
+    expect(hide.checked).toBe(false)
+
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
+    expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(true)
+
+    change('hide-driver-managed', true)
+    const shown = [...document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')].map(cb => cb.dataset.locationId)
+    expect(shown).toEqual(['3'])
+    expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(false)
+    expect(localStorage.getItem('filaman-locations-hide-driver-managed')).toBe('1')
+
+    change('hide-driver-managed', false)
+    expect([...document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')].map(cb => cb.dataset.locationId)).toEqual(['3', '4'])
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
+})
+
+it('restores Hide Driver Managed from localStorage', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'Storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', custom_fields: { managed_by: 'bambuddy_plugin' }, spool_count: 1 },
+  ] } as never)
+  localStorage.setItem('filaman-locations-hide-driver-managed', '1')
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('#locations-table input[data-location-id]')).toHaveLength(1))
+    expect(document.querySelector<HTMLInputElement>('#hide-driver-managed')!.checked).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('#locations-table input[data-location-id]')!.dataset.locationId).toBe('3')
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
+})
+
+it('locks AMS on driver-managed slots, resolves non-canonical casing, and rejects blank write-ins', async () => {
   const fixture = dependencies.cachedFetchAllPages
   dependencies.cachedFetchAllPages = async () => ({ items: [
     { id: 3, name: 'Shelf', identifier: null, location_type: 'storage', spool_count: 0 },
@@ -239,29 +284,28 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     await vi.waitFor(() => expect(writes()).toHaveLength(1))
     expect(JSON.parse(String(writes()[0].init!.body))).toEqual({ name: 'Shelf', identifier: null, location_type: 'Dry Box' })
 
-    // Driver-managed slot hides "No type" in both single edit and bulk Change Type.
+    // Driver-managed slot locks type to AMS in Edit Location.
     document.querySelector<HTMLButtonElement>('.btn-edit[data-id="4"]')!.click()
-    const driverOptions = [...document.querySelectorAll<HTMLOptionElement>('#location-type option')].map(o => o.textContent)
-    expect(driverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
-    expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('AMS'))
+    const typeSelect = document.querySelector<HTMLSelectElement>('#location-type')!
+    expect([...typeSelect.options].map(o => o.textContent)).toEqual(['AMS'])
+    expect(typeSelect.value).toBe(locationTypes.encodeTypeOption('AMS'))
+    expect(typeSelect.disabled).toBe(true)
     expect(document.querySelector<HTMLInputElement>('#location-identifier')!.readOnly).toBe(true)
     expect(document.getElementById('location-identifier-hint')!.textContent).toContain('printer driver')
+    expect(document.getElementById('location-type-hint')!.textContent).toContain('cannot be changed')
     expect(document.getElementById('location-type-hint')!.classList.contains('hidden')).toBe(false)
     document.querySelector<HTMLButtonElement>('#modal-cancel')!.click()
 
-    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
-    document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
-    const bulkDriverOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
-    expect(bulkDriverOptions).toEqual(['AMS', 'Storage', 'Other (write in)…'])
-    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
-    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('must keep a type')
-    document.querySelector<HTMLButtonElement>('#bulk-type-modal [data-dialog-close]')!.click()
-
-    // Mixed selection (Storage + driver-managed AMS) requires an explicit choice instead of defaulting to AMS.
     const alert = vi.fn(async (_message: string) => true)
     const success = vi.fn(async () => true)
     vi.stubGlobal('__fmAlert', alert)
     vi.stubGlobal('__fmSuccess', success)
+
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
+    document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('AMS slots managed by a printer driver cannot change type.'))
+    expect(document.querySelector<HTMLDialogElement>('#bulk-type-modal')!.open).toBe(false)
+
     intercept = (path, init) => {
       if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
         return Response.json({ detail: [{ msg: 'List should have at most 1000 items' }] }, { status: 422 })
@@ -269,13 +313,8 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     }
     document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="3"]')!.click()
     document.querySelector<HTMLButtonElement>('#bulk-btn-type')!.click()
-    const mixedOptions = [...document.querySelectorAll<HTMLOptionElement>('#bulk-type option')].map(o => o.textContent)
-    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('must keep a type')
-    expect(mixedOptions).toEqual(['Choose a type…', 'AMS', 'Storage', 'Other (write in)…'])
-    expect(document.querySelector<HTMLSelectElement>('#bulk-type')!.value).toBe('')
-    expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(true)
-
-    change('bulk-type', locationTypes.encodeTypeOption('Storage'))
+    expect(document.getElementById('bulk-type-hint')!.textContent).toContain('keep type AMS')
+    expect(document.querySelector<HTMLSelectElement>('#bulk-type')!.value).toBe(locationTypes.encodeTypeOption('Storage'))
     expect(document.querySelector<HTMLButtonElement>('#bulk-type-submit')!.disabled).toBe(false)
     submit('bulk-type-form')
     await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('List should have at most 1000 items'))
@@ -283,11 +322,12 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
 
     intercept = (path, init) => {
       if (path === '/api/v1/locations/bulk' && init?.method === 'PATCH') {
-        return Response.json({ updated: [3, 4], deleted: [], skipped: [], not_found: [] })
+        return Response.json({ updated: [3], deleted: [], skipped: [4], not_found: [] })
       }
     }
     submit('bulk-type-form')
-    await vi.waitFor(() => expect(success).toHaveBeenCalledWith('Updated the type of 2 location(s).'))
+    await vi.waitFor(() => expect(success).toHaveBeenCalledWith('Updated the type of 1 location(s).'))
+    expect(JSON.parse(String(writes().at(-1)!.init!.body))).toEqual({ location_ids: [3], location_type: 'Storage' })
   } finally {
     dependencies.cachedFetchAllPages = fixture
   }
