@@ -36,18 +36,10 @@ MIGRATION_PATHS = {
 
 SEEDED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
-# Known-unenforced keys we deliberately keep, with the reason: the api-key
-# endpoints in me_api_keys.py are self-service on the caller's own keys, so they
-# guard by ownership (PrincipalDep) rather than by permission. Reading in general
-# is open to every authenticated principal — that rule is documented in
-# docs/permissions.md, and the read keys that nothing checked were removed in
-# migration d5f3b8c2a614. Shrink this set when those endpoints start checking;
-# never grow it without deciding that the new key is genuinely decorative.
-KNOWN_UNENFORCED = {
-    "user_api_keys:read_own",
-    "user_api_keys:create_own",
-    "user_api_keys:delete_own",
-}
+# User key-management scopes are now enforced for scoped credentials. Personal
+# key self-service remains ownership-based for user sessions and unrestricted keys;
+# see docs/permissions.md. Every seeded key participates in a permission or scope check.
+KNOWN_UNENFORCED: set[str] = set()
 
 REMOVED_BY_MIGRATION = {
     # a4d1c8b7e903

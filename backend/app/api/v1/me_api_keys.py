@@ -33,12 +33,26 @@ class ApiKeyListItem(BaseModel):
         from_attributes = True
 
 
+def _require_user_account(principal, permission: str):
+    if principal.user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "User account credentials required"},
+        )
+    if principal.scopes is not None and permission not in principal.scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "API key scope does not permit this operation"},
+        )
+
+
 @router.post("", response_model=ApiKeyCreatedResponse, status_code=status.HTTP_201_CREATED)
 async def create_api_key(
     data: CreateApiKeyRequest,
-    principal: PrincipalDep,
     db: DBSession,
+    principal: PrincipalDep,
 ):
+    _require_user_account(principal, "user_api_keys:create_own")
     secret = generate_token_secret()
     key_hash = hash_token(secret)
 
@@ -46,7 +60,7 @@ async def create_api_key(
         user_id=principal.user_id,
         name=data.name,
         key_hash=key_hash,
-        scopes=None,
+        scopes=principal.scopes,
     )
     db.add(api_key)
     await db.commit()
@@ -64,9 +78,10 @@ async def create_api_key(
 
 @router.get("", response_model=list[ApiKeyListItem])
 async def list_api_keys(
-    principal: PrincipalDep,
     db: DBSession,
+    principal: PrincipalDep,
 ):
+    _require_user_account(principal, "user_api_keys:read_own")
     result = await db.execute(select(UserApiKey).where(UserApiKey.user_id == principal.user_id))
     keys = result.scalars().all()
 
@@ -84,9 +99,10 @@ async def list_api_keys(
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_api_key(
     key_id: int,
-    principal: PrincipalDep,
     db: DBSession,
+    principal: PrincipalDep,
 ):
+    _require_user_account(principal, "user_api_keys:delete_own")
     result = await db.execute(
         select(UserApiKey).where(
             UserApiKey.user_id == principal.user_id,

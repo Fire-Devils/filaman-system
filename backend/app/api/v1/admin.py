@@ -2,13 +2,18 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, PrincipalDep, RequirePermission
+from app.api.deps import DBSession, RequirePermission
 from app.api.v1.schemas import PaginatedResponse
-from app.core.security import generate_token_secret, hash_password_async, hash_token, generate_device_code
-from app.models import Device, Permission, Role, User, UserRole, RolePermission
+from app.core.security import (
+    generate_device_code,
+    generate_token_secret,
+    hash_password_async,
+    hash_token,
+)
+from app.models import Device, Permission, Role, RolePermission, User, UserRole
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -110,6 +115,51 @@ class DeviceUpdate(BaseModel):
     auto_assign_enabled: bool | None = None
     auto_assign_timeout: int | None = None
 
+def _require_unrestricted_superadmin(principal):
+    if not principal.is_superadmin or principal.scopes is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "forbidden", "message": "Only unrestricted superadmins can manage superadmin accounts"},
+        )
+
+
+async def _guard_user_write(db, user_id, *, principal, removes_active_root=False):
+    active_roots = select(User.id).where(
+        User.is_superadmin.is_(True), User.is_active.is_(True), User.deleted_at.is_(None),
+    ).order_by(User.id).with_for_update()
+    if removes_active_root:
+        await db.execute(active_roots)
+    # A conditional write locks the target even on SQLite, closing promotion races through commit.
+    claim = update(User).where(User.id == user_id, User.deleted_at.is_(None))
+    if not principal.is_superadmin or principal.scopes is not None:
+        claim = claim.where(User.is_superadmin.is_(False))
+    result = await db.execute(claim.values(id=User.id, updated_at=User.updated_at))
+    if result.rowcount != 1:
+        existing = await db.scalar(select(User.id).where(User.id == user_id, User.deleted_at.is_(None)))
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "not_found", "message": "User not found"},
+            )
+        _require_unrestricted_superadmin(principal)
+    if removes_active_root and (await db.scalars(active_roots)).all() == [user_id]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "bad_request", "message": "Cannot remove the last active superadmin"},
+        )
+
+
+async def _write_user(db, user, values, principal):
+    removes_active_root = (
+        values.get("is_superadmin") is False or values.get("is_active") is False or values.get("deleted_at") is not None
+    )
+    await _guard_user_write(db, user.id, principal=principal, removes_active_root=removes_active_root)
+    if values:
+        await db.execute(update(User).where(User.id == user.id).values(**values))
+    await db.commit()
+    await db.refresh(user)
+
+
 @router.get("/users", response_model=PaginatedResponse[UserResponse])
 
 async def list_users(
@@ -137,6 +187,8 @@ async def create_user(
     db: DBSession,
     principal = RequirePermission("admin:users_manage"),
 ):
+    if data.is_superadmin:
+        _require_unrestricted_superadmin(principal)
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():
         raise HTTPException(
@@ -200,11 +252,9 @@ async def update_user(
             detail={"code": "not_found", "message": "User not found"},
         )
 
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(user, key, value)
-
-    await db.commit()
-    await db.refresh(user)
+    if user.is_superadmin or data.is_superadmin:
+        _require_unrestricted_superadmin(principal)
+    await _write_user(db, user, data.model_dump(exclude_unset=True), principal)
     return user
 
 
@@ -230,8 +280,11 @@ async def reset_user_password(
             detail={"code": "not_found", "message": "User not found"},
         )
 
-    user.password_hash = await hash_password_async(data.new_password)
-    await db.commit()
+    if user.is_superadmin:
+        _require_unrestricted_superadmin(principal)
+
+    password_hash = await hash_password_async(data.new_password)
+    await _write_user(db, user, {"password_hash": password_hash}, principal)
     return {"message": "Password reset successfully"}
 
 
@@ -258,34 +311,9 @@ async def delete_user(
             detail={"code": "bad_request", "message": "You cannot delete your own account"},
         )
 
-    # 3. Superuser safety checks
     if user.is_superadmin:
-        # Only a superuser can delete another superuser
-        if not principal.is_superadmin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "forbidden", "message": "Only superadmins can delete other superadmins"},
-            )
-        
-        # Check if this is the last superuser
-        # We count all ACTIVE superadmins
-        count_res = await db.execute(
-            select(func.count())
-            .select_from(User)
-            .where(User.is_superadmin.is_(True))
-            .where(User.deleted_at.is_(None))
-        )
-        superadmin_count = count_res.scalar() or 0
-        
-        if superadmin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "bad_request", "message": "Cannot delete the last superuser"},
-            )
-
-    # 4. Soft delete
-    user.deleted_at = datetime.now(timezone.utc)
-    await db.commit()
+        _require_unrestricted_superadmin(principal)
+    await _write_user(db, user, {"deleted_at": datetime.now(timezone.utc)}, principal)
 
 
 @router.put("/users/{user_id}/roles")
@@ -307,6 +335,10 @@ async def set_user_roles(
             detail={"code": "not_found", "message": "User not found"},
         )
 
+    if user.is_superadmin:
+        _require_unrestricted_superadmin(principal)
+
+    await _guard_user_write(db, user.id, principal=principal)
     await db.execute(UserRole.__table__.delete().where(UserRole.user_id == user_id))
 
     if role_keys:
