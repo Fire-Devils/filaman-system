@@ -225,6 +225,9 @@ it('hides No type for driver-managed slots, resolves non-canonical casing, and r
     expect(singleOptions).toEqual(['No type', 'AMS', 'Storage', 'Other (write in)…'])
     expect(document.querySelector<HTMLSelectElement>('#location-type')!.value).toBe(locationTypes.encodeTypeOption('Storage'))
 
+    expect(document.querySelector('#location-type-custom')!.getAttribute('pattern')).toBe('.*\\S.*')
+    expect(document.querySelector('#bulk-type-custom')!.getAttribute('pattern')).toBe('.*\\S.*')
+
     // Blank/whitespace write-in is rejected by form validity instead of saving null.
     change('location-type', locationTypes.TYPE_WRITE_IN)
     change('location-type-custom', '   ')
