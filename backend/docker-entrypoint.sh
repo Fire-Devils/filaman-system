@@ -25,7 +25,10 @@ echo "Checking for database migrations..."
 chmod +x /app/backup_db.sh
 
 # The backup script handles the configured SQLite path and skips new/external databases.
-/app/backup_db.sh
+# A failed startup backup must not block migrations and startup (set -e would crash-loop the container).
+if ! /app/backup_db.sh; then
+    echo "WARNING: startup backup failed, continuing without a fresh backup" >&2
+fi
 
 echo "Running migrations..."
 alembic upgrade head
