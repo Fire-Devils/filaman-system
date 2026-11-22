@@ -26,6 +26,7 @@ from app.api.v1.print_jobs import router_projects as print_projects_router
 from app.api.v1.print_jobs import router_spool_jobs as spool_print_jobs_router
 from app.api.v1.printer_params import router_filament_params, router_spool_params
 from app.api.v1.printers import router as printers_router
+from app.api.v1.slicer_link import router as slicer_link_router
 from app.api.v1.spool_link_suggestions import router as spool_link_suggestions_router
 from app.api.v1.spoolman import router as spoolman_router
 from app.api.v1.spools import (
@@ -70,6 +71,7 @@ api_router.include_router(printers_router)
 api_router.include_router(print_jobs_router)
 api_router.include_router(print_projects_router)
 api_router.include_router(spool_print_jobs_router)
+api_router.include_router(slicer_link_router)
 api_router.include_router(admin_router)
 api_router.include_router(devices_router)
 api_router.include_router(display_router)

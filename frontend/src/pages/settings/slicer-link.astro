@@ -1,0 +1,191 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import FormSection from '../../components/FormSection.astro'
+---
+
+<Layout title="FilaMan - Slicer-Link">
+  <div class="fm-settings-page fm-settings-profile">
+  <header class="fm-list-toolbar">
+    <div>
+      <a href="/settings" class="fm-admin-back">&larr; <span data-i18n="apiKeys.backToSettings">Back to Settings</span></a>
+      <h1 data-i18n="slicerLink.title">Slicer-Link</h1>
+    </div>
+  </header>
+
+  <div class="fm-settings-stack">
+    <p class="fm-field-hint" data-i18n="slicerLink.intro">A small script reports each sliced job to FilaMan. It appears as an open print job and is confirmed when the print is done.</p>
+
+    <FormSection titleKey="slicerLink.step1" title="1. Download the script">
+      <p class="fm-field-hint" data-i18n="slicerLink.step1Hint">Needs Python 3.8 or newer, nothing else. Save it somewhere permanent.</p>
+      <div>
+        <a id="download-script" class="fm-btn fm-btn-primary" href="/api/v1/slicer-link/script" download="filaman_slicer_link.py" data-i18n="slicerLink.download">Download script</a>
+        <span id="script-version" class="fm-field-hint"></span>
+      </div>
+    </FormSection>
+
+    <FormSection titleKey="slicerLink.step2" title="2. Create an API key">
+      <p class="fm-field-hint" data-i18n="slicerLink.step2Hint">The script signs in with an API key. Use your own key only for this script.</p>
+      <div><a href="/settings/api-keys" class="fm-btn fm-btn-secondary" data-i18n="slicerLink.openApiKeys">Open API keys</a></div>
+    </FormSection>
+
+    <FormSection titleKey="slicerLink.step3" title="3. Choose the printer and copy the command">
+      <div id="status-error" class="fm-alert-error hidden" role="alert"></div>
+      <div class="fm-compact-form">
+        <div>
+          <label for="sl-printer" class="fm-label" data-i18n="slicerLink.printer">Printer</label>
+          <select id="sl-printer" class="fm-select"></select>
+        </div>
+        <div>
+          <label for="sl-key" class="fm-label" data-i18n="slicerLink.keyOptional">API key (optional, stays in this browser)</label>
+          <input id="sl-key" type="text" class="fm-input" autocomplete="off" style="font-family: monospace;" />
+        </div>
+        <div>
+          <label for="sl-map" class="fm-label" data-i18n="slicerLink.map">Slot mapping (optional)</label>
+          <input id="sl-map" type="text" class="fm-input" placeholder="0=1,1=2" style="font-family: monospace;" />
+          <p class="fm-field-hint" data-i18n="slicerLink.mapHint">Default: tool T0 is the first active slot of the printer, T1 the second, and so on. To override, write tool=slot number, for example 0=1,1=2.</p>
+          <p id="sl-slots" class="fm-field-hint"></p>
+          <div id="sl-map-error" class="fm-alert-error hidden" role="alert" data-i18n="slicerLink.mapInvalid">Use the form 0=1,1=2.</div>
+        </div>
+        <div>
+          <label for="sl-command" class="fm-label" data-i18n="slicerLink.command">Command line</label>
+          <div style="display: flex; gap: 8px;">
+            <input id="sl-command" type="text" readonly class="fm-input" style="font-family: monospace;" />
+            <button type="button" id="sl-copy" class="fm-btn fm-btn-secondary" data-i18n="apiKeys.copyBtn">Copy</button>
+          </div>
+          <p class="fm-field-hint" data-i18n="slicerLink.commandHint">Replace PYTHON_PATH with the full path of your Python and SCRIPT_PATH with the path of the downloaded script. The slicer appends the G-code path itself.</p>
+          <div id="sl-copy-error" class="fm-alert-error hidden" role="alert"></div>
+        </div>
+        <div>
+          <label for="sl-test" class="fm-label" data-i18n="slicerLink.testLabel">Test the connection</label>
+          <input id="sl-test" type="text" readonly class="fm-input" style="font-family: monospace;" />
+          <p class="fm-field-hint" data-i18n="slicerLink.testHint">Run this once in a terminal. A successful test shows the printer as connected below.</p>
+        </div>
+      </div>
+
+      <h3 style="margin: 16px 0 8px;" data-i18n="slicerLink.howTo">Set it up in your slicer</h3>
+      <ul class="fm-field-hint" style="padding-left: 20px; margin: 0; display: grid; gap: 6px;">
+        <li data-i18n="slicerLink.howPrusa">PrusaSlicer / SuperSlicer: Print Settings, Output options, Post-processing scripts. Paste the command.</li>
+        <li data-i18n="slicerLink.howOrca">OrcaSlicer / BambuStudio: Process settings, Others, Post-processing scripts. Paste the command.</li>
+        <li data-i18n="slicerLink.howCura">Cura: no automatic hook yet. After exporting the G-code, run the command in a terminal and append the G-code path.</li>
+      </ul>
+    </FormSection>
+
+    <FormSection titleKey="slicerLink.statusTitle" title="Status">
+      <div id="status-loading" class="fm-field-hint" data-i18n="common.loading">Loading...</div>
+      <div id="status-printers" style="display: grid; gap: 6px;"></div>
+      <h3 style="margin: 16px 0 8px;" data-i18n="slicerLink.recentJobs">Recent jobs</h3>
+      <div id="status-jobs" style="display: grid; gap: 6px;"></div>
+    </FormSection>
+  </div>
+  </div>
+
+  <script>
+    import { t, initI18n } from '../../lib/i18n'
+    import { api } from '../../lib/api'
+    import { getAbortSignal, isAbortError } from '../../lib/abort'
+    import { copyText } from '../../lib/clipboard'
+    import { buildCommand, normalizeMap, type SlicerLinkStatus } from '../../lib/slicer-link'
+    await initI18n()
+
+    const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
+    const printerSelect = $<HTMLSelectElement>('sl-printer')
+    const keyInput = $<HTMLInputElement>('sl-key')
+    const mapInput = $<HTMLInputElement>('sl-map')
+    const commandInput = $<HTMLInputElement>('sl-command')
+    const testInput = $<HTMLInputElement>('sl-test')
+    let status: SlicerLinkStatus | null = null
+
+    function formatDate(iso: string | null): string {
+      return iso ? new Date(iso).toLocaleString() : ''
+    }
+
+    function selectedPrinterId(): number | null {
+      const value = Number(printerSelect.value)
+      return Number.isInteger(value) && value > 0 ? value : null
+    }
+
+    function refreshCommand() {
+      const printer = status?.printers.find((p) => p.printer_id === selectedPrinterId())
+      const mapText = mapInput.value.trim()
+      const mapValid = !mapText || normalizeMap(mapText) !== null
+      $('sl-map-error').classList.toggle('hidden', mapValid)
+      $('sl-slots').textContent = printer && printer.slots.length
+        ? t('slicerLink.slots') + ' ' + printer.slots.map((s) => `T${s.index} → ${s.slot_no}${s.name ? ` (${s.name})` : ''}`).join(', ')
+        : ''
+      const base = { url: window.location.origin, printerId: selectedPrinterId(), key: keyInput.value }
+      commandInput.value = buildCommand({ ...base, map: mapText })
+      testInput.value = buildCommand(base) + ' --test'
+    }
+
+    function row(text: string, href?: string): HTMLElement {
+      const el = document.createElement(href ? 'a' : 'div')
+      el.textContent = text
+      if (href) (el as HTMLAnchorElement).href = href
+      return el
+    }
+
+    function renderStatus(data: SlicerLinkStatus) {
+      $('script-version').textContent = ' ' + t('slicerLink.version').replace('{version}', data.latest_script_version)
+      printerSelect.innerHTML = ''
+      for (const printer of data.printers) {
+        const option = document.createElement('option')
+        option.value = String(printer.printer_id)
+        option.textContent = printer.printer_name
+        printerSelect.appendChild(option)
+      }
+
+      const printers = $('status-printers')
+      printers.innerHTML = ''
+      for (const printer of data.printers) {
+        let text: string
+        if (printer.last_contact_at) {
+          text = `${printer.printer_name}: ${t('slicerLink.connected')} (${formatDate(printer.last_contact_at)})`
+          if (printer.update_available) text += ` - ${t('slicerLink.updateAvailable').replace('{version}', data.latest_script_version)}`
+        } else {
+          text = `${printer.printer_name}: ${t('slicerLink.notConnected')}`
+        }
+        printers.appendChild(row(text))
+      }
+      if (!data.printers.length) printers.appendChild(row(t('slicerLink.noPrinters')))
+
+      const jobs = $('status-jobs')
+      jobs.innerHTML = ''
+      for (const job of data.recent_jobs) {
+        jobs.appendChild(row(`${job.name} · ${t('printJobs.status.' + job.status)} · ${formatDate(job.created_at)}`, `/print-jobs/${job.id}`))
+      }
+      if (!data.recent_jobs.length) jobs.appendChild(row(t('slicerLink.noJobs')))
+    }
+
+    async function load() {
+      try {
+        status = await api.get<SlicerLinkStatus>('/slicer-link/status', { signal: getAbortSignal() })
+        renderStatus(status)
+        $('status-error').classList.add('hidden')
+      } catch (error: any) {
+        if (isAbortError(error)) return
+        $('status-error').textContent = error?.message || t('slicerLink.loadError')
+        $('status-error').classList.remove('hidden')
+      } finally {
+        $('status-loading').classList.add('hidden')
+        refreshCommand()
+      }
+    }
+
+    printerSelect.addEventListener('change', refreshCommand)
+    keyInput.addEventListener('input', refreshCommand)
+    mapInput.addEventListener('input', refreshCommand)
+    $('sl-copy').addEventListener('click', async () => {
+      const error = $('sl-copy-error')
+      if (await copyText(commandInput.value)) {
+        error.classList.add('hidden')
+      } else {
+        error.textContent = t('apiKeys.copyFailed')
+        error.classList.remove('hidden')
+        commandInput.select()
+      }
+    })
+
+    refreshCommand()
+    void load()
+  </script>
+</Layout>
