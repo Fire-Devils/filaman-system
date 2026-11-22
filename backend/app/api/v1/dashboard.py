@@ -41,6 +41,16 @@ class LowStockSpool(BaseModel):
     low_weight_threshold_g: int
 
 
+class LowStockFilament(BaseModel):
+    filament_id: int
+    filament_designation: str
+    filament_type: str
+    manufacturer_name: str
+    total_remaining_g: float
+    low_stock_threshold_g: float
+    spool_count: int
+
+
 class EmptySpool(BaseModel):
     spool_id: int
     filament_designation: str
@@ -57,6 +67,7 @@ class DashboardStatsResponse(BaseModel):
     location_stats: list[LocationStat]
     manufacturers_with_spools: list[ManufacturerSpoolCount]
     low_stock_spools: list[LowStockSpool]
+    low_stock_filaments: list[LowStockFilament] = []
     empty_spools: list[EmptySpool]
     filament_types: list[FilamentTypeCount]
     spool_count_total: int | None = Field(None, exclude_if=lambda value: value is None)
@@ -232,6 +243,39 @@ async def get_dashboard_stats(
         .limit(limit)
     )
 
+    # Filamente unter ihrem Mindestbestand: Summe der Restgewichte aller Spulen
+    # (ohne archived/empty; "new" zaehlt mit, NULL zaehlt als 0).
+    counted_spools = (
+        select(
+            Spool.filament_id.label("filament_id"),
+            func.coalesce(func.sum(func.coalesce(Spool.remaining_weight_g, 0)), 0).label("total"),
+            func.count(Spool.id).label("spool_count"),
+        )
+        .join(SpoolStatus, Spool.status_id == SpoolStatus.id)
+        .where(SpoolStatus.key.notin_(("archived", "empty")))
+        .group_by(Spool.filament_id)
+        .subquery()
+    )
+    low_total = func.coalesce(counted_spools.c.total, 0)
+    low_stock_filaments_stmt = (
+        select(
+            Filament.id,
+            Filament.designation,
+            Filament.material_type,
+            Manufacturer.name,
+            low_total.label("total"),
+            Filament.low_stock_threshold_g,
+            func.coalesce(counted_spools.c.spool_count, 0).label("spool_count"),
+        )
+        .join(Manufacturer, Filament.manufacturer_id == Manufacturer.id)
+        .outerjoin(counted_spools, counted_spools.c.filament_id == Filament.id)
+        .where(Filament.low_stock_threshold_g.isnot(None))
+        .where(Filament.low_stock_threshold_g > 0)
+        .where(low_total < Filament.low_stock_threshold_g)
+        .order_by(low_total / Filament.low_stock_threshold_g, Filament.id)
+        .limit(limit)
+    )
+
     # Leere Spulen (remaining_weight_g <= 0)
     empty_stmt = (
         select(
@@ -293,6 +337,7 @@ async def get_dashboard_stats(
     fil_stats_res = await db.execute(filament_stats_stmt)
     mfg_res = await db.execute(non_empty_stmt)
     low_stock_res = await db.execute(low_stock_stmt)
+    low_stock_filaments_res = await db.execute(low_stock_filaments_stmt)
     empty_res = await db.execute(empty_stmt)
     types_res = await db.execute(types_stmt)
     location_stats = await get_dashboard_locations(db, principal)
@@ -337,6 +382,19 @@ async def get_dashboard_stats(
         for row in low_stock_res.all()
     ]
 
+    low_stock_filaments = [
+        LowStockFilament(
+            filament_id=row[0],
+            filament_designation=row[1],
+            filament_type=row[2],
+            manufacturer_name=row[3],
+            total_remaining_g=float(row[4]),
+            low_stock_threshold_g=float(row[5]),
+            spool_count=int(row[6]),
+        )
+        for row in low_stock_filaments_res.all()
+    ]
+
     empty_spools = [
         EmptySpool(
             spool_id=row[0],
@@ -367,6 +425,7 @@ async def get_dashboard_stats(
         location_stats=location_stats,
         manufacturers_with_spools=manufacturers_with_spools,
         low_stock_spools=low_stock_spools,
+        low_stock_filaments=low_stock_filaments,
         empty_spools=empty_spools,
         filament_types=filament_types,
         **totals,

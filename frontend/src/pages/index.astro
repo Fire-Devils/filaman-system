@@ -57,6 +57,9 @@ import FormDialog from '../components/FormDialog.astro'
       <FormSection widget="lowStockSpools" id="low-stock-title" titleKey="dashboard.lowStockSpools" title="Low-stock spools" class="dashboard-low-stock">
         <div id="low-stock-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
+      <FormSection widget="lowStockFilaments" id="low-stock-filaments-title" titleKey="dashboard.lowStockFilaments" title="Low stock filaments" class="dashboard-low-stock">
+        <div id="low-stock-filaments" class="dashboard-table dashboard-list" role="region" aria-labelledby="low-stock-filaments-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
+      </FormSection>
       <FormSection widget="manufacturersWithSpools" id="manufacturers-title" titleKey="nav.manufacturers" title="Manufacturers">
         <div id="manufacturers-with-spools" class="dashboard-table dashboard-list" role="region" aria-labelledby="manufacturers-title" tabindex="0"><p data-i18n="common.loading">Loading...</p></div>
       </FormSection>
@@ -177,6 +180,7 @@ import FormDialog from '../components/FormDialog.astro'
       location_stats: LocationStat[]
       filament_stats: { filament_type: string; spool_count: number; total_weight_g: number }[]
       manufacturers_with_spools: { id: number; name: string; spool_count: number }[]
+      low_stock_filaments?: { filament_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; total_remaining_g: number; low_stock_threshold_g: number; spool_count: number }[]
       low_stock_spools: { spool_id: number; filament_designation: string; filament_type: string; manufacturer_name: string; remaining_weight_g: number }[]
     }
     const dialogs = window as unknown as AppDialogs
@@ -628,6 +632,27 @@ import FormDialog from '../components/FormDialog.astro'
                 <td title="${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})">${escapeHtml(s.filament_designation)} (${escapeHtml(s.filament_type)})</td>
                 <td title="${escapeHtml(s.manufacturer_name)}">${escapeHtml(s.manufacturer_name)}</td>
                 <td style="text-align: right; font-family: monospace; color: var(--error-text);">${s.remaining_weight_g.toFixed(0)}g</td>
+              </tr>`
+            ).join('') +
+            `</tbody></table>`
+        }
+        const lowStockFilamentsContainer = document.getElementById('low-stock-filaments')!
+        const lowStockFilaments = dashboardData.low_stock_filaments ?? []
+        if (lowStockFilaments.length === 0) {
+          lowStockFilamentsContainer.innerHTML = `<p style="color: var(--accent);">${t('dashboard.lowStockFilamentsOk')}</p>`
+        } else {
+          lowStockFilamentsContainer.innerHTML = `<table class="fm-table">
+            <thead><tr>
+              <th>${t('dashboard.filament')}</th>
+              <th>${t('dashboard.manufacturer')}</th>
+              <th style="text-align: right;">${t('dashboard.remaining')}</th>
+            </tr></thead>
+            <tbody>` +
+            lowStockFilaments.map(f =>
+              `<tr>
+                <td title="${escapeHtml(f.filament_designation)} (${escapeHtml(f.filament_type)})"><a href="/filaments/${f.filament_id}">${escapeHtml(f.filament_designation)} (${escapeHtml(f.filament_type)})</a></td>
+                <td title="${escapeHtml(f.manufacturer_name)}">${escapeHtml(f.manufacturer_name)}</td>
+                <td style="text-align: right; font-family: monospace; color: var(--error-text);">${f.total_remaining_g.toFixed(0)} / ${f.low_stock_threshold_g.toFixed(0)}g</td>
               </tr>`
             ).join('') +
             `</tbody></table>`
