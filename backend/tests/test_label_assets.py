@@ -746,6 +746,7 @@ class TestLabelAssetBackups:
         payload = response.json()
         assert set(payload) == {"metadata", "data"}
         assert set(payload["metadata"]) == {
+            "kind",
             "export_date",
             "app_version",
             "schema_version",
@@ -1190,20 +1191,14 @@ class TestLabelAssetBackups:
 
         monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
         client, csrf_token = auth_client
-        legacy = json.dumps(
-            {
-                "metadata": {
-                    "export_date": "2026-09-22",
-                    "app_version": "test",
-                    "schema_version": None,
-                },
-                "data": {},
-            }
-        ).encode()
+        exported = await client.get("/api/v1/admin/system/backup/export")
+        legacy = exported.json()
+        legacy["metadata"].pop("kind")
+        del legacy["data"]["filament_printer_initializations"]
 
         response = await client.post(
             "/api/v1/admin/system/backup/import",
-            files={"file": ("backup.json", legacy, "application/json")},
+            files={"file": ("backup.json", json.dumps(legacy), "application/json")},
             headers={"X-CSRF-Token": csrf_token},
         )
 

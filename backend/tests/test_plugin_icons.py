@@ -171,9 +171,13 @@ async def test_pre_icon_backup_keeps_builtin_icons(auth_client, db_session, monk
     monkeypatch.setattr(system, "_get_backup_dir", lambda: tmp_path)
     old_records = [{key: value for key, value in plugin.items() if key != "icon"} for plugin in BUILTIN_PLUGINS]
     client, token = auth_client
+    exported = await client.get("/api/v1/admin/system/backup/export")
+    old_backup = exported.json()
+    old_backup["metadata"].pop("kind")
+    old_backup["data"]["installed_plugins"] = old_records
     response = await client.post(
         "/api/v1/admin/system/backup/import",
-        files={"file": ("old.json", json.dumps({"metadata": {}, "data": {"installed_plugins": old_records}}), "application/json")},
+        files={"file": ("old.json", json.dumps(old_backup), "application/json")},
         headers={"X-CSRF-Token": token},
     )
     assert response.status_code == 200, response.text
