@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
@@ -30,6 +30,7 @@ from app.models import (
     Spool,
 )
 from app.plugins.manager import plugin_manager
+from app.services.abrasive import slot_warnings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printers", tags=["printers"])
@@ -154,6 +155,8 @@ class PrinterCreate(BaseModel):
     location_id: int | None = None
     driver_key: str
     driver_config: dict | None = None
+    nozzle_diameter_mm: float | None = Field(None, gt=0)
+    nozzle_hardened: bool | None = None
 
 
 class PrinterUpdate(BaseModel):
@@ -162,6 +165,16 @@ class PrinterUpdate(BaseModel):
     is_active: bool | None = None
     driver_key: str | None = None
     driver_config: dict | None = None
+    nozzle_diameter_mm: float | None = Field(None, gt=0)
+    nozzle_hardened: bool | None = None
+
+
+def _slot_warnings(slot: PrinterSlot, printer: Printer | None) -> list[dict[str, Any]]:
+    assignment = slot.assignment
+    spool = assignment.spool if assignment else None
+    if printer is None or spool is None:
+        return []
+    return slot_warnings(spool.filament, printer)
 
 
 class SlotAssignmentResponse(BaseModel):
@@ -194,6 +207,7 @@ class SlotResponse(BaseModel):
     is_active: bool
     custom_fields: dict | None = None
     assignment: SlotAssignmentResponse | None = None
+    warnings: list[dict[str, Any]] = []
 
     class Config:
         from_attributes = True
@@ -206,6 +220,8 @@ class PrinterResponse(BaseModel):
     is_active: bool
     driver_key: str
     custom_fields: dict | None = None
+    nozzle_diameter_mm: float | None = None
+    nozzle_hardened: bool | None = None
 
     class Config:
         from_attributes = True
@@ -383,6 +399,7 @@ async def get_printer(
                 is_active=slot.is_active,
                 custom_fields=slot.custom_fields,
                 assignment=assignment_data,
+                warnings=_slot_warnings(slot, printer),
             )
         )
 
@@ -393,6 +410,8 @@ async def get_printer(
         is_active=printer.is_active,
         driver_key=printer.driver_key,
         custom_fields=printer.custom_fields,
+        nozzle_diameter_mm=printer.nozzle_diameter_mm,
+        nozzle_hardened=printer.nozzle_hardened,
         driver_config=printer.driver_config,
         slots=slot_responses,
     )
@@ -514,6 +533,9 @@ async def list_slots(
     db: DBSession,
     principal: PrincipalDep,
 ):
+    printer = (
+        await db.execute(select(Printer).where(Printer.id == printer_id))
+    ).scalar_one_or_none()
     result = await db.execute(
         select(PrinterSlot)
         .where(PrinterSlot.printer_id == printer_id)
@@ -593,6 +615,7 @@ async def list_slots(
                 is_active=slot.is_active,
                 custom_fields=slot.custom_fields,
                 assignment=assignment_data,
+                warnings=_slot_warnings(slot, printer),
             )
         )
 

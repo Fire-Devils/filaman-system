@@ -26,6 +26,8 @@ class Printer(Base, TimestampMixin):
         Integer, ForeignKey("locations.id"), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(default=True)
+    nozzle_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nozzle_hardened: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
 
     driver_key: Mapped[str] = mapped_column(String(100), nullable=False)

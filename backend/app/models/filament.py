@@ -78,6 +78,7 @@ class Filament(Base, TimestampMixin):
     material_subgroup: Mapped[str | None] = mapped_column(
         String(100), nullable=True, index=True
     )
+    is_abrasive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     diameter_mm: Mapped[float] = mapped_column(Float, nullable=False)
 
     manufacturer_color_name: Mapped[str | None] = mapped_column(

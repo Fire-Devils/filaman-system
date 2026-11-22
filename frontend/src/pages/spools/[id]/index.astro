@@ -193,7 +193,7 @@ const { id } = Astro.params
     import { getAbortSignal, isAbortError } from '../../../lib/abort'
     import { createDetailScrollIdentity } from '../../../lib/detail-scroll-identity'
     import { formatSpoolMetrics, renderSpoolReel, spoolRemainingWeight } from '../../../lib/spool-reel'
-    import { getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
+    import { renderAbrasiveBadge, getFilamentColors, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
     import { buildSpoolDetailSections, buildSpoolUpdatePayload, formatSpoolDate, renderSpoolFieldInput, type SpoolDetailRow } from '../../../lib/spool-detail'
     import { formatGrams, statusPillStyle, type PrintJob } from '../../../lib/print-jobs'
     import { formatPrice, formatRfidUid, getCurrency, initCurrency, initRfidDisplayFormat } from '../../../lib/format'
@@ -829,6 +829,7 @@ const { id } = Astro.params
             </div>
             <div class="filament-hero-body">
               ${renderFilamentHeaderColors(spool.filament || {}, t('filaments.soldAs'))}
+              ${renderAbrasiveBadge(spool.filament || {}, t, false)}
               <div class="spool-hero-facts"><span>${escapeExtraFieldHtml(getStatusLabel(spool.status_id))}</span><span aria-hidden="true">·</span><span>${escapeExtraFieldHtml(getLocationName(spool.location_id))}</span>${renderMoistureFact()}</div>
               <div class="spool-hero-summary">${renderRemainingSummary()}</div>
             </div>

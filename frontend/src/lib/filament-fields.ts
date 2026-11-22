@@ -37,6 +37,9 @@ export const filamentSections: FilamentSection[] = [
         ['solid', 'filaments.finishSolid'], ['matte', 'filaments.finishMatte'], ['silk', 'filaments.finishSilk'],
         ['translucent', 'filaments.finishTranslucent'], ['neon', 'filaments.finishNeon'], ['glow', 'filaments.finishGlow'],
       ] },
+      { key: 'is_abrasive', labelKey: 'filaments.abrasive', kind: 'select', options: [
+        ['true', 'filaments.abrasiveYes'], ['false', 'filaments.abrasiveNo'],
+      ] },
       { key: 'designation', labelKey: 'filaments.designation', kind: 'text', required: true, editOnly: true, placeholderKey: 'filaments.designationPlaceholder' },
       { key: 'density_g_cm3', labelKey: 'filaments.densityLabel', kind: 'number', unit: 'g/cm³', step: '0.01', placeholderKey: 'filaments.densityPlaceholder' },
       { key: 'is_discontinued', labelKey: 'filaments.discontinued', kind: 'checkbox', display: 'discontinued' },

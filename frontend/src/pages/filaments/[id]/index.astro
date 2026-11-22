@@ -76,7 +76,7 @@ export function getStaticPaths() {
     import { prepareExtraFieldUpdate, renderDetailExtraFieldRows } from '../../../lib/entity-extra-fields'
     import { createEntityExtraFieldsDialog, loadEntitySystemFields } from '../../../lib/entity-extra-fields-dialog'
     import { cachedFetchAllPages, fetchSequential, CACHE_KEYS, invalidateCachePrefix } from '../../../lib/cache'
-    import { buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
+    import { renderAbrasiveBadge, buildFilamentDetailSections, buildFilamentHeaderName, buildFilamentHeroStyle, formatHeaderId, renderFilamentHeaderColors, renderFilamentSpoolImage, renderFilamentDetailRow, safeExternalUrl } from '../../../lib/filament-detail'
     import { createFilamentFormController, type FilamentFormData } from '../../../lib/filament-form'
     import { mountFilamentPluginHooks } from '../../../lib/filament-plugin-hooks'
     import { createDetailEditSession } from '../../../lib/detail-edit'
@@ -396,6 +396,7 @@ export function getStaticPaths() {
               </div>
               <div class="filament-hero-body">
                 ${renderFilamentHeaderColors(f, t('filaments.soldAs'))}
+                ${renderAbrasiveBadge(f, t)}
                 <div class="detail-hero-stats">
                   <div class="detail-hero-stat"><span class="detail-stat-symbol" aria-hidden="true">⌀</span><div><span>${t('filaments.diameter')}</span><strong>${f.diameter_mm != null ? escapeExtraFieldHtml(`${f.diameter_mm} mm`) : '—'}</strong></div></div>
                   <div class="detail-hero-stat"><svg aria-hidden="true"><use href="/icons.svg?v=2#icon-balance"></use></svg><div><span>${t('filaments.rawMaterialWeightLabel')}</span><strong>${f.raw_material_weight_g != null ? escapeExtraFieldHtml(`${f.raw_material_weight_g} g`) : '—'}</strong></div></div>

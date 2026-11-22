@@ -99,6 +99,7 @@ describe('filament detail presentation', () => {
       { labelKey: 'filaments.diameter', value: '—' },
       { labelKey: 'filaments.materialSubgroup', value: '—' },
       { labelKey: 'filaments.finishType', value: '—' },
+      { labelKey: 'filaments.abrasive', value: '—' },
       { labelKey: 'filaments.densityLabel', value: '—' },
       { labelKey: 'filaments.discontinued', value: '—' },
     ])

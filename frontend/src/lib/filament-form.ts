@@ -433,6 +433,7 @@ export function createFilamentFormController(options: {
       diameter_mm: serialize(numberValue('diameter_mm')),
       material_subgroup: serialize(input('material_subgroup').value.trim()),
       finish_type: serialize(select('finish_type').value),
+      is_abrasive: serialize(select('is_abrasive').value),
       designation: serialize(input('designation').value),
       color_mode: serialize(getColorMode()),
       multi_color_style: serialize(select('multi_color_style').value),
@@ -1084,6 +1085,7 @@ export function createFilamentFormController(options: {
         && !value[0].startsWith('[')
       setField(key, Array.isArray(value) ? simpleCsv ? value.join(', ') : JSON.stringify(value) : value)
     }
+    if (hasValue('is_abrasive')) setField('is_abrasive', data.is_abrasive == null ? '' : String(data.is_abrasive))
     if (hasValue('is_discontinued')) input('is_discontinued').checked = !!data.is_discontinued
     if (hasValue('color_mode')) {
       colorModeRadios.forEach((radio) => { radio.checked = radio.value === (data.color_mode || 'single') })
@@ -1148,6 +1150,8 @@ export function createFilamentFormController(options: {
       const value = String(formData.get(key) || '').trim()
       if (mode === 'edit' || value) scalar[key] = value || null
     }
+    const abrasive = String(formData.get('is_abrasive') || '')
+    if (mode === 'edit' || abrasive) scalar.is_abrasive = abrasive === 'true' ? true : abrasive === 'false' ? false : null
     for (const key of optionalNumbers) {
       const value = String(formData.get(key) || '')
       if (mode === 'edit' || value) scalar[key] = value ? Number(value) : null
