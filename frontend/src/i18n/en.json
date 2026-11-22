@@ -21,7 +21,8 @@
     "toggleSidebar": "Toggle Sidebar",
     "plugins": "Plugins",
     "updateAvailable": "Update available",
-    "printJobs": "Print Jobs"
+    "printJobs": "Print Jobs",
+    "analytics": "Analytics"
   },
   "theme": {
     "colorMode": "Color mode",
@@ -1543,6 +1544,35 @@
     "noUsages": "No spools recorded",
     "deleteConfirm": "Delete print \"{name}\"?",
     "deleteBookedConfirm": "Delete print \"{name}\"? The booked consumption stays on the spools."
+  },
+  "analytics": {
+    "title": "Consumption and costs",
+    "range": "Period",
+    "range3m": "3 months",
+    "range6m": "6 months",
+    "range12m": "12 months",
+    "rangeYear": "This year",
+    "rangeAll": "All time",
+    "kpiConsumption": "Consumption",
+    "kpiCost": "Cost",
+    "kpiPrints": "Prints",
+    "kpiSuccess": "Success rate",
+    "kpiCostPerPrint": "Cost per print",
+    "costIncomplete": "Cost incomplete: {grams} g consumed without a price.",
+    "byMonth": "Consumption per month",
+    "byMaterial": "Consumption by material",
+    "byManufacturer": "Consumption by manufacturer",
+    "purchases": "Purchases per month",
+    "topProjects": "Top projects by cost",
+    "other": "Other",
+    "unknown": "Unknown",
+    "empty": "No data in the selected period.",
+    "emptySection": "No data.",
+    "loadFailed": "Could not load analytics.",
+    "prints": "{count} prints",
+    "jobsDetail": "{completed} successful, {failed} failed, {cancelled} discarded",
+    "printTime": "Print time",
+    "purchaseTotal": "Total purchased"
   },
   "spoolman": {
     "title": "Spoolman Import",

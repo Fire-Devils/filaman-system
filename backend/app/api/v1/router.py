@@ -7,6 +7,7 @@ from app.api.mcp_plugin_tools import load_plugin_read_tools
 from app.api.v1.admin import router as admin_router
 from app.api.v1.app_settings_admin import public_router as app_settings_public_router
 from app.api.v1.app_settings_admin import router as app_settings_admin_router
+from app.api.v1.analytics import router as analytics_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.devices import router as devices_router
 from app.api.v1.display import router as display_router
@@ -55,6 +56,7 @@ api_router.include_router(router)
 api_router.include_router(router_colors)
 api_router.include_router(router_filaments)
 api_router.include_router(dashboard_router)
+api_router.include_router(analytics_router)
 api_router.include_router(router_locations)
 api_router.include_router(router_spools)
 api_router.include_router(router_spool_measurements)

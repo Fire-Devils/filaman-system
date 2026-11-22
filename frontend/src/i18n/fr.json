@@ -21,7 +21,8 @@
     "toggleSidebar": "Afficher ou masquer le menu",
     "plugins": "Plugins",
     "updateAvailable": "Mise à jour disponible",
-    "printJobs": "Travaux d'impression"
+    "printJobs": "Travaux d'impression",
+    "analytics": "Analyse"
   },
   "theme": {
     "colorMode": "Mode de couleur",
@@ -1543,6 +1544,35 @@
     "noUsages": "Aucune bobine enregistrée",
     "deleteConfirm": "Supprimer l'impression \"{name}\" ?",
     "deleteBookedConfirm": "Supprimer l'impression \"{name}\" ? La consommation déjà déduite reste sur les bobines."
+  },
+  "analytics": {
+    "title": "Consommation et coûts",
+    "range": "Période",
+    "range3m": "3 mois",
+    "range6m": "6 mois",
+    "range12m": "12 mois",
+    "rangeYear": "Cette année",
+    "rangeAll": "Tout",
+    "kpiConsumption": "Consommation",
+    "kpiCost": "Coût",
+    "kpiPrints": "Impressions",
+    "kpiSuccess": "Taux de réussite",
+    "kpiCostPerPrint": "Coût par impression",
+    "costIncomplete": "Coûts incomplets : {grams} g consommés sans prix.",
+    "byMonth": "Consommation par mois",
+    "byMaterial": "Consommation par matériau",
+    "byManufacturer": "Consommation par fabricant",
+    "purchases": "Achats par mois",
+    "topProjects": "Meilleurs projets par coût",
+    "other": "Autres",
+    "unknown": "Inconnu",
+    "empty": "Aucune donnée sur la période choisie.",
+    "emptySection": "Aucune donnée.",
+    "loadFailed": "Impossible de charger l'analyse.",
+    "prints": "{count} impressions",
+    "jobsDetail": "{completed} réussies, {failed} échouées, {cancelled} abandonnées",
+    "printTime": "Durée d'impression",
+    "purchaseTotal": "Total acheté"
   },
   "spoolman": {
     "title": "Import Spoolman",

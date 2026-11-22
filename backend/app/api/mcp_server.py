@@ -333,6 +333,17 @@ TOOLS: tuple[Tool, ...] = (
     Tool("get_dashboard_stats", "Inventory totals: spool counts, total and remaining weight, value.",
          _schema(), _get("/dashboard/stats")),
     Tool(
+        "get_usage_analytics",
+        "Filament consumption and cost analytics for a period (default last 12 months): consumption by month, "
+        "material and manufacturer, purchases, print job statistics, top projects and totals. Costs exclude "
+        "consumption without a known price (see totals.cost_unknown_weight_g).",
+        _schema({
+            "from": {"type": "string", "description": "Start date YYYY-MM-DD"},
+            "to": {"type": "string", "description": "End date YYYY-MM-DD"},
+        }),
+        _get("/analytics/summary", "from", "to"),
+    ),
+    Tool(
         "list_spool_events",
         "List spool history events (measurements, consumption, moves, status changes), newest first.",
         _schema({"search": {"type": "string", "maxLength": 200}, **_PAGING}),
