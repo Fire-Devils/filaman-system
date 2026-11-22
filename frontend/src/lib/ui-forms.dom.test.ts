@@ -205,6 +205,51 @@ it('filters locations by type and bulk deletes only the shown selection', async 
   }
 })
 
+it('hides driver-managed slots and drops them from the bulk selection', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'Storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', custom_fields: { managed_by: 'bambuddy_plugin' }, spool_count: 1 },
+  ] } as never)
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('#locations-table input[data-location-id]')).toHaveLength(2))
+    const hide = document.querySelector<HTMLInputElement>('#hide-driver-managed')!
+    expect(hide.checked).toBe(false)
+
+    document.querySelector<HTMLInputElement>('#locations-table input[data-location-id="4"]')!.click()
+    expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(true)
+
+    change('hide-driver-managed', true)
+    const shown = [...document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')].map(cb => cb.dataset.locationId)
+    expect(shown).toEqual(['3'])
+    expect(document.getElementById('bulk-action-bar')!.classList.contains('visible')).toBe(false)
+    expect(localStorage.getItem('filaman-locations-hide-driver-managed')).toBe('1')
+
+    change('hide-driver-managed', false)
+    expect([...document.querySelectorAll<HTMLInputElement>('#locations-table input[data-location-id]')].map(cb => cb.dataset.locationId)).toEqual(['3', '4'])
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
+})
+
+it('restores Hide Driver Managed from localStorage', async () => {
+  const fixture = dependencies.cachedFetchAllPages
+  dependencies.cachedFetchAllPages = async () => ({ items: [
+    { id: 3, name: 'Shelf', identifier: null, location_type: 'Storage', spool_count: 0 },
+    { id: 4, name: 'AMS A1', identifier: null, location_type: 'AMS', custom_fields: { managed_by: 'bambuddy_plugin' }, spool_count: 1 },
+  ] } as never)
+  localStorage.setItem('filaman-locations-hide-driver-managed', '1')
+  try {
+    await boot('locations/index')
+    await vi.waitFor(() => expect(document.querySelectorAll('#locations-table input[data-location-id]')).toHaveLength(1))
+    expect(document.querySelector<HTMLInputElement>('#hide-driver-managed')!.checked).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('#locations-table input[data-location-id]')!.dataset.locationId).toBe('3')
+  } finally {
+    dependencies.cachedFetchAllPages = fixture
+  }
+})
+
 it('locks AMS on driver-managed slots, resolves non-canonical casing, and rejects blank write-ins', async () => {
   const fixture = dependencies.cachedFetchAllPages
   dependencies.cachedFetchAllPages = async () => ({ items: [

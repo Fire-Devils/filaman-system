@@ -852,6 +852,7 @@
     "identifierManaged": "Le pilote d'imprimante définit cet identifiant.",
     "type": "Type",
     "filterType": "Type",
+    "hideDriverManaged": "Masquer les gérés par pilote",
     "filterAll": "Tous les types",
     "typeNone": "Aucun type",
     "selectTypePlaceholder": "Choisir un type…",

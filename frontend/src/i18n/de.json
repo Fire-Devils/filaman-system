@@ -853,6 +853,7 @@
     "identifierManaged": "Diesen Kennzeichner setzt der Druckertreiber.",
     "type": "Typ",
     "filterType": "Typ",
+    "hideDriverManaged": "Treiberverwaltete ausblenden",
     "filterAll": "Alle Typen",
     "typeNone": "Kein Typ",
     "selectTypePlaceholder": "Typ auswählen…",

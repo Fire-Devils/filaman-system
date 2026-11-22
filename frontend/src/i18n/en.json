@@ -852,6 +852,7 @@
     "identifierManaged": "The printer driver sets this identifier.",
     "type": "Type",
     "filterType": "Type",
+    "hideDriverManaged": "Hide Driver Managed",
     "filterAll": "All types",
     "typeNone": "No type",
     "selectTypePlaceholder": "Choose a type…",
