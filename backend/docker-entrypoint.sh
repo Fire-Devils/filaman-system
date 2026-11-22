@@ -24,19 +24,22 @@ echo "Checking for database migrations..."
 # Ensure backup script is executable
 chmod +x /app/backup_db.sh
 
-# Only backup if the database file exists and has size > 0
-# Path adjusted to /app/data/filaman.db as requested
-if [ -f "/app/data/filaman.db" ] && [ -s "/app/data/filaman.db" ]; then
-    echo "Existing database found, creating backup..."
-    /app/backup_db.sh
-fi
+# The backup script handles the configured SQLite path and skips new/external databases.
+/app/backup_db.sh
 
 echo "Running migrations..."
 alembic upgrade head
 echo "Database migrations complete."
 
 # Cron already installed via Dockerfile
-echo "0 2 * * * /app/backup_db.sh >> /var/log/backup.log 2>&1" > /etc/cron.d/filaman-backup
+# Cron has its own environment; retain only the backup configuration, privately quoted by Bash.
+(umask 077
+  for name in DATABASE_URL DB_PATH BACKUP_DIR MAX_BACKUPS; do
+    declare -p "$name" 2>/dev/null || true
+  done > /run/filaman-backup.env
+)
+chmod 0600 /run/filaman-backup.env
+printf '%s\n' 'PATH=/usr/local/bin:/usr/bin:/bin' "0 2 * * * root /bin/bash -c 'set -a; source /run/filaman-backup.env; exec /app/backup_db.sh' >> /var/log/backup.log 2>&1" > /etc/cron.d/filaman-backup
 chmod 0644 /etc/cron.d/filaman-backup
 
 # Start cron

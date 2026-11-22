@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import re
-import shutil
+import sqlite3
 import tempfile
 import time
 from collections.abc import AsyncIterator, Mapping
@@ -25,6 +25,7 @@ from pydantic import BaseModel, StrictBool, ValidationError
 from sqlalchemy import DateTime, LargeBinary, delete, func, select, text
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import undefer
 from starlette.concurrency import run_in_threadpool
@@ -40,6 +41,7 @@ from app.api.v1.printers import (
     _is_primary_worker,
     _proxy_to_primary,
 )
+from app.core.async_tasks import finish_on_cancel
 from app.core.cache import response_cache
 from app.core.config import settings
 from app.core.file_lock import FileLockBusy
@@ -115,6 +117,13 @@ from app.services.label_asset_service import (
     validate_canonical_label_image,
 )
 from app.services.label_preset_v1 import convert_label_preset_data
+from app.services.sqlite_backup import (
+    copy_sqlite_database,
+    sqlite_database_path,
+    unique_backup_name,
+    validate_restore_source,
+    write_sqlite_snapshot,
+)
 from app.services.plugin_catalog import (
     CatalogRelease,
     CatalogSelection,
@@ -1419,7 +1428,7 @@ async def _write_backup_file(
             )
         else:
             stream.write(b'{"metadata":')
-            write_json(stream, metadata)
+            write_json(stream, {**metadata, "kind": kind})
             stream.write(b',"data":{')
         for table_index, (table_name, model) in enumerate(tables):
             if format == "json":
@@ -1501,6 +1510,40 @@ async def _backup_plugin_list(db: DBSession) -> list[BackupPluginInfo]:
     ]
 
 
+async def _write_backup_snapshot(
+    db: DBSession,
+    path: Path,
+    kind: Literal["complete", "inventory"],
+    format: Literal["json", "jsonl", "auto"],
+    *,
+    auto_backup: bool = False,
+) -> Path:
+    # Permission checks may already have opened a transaction in the request session.
+    engine = db.bind.engine if isinstance(db.bind, AsyncConnection) else db.bind
+    async with AsyncSession(engine) as snapshot:
+        if snapshot.get_bind().dialect.name == "sqlite":
+            # The SQLite driver's legacy transaction mode doesn't start a transaction for SELECT.
+            await snapshot.execute(text("BEGIN"))
+        else:
+            await snapshot.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+
+        plugins = None
+        if kind == "complete" and not auto_backup:
+            plugins = await _backup_plugin_list(snapshot) or None
+        metadata = BackupMetadata(
+            export_date=datetime.now(UTC).isoformat(),
+            app_version=_read_installed_version(),
+            schema_version=await _get_schema_version(snapshot),
+            plugins=plugins,
+        ).model_dump(exclude={"plugins"} if auto_backup else None)
+        if auto_backup:
+            metadata["auto_backup"] = True
+        tables = COMPLETE_BACKUP_TABLES if kind == "complete" else INVENTORY_BACKUP_TABLES
+        return await _write_backup_file(
+            snapshot, path, kind=kind, metadata=metadata, tables=tables, format=format
+        )
+
+
 @router.get("/backup/export")
 async def export_backup(
     db: DBSession,
@@ -1526,30 +1569,10 @@ async def export_backup(
 
     logger.info(f"Starting backup export by user {principal.user_id}")
 
-    # Get schema version
-    schema_version = await _get_schema_version(db)
-
-    # Get app version
-    app_version = _read_installed_version()
-
-    metadata = BackupMetadata(
-        export_date=datetime.now(UTC).isoformat(),
-        app_version=app_version,
-        schema_version=schema_version,
-        plugins=await _backup_plugin_list(db) or None,
-    )
-
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     path = _temporary_backup_path()
     try:
-        path = await _write_backup_file(
-            db,
-            path,
-            kind="complete",
-            metadata=metadata.model_dump(),
-            tables=COMPLETE_BACKUP_TABLES,
-            format=format,
-        )
+        path = await _write_backup_snapshot(db, path, "complete", format)
     except BaseException:
         path.unlink(missing_ok=True)
         raise
@@ -1582,26 +1605,10 @@ async def export_inventory_backup(
     """
     logger.info(f"Starting inventory backup export by user {principal.user_id}")
 
-    schema_version = await _get_schema_version(db)
-    app_version = _read_installed_version()
-
-    metadata = BackupMetadata(
-        export_date=datetime.now(UTC).isoformat(),
-        app_version=app_version,
-        schema_version=schema_version,
-    )
-
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     path = _temporary_backup_path()
     try:
-        path = await _write_backup_file(
-            db,
-            path,
-            kind="inventory",
-            metadata=metadata.model_dump(),
-            tables=INVENTORY_BACKUP_TABLES,
-            format=format,
-        )
+        path = await _write_backup_snapshot(db, path, "inventory", format)
     except BaseException:
         path.unlink(missing_ok=True)
         raise
@@ -1621,26 +1628,8 @@ async def _create_auto_backup(db: DBSession) -> Path:
     backup_dir = _get_backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    backup_path = backup_dir / f"auto_backup_before_import_{timestamp}.jsonl"
-    schema_version = await _get_schema_version(db)
-    app_version = _read_installed_version()
-
-    metadata = {
-        "export_date": datetime.now(UTC).isoformat(),
-        "app_version": app_version,
-        "schema_version": schema_version,
-        "auto_backup": True,
-    }
-
-    backup_path = await _write_backup_file(
-        db,
-        backup_path,
-        kind="complete",
-        metadata=metadata,
-        tables=COMPLETE_BACKUP_TABLES,
-        format="auto",
-    )
+    backup_path = backup_dir / unique_backup_name("auto_backup_before_import", "jsonl")
+    backup_path = await _write_backup_snapshot(db, backup_path, "complete", "auto", auto_backup=True)
 
     logger.info(f"Auto-backup created: {backup_path}")
     return backup_path
@@ -1985,6 +1974,11 @@ async def _prepare_backup_upload(
             stack.enter_context,
             read_legacy_backup(file.file, {name for name, _model in tables}),
         )
+        if expected_kind == "complete" and (
+            metadata.get("kind", "complete") != "complete"
+            or not {"users", "roles", "permissions", "spool_statuses"}.issubset(data)
+        ):
+            raise BackupStreamError("A full restore requires a complete database backup")
         yield backup_format, metadata, data
 
 
@@ -2066,11 +2060,7 @@ async def import_backup(
             auto_backup_path = await _create_auto_backup(db)
             logger.info(f"Auto-backup created at: {auto_backup_path}")
 
-            # Clean session identity map — the auto-backup loaded all objects
-            # via select(), and bulk-delete below bypasses the ORM.  Without
-            # expunge_all() the session may still track stale instances whose
-            # PKs collide with the rows we are about to re-insert, causing
-            # SQLAlchemy to skip INSERTs or emit UPDATEs instead.
+            # Drop ORM objects whose IDs the restore can replace.
             db.expunge_all()
 
             # For SQLite: defer FK constraint checks until COMMIT so that
@@ -2200,7 +2190,7 @@ async def import_inventory_backup(
             auto_backup_path = await _create_auto_backup(db)
             logger.info(f"Auto-backup created at: {auto_backup_path}")
 
-            # Clean session identity map — see import_backup for rationale
+            # Drop ORM objects whose IDs the restore can replace.
             db.expunge_all()
 
             # For SQLite: defer FK constraint checks until COMMIT
@@ -2259,19 +2249,12 @@ async def import_inventory_backup(
 
 def _get_backup_dir() -> Path:
     """Backup-Verzeichnis ermitteln (env BACKUP_DIR oder Standard)."""
-    return Path(os.environ.get("BACKUP_DIR", "/app/data/backups"))
+    return Path(os.environ.get("BACKUP_DIR") or "/app/data/backups")
 
 
 def _get_db_path() -> Path | None:
     """SQLite-Datenbankpfad aus DATABASE_URL extrahieren. None bei Nicht-SQLite."""
-    url = settings.database_url
-    if "sqlite" not in url:
-        return None
-    # sqlite+aiosqlite:///path/to/db oder sqlite:///path/to/db
-    parts = url.split("///", 1)
-    if len(parts) != 2:
-        return None
-    return Path(parts[1])
+    return sqlite_database_path(settings.database_url)
 
 
 class SqliteBackupEntry(BaseModel):
@@ -2347,7 +2330,7 @@ async def restore_sqlite_backup(
     """SQLite-Backup wiederherstellen.
 
     Erstellt zuerst ein Auto-Backup, schliesst dann alle DB-Verbindungen
-    und kopiert die Backup-Datei ueber die aktuelle Datenbank.
+    und stellt den Snapshot ueber die SQLite-Backup-API wieder her.
     """
     if not principal.is_superadmin:
         raise HTTPException(
@@ -2394,19 +2377,32 @@ async def restore_sqlite_backup(
     try:
         with plugin_restore_lock():
             backup_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-            auto_backup_name = f"auto_before_restore_{timestamp}.db"
+            try:
+                await asyncio.to_thread(validate_restore_source, backup_file)
+            except (ValueError, sqlite3.DatabaseError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"code": "invalid_backup", "message": "Select a valid FilaMan SQLite backup"},
+                ) from exc
+            auto_backup_name = unique_backup_name("auto_before_restore", "db")
             auto_backup_path = backup_dir / auto_backup_name
-            shutil.copy2(str(db_path), str(auto_backup_path))
-            logger.info("Auto-backup created before restore: %s", auto_backup_path)
 
-            from app.core.database import engine
+            async def restore() -> None:
+                await asyncio.to_thread(write_sqlite_snapshot, db_path, auto_backup_path)
+                logger.info("Auto-backup created before restore: %s", auto_backup_path)
 
-            await engine.dispose()
+                from app.core.database import engine
 
-            shutil.copy2(str(backup_file), str(db_path))
-            logger.info("SQLite database restored from: %s", backup_file)
+                await db.close()
+                await engine.dispose()
+                await asyncio.to_thread(copy_sqlite_database, backup_file, db_path)
+                response_cache.clear()
+                logger.info("SQLite database restored from: %s", backup_file)
 
+            await finish_on_cancel(restore())
+
+    except HTTPException:
+        raise
     except FileLockBusy as exc:
         raise _backup_restore_busy() from exc
     except Exception as exc:
@@ -2415,8 +2411,6 @@ async def restore_sqlite_backup(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "restore_failed", "message": f"Restore failed: {exc}"},
         )
-
-    response_cache.clear()
 
     return SqliteRestoreResponse(
         message=f"Database restored from '{body.filename}'. Please reload the application.",
