@@ -1225,6 +1225,8 @@ async def update_spool(
 
     # Capture pre-update tara/remaining for tara-change propagation
     tara_in_payload = "empty_spool_weight_g" in update_data
+    if tara_in_payload:
+        await SpoolService(db).lock_balance(spool)
     old_tara = spool.empty_spool_weight_g
     old_remaining = spool.remaining_weight_g
 
