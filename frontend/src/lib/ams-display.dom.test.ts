@@ -60,7 +60,7 @@ it('tells the truth about untracked bays, unknown colour, loaded vs printing and
     ams: [{
       ams_id: 0, kind: 'ams', model: 'ams_2_pro', label: 'AMS A',
       slots: [
-        { ams_id: 0, slot: 0, label: 'A1', color: '#EDFF00', material: 'PLA', spool_id: null, remaining_percent: 0, remaining_source: 'printer' },
+        { ams_id: 0, slot: 0, label: 'A1', color: '#EDFF00', material: 'PLA', spool_id: null, remaining_percent: null, remaining_source: null },
         { ams_id: 0, slot: 1, label: 'A2', color: '#1729AB', colors: ['#1729AB'], color_name: 'Klein Blue', material: 'PLA', spool_id: 123, remaining_percent: 90, remaining_grams: 900, remaining_source: 'filaman', active: true },
         { ams_id: 0, slot: 2, label: 'A3', color: '#202020', material: 'PETG', spool_id: null, remaining_percent: null },
         { ams_id: 0, slot: 3, label: 'A4', color: '#FF0000', color_name: 'Red', material: 'PETG', spool_id: 9, remaining_percent: 12, remaining_grams: 80 },
@@ -104,6 +104,38 @@ it('tells the truth about untracked bays, unknown colour, loaded vs printing and
   fail = false
   await poll()
   expect(document.getElementById('ams-stale')!.hidden).toBe(true)
+})
+
+it.each([
+  { spool_id: null, rfid: true },
+  { spool_id: 17, rfid: true },
+  { spool_id: null, rfid: false },
+])('shows a valid printer zero with spool=$spool_id and RFID=$rfid', async ({ spool_id, rfid }) => {
+  i18n.setLang('en')
+  const slot = {
+    ams_id: 0, slot: 0, label: 'A1', color: '#FFFFFF', material: 'PLA',
+    spool_id, rfid, remaining_percent: 0 as number | null, remaining_source: 'printer' as 'printer' | null,
+  }
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+    printers: [{ id: 1, name: 'Printer', ams: [{ ams_id: 0, kind: 'ams', label: 'AMS A', slots: [slot] }] }],
+  })))
+  let poll!: () => Promise<void>
+  await bootAstroPage('display', {
+    ...i18n, ...swatch, renderSpoolReel, initI18n: async () => {},
+    getAbortSignal: () => undefined, isAbortError: () => false,
+    setInterval: (callback: () => Promise<void>) => { poll = callback },
+  })
+  const bay = document.querySelector<HTMLElement>('.ams-bay')!
+  expect(bay.textContent).toContain('0% left')
+  expect(bay.querySelector('.ams-bar')?.getAttribute('data-level')).toBe('estimate')
+  bay.click()
+  expect(document.querySelector('#ams-detail .ams-pct')?.textContent).toContain('0%')
+  slot.remaining_percent = null
+  slot.remaining_source = null
+  await poll()
+  const updatedBay = document.querySelector<HTMLElement>('.ams-bay')!
+  expect(updatedBay.textContent).not.toContain('0% left')
+  expect(updatedBay.querySelector('.ams-bar')?.getAttribute('data-level')).toBe('unknown')
 })
 
 it('marks the board stale when a request hangs instead of failing', async () => {
@@ -184,6 +216,29 @@ it('points the strip, highlight and feed line at the printer-reported active slo
   await poll()
   expect(active()).toEqual(['9:0:2'])
   expect(document.querySelector<HTMLElement>('.ams-loaded-dot')?.dataset.bay).toBe('9:0:2')
+})
+
+it.each([
+  { slot: 0, key: '9:255:0', label: 'Ext1' },
+  { slot: 1, key: '9:255:1', label: 'Ext2' },
+])('highlights active external $label in the machine strip and bay', async ({ slot, key, label }) => {
+  i18n.setLang('en')
+  localStorage.setItem('filaman.amsView.showExternal', 'true')
+  const printer = {
+    id: 9, name: 'H2D', state: 'RUNNING', active: { ams_id: 255, slot },
+    ams: [{ ams_id: 255, kind: 'external', label: 'External', slots: [
+      { ams_id: 255, slot: 0, label: 'Ext1', color: '#FF0000', material: 'TPU', extruder: 'left', remaining_percent: null },
+      { ams_id: 255, slot: 1, label: 'Ext2', color: '#00FF00', material: 'PLA', extruder: 'right', remaining_percent: null },
+    ] }],
+  }
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ printers: [printer] })))
+  await bootAstroPage('display', {
+    ...i18n, ...swatch, renderSpoolReel, initI18n: async () => {},
+    getAbortSignal: () => undefined, isAbortError: () => false, setInterval: () => {},
+  })
+  expect([...document.querySelectorAll<HTMLElement>('.ams-bay[data-active="1"]')].map(bay => bay.dataset.key)).toEqual([key])
+  expect(document.querySelector<HTMLElement>('.ams-loaded-dot')?.dataset.bay).toBe(key)
+  expect(document.querySelector('.ams-loaded')?.textContent).toContain(label)
 })
 
 it('runs the feed line to the bay row that holds the loaded bay when a unit wraps to 2×2', async () => {

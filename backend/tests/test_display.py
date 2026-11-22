@@ -1422,29 +1422,110 @@ def _h2d_status(extruder_slots, active_extruder=1):
     }
 
 
-def test_each_loaded_slot_names_its_hotend():
+@pytest.mark.parametrize("active_extruder", [0, 1])
+def test_each_loaded_slot_names_its_hotend(active_extruder):
     """Both hotends hold filament; tray_now could only ever name one of them."""
     out = build_printer_display(_P(), {}, _h2d_status({
         "0": {"ams_id": 0, "slot_id": 2, "has_filament": True},
         "1": {"ams_id": 1, "slot_id": 0, "has_filament": True},
-    }))
+    }, active_extruder=active_extruder))
     ams_a, ams_b = out["ams"][0]["slots"], out["ams"][1]["slots"]
     assert ams_a[2]["extruder"] == "right"
     assert ams_b[0]["extruder"] == "left"
     assert [s["extruder"] for s in ams_a if s["slot"] != 2] == [None, None, None]
-    assert out["active"] == {"ams_id": 1, "slot": 0}
+    assert out["active"] == ({"ams_id": 0, "slot": 2} if active_extruder == 0 else {"ams_id": 1, "slot": 0})
 
 
-def test_external_spools_name_their_hotend():
+@pytest.mark.parametrize("active_extruder, active_slot", [(1, 0), (0, 1)])
+def test_external_spools_name_their_hotend(active_extruder, active_slot):
     """Both holders loaded: 254 feeds the left hotend, 255 the right one."""
     out = build_printer_display(_P(), {}, _h2d_status({
         "0": {"ams_id": 255, "slot_id": 0, "has_filament": True},
         "1": {"ams_id": 254, "slot_id": 0, "has_filament": True},
-    }) | {"vt_tray": [{"id": 254, "tray_type": "TPU", "tray_color": "FF0000FF"},
+    }, active_extruder=active_extruder) | {"vt_tray": [{"id": 254, "tray_type": "TPU", "tray_color": "FF0000FF"},
                       {"id": 255, "tray_type": "PLA", "tray_color": "00FF00FF"}]})
     external = next(u for u in out["ams"] if u["kind"] == "external")
     assert [(s["slot"], s["extruder"]) for s in external["slots"]] == [(0, "left"), (1, "right")]
     assert all(s["extruder"] is None for u in out["ams"] if u["kind"] == "ams" for s in u["slots"])
+    assert out["active"] == {"ams_id": 255, "slot": active_slot}
+    assert [s["slot"] for s in external["slots"] if s["active"]] == [active_slot]
+    assert slots_only(out)["active"] == out["active"]
+
+
+@pytest.mark.parametrize("sentinel", [254, 255])
+def test_scalar_external_sentinel_does_not_identify_an_active_holder(sentinel):
+    out = build_printer_display(_P(), {}, _h2d_status({}) | {"tray_now": sentinel})
+    assert out["active"] is None
+    assert not any(slot["active"] for unit in out["ams"] for slot in unit["slots"])
+
+
+@pytest.mark.parametrize("slot_id", [27, 255])
+def test_unresolved_external_pair_does_not_select_stale_scalar_tray(slot_id):
+    status = _h2d_status({"0": {"ams_id": 255, "slot_id": slot_id, "has_filament": True}}, active_extruder=0)
+    status["tray_now"] = 0
+    status["vt_tray"].append({"id": 255, "tray_type": "PLA", "tray_color": "00FF00FF"})
+    out = build_printer_display(_P(), {}, status)
+    assert normalize_driver_state(status)["active_tray"] is None
+    assert out["active"] is None
+    assert all(slot["extruder"] is None for unit in out["ams"] if unit["kind"] == "external" for slot in unit["slots"])
+
+
+def test_single_reported_external_holder_keeps_its_explicit_activity():
+    status = _h2d_status({"0": {"ams_id": 255, "slot_id": 0, "has_filament": True}}, active_extruder=0)
+    status["vt_tray"][0]["active"] = True
+    status["ams"]["ams"][0]["tray"][0]["active"] = True
+    out = build_printer_display(_P(), {}, status)
+    assert out["active"] == {"ams_id": 255, "slot": 0}
+    external = next(unit for unit in out["ams"] if unit["kind"] == "external")
+    assert external["slots"][0]["extruder"] is None
+
+
+@pytest.mark.parametrize("known_dual", [False, True])
+def test_external_mapping_does_not_guess_from_stale_opposite_holder(known_dual):
+    status = _h2d_status({"0": {"ams_id": 255, "slot_id": 0, "has_filament": True}}, active_extruder=0)
+    status["vt_tray"][0]["active"] = True
+    if known_dual:
+        status["extruder_slots"]["1"] = {"ams_id": 254, "slot_id": 0, "has_filament": False}
+    else:
+        status["vt_tray"].append({"id": 255, "tray_type": "", "tray_color": ""})
+    out = build_printer_display(_P(), {}, status)
+    assert out["active"] is None
+
+
+@pytest.mark.parametrize("evidence", ["inventory", "deputy", "second_nozzle", "second_nozzle_target", "other_external_unit"])
+def test_external_flag_fallback_does_not_override_known_dual_evidence(evidence):
+    status = _h2d_status({"0": {"ams_id": 255, "slot_id": 0, "has_filament": True}}, active_extruder=0)
+    status["vt_tray"][0]["active"] = True
+    inventory = {}
+    if evidence == "inventory":
+        inventory[(255, 1)] = {"spool_id": 42, "material": "TPU", "present": True}
+    elif evidence == "deputy":
+        status["extruder_slots"]["1"] = status["extruder_slots"].pop("0")
+        status["active_extruder"] = 1
+    elif evidence == "other_external_unit":
+        status["ams"]["ams"].append({"id": 5, "is_external": True, "tray": [{
+            "id": 0, "tray_type": "PLA", "active": True,
+        }]})
+        status["vt_tray"].append({"id": 255, "tray_type": "PLA"})
+    else:
+        key = "nozzle_2" if evidence == "second_nozzle" else "nozzle_2_target"
+        status["temperatures"] = {key: 231}
+    out = build_printer_display(_P(), inventory, status)
+    assert out["active"] == ({"ams_id": 255, "slot": 1} if inventory or evidence == "other_external_unit" else None)
+    external = next(unit for unit in out["ams"] if unit["kind"] == "external")
+    assert external["slots"][0]["extruder"] is None
+
+
+@pytest.mark.parametrize("ams_id, slot_id", [(130, 2), (131, 3), (134, 2), (135, 3), (130, 4)])
+def test_native_ht_local_tray_ids_select_its_only_bay(ams_id, slot_id):
+    status = _h2d_status({"1": {"ams_id": ams_id, "slot_id": slot_id, "has_filament": True}})
+    status["ams"]["ams"].append({"id": ams_id, "tray": [{
+        "id": slot_id, "tray_type": "PA", "tray_color": "333333FF",
+    }]})
+    out = build_printer_display(_P(), {}, status)
+    ht = next(unit for unit in out["ams"] if unit["ams_id"] == ams_id)
+    assert out["active"] == {"ams_id": ams_id, "slot": 0}
+    assert ht["slots"][0]["extruder"] == "left"
 
 
 def test_a_hotend_without_filament_marks_nothing():
@@ -1474,13 +1555,55 @@ def test_ams_ht_reported_as_tray_1_names_its_hotend():
     out = build_printer_display(_P(), {}, status)
     ht = next(u for u in out["ams"] if u["kind"] == "ams_ht")
     assert ht["slots"][0]["extruder"] == "right"
+    assert out["active"] == {"ams_id": 128, "slot": 0}
+    assert ht["slots"][0]["active"] is True
 
 
-def test_flagged_ams_ht_below_128_names_its_hotend():
-    status = _h2d_status({"1": {"ams_id": 5, "slot_id": 1, "has_filament": True}}, active_extruder=1)
+@pytest.mark.parametrize("tray_id", [0, 1])
+def test_flagged_ams_ht_below_128_names_its_hotend(tray_id):
+    status = _h2d_status({"1": {"ams_id": 5, "slot_id": tray_id, "has_filament": True}}, active_extruder=1)
     status["ams"]["ams"].append({"id": 5, "is_ams_ht": True,
-                                 "tray": [{"id": 1, "tray_type": "PA", "tray_color": "333333FF"}]})
+                                 "tray": [{"id": tray_id, "tray_type": "PA", "tray_color": "333333FF"}]})
     out = build_printer_display(_P(), {}, status)
     ht = next(u for u in out["ams"] if u["ams_id"] == 5)
     assert ht["kind"] == "ams_ht"
     assert ht["slots"][0]["extruder"] == "left"
+    assert out["active"] == {"ams_id": 5, "slot": 0}
+    assert ht["slots"][0]["active"] is True
+
+
+@pytest.mark.parametrize("holder", [254, 255])
+@pytest.mark.parametrize("scalar", [2, 130])
+def test_external_tray_transition_waits_for_consistent_source_reports(holder, scalar):
+    from copy import deepcopy
+
+    # Bambu 2.12.2 retains the extruder pair on an AMS-only push, and vice versa.
+    external = _h2d_status({"0": {"ams_id": holder, "slot_id": 0, "has_filament": True}}, active_extruder=0)
+    external["ams"]["tray_now"] = 255
+    external["vt_tray"] = [
+        {"id": 254, "tray_type": "ABS", "active": True},
+        {"id": 255, "tray_type": "TPU", "active": True},
+    ]
+    external["ams"]["ams"].append({"id": 130, "tray": [{"id": 0, "tray_type": "PA", "active": True}]})
+    external["ams"]["ams"][0]["tray"][2]["active"] = True
+    expected_external = {"ams_id": 255, "slot": 0 if holder == 254 else 1}
+    assert build_printer_display(_P(), {}, external)["active"] == expected_external
+
+    conflict = deepcopy(external)
+    conflict["ams"]["tray_now"] = scalar
+    selected = deepcopy(conflict)
+    selected["extruder_slots"]["0"] = {
+        "ams_id": 0 if scalar == 2 else 130, "slot_id": 2 if scalar == 2 else 0, "has_filament": True,
+    }
+    expected_selected = {"ams_id": 0 if scalar == 2 else 130, "slot": 2 if scalar == 2 else 0}
+    assert build_printer_display(_P(), {}, selected)["active"] == expected_selected
+
+    # Reverse transition: the extruder report arrives first, yielding the same ambiguous snapshot.
+    reverse = deepcopy(selected)
+    reverse["extruder_slots"] = deepcopy(external["extruder_slots"])
+    assert reverse == conflict
+    for pending in (conflict, reverse):
+        out = build_printer_display(_P(), {}, pending)
+        assert out["active"] is None
+        assert slots_only(out)["active"] is None
+        assert not any(slot["active"] for unit in out["ams"] for slot in unit["slots"])
