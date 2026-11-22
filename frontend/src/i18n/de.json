@@ -502,6 +502,7 @@
   },
   "spools": {
     "title": "Spulen",
+    "hideSealed": "Versiegelte ausblenden",
     "addSpool": "Spule hinzufügen",
     "addSpoolFromEmpty": "Aus leerer Spule",
     "selectEmptySpoolTitle": "Leere Spule auswählen",
@@ -2282,5 +2283,17 @@
     "nozzleRange": "Düsentemperatur",
     "pressureAdvance": "Pressure Advance K",
     "inactiveProfiles": "Plugin aktivieren, um ein Slicer-Profil auszuwählen."
+  },
+  "spoolLink": {
+    "detected": "Unbekannter RFID-Tag für {filament} in {where} erkannt",
+    "unknownPrinter": "einem Drucker",
+    "link": "Verknüpfen & aktivieren",
+    "create": "Neue Spule anlegen",
+    "spool": "Spule #{id}",
+    "created": "angelegt {date}",
+    "weight": "{weight} g",
+    "lot": "Charge {lot}",
+    "select": "Zu verknüpfende Spule",
+    "failed": "Der Vorschlag konnte nicht übernommen werden."
   }
 }

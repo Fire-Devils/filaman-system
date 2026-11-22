@@ -22,6 +22,7 @@ from app.api.v1.oidc_admin import public_router as oidc_public_router
 from app.api.v1.oidc_admin import router as oidc_admin_router
 from app.api.v1.printer_params import router_filament_params, router_spool_params
 from app.api.v1.printers import router as printers_router
+from app.api.v1.spool_link_suggestions import router as spool_link_suggestions_router
 from app.api.v1.spoolman import router as spoolman_router
 from app.api.v1.spools import (
     router_locations,
@@ -54,6 +55,7 @@ api_router.include_router(dashboard_router)
 api_router.include_router(router_locations)
 api_router.include_router(router_spools)
 api_router.include_router(router_spool_measurements)
+api_router.include_router(spool_link_suggestions_router)
 api_router.include_router(me_router)
 api_router.include_router(me_api_keys_router)
 api_router.include_router(label_presets_router)

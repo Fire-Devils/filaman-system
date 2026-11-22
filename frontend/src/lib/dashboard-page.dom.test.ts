@@ -43,6 +43,7 @@ async function boot(canArchive = false, poll = async () => Response.json([
     fetchAllPages, getAbortSignal: () => undefined,
     isAbortError: () => false,
     hasPermission,
+    mountSpoolLinkBanner: async () => ({ refresh: async () => {} }),
     bindFormDialog, escapeHtml, fetch,
     api: {
       get: async (path: string) => path === '/me'
