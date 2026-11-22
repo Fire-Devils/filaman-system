@@ -49,10 +49,10 @@
     "description": "Lets tools that speak the Spoolman API connect to FilaMan.",
     "publisher": "Fire-Devils",
     "repository_url": "https://github.com/Fire-Devils/filaman-spoolmanapi-plugin",
-    "version": "1.2.4",
+    "version": "1.2.10",
     "min_filaman_version": "2.0.3",
-    "zip_path": "spoolmanapi-1.2.4.zip",
-    "sha256": "327379062ddb14b5d764f1d7be4917cb162b9306c28a593c71e98f7e3fecb424"
+    "zip_path": "spoolmanapi-1.2.10.zip",
+    "sha256": "32db23789437d5791d80989df8c178622b9acfc7404a4bf140e3c7d5295babd5"
   },
   {
     "plugin_key": "filabrain",
