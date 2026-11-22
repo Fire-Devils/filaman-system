@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "UNRELEASED",
+      "date": "",
+      "changes": {
+        "de": [
+          { "type": "fix", "text": "AMS View: Bei Druckern mit nur einem externen Halter erscheint kein leerer zweiter Platz mehr durch einen veralteten Slot-Eintrag; der Halter heißt jetzt \"Ext\". (#254)" }
+        ],
+        "en": [
+          { "type": "fix", "text": "AMS View: printers with a single external holder no longer show an empty second bay caused by a stale slot entry; the holder is now labelled \"Ext\". (#254)" }
+        ]
+      }
+    },
+    {
       "version": "2.3.0",
       "date": "",
       "changes": {

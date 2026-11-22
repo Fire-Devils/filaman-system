@@ -904,3 +904,21 @@ async def test_failed_health_read_does_not_stop_a_started_driver(monkeypatch):
     assert manager.drivers[1] is driver
     assert manager.get_health()[1] == {"driver_key": "fixture", "status": "error"}
     driver.stop.assert_not_awaited()
+
+
+class TestLegacyExternalSlotRetirement:
+    @pytest.mark.asyncio
+    async def test_canonical_external_row_deactivates_legacy_rows(self, db_session, slots_env):
+        printer, _ = slots_env
+        for no, idx in ((1254, "255-254"), (1255, "255-255")):
+            db_session.add(PrinterSlot(
+                printer_id=printer.id, slot_no=no, name="Ext", is_active=True,
+                custom_fields={"slot_index": idx},
+            ))
+        await db_session.commit()
+
+        await PluginManager()._handle_event(printer.id, {
+            "event_type": "slots_update", "slots": [_tray("255-1", "Ext")],
+        })
+
+        assert await _active_indexes(db_session, printer.id) == {"255-1"}

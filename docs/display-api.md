@@ -140,7 +140,7 @@ Rules you can rely on:
 - `job.eta` is UTC (`YYYY-MM-DDTHH:MM:SS+00:00`). Format it in the viewer's timezone. `job.filament_grams` is the job's filament weight when the queue knows it, not a live scale reading. `job.elapsed_seconds` is set when that queue item recorded a start time.
 - `nozzle_2` / `nozzle_2_target` are null when the printer has one nozzle or is not reporting the second hotend.
 - `remaining_cost` uses the same currency as `currency` on the payload. It is the spool purchase price (or the filament price) times remaining filament over a full spool. `fields=slots` omits it.
-- A regular AMS always lists slots 0–3, even when empty. An AMS-HT lists slot 0; the external holder lists as many trays as the printer reports (labels `Ext1`, `Ext2`, …).
+- A regular AMS always lists slots 0–3, even when empty. An AMS-HT lists slot 0; the external holder lists as many trays as the printer reports (labels `Ext1`, `Ext2`, …; a single holder is labelled `Ext`).
 - `spool_id` is set only when FilaMan has a spool assigned to that slot; a slot
   can still be non-empty (the printer sees filament) with `spool_id: null`.
 - Adding fields never bumps `schema_version`; changing a field's meaning does.

@@ -309,6 +309,36 @@ def test_legacy_external_keys_collapse_to_two_bays():
     assert ext[0]["slots"][1]["empty"] is True
 
 
+def test_single_external_bay_is_labelled_ext():
+    out = build_printer_display(_P(name="X1C"), {(255, 1): {"present": False}}, None)
+    ext = [u for u in out["ams"] if u["kind"] == "external"]
+    assert [s["label"] for s in ext[0]["slots"]] == ["Ext"]
+
+
+async def _x1c_slots(db_session, canonical=True):
+    printer = await _create_printer(db_session, name="X1C", driver_key="bambuddy")
+    if canonical:
+        await _create_slot(db_session, printer.id, slot_no=1001, name="Ext", custom_fields={"slot_index": "255-1"})
+    await _create_slot(db_session, printer.id, slot_no=1254, name="Ext", custom_fields={"slot_index": "255-254"})
+    return printer
+
+
+@pytest.mark.asyncio
+async def test_load_slot_spools_ignores_legacy_external_when_canonical_exists(db_session):
+    from app.services.display_service import load_slot_spools
+
+    printer = await _x1c_slots(db_session)
+    assert set(await load_slot_spools(db_session, printer.id)) == {(255, 1)}
+
+
+@pytest.mark.asyncio
+async def test_load_slot_spools_keeps_legacy_external_without_canonical(db_session):
+    from app.services.display_service import load_slot_spools
+
+    printer = await _x1c_slots(db_session, canonical=False)
+    assert set(await load_slot_spools(db_session, printer.id)) == {(255, 0)}
+
+
 def test_normalize_preserves_trayless_units():
     """A thin status update must not make an already-known AMS disappear."""
     live = normalize_driver_state(
@@ -720,7 +750,7 @@ def test_build_merges_live_and_filaman_and_marks_backup():
     assert out["connected"] is True and out["job"]["progress"] == 42
     assert [u["label"] for u in out["ams"]] == ["AMS A", "HT1", "External"]
     ext = out["ams"][2]
-    assert ext["kind"] == "external" and [s["label"] for s in ext["slots"]] == ["Ext1"] and ext["slots"][0]["empty"]
+    assert ext["kind"] == "external" and [s["label"] for s in ext["slots"]] == ["Ext"] and ext["slots"][0]["empty"]
     a = out["ams"][0]["slots"]
     # slot 0: printer sees PETG, FilaMan has no spool -> non-empty, printer remaining
     assert a[0]["empty"] is False and a[0]["spool_id"] is None
