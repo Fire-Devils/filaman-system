@@ -234,6 +234,14 @@ async def get_analytics_summary(
                         & (Spool.stocked_in_at >= lo)
                         & (Spool.stocked_in_at < hi)
                     )
+                    | (
+                        # No purchase or stock-in date: fall back to when the
+                        # spool was added to FilaMan.
+                        Spool.purchase_date.is_(None)
+                        & Spool.stocked_in_at.is_(None)
+                        & (Spool.created_at >= lo)
+                        & (Spool.created_at < hi)
+                    )
                 )
                 .options(joinedload(Spool.filament))
             )
@@ -246,7 +254,7 @@ async def get_analytics_summary(
     purchase_material: dict[str, float] = defaultdict(float)
     purchase_total = 0.0
     for spool in spools:
-        when = _aware(spool.purchase_date or spool.stocked_in_at)
+        when = _aware(spool.purchase_date or spool.stocked_in_at or spool.created_at)
         material = (spool.filament.material_type if spool.filament else None) or "unknown"
         price = spool.purchase_price or 0.0
         purchase_month[_month_key(when)][material] += price

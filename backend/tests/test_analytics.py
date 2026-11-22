@@ -242,6 +242,15 @@ async def test_purchases_by_purchase_date_or_stocked_in(auth_client, db_session)
 
 
 @pytest.mark.asyncio
+async def test_purchases_fall_back_to_created_at(auth_client, db_session):
+    client, _ = auth_client
+    await _spool(db_session, purchase_price=12.5, material="PLA")
+    await db_session.commit()
+    data = (await client.get(URL)).json()
+    assert data["purchases"]["total"] == 12.5
+
+
+@pytest.mark.asyncio
 async def test_print_jobs_and_top_projects(auth_client, db_session):
     client, _ = auth_client
     spool = await _spool(db_session, filament_price=30.0)

@@ -233,6 +233,10 @@ export function buildFilamentDetailSections(
         const labelKey = field.options.find(([option]) => option === raw)?.[1]
         value = labelKey ? display.translate(labelKey) : raw
       }
+      if (field.key === 'is_abrasive' && raw === '' && display.translate && typeof filament.abrasive === 'boolean') {
+        // Auto-detected: say so and show the detected result.
+        value = `${display.translate('filaments.abrasiveAuto')} (${display.translate(filament.abrasive ? 'common.yes' : 'common.no')})`
+      }
       const suffix = field.unit ? `${field.unit === '%' ? '' : ' '}${field.unit}` : ''
       return row(field.labelKey, value, suffix, field.link ? raw as string | null : undefined)
     }),

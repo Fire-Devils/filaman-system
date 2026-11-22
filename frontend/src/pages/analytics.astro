@@ -57,7 +57,7 @@ import Layout from '../layouts/Layout.astro'
     </div>
   </div>
 
-  <style>
+  <style is:global>
     .an-page { display: flex; flex-direction: column; gap: 16px; }
     .an-note { padding: 10px 14px; border-radius: 8px; background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text); }
     .an-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
