@@ -1,4 +1,5 @@
 import { getAbortSignal, isAbortError } from './abort'
+import { api } from './api'
 import { changedNativeFields, setFormFieldValue } from './detail-edit'
 import { CACHE_KEYS, cachedFetchAllPages, invalidateCachePrefix } from './cache'
 import { normalizeHexCode, toColorSwatchBackground } from './colors'
@@ -58,6 +59,8 @@ const DEFAULT_DENSITIES: Record<string, number> = {
   HIPS: 1.04,
   PVA: 1.22,
 }
+
+export type PluginDraftStageOptions = { signal?: AbortSignal; isCurrent?: () => boolean }
 
 type FormMode = 'create' | 'edit'
 type Color = { id: number; name: string; hex_code: string }
@@ -1196,26 +1199,66 @@ export function createFilamentFormController(options: {
     }
   }
 
-  function stagePluginDraft(units: unknown, draft: Record<string, unknown>) {
+  async function stagePluginDraft(units: unknown, draft: Record<string, unknown>, options: PluginDraftStageOptions = {}) {
     const staged: string[] = []
     const skipped: string[] = []
     if (!Array.isArray(units) || units.length > 50) return { staged, skipped }
+    // Leave time for the plugin's 3.5-second message timeout and reply delivery.
+    const deadline = performance.now() + 2500
     const current = readPluginDraft()
-    const sameDraft = serialize(draft) === serialize(current) && !submitting && !destroyed
+    const request = catalogRequest
+    const snapshot = serialize(readSnapshot())
+    const deadlineController = new AbortController()
+    const signal = AbortSignal.any([getAbortSignal(), deadlineController.signal, ...(options.signal ? [options.signal] : [])])
+    const isCurrent = () => performance.now() < deadline && !submitting && !destroyed && !signal.aborted && request === catalogRequest
+      && options.isCurrent?.() !== false && serialize(draft) === serialize(readPluginDraft())
+      && snapshot === serialize(readSnapshot())
+    const references = new Map<string, Color | Manufacturer>([
+      ...allColors.map(item => [`/colors/${item.id}`, item] as const),
+      ...allManufacturers.map(item => [`/manufacturers/${item.id}`, item] as const),
+    ])
+    async function loadReference(key: string, id: number): Promise<boolean> {
+      if (!isCurrent()) return false
+      const path = `/${key === 'color_id' ? 'colors' : 'manufacturers'}/${id}`
+      if (references.has(path)) return true
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        const item = await Promise.race([
+          api.get<unknown>(path, { signal }),
+          new Promise<undefined>(resolve => {
+            timer = setTimeout(() => {
+              deadlineController.abort()
+              resolve(undefined)
+            }, Math.max(0, deadline - performance.now()))
+          }),
+        ])
+        if (!isRecord(item) || item.id !== id || typeof item.name !== 'string' || !item.name.trim()
+          || (key === 'color_id' && (typeof item.hex_code !== 'string' || !normalizeHexCode(item.hex_code)))) return false
+        references.set(path, item as Color | Manufacturer)
+        return true
+      } catch { return false }
+      finally { clearTimeout(timer) }
+    }
     const values: FilamentFormData = {}
     for (const unit of units) {
       if (!isRecord(unit)) continue
       const changes = Object.entries(unit)
       if (!changes.length || changes.length > pluginFields.size + 2) continue
-      const valid = sameDraft && changes.every(([key, change]) => {
+      let valid = isCurrent() && changes.every(([key, change]) => {
         if (!Object.hasOwn(current, key) || Object.hasOwn(values, key) || !isRecord(change)
           || !Object.hasOwn(change, 'old') || !Object.hasOwn(change, 'value')
           || !matchesDraftValue(current[key], change.old)) return false
-        if (key === 'manufacturer_id') return mode === 'create' && allManufacturers.some(item => item.id === change.value)
-        if (key === 'color_id') return mode === 'create' && getColorMode() === 'single'
-          && allColors.some(item => item.id === change.value)
+        if (key === 'manufacturer_id' || key === 'color_id') {
+          if (typeof change.value !== 'number' || !Number.isSafeInteger(change.value) || change.value <= 0 || change.value > 2_147_483_647) return false
+          return key === 'manufacturer_id' ? mode === 'create' : getColorMode() === 'single' && selectedColorIds.length <= 1
+        }
         return isPluginFieldValue(key, change.value, form)
       })
+      if (valid) {
+        for (const [key, change] of changes) {
+          if ((key === 'manufacturer_id' || key === 'color_id') && !await loadReference(key, (change as { value: number }).value)) valid = false
+        }
+      }
       if (!valid) {
         skipped.push(...changes.map(([key]) => key))
         continue
@@ -1226,6 +1269,7 @@ export function createFilamentFormController(options: {
       }
     }
     if (!staged.length) return { staged, skipped }
+    if (!isCurrent()) return { staged: [], skipped: [...skipped, ...staged] }
 
     // Use the raw baseline for an explicitly selected formatting-only change.
     for (const key of rawPluginTextFields) {
@@ -1235,7 +1279,10 @@ export function createFilamentFormController(options: {
         payloadBaseline.scalar[key] = raw
       }
     }
-    if (Object.hasOwn(values, 'color_id')) values.colors = [{ color_id: values.color_id as number, position: 1 }]
+    if (Object.hasOwn(values, 'manufacturer_id')) values.manufacturer = references.get(`/manufacturers/${values.manufacturer_id}`) as Manufacturer
+    if (Object.hasOwn(values, 'color_id')) values.colors = [{
+      color_id: values.color_id as number, position: 1, color: references.get(`/colors/${values.color_id}`) as Color,
+    }]
     preserveDraftSpoolFields = true
     try {
       applyInitialData(values, 'plugin')

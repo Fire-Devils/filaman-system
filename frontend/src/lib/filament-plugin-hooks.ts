@@ -1,4 +1,5 @@
 import { api } from './api'
+import type { PluginDraftStageOptions } from './filament-form'
 import { getAbortSignal, isAbortError } from './abort'
 import { createPluginIcon } from './plugin-icon'
 import { isValidPluginSlug, PLUGIN_PAGE_PREFIX } from './plugin-nav'
@@ -6,7 +7,7 @@ import { syncPluginTheme } from './plugin-theme'
 
 type FilamentPluginForm = {
   readPluginDraft(): Record<string, unknown>
-  stagePluginDraft(units: unknown, draft: Record<string, unknown>): { staged: string[]; skipped: string[] }
+  stagePluginDraft(units: unknown, draft: Record<string, unknown>, options?: PluginDraftStageOptions): { staged: string[]; skipped: string[] } | Promise<{ staged: string[]; skipped: string[] }>
 }
 
 export type SelectedFilament = {
@@ -41,6 +42,7 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?:
   let selection: number[] = []
   let expectedSelection: SelectedFilament[] | undefined
   let draft: Record<string, unknown> | undefined
+  let recordToken: string | undefined
   let editEntry = 0
   let discovery = 0
   let discovering = false
@@ -87,10 +89,12 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?:
     close()
   }
 
-  window.addEventListener('message', event => {
+  window.addEventListener('message', async event => {
     const sender = frame?.contentWindow
     if (!dialog.open || !sender || event.source !== sender || event.origin !== origin) return
+    let senderDocument: Document
     try {
+      senderDocument = sender.document
       if (sender.location.pathname !== path) return
     } catch {
       // The frame has left the installed plugin page.
@@ -102,11 +106,21 @@ export function mountFilamentPluginHooks(host: HTMLElement, hook: Hook, signal?:
     if (type === 'filaman:filament-context') {
       const context = hook.mode === 'selection'
         ? { mode: hook.mode, filament_ids: selection, expected_filaments: expectedSelection }
-        : { mode: hook.mode, filament_id: hook.filamentId, record_token: hook.getRecordToken?.(), fields: draft = hook.form.readPluginDraft() }
+        : { mode: hook.mode, filament_id: hook.filamentId, record_token: recordToken = hook.getRecordToken?.(), capabilities: { color_staging: true, manufacturer_staging: hook.mode === 'create' }, fields: draft = hook.form.readPluginDraft() }
       sender.postMessage({ type, request_id, ...context }, origin)
     }
     if (type === 'filaman:filament-stage' && hook.mode !== 'selection' && draft) {
-      sender.postMessage({ type, request_id, ...hook.form.stagePluginDraft(message.units, draft) }, origin)
+      const expectedDraft = draft
+      const expectedToken = recordToken
+      const isCurrent = () => {
+        try {
+          return dialog.open && frame?.contentWindow === sender && draft === expectedDraft
+            && expectedToken === hook.getRecordToken?.() && !signal?.aborted
+            && sender.document === senderDocument && sender.location.pathname === path
+        } catch { return false }
+      }
+      const result = await hook.form.stagePluginDraft(message.units, expectedDraft, { signal: frameTheme?.signal, isCurrent })
+      if (isCurrent()) sender.postMessage({ type, request_id, ...result }, origin)
     }
   }, { signal })
 

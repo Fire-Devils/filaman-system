@@ -5,6 +5,8 @@ import { chromium } from 'playwright-core'
 const base = process.argv[2] || 'http://127.0.0.1:4321'
 const manufacturer = { id: 7, name: 'Fixture Brand', empty_spool_weight_g: 201, spool_count: 1, filament_count: 1, archived_spool_count: 0 }
 const color = { id: 11, name: 'Fixture Red', hex_code: '#FF0000', usage_count: 1 }
+const newColor = { id: 99, name: 'New publisher preview', hex_code: '#243746' }
+const newManufacturer = { id: 88, name: 'New plugin manufacturer', empty_spool_weight_g: 999 }
 const reel = { id: 4, name: 'Fixture reel', empty_weight_g: 177, spool_material: 'Plastic', outer_diameter_mm: 200, width_mm: 66 }
 const filament = (id, designation) => ({
   id, designation, manufacturer_id: 7, manufacturer,
@@ -29,6 +31,7 @@ try {
   page.on('pageerror', error => pageErrors.push(error.message))
   let filamentReads = 0
   const writes = []
+  const colorWrites = []
   let accountTheme = 'light'
   let failFilamentLoad = false
   let locationName = 'Initial fixture room'
@@ -59,6 +62,8 @@ try {
     })
     if (req.method() !== 'GET') {
       if (path.endsWith('/filaments') || path.endsWith('/filaments/10')) writes.push(req.postDataJSON())
+      if (path.endsWith('/filaments/10') && req.method() === 'PATCH') return route.fulfill({ json: first })
+      if (path.endsWith('/filaments/10/colors')) colorWrites.push(req.postDataJSON())
       return route.fulfill({ status: 422, json: { detail: { message: 'Fixture intercepted Save' } } })
     }
     let json = []
@@ -71,6 +76,8 @@ try {
         { ...plugin, name: 'External plugin', page_url: 'https://example.invalid/fixture' },
       ]
     }
+    else if (path.endsWith('/colors/99')) json = newColor
+    else if (path.endsWith('/manufacturers/88')) json = newManufacturer
     else if (path.endsWith('/manufacturers')) {
       entityReads.manufacturers++
       json = { items: [manufacturer], total: 1 }
@@ -139,7 +146,7 @@ try {
   function message(frame, type, payload = {}) {
     return frame.evaluate(({ type, payload }) => new Promise((resolve, reject) => {
       const request_id = crypto.randomUUID()
-      const timer = setTimeout(() => reject(new Error('No plugin hook response for ' + type)), 1500)
+      const timer = setTimeout(() => reject(new Error('No plugin hook response for ' + type)), 3500)
       window.addEventListener('message', function respond(event) {
         if (event.origin !== location.origin || event.source !== parent || event.data?.request_id !== request_id) return
         window.removeEventListener('message', respond)
@@ -163,6 +170,7 @@ try {
   assert.equal(await launch.textContent(), plugin.name)
   const context = await message(create, 'filaman:filament-context')
   assert.equal(context.mode, 'create')
+  assert.deepEqual(context.capabilities, { color_staging: true, manufacturer_staging: true })
   assert.equal(context.filament_id, null)
   assert.equal(context.fields.designation, 'Unsaved draft')
   assert.equal(context.fields.material_type, null)
@@ -179,12 +187,64 @@ try {
   }, fake)
   assert.equal(await field('designation').inputValue(), 'Unsaved draft')
 
+  // A WindowProxy survives same-path iframe reloads; the requesting document must not.
+  let releaseReloadRead
+  let reloadReadStarted
+  const reloadStarted = new Promise(resolve => { reloadReadStarted = resolve })
+  heldEntityReads.set('99', { started: reloadReadStarted, release: new Promise(resolve => { releaseReloadRead = resolve }) })
+  await page.evaluate(() => {
+    const original = window.fetch
+    window.referenceSettled = false
+    window.previousPluginWindow = document.querySelector('dialog[open] iframe').contentWindow
+    window.fetch = async (...args) => {
+      const response = await original(...args)
+      if (String(args[0]).endsWith('/colors/99')) {
+        const json = response.json.bind(response)
+        response.json = async () => {
+          try { return await json() }
+          finally { setTimeout(() => { window.referenceSettled = true }, 0) }
+        }
+      }
+      return response
+    }
+    window.restoreReferenceFetch = () => { window.fetch = original }
+  })
+  await create.evaluate(() => parent.postMessage({ type: 'filaman:filament-stage', request_id: 'old-document', units: [{
+    designation: { old: 'Unsaved draft', value: 'Obsolete document' }, color_id: { old: null, value: 99 },
+  }] }, location.origin))
+  await reloadStarted
+  await Promise.all([page.waitForEvent('framenavigated', frame => frame === create), create.evaluate(() => location.reload())])
+  await create.getByText('Plugin fixture', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => document.querySelector('dialog[open] iframe').contentWindow === window.previousPluginWindow), true)
+  releaseReloadRead()
+  await page.waitForFunction(() => window.referenceSettled)
+  assert.equal(await field('designation').inputValue(), 'Unsaved draft')
+  await page.evaluate(() => window.restoreReferenceFetch())
+  assert.equal((await message(create, 'filaman:filament-context')).fields.color_id, null)
+
+  let releaseTimedRead
+  let timedReadStarted
+  const timedStarted = new Promise(resolve => { timedReadStarted = resolve })
+  heldEntityReads.set('99', { started: timedReadStarted, release: new Promise(resolve => { releaseTimedRead = resolve }) })
+  const startedAt = Date.now()
+  const timedStage = message(create, 'filaman:filament-stage', { units: [{
+    designation: { old: 'Unsaved draft', value: 'Late request' }, color_id: { old: null, value: 99 },
+  }] })
+  await timedStarted
+  const timedResult = await timedStage
+  assert.ok(Date.now() - startedAt < 3500, 'host replies before the plugin request expires')
+  assert.deepEqual(timedResult.staged, [])
+  assert.deepEqual(timedResult.skipped, ['designation', 'color_id'])
+  releaseTimedRead()
+  assert.equal(await field('designation').inputValue(), 'Unsaved draft')
+  assert.equal((await message(create, 'filaman:filament-context')).fields.color_id, null)
+
   const staged = await message(create, 'filaman:filament-stage', { units: [
     { designation: { old: 'Unsaved draft', value: 'Proposed PLA' } },
     { material_type: { old: context.fields.material_type, value: 'PETG' } },
     { diameter_mm: { old: context.fields.diameter_mm, value: 2.85 } },
-    { manufacturer_id: { old: context.fields.manufacturer_id, value: 7 } },
-    { color_id: { old: context.fields.color_id, value: 11 } },
+    { manufacturer_id: { old: context.fields.manufacturer_id, value: 88 } },
+    { color_id: { old: context.fields.color_id, value: 99 } },
     { spool_width_mm: { old: context.fields.spool_width_mm, value: 67 } },
     { custom_fields: { old: null, value: { injected: true } } },
   ] })
@@ -196,6 +256,8 @@ try {
   const filled = await message(create, 'filaman:filament-context')
   assert.equal(filled.fields.material_type, 'PETG')
   assert.equal(filled.fields.diameter_mm, 2.85)
+  assert.equal(filled.fields.manufacturer_name, newManufacturer.name)
+  assert.equal(filled.fields.palette_color_name, newColor.name)
   assert.equal(writes.length, 0)
   if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Close' }).click()
   await Promise.all([page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/filaments')), field('submit-btn').click()])
@@ -203,7 +265,8 @@ try {
   assert.equal(writes[0].material_type, 'PETG')
   assert.equal(writes[0].diameter_mm, 2.85)
   assert.equal(writes[0].filamentdb_spool_profile_id, null)
-  assert.deepEqual(writes[0].colors, [{ color_id: 11, position: 1 }])
+  assert.equal(writes[0].manufacturer_id, 88)
+  assert.deepEqual(writes[0].colors, [{ color_id: 99, position: 1 }])
 
   await page.goto(new URL('/filaments/10', base).href)
   await page.locator('#btn-enter-filament-edit').waitFor()
@@ -215,19 +278,21 @@ try {
   const edit = await openPlugin('editor')
   const editing = await message(edit, 'filaman:filament-context')
   assert.equal(editing.mode, 'edit')
+  assert.deepEqual(editing.capabilities, { color_staging: true, manufacturer_staging: false })
   assert.equal(editing.filament_id, 10)
   assert.equal(editing.record_token, first.record_token)
   assert.equal(editing.fields.manufacturer_name, manufacturer.name)
   const linked = await message(edit, 'filaman:filament-stage', { units: [
     { material_type: { old: 'Wrong PLA', value: 'PETG' }, material_subgroup: { old: null, value: 'Matte' } },
     { density_g_cm3: { old: editing.fields.density_g_cm3, value: 1.24 } },
+    { color_id: { old: editing.fields.color_id, value: 99 } },
     { manufacturer_color_name: { old: editing.fields.manufacturer_color_name, value: 'Fixture Red' } },
     { default_spool_weight_g: { old: editing.fields.default_spool_weight_g, value: 177.5 } },
     { material_type: { old: editing.fields.material_type, value: 'ß'.repeat(26) } },
     { manufacturer_sku: { old: editing.fields.manufacturer_sku, value: 'S'.repeat(256) } },
     { datasheet_url: { old: editing.fields.datasheet_url, value: 'javascript:alert(1)' } },
   ] })
-  assert.deepEqual(linked.staged, ['density_g_cm3', 'manufacturer_color_name'])
+  assert.deepEqual(linked.staged, ['density_g_cm3', 'color_id', 'manufacturer_color_name'])
   assert.deepEqual(linked.skipped, [
     'material_type', 'material_subgroup', 'default_spool_weight_g', 'material_type', 'manufacturer_sku', 'datasheet_url',
   ])
@@ -235,10 +300,15 @@ try {
   assert.equal(await field('density_g_cm3').inputValue(), '1.24')
   assert.equal(writes.length, 1)
   await dialog.getByRole('button', { name: 'Close' }).click()
-  await Promise.all([page.waitForResponse(r => r.request().method() === 'PATCH' && r.url().endsWith('/filaments/10')), field('submit-btn').click()])
+  await Promise.all([
+    page.waitForResponse(r => r.request().method() === 'PATCH' && r.url().endsWith('/filaments/10')),
+    page.waitForResponse(r => r.request().method() === 'PUT' && r.url().endsWith('/filaments/10/colors')),
+    field('submit-btn').click(),
+  ])
   assert.equal(writes[1].manufacturer_color_name, 'Fixture Red')
   assert.equal(writes[1].density_g_cm3, 1.24)
   assert.equal('datasheet_url' in writes[1], false)
+  assert.deepEqual(colorWrites, [{ color_mode: 'single', multi_color_style: null, colors: [{ color_id: 99, position: 1 }] }])
 
   await field('btn-edit-filament').click()
   await field('btn-enter-filament-edit').waitFor()
