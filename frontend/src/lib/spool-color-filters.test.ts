@@ -10,7 +10,7 @@ const scope = (colors: typeof blue[], has_empty_colors = false) => ({ manufactur
 it('keeps selected names removable without adding out-of-scope wheel samples', () => {
   const options: Record<string, HeaderFilterOption[]> = {}
   const columnFilters: Record<string, { type: 'multi'; values: string[] }> = {}
-  const update = new Function('spoolFilterFacets', 'statuses', 'columnFilters', 'splHeaderFilters', 't', `const allLocations = new Map(); ${production}; return updateSpoolFilterOptions;`)(
+  const update = new Function('spoolFilterFacets', 'statuses', 'columnFilters', 'splHeaderFilters', 't', `const allLocations = new Map(), hideSealedInput = { checked: false }; ${production}; return updateSpoolFilterOptions;`)(
     { used_status_ids: [1, 2, 3], by_status: {
       1: scope([blue], true),
       2: scope([{ ...blue, color_hexes: ['#000080'] }]),
@@ -46,7 +46,7 @@ it('keeps selected names removable without adding out-of-scope wheel samples', (
 
 it('does not assume archived statuses are active when status reference loading failed', () => {
   const options: Record<string, HeaderFilterOption[]> = {}
-  const update = new Function('spoolFilterFacets', 'statuses', 'columnFilters', 'splHeaderFilters', 't', `const allLocations = new Map(); ${production}; return updateSpoolFilterOptions;`)(
+  const update = new Function('spoolFilterFacets', 'statuses', 'columnFilters', 'splHeaderFilters', 't', `const allLocations = new Map(), hideSealedInput = { checked: false }; ${production}; return updateSpoolFilterOptions;`)(
     { used_status_ids: [1, 3], by_status: { 1: scope([blue]), 3: scope([red]) } },
     [], {}, { setOptions: (key: string, values: HeaderFilterOption[]) => { options[key] = values } }, () => 'Empty',
   )
@@ -56,7 +56,7 @@ it('does not assume archived statuses are active when status reference loading f
 
 it('keeps a selected name removable after its last spool-backed color disappears', () => {
   const options: Record<string, HeaderFilterOption[]> = {}
-  const update = new Function('spoolFilterFacets', 'statuses', 'columnFilters', 'splHeaderFilters', 't', `const allLocations = new Map(); ${production}; return updateSpoolFilterOptions;`)(
+  const update = new Function('spoolFilterFacets', 'statuses', 'columnFilters', 'splHeaderFilters', 't', `const allLocations = new Map(), hideSealedInput = { checked: false }; ${production}; return updateSpoolFilterOptions;`)(
     { used_status_ids: [1], by_status: { 1: scope([red]) } },
     [{ id: 1, key: 'active' }], { colors: { type: 'multi', values: ['Deleted Blue'] } },
     { setOptions: (key: string, values: HeaderFilterOption[]) => { options[key] = values } }, () => 'Empty',
@@ -100,7 +100,7 @@ it('keeps refreshed spool facets when an older fallback location load finishes l
   let reads = 0
   const methods = new Function('fetchSpoolFilterFacets', 'fetch', 'splHeaderFilters', 'console', `
     const statuses = [{ id: 1, key: 'active' }], columnFilters = {};
-    let spoolFilterFacets; const allLocations = new Map();
+    let spoolFilterFacets; const allLocations = new Map(), hideSealedInput = { checked: false };
     const getAbortSignal = () => undefined, isAbortError = () => false, t = key => key;
     ${production}; ${refreshSource}; ${loadSource};
     return { loadFilters, refreshSpoolFilterOptions, allLocations };
@@ -125,7 +125,7 @@ it('refreshes row location names for every status, including archived-only shelv
   const facets = { used_status_ids: [1, 3], by_status: { 1: scope([]), 3: shelfScope } }
   const locationName = astroPageFunction('spools/index', 'getLocationName')
   const read = new Function('spoolFilterFacets', `
-    const allLocations = new Map();
+    const allLocations = new Map(), hideSealedInput = { checked: false };
     const statuses = [{id:1, key:'opened'}, {id:3, key:'archived'}], columnFilters = {};
     const splHeaderFilters = {setOptions() {}}, t = key => key;
     ${production}; ${locationName};

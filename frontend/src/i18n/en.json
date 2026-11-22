@@ -501,6 +501,7 @@
   },
   "spools": {
     "title": "Spools",
+    "hideSealed": "Hide sealed spools",
     "addSpool": "Add Spool",
     "addSpoolFromEmpty": "From Empty Spool",
     "selectEmptySpoolTitle": "Select Empty Spool",
@@ -2279,5 +2280,17 @@
     "nozzleRange": "Nozzle temperature",
     "pressureAdvance": "Pressure advance K",
     "inactiveProfiles": "Enable the plugin to choose a slicer profile."
+  },
+  "spoolLink": {
+    "detected": "Unknown RFID tag detected for {filament} in {where}",
+    "unknownPrinter": "a printer",
+    "link": "Link & activate",
+    "create": "Create new spool",
+    "spool": "Spool #{id}",
+    "created": "added {date}",
+    "weight": "{weight} g",
+    "lot": "lot {lot}",
+    "select": "Spool to link",
+    "failed": "The suggestion could not be applied."
   }
 }
