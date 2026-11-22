@@ -870,7 +870,7 @@ async def test_driver_mutation_activates_recovered_peer(
     plugin_service.PLUGINS_DIR.mkdir()
     monkeypatch.syspath_prepend(str(plugin_service.PLUGINS_DIR))
 
-    async def install(dependencies, plugin_key, *, dry_run=False):
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
         if len(set(dependencies)) > 1:
             raise PluginInstallError("incompatible fixture versions")
 

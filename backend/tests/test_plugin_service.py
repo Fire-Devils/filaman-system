@@ -865,6 +865,150 @@ async def test_upgrade_resolves_dependencies_with_other_installed_plugins(db_ses
     install.assert_awaited_once_with(["shared-fixture==1", "other-fixture==2"], "test_plugin")
 
 
+@pytest.mark.parametrize("upgrade", [False, True])
+@pytest.mark.parametrize("repair_peer", [False, True])
+async def test_unavailable_peer_does_not_block_independent_plugin_install(
+    db_session, tmp_path, monkeypatch, upgrade, repair_peer,
+):
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path / "plugins")
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
+    plugin_service.PLUGINS_DIR.mkdir()
+
+    peer_repaired = False
+
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
+        if "unavailable-fixture==1" in dependencies and not peer_repaired:
+            raise PluginInstallError("Fixture package cannot be installed")
+
+    monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+    service = PluginInstallService(db_session)
+
+    def archive(version):
+        return _make_zip({
+            "plugin.json": json.dumps({
+                **VALID_MANIFEST, "version": version, "dependencies": ["working-fixture==1"],
+            }),
+            "driver.py": VALID_DRIVER_PY,
+            "__init__.py": VALID_INIT_PY,
+        })
+
+    if upgrade:
+        await service.install_from_zip(archive("1.0.0"), installed_by=1)
+    peer = plugin_service.PLUGINS_DIR / "unavailable_peer"
+    peer.mkdir()
+    (peer / "plugin.json").write_text(json.dumps({"dependencies": ["unavailable-fixture==1"]}))
+    await plugin_service.provision_installed_plugin_dependencies()
+    assert not plugin_service.plugin_dependencies_available(peer)
+
+    peer_repaired = repair_peer
+    plugin, updated = await service.install_from_zip(archive("2.0.0"), installed_by=1)
+
+    assert plugin.version == "2.0.0" and updated is upgrade
+    assert (await service.get_plugin("test_plugin")).version == "2.0.0"
+    assert json.loads((plugin_service.PLUGINS_DIR / "test_plugin/plugin.json").read_text())["version"] == "2.0.0"
+    assert plugin_service.plugin_dependencies_available(plugin_service.PLUGINS_DIR / "test_plugin")
+    assert plugin_service.plugin_dependencies_available(peer) is repair_peer
+
+
+@pytest.mark.parametrize("previously_unavailable", [False, True])
+async def test_candidate_resolution_preserves_archive_on_healthy_peer_conflict(
+    db_session, tmp_path, monkeypatch, previously_unavailable,
+):
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path / "plugins")
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
+    plugin_service.PLUGINS_DIR.mkdir()
+    unavailable = False
+
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
+        if unavailable and "original-fixture==1" in dependencies:
+            raise PluginInstallError("Original candidate package became unavailable")
+        if {"shared-fixture==1", "shared-fixture==2"} <= set(dependencies):
+            raise PluginInstallError("Conflicting healthy peer")
+
+    monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+    service = PluginInstallService(db_session)
+
+    def archive(version, dependency):
+        return _make_zip({
+            "plugin.json": json.dumps({**VALID_MANIFEST, "version": version, "dependencies": [dependency]}),
+            "driver.py": VALID_DRIVER_PY,
+            "__init__.py": VALID_INIT_PY,
+        })
+
+    await service.install_from_zip(archive("1.0.0", "original-fixture==1"), installed_by=1)
+    candidate = plugin_service.PLUGINS_DIR / "test_plugin"
+    manifest_before = (candidate / "plugin.json").read_bytes()
+    driver_before = (candidate / "driver.py").read_bytes()
+    peer = plugin_service.PLUGINS_DIR / "healthy_peer"
+    peer.mkdir()
+    (peer / "plugin.json").write_text(json.dumps({"dependencies": ["shared-fixture==1"]}))
+    unavailable = previously_unavailable
+    await plugin_service.provision_installed_plugin_dependencies()
+    assert plugin_service.plugin_dependencies_available(candidate) is not previously_unavailable
+
+    with pytest.raises(PluginInstallError, match="Conflicting healthy peer"):
+        await service.install_from_zip(archive("2.0.0", "shared-fixture==2"), installed_by=1)
+
+    assert (await service.get_plugin("test_plugin")).version == "1.0.0"
+    assert (candidate / "plugin.json").read_bytes() == manifest_before
+    assert (candidate / "driver.py").read_bytes() == driver_before
+    assert plugin_service.plugin_dependencies_available(candidate) is not previously_unavailable
+    assert plugin_service.plugin_dependencies_available(peer)
+
+    repaired, _ = await service.install_from_zip(archive("2.0.0", "shared-fixture==1"), installed_by=1)
+    assert repaired.version == "2.0.0"
+    assert plugin_service.plugin_dependencies_available(candidate)
+
+
+async def test_optional_recovery_preserves_selected_candidate_api(db_session, tmp_path, monkeypatch):
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path / "plugins")
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
+    plugin_service.PLUGINS_DIR.mkdir()
+    libraries = tmp_path / "libraries"
+    libraries.mkdir()
+    monkeypatch.setenv("PYTHONPATH", str(libraries))
+    peer_repaired = False
+    monkeypatch.setattr(plugin_service, "_installed_package_versions", lambda *args: {"dependency-fixture": "2"})
+
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
+        old_version = "dependency-fixture==1" in dependencies
+        if old_version and (not peer_repaired or constraints is not None):
+            raise PluginInstallError("Peer package is unavailable")
+        if not dry_run:
+            (libraries / "dependency_api.py").write_text(
+                "old_api = True\n" if old_version else "new_api = True\n"
+            )
+
+    monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+    peer = plugin_service.PLUGINS_DIR / "peer"
+    peer.mkdir()
+    (peer / "plugin.json").write_text(json.dumps({"dependencies": ["dependency-fixture==1"]}))
+    await plugin_service.provision_installed_plugin_dependencies()
+    assert not plugin_service.plugin_dependencies_available(peer)
+    peer_repaired = True
+    archive = _make_zip({
+        "plugin.json": json.dumps({
+            **VALID_MANIFEST, "plugin_type": "import", "mount_prefix": "/test",
+            "dependencies": ["dependency-fixture>=1"],
+        }),
+        "router.py": "from fastapi import APIRouter\nfrom dependency_api import new_api\nrouter = APIRouter()\n",
+        "__init__.py": VALID_INIT_PY,
+    })
+    service = PluginInstallService(db_session)
+
+    plugin, _ = await service.install_from_zip(archive, installed_by=1)
+
+    assert plugin.plugin_key == "test_plugin"
+    await plugin_service._preflight_plugin_router(plugin_service.PLUGINS_DIR / "test_plugin")
+    assert not plugin_service.plugin_dependencies_available(peer)
+
+
 async def test_startup_recovers_compatible_plugins_after_joint_resolution_failure(tmp_path, monkeypatch):
     from unittest.mock import AsyncMock, call
 
@@ -941,7 +1085,7 @@ async def test_mutation_recovers_a_peer_with_previously_conflicting_dependencies
     monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
     plugin_service.PLUGINS_DIR.mkdir()
 
-    async def install(dependencies, plugin_key, *, dry_run=False):
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
         if len(set(dependencies)) > 1:
             raise PluginInstallError("incompatible fixture versions")
 
@@ -1053,7 +1197,7 @@ async def test_provisioning_preserves_healthy_peers_when_a_resolved_package_fail
     monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path)
     monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path)
 
-    async def install(dependencies, plugin_key, *, dry_run=False):
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
         if conflicts and len(dependencies) > 1:
             raise PluginInstallError("incompatible fixture versions")
         if not dry_run and "broken-fixture" in dependencies:
@@ -1070,7 +1214,8 @@ async def test_provisioning_preserves_healthy_peers_when_a_resolved_package_fail
     assert not plugin_service.plugin_dependencies_available(tmp_path / "broken")
 
 
-async def test_uninstall_activates_after_timed_out_peer_recovery(db_session, tmp_path, monkeypatch):
+@pytest.mark.parametrize("failure", ["timeout", "constraint_storage"])
+async def test_uninstall_activates_after_failed_peer_recovery(db_session, tmp_path, monkeypatch, failure):
     import asyncio
 
     from app.services import plugin_service
@@ -1091,7 +1236,7 @@ async def test_uninstall_activates_after_timed_out_peer_recovery(db_session, tmp
     cancelled = False
     activated = False
 
-    async def install(dependencies, plugin_key, *, dry_run=False):
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
         nonlocal cancelled
         try:
             await asyncio.wait_for(asyncio.Future(), timeout=0.1)
@@ -1104,10 +1249,308 @@ async def test_uninstall_activates_after_timed_out_peer_recovery(db_session, tmp
         activated = True
 
     monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+    if failure == "constraint_storage":
+        temporary_directory = plugin_service.tempfile.TemporaryDirectory
+
+        def unavailable_constraints(*args, **kwargs):
+            if kwargs.get("prefix") == "plugin-constraints-":
+                raise OSError("Fixture constraint storage is unavailable")
+            return temporary_directory(*args, **kwargs)
+
+        monkeypatch.setattr(plugin_service.tempfile, "TemporaryDirectory", unavailable_constraints)
 
     await service.uninstall("test_plugin", after_delete=activate)
 
-    assert cancelled
+    assert cancelled is (failure == "timeout")
     assert activated
     assert await service.get_plugin("test_plugin") is None
     assert not plugin_service.plugin_dependencies_available(peer)
+
+
+@pytest.fixture
+def dependency_wheels(tmp_path, monkeypatch):
+    import asyncio
+    import base64
+    import csv
+    import hashlib
+
+    from app.services import plugin_service
+
+    libraries, wheels = tmp_path / "libraries", tmp_path / "wheels"
+    libraries.mkdir()
+    wheels.mkdir()
+    monkeypatch.syspath_prepend(str(libraries))
+    monkeypatch.setenv("PYTHONPATH", str(libraries))
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "1")
+    monkeypatch.setattr(plugin_service, "PLUGINS_DIR", tmp_path / "plugins")
+    monkeypatch.setattr(plugin_service, "DATA_DIR", tmp_path / "data")
+    plugin_service.PLUGINS_DIR.mkdir()
+    for package, number in (("rollback_fixture", 1), ("rollback_fixture", 2), ("new_fixture", 1)):
+        metadata = f"{package}-{number}.dist-info"
+        files = {
+            f"{package}.py": f"api_{number} = True\n",
+            f"{metadata}/METADATA": f"Metadata-Version: 2.1\nName: {package.replace('_', '-')}\nVersion: {number}\n",
+            f"{metadata}/WHEEL": "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        }
+        records = io.StringIO()
+        writer = csv.writer(records)
+        for name, data in files.items():
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data.encode()).digest()).decode().rstrip("=")
+            writer.writerow([name, f"sha256={digest}", len(data.encode())])
+        writer.writerow([f"{metadata}/RECORD", "", ""])
+        files[f"{metadata}/RECORD"] = records.getvalue()
+        with zipfile.ZipFile(wheels / f"{package}-{number}-py3-none-any.whl", "w") as archive:
+            for name, data in files.items():
+                archive.writestr(name, data)
+
+    spawn = asyncio.create_subprocess_exec
+
+    async def install_into_fixture(*command, **kwargs):
+        if command[1:3] == ("pip", "install") or command[1:4] == ("-m", "pip", "install"):
+            command = (*command, "--target", str(libraries), "--no-index", "--find-links", str(wheels))
+        return await spawn(*command, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", install_into_fixture)
+    return libraries
+
+
+@pytest.mark.parametrize("recoverable", ["rollback-fixture==1", "new-fixture==1"])
+@pytest.mark.parametrize("final_install_fails", [False, True])
+async def test_successful_candidate_preserves_healthy_peer_versions(
+    db_session, tmp_path, monkeypatch, dependency_wheels, recoverable, final_install_fails,
+):
+    from importlib.metadata import version
+
+    from app.services import plugin_service
+
+    service = PluginInstallService(db_session)
+
+    def archive(key, dependencies):
+        return _make_zip({
+            "plugin.json": json.dumps({**VALID_MANIFEST, "plugin_key": key, "driver_key": key,
+                "plugin_type": "import", "mount_prefix": "/" + key, "dependencies": dependencies}),
+            "router.py": "from fastapi import APIRouter\n" + (
+                "from rollback_fixture import api_2\n" if key == "healthy_peer" else ""
+            ) + "router = APIRouter()\n",
+            "__init__.py": "",
+        })
+
+    await service.install_from_zip(archive("healthy_peer", ["rollback-fixture>=1"]), installed_by=1)
+    for key, dependency in (("blocked_a", recoverable), ("blocked_b", "missing-wheel-fixture==1")):
+        peer = plugin_service.PLUGINS_DIR / key
+        peer.mkdir()
+        (peer / "plugin.json").write_text(json.dumps({"dependencies": [dependency]}))
+        plugin_service._set_dependency_availability(peer, available=False)
+
+    compatible = plugin_service.PLUGINS_DIR / "blocked_compatible"
+    compatible.mkdir()
+    (compatible / "plugin.json").write_text(json.dumps({"dependencies": ["new-fixture==1"]}))
+    plugin_service._set_dependency_availability(compatible, available=False)
+    real_install = PluginInstallService._install_dependencies
+
+    async def install(dependencies, plugin_key, **kwargs):
+        if final_install_fails and plugin_key == "compatible installed plugins":
+            raise PluginInstallError("Fixture wheel build failed after metadata resolution")
+        await real_install(dependencies, plugin_key, **kwargs)
+
+    monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+    candidate, _ = await service.install_from_zip(archive("test_plugin", ["rollback-fixture>=1"]), installed_by=1)
+
+    assert candidate.plugin_key == "test_plugin"
+    assert plugin_service.plugin_dependencies_available(compatible)
+    assert version("rollback-fixture") == "2"
+    await plugin_service._preflight_plugin_router(plugin_service.PLUGINS_DIR / "healthy_peer")
+    assert plugin_service.plugin_dependencies_available(plugin_service.PLUGINS_DIR / "healthy_peer")
+    assert plugin_service.plugin_dependencies_available(plugin_service.PLUGINS_DIR / "blocked_a") is (
+        recoverable == "new-fixture==1"
+    )
+    assert not plugin_service.plugin_dependencies_available(plugin_service.PLUGINS_DIR / "blocked_b")
+
+    # Restart after recovery must leave the previously working router importable.
+    availability = await plugin_service.provision_installed_plugin_dependencies()
+    assert availability["healthy_peer"]
+    assert availability["blocked_a"] is (recoverable == "new-fixture==1")
+    await plugin_service._preflight_plugin_router(plugin_service.PLUGINS_DIR / "healthy_peer")
+
+    # Container replacement retains the manifests and markers but drops installed wheels.
+    dependency_wheels.rename(tmp_path / "previous-environment")
+    dependency_wheels.mkdir()
+    assert await plugin_service.provision_installed_plugin_dependencies() == availability
+    await plugin_service._preflight_plugin_router(plugin_service.PLUGINS_DIR / "healthy_peer")
+
+
+@pytest.mark.parametrize("mutation", ["uninstall", "drop_dependency"])
+@pytest.mark.parametrize("survivor", [None, "direct", "transitive", "inactive"])
+async def test_removed_dependency_recovery_preserves_remaining_consumers(
+    db_session, tmp_path, monkeypatch, dependency_wheels, mutation, survivor,
+):
+    from importlib.metadata import version
+
+    from app.services import plugin_service
+
+    service = PluginInstallService(db_session)
+
+    def archive(key, release, dependencies):
+        return _make_zip({
+            "plugin.json": json.dumps({**VALID_MANIFEST, "plugin_key": key, "driver_key": key,
+                                       "version": release, "dependencies": dependencies}),
+            "driver.py": VALID_DRIVER_PY, "__init__.py": "",
+        })
+
+    await service.install_from_zip(archive("test_plugin", "1.0.0", ["rollback-fixture==1"]), installed_by=1)
+    if survivor:
+        if survivor == "transitive":
+            (dependency_wheels / "healthy_fixture-1.dist-info").mkdir()
+            (dependency_wheels / "healthy_fixture-1.dist-info/METADATA").write_text(
+                "Metadata-Version: 2.1\nName: healthy-fixture\nVersion: 1\nRequires-Dist: rollback-fixture>=1\n"
+            )
+        healthy = plugin_service.PLUGINS_DIR / "healthy"
+        healthy.mkdir()
+        (healthy / "plugin.json").write_text(json.dumps({
+            "dependencies": [{
+                "transitive": "healthy-fixture==1", "direct": "rollback-fixture>=1",
+                "inactive": "rollback-fixture==1; sys_platform == 'win32'",
+            }[survivor]],
+        }))
+    peer = plugin_service.PLUGINS_DIR / "blocked"
+    peer.mkdir()
+    (peer / "plugin.json").write_text(json.dumps({"dependencies": ["rollback-fixture==2"]}))
+    plugin_service._set_dependency_availability(peer, available=False)
+
+    if mutation == "uninstall":
+        await service.uninstall("test_plugin")
+    else:
+        await service.install_from_zip(archive("test_plugin", "2.0.0", []), installed_by=1)
+
+    protected = survivor in {"direct", "transitive"}
+    assert version("rollback-fixture") == ("1" if protected else "2")
+    assert plugin_service.plugin_dependencies_available(peer) is (not protected)
+
+
+@pytest.mark.parametrize("requirement", [
+    "local_fixture-1-py3-none-any.whl", "./plugin.whl", "/tmp/plugin.tar.gz", "git+https://example.com/a.git",
+])
+def test_opaque_requirements_preserve_all_installed_versions(monkeypatch, requirement):
+    from types import SimpleNamespace
+
+    from app.services import plugin_service
+
+    monkeypatch.setattr(plugin_service, "distributions", lambda: [
+        SimpleNamespace(metadata={"Name": "fixture"}, version="1", requires=[]),
+    ])
+
+    assert plugin_service._installed_package_versions([requirement]) == {"fixture": "1"}
+
+
+@pytest.mark.parametrize("roots, protected", [
+    (["owner"], {"owner"}),
+    (["owner[enabled]"], {"owner", "selected", "leaf"}),
+    (["owner", "owner[enabled]"], {"owner", "selected", "leaf"}),
+    (["owner[enabled]", "owner"], {"owner", "selected", "leaf"}),
+    (["owner[enabled]; python_version < '0'"], set()),
+])
+def test_protected_packages_follow_only_active_dependency_edges(monkeypatch, roots, protected):
+    from types import SimpleNamespace
+
+    from app.services import plugin_service
+
+    installed = {
+        "owner": [
+            "selected[child]; extra == 'enabled'",
+            "inactive; python_version < '0'",
+        ],
+        "selected": ["leaf; extra == 'child'", "owner"],
+        "leaf": [], "inactive": [], "unrelated": [],
+    }
+    monkeypatch.setattr(plugin_service, "distributions", lambda: [
+        SimpleNamespace(metadata={"Name": name}, version="1", requires=dependencies)
+        for name, dependencies in installed.items()
+    ])
+    assert set(plugin_service._installed_package_versions(roots)) == protected
+
+
+@pytest.mark.parametrize("old_requirement", ["==2", ">=1"])
+@pytest.mark.parametrize("failure", ["router", "commit", "cancel", "restore", "restore_cancel", "rollback"])
+async def test_rejected_upgrade_restores_working_package_versions(
+    db_session, tmp_path, monkeypatch, dependency_wheels, old_requirement, failure,
+):
+    import asyncio
+    from importlib.metadata import version
+    from unittest.mock import AsyncMock
+
+    from app.services import plugin_service
+
+    real_install = PluginInstallService._install_dependencies
+
+    downgraded = False
+    restoring, release_restore = asyncio.Event(), asyncio.Event()
+
+    async def install(dependencies, plugin_key, *, dry_run=False, constraints=None):
+        nonlocal downgraded
+        if failure in {"restore", "restore_cancel"} and downgraded and "rollback-fixture==2" in dependencies:
+            if failure == "restore_cancel":
+                restoring.set()
+                await release_restore.wait()
+            raise PluginInstallError("Original wheel became unavailable")
+        await real_install(dependencies, plugin_key, dry_run=dry_run, constraints=constraints)
+        if not dry_run and version("rollback-fixture") == "1":
+            downgraded = True
+
+    monkeypatch.setattr(PluginInstallService, "_install_dependencies", staticmethod(install))
+
+    def archive(release, requirement, symbol):
+        return _make_zip({
+            "plugin.json": json.dumps({**VALID_MANIFEST, "plugin_type": "import", "mount_prefix": "/test",
+                                       "version": release, "dependencies": [f"rollback-fixture{requirement}"]}),
+            "__init__.py": "",
+            "router.py": f"from fastapi import APIRouter\nfrom rollback_fixture import {symbol}\nrouter = APIRouter()\n",
+        })
+
+    service = PluginInstallService(db_session)
+    await service.install_from_zip(archive("1.0.0", old_requirement, "api_2"), installed_by=1)
+    retained = plugin_service.PLUGINS_DIR / "test_plugin"
+    await plugin_service._preflight_plugin_router(retained)
+    for key, dependency in (("blocked_a", "rollback-fixture==1"), ("blocked_b", "missing-wheel-fixture==1")):
+        peer = plugin_service.PLUGINS_DIR / key
+        peer.mkdir()
+        (peer / "plugin.json").write_text(json.dumps({"dependencies": [dependency]}))
+        plugin_service._set_dependency_availability(peer, available=False)
+
+    with monkeypatch.context() as change:
+        if failure == "commit":
+            change.setattr(db_session, "commit", AsyncMock(side_effect=OSError("Commit failed")))
+        if failure == "rollback":
+            change.setattr(db_session, "rollback", AsyncMock(side_effect=RuntimeError("Database rollback failed")))
+        if failure == "cancel":
+            preflight = plugin_service._preflight_plugin_router
+
+            async def cancel_after_preflight(path):
+                await preflight(path)
+                raise asyncio.CancelledError
+
+            change.setattr(plugin_service, "_preflight_plugin_router", cancel_after_preflight)
+        expected = (OSError if failure == "commit" else RuntimeError if failure == "rollback"
+                    else asyncio.CancelledError if failure in {"cancel", "restore_cancel"} else PluginInstallError)
+        pending = service.install_from_zip(
+            archive("2.0.0", "==1", "api_1" if failure in {"commit", "cancel"} else "missing_api"), installed_by=1,
+        )
+        if failure == "restore_cancel":
+            pending = asyncio.create_task(pending)
+            await asyncio.wait_for(restoring.wait(), 5)
+            pending.cancel()
+            release_restore.set()
+        with pytest.raises(expected) as error:
+            await pending
+
+    assert (await service.get_plugin("test_plugin")).version == "1.0.0"
+    assert json.loads((retained / "plugin.json").read_text())["version"] == "1.0.0"
+    assert plugin_service.plugin_dependencies_available(retained)
+    assert not plugin_service.plugin_dependencies_available(plugin_service.PLUGINS_DIR / "blocked_a")
+    assert not plugin_service.plugin_dependencies_available(plugin_service.PLUGINS_DIR / "blocked_b")
+    if failure == "restore":
+        assert error.value.code == "dependency_restore_failed"
+    elif failure == "restore_cancel":
+        assert version("rollback-fixture") == "1"
+    else:
+        assert version("rollback-fixture") == "2"
+        await plugin_service._preflight_plugin_router(retained)
