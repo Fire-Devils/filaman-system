@@ -226,11 +226,6 @@ async def logout(
         )
         await db.commit()
 
-        # Evict from auth cache so the session is not reused
-        from app.core.middleware import _session_cache
-
-        _session_cache.pop(principal.session_id, None)
-
     response.delete_cookie("session_id", path="/")
     response.delete_cookie("csrf_token", path="/")
 
