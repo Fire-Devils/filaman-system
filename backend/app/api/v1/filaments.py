@@ -1233,7 +1233,9 @@ async def update_filaments_bulk(
     db: DBSession,
     principal=RequirePermission("filaments:update"),
 ):
-    """Bulk update fields on multiple filaments (price, diameter, spool weight, density)."""
+    """Bulk update fields on multiple filaments (price, diameter, spool weight, density,
+    minimum stock). low_stock_threshold_g is applied whenever it is present in
+    the request, so an explicit null clears it; omitted fields stay unchanged."""
     result = await db.execute(
         select(Filament).where(Filament.id.in_(data.filament_ids))
     )
@@ -1249,6 +1251,8 @@ async def update_filaments_bulk(
             filament.default_spool_weight_g = data.default_spool_weight_g
         if data.density_g_cm3 is not None:
             filament.density_g_cm3 = data.density_g_cm3
+        if "low_stock_threshold_g" in data.model_fields_set:
+            filament.low_stock_threshold_g = data.low_stock_threshold_g
         count += 1
 
     await db.commit()

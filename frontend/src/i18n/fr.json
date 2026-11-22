@@ -487,6 +487,8 @@
     "bulkSetDiameter": "Définir le diamètre",
     "bulkSetSpoolWeight": "Définir le poids de la bobine",
     "bulkSetDensity": "Définir la densité",
+    "bulkSetLowStock": "Définir le stock minimum",
+    "bulkLowStockHint": "Laisser vide pour supprimer le stock minimum",
     "bulkConfirmDelete": "Voulez-vous vraiment supprimer {count} filament(s) ?",
     "bulkConfirmDeleteForce": "Supprimer aussi définitivement toutes les bobines associées. Cette action est irréversible.",
     "bulkSuccess": "{count} filament(s) mis à jour avec succès",

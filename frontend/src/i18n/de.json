@@ -488,6 +488,8 @@
     "bulkSetDiameter": "Durchmesser setzen",
     "bulkSetSpoolWeight": "Spulengewicht setzen",
     "bulkSetDensity": "Dichte setzen",
+    "bulkSetLowStock": "Mindestbestand setzen",
+    "bulkLowStockHint": "Leer lassen, um den Mindestbestand zu entfernen",
     "bulkConfirmDelete": "Möchten Sie {count} Filament(e) wirklich löschen?",
     "bulkConfirmDeleteForce": "Auch alle zugehörigen Spulen endgültig löschen. Dies kann nicht rückgängig gemacht werden.",
     "bulkSuccess": "{count} Filament(e) erfolgreich aktualisiert",
