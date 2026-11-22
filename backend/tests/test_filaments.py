@@ -1632,6 +1632,64 @@ class TestFilamentBulkOperations:
         assert filament_two.price == 29.99
 
     @pytest.mark.asyncio
+    async def test_bulk_set_clear_low_stock_threshold(self, auth_client, db_session):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        fils = [
+            await _create_filament(db_session, manufacturer.id, designation=f"LS {i}")
+            for i in range(3)
+        ]
+        ids = [f.id for f in fils]
+        headers = {"X-CSRF-Token": csrf_token}
+
+        r = await client.patch(
+            "/api/v1/filaments/bulk",
+            json={"filament_ids": ids, "low_stock_threshold_g": 700},
+            headers=headers,
+        )
+        assert r.status_code == 200 and r.json()["count"] == 3
+        for f in fils:
+            await db_session.refresh(f)
+            assert f.low_stock_threshold_g == 700
+
+        # Omitted field leaves the threshold unchanged
+        r = await client.patch(
+            "/api/v1/filaments/bulk",
+            json={"filament_ids": ids, "price": 12.5},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        for f in fils:
+            await db_session.refresh(f)
+            assert f.low_stock_threshold_g == 700
+            assert f.price == 12.5
+
+        # Explicit null clears it
+        r = await client.patch(
+            "/api/v1/filaments/bulk",
+            json={"filament_ids": ids, "low_stock_threshold_g": None},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        for f in fils:
+            await db_session.refresh(f)
+            assert f.low_stock_threshold_g is None
+
+    @pytest.mark.asyncio
+    async def test_bulk_low_stock_threshold_negative_rejected(
+        self, auth_client, db_session
+    ):
+        client, csrf_token = auth_client
+        manufacturer = await _create_manufacturer(db_session)
+        fil = await _create_filament(db_session, manufacturer.id, designation="Neg")
+        r = await client.patch(
+            "/api/v1/filaments/bulk",
+            json={"filament_ids": [fil.id], "low_stock_threshold_g": -1},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_bulk_delete_filaments(self, auth_client, db_session):
         client, csrf_token = auth_client
 

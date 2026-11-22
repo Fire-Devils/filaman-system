@@ -5,9 +5,11 @@
       "date": "",
       "changes": {
         "de": [
+          { "type": "feature", "text": "Filamente: Mindestbestand lässt sich jetzt für mehrere ausgewählte Filamente auf einmal setzen oder entfernen." },
           { "type": "fix", "text": "AMS View: Bei Druckern mit nur einem externen Halter erscheint kein leerer zweiter Platz mehr durch einen veralteten Slot-Eintrag; der Halter heißt jetzt \"Ext\". (#254)" }
         ],
         "en": [
+          { "type": "feature", "text": "Filaments: the minimum stock can now be set or removed for several selected filaments at once." },
           { "type": "fix", "text": "AMS View: printers with a single external holder no longer show an empty second bay caused by a stale slot entry; the holder is now labelled \"Ext\". (#254)" }
         ]
       }

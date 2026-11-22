@@ -137,6 +137,7 @@ const { compactPicker = false } = Astro.props
     <button class="fm-btn fm-btn-outline" id="bulk-btn-diameter" data-i18n="filaments.bulkSetDiameter">Set Diameter</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-spool-weight" data-i18n="filaments.bulkSetSpoolWeight">Set Spool Weight</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-density" data-i18n="filaments.bulkSetDensity">Set Density</button>
+    <button class="fm-btn fm-btn-outline" id="bulk-btn-low-stock" data-i18n="filaments.bulkSetLowStock">Set Minimum Stock</button>
     <button class="fm-btn fm-btn-outline" id="bulk-btn-print" data-i18n="filaments.bulkLabel">Print Labels</button>
     <button class="fm-btn fm-btn-danger" id="bulk-btn-delete" data-i18n="filaments.bulkDelete">Delete</button>
   </div>
@@ -1348,6 +1349,28 @@ const { compactPicker = false } = Astro.props
       )
       if (value === null) return
       await bulkPatch({ density_g_cm3: Number(value) })
+    })
+
+    // Set Minimum Stock (empty input clears the threshold)
+    document.getElementById('bulk-btn-low-stock')?.addEventListener('click', async () => {
+      if (selectedFilamentIds.size === 0) return
+      const value = await openBulkPrompt(
+        t('filaments.bulkSetLowStock'),
+        `<input type="number" class="fm-input" style="width: 100%;" min="0" step="1" value="" />
+         <p class="fm-text-muted" style="margin-top: 0.5rem; font-size: 0.85rem;" data-i18n="filaments.bulkLowStockHint"></p>`
+      )
+      if (value === null) return
+      const trimmed = value.trim()
+      if (trimmed === '') {
+        await bulkPatch({ low_stock_threshold_g: null })
+        return
+      }
+      const num = Number(trimmed)
+      if (!Number.isFinite(num) || num < 0) {
+        dialogWindow.__fmAlert(t('filaments.bulkError'))
+        return
+      }
+      await bulkPatch({ low_stock_threshold_g: num })
     })
     })
   </script>

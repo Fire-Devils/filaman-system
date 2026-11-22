@@ -487,6 +487,8 @@
     "bulkSetDiameter": "Set Diameter",
     "bulkSetSpoolWeight": "Set Spool Weight",
     "bulkSetDensity": "Set Density",
+    "bulkSetLowStock": "Set Minimum Stock",
+    "bulkLowStockHint": "Leave empty to remove the minimum stock",
     "bulkConfirmDelete": "Are you sure you want to delete {count} filament(s)?",
     "bulkConfirmDeleteForce": "Also delete all associated spools permanently. This cannot be undone.",
     "bulkSuccess": "{count} filament(s) updated successfully",

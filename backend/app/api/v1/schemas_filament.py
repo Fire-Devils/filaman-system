@@ -356,6 +356,8 @@ class BulkFilamentUpdateRequest(BaseModel):
     diameter_mm: FiniteFloat | None = None
     default_spool_weight_g: FiniteFloat | None = None
     density_g_cm3: FiniteFloat | None = None
+    # Explicit null clears the threshold, omitting the field leaves it unchanged.
+    low_stock_threshold_g: FiniteFloat | None = Field(None, ge=0)
 
 
 class BulkFilamentDeleteRequest(BaseModel):
