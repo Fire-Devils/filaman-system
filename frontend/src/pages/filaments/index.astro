@@ -158,6 +158,7 @@ const { compactPicker = false } = Astro.props
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
+    import { colorFilterFromIds } from '../../lib/color-library-links'
     import { cachedFetch, CACHE_KEYS, invalidateCache } from '../../lib/cache'
     import { initColumnPicker, type ColumnGroup } from '../../lib/column-picker'
     import { columnClassName, createSortableColumnHeader } from '../../lib/column-key'
@@ -445,6 +446,18 @@ const { compactPicker = false } = Astro.props
       void loadFilaments(true)
     }
 
+    function applyUrlColorFilter(colors: Array<{ value: string; color_stops?: { id: number }[] }>) {
+      const ids = urlParams.getAll('color_id')
+      if (!ids.length) return
+      const filter = colorFilterFromIds(ids, colors)
+      if (filter) {
+        columnFilters.colors = filter
+        filHeaderFilters?.setValue('colors', filter)
+        updateFilterResets()
+      }
+      removeFilterUrlParams('color_id')
+    }
+
     async function populateFilterDropdowns() {
       try {
         const signal = getAbortSignal()
@@ -479,6 +492,7 @@ const { compactPicker = false } = Astro.props
         }))
         if (options.has_empty_colors) colorOptions.unshift({ value: '', label: t('common.empty') })
         filHeaderFilters?.setOptions('colors', colorOptions)
+        applyUrlColorFilter(options.colors)
 
       } catch (e) {
         if (isAbortError(e)) return

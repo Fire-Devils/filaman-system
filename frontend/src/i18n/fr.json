@@ -177,6 +177,8 @@
     "filamentTypes": "Types de filament",
     "noData": "Aucune donnée",
     "lowStockSpools": "Bobines presque vides",
+    "lowStockFilaments": "Filaments en stock faible",
+    "lowStockFilamentsOk": "Tous les filaments sont au-dessus de leur stock minimum",
     "archive": "Archiver",
     "archiving": "Archivage…",
     "archiveAllEmpty": "Archiver toutes les bobines vides",
@@ -352,6 +354,8 @@
     "defaultSpoolWeight": "Poids de la bobine vide (g)",
     "defaultSpoolWeightLabel": "Poids de la bobine vide",
     "defaultSpoolWeightPlaceholder": "ex. 250",
+    "lowStockThresholdLabel": "Seuil de stock minimum (g)",
+    "lowStockThresholdPlaceholder": "ex. 700",
     "noFilaments": "Aucun filament trouvé.",
     "addOne": "En ajouter un",
     "failedLoad": "Échec du chargement des filaments",
@@ -497,6 +501,7 @@
   },
   "spools": {
     "title": "Bobines",
+    "hideSealed": "Masquer les bobines scellées",
     "addSpool": "Ajouter une bobine",
     "addSpoolFromEmpty": "À partir d'une bobine vide",
     "selectEmptySpoolTitle": "Sélectionner une bobine vide",
@@ -706,6 +711,8 @@
     "hexCode": "Code hex",
     "usage": "Utilisation",
     "usedIn": "Utilisée dans {count} filament(s)",
+    "usedInFilaments": "{count} filament(s)",
+    "showSpools": "Afficher les bobines",
     "noColors": "Aucune couleur trouvée.",
     "failedLoad": "Échec du chargement des couleurs",
     "failedSave": "Échec de l'enregistrement de la couleur",
@@ -2275,5 +2282,17 @@
     "nozzleRange": "Température de buse",
     "pressureAdvance": "Avance de pression K",
     "inactiveProfiles": "Activez l’extension pour choisir un profil de trancheur."
+  },
+  "spoolLink": {
+    "detected": "Tag RFID inconnu détecté pour {filament} dans {where}",
+    "unknownPrinter": "une imprimante",
+    "link": "Lier et activer",
+    "create": "Créer une nouvelle bobine",
+    "spool": "Bobine n° {id}",
+    "created": "ajoutée le {date}",
+    "weight": "{weight} g",
+    "lot": "lot {lot}",
+    "select": "Bobine à lier",
+    "failed": "La suggestion n’a pas pu être appliquée."
   }
 }

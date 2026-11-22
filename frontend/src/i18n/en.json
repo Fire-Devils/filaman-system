@@ -177,6 +177,8 @@
     "filamentTypes": "Filament Types",
     "noData": "No data",
     "lowStockSpools": "Low Stock Spools",
+    "lowStockFilaments": "Low stock filaments",
+    "lowStockFilamentsOk": "All filaments are above their minimum stock",
     "archive": "Archive",
     "archiving": "Archiving...",
     "archiveAllEmpty": "Archive all empty spools",
@@ -352,6 +354,8 @@
     "defaultSpoolWeight": "Empty Spool Weight (g)",
     "defaultSpoolWeightLabel": "Empty Spool Weight",
     "defaultSpoolWeightPlaceholder": "e.g. 250",
+    "lowStockThresholdLabel": "Minimum stock threshold (g)",
+    "lowStockThresholdPlaceholder": "e.g. 700",
     "noFilaments": "No filaments found.",
     "addOne": "Add one",
     "failedLoad": "Failed to load filaments",
@@ -497,6 +501,7 @@
   },
   "spools": {
     "title": "Spools",
+    "hideSealed": "Hide sealed spools",
     "addSpool": "Add Spool",
     "addSpoolFromEmpty": "From Empty Spool",
     "selectEmptySpoolTitle": "Select Empty Spool",
@@ -706,6 +711,8 @@
     "hexCode": "Hex Code",
     "usage": "Usage",
     "usedIn": "Used in {count} filament(s)",
+    "usedInFilaments": "{count} filament(s)",
+    "showSpools": "Show spools",
     "noColors": "No colors found.",
     "failedLoad": "Failed to load colors",
     "failedSave": "Failed to save color",
@@ -2275,5 +2282,17 @@
     "nozzleRange": "Nozzle temperature",
     "pressureAdvance": "Pressure advance K",
     "inactiveProfiles": "Enable the plugin to choose a slicer profile."
+  },
+  "spoolLink": {
+    "detected": "Unknown RFID tag detected for {filament} in {where}",
+    "unknownPrinter": "a printer",
+    "link": "Link & activate",
+    "create": "Create new spool",
+    "spool": "Spool #{id}",
+    "created": "added {date}",
+    "weight": "{weight} g",
+    "lot": "lot {lot}",
+    "select": "Spool to link",
+    "failed": "The suggestion could not be applied."
   }
 }

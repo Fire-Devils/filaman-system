@@ -221,6 +221,7 @@ class FilamentCreate(FilamentStandardProperties):
     finish_type: str | None = None
     raw_material_weight_g: FiniteFloat | None = None
     default_spool_weight_g: FiniteFloat | None = None
+    low_stock_threshold_g: FiniteFloat | None = Field(None, ge=0)
     spool_outer_diameter_mm: FiniteFloat | None = None
     spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
@@ -287,6 +288,7 @@ class FilamentUpdate(FilamentStandardProperties):
     finish_type: str | None = None
     raw_material_weight_g: FiniteFloat | None = None
     default_spool_weight_g: FiniteFloat | None = None
+    low_stock_threshold_g: FiniteFloat | None = Field(None, ge=0)
     spool_outer_diameter_mm: FiniteFloat | None = None
     spool_width_mm: FiniteFloat | None = None
     spool_material: str | None = None
@@ -317,6 +319,7 @@ class FilamentResponse(FilamentStandardProperties):
     finish_type: str | None
     raw_material_weight_g: float | None
     default_spool_weight_g: float | None
+    low_stock_threshold_g: float | None = None
     spool_outer_diameter_mm: float | None = None
     spool_width_mm: float | None = None
     spool_material: str | None = None

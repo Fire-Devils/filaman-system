@@ -458,6 +458,7 @@ export function createFilamentFormController(options: {
       build_plate_compatibility: serialize(listValue('build_plate_compatibility')),
       is_discontinued: serialize(input('is_discontinued').checked),
       default_spool_weight_g: serialize(numberValue('default_spool_weight_g')),
+      low_stock_threshold_g: serialize(numberValue('low_stock_threshold_g')),
       filamentdb_spool_image_file: serialize(spoolImageFile ?? null),
       filamentdb_spool_profile_id: serialize(spoolProfileId ?? null),
       spool_material: serialize(select('spool_material').value),
@@ -1059,6 +1060,7 @@ export function createFilamentFormController(options: {
       ['flow_ratio', 'flow_ratio'],
       ['pressure_advance_k', 'pressure_advance_k'],
       ['default_spool_weight_g', 'default_spool_weight_g'],
+      ['low_stock_threshold_g', 'low_stock_threshold_g'],
       ['spool_material', 'spool_material'],
       ['spool_outer_diameter_mm', 'spool_outer_diameter_mm'],
       ['spool_width_mm', 'spool_width_mm'],
@@ -1138,7 +1140,7 @@ export function createFilamentFormController(options: {
       'manufacturer_sku', 'datasheet_url', 'image_url',
     ]
     const optionalNumbers = [
-      'raw_material_weight_g', 'default_spool_weight_g', 'spool_outer_diameter_mm', 'spool_width_mm',
+      'raw_material_weight_g', 'default_spool_weight_g', 'low_stock_threshold_g', 'spool_outer_diameter_mm', 'spool_width_mm',
       'price', 'density_g_cm3', 'drying_temp_c', 'drying_time_hours', 'softening_temp_c',
       'chamber_temp_c', 'max_volumetric_speed_mm3_s', 'flow_ratio', 'pressure_advance_k',
     ]

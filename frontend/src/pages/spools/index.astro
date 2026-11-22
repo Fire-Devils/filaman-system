@@ -22,6 +22,7 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     }
   
   </style>
+  <div id="spool-link-banner"></div>
   <div class="fm-list-toolbar">
     <h1 data-i18n="spools.title">Spools</h1>
     <div class="fm-list-controls">
@@ -49,6 +50,10 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     <label id="filter-group-control" class="fm-column-group-control" hidden>
       <input type="checkbox" id="filter-group" class="fm-checkbox" />
       <span data-i18n="spools.groupByFilament">Group by Filament</span>
+    </label>
+    <label id="filter-hide-sealed-control" class="fm-column-group-control">
+      <input type="checkbox" id="filter-hide-sealed" class="fm-checkbox" />
+      <span data-i18n="spools.hideSealed">Hide sealed spools</span>
     </label>
   </div>
 
@@ -204,8 +209,11 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initInventoryScroll, inventoryApiPages, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { colorFilterParams, fetchAllPages } from '../../lib/api'
+    import { colorFilterFromIds } from '../../lib/color-library-links'
     import type { AppDialogs } from '../../lib/form-dialog'
     import { mountPanel } from '../../lib/panel-navigation'
+    import { readHideSealed, sealedExclusionStatusIds, writeHideSealed } from '../../lib/sealed-spools'
+    import { mountSpoolLinkBanner } from '../../lib/spool-link-banner'
 
     mountPanel('spools', async (panelSignal) => {
     const dialogWindow = window as unknown as AppDialogs
@@ -288,6 +296,14 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       const sf = localStorage.getItem('filaman-filters-spools')
       if (sf) savedFilterState = JSON.parse(sf)
     } catch { /* ignore invalid data */ }
+    const hideSealedInput = document.getElementById('filter-hide-sealed') as HTMLInputElement
+    hideSealedInput.checked = readHideSealed()
+    hideSealedInput.addEventListener('change', () => {
+      writeHideSealed(hideSealedInput.checked)
+      updateSpoolFilterOptions()
+      applyFiltersAndRender()
+    }, { signal: panelSignal })
+    void mountSpoolLinkBanner(document.getElementById('spool-link-banner')!, panelSignal, () => loadSpools(true))
     let colorFilterPaged = true
     let columnFilters: Record<string, ColumnFilterValue> = { ...(savedFilterState?.columns || {}) }
     let splHeaderFilters: HeaderFilterController | null = null
@@ -503,9 +519,14 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       const archivedStatusIds = new Set(
         statuses.filter((status) => status.key === 'archived').map((status) => String(status.id))
       )
+      const hiddenSealedIds = new Set(
+        hideSealedInput.checked && selectedStatusIds.length === 0
+          ? statuses.filter((status) => status.key === 'new').map((status) => String(status.id))
+          : []
+      )
       const scopeIds = selectedStatusIds.length > 0
         ? selectedStatusIds
-        : statuses.length ? spoolFilterFacets.used_status_ids.map(String).filter(id => !archivedStatusIds.has(id)) : []
+        : statuses.length ? spoolFilterFacets.used_status_ids.map(String).filter(id => !archivedStatusIds.has(id) && !hiddenSealedIds.has(id)) : []
 
       const manufacturers = new Map<string, HeaderFilterOption>()
       const materials = new Set<string>()
@@ -606,6 +627,27 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
       }
     }
 
+    function applyUrlColorFilter() {
+      const ids = urlParams.getAll('color_id')
+      if (!ids.length) return
+      const options = Object.values(spoolFilterFacets?.by_status ?? {}).flatMap(scope => scope.colors)
+      const filter = colorFilterFromIds(ids, options)
+      if (filter) {
+        columnFilters.colors = filter
+        splHeaderFilters?.setValue('colors', filter)
+        updateFilterResets()
+      } else {
+        // Color without any spool (e.g. only used by filaments): filter by its id
+        // server-side so the list is empty instead of silently showing everything.
+        const known = ids.map(Number).filter(Number.isInteger)
+        if (known.length) {
+          columnFilters.colors = { type: 'multi', values: ['#color'], colorStopIds: [['#color', known]] }
+          updateFilterResets()
+        }
+      }
+      removeFilterUrlParams('color_id')
+    }
+
     async function loadSpoolStatuses() {
       try {
         const response = await fetch('/api/v1/spools/statuses', { credentials: 'include', signal: getAbortSignal() })
@@ -650,7 +692,8 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
           params.set(`${key}_max`, String(Math.max(value, upper)))
         }
       }
-      statusIds.forEach((id) => params.append('status_id', id))
+      const sealedHidingIds = sealedExclusionStatusIds(statuses, statusIds, hideSealedInput.checked)
+      ;(sealedHidingIds ?? statusIds).forEach((id) => params.append('status_id', id))
       if (isArchivedSelected) params.set('include_archived', 'true')
       manufacturerIds.forEach((id) => params.append('manufacturer_id', id))
       locationIds.filter(Boolean).forEach((id) => params.append('location_id', id))
@@ -1194,7 +1237,8 @@ import InventoryFilterReset from '../../components/InventoryFilterReset.astro'
         if (panelSignal.aborted) return
         setupHeaderFilters()
         await loadSpoolStatuses()
-        if (!panelSignal.aborted) return loadFilters()
+        if (!panelSignal.aborted) await loadFilters()
+        if (!panelSignal.aborted) applyUrlColorFilter()
       })
       .then(() => { if (!panelSignal.aborted) return loadSpools() })
     document.querySelector('main')!.addEventListener('filaman:panel-authorized', () => {

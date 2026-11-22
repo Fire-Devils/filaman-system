@@ -178,6 +178,8 @@
     "filamentTypes": "Filament-Arten",
     "noData": "Keine Daten",
     "lowStockSpools": "Spulen (fast leer)",
+    "lowStockFilaments": "Filamente mit niedrigem Bestand",
+    "lowStockFilamentsOk": "Alle Filamente liegen über ihrem Mindestbestand",
     "archive": "Archivieren",
     "archiving": "Archivierung...",
     "archiveAllEmpty": "Alle leeren Spulen archivieren",
@@ -353,6 +355,8 @@
     "defaultSpoolWeight": "Leer-Spulengewicht (g)",
     "defaultSpoolWeightLabel": "Leer-Spulengewicht",
     "defaultSpoolWeightPlaceholder": "z.B. 250",
+    "lowStockThresholdLabel": "Mindestbestand (g)",
+    "lowStockThresholdPlaceholder": "z.B. 700",
     "noFilaments": "Keine Filamente gefunden.",
     "addOne": "Erstellen",
     "failedLoad": "Filamente konnten nicht geladen werden",
@@ -498,6 +502,7 @@
   },
   "spools": {
     "title": "Spulen",
+    "hideSealed": "Versiegelte ausblenden",
     "addSpool": "Spule hinzufügen",
     "addSpoolFromEmpty": "Aus leerer Spule",
     "selectEmptySpoolTitle": "Leere Spule auswählen",
@@ -707,6 +712,8 @@
     "hexCode": "Hex-Code",
     "usage": "Verwendung",
     "usedIn": "In {count} Filament(en) verwendet",
+    "usedInFilaments": "{count} Filament(e)",
+    "showSpools": "Spulen anzeigen",
     "noColors": "Keine Farben gefunden.",
     "failedLoad": "Farben konnten nicht geladen werden",
     "failedSave": "Farbe konnte nicht gespeichert werden",
@@ -2276,5 +2283,17 @@
     "nozzleRange": "Düsentemperatur",
     "pressureAdvance": "Pressure Advance K",
     "inactiveProfiles": "Plugin aktivieren, um ein Slicer-Profil auszuwählen."
+  },
+  "spoolLink": {
+    "detected": "Unbekannter RFID-Tag für {filament} in {where} erkannt",
+    "unknownPrinter": "einem Drucker",
+    "link": "Verknüpfen & aktivieren",
+    "create": "Neue Spule anlegen",
+    "spool": "Spule #{id}",
+    "created": "angelegt {date}",
+    "weight": "{weight} g",
+    "lot": "Charge {lot}",
+    "select": "Zu verknüpfende Spule",
+    "failed": "Der Vorschlag konnte nicht übernommen werden."
   }
 }

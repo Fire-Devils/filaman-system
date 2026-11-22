@@ -26,6 +26,7 @@ async function boot(canArchive = false, poll = async () => Response.json([
       spool_distribution: { full: 0, normal: 0, low: 1, critical: 0, empty: 0 }, total_value_available: 3,
       manufacturers_with_spools: [{ id: 7, name: 'Maker <clear>', spool_count: 2 }],
       low_stock_spools: [{ spool_id: 3, filament_designation: 'Sample', filament_type: 'PLA', manufacturer_name: 'Maker', remaining_weight_g: 50 }],
+      low_stock_filaments: [{ filament_id: 5, filament_designation: 'Black <PETG>', filament_type: 'PETG', manufacturer_name: 'Maker', total_remaining_g: 600, low_stock_threshold_g: 700, spool_count: 2 }],
       filament_types: [{ material_type: 'Empty-only type', count: 4 }],
       location_stats: [{ location_id: 9, location_name: 'Dry <box>', spool_count: 4, total_weight_g: 2500 }],
       filament_stats: [{ filament_type: 'PLA', spool_count: 2, total_weight_g: 1500 }, { filament_type: 'PETG <clear>', spool_count: 1, total_weight_g: 250 }],
@@ -42,6 +43,7 @@ async function boot(canArchive = false, poll = async () => Response.json([
     fetchAllPages, getAbortSignal: () => undefined,
     isAbortError: () => false,
     hasPermission,
+    mountSpoolLinkBanner: async () => ({ refresh: async () => {} }),
     bindFormDialog, escapeHtml, fetch,
     api: {
       get: async (path: string) => path === '/me'
@@ -70,6 +72,11 @@ it('renders safe material statistics and scope controls, and opens a read-only d
     .toEqual([['PLA', '2', '1.5 kg'], ['PETG <clear>', '1', '250 g']])
   expect(rows[1].querySelector('a')!.getAttribute('href')).toBe('/spools?material=PETG%20%3Cclear%3E')
   expect(document.querySelector('#filament-stats')!.textContent).not.toContain('Empty-only type')
+  const lowFilament = document.querySelector('#low-stock-filaments tbody tr')!
+  expect(lowFilament.querySelector('a')!.getAttribute('href')).toBe('/filaments/5')
+  expect(lowFilament.textContent).toContain('Black <PETG> (PETG)')
+  expect(lowFilament.textContent).toContain('600 / 700g')
+  expect(document.querySelector('#low-stock-filaments img')).toBeNull()
 
   document.querySelector<HTMLButtonElement>('[data-scope="active"]')!.click()
   expect(document.querySelector('#stat-total-filaments')!.textContent).toBe('1')
