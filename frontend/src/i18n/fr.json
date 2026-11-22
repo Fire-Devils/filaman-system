@@ -711,6 +711,8 @@
     "hexCode": "Code hex",
     "usage": "Utilisation",
     "usedIn": "Utilisée dans {count} filament(s)",
+    "usedInFilaments": "{count} filament(s)",
+    "showSpools": "Afficher les bobines",
     "noColors": "Aucune couleur trouvée.",
     "failedLoad": "Échec du chargement des couleurs",
     "failedSave": "Échec de l'enregistrement de la couleur",

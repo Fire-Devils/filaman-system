@@ -53,6 +53,7 @@ import Layout from '../../layouts/Layout.astro'
     import { getAbortSignal, isAbortError } from '../../lib/abort'
     import { initInventoryScroll, inventoryLocalPages } from '../../lib/inventory-scroll'
     import { fetchAllPages } from '../../lib/api'
+    import { colorUsageHtml } from '../../lib/color-library-links'
     import { bindAlphaColorControls, normalizeHexCode, toColorSwatchBackground } from '../../lib/colors'
     import { escapeHtml } from '../../lib/extra-fields'
     import {
@@ -182,7 +183,7 @@ import Layout from '../../layouts/Layout.astro'
           </td>
           <td style="padding: 12px; font-family: monospace; color: var(--text-muted);">${escapeHtml(String(c.hex_code).toUpperCase())}</td>
           <td style="padding: 12px; color: var(--text-muted); font-size: 0.85rem;">
-            ${t('colors.usedIn', { count: c.usage_count })}
+            ${colorUsageHtml(c.id, c.usage_count, t)}
           </td>
           <td style="padding: 12px; text-align: right;">
             <div class="fm-row-actions">${tableAction('edit', { id: c.id })}${tableAction('delete', { id: c.id, usage: c.usage_count }, { disabled: c.usage_count > 0, title: c.usage_count > 0 ? t('colors.inUseWarning') : undefined })}</div>

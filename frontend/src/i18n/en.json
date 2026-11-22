@@ -711,6 +711,8 @@
     "hexCode": "Hex Code",
     "usage": "Usage",
     "usedIn": "Used in {count} filament(s)",
+    "usedInFilaments": "{count} filament(s)",
+    "showSpools": "Show spools",
     "noColors": "No colors found.",
     "failedLoad": "Failed to load colors",
     "failedSave": "Failed to save color",
